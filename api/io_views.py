@@ -201,6 +201,7 @@ def io_fields_view(request, slug):
 def _scoped_qs(request, tenant, handler, model, action):
     qs = model._default_manager.filter(tenant=tenant)
     qs = rbac.restrict_queryset(qs, request.user, tenant, handler.slug, action)
+    qs = handler.visible_rows(qs, request.user)
     return handler.export_queryset(qs)
 
 
@@ -604,14 +605,14 @@ def io_import_view(request, slug):
         )
 
     # Row scope for update-target / create-target enforcement.
-    change_qs = rbac.restrict_queryset(
+    change_qs = handler.visible_rows(rbac.restrict_queryset(
         model._default_manager.filter(tenant=tenant), request.user, tenant,
         slug, "change",
-    )
-    add_qs = rbac.restrict_queryset(
+    ), request.user)
+    add_qs = handler.visible_rows(rbac.restrict_queryset(
         model._default_manager.filter(tenant=tenant), request.user, tenant,
         slug, "add",
-    )
+    ), request.user)
 
     created = updated = 0
     errors, preview = [], []
