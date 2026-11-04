@@ -4,9 +4,11 @@ import { CalendarClock, ShieldCheck } from "lucide-react"
 
 import type { Script } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { SortHeader } from "@/components/data-table"
+import { SortHeader, selectionColumn } from "@/components/data-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { RunStatusBadge } from "@/components/script-run-status"
+import { actionsColumn } from "@/components/columns/actions-column"
+import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 export type ScriptColumnId =
   | "name"
@@ -27,7 +29,13 @@ const VISIBILITY_LABEL: Record<Script["visibility"], string> = {
 /** One factory for the list page and the embedded tables, per the shared
  * column convention. */
 export function buildScriptColumns(
-  opts: { omit?: ScriptColumnId[] } = {}
+  opts: {
+    omit?: ScriptColumnId[]
+    /** Leading checkbox column for bulk selection. */
+    selection?: boolean
+    /** Trailing RowActions column. */
+    actions?: ActionsColumnOpts<Script>
+  } = {}
 ): ColumnDef<Script, unknown>[] {
   const omit = new Set(opts.omit ?? [])
   const all: Record<ScriptColumnId, () => ColumnDef<Script, unknown>> = {
@@ -143,5 +151,9 @@ export function buildScriptColumns(
     "runs",
     "owner",
   ]
-  return order.filter((id) => !omit.has(id)).map((id) => all[id]())
+  const cols: ColumnDef<Script, unknown>[] = []
+  if (opts.selection) cols.push(selectionColumn<Script>())
+  for (const id of order) if (!omit.has(id)) cols.push(all[id]())
+  if (opts.actions) cols.push(actionsColumn<Script>(opts.actions))
+  return cols
 }

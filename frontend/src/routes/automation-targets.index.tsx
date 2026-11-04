@@ -1,114 +1,66 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { Wand2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import { type AutomationTarget } from "@/lib/api"
+import type { AutomationTarget } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { useMe } from "@/lib/use-me"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
+import { buildAutomationTargetColumns } from "@/components/columns/automation-target-columns"
 import { AutomationTargetDeleteDialog } from "@/components/automation-target-delete-dialog"
 import { AutomationExplainer } from "@/components/automation-explainer"
 import { AutomationTargetTestButton } from "@/components/automation-target-test-button"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { BulkFlagActions } from "@/components/bulk-flag-actions"
 import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/automation-targets/")({
   component: AutomationTargetsPage,
 })
 
+const ENDPOINT = "/api/automation-targets/"
+const NOUN: [string, string] = ["target", "targets"]
+
 function AutomationTargetsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("automationtarget", "add")
+  const canEdit = canDo("automationtarget", "change")
+  const canDelete = canDo("automationtarget", "delete")
+  const selectable = canEdit || canDelete
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<AutomationTarget | null>(null)
+  const [selected, setSelected] = useState<AutomationTarget[]>([])
 
   const query = useQuery({
     queryKey: ["automation-targets", q],
     queryFn: () =>
       apiAll<AutomationTarget>(
-        `/api/automation-targets/?${new URLSearchParams({ search: q }).toString()}`
+        `${ENDPOINT}?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
 
   const rows = query.data?.results ?? []
   const onDelete = useCallback((t: AutomationTarget) => setDeleting(t), [])
-  const columns = useMemo<ColumnDef<AutomationTarget>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/automation-targets/$id"
-            params={{ id: row.original.id }}
-            className="link flex items-center gap-2 font-medium"
-          >
-            {row.original.name}
-            {!row.original.enabled && (
-              <Badge variant="secondary" className="text-[10px]">
-                disabled
-              </Badge>
-            )}
-          </Link>
-        ),
-      },
-      {
-        id: "kind",
-        accessorKey: "kind_display",
-        header: "Kind",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {row.original.kind_display}
-          </span>
-        ),
-      },
-      {
-        id: "url",
-        accessorKey: "base_url",
-        header: "Endpoint",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block font-mono text-[11px] text-muted-foreground">
-            {row.original.base_url}
-            {row.original.kind === "awx" && row.original.job_template_id
-              ? ` · JT ${row.original.job_template_id}`
-              : ""}
-          </span>
-        ),
-      },
-      {
-        id: "auto",
-        header: "On change",
-        cell: ({ row }) =>
-          row.original.auto_on_change ? (
-            <Badge variant="secondary" className="text-[10px]">
-              auto
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">manual</span>
-          ),
-      },
-      {
-        id: "actions",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <RowActions
-            editTo="/automation-targets/$id/edit"
-            editParams={{ id: row.original.id }}
-            onDelete={() => onDelete(row.original)}
-            extra={<AutomationTargetTestButton target={row.original} />}
-          />
-        ),
-      },
-    ],
-    [onDelete]
+  const columns = useMemo(
+    () =>
+      buildAutomationTargetColumns({
+        selection: selectable,
+        actions: {
+          editTo: "/automation-targets/$id/edit",
+          editParams: (t) => ({ id: t.id }),
+          canEdit: () => canEdit,
+          onDelete,
+          canDelete: () => canDelete,
+          extra: (t) => <AutomationTargetTestButton target={t} />,
+        },
+      }),
+    [onDelete, canEdit, canDelete, selectable]
   )
+  const clear = () => setSelected([])
 
   return (
     <ListPageShell
@@ -145,8 +97,32 @@ function AutomationTargetsPage() {
           columns={columns}
           flexColumn="url"
           tableId="automation-targets"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       </div>
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint={ENDPOINT}
+        noun={NOUN}
+        invalidate={[["automation-targets"]]}
+        onCleared={clear}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="automationtarget"
+        actions={
+          canEdit && (
+            <BulkFlagActions
+              endpoint={ENDPOINT}
+              field="enabled"
+              ids={selected.map((t) => t.id)}
+              noun={NOUN}
+              invalidate={[["automation-targets"]]}
+              onDone={clear}
+            />
+          )
+        }
+      />
       <AutomationTargetDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

@@ -148,6 +148,11 @@ dashboard**, so that the Dashboard link opens it instead of their own layout.
 When that dashboard is deleted, the Dashboard link opens their own layout
 again.
 
+On **All dashboards**, tick rows to reveal the bulk bar. **Delete** first shows
+what would happen: your own dashboards go, and one someone else shared with
+you stays, named with the reason - only its owner deletes it
+(`POST /api/dashboards/bulk-delete/`, `{ids, dry_run}`).
+
 Every widget loads its data with the **viewer's** permissions, never the
 owner's. A shared dashboard shows each viewer only what they could already
 see.

@@ -20,6 +20,9 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.bulk_delete import MAX_IDS, SafeBulkDeleteMixin, int_bulk_ids
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
+
 from .drf import DeploymentAdminForWrites, RBACObjectPermission
 from .models import GroupProfile, ObjectPermission, UserProfile
 from .permissions import can_manage_deployment, user_tenants
@@ -255,10 +258,59 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "last_login", "date_joined"]
 
 
-class UserViewSet(viewsets.ModelViewSet):
+class _AccessBulkMixin(SafeBulkDeleteMixin):
+    """Bulk select on the deployment-wide access lists. Their writes are
+    deployment-admin only (``DeploymentAdminForWrites``), and their rows are
+    not audited models nor have a site to keep a write inside, so a bulk
+    delete writes its own change log entries."""
+
+    rbac_action_map = dict(BulkEditMixin.rbac_action_map)
+
+    def _assert_bulk_write_in_site_scope(self, pks, action="change"):
+        """Users, groups and permissions have no site."""
+
+    def bulk_destroy(self, rows):
+        from audit.bulk import log_bulk_delete
+
+        super().bulk_destroy(rows)
+        log_bulk_delete(rows)
+
+
+class UserViewSet(_AccessBulkMixin, BulkEditMixin, viewsets.ModelViewSet):
+    """``bulk-update`` turns accounts on and off (``is_active`` only);
+    ``bulk-delete`` deletes them. Both keep the rows
+    :func:`auth_api.bulk_guards.user_blockers` names: your own account, a
+    superuser's unless you are one, and the last active superuser."""
+
     queryset = User.objects.all().prefetch_related("groups", "profile__tenants").order_by("username")
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated, RBACObjectPermission, DeploymentAdminForWrites]
+    bulk_edit = BulkEditSpec(fields=("is_active",), tags=False)
+
+    def _bulk_ids(self, request):
+        return int_bulk_ids(request, MAX_IDS)
+
+    def bulk_blockers(self, rows):
+        from .bulk_guards import user_blockers
+
+        return {**user_blockers(self.request.user, rows), **super().bulk_blockers(rows)}
+
+    def check_bulk_rows(self, rows, updates):
+        """Switching accounts off refuses what a delete keeps, naming the
+        account; a superuser's needs a superuser, as a single edit."""
+        from rest_framework.exceptions import PermissionDenied, ValidationError
+
+        from .bulk_guards import SUPERUSER_TARGET, user_blockers
+
+        if updates.get("is_active") is not False:
+            if any(u.is_superuser for u in rows) and not self.request.user.is_superuser:
+                raise PermissionDenied(SUPERUSER_TARGET)
+            return
+        for pk, why in user_blockers(self.request.user, rows).items():
+            name = next(u.username for u in rows if u.pk == pk)
+            if why == SUPERUSER_TARGET:
+                raise PermissionDenied(why)
+            raise ValidationError({"is_active": f"{name}: {why}"})
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -313,16 +365,40 @@ class UserViewSet(viewsets.ModelViewSet):
             "Only a superuser may modify a superuser account."
         )
 
+    def _forbid_lockout(self, obj):
+        """A single switch-off refuses what the bulk one refuses: your own
+        account, and the last active superuser."""
+        from rest_framework.exceptions import ValidationError
+
+        from .bulk_guards import user_blockers
+
+        data = self.request.data if isinstance(self.request.data, dict) else {}
+        if "is_active" not in data or data["is_active"] not in (False, "false", "False"):
+            return
+        why = user_blockers(self.request.user, [obj]).get(obj.pk)
+        if why is not None:
+            raise ValidationError({"is_active": why})
+
     def update(self, request, *args, **kwargs):
-        self._forbid_superuser_target(self.get_object(), flags_only_ok=True)
+        obj = self.get_object()
+        self._forbid_superuser_target(obj, flags_only_ok=True)
+        self._forbid_lockout(obj)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
-        self._forbid_superuser_target(self.get_object(), flags_only_ok=True)
+        obj = self.get_object()
+        self._forbid_superuser_target(obj, flags_only_ok=True)
+        self._forbid_lockout(obj)
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        self._forbid_superuser_target(self.get_object())
+        from .bulk_guards import user_blockers
+
+        obj = self.get_object()
+        self._forbid_superuser_target(obj)
+        why = user_blockers(request.user, [obj]).get(obj.pk)
+        if why is not None:
+            return Response({"detail": why}, status=status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"], url_path="send-reset")
@@ -405,11 +481,27 @@ class GroupSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
 
-class GroupViewSet(viewsets.ModelViewSet):
+class GroupViewSet(_AccessBulkMixin, viewsets.ModelViewSet):
+    """``bulk-delete`` keeps a built-in group, and the groups through which
+    the caller manages users when it would take all of them
+    (:func:`auth_api.bulk_guards.group_blockers`) - as the single delete."""
+
     queryset = Group.objects.all().select_related("profile").order_by("name")
     serializer_class = GroupSerializer
     permission_classes = [IsAuthenticated, RBACObjectPermission, DeploymentAdminForWrites]
     rbac_object_type = "group"
+
+    def _bulk_ids(self, request):
+        return int_bulk_ids(request, MAX_IDS)
+
+    def bulk_blockers(self, rows):
+        from .bulk_guards import group_blockers
+
+        out = group_blockers(self.request.user, rows)
+        for g in rows:
+            if getattr(getattr(g, "profile", None), "built_in", False):
+                out[g.pk] = "Built-in groups can't be deleted."
+        return {**out, **super().bulk_blockers(rows)}
 
     def get_queryset(self):
         from django.db.models import Count
@@ -422,13 +514,9 @@ class GroupViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         group = self.get_object()
-        if getattr(getattr(group, "profile", None), "built_in", False):
-            from rest_framework import status
-
-            return Response(
-                {"detail": "Built-in groups can't be deleted."},
-                status=status.HTTP_409_CONFLICT,
-            )
+        why = self.bulk_blockers([group]).get(group.pk)
+        if why is not None:
+            return Response({"detail": why}, status=status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)
 
 
@@ -576,7 +664,14 @@ class ObjectPermissionSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class ObjectPermissionViewSet(viewsets.ModelViewSet):
+class ObjectPermissionViewSet(_AccessBulkMixin, BulkEditMixin, viewsets.ModelViewSet):
+    """``bulk-update`` enables, disables and describes grants; what a grant
+    reaches and who holds it stay one grant at a time. ``bulk-delete`` and
+    disabling keep the built-in Administrator grant, and the grants through
+    which the caller manages users when it would take all of them
+    (:func:`auth_api.bulk_guards.permission_blockers`) - as a single delete
+    or edit does."""
+
     queryset = (
         ObjectPermission.objects.all()
         .prefetch_related("groups", "users", "tenants", "sites")
@@ -585,6 +680,42 @@ class ObjectPermissionViewSet(viewsets.ModelViewSet):
     serializer_class = ObjectPermissionSerializer
     permission_classes = [IsAuthenticated, RBACObjectPermission, DeploymentAdminForWrites]
     rbac_object_type = "objectpermission"
+    bulk_edit = BulkEditSpec(fields=("enabled", "description"), tags=False)
+
+    def bulk_blockers(self, rows):
+        from .bulk_guards import permission_blockers
+
+        return {**permission_blockers(self.request.user, rows), **super().bulk_blockers(rows)}
+
+    def check_bulk_rows(self, rows, updates):
+        from rest_framework.exceptions import ValidationError
+
+        from .bulk_guards import permission_blockers
+
+        if updates.get("enabled") is not False:
+            return
+        for pk, why in permission_blockers(self.request.user, rows).items():
+            name = next(p.name for p in rows if p.pk == pk)
+            raise ValidationError({"enabled": f"{name}: {why}"})
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import ValidationError
+
+        from .bulk_guards import permission_blockers
+
+        perm = serializer.instance
+        if serializer.validated_data.get("enabled") is False and perm.enabled:
+            why = permission_blockers(self.request.user, [perm]).get(perm.pk)
+            if why is not None:
+                raise ValidationError({"enabled": why})
+        super().perform_update(serializer)
+
+    def destroy(self, request, *args, **kwargs):
+        perm = self.get_object()
+        why = self.bulk_blockers([perm]).get(perm.pk)
+        if why is not None:
+            return Response({"detail": why}, status=status.HTTP_409_CONFLICT)
+        return super().destroy(request, *args, **kwargs)
 
     def get_queryset(self):
         # Scope to permissions that APPLY to the active tenant - an empty

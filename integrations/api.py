@@ -7,6 +7,7 @@ from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.serializers import TenantScopedModelSerializer
 from api.viewsets import TenantScopedViewSet
 
@@ -81,9 +82,14 @@ class WebhookSerializer(serializers.ModelSerializer):
                             "additional_header_names", "created_at", "updated_at"]
 
 
-class WebhookViewSet(TenantScopedViewSet):
+class WebhookViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = Webhook.objects.all().order_by("name")
     serializer_class = WebhookSerializer
+    # The URL, the secret and the headers belong to one webhook: not bulk
+    # edits, and never read back.
+    bulk_edit = BulkEditSpec(
+        fields=("enabled", "on_create", "on_update", "on_delete"), tags=False
+    )
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -149,9 +155,11 @@ class AutomationTargetSerializer(serializers.ModelSerializer):
                             "created_at", "updated_at"]
 
 
-class AutomationTargetViewSet(TenantScopedViewSet):
+class AutomationTargetViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = AutomationTarget.objects.all().order_by("name")
     serializer_class = AutomationTargetSerializer
+    # The endpoint and the token belong to one target: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("enabled", "auto_on_change"), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset()

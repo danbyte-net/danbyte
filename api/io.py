@@ -420,6 +420,12 @@ class ModelIOHandler:
         another way (a synced DHCP scope through its server connection)."""
         return self.model._default_manager.filter(tenant=tenant)
 
+    def visible_rows(self, qs, user):
+        """``qs`` narrowed to the rows ``user`` sees through the API, for a
+        type whose list narrows past RBAC (a script shared with some users
+        only). Export and import read and match only these. Default: all."""
+        return qs
+
     def export_queryset(self, qs):
         if _is_taggable(self.model):
             qs = qs.prefetch_related(TAGS)

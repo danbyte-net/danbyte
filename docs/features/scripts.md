@@ -231,6 +231,24 @@ name is kept, so TLS still checks it. With an `https`
 | `script: trust` | Mark a script trusted, edit one without clearing that, and edit or schedule scripts that run as their owner |
 | `scripts.publish` | Publish a script to everyone in the tenant |
 
+## Bulk changes
+
+Tick rows in the script list - with `script: change` or `delete` - to reveal the
+bulk bar. Every action reaches only the scripts you can see, as the list does:
+
+- **Enable** and **Disable** switch every selected script on or off.
+- **Export** downloads the selected scripts as CSV, Excel or JSON. Export and
+  import, here and from **Import / Export**, read only the scripts you can see:
+  a private script of someone else's never leaves in a file, and an import does
+  not match it.
+- **Edit** sets **Enabled** or the **Description**. The code, who it runs as,
+  its sharing and its schedule stay per script, under the rules above.
+- **Delete** first shows what would happen - with the runs that go along - then
+  deletes the scripts.
+
+`POST /api/scripts/bulk-update/` needs `script: change`;
+`POST /api/scripts/bulk-delete/` needs `script: delete`.
+
 ## From the shell
 
 ```bash

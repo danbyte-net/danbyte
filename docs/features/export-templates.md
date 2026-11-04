@@ -254,6 +254,23 @@ is deliberately short - the template body is the content, and there is no
   produces the file (saved as an attachment when you enabled that option). The
   same action sits in the header of the template's own page.
 
+## Bulk changes
+
+Tick rows in the template list - with the `change` or `delete` grant - to
+reveal the bulk bar:
+
+- **Export** downloads the selected templates as CSV, Excel or JSON.
+- **Edit** sets **As attachment** or **Description** on every selected
+  template. The body, object type and file name stay per template.
+- **Delete** first shows what would happen and names the templates that sit
+  in a config bundle: they leave the bundle, as a single delete does.
+
+| Endpoint | Needs |
+|---|---|
+| `POST /api/export-templates/bulk-update/` | `exporttemplate.change`; `{ids, fields}` with `as_attachment`, `description` |
+| `GET /api/export-templates/bulk-edit-fields/` | `exporttemplate.change` |
+| `POST /api/export-templates/bulk-delete/` | `exporttemplate.delete`; `{ids, dry_run}` |
+
 ## Config-template bindings
 
 An export template with object type **device** can double as a device's **config
@@ -294,6 +311,11 @@ GET /api/devices/<id>/render/?bundle=leaf-files       → {bundle, files: {path:
 GET /api/devices/<id>/render/?bundle=role             → the bundle bound to the device's role
 GET /api/devices/<id>/render/?bundle=role&archive=tar → a tarball, paths kept relative
 ```
+
+The bundle list takes the same bulk bar as the templates: **Export**, **Edit**
+(the **Description**) and a previewed **Delete**, through
+`/api/config-bundles/bulk-update/` (`configbundle.change`) and
+`/api/config-bundles/bulk-delete/` (`configbundle.delete`).
 
 Every rendered file carries its `sha256`, so a tool can skip what has not
 changed. `bundle=role` is an error rather than a guess when the role has no

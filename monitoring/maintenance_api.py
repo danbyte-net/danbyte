@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.serializers import StatusSerializerMixin, TenantScopedModelSerializer
 from api.viewsets import TenantScopedViewSet
 
@@ -107,13 +108,24 @@ class MaintenanceEventSerializer(StatusSerializerMixin, TenantScopedModelSeriali
         return attrs
 
 
-class MaintenanceEventViewSet(TenantScopedViewSet):
+class MaintenanceEventViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = (
         MaintenanceEvent.objects.select_related("provider", "status")
         .prefetch_related("impacts")
         .order_by("-starts_at")
     )
     serializer_class = MaintenanceEventSerializer
+    # The window, kind and impacts belong to one event: not bulk edits. A
+    # status runs through the serializer's checks for each row, as a PATCH.
+    bulk_edit = BulkEditSpec(fields=("status_id", "description"), tags=False)
+
+    def after_bulk_update(self, pks, updates):
+        """A new status may start or retire the window's alert silence, as
+        a single edit's ``perform_update`` does."""
+        if "status_id" not in updates:
+            return
+        for event in MaintenanceEvent.objects.filter(pk__in=pks).select_related("status"):
+            event.sync_silence()
 
     def get_queryset(self):
         qs = super().get_queryset()

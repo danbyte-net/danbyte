@@ -27,6 +27,17 @@ kinds share the same record:
 | **ETR** | Outages only: the estimated time to restore, while the real end is unknown. |
 | **Raw email** | The original notification, kept verbatim next to what was parsed out of it. |
 
+Tick rows in the **Maintenance** list - with the `change` or `delete` grant -
+to reveal the bulk bar:
+
+- **Export** downloads the selected events as CSV, Excel or JSON.
+- **Edit** sets the **Status** or the **Description** on every selected event.
+  A status is checked for each event as its own edit checks it, and starts or
+  retires the event's alert silence the same way. The window, kind and impacts
+  stay per event.
+- **Delete** first shows what would happen, then deletes the events and the
+  silences they drove.
+
 ## Statuses come from the catalog
 
 Event statuses are **user-editable rows** in the shared Statuses catalog
@@ -164,6 +175,8 @@ a systemd timer; unparsed mail is left unread for the next pass.
 | `GET/POST /api/monitoring/maintenance-events/` | List and create - a create may carry `impacts`, as `ingest` does. Filters: `kind`, `status` (id or slug), `provider`, `open=1`, `active_at=<iso>`, `object_type=&object_id=` (events touching that object) |
 | `PATCH/DELETE …/{id}/` | Update (resyncs the silence) / delete (retires it) |
 | `POST …/ingest/` | Upsert from an external parser (above) |
+| `POST …/bulk-update/` | `maintenanceevent.change`; `{ids, fields}` with `status_id`, `description` (resyncs each silence) |
+| `POST …/bulk-delete/` | `maintenanceevent.delete`; `{ids, dry_run}` (retires each silence) |
 | `GET/POST /api/monitoring/event-impacts/` | Impacts; `?event=` or `?object_type=&object_id=` for the reverse "what maintenance touches this circuit?" |
 | `GET /api/planning/calendar.ics` | The iCal feed |
 

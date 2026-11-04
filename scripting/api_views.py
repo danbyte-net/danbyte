@@ -13,6 +13,7 @@ from django.http import FileResponse
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 
 from .models import Script, ScriptOutput, ScriptRun
@@ -28,12 +29,19 @@ from .visibility import visible_scripts
 logger = logging.getLogger(__name__)
 
 
-class ScriptViewSet(TenantScopedViewSet):
+class ScriptViewSet(BulkEditMixin, TenantScopedViewSet):
     """Scripts the caller can see. `run` and `trust` are their own grants."""
 
     queryset = Script.objects.all()
     serializer_class = ScriptSerializer
-    rbac_action_map = {"run": "run", "runs": "view", "trust": "trust"}
+    rbac_action_map = {
+        **BulkEditMixin.rbac_action_map,
+        "run": "run", "runs": "view", "trust": "trust",
+    }
+    # What a script runs, as whom and when are checked against its owner and
+    # trust one script at a time: not bulk edits. Each row still passes the
+    # serializer's checks, as a PATCH would.
+    bulk_edit = BulkEditSpec(fields=("enabled", "description"), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("owner").prefetch_related(

@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { NamedDashboard } from "@/lib/api"
 import { dash } from "@/components/cells/dash"
 import { TimeCell } from "@/components/cells/time-ago"
-import { SortHeader } from "@/components/data-table"
+import { SortHeader, selectionColumn } from "@/components/data-table"
 import { Badge } from "@/components/ui/badge"
 
 const VISIBILITY: Record<NamedDashboard["visibility"], string> = {
@@ -13,9 +13,13 @@ const VISIBILITY: Record<NamedDashboard["visibility"], string> = {
   groups: "Groups",
 }
 
-/** A named dashboard, as a row of the dashboards list. */
-export function dashboardColumns(): ColumnDef<NamedDashboard>[] {
+/** A named dashboard, as a row of the dashboards list. `selection` adds
+ * the leading checkbox column for bulk selection. */
+export function dashboardColumns(
+  opts: { selection?: boolean } = {}
+): ColumnDef<NamedDashboard>[] {
   return [
+    ...(opts.selection ? [selectionColumn<NamedDashboard>()] : []),
     {
       id: "name",
       accessorFn: (r) => r.name,
