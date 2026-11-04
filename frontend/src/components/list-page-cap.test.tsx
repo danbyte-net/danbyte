@@ -169,3 +169,18 @@ describe("capped list page", () => {
     expect(html).toContain("1 row · First 1,000 of 40,960 rows · exported now")
   })
 })
+
+describe("the list page's content area", () => {
+  // #470: a page whose content has nothing to tab to (Jobs) still lets a
+  // keyboard reach and scroll its content area.
+  it("is a focusable, named region", async () => {
+    mount(
+      <ListPageShell title="Jobs">
+        <p>No links here</p>
+      </ListPageShell>
+    )
+    const region = await screen.findByRole("region", { name: "Jobs" })
+    expect(region.getAttribute("tabindex")).toBe("0")
+    expect(region.textContent).toContain("No links here")
+  })
+})
