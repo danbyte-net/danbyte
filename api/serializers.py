@@ -5059,7 +5059,7 @@ class TopologyViewSerializer(NumIdModelSerializer):
     # The map's cards are sized differently in each view style, so a view
     # keeps one arrangement per style. Each is bounded like the single map
     # this grew out of.
-    POSITION_STYLES = ("stencil", "hierarchy", "flat", "diagram")
+    POSITION_STYLES = ("stencil", "hierarchy", "flat", "diagram", "routing")
 
     # ── Diagram-tab keys ─────────────────────────────────────────────────
     # Only these (added in 0.17) are checked in depth; the older keys keep
