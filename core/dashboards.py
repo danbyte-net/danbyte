@@ -116,6 +116,9 @@ class DashboardViewSet(SafeBulkDeleteMixin, viewsets.ModelViewSet):
 
     serializer_class = DashboardSerializer
     permission_classes = [IsAuthenticated]
+    # Dashboards are not an RBAC type - ownership gates the delete - but every
+    # bulk delete declares its verb.
+    rbac_action_map = {"bulk_delete": "delete"}
 
     def bulk_blocker(self, obj):
         if obj.owner_id != self.request.user.id:
