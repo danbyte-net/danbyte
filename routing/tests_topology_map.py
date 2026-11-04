@@ -263,6 +263,26 @@ class PayloadTests(_Base):
         self.assertEqual(e["source"], f"dev:{self.r1.id}")
         self.assertFalse(self._edges(self._get("layers=ebgp"), "circuit"))
 
+    def test_a_circuit_cabled_to_two_routers_is_a_line_between_them(self):
+        # A circuit cabled at both ends used to 500 the payload: the circuit
+        # layer's cards had no id for the site-to-site edge.
+        provider = Provider.objects.create(tenant=self.t, name="Telco", slug="telco")
+        cph = Site.objects.create(tenant=self.t, name="CPH")
+        c = Circuit.objects.create(tenant=self.t, provider=provider, cid="PNI-1")
+        a = CircuitTermination.objects.create(circuit=c, term_side="A", site=self.ams)
+        z = CircuitTermination.objects.create(circuit=c, term_side="Z", site=cph)
+        for dev, term in ((self.r1, a), (self.r2, z)):
+            port = Interface.objects.create(device=dev, name="wan0")
+            cab = Cable.objects.create(tenant=self.t)
+            CableTermination.objects.create(cable=cab, end="A", interface=port)
+            CableTermination.objects.create(cable=cab, end="B", circuit_termination=term)
+        g = self._get()
+        [e] = self._edges(g, "circuit")
+        self.assertEqual(e["id"], f"cc:{c.id}")
+        self.assertEqual({e["source"], e["target"]},
+                         {f"dev:{self.r1.id}", f"dev:{self.r2.id}"})
+        self.assertLessEqual({e["source"], e["target"]}, {n["id"] for n in g["nodes"]})
+
     def test_a_vm_router_is_a_card(self):
         from api.models import Cluster, ClusterType
 

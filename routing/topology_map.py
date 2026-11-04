@@ -455,12 +455,15 @@ def _bgp_lines(sessions, on_map, allowed):
 # ─── Circuits and cables ────────────────────────────────────────────────────
 
 def _circuit_lines(graph, user, tenant, scope_q):
-    """The Circuits layer: provider networks and the circuits the map's
-    routers are cabled to them by (#466), as the Diagram draws them. The
-    site-to-site circuit lines join here when the Diagram has them."""
+    """The Circuits layer, as the Diagram draws it: provider networks with the
+    circuits the map's routers are cabled to them by (#466), and circuits
+    cabled to two of its routers at both ends. The shim cards carry the
+    routing map's own ids (``dev:<id>``, the Diagram's), which the
+    site-to-site edges are drawn between."""
     shim = {
         "nodes": [
-            {"type": "device", "data": {"device_id": n["data"]["device_id"]}}
+            {"id": n["id"], "type": "device",
+             "data": {"device_id": n["data"]["device_id"]}}
             for n in graph["nodes"] if n["data"].get("device_id")
         ],
         "edges": [],
