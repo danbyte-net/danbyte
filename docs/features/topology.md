@@ -4,8 +4,8 @@ icon: lucide/share-2
 
 # Topology {#topology-map}
 
-**Maps → Topology** draws your network three ways, switched by the
-**Diagram / Hierarchy / Logical** tabs in the header:
+**Maps → Topology** draws your network four ways, switched by the
+**Diagram / Hierarchy / Logical / Routing** tabs in the header:
 
 - **Diagram** (default) - a clean, printable network diagram: one solid
   card per device in its role's color, in **Detailed** mode (the default:
@@ -52,6 +52,10 @@ icon: lucide/share-2
   same rail diagram draws the
   [Virtual topology](virtual-switches.md#network-topology) and a VM's
   Topology card.)
+- **Routing** - how traffic is routed rather than cabled: the routers of
+  the same device set in a box per AS, with eBGP and iBGP sessions, and
+  circuits and cables as layers you switch on and off. See
+  [Routing view](#routing-view).
 
 The **Maps** menu holds the other maps too: the
 [Site map](site-map.md), [Floor plans](floor-plans.md), the
@@ -572,6 +576,101 @@ between members.
   way. A map arranged before it stacked puts the stack where its members
   stood on average. Layer bands sort and carry a stack as one card, by its
   master's role.
+
+## Routing view {#routing-view}
+
+The **Routing** tab (`?tab=routing`) draws how the network routes rather
+than how it is cabled. It takes the same device set as the Diagram - the
+**Filters**, a focus, a hand-picked map, a saved view - so one view can be
+exported as "Core - physical" on the Diagram and "Core - routing" here.
+
+**Routers.** A card is a device or a VM that runs a routing process (a BGP,
+OSPF, IS-IS, EIGRP or LDP instance, or a static route) that you may view,
+or a device at the far end of a BGP session from one; such a far end has a
+dashed edge. Cards are the Diagram's: the role's color, the name bold and
+never cut (see [Names are never cut](#diagram-view)), and under it the
+card lines - by default the **router ID** (`RID 10.255.0.1`), the **ASNs**
+(the local AS of each BGP instance, a VRF's AS with its VRF in brackets)
+and the **loopback** (the global table's address on an interface named
+`lo`/`Loopback…`, or one whose IP role is *Loopback*; IPv4 first). The
+header's **Simple | Detailed** switches between the name and its AS only,
+and every line; **Display ▸ Card lines** picks the lines (Role, Router
+ID, ASN, Loopback, Site, Primary IP, Status). There is no photo face: this
+is a logical picture. The router ID is the global table's, BGP's first.
+
+**AS boxes.** The cards sit in one box per local AS - the iBGP domain -
+titled with the AS number and the first line of the ASN's description
+(`AS65001 · Core`). A router with BGP in several tables sits in the box of
+its global table's AS (else its lowest); a far end with no BGP of its own
+sits in the AS its sessions name. A map never arranged is laid out
+**By AS**: each box holds its routers in rows by role (in the
+[Levels](#levels-role-tiers) order), the boxes packed left to right, the
+routers in no AS after them and the provider networks in a row below.
+Boxes are zones: move one by its title bar and the cards inside it go with
+it; resize it from its corners; rename, recolor or delete it from its
+toolbar or right-click menu. **Add ▸ Zone** draws a zone of your own.
+**Arrange ▸ By AS** lays everything out by AS again, keeping each box's
+name and color and the zones you drew; **Arrange ▸ Reset layout** drops
+the arrangement and lays the map out By AS on the fly. Dragging a card or
+a box keeps the whole arrangement - every card and box - as one undo step.
+
+**Lines (layers).**
+
+| Layer | Drawn as | Label |
+|---|---|---|
+| **eBGP** | solid and thick, one color per AS pair | `AS65001 ⇄ AS65050`, then the address families (`v4`, `v6`, `vpnv4`, `evpn`…) and the VRF |
+| **iBGP** | thin; from a route reflector to its client, an arrow at the client | the families, `RR client` and the cluster ID - only when there is more to say than IPv4 unicast |
+| **Circuits** | dash-dot in the circuit type's color, to the [provider network](#provider-networks) the router is cabled to | the circuit ID |
+| **Cables** | faint, one line per pair of routers cabled together (through patch panels) | `2x` for several cables |
+
+A BGP line stands for every session between two routers in one table:
+both ends' sessions fold into it, and a session defined on one end only is
+marked *One side only* in its panel. Several lines between the same two
+cards run side by side. Cables are off until you switch them on; each
+layer's eye in the **Objects** sidebar (and **Display ▸ Layers**) switches
+it, saved with the view, and a line's own eye hides that one line. A layer
+you may not see is not offered.
+
+**Panels.** A router's panel lists its role, status, site, router ID, ASNs,
+loopback and every routing process (`BGP AS65001`, `OSPF · VRF red`,
+`Static · 12`), with **Open device** (or **Open VM**) and **Focus**. A BGP
+line's panel names its kind, the two ASes, the families, the VRF and the
+route reflector (with its cluster ID), then one section per session:
+the session (a link), its status, **Peer group**, **Policy in** and
+**Policy out** (each a link to the [routing policy](routing.md)), a
+family's own policies and maximum where they differ, **Max prefixes**,
+**BFD** (its profile, linked), **Keepalive / hold** and the instance's
+**RPKI** caches - each as the session ends up with it (session, then peer
+group, then instance). A catalog row you may not view is left out. A
+circuit's and a provider network's panels are the Diagram's; a cable
+line's lists its cables.
+
+**Objects sidebar and legend.** The sidebar lists the **Layers** first
+(each with its eye, its line swatch and its lines), then the **AS boxes
+and zones** (click to frame one), then the **Routers** by AS, each with an
+eye; *Show all* brings back what was hidden. **H** hides the selected card
+or line, **Shift+H** shows everything. The **Legend** keys the layers drawn
+and each AS pair's color.
+
+**Saved views.** A view keeps the Routing tab's arrangement apart from the
+other tabs' (`positions_by_style.routing`, `zones_by_style.routing`) and
+its display (`filters.routing`: card mode, layers, card lines), with the
+same Save, Undo, Redo and leave guard. The URL parameters are the
+Diagram's (`site`, `role`, `status`, `tag`, `device`, `depth`, `devices`,
+`view`, `q`).
+
+**Export.** The second bar's [Export](#export) draws the tab as **SVG**,
+**PNG**, **PDF**, **Print** and **draw.io**, titled *Routing topology*
+(the view's or site's name joins the filters line and the file name): the
+cards, the AS boxes, each line in its layer's look with its label, the
+route reflector's arrowhead, and the legend. In draw.io the sessions sit
+on the *BGP* layer.
+
+**Who sees what.** A card needs view on the device (on the VM for a VM)
+and shows only the processes you may view; a line needs both ends on the
+map and, per layer, view on BGP sessions (eBGP, iBGP) or on circuits,
+provider networks and sites (Circuits). A missing grant hides that layer,
+never the map. See [Routing topology API](#routing-topology-api).
 
 ## Big graphs
 
@@ -1588,7 +1687,7 @@ back button and a reload all keep it.
 
 | Parameter | Values |
 |---|---|
-| `tab` | `diagram` (default), `hierarchy`, `logical`. The retired `wiring` (or `stencil`) and `flat` open `diagram` with `mode=detailed` and `mode=simple` |
+| `tab` | `diagram` (default), `hierarchy`, `logical`, `routing`. The retired `wiring` (or `stencil`) and `flat` open `diagram` with `mode=detailed` and `mode=simple` |
 | `mode` | Diagram: `detailed` (default), `simple` |
 | `face` | Diagram: devices as `card` (default) or `photo` - see [Photo nodes](#photo-nodes) |
 | `anchor` | Diagram: cables meet a photo at its `ports` (default) or its `edge` |
@@ -1633,6 +1732,8 @@ layout run.
 the map's data, not captured from the screen, so every card is in the file
 however far off screen it sits. A [trace map](#trace-maps) has the same
 menu beside its axis, and its files are titled after the cable or port.
+On the [Routing tab](#routing-view) the files are the routing picture,
+titled *Routing topology*.
 
 | Format | What you get | Good for |
 |---|---|---|
@@ -2151,6 +2252,87 @@ what" questions.
 
 All three are RBAC-scoped to the caller's `device.view` grant.
 
+### Routing topology API
+
+`GET /api/topology/routing/` (or `POST` with the query as a JSON body, as
+the page sends it) - the [Routing tab](#routing-view)'s payload, one call.
+The query is the graph endpoint's: `site`, `location`, `role`, `status`,
+`tag`, `devices` (with `chassis`), `device` with `depth` (here: that many
+BGP hops around the router), plus `layers` - a comma-separated (or JSON)
+list of `ebgp`, `ibgp`, `circuits`, `cables`, default all but `cables`; an
+unknown layer or a malformed id is a 400, no `device.view` a 403. A VM has
+no location: a `location` filter or a hand-picked set leaves VMs out.
+
+```json
+{
+  "nodes": [
+    {"id": "dev:<id>", "type": "router", "data": {
+      "kind": "device", "device_id": "<id>", "vm_id": null, "name": "r1",
+      "role": {"id": "…", "name": "Router", "slug": "router", "color": "0ea5e9"},
+      "status_mini": {…}, "site": "AMS", "site_id": "…", "primary_ip": null,
+      "router": true, "router_id": "10.255.0.1",
+      "asns": [{"asn": 65001, "vrf": null}], "as_group": 65001,
+      "loopback": "10.255.0.1",
+      "instances": [{"kind": "bgp", "id": "…", "vrf": null,
+                     "router_id": "10.255.0.1", "asn": 65001,
+                     "asn_id": "…", "cluster_id": null},
+                    {"kind": "static", "id": null, "count": 12, …}]}},
+    {"id": "pn:<id>", "type": "provider_network", "data": {…}}
+  ],
+  "as_groups": [{"id": "as:65001", "asn": 65001, "asn_id": "…",
+                 "name": "Core", "nodes": ["dev:<id>", …]}],
+  "edges": [
+    {"id": "ibgp:dev:<rr>|dev:<client>|", "source": "dev:<rr>",
+     "target": "dev:<client>", "type": "ibgp", "data": {
+       "kind": "ibgp", "vrf": null, "address_families": ["vpnv4-unicast"],
+       "a_asn": 65001, "b_asn": 65001, "pairs": [{"a": "AS65001", "b": "AS65001"}],
+       "rr": {"reflector": "dev:<rr>", "client": "dev:<client>", "cluster_id": "1.1.1.1"},
+       "one_sided": false,
+       "sessions": [{"id": "…", "numid": 7, "name": null, "node": "dev:<rr>",
+         "vrf": null, "local_asn": 65001, "remote_asn": 65001,
+         "local_address": "…", "remote_address": "…", "interface": null,
+         "status_mini": null, "peer_group": {"id": "…", "name": "CLIENTS"},
+         "import_policy": {"id": "…", "name": "IN"}, "export_policy": null,
+         "address_families": [{"afi_safi": "vpnv4-unicast", "activate": true,
+           "import_policy": …, "export_policy": …, "maximum_prefix": null,
+           "route_reflector_client": true}],
+         "maximum_prefix": null, "bfd": true, "bfd_profile": {"id": "…", "name": "fast"},
+         "keepalive": 10, "hold_time": 30, "route_reflector_client": true,
+         "cluster_id": "1.1.1.1", "rpki_caches": [{"id": "…", "name": "rpki1"}]}]}},
+    {"id": "ce:<circuit id>", "type": "circuit", "source": "dev:<id>",
+     "target": "pn:<id>", "data": {…}},
+    {"id": "cable:dev:<a>|dev:<b>", "type": "cable", "source": "dev:<a>",
+     "target": "dev:<b>", "data": {"cables": [{"id": "…", "numid": 12,
+       "label": null, "a": "r1:et-0/0/1", "b": "r2:et-0/0/1"}]}}
+  ],
+  "meta": {"layers": {"ebgp": true, "ibgp": true, "circuits": false, "cables": true},
+           "requested": ["circuits", "ebgp", "ibgp"]}
+}
+```
+
+- **Nodes.** `router: false` marks a far end with no process of its own;
+  `as_group` is the AS box it sits in. `instances` lists only the processes
+  the caller may view (`bgpinstance`, `ospfinstance`, `isisinstance`,
+  `eigrpinstance`, `ldpinstance`, `staticroute`); a box with none of those
+  is not a router. The loopback needs view on IP addresses.
+- **BGP lines** are `ebgp` or `ibgp` (from the AS numbers, or the remote
+  AS mode): one per node pair and table, both ends' sessions folded in
+  (`one_sided` when only one end defines it); the far end is the session's
+  peer device, else the device or VM its remote address is on. A line with
+  a route reflector at one end runs from it (`rr`); `a_asn` is the
+  source's AS. Each session's values are its effective ones (session, then
+  peer group, then instance); a peer group, policy, BFD profile or RPKI
+  cache the caller may not view is `null` or left out.
+- **Circuits** are the [provider network](#provider-networks) lines of the
+  graph endpoint, from the routers on the map.
+- **`meta.layers`** says which layers the caller may see: the BGP layers
+  need `bgpsession.view`, circuits need `circuit`, `providernetwork` and
+  `site` view. A missing grant leaves that layer's lines out, never a
+  card.
+
+Everything is inside the active tenant, and the endpoint costs the same
+handful of queries whatever the size of the map.
+
 ### Device palette API
 
 `GET /api/devices/?picker=palette` is the light device list the diagram
@@ -2211,6 +2393,9 @@ earlier versions load and save unchanged.
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
 | `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto) and `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
+| `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
+| `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |
+| `filters.routing` | the Routing tab's display: `{mode: simple\|detailed, layers: {ebgp, ibgp, circuits, cables: bool}, fields: [role, router_id, asn, loopback, site, primary_ip, status]}`, each optional; any other key is a 400. Absent layers are their defaults (all on but `cables`); absent `fields` is `router_id, asn, loopback`. |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
 | `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |

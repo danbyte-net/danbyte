@@ -12,20 +12,24 @@ import type { NodeStyle } from "@/components/topology/topology-canvas"
  * spacing that was tuned for chips.
  */
 export type PosMap = Record<string, [number, number]>
-export type PosByStyle = Partial<Record<NodeStyle, PosMap>>
+/** The styles that keep an arrangement: the canvas's, and the Routing
+ * tab's (its own canvas, cards placed by their centres). */
+export type MapStyle = NodeStyle | "routing"
+export type PosByStyle = Partial<Record<MapStyle, PosMap>>
 
 /** The styles that own an arrangement (Logical is a rail diagram, not a
  * canvas, so it has none). Mirrors the backend's validation list. */
-export const POSITION_STYLES: NodeStyle[] = [
+export const POSITION_STYLES: MapStyle[] = [
   "stencil",
   "hierarchy",
   "flat",
   "diagram",
+  "routing",
 ]
 
 /** Old stores held one flat map for every style; read it as the style it was
  * most likely arranged in, so nobody loses an arrangement to the split. */
-export function migratePositions(raw: unknown, style: NodeStyle): PosByStyle {
+export function migratePositions(raw: unknown, style: MapStyle): PosByStyle {
   if (!raw || typeof raw !== "object") return {}
   const obj = raw as Record<string, unknown>
   const isNew = POSITION_STYLES.some((k) => k in obj)
@@ -47,8 +51,8 @@ export function viewPositions(
   const style = styleOf(
     (v.state.filters as { viewStyle?: unknown } | undefined)?.viewStyle
   )
-  return v.state.positions && POSITION_STYLES.includes(style as NodeStyle)
-    ? { [style as NodeStyle]: v.state.positions }
+  return v.state.positions && POSITION_STYLES.includes(style as MapStyle)
+    ? { [style as MapStyle]: v.state.positions }
     : {}
 }
 
@@ -98,6 +102,9 @@ export interface Zone {
    * `BAND_PER_ROW_MAX` keeps them all on one line). Absent: Auto - wrap
    * past 12 cards or a line too wide. */
   per_row?: number
+  /** The Routing tab: the AS this box frames. An AS box carries the cards
+   * inside it when it moves; Arrange ▸ By AS finds it again by it. */
+  asn?: number
 }
 
 /** The most cards a row may set on one line: "All on one line". */
@@ -118,7 +125,7 @@ export function bandPerRow(v: unknown): number | undefined {
  * left and right. */
 export type BandExits = "v" | "h"
 
-export type ZonesByStyle = Partial<Record<NodeStyle, Zone[]>>
+export type ZonesByStyle = Partial<Record<MapStyle, Zone[]>>
 
 /** The zone and band quick swatches - a tint each, meaning nothing on its
  * own. Danbyte's full preset grid sits behind them (More colors). */
