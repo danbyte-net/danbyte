@@ -433,16 +433,10 @@ describe("Cyclical on the Diagram", () => {
         (e) => e.source === "dev:r0" && e.target === "dev:r1"
       )!
       expect((beside.data as DiagramEdgeData).arc).toBeUndefined()
-      // Its two control points; in Detailed a lead on each arm too, so
-      // the port names at both nubs sit on a straight run.
+      // Its two control points, in both modes: the port names at the
+      // nubs follow the curve, which does not run straight for them.
       const pts = (beside.data as DiagramEdgeData).plan![0].pts
-      expect(pts).toHaveLength(mode === "detailed" ? 6 : 4)
-      const flat = (p: Pt, q: Pt, r: Pt) =>
-        Math.abs((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x))
-      if (mode === "detailed") {
-        expect(flat(pts[0], pts[1], pts[2])).toBeLessThan(1e-6)
-        expect(flat(pts[5], pts[4], pts[3])).toBeLessThan(1e-6)
-      }
+      expect(pts).toHaveLength(4)
     })
 
   it("nests the arcs leaving one side instead of crossing them", () => {

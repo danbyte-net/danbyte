@@ -279,6 +279,9 @@ export interface LabelBlock {
    * their line: the box is the gap the line breaks for, in the page's
    * colour, with no edge. */
   chip: boolean
+  /** An end label on a curve (`PortPlace.path`): the text follows it
+   * glyph by glyph over a gap along it, instead of the turned box. */
+  path?: Pt[]
 }
 
 /** An end label's height: the 9px text and a hairline. The line breaks
@@ -286,11 +289,15 @@ export interface LabelBlock {
 export const PORT_H = LABEL.END_SIZE + 1
 
 /** Where an end label sits: the centre of its text, on its line, and its
- * turn in degrees (`uprightAngle`). */
+ * turn in degrees (`uprightAngle`). On a curve, `path` is the stretch of
+ * line it takes, in the order it reads: the text follows it glyph by glyph
+ * (`glyphsAlong`) over a gap as wide as the line bends; `rotate` is then
+ * its chord's turn, for writers that turn a label as a whole (draw.io). */
 export interface PortPlace {
   x: number
   y: number
   rotate: number
+  path?: Pt[]
 }
 
 /** A direction in degrees turned to read upright: [-100, 80). A run within
@@ -384,7 +391,78 @@ export function inlineBlock(
     ox: place.x,
     oy: place.y,
     chip: false,
+    ...(place.path ? { path: place.path } : {}),
   }
+}
+
+/** Glyphs of an end label laid along its curve. */
+export interface GlyphRun {
+  /** Each glyph's origin (its baseline's left end) and turn, degrees -
+   * SVG text's per-glyph `x`, `y` and `rotate`. */
+  chars: string[]
+  x: number[]
+  y: number[]
+  rotate: number[]
+}
+
+/**
+ * An end label's text laid along `path` (its stretch of curve, in the
+ * order it reads), centred on it as a straight label is on its run: each
+ * glyph at its place along the curve and turned with it, on the baseline
+ * a straight label has. Widths come from `measure`, so the glyphs sit
+ * where the text was measured - the canvas, the SVG and the PDF draw the
+ * same run.
+ */
+export function glyphsAlong(
+  path: readonly Pt[],
+  text: string,
+  measure: Measure = measureText
+): GlyphRun {
+  const size = LABEL.END_SIZE
+  const cum = [0]
+  for (let i = 1; i < path.length; i++)
+    cum.push(cum[i - 1] + dist(path[i - 1], path[i]))
+  const len = cum[cum.length - 1]
+  /** The point `s` px along the path, and its direction there. */
+  const walk = (s: number) => {
+    let i = 1
+    while (i < path.length - 1 && cum[i] < s) i++
+    const [p, q] = [path[i - 1], path[i]]
+    const seg = cum[i] - cum[i - 1] || 1
+    const k = (s - cum[i - 1]) / seg
+    return {
+      x: p.x + (q.x - p.x) * k,
+      y: p.y + (q.y - p.y) * k,
+      r: Math.atan2(q.y - p.y, q.x - p.x),
+    }
+  }
+  const chars = Array.from(text)
+  const w = endTextWidth(text, measure)
+  // How far the baseline sits below the line, as on a straight label.
+  const down = baselineAt(-PORT_H / 2, size, PORT_H)
+  const out: GlyphRun = { chars, x: [], y: [], rotate: [] }
+  let start = (len - w) / 2
+  let prefix = ""
+  for (const ch of chars) {
+    prefix += ch
+    const end = (len - w) / 2 + endTextWidth(prefix, measure)
+    const adv = end - start
+    // Turned as the curve runs under the glyph's middle, set back from
+    // there to its origin.
+    const m = walk(start + adv / 2)
+    const [c, s] = [Math.cos(m.r), Math.sin(m.r)]
+    out.x.push(m.x - (c * adv) / 2 - s * down)
+    out.y.push(m.y - (s * adv) / 2 + c * down)
+    out.rotate.push((m.r * 180) / Math.PI)
+    start = end
+  }
+  return out
+}
+
+/** SVG path data through a label's curve (the gap it breaks its line
+ * for, stroked as wide as the label is tall). */
+export function pathThrough(path: readonly Pt[]): string {
+  return path.map((p, i) => `${i ? "L" : "M"} ${at(p)}`).join(" ")
 }
 
 /** Where a link's labels go. */

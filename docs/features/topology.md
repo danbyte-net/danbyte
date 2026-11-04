@@ -160,7 +160,8 @@ something.
   (`TEST · cat5e`; on a trunk too short for it, the longest leg carries
   it). Hovering or clicking any part lights up and opens the whole cable.
   With Bendy lines, legs converging on one card end in a straight run long
-  enough for their port names, one name to each gap between them; a leg
+  enough for their port names (with labels on or off), one name to each
+  gap between them; a leg
   bends nearer its split point or its port to keep clear of the cards it
   passes, and one no curve gets clear of goes round them as an elbow.
   In Simple the legs to one card fold into one, named by its first port in
@@ -309,8 +310,11 @@ names its peers, the session kind and the VRF.
   sideways by more than twice the gap; further apart it sweeps out past
   the middle in an S. Lines leaving one Simple midpoint each bend within a
   reach of their own, the one heading most steeply out soonest, so they
-  part right after it and keep room for their names. Where a nub has
-  labels the curve runs straight out of it far enough for them.
+  part right after it and keep room for their names. The curve is the
+  same with labels on or off: its port names and addresses follow it
+  (see [Link labels](#link-labels)) instead of it running straight for
+  them. Out of a photo port that faces away from the far card it runs out
+  far enough to round the photo's corner before it turns.
 - **Cyclical** - an arc that loops round the cards between its two ends
   instead of crossing them, both ends leaving through the side it bulges to
   (the top of a row, say). In Detailed each end first runs straight out of
@@ -345,11 +349,17 @@ and of the link (`labels=`).
   it: out of the nub the line runs a few pixels, stops for a small gap, the
   name, a gap, and runs on. So when many ports sit side by side, each name
   is plainly on its own cable. It reads along the line, turned to stay
-  upright (a line within 10° of vertical reads bottom to top). In Detailed
-  the name sits on the straight run out of its nub, and the planner makes
-  that run long enough for it before the cable bends; in Simple a line that
-  is one cable carries its names on its own run, once it has parted from
-  the other lines leaving that side.
+  upright (a line within 10° of vertical reads bottom to top). On an Elbow
+  or Straight line in Detailed the name sits on the straight run out of
+  its nub, and the planner makes that run long enough for it before the
+  cable bends; in Simple a line that is one cable carries its names on its
+  own run, once it has parted from the other lines leaving that side. On a
+  **Bendy** line the names and addresses follow the curve, letter by
+  letter, over a gap that bends with it - never upside down, and only
+  where the curve bends gently under them - and the curve is drawn exactly
+  as with labels off. Names on neighbouring cables out of one row of nubs
+  stagger along their curves where they would meet, and a cable crossing a
+  curved label steeply passes under it (the gap breaks it there).
 - **IPs** - each end's full address in the subnet the two ends share, the
   same way on the same cable, after its port name (a dual-stack end shows
   both, one after the other).
@@ -408,7 +418,8 @@ greyed out (it would change nothing).
   device's own setting wins, then its type's, then its role's, and with none
   set a photo is drawn at rack width.
 - **Cables on their ports:** a cable starts at its port's marker, runs
-  straight up or down (its lead, drawn over the photo) - towards its far
+  straight up or down (its lead, drawn over the photo but under the nubs
+  on the image's edge, which stay on top of every line) - towards its far
   device when that lies above or below the photo, else to the nearer
   edge; on a map where that makes more lines cross than every port
   leaving by its nearer edge would, all of them do that instead (a map of
@@ -1709,7 +1720,11 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   name and address is a label cell on its line, turned along it, on a
   background of the color under it (white, or its band's) with a space
   either side, so the line breaks for it
-  with a small gap round the text - move the line and they follow.
+  with a small gap round the text - move the line and they follow. draw.io
+  cannot bend text along a line: a label that follows a Bendy curve on the
+  map is a straight label here, turned along the curve where it sits. The
+  SVG, PNG and PDF bend it as the map does (glyph by glyph, plain SVG
+  text the PDF renderer draws as well).
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
   with each corner as a waypoint, so they stay square when you move a card.
   Bendy lines and Cyclical arcs are draw.io curves through the same points

@@ -794,6 +794,14 @@
 .react-flow.dark .topo-endlabel rect {
   fill: var(--xy-background-color, var(--xy-background-color-default));
 }
+/* A label on a curve: its gap is a stroke along the curve. */
+.topo-endlabel path {
+  fill: none;
+  stroke: var(--background);
+}
+.react-flow.dark .topo-endlabel path {
+  stroke: var(--xy-background-color, var(--xy-background-color-default));
+}
 [data-ports="off"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
 [data-lod="1"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
 [data-lod="2"] .react-flow__edge:not(.topo-hot) .topo-endlabel,

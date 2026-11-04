@@ -127,6 +127,25 @@ export function leadStart(box: Rect, a: Anchor | undefined): Pt | null {
   return { x: box.x + a.fx * box.w, y: box.y + a.fy * box.h }
 }
 
+/**
+ * A photo port's lead, `from` the port `to` the edge of the photo's box,
+ * less where it runs over the nub standing out of the image's bottom edge
+ * at `bottom` (`NUB.OUT` tall, under the caption): drawn over the nodes,
+ * it would paint over the nub; the line under the nodes runs there, and
+ * the nub covers it as every nub covers its line.
+ */
+export function leadAroundNub(from: Pt, to: Pt, bottom: number): [Pt, Pt][] {
+  if (Math.abs(from.x - to.x) > 0.01) return [[from, to]]
+  const [lo, hi] = [bottom, bottom + NUB.OUT]
+  const [y0, y1] = [Math.min(from.y, to.y), Math.max(from.y, to.y)]
+  if (y1 <= lo || y0 >= hi) return [[from, to]]
+  const at = (y: number): Pt => ({ x: from.x, y })
+  const out: [Pt, Pt][] = []
+  if (y0 < lo) out.push([at(y0), at(lo)])
+  if (y1 > hi) out.push([at(hi), at(y1)])
+  return out
+}
+
 export interface AnchorLink {
   id: string
   source: string
@@ -441,17 +460,15 @@ export function anchorLinks(
     const cables = l.cables ?? []
     if (cables.some((_, i) => photoEnd(l, i, "a") || photoEnd(l, i, "b"))) {
       out.links.set(l.id, {
-        a: cables.map(
-          (c, i): Anchor =>
-            l.junction?.a
-              ? { k: "junction", dir: l.junction.a }
-              : (photoEnd(l, i, "a") ?? midAnchor(l.source, sa, c.a))
+        a: cables.map((c, i): Anchor =>
+          l.junction?.a
+            ? { k: "junction", dir: l.junction.a }
+            : (photoEnd(l, i, "a") ?? midAnchor(l.source, sa, c.a))
         ),
-        b: cables.map(
-          (c, i): Anchor =>
-            l.junction?.b
-              ? { k: "junction", dir: l.junction.b }
-              : (photoEnd(l, i, "b") ?? midAnchor(l.target, sb, c.b))
+        b: cables.map((c, i): Anchor =>
+          l.junction?.b
+            ? { k: "junction", dir: l.junction.b }
+            : (photoEnd(l, i, "b") ?? midAnchor(l.target, sb, c.b))
         ),
       })
       continue

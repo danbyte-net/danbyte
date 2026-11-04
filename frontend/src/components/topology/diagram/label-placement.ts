@@ -51,6 +51,10 @@ export interface InlineAsk {
   /** Where that run starts, px from the end: past a photo port's lead,
    * which turns where it leaves the photo. */
   run?: number
+  /** The route is a curve (a bendy line): each label follows it, bent
+   * as the line bends under it (`PortPlace.path`), rather than waiting
+   * for a straight stretch. */
+  curved?: boolean
   /** The route is one straight line - past `run` - where `walk(d)` is
    * `at` plus `d` times the unit vector `u`. Lets a label skip the
    * stretch something is sure to block. */
@@ -95,11 +99,29 @@ export type Blocker = Item
 export function blocks(
   it: Blocker,
   box: TurnedBox,
-  mine: (cable: string) => boolean
+  mine: (cable: string) => boolean,
+  crossing = false
 ): boolean {
-  if (it.k === "seg") return !mine(it.cable) && segHitsBox(it.p, it.q, box)
+  if (it.k === "seg")
+    return (
+      !mine(it.cable) &&
+      !(crossing && crossesSteeply(it.p, it.q, box)) &&
+      segHitsBox(it.p, it.q, box)
+    )
   if (it.k === "label" && it.dead) return false
   return boxesOverlap(box, it.box)
+}
+
+/** The least angle, degrees, another cable may cross a label on a curve
+ * at: its gap breaks that cable there and the text reads over it. One
+ * running along it more nearly than this would vanish under it. */
+const CROSS = 30
+
+/** Does the run `p`-`q` cross `box` steeply enough to pass under it? */
+export function crossesSteeply(p: Pt, q: Pt, box: TurnedBox): boolean {
+  const a = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
+  const d = Math.abs((((a - box.angle) % 180) + 180) % 180)
+  return Math.min(d, 180 - d) >= CROSS
 }
 
 /** Everything labels keep clear of: the routes, the cards, and the labels
@@ -126,10 +148,15 @@ export class LabelScene {
     return !this.blocker(box, mine)
   }
 
-  /** What `box` runs into first, if anything (`free` is its absence). */
-  blocker(box: TurnedBox, mine: (cable: string) => boolean): Blocker | null {
+  /** What `box` runs into first, if anything (`free` is its absence).
+   * With `crossing`, a cable crossing it steeply does not count. */
+  blocker(
+    box: TurnedBox,
+    mine: (cable: string) => boolean,
+    crossing = false
+  ): Blocker | null {
     for (const it of this.grid.near(turnedBounds(box)))
-      if (blocks(it, box, mine)) return it
+      if (blocks(it, box, mine, crossing)) return it
     return null
   }
 
@@ -284,6 +311,86 @@ export function inlineBox(
   }
 }
 
+/** How far a label on a curve may bend away from its chord, degrees:
+ * gentle enough to read, and - its chord turned upright - never upside
+ * down. */
+const BEND = 20
+/** Spacing of a curved label's points, px. */
+const CURVE_STEP = 3
+/** The longest piece of a curved label one box stands for, px. */
+const CURVE_PIECE = 8
+
+/**
+ * A label `span` px long laid on a curve from `a` px along it: its place
+ * (centre, chord turned upright, and the stretch it reads along) and the
+ * boxes it takes, piece by piece along the curve. Null where the curve
+ * bends more than `BEND` under it.
+ */
+function onCurve(
+  walk: (d: number) => Pt & { angle: number },
+  a: number,
+  span: number,
+  pad: number
+): { place: PortPlace; boxes: TurnedBox[]; taken: TurnedBox[] } | null {
+  const n = Math.max(2, Math.ceil(span / CURVE_STEP))
+  const pts: (Pt & { angle: number })[] = []
+  for (let k = 0; k <= n; k++) pts.push(walk(a + (span * k) / n))
+  const [p, q] = [pts[0], pts[n]]
+  if (Math.hypot(q.x - p.x, q.y - p.y) < span * 0.8) return null
+  const chord = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
+  let most = 0
+  for (const t of pts) most = Math.max(most, turnOf(t.angle, chord))
+  if (most > BEND) return null
+  const c = walk(a + span / 2)
+  const rotate = uprightAngle(chord)
+  const line = pts.map((t) => ({ x: t.x, y: t.y }))
+  const place: PortPlace = { x: c.x, y: c.y, rotate }
+  // A curve this gentle is a straight label. Turned upright, the text
+  // reads the curve the other way.
+  if (most > 1)
+    place.path = turnOf(rotate, chord) > 90 ? [...line].reverse() : line
+  return {
+    place,
+    boxes: curveBoxes(line, pad),
+    taken: curveBoxes(line),
+  }
+}
+
+/**
+ * The boxes a label laid along a curve takes (`PortPlace.path`, read in
+ * either direction): one for each piece of it up to `CURVE_PIECE` px
+ * long, as tall as the label, `pad` more at both ends and half that each
+ * side.
+ */
+export function curveBoxes(path: readonly Pt[], pad = 0): TurnedBox[] {
+  const out: TurnedBox[] = []
+  const n = path.length - 1
+  let i = 0
+  while (i < n) {
+    let j = i + 1
+    let len = Math.hypot(path[j].x - path[i].x, path[j].y - path[i].y)
+    while (j < n) {
+      const next = Math.hypot(
+        path[j + 1].x - path[i].x,
+        path[j + 1].y - path[i].y
+      )
+      if (next > CURVE_PIECE) break
+      j++
+      len = next
+    }
+    const [u, v] = [path[i], path[j]]
+    out.push({
+      cx: (u.x + v.x) / 2,
+      cy: (u.y + v.y) / 2,
+      hw: len / 2 + (i === 0 || j === n ? pad : 0),
+      hh: PORT_H / 2 + pad / 2,
+      angle: (Math.atan2(v.y - u.y, v.x - u.x) * 180) / Math.PI,
+    })
+    i = j
+  }
+  return out
+}
+
 /** Steps along a route a run of labels tries, px. */
 const STEP = 2
 /** Steps a stretch's straightness is checked at, px. */
@@ -332,9 +439,11 @@ export function placeInline(
     // What stopped the last try: a label sliding along its line usually
     // runs into the same thing a step on, so it is asked first.
     let last: Blocker | null = null
+    // On a curve the labels read over a cable crossing them.
+    const crossing = !!ask.curved
     const stop = (box: TurnedBox): Blocker | null => {
-      if (last && blocks(last, box, mine)) return last
-      last = scene.blocker(box, mine)
+      if (last && blocks(last, box, mine, crossing)) return last
+      last = scene.blocker(box, mine, crossing)
       return last
     }
     // A port name keeps to its nub's run: straight from the end on. The
@@ -372,9 +481,21 @@ export function placeInline(
       if (skip && d - skip.from <= skip.by) continue
       skip = null
       const places: PortPlace[] = []
+      const takes: TurnedBox[][] = []
       let off = d
       let bent = false
       for (let i = 0; i < spans.length; i++) {
+        if (ask.curved) {
+          const fit = onCurve(walk, off, spans[i], PAD)
+          if (!fit) break
+          let hit: Blocker | null = null
+          for (const box of fit.boxes) if ((hit = stop(box))) break
+          if (hit) break
+          places.push(fit.place)
+          takes.push(fit.taken)
+          off += spans[i] + LABEL.LEAD
+          continue
+        }
         // Each label on a straight stretch of its own, centred on the
         // route and turned along the stretch.
         const [a, b] = [off, off + spans[i]]
@@ -407,17 +528,17 @@ export function placeInline(
           break
         }
         places.push(place)
+        takes.push([inlineBox(place, ask.ws[i])])
         off = b + LABEL.LEAD
       }
       if (places.length === spans.length) {
         found = { at: places, reach: d + total }
+        for (const boxes of takes) for (const box of boxes) scene.take(box)
         break
       }
       // Past the run out of the nub: nothing further along will do.
       if (ask.first && bent && d > ask.from) break
     }
-    if (found)
-      found.at.forEach((place, i) => scene.take(inlineBox(place, ask.ws[i])))
     out.set(ask.key, found)
   }
   return out
