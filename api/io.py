@@ -414,6 +414,12 @@ class ModelIOHandler:
         return key if refs[cache_key] == rel.pk else str(rel.pk)
 
     # ── export ────────────────────────────────────────────────────────────
+    def tenant_rows(self, tenant):
+        """The type's rows in ``tenant``, before RBAC - what an export starts
+        from. Its own ``tenant`` column, unless the type reaches its tenant
+        another way (a synced DHCP scope through its server connection)."""
+        return self.model._default_manager.filter(tenant=tenant)
+
     def export_queryset(self, qs):
         if _is_taggable(self.model):
             qs = qs.prefetch_related(TAGS)

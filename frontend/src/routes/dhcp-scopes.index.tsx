@@ -1,20 +1,19 @@
 import { useMemo, useState } from "react"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, type DhcpScope, type Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
-import { dash } from "@/components/kv-card"
+import { buildDhcpScopeColumns } from "@/components/columns/dhcp-scope-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { TableActions } from "@/components/table-actions"
 import { DhcpScopeDialog } from "@/components/integrations/dhcp-scope-dialog"
 import { useFacetRail } from "@/lib/use-facet-rail"
 import { useUrlSearch } from "@/lib/url-filters"
@@ -28,8 +27,11 @@ function DhcpScopesPage() {
   const { canDo } = useMe()
   const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
+  const [selected, setSelected] = useState<DhcpScope[]>([])
   const canManage = canDo("dhcpscope", "add")
+  const canEdit = canDo("dhcpscope", "change")
   const canDelete = canDo("dhcpscope", "delete")
+  const selectable = canEdit || canDelete
   const query = useQuery({
     queryKey: ["dhcp-scopes", "all", q],
     queryFn: () =>
@@ -49,134 +51,18 @@ function DhcpScopesPage() {
     onError: (e) => apiErrorToast(e),
   })
 
-  const columns = useMemo<ColumnDef<DhcpScope>[]>(
-    () => [
-      {
-        id: "scope",
-        accessorKey: "scope_id",
-        header: ({ column }) => <SortHeader column={column} label="Scope" />,
-        cell: ({ row }) => (
-          <span className="font-mono text-xs font-medium">
-            {row.original.scope_id}
-          </span>
-        ),
-      },
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => row.original.name || dash,
-      },
-      {
-        id: "prefix",
-        header: "Prefix",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.prefix ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Link
-                to="/prefixes/$id"
-                params={{ id: row.original.prefix }}
-                className="link font-mono text-xs"
-              >
-                {row.original.prefix_cidr}
-              </Link>
-              {row.original.vrf_name && (
-                <span className="text-[10px] text-muted-foreground">
-                  · {row.original.vrf_name}
-                </span>
-              )}
-            </span>
-          ) : (
-            dash
-          ),
-      },
-      {
-        id: "range",
-        header: "Range",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {row.original.start_range}–{row.original.end_range}
-          </span>
-        ),
-      },
-      {
-        id: "server",
-        accessorKey: "connection_name",
-        header: ({ column }) => <SortHeader column={column} label="Server" />,
-        cell: ({ row }) =>
-          row.original.connection ? (
-            <Link
-              to="/windows-servers/$id"
-              params={{ id: row.original.connection }}
-              className="link text-xs"
-            >
-              {row.original.connection_name}
-            </Link>
-          ) : (
-            <span
-              className="text-xs text-muted-foreground"
-              title="Danbyte-owned scope - no DHCP server behind it"
-            >
-              Local
-            </span>
-          ),
-      },
-      {
-        id: "state",
-        accessorKey: "state",
-        header: ({ column }) => <SortHeader column={column} label="State" />,
-        cell: ({ row }) => (
-          <Badge
-            variant={row.original.state === "Active" ? "success" : "secondary"}
-            className="text-[10px]"
-          >
-            {row.original.state || "unknown"}
-          </Badge>
-        ),
-      },
-      {
-        id: "reservations",
-        accessorKey: "reservation_count",
-        header: ({ column }) => (
-          <SortHeader column={column} label="Reservations" />
-        ),
-        cell: ({ row }) =>
-          row.original.reservation_count > 0 ? (
-            <Link
-              to="/dhcp-reservations"
-              search={{ scope: row.original.id }}
-              className="link"
-            >
-              <span className="num">{row.original.reservation_count}</span>
-              {row.original.drift_count > 0 && (
-                <Badge variant="destructive" className="ml-2 text-[10px]">
-                  {row.original.drift_count} drift
-                </Badge>
-              )}
-            </Link>
-          ) : (
-            <span className="num text-muted-foreground">0</span>
-          ),
-      },
-      ...(canDelete
-        ? [
-            {
-              id: "actions",
-              header: "",
-              enableSorting: false,
-              cell: ({ row }) => (
-                <RowActions
-                  onDelete={() => del.mutate(row.original)}
-                  deleteLabel="Delete scope (removes it on the server)"
-                />
-              ),
-            } satisfies ColumnDef<DhcpScope>,
-          ]
-        : []),
-    ],
-    [canDelete, del]
+  const columns = useMemo(
+    () =>
+      buildDhcpScopeColumns<DhcpScope>({
+        selection: selectable,
+        actions: canDelete
+          ? {
+              onDelete: (r) => del.mutate(r),
+              deleteLabel: "Delete scope (removes it on the server)",
+            }
+          : undefined,
+      }),
+    [selectable, canDelete, del]
   )
 
   const { rail, filtered } = useFacetRail(rows, [
@@ -203,11 +89,14 @@ function DhcpScopesPage() {
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Filter scopes…" }}
       actions={
-        canManage ? (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" /> Add scope
-          </Button>
-        ) : undefined
+        <>
+          <TableActions ioType="dhcpscope" />
+          {canManage && (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" /> Add scope
+            </Button>
+          )}
+        </>
       }
     >
       {rows.length === 0 && query.data && !q ? (
@@ -220,8 +109,20 @@ function DhcpScopesPage() {
           data={filtered}
           columns={columns}
           tableId="dhcp-scopes-all"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/dhcp-scopes/"
+        noun={["scope", "scopes"]}
+        invalidate={[["dhcp-scopes"], ["dhcp-reservations"], ["dhcp-leases"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="dhcpscope"
+      />
       {creating && <DhcpScopeDialog onOpenChange={setCreating} />}
     </ListPageShell>
   )

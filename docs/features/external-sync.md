@@ -51,6 +51,20 @@ Two places, on purpose:
   the data maps to. The connection pages appear once the matching toggle is on;
   the DNS/DHCP data pages are always there.
 
+Every one of these lists takes a selection, like the rest of Danbyte: tick rows
+for **Export** of the selection, and whatever bulk **Edit** and **Delete** a
+single row of that list allows. The DHCP and DNS lists are described in
+[Windows sync](windows-sync.md#dhcp-bulk); on **Virtualization sources**, with
+the `change` or `delete` grant:
+
+- **Export** downloads the selected sources as CSV, Excel or JSON. The
+  credentials are never a column.
+- **Edit** sets **Enabled**, the **Sync mode** and the **Poll interval** on
+  every selected source. The API, login and sync scope stay per source.
+- **Delete** shows a preview first - the sync state (guests, pending changes,
+  networks, placement rules) that goes with the sources - then removes them.
+  The VMs, switches and networks they imported stay.
+
 ## Internal hosts and the outbound allowlist
 
 Like the NetBox importer, these integrations respect the deployment's

@@ -615,6 +615,10 @@ class EveryTypeRoundTripTests(APITestCase):
             for entry in io_types():
                 slug = entry["slug"]
                 model = io_for(slug).model
+                # A round trip needs an import; the export-only types (the
+                # synced DHCP and DNS rows) have none.
+                if not entry["importable"]:
+                    continue
                 if not model._default_manager.filter(tenant=tenant).exists():
                     continue
                 covered.add(slug)
