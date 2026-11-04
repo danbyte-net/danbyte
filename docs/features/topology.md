@@ -369,7 +369,10 @@ and of the link (`labels=`).
   curved label steeply passes under it (the gap breaks it there).
 - **IPs** - each end's full address in the subnet the two ends share, the
   same way on the same cable, after its port name (a dual-stack end shows
-  both, one after the other).
+  both, one after the other, IPv4 first). They may sit anywhere along their
+  end's half of the cable - all of it when the other end has no labels -
+  nearest the port name first. Where the run does not fit anywhere, the
+  IPv6 address goes and the IPv4 stays; an address is never cut.
 - **Subnets** - the shared subnet as the chip on the middle of the line
   (both, stacked, on a dual-stack link; under a bundle's count).
 
@@ -390,10 +393,12 @@ link's chip sits over its raised line. Which labels exist:
   view IP addresses - or with none recorded - there are no subnet or address
   labels, and no error. The cable's panel lists every address of each end,
   and the subnets they share.
-- Labels are best effort: one with no free stretch of its line, clear of the
-  cards, the other labels and the other lines, is left off (the nub's
-  tooltip and the panel still name the port). With Ports off the cables
-  carry no names.
+- Labels are best effort, placed in order: port names, then each end's
+  addresses, then the subnet chips - a chip moves along its line (or beside
+  it) round the end labels, never the other way. One with no free stretch
+  of its line, clear of the cards, the other labels and the other lines, is
+  left off (the nub's tooltip and the panel still name the port). With
+  Ports off the cables carry no names.
 
 ### Photo nodes
 

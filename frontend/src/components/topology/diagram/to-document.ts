@@ -1181,10 +1181,14 @@ export function toDocument(
         if (overlay || !anchor || anchor.k === "junction" || !lines?.length)
           return undefined
         if (plan && !placed) return undefined
-        return lines.map((text, k) => ({
-          text,
-          ...(placed?.[k] ? { at: placed[k] } : {}),
-        }))
+        // Planned, only those placed: a run cut short drops its last
+        // ones (IPv6 before IPv4).
+        return (placed ? lines.slice(0, placed.length) : lines).map(
+          (text, k) => ({
+            text,
+            ...(placed?.[k] ? { at: placed[k] } : {}),
+          })
+        )
       }
       const la = port(aa, p ? p.a : undefined)
       const lb = port(ba, p ? p.b : undefined)

@@ -82,6 +82,13 @@ interface Placed {
   on?: string
 }
 
+/** A curve as points every 8px or so (at least 48 pieces): a long one's
+ * chords stray from it further than a label may. */
+const sampled = (r: { length: number; at: (t: number) => Pt }) => {
+  const n = Math.max(48, Math.ceil(r.length / 8))
+  return Array.from({ length: n + 1 }, (_, k) => r.at(k / n))
+}
+
 /** Every label a build placed, as boxes, and every drawn line. */
 function scene(b: ReturnType<typeof build>) {
   const labels: Placed[] = []
@@ -93,10 +100,7 @@ function scene(b: ReturnType<typeof build>) {
     routes.forEach((r, i) =>
       lines.push({
         edge: `${e.id}#${i}`,
-        pts:
-          d.line === "bendy" || d.line === "cyclical"
-            ? Array.from({ length: 49 }, (_, k) => r.at(k / 48))
-            : r.pts,
+        pts: d.line === "bendy" || d.line === "cyclical" ? sampled(r) : r.pts,
       })
     )
     d.plan.forEach((p, i) => {
@@ -398,6 +402,28 @@ describe("end labels on their line", () => {
       9
     )
     expect(out.reach).toBeCloseTo(ip.x + 30 + LABEL.GAP, 9)
+  })
+
+  it("drops the last addresses before all of them when they do not all fit", () => {
+    // 100 px to the middle: room for one 40 px address, not two.
+    const route = [
+      [
+        { x: 0, y: 0 },
+        { x: 200, y: 0 },
+      ],
+    ]
+    const all = lines(route)
+    expect(placeInline([all.ask(0, [40, 40])], all.sc).get("c0")).toBeNull()
+    const cut = lines(route)
+    const out = placeInline([cut.ask(0, [40, 40], { least: 1 })], cut.sc)
+    expect(out.get("c0")!.at).toHaveLength(1)
+    // With room, the whole run.
+    const wide = lines(route)
+    const whole = placeInline(
+      [wide.ask(0, [20, 20], { least: 1 })],
+      wide.sc
+    ).get("c0")!
+    expect(whole.at).toHaveLength(2)
   })
 
   it("keeps a port name to the run out of its nub", () => {
