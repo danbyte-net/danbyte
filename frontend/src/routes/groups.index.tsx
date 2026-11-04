@@ -1,16 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { type RBACGroup } from "@/lib/api"
+import type { RBACGroup } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
+import { buildGroupColumns } from "@/components/columns/group-columns"
 import { GroupDeleteDialog } from "@/components/group-delete-dialog"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -19,6 +18,7 @@ export const Route = createFileRoute("/groups/")({ component: GroupsPage })
 function GroupsPage() {
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<RBACGroup | null>(null)
+  const [selected, setSelected] = useState<RBACGroup[]>([])
   const { canDo } = useMe()
   const canAdd = canDo("group", "add")
   const canEdit = canDo("group", "change")
@@ -41,8 +41,19 @@ function GroupsPage() {
   }, [allRows, q])
 
   const handleDelete = useCallback((g: RBACGroup) => setDeleting(g), [])
-  const columns = useMemo<ColumnDef<RBACGroup>[]>(
-    () => buildColumns({ onDelete: handleDelete, canEdit, canDelete }),
+  const columns = useMemo(
+    () =>
+      buildGroupColumns({
+        // Groups have no bulk edit: the one bulk action is Delete.
+        selection: canDelete,
+        actions: {
+          editTo: "/groups/$id/edit",
+          editParams: (g) => ({ id: String(g.id) }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: (g) => canDelete && !g.built_in,
+        },
+      }),
     [handleDelete, canEdit, canDelete]
   )
 
@@ -71,6 +82,15 @@ function GroupsPage() {
         columns={columns}
         flexColumn="description"
         tableId="groups"
+        onSelectedRowsChange={canDelete ? setSelected : undefined}
+        selectedRows={canDelete ? selected : undefined}
+      />
+      <SafeBulkDeleteBar
+        selected={selected.map((g) => ({ id: String(g.id) }))}
+        endpoint="/api/groups/"
+        noun={["group", "groups"]}
+        invalidate={[["groups"], ["object-permissions"]]}
+        onCleared={() => setSelected([])}
       />
       <GroupDeleteDialog
         group={deleting}
@@ -78,79 +98,4 @@ function GroupsPage() {
       />
     </ListPageShell>
   )
-}
-
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-}: {
-  onDelete: (g: RBACGroup) => void
-  canEdit: boolean
-  canDelete: boolean
-}): ColumnDef<RBACGroup>[] {
-  return [
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link
-          to="/groups/$id/edit"
-          params={{ id: String(row.original.id) }}
-          className="link flex items-center gap-2 font-medium"
-        >
-          {row.original.name}
-          {row.original.built_in && (
-            <Badge variant="secondary" className="text-[10px]">
-              built-in
-            </Badge>
-          )}
-        </Link>
-      ),
-    },
-    {
-      id: "description",
-      accessorKey: "description",
-      header: "Description",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "-"}
-        </span>
-      ),
-    },
-    {
-      id: "users",
-      accessorKey: "user_count",
-      header: ({ column }) => <SortHeader column={column} label="Users" />,
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.user_count}</span>
-      ),
-    },
-    {
-      id: "permissions",
-      accessorKey: "permission_count",
-      header: ({ column }) => (
-        <SortHeader column={column} label="Permissions" />
-      ),
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.permission_count}</span>
-      ),
-    },
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/groups/$id/edit" : undefined}
-          editParams={{ id: String(row.original.id) }}
-          onDelete={
-            canDelete && !row.original.built_in
-              ? () => onDelete(row.original)
-              : undefined
-          }
-        />
-      ),
-    },
-  ]
 }

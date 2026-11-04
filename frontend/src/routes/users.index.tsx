@@ -1,19 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { KeyRound } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type RBACUser } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { RBACUser } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { timeAgoColumn } from "@/components/cells/time-ago"
-import { RowActions } from "@/components/row-actions"
+import { buildUserColumns } from "@/components/columns/user-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { ACTIVATE_WORDS, BulkFlagActions } from "@/components/bulk-flag-actions"
 import { UserDeleteDialog } from "@/components/user-delete-dialog"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -54,6 +54,9 @@ function ResetButton({ user }: { user: RBACUser }) {
 
 export const Route = createFileRoute("/users/")({ component: UsersPage })
 
+const ENDPOINT = "/api/users/"
+const NOUN: [string, string] = ["user", "users"]
+
 function UsersPage() {
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<RBACUser | null>(null)
@@ -71,10 +74,24 @@ function UsersPage() {
   })
 
   const rows = query.data?.results ?? []
+  const selectable = canEdit || canDelete
+  const [selected, setSelected] = useState<RBACUser[]>([])
+  const clear = () => setSelected([])
   const handleDelete = useCallback((u: RBACUser) => setDeleting(u), [])
-  const columns = useMemo<ColumnDef<RBACUser>[]>(
-    () => buildColumns({ onDelete: handleDelete, canEdit, canDelete }),
-    [handleDelete, canEdit, canDelete]
+  const columns = useMemo(
+    () =>
+      buildUserColumns({
+        selection: selectable,
+        actions: {
+          editTo: "/users/$id/edit",
+          editParams: (u) => ({ id: String(u.id) }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: () => canDelete,
+          extra: (u) => (canEdit ? <ResetButton user={u} /> : null),
+        },
+      }),
+    [handleDelete, canEdit, canDelete, selectable]
   )
 
   return (
@@ -103,6 +120,32 @@ function UsersPage() {
         columns={columns}
         flexColumn="email"
         tableId="users"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      {/* No bulk edit dialog: the one field a bulk change sets is whether
+          the account is active. */}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint={ENDPOINT}
+        noun={NOUN}
+        invalidate={[["users"]]}
+        onCleared={clear}
+        canEdit={false}
+        canDelete={canDelete}
+        actions={
+          canEdit && (
+            <BulkFlagActions
+              endpoint={ENDPOINT}
+              field="is_active"
+              ids={selected.map((u) => String(u.id))}
+              noun={NOUN}
+              invalidate={[["users"]]}
+              onDone={clear}
+              words={ACTIVATE_WORDS}
+            />
+          )
+        }
       />
       <UserDeleteDialog
         user={deleting}
@@ -110,114 +153,4 @@ function UsersPage() {
       />
     </ListPageShell>
   )
-}
-
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-}: {
-  onDelete: (u: RBACUser) => void
-  canEdit: boolean
-  canDelete: boolean
-}): ColumnDef<RBACUser>[] {
-  return [
-    {
-      id: "username",
-      accessorKey: "username",
-      header: ({ column }) => <SortHeader column={column} label="Username" />,
-      cell: ({ row }) => (
-        <Link
-          to="/users/$id/edit"
-          params={{ id: String(row.original.id) }}
-          className="link flex items-center gap-2 font-mono text-xs font-medium"
-        >
-          {row.original.username}
-          {row.original.is_superuser && (
-            <Badge variant="warning" className="text-[10px]">
-              superuser
-            </Badge>
-          )}
-          {!row.original.is_active && (
-            <Badge variant="secondary" className="text-[10px]">
-              inactive
-            </Badge>
-          )}
-        </Link>
-      ),
-    },
-    {
-      id: "name",
-      accessorFn: (u) => `${u.first_name} ${u.last_name}`.trim(),
-      header: "Name",
-      cell: ({ row }) => {
-        const name =
-          `${row.original.first_name} ${row.original.last_name}`.trim()
-        return name ? (
-          <span className="text-xs">{name}</span>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )
-      },
-    },
-    {
-      id: "email",
-      accessorKey: "email",
-      header: ({ column }) => <SortHeader column={column} label="Email" />,
-      cell: ({ row }) =>
-        row.original.email ? (
-          <span className="font-mono text-xs text-muted-foreground">
-            {row.original.email}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-    },
-    {
-      id: "groups",
-      accessorFn: (u) => u.groups.map((g) => g.name).join(", "),
-      header: "Groups",
-      cell: ({ row }) =>
-        row.original.groups.length ? (
-          <span className="text-xs">
-            {row.original.groups.map((g) => g.name).join(", ")}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-    },
-    {
-      id: "auth",
-      accessorKey: "auth_source",
-      header: "Auth",
-      cell: ({ row }) => (
-        <span className="flex items-center gap-1.5 text-xs">
-          <span className="uppercase">{row.original.auth_source}</span>
-          {row.original.require_mfa && (
-            <Badge variant="secondary" className="text-[10px]">
-              MFA
-            </Badge>
-          )}
-        </span>
-      ),
-    },
-    timeAgoColumn<RBACUser>({
-      id: "last_login",
-      header: "Last login",
-      get: (r) => r.last_login,
-      align: "right",
-    }),
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/users/$id/edit" : undefined}
-          editParams={{ id: String(row.original.id) }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-          extra={canEdit ? <ResetButton user={row.original} /> : undefined}
-        />
-      ),
-    },
-  ]
 }

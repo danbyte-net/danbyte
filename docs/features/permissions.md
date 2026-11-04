@@ -199,6 +199,42 @@ rows*.
 8. Assign the permission to **groups** and/or **users**.
 9. Save.
 
+### Many at once
+
+Tick rows on the Users, Groups or Permissions list to reveal the bulk bar. Like
+every change to access, a bulk change needs a deployment administrator: a
+grant limited to tenants is refused.
+
+| List | Bulk actions |
+|---|---|
+| **Users** | **Activate**, **Deactivate** and **Delete**. Nothing else about an account changes in bulk. |
+| **Groups** | **Delete**. |
+| **Permissions** | **Enable**, **Disable**, **Edit** (the **Enabled** switch and the **Description**) and **Delete**. What a grant reaches and who holds it stay one grant at a time. |
+
+Delete first shows what would happen and names each row it keeps, with the
+reason. Some rows never go, one at a time or many - a single delete answers
+the same reason, and a single edit refuses the same switch-off:
+
+- **Your own account** is neither deleted nor deactivated.
+- **A superuser's account** is deleted or deactivated only by a superuser, and
+  the **last active superuser** stays.
+- **Built-in groups** stay.
+- **The built-in Administrator grant** is neither deleted nor disabled.
+- **The grants and groups you manage users through** stay when the change
+  would take all of them, so nobody locks themselves out of this page.
+
+Every account deleted, activated or deactivated in bulk, every group deleted
+and every grant changed is in the [change log](change-log.md). Users and
+groups have no export.
+
+| Endpoint | |
+|---|---|
+| `POST /api/users/bulk-update/` | `{ids, fields: {is_active}}`; ids are whole numbers |
+| `POST /api/users/bulk-delete/` | `{ids, dry_run}` |
+| `POST /api/groups/bulk-delete/` | `{ids, dry_run}` |
+| `POST /api/object-permissions/bulk-update/` | `{ids, fields}` with `enabled`, `description` |
+| `POST /api/object-permissions/bulk-delete/` | `{ids, dry_run}` |
+
 ### Site roles (local IT, in one click)
 
 A common need is *local IT who runs their own site but shouldn't touch others*.

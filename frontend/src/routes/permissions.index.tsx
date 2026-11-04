@@ -1,15 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { type ObjectPermission } from "@/lib/api"
+import type { ObjectPermission } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
+import { buildPermissionColumns } from "@/components/columns/permission-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { BulkFlagActions } from "@/components/bulk-flag-actions"
 import { PermissionDeleteDialog } from "@/components/permission-delete-dialog"
 import { SiteRoleDialog } from "@/components/site-role-dialog"
 import { useMe } from "@/lib/use-me"
@@ -18,6 +18,9 @@ import { useUrlSearch } from "@/lib/url-filters"
 export const Route = createFileRoute("/permissions/")({
   component: PermissionsPage,
 })
+
+const ENDPOINT = "/api/object-permissions/"
+const NOUN: [string, string] = ["permission", "permissions"]
 
 function PermissionsPage() {
   const [q, setQ] = useUrlSearch()
@@ -45,10 +48,23 @@ function PermissionsPage() {
     )
   }, [allRows, q])
 
+  const selectable = canEdit || canDelete
+  const [selected, setSelected] = useState<ObjectPermission[]>([])
+  const clear = () => setSelected([])
   const handleDelete = useCallback((p: ObjectPermission) => setDeleting(p), [])
-  const columns = useMemo<ColumnDef<ObjectPermission>[]>(
-    () => buildColumns({ onDelete: handleDelete, canEdit, canDelete }),
-    [handleDelete, canEdit, canDelete]
+  const columns = useMemo(
+    () =>
+      buildPermissionColumns({
+        selection: selectable,
+        actions: {
+          editTo: "/permissions/$id/edit",
+          editParams: (p) => ({ id: p.id }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: () => canDelete,
+        },
+      }),
+    [handleDelete, canEdit, canDelete, selectable]
   )
 
   return (
@@ -85,6 +101,29 @@ function PermissionsPage() {
         columns={columns}
         flexColumn="object_types"
         tableId="permissions"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint={ENDPOINT}
+        noun={NOUN}
+        invalidate={[["object-permissions"]]}
+        onCleared={clear}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        actions={
+          canEdit && (
+            <BulkFlagActions
+              endpoint={ENDPOINT}
+              field="enabled"
+              ids={selected.map((p) => p.id)}
+              noun={NOUN}
+              invalidate={[["object-permissions"]]}
+              onDone={clear}
+            />
+          )
+        }
       />
       <PermissionDeleteDialog
         permission={deleting}
@@ -93,115 +132,4 @@ function PermissionsPage() {
       <SiteRoleDialog open={siteRoleOpen} onOpenChange={setSiteRoleOpen} />
     </ListPageShell>
   )
-}
-
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-}: {
-  onDelete: (p: ObjectPermission) => void
-  canEdit: boolean
-  canDelete: boolean
-}): ColumnDef<ObjectPermission>[] {
-  return [
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link
-          to="/permissions/$id/edit"
-          params={{ id: row.original.id }}
-          className="link flex items-center gap-2 font-medium"
-        >
-          {row.original.name}
-          {!row.original.enabled && (
-            <Badge variant="secondary" className="text-[10px]">
-              disabled
-            </Badge>
-          )}
-        </Link>
-      ),
-    },
-    {
-      id: "actions_granted",
-      accessorFn: (p) => p.actions.join(", "),
-      header: "Actions",
-      cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {row.original.actions.join(" · ") || "-"}
-        </span>
-      ),
-    },
-    {
-      id: "object_types",
-      accessorFn: (p) => p.object_types.join(", "),
-      header: "Object types",
-      cell: ({ row }) => {
-        const ts = row.original.object_types
-        // "*" leaves out users, groups and permissions; name any added back.
-        const label = ts.includes("*")
-          ? ["All object types", ...ts.filter((t) => t !== "*")].join(" + ")
-          : ts.join(", ") || "-"
-        return (
-          <span className="line-clamp-1 block font-mono text-[11px] text-muted-foreground">
-            {label}
-          </span>
-        )
-      },
-    },
-    {
-      id: "scope",
-      accessorFn: (p) => p.tenants.map((t) => t.name).join(", "),
-      header: "Tenant scope",
-      cell: ({ row }) =>
-        row.original.tenants.length ? (
-          <span className="text-xs">
-            {row.original.tenants.map((t) => t.name).join(", ")}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">All</span>
-        ),
-    },
-    {
-      id: "assigned",
-      header: "Assigned to",
-      cell: ({ row }) => {
-        const g = row.original.groups.length
-        const u = row.original.users.length
-        const parts: string[] = []
-        if (g) parts.push(`${g} group${g > 1 ? "s" : ""}`)
-        if (u) parts.push(`${u} user${u > 1 ? "s" : ""}`)
-        return (
-          <span className="text-xs text-muted-foreground">
-            {parts.join(" · ") || "-"}
-          </span>
-        )
-      },
-    },
-    {
-      id: "constraints",
-      header: "Constraints",
-      cell: ({ row }) =>
-        row.original.constraints != null ? (
-          <Badge variant="secondary" className="text-[10px]">
-            scoped
-          </Badge>
-        ) : (
-          <span className="text-xs text-muted-foreground">-</span>
-        ),
-    },
-    {
-      id: "row_actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/permissions/$id/edit" : undefined}
-          editParams={{ id: row.original.id }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-        />
-      ),
-    },
-  ]
 }
