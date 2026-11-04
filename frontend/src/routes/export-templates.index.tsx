@@ -1,22 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { Download } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { type ExportTemplate } from "@/lib/api"
+import type { ExportTemplate } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { downloadBlob } from "@/lib/table-export"
-import { numidColumn } from "@/components/cells/numid"
 import { Spinner } from "@/components/ui/spinner"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
+import { buildExportTemplateColumns } from "@/components/columns/export-template-columns"
 import { ExportTemplateDeleteDialog } from "@/components/export-template-delete-dialog"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useUrlSearch } from "@/lib/url-filters"
 
 // Render + download a template's output. Fetches the file so we can surface a
@@ -44,7 +43,7 @@ function DownloadButton({ template }: { template: ExportTemplate }) {
         text
       )
     },
-    onError: (err) => toast.error(`Render failed: ${(err as Error).message}`),
+    onError: (err) => toast.error(`Render failed: ${err.message}`),
   })
   return (
     <Button
@@ -70,11 +69,14 @@ export const Route = createFileRoute("/export-templates/")({
 })
 
 function ExportTemplatesPage() {
-  const { canDo } = useMe()
+  const { canDo, humanIds } = useMe()
   const canAdd = canDo("exporttemplate", "add")
-  const { humanIds } = useMe()
+  const canEdit = canDo("exporttemplate", "change")
+  const canDelete = canDo("exporttemplate", "delete")
+  const selectable = canEdit || canDelete
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ExportTemplate | null>(null)
+  const [selected, setSelected] = useState<ExportTemplate[]>([])
 
   const query = useQuery({
     queryKey: ["export-templates", q],
@@ -86,66 +88,21 @@ function ExportTemplatesPage() {
 
   const rows = query.data?.results ?? []
   const onDelete = useCallback((t: ExportTemplate) => setDeleting(t), [])
-  const columns = useMemo<ColumnDef<ExportTemplate>[]>(
-    () => [
-      ...(humanIds
-        ? [numidColumn<ExportTemplate>({ get: (r) => r.numid })]
-        : []),
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/export-templates/$id"
-            params={{ id: row.original.id }}
-            className="link font-medium"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      {
-        id: "object_type",
-        accessorKey: "object_type_label",
-        header: "Object type",
-        cell: ({ row }) => (
-          <span className="text-xs">{row.original.object_type_label}</span>
-        ),
-      },
-      {
-        id: "format",
-        header: "Format",
-        cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-muted-foreground">
-            .{row.original.file_extension} · {row.original.mime_type}
-          </span>
-        ),
-      },
-      {
-        id: "description",
-        accessorKey: "description",
-        header: "Description",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.description || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "actions",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <RowActions
-            editTo="/export-templates/$id/edit"
-            editParams={{ id: row.original.id }}
-            onDelete={() => onDelete(row.original)}
-            extra={<DownloadButton template={row.original} />}
-          />
-        ),
-      },
-    ],
-    [onDelete, humanIds]
+  const columns = useMemo(
+    () =>
+      buildExportTemplateColumns({
+        humanIds,
+        selection: selectable,
+        actions: {
+          editTo: "/export-templates/$id/edit",
+          editParams: (t) => ({ id: t.id }),
+          canEdit: () => canEdit,
+          onDelete,
+          canDelete: () => canDelete,
+          extra: (t) => <DownloadButton template={t} />,
+        },
+      }),
+    [onDelete, humanIds, canEdit, canDelete, selectable]
   )
 
   return (
@@ -175,6 +132,18 @@ function ExportTemplatesPage() {
         columns={columns}
         flexColumn="description"
         tableId="export-templates"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/export-templates/"
+        noun={["template", "templates"]}
+        invalidate={[["export-templates"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="exporttemplate"
       />
       <ExportTemplateDeleteDialog
         item={deleting}

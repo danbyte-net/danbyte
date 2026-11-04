@@ -74,6 +74,23 @@ Because a context's whole purpose is the data it contributes, the Data block is
 on the Overview rather than behind a tab. Long blocks scroll inside their own
 box, so a large context doesn't stretch the page.
 
+## Bulk changes
+
+Tick rows in **Customize → Config contexts** - with the `change` or `delete`
+grant - to reveal the bulk bar:
+
+- **Export** downloads the selected contexts as CSV, Excel or JSON.
+- **Edit** sets **Active**, **Weight** or **Description** on every selected
+  context. The data and the assignment criteria stay per context.
+- **Delete** first shows what would happen, then deletes the contexts, each
+  with a change-log entry.
+
+| Endpoint | Needs |
+|---|---|
+| `POST /api/config-contexts/bulk-update/` | `configcontext.change`; `{ids, fields}` with `is_active`, `weight`, `description` |
+| `GET /api/config-contexts/bulk-edit-fields/` | `configcontext.change` |
+| `POST /api/config-contexts/bulk-delete/` | `configcontext.delete`; `{ids, dry_run}` |
+
 ## See it on a device or VM
 
 Every device and virtual machine detail page has a **Config** tab. It shows the

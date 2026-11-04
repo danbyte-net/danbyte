@@ -2,7 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { ConfigBundle } from "@/lib/api"
-import { SortHeader } from "@/components/data-table"
+import { SortHeader, selectionColumn } from "@/components/data-table"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -36,6 +36,8 @@ export interface ConfigBundleColumnOpts<T extends ConfigBundle = ConfigBundle> {
   omit?: ConfigBundleColumnId[]
   /** Keep only these columns (canonical order still applies). */
   include?: ConfigBundleColumnId[]
+  /** Leading checkbox column for bulk selection. */
+  selection?: boolean
   /** Leading "#" numid column - gate on `useMe().humanIds`. */
   humanIds?: boolean
   /** Trailing RowActions column. */
@@ -132,6 +134,7 @@ export function buildConfigBundleColumns<T extends ConfigBundle = ConfigBundle>(
   }
 
   const cols: ColumnDef<T, unknown>[] = []
+  if (opts.selection) cols.push(selectionColumn<T>())
   for (const id of CANONICAL_ORDER) if (keep(id)) cols.push(byId[id]())
   if (opts.actions) cols.push(actionsColumn<T>(opts.actions))
   return cols

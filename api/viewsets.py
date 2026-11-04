@@ -10356,10 +10356,12 @@ def _location_subtree(location_id) -> set:
 
 
 # ─── Config Contexts ─────────────────────────────────────────────────────────
-class ConfigContextViewSet(TenantScopedViewSet):
+class ConfigContextViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = ConfigContext.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = ConfigContextSerializer
     pagination_class = StandardPagination
+    # The data and the criteria belong to one context: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("is_active", "weight", "description"), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related(
@@ -10373,12 +10375,13 @@ class ConfigContextViewSet(TenantScopedViewSet):
 
 
 # ─── Export templates ────────────────────────────────────────────────────────
-class ConfigBundleViewSet(TenantScopedViewSet):
+class ConfigBundleViewSet(BulkEditMixin, TenantScopedViewSet):
     """Filter with ``?role=<id>`` (bundles bound to that role) and ``?search=``."""
 
     queryset = ConfigBundle.objects.all().order_by(NATURAL_NAME)
     serializer_class = ConfigBundleSerializer
     pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("description",), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related("templates", "roles")
@@ -10392,10 +10395,27 @@ class ConfigBundleViewSet(TenantScopedViewSet):
         return qs.distinct()
 
 
-class ExportTemplateViewSet(TenantScopedViewSet):
+class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = ExportTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = ExportTemplateSerializer
     pagination_class = StandardPagination
+    # The code, type and file name belong to one template: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("as_attachment", "description"), tags=False)
+
+    def bulk_notes(self, rows):
+        """A template in a config bundle leaves it, as its single delete does:
+        named first, so the bundles are no surprise."""
+        through = ConfigBundle.templates.through
+        counts: dict = {}
+        for tid in through.objects.filter(
+            exporttemplate_id__in=[r.pk for r in rows]
+        ).values_list("exporttemplate_id", flat=True):
+            counts[tid] = counts.get(tid, 0) + 1
+        return [
+            {"id": str(r.pk), "name": str(r), "label": "In a config bundle",
+             "detail": f"Leaves {n} bundle{'' if n == 1 else 's'}."}
+            for r in rows if (n := counts.get(r.pk))
+        ]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -10472,7 +10492,7 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         return resp
 
 
-class LabelTemplateViewSet(TenantScopedViewSet):
+class LabelTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
     """Printable per-object label templates (Jinja2 HTML + QR, sized in mm).
 
     CRUD, plus ``fields`` (token reference for the editor), ``preview`` (render an
@@ -10484,6 +10504,8 @@ class LabelTemplateViewSet(TenantScopedViewSet):
     queryset = LabelTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = LabelTemplateSerializer
     pagination_class = StandardPagination
+    # Size, markup and the default flag belong to one template: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("qr_enabled", "description"), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset()

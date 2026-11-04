@@ -39,6 +39,19 @@ name). Cable labels also get each end: `{{ a }}` / `{{ b }}` (the devices),
 `{{ a_port_name }}` / `{{ b_port_name }}` (the bare port name, for short
 labels).
 
+## Bulk changes
+
+Tick rows in **Customize → Label templates** - with the `change` or `delete`
+grant - to reveal the bulk bar:
+
+- **Export** downloads the selected templates as CSV, Excel or JSON.
+- **Edit** turns the **QR code** on or off or sets the **Description** on every
+  selected template. Size, markup and the default flag stay per template.
+- **Delete** first shows what would happen, then deletes the templates.
+
+`POST /api/label-templates/bulk-update/` needs `labeltemplate.change`,
+`POST /api/label-templates/bulk-delete/` needs `labeltemplate.delete`.
+
 ## Printing
 
 A **Print label** action appears on an object's page (and in the list **bulk
