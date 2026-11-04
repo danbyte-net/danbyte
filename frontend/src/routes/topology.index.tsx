@@ -28,13 +28,15 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
-import { api, fetchTopology } from "@/lib/api"
+import { api, fetchRoutingTopology, fetchTopology } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type {
   BulkStatusResponse,
   DevicePaletteRow,
   GhostEdgeData,
   Paginated,
+  RoutingLayer,
+  RoutingQuery,
   Status,
   TagOption,
   TopoEdge,
@@ -144,6 +146,16 @@ import {
   LogicalTopologyView,
 } from "@/components/topology/logical-view"
 import { TopologyObjectsSidebar } from "@/components/topology/map-sidebar"
+import { RoutingTab } from "@/components/topology/routing/routing-tab"
+import type { RoutingCanvasHandle } from "@/components/topology/routing/routing-canvas"
+import { routingLegendRows } from "@/components/topology/routing/routing-document"
+import { RoutingDisplayPopover } from "@/components/topology/routing/routing-display"
+import {
+  readRoutingDisplay,
+  routingDisplay,
+  shownRouting,
+} from "@/components/topology/routing/routing-model"
+import type { RoutingSettings } from "@/components/topology/routing/routing-model"
 import {
   BundlePanel,
   EdgePanel,
@@ -582,14 +594,16 @@ interface StoredDisplay {
 const LARGE_TENANT = 500
 
 type GroupBy = "none" | "site" | "location"
-/** The page's views: the canvas styles + the VLAN-rail diagram. */
-type ViewStyle = NodeStyle | "logical"
+/** The page's views: the canvas styles, the VLAN-rail diagram and the
+ * routing picture (its own canvas). */
+type ViewStyle = NodeStyle | "logical" | "routing"
 const VIEW_STYLES: ViewStyle[] = [
   "diagram",
   "stencil",
   "hierarchy",
   "flat",
   "logical",
+  "routing",
 ]
 /** Stored values may name a removed view (e.g. the scrapped Faceplates).
  * The style an arrangement is kept under: a view saved before styles were
@@ -599,8 +613,8 @@ function sanitizeViewStyle(v: unknown): ViewStyle {
 }
 /** The tabs. Wiring (the "stencil" renderer) and Flat are retired: a view
  * or link that names them opens the Diagram, Detailed or Simple. */
-type TabStyle = "diagram" | "hierarchy" | "logical"
-const TAB_STYLES = ["diagram", "hierarchy", "logical"] as const
+type TabStyle = "diagram" | "hierarchy" | "logical" | "routing"
+const TAB_STYLES = ["diagram", "hierarchy", "logical", "routing"] as const
 /** Retired tab names a link may still carry, and the mode each opens. */
 const RETIRED_TABS: Record<string, DiagramModeParam | undefined> = {
   wiring: "detailed",
@@ -975,6 +989,11 @@ function TopologyPage() {
     )
   const isDiagram = viewStyle === "diagram"
   const logical = viewStyle === "logical"
+  /** The Routing tab: its own canvas over the same filters, views and
+   * document as the Diagram (components/topology/routing). */
+  const routing = viewStyle === "routing"
+  /** A tab the Diagram's canvas does not draw. */
+  const canvasless = logical || routing
   // Aggregate the graph to one card per site/location; double-click a card
   // (or its panel's button) drills into that group's device view.
   const [groupBy] = useUrlEnum<GroupBy>("group", dflt.group, GROUPS)
@@ -1710,7 +1729,7 @@ function TopologyPage() {
   const q = useQuery({
     queryKey: ["topology", graphQuery, setKey],
     queryFn: ({ signal }) => fetchTopology(graphQuery, { signal }),
-    enabled: !logical && mapSettled,
+    enabled: !canvasless && mapSettled,
     // The same map asked for with other labels or card lines - or a hand-
     // built map with a device more or less - keeps the one on screen until
     // the new one arrives, instead of blanking it.
@@ -1798,7 +1817,7 @@ function TopologyPage() {
 
   const ghosts = useQuery({
     queryKey: ["topology-ghosts", filters.site],
-    enabled: !logical && mapSettled,
+    enabled: !canvasless && mapSettled,
     queryFn: ({ signal }) =>
       api<{ edges: TopoEdge[] }>(
         `/api/monitoring/topology/ghosts/${
@@ -1810,7 +1829,7 @@ function TopologyPage() {
 
   const bgp = useQuery({
     queryKey: ["topology-bgp", filters.site],
-    enabled: !logical && mapSettled,
+    enabled: !canvasless && mapSettled,
     queryFn: ({ signal }) =>
       api<{ edges: TopoEdge[] }>(
         `/api/routing/topology/bgp/${
@@ -1819,6 +1838,89 @@ function TopologyPage() {
         { signal }
       ),
   })
+
+  // ── Routing tab ──
+  // Its display (card mode, lines, layers on or off) is part of the view
+  // document (`filters.routing`): an undo step, saved with the view. Its
+  // map is the Diagram's query - filters, focus, hand-picked set - asked of
+  // /api/topology/routing/; cables come only while their layer is on.
+  const routingCanvas = useRef<RoutingCanvasHandle>(null)
+  const routingSettings = useMemo(
+    () => readRoutingDisplay(doc.doc.filters.routing),
+    [doc.doc.filters.routing]
+  )
+  const setRoutingSettings = (next: Partial<RoutingSettings>) =>
+    edit({
+      type: "setDisplay",
+      patch: { routing: routingDisplay({ ...routingSettings, ...next }) },
+    })
+  const setRoutingLayer = (layer: RoutingLayer, on: boolean) =>
+    setRoutingSettings({ layers: { ...routingSettings.layers, [layer]: on } })
+  const routingCables = routingSettings.layers.cables
+  const routingQuery = useMemo<RoutingQuery>(() => {
+    const {
+      include: _include,
+      card_fields: _fields,
+      collapse_panels: _collapse,
+      group_by: _group,
+      ...map
+    } = graphQuery
+    const layers: RoutingLayer[] = ["ebgp", "ibgp", "circuits"]
+    if (routingCables) layers.push("cables")
+    // Grouping by site or location has no routing picture of its own: the
+    // routers of the whole set (or of the group drilled into).
+    return { ...map, layers }
+  }, [graphQuery, routingCables])
+  const rq = useQuery({
+    queryKey: ["topology-routing", routingQuery],
+    queryFn: ({ signal }) => fetchRoutingTopology(routingQuery, { signal }),
+    enabled: routing && mapSettled && !resolving,
+    // Switching the cables on is the same map: keep it until they come.
+    placeholderData: (prev, prevQuery) => {
+      const was = prevQuery?.queryKey[1] as RoutingQuery | undefined
+      if (!was) return undefined
+      const { layers: _a, ...a } = was
+      const { layers: _b, ...b } = routingQuery
+      return JSON.stringify(a) === JSON.stringify(b) ? prev : undefined
+    },
+  })
+  /** Where the Routing tab's cards and AS boxes stand: one undo step. The
+   * cards this user cannot see keep the places others gave them. */
+  const setRoutingArrangement = (p: PosMap | null, z: Zone[]) => {
+    edit({
+      type: "setPositions",
+      style: "routing",
+      positions: p,
+      seen: rq.data?.nodes.map((n) => n.id),
+    })
+    edit({ type: "setRegions", style: "routing", regions: z })
+  }
+  /** Add ▸ Zone on the Routing tab: in the middle of the screen, the
+   * arrangement pinned as it stands. */
+  const addRoutingZone = () => {
+    const c = routingCanvas.current?.center() ?? { x: 0, y: 0 }
+    const now = routingCanvas.current?.arrangement()
+    const list = now?.zones ?? doc.doc.zones.routing ?? []
+    setRoutingArrangement(now?.positions ?? doc.doc.positions.routing ?? null, [
+      ...list,
+      {
+        id: `z${Date.now().toString(36)}`,
+        label: "Zone",
+        x: Math.round(c.x - ZONE_W / 2),
+        y: Math.round(c.y - ZONE_H / 2),
+        w: ZONE_W,
+        h: ZONE_H,
+        color: ZONE_COLORS[list.length % ZONE_COLORS.length],
+      },
+    ])
+  }
+  const routingShown = useMemo(
+    () =>
+      rq.data
+        ? shownRouting(rq.data, routingSettings.layers, hidden)
+        : undefined,
+    [rq.data, routingSettings.layers, hidden]
+  )
 
   /** Everything the query returned plus the LLDP ghosts and BGP sessions
    * between those cards - what the sidebar lists, hidden or not. */
@@ -1957,17 +2059,17 @@ function TopologyPage() {
   // or location) as its eye would; Shift+H shows all.
   const selNodeId = selNode?.device_id ? `dev:${selNode.device_id}` : null
   useHideKeys(
-    !logical && selNodeId
+    !canvasless && selNodeId
       ? () => {
           setHiddenNodes(withHidden(hidden, "devices", selNodeId, true))
           clearSel()
         }
-      : !logical && selEdgeId
+      : !canvasless && selEdgeId
         ? () => {
             const line = canvas.current?.line(selEdgeId)
             if (line) hideLines(line.edgeIds)
           }
-        : !logical && selGroup
+        : !canvasless && selGroup
           ? () => {
               setHiddenNodes(
                 withHidden(
@@ -2003,7 +2105,8 @@ function TopologyPage() {
       }),
     // The sidebar's chips, and the cards' pill when some card lists
     // `monitor`.
-    enabled: !logical && deviceIds.length > 0 && (showObjects || cardMonitor),
+    enabled:
+      !canvasless && deviceIds.length > 0 && (showObjects || cardMonitor),
     staleTime: 30_000,
   })
   const checks = monQuery.data?.statuses ?? EMPTY_MON
@@ -2205,9 +2308,9 @@ function TopologyPage() {
       /* private mode - non-fatal */
     }
   }
-  const paletteShown = !logical && paletteOpen
+  const paletteShown = !canvasless && paletteOpen
   /** A map whose set is picked by hand takes dropped devices. */
-  const canBuild = !logical && builder
+  const canBuild = !canvasless && builder
   /** Where a card added by hand is kept: the tab's own arrangement. A
    * Diagram card stands on its centre, a Hierarchy card on its top-left
    * corner; each is its tab's new-card size until the map fetches it. */
@@ -2627,7 +2730,7 @@ function TopologyPage() {
     // Cards leave any hand-picked map this way, Diagram or Hierarchy - the
     // same maps their menu's Remove from map works on.
     const ids =
-      !builder || logical
+      !builder || canvasless
         ? []
         : gone.length
           ? (canvas.current?.selectedDevices() ?? [])
@@ -2863,6 +2966,8 @@ function TopologyPage() {
   }
 
   const count = q.data?.nodes.length ?? 0
+  const routerCount =
+    rq.data?.nodes.filter((n) => n.type === "router").length ?? 0
   const focusName = focus
     ? (graph?.nodes.find((n) => n.data.device_id === focus.id)?.data.name ??
       "device")
@@ -3009,7 +3114,7 @@ function TopologyPage() {
           scrolls, with its scrollbar showing. */}
       <header className="@container/head flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
         <h1 className="shrink-0 text-base font-semibold">Topology</h1>
-        {q.data && !logical && (
+        {q.data && !canvasless && (
           // One width whatever the number, so the tabs after it stay put.
           <Badge variant="secondary" className="min-w-24 shrink-0">
             <span className="num">{count}</span>{" "}
@@ -3020,6 +3125,12 @@ function TopologyPage() {
               : count === 1
                 ? "device"
                 : "devices"}
+          </Badge>
+        )}
+        {routing && rq.data && (
+          <Badge variant="secondary" className="min-w-24 shrink-0">
+            <span className="num">{routerCount}</span>{" "}
+            {routerCount === 1 ? "router" : "routers"}
           </Badge>
         )}
         <SegmentedTabs<TabStyle>
@@ -3036,8 +3147,24 @@ function TopologyPage() {
             { value: "diagram", label: "Diagram" },
             { value: "hierarchy", label: "Hierarchy" },
             { value: "logical", label: "Logical" },
+            { value: "routing", label: "Routing" },
           ]}
         />
+        {routing && (
+          <div
+            className={cn("flex shrink-0 items-center gap-2", headNarrow.hide)}
+          >
+            <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
+            <SegmentedTabs<DiagramModeParam>
+              value={routingSettings.mode}
+              onValueChange={(mode) => setRoutingSettings({ mode })}
+              items={[
+                { value: "simple", label: "Simple" },
+                { value: "detailed", label: "Detailed" },
+              ]}
+            />
+          </div>
+        )}
         {isDiagram && (
           <div
             className={cn("flex shrink-0 items-center gap-2", headNarrow.hide)}
@@ -3102,7 +3229,15 @@ function TopologyPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && matchedIds?.size)
+                    if (e.key !== "Enter") return
+                    if (routing) {
+                      const needle = search.trim().toLowerCase()
+                      const hit = routingShown?.nodes.find((n) =>
+                        n.data.name.toLowerCase().includes(needle)
+                      )
+                      if (needle && hit)
+                        routingCanvas.current?.focusNode(hit.id)
+                    } else if (matchedIds?.size)
                       canvas.current?.focusNode([...matchedIds][0])
                   }}
                   className="h-7 text-xs md:text-xs"
@@ -3138,148 +3273,155 @@ function TopologyPage() {
                   tags={tags.data?.results}
                 />
               )}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <BarMenuTrigger>
-                    <SlidersHorizontal /> Display
-                  </BarMenuTrigger>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="max-h-(--radix-popover-content-available-height) w-64 space-y-3 overflow-y-auto p-3"
-                >
-                  <PopoverField label="Group by" group>
-                    <SegmentedTabs<GroupBy>
-                      value={groupBy}
-                      onValueChange={(v) => {
-                        // Grouping starts from the whole estate: clear the focus
-                        // and any group we had drilled into, in one navigation.
-                        patch({
-                          group: v === dflt.group ? undefined : v,
-                          device: undefined,
-                          depth: undefined,
-                          ...(v !== "none"
-                            ? { site: "all", location: "all" }
-                            : {}),
-                        })
-                        clearSel()
-                        dropAllPositions()
-                      }}
-                      items={[
-                        { value: "none", label: "None" },
-                        { value: "site", label: "Site" },
-                        { value: "location", label: "Location" },
-                      ]}
-                    />
-                  </PopoverField>
-                  {isDiagram && !grouped && (
-                    <PopoverField label="Draw as" group>
-                      <SegmentedTabs<FaceParam>
-                        value={diagramFace}
-                        onValueChange={setDiagramFace}
+              {routing ? (
+                <RoutingDisplayPopover
+                  settings={routingSettings}
+                  onChange={setRoutingSettings}
+                />
+              ) : (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <BarMenuTrigger>
+                      <SlidersHorizontal /> Display
+                    </BarMenuTrigger>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    className="max-h-(--radix-popover-content-available-height) w-64 space-y-3 overflow-y-auto p-3"
+                  >
+                    <PopoverField label="Group by" group>
+                      <SegmentedTabs<GroupBy>
+                        value={groupBy}
+                        onValueChange={(v) => {
+                          // Grouping starts from the whole estate: clear the focus
+                          // and any group we had drilled into, in one navigation.
+                          patch({
+                            group: v === dflt.group ? undefined : v,
+                            device: undefined,
+                            depth: undefined,
+                            ...(v !== "none"
+                              ? { site: "all", location: "all" }
+                              : {}),
+                          })
+                          clearSel()
+                          dropAllPositions()
+                        }}
                         items={[
-                          { value: "card", label: "Card" },
-                          { value: "photo", label: "Photo" },
+                          { value: "none", label: "None" },
+                          { value: "site", label: "Site" },
+                          { value: "location", label: "Location" },
                         ]}
                       />
                     </PopoverField>
-                  )}
-                  {isDiagram && !grouped && photos && (
-                    <PopoverField label="Cables to" group>
-                      <SegmentedTabs<AnchorParam>
-                        value={diagramAnchor}
-                        onValueChange={setDiagramAnchor}
-                        items={[
-                          { value: "ports", label: "Ports" },
-                          { value: "edge", label: "Edge" },
-                        ]}
-                      />
-                    </PopoverField>
-                  )}
-                  {isDiagram && !grouped && (
-                    <PopoverField label="Virtual chassis" group>
-                      <SegmentedTabs<ChassisMode>
-                        value={stackMode}
-                        onValueChange={setStackMode}
-                        items={[
-                          { value: "off", label: "Off" },
-                          { value: "v", label: "Top-down" },
-                          { value: "h", label: "Left-right" },
-                        ]}
-                      />
-                    </PopoverField>
-                  )}
-                  {isDiagram && (
-                    <PopoverField label="Lines" group>
-                      <LineTabs<LineParam>
-                        value={diagramLine}
-                        onChange={setDiagramLine}
-                      />
-                    </PopoverField>
-                  )}
-                  {isDiagram && !grouped && (
-                    <PopoverField label="Labels" group>
-                      <div className="flex items-center gap-4">
-                        {(
-                          [
-                            ["subnet", "Subnets"],
-                            ["ip", "IPs"],
-                            ["port", "Ports"],
-                          ] as const
-                        ).map(([token, label]) => (
-                          <FormCheckbox
-                            key={token}
-                            label={label}
-                            checked={diagramLabels.includes(token)}
-                            onChange={(v) => setLabel(token, v)}
-                            className="items-center whitespace-nowrap"
-                          />
-                        ))}
-                      </div>
-                    </PopoverField>
-                  )}
-                  <PopoverField label="Color by">
-                    <Select
-                      value={colorMode}
-                      onValueChange={(v) => setColorMode(v as EdgeColorMode)}
-                    >
-                      <SelectTrigger size="sm" className="w-full text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cable">Cable</SelectItem>
-                        <SelectItem value="type">Type</SelectItem>
-                        <SelectItem value="status">Status</SelectItem>
-                        <SelectItem value="speed">Speed</SelectItem>
-                        <SelectItem value="none">None</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </PopoverField>
-                  <FormCheckbox
-                    label="LAG bundles"
-                    checked={lagMode === "on"}
-                    onChange={(v) => setLagMode(v ? "on" : "off")}
-                    className="items-center pt-1"
-                  />
-                  <FormCheckbox
-                    label="Patch panels"
-                    checked={!filters.collapse}
-                    onChange={(v) => set({ collapse: !v })}
-                    className="items-center pt-1"
-                  />
-                  {isDiagram && !grouped && (
-                    <div className="border-t border-border pt-3">
-                      <PopoverField label="Card lines" group>
-                        <ViewCardLinesEditor
-                          value={savedDiagram?.fields ?? null}
-                          onChange={setViewCardLines}
+                    {isDiagram && !grouped && (
+                      <PopoverField label="Draw as" group>
+                        <SegmentedTabs<FaceParam>
+                          value={diagramFace}
+                          onValueChange={setDiagramFace}
+                          items={[
+                            { value: "card", label: "Card" },
+                            { value: "photo", label: "Photo" },
+                          ]}
                         />
                       </PopoverField>
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
-              {isDiagram && (
+                    )}
+                    {isDiagram && !grouped && photos && (
+                      <PopoverField label="Cables to" group>
+                        <SegmentedTabs<AnchorParam>
+                          value={diagramAnchor}
+                          onValueChange={setDiagramAnchor}
+                          items={[
+                            { value: "ports", label: "Ports" },
+                            { value: "edge", label: "Edge" },
+                          ]}
+                        />
+                      </PopoverField>
+                    )}
+                    {isDiagram && !grouped && (
+                      <PopoverField label="Virtual chassis" group>
+                        <SegmentedTabs<ChassisMode>
+                          value={stackMode}
+                          onValueChange={setStackMode}
+                          items={[
+                            { value: "off", label: "Off" },
+                            { value: "v", label: "Top-down" },
+                            { value: "h", label: "Left-right" },
+                          ]}
+                        />
+                      </PopoverField>
+                    )}
+                    {isDiagram && (
+                      <PopoverField label="Lines" group>
+                        <LineTabs<LineParam>
+                          value={diagramLine}
+                          onChange={setDiagramLine}
+                        />
+                      </PopoverField>
+                    )}
+                    {isDiagram && !grouped && (
+                      <PopoverField label="Labels" group>
+                        <div className="flex items-center gap-4">
+                          {(
+                            [
+                              ["subnet", "Subnets"],
+                              ["ip", "IPs"],
+                              ["port", "Ports"],
+                            ] as const
+                          ).map(([token, label]) => (
+                            <FormCheckbox
+                              key={token}
+                              label={label}
+                              checked={diagramLabels.includes(token)}
+                              onChange={(v) => setLabel(token, v)}
+                              className="items-center whitespace-nowrap"
+                            />
+                          ))}
+                        </div>
+                      </PopoverField>
+                    )}
+                    <PopoverField label="Color by">
+                      <Select
+                        value={colorMode}
+                        onValueChange={(v) => setColorMode(v as EdgeColorMode)}
+                      >
+                        <SelectTrigger size="sm" className="w-full text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cable">Cable</SelectItem>
+                          <SelectItem value="type">Type</SelectItem>
+                          <SelectItem value="status">Status</SelectItem>
+                          <SelectItem value="speed">Speed</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </PopoverField>
+                    <FormCheckbox
+                      label="LAG bundles"
+                      checked={lagMode === "on"}
+                      onChange={(v) => setLagMode(v ? "on" : "off")}
+                      className="items-center pt-1"
+                    />
+                    <FormCheckbox
+                      label="Patch panels"
+                      checked={!filters.collapse}
+                      onChange={(v) => set({ collapse: !v })}
+                      className="items-center pt-1"
+                    />
+                    {isDiagram && !grouped && (
+                      <div className="border-t border-border pt-3">
+                        <PopoverField label="Card lines" group>
+                          <ViewCardLinesEditor
+                            value={savedDiagram?.fields ?? null}
+                            onChange={setViewCardLines}
+                          />
+                        </PopoverField>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              )}
+              {(isDiagram || routing) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <BarIconButton
@@ -3290,11 +3432,17 @@ function TopologyPage() {
                     </BarIconButton>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-40">
-                    <DropdownMenuLabel>Diagram</DropdownMenuLabel>
+                    <DropdownMenuLabel>
+                      {routing ? "Routing" : "Diagram"}
+                    </DropdownMenuLabel>
                     <DropdownMenuRadioGroup
-                      value={diagramMode}
+                      value={routing ? routingSettings.mode : diagramMode}
                       onValueChange={(v) =>
-                        setDiagramMode(v as DiagramModeParam)
+                        routing
+                          ? setRoutingSettings({
+                              mode: v as DiagramModeParam,
+                            })
+                          : setDiagramMode(v as DiagramModeParam)
                       }
                     >
                       <DropdownMenuRadioItem value="simple">
@@ -3320,12 +3468,14 @@ function TopologyPage() {
           ref={barRef}
           className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6"
         >
-          <BarToggle
-            pressed={paletteShown}
-            onClick={() => setPalette(!paletteOpen)}
-          >
-            <PanelLeft /> Devices
-          </BarToggle>
+          {!routing && (
+            <BarToggle
+              pressed={paletteShown}
+              onClick={() => setPalette(!paletteOpen)}
+            >
+              <PanelLeft /> Devices
+            </BarToggle>
+          )}
           <Select
             value={resolving ? "" : viewId}
             onValueChange={(v) => {
@@ -3427,7 +3577,37 @@ function TopologyPage() {
                 <HistoryButtons {...steps} />
               </div>
             )}
-            {isDiagram ? (
+            {routing ? (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <BarMenuTrigger>
+                      <Plus /> Add
+                    </BarMenuTrigger>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem onSelect={addRoutingZone}>
+                      <Square /> Zone
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <ArrangeMenu
+                  // Laid out By AS afresh; zones drawn by hand stay.
+                  onReset={() =>
+                    setRoutingArrangement(
+                      null,
+                      (doc.doc.zones.routing ?? []).filter(
+                        (z) => z.asn === undefined
+                      )
+                    )
+                  }
+                  onByAs={() => {
+                    const next = routingCanvas.current?.arrangeByAs(roleOrder)
+                    if (next) setRoutingArrangement(next.positions, next.zones)
+                  }}
+                />
+              </>
+            ) : isDiagram ? (
               <>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -3559,30 +3739,63 @@ function TopologyPage() {
                 <LinkIcon /> Copy link
               </BarButton>
             )}
-            <ExportMenu
-              name={exportName}
-              modes={isDiagram}
-              shownMode={diagramMode}
-              disabled={!graph}
-              // Every file is drawn in the Diagram's look, whatever the tab.
-              legend={legendRows({
-                viewStyle: "diagram",
-                grouped,
-                colorMode,
-                types: presentTypes,
-                speeds: presentSpeeds,
-                roles: rolesInGraph,
-                monitorPill: cardMonitor,
-              })}
-              document={(req) =>
-                canvas.current?.document({
-                  ...req,
-                  meta: exportMeta(),
-                  notes,
-                  origin: window.location.origin,
-                }) ?? null
-              }
-            />
+            {routing ? (
+              <ExportMenu
+                name={
+                  appliedView || drill || siteName
+                    ? `${exportName} - Routing topology`
+                    : "Routing topology"
+                }
+                disabled={!routingShown}
+                legend={routingShown ? routingLegendRows(routingShown) : []}
+                document={(req) => {
+                  const meta = exportMeta()
+                  const viewName = meta.title !== "Topology" ? meta.title : null
+                  return (
+                    routingCanvas.current?.document({
+                      ...req,
+                      meta: {
+                        ...meta,
+                        title: "Routing topology",
+                        ...(viewName || meta.filters
+                          ? {
+                              filters: [viewName, meta.filters]
+                                .filter(Boolean)
+                                .join(" · "),
+                            }
+                          : {}),
+                      },
+                      origin: window.location.origin,
+                    }) ?? null
+                  )
+                }}
+              />
+            ) : (
+              <ExportMenu
+                name={exportName}
+                modes={isDiagram}
+                shownMode={diagramMode}
+                disabled={!graph}
+                // Every file is drawn in the Diagram's look, whatever the tab.
+                legend={legendRows({
+                  viewStyle: "diagram",
+                  grouped,
+                  colorMode,
+                  types: presentTypes,
+                  speeds: presentSpeeds,
+                  roles: rolesInGraph,
+                  monitorPill: cardMonitor,
+                })}
+                document={(req) =>
+                  canvas.current?.document({
+                    ...req,
+                    meta: exportMeta(),
+                    notes,
+                    origin: window.location.origin,
+                  }) ?? null
+                }
+              />
+            )}
             {barRoom.copyLink && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -3643,17 +3856,40 @@ function TopologyPage() {
             onClose={() => setPalette(false)}
           />
         )}
-        <div className="relative min-h-0 flex-1">
+        {routing && (
+          <RoutingTab
+            data={resolving ? undefined : rq.data}
+            loading={rq.isLoading || !mapSettled}
+            error={rq.isError ? rq.error : null}
+            settings={routingSettings}
+            onLayer={setRoutingLayer}
+            positions={doc.doc.positions.routing}
+            zones={doc.doc.zones.routing}
+            onArrange={setRoutingArrangement}
+            hidden={hidden}
+            onHiddenChange={setHiddenNodes}
+            showObjects={showObjects}
+            search={search}
+            roleOrder={roleOrder}
+            fitKey={`${fitKey}|${layoutTick}`}
+            canvasRef={routingCanvas}
+            onFocusDevice={focusDevice}
+            builder={builder}
+            onBackToFiltered={exitBuilder}
+          />
+        )}
+        {/* The Diagram's canvas area; the Routing tab draws its own. */}
+        <div className={cn("relative min-h-0 flex-1", routing && "hidden")}>
           {logical && <LogicalTopologyView />}
-          {!logical && (q.isLoading || (!mapSettled && !graph)) && (
+          {!canvasless && (q.isLoading || (!mapSettled && !graph)) && (
             <Loading className="absolute inset-0" />
           )}
-          {!logical && q.isError && (
+          {!canvasless && q.isError && (
             <div className="absolute inset-0 flex items-center justify-center p-6">
               <QueryError error={q.error} />
             </div>
           )}
-          {!logical && graph && (
+          {!canvasless && graph && (
             <Suspense fallback={<Loading className="absolute inset-0" />}>
               <TopologyCanvas
                 ref={canvas}
@@ -3844,7 +4080,7 @@ function TopologyPage() {
                   </Tooltip>
                 </div>
               )}
-            {!logical && graph && partialMap && <PartialMapChip />}
+            {!canvasless && graph && partialMap && <PartialMapChip />}
             {!showObjects && (
               <HiddenChip
                 count={hiddenHere}
@@ -3855,7 +4091,7 @@ function TopologyPage() {
               />
             )}
           </div>
-          {!logical && graph && (
+          {!canvasless && graph && (
             // left-16 clears React Flow's zoom controls in the corner; a
             // fit keeps the map clear of it (keepClear).
             <div ref={legendBox} className="absolute bottom-4 left-16 z-10">
@@ -3914,7 +4150,7 @@ function TopologyPage() {
           )}
         </div>
 
-        {showObjects && !logical && graph && (
+        {showObjects && !canvasless && graph && (
           <TopologyObjectsSidebar
             graph={fullGraph!}
             checks={checks}

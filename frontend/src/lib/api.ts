@@ -4781,7 +4781,8 @@ export interface DevicePathRun {
 
 /** The view styles that own an arrangement in a saved view. Mirrors
  * `TopologyViewSerializer.POSITION_STYLES`. */
-export type TopologyPositionStyle = "stencil" | "hierarchy" | "flat" | "diagram"
+export type TopologyPositionStyle =
+  "stencil" | "hierarchy" | "flat" | "diagram" | "routing"
 
 export type TopologyLineType = "straight" | "elbow" | "bendy" | "cyclical"
 
@@ -4805,6 +4806,8 @@ export interface TopologyViewZone {
   /** A row of several layers: a sub-row each (`stack`) or mixed in one
    * (`row`, the default). */
   layout?: "stack" | "row"
+  /** The Routing tab: the AS this box frames (an AS box). */
+  asn?: number
 }
 
 /** The Diagram tab's display settings (`state.filters.diagram`). */
@@ -4827,6 +4830,8 @@ export type TopologyPhotoAnchor = "ports" | "edge"
 export interface TopologyViewFilters {
   [key: string]: unknown
   diagram?: TopologyDiagramDisplay
+  /** The Routing tab's display. */
+  routing?: RoutingDisplay
 }
 
 /** A per-link override, keyed by the sorted device pair `"<uuid>|<uuid>"`. */
@@ -4977,6 +4982,196 @@ export function fetchTopology(
 ): Promise<TopologyGraph> {
   if (q.devices !== undefined) return postTopology(q, init)
   return api<TopologyGraph>(`/api/topology/?${topologyParams(q)}`, {
+    signal: init.signal,
+  })
+}
+
+// ── The Routing tab (`/api/topology/routing/`) ──────────────────────────
+
+/** A line layer of the Routing tab; each is an edge `type` too (the
+ * Circuits layer's lines are `circuit`, the Cables layer's `cable`). */
+export type RoutingLayer = "ebgp" | "ibgp" | "circuits" | "cables"
+
+/** A Routing card's lines (`filters.routing.fields`). */
+export type RoutingCardField =
+  "role" | "router_id" | "asn" | "loopback" | "site" | "primary_ip" | "status"
+
+/** The Routing tab's display a saved view keeps (`filters.routing`). */
+export interface RoutingDisplay {
+  mode?: "simple" | "detailed"
+  /** Each layer on or off; absent = its default. */
+  layers?: Partial<Record<RoutingLayer, boolean>>
+  /** The card lines; absent = the default list. */
+  fields?: RoutingCardField[]
+}
+
+/** A routing process on a router. */
+export interface RoutingProcess {
+  kind: "bgp" | "ospf" | "isis" | "eigrp" | "ldp" | "static"
+  id: string | null
+  vrf: string | null
+  router_id: string | null
+  asn?: number
+  asn_id?: string
+  cluster_id?: string | null
+  /** Static routes: how many. */
+  count?: number
+}
+
+export interface RoutingRouterData {
+  kind: "device" | "vm"
+  device_id: string | null
+  vm_id: string | null
+  name: string
+  role: { id: string; name: string; slug: string; color: string } | null
+  status_mini: (StatusMini & { is_default?: boolean }) | null
+  site: string | null
+  site_id: string | null
+  primary_ip: string | null
+  /** Runs a routing process (false: only the far end of a line). */
+  router: boolean
+  router_id: string | null
+  /** Its local ASes, one per BGP instance (table). */
+  asns: { asn: number; vrf: string | null }[]
+  /** The AS box it sits in. */
+  as_group: number | null
+  loopback: string | null
+  instances: RoutingProcess[]
+}
+
+export interface RoutingRef {
+  id: string
+  name: string
+}
+
+/** One BGP session as a line's panel lists it. */
+export interface RoutingSessionRow {
+  id: string
+  numid: number | null
+  name: string | null
+  /** The node whose session it is. */
+  node: string
+  vrf: string | null
+  local_asn: number | null
+  remote_asn: number | null
+  local_address: string | null
+  remote_address: string | null
+  interface: string | null
+  status_mini: (StatusMini & { is_default?: boolean }) | null
+  peer_group: RoutingRef | null
+  import_policy: RoutingRef | null
+  export_policy: RoutingRef | null
+  address_families: {
+    afi_safi: string
+    activate: boolean
+    import_policy: RoutingRef | null
+    export_policy: RoutingRef | null
+    maximum_prefix: number | null
+    route_reflector_client: boolean | null
+  }[]
+  maximum_prefix: number | null
+  bfd: boolean
+  bfd_profile: RoutingRef | null
+  keepalive: number | null
+  hold_time: number | null
+  route_reflector_client: boolean
+  cluster_id: string | null
+  rpki_caches: RoutingRef[]
+}
+
+export interface RoutingBgpData {
+  kind: "ebgp" | "ibgp" | null
+  vrf: string | null
+  address_families: string[]
+  /** The source end's AS, then the target's. */
+  a_asn: number | null
+  b_asn: number | null
+  pairs: { a: string; b: string }[]
+  sessions: RoutingSessionRow[]
+  /** iBGP: a route reflector at the source, its client at the target. */
+  rr: { reflector: string; client: string; cluster_id: string | null } | null
+  /** Only one end defines the session. */
+  one_sided: boolean
+}
+
+export interface RoutingCableData {
+  cables: {
+    id: string
+    numid: number | null
+    label: string | null
+    a: string | null
+    b: string | null
+  }[]
+}
+
+export type RoutingNode =
+  | { id: string; type: "router"; data: RoutingRouterData }
+  | { id: string; type: "provider_network"; data: TopoProviderNetworkData }
+
+/** A BGP line: eBGP or iBGP. */
+export interface RoutingBgpEdge<
+  TKind extends "ebgp" | "ibgp" = "ebgp" | "ibgp",
+> {
+  id: string
+  source: string
+  target: string
+  type: TKind
+  data: RoutingBgpData
+}
+
+export type RoutingEdge =
+  | RoutingBgpEdge<"ebgp">
+  | RoutingBgpEdge<"ibgp">
+  | {
+      id: string
+      source: string
+      target: string
+      type: "circuit"
+      data: NonNullable<TopoEdge["data"]>
+    }
+  | {
+      id: string
+      source: string
+      target: string
+      type: "cable"
+      data: RoutingCableData
+    }
+
+/** An AS box: the cards whose global table runs this AS. */
+export interface RoutingAsGroup {
+  id: string
+  asn: number
+  asn_id: string | null
+  /** The ASN's description, first line. */
+  name: string | null
+  nodes: string[]
+}
+
+export interface RoutingTopology {
+  nodes: RoutingNode[]
+  edges: RoutingEdge[]
+  as_groups: RoutingAsGroup[]
+  meta: {
+    /** The layers the caller may see. */
+    layers: Record<RoutingLayer, boolean>
+    requested: RoutingLayer[]
+  }
+}
+
+export type RoutingQuery = Omit<
+  TopologyQuery,
+  "include" | "card_fields" | "group_by" | "collapse_panels"
+> & { chassis?: string[]; layers?: RoutingLayer[] }
+
+/** The Routing tab's map, the query as a JSON body (a device set would
+ * overflow a URL). */
+export function fetchRoutingTopology(
+  q: RoutingQuery,
+  init: { signal?: AbortSignal } = {}
+): Promise<RoutingTopology> {
+  return api<RoutingTopology>("/api/topology/routing/", {
+    method: "POST",
+    body: JSON.stringify(q),
     signal: init.signal,
   })
 }

@@ -7,9 +7,9 @@ import type { EdgeProps } from "@xyflow/react"
 // card centre that brightens under the pointer. Its name is the canvas's
 // hover tip, like every other line's (see `bgpLabel`).
 
-type Box = { x: number; y: number; w: number; h: number }
+export type Box = { x: number; y: number; w: number; h: number }
 
-function box(node: ReturnType<typeof useInternalNode>): Box | null {
+export function box(node: ReturnType<typeof useInternalNode>): Box | null {
   if (!node) return null
   const { x, y } = node.internals.positionAbsolute
   return { x, y, w: node.measured.width ?? 0, h: node.measured.height ?? 0 }
@@ -17,7 +17,7 @@ function box(node: ReturnType<typeof useInternalNode>): Box | null {
 
 /** Where the centre-to-centre line leaves a card - so the line starts at
  * the card's border, not under its body. */
-function exitPoint(from: Box, to: Box) {
+export function exitPoint(from: Box, to: Box) {
   const c = { x: from.x + from.w / 2, y: from.y + from.h / 2 }
   const dx = to.x + to.w / 2 - c.x
   const dy = to.y + to.h / 2 - c.y
