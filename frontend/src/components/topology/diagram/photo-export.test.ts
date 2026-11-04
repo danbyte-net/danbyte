@@ -232,8 +232,9 @@ describe("photo captions in the exports", () => {
     const dom = new DOMParser().parseFromString(xml, "application/xml")
     const obj = dom.querySelector(`object[danbyte_id="${fwId}"]`)!
     const label = obj.getAttribute("label")!
+    // The default card lines: the role badge between name and lines.
     expect(label).toMatch(
-      /^<b>aarhus-fw1<\/b> <span style="[^"]*font-size:10px/
+      /^<b>aarhus-fw1<\/b> <span style="background-color:#[0-9a-f]{6};[^"]*">Firewall<\/span> <span style="[^"]*font-size:10px/
     )
     expect(label).toContain("· 10.196.227.1 · SN FOC1234</span>")
     expect(obj.querySelector("mxCell")!.getAttribute("style")).toContain(
@@ -405,7 +406,10 @@ describe("photo nodes in draw.io", () => {
     expect(style).toMatch(
       /points=\[\[[\d.]+,[\d.]+,0\](,\[[\d.]+,[\d.]+,0\]){3}\]/
     )
-    expect(obj.getAttribute("label")).toBe("aarhus-fw1")
+    // The bold name and its role badge (no card lines in the payload).
+    expect(obj.getAttribute("label")).toMatch(
+      /^<b>aarhus-fw1<\/b> <span style="background-color:#[0-9a-f]{6};[^"]*">Firewall<\/span>$/
+    )
     // The image box, not the caption under it.
     const fw = doc.nodes.find((n) => n.id === fwId)!
     const geo = obj.querySelector("mxGeometry")!
