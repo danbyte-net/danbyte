@@ -54,6 +54,23 @@ The stored AWX bearer token / webhook signing secret is **never** shown here.
 It is write-only on the API, so the page can only report whether one is set -
 to change it, edit the target and type a new one.
 
+### Bulk changes on the target list
+
+Tick rows in **Integrations → Automation targets** - with the `change` or
+`delete` grant - to reveal the bulk bar:
+
+- **Enable** and **Disable** switch every selected target on or off.
+- **Export** downloads the selected targets as CSV, Excel or JSON, without the
+  token.
+- **Edit** sets **Enabled** and **Auto on change**. The endpoint, kind and
+  token stay per target.
+- **Delete** first shows what would happen, then deletes the targets; their
+  past runs stay in **Deploy runs**.
+
+`POST /api/automation-targets/bulk-update/` needs `automationtarget.change`
+(`{ids, fields}` with `enabled`, `auto_on_change`);
+`POST /api/automation-targets/bulk-delete/` needs `automationtarget.delete`.
+
 ## What lives where
 
 Two systems, on purpose - **Danbyte does not run Ansible**:

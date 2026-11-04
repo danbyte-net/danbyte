@@ -70,6 +70,25 @@ right away and shows you the result - the response status code, or the error if 
 failed - so you can confirm the URL, headers, and TLS settings are correct before
 relying on it.
 
+## Bulk changes
+
+Tick rows in the webhook list - with the `change` or `delete` grant - to reveal
+the bulk bar:
+
+- **Enable** and **Disable** switch every selected webhook on or off.
+- **Export** downloads the selected webhooks as CSV, Excel or JSON. The signing
+  secret and the additional headers are write-only and never in the file.
+- **Edit** sets **Enabled** and the **On create / On update / On delete**
+  triggers on every selected webhook. The URL, secret and headers stay per
+  webhook.
+- **Delete** first shows what would happen, then deletes the webhooks.
+
+| Endpoint | Needs |
+|---|---|
+| `POST /api/webhooks/bulk-update/` | `webhook.change`; `{ids, fields}` with `enabled`, `on_create`, `on_update`, `on_delete` |
+| `GET /api/webhooks/bulk-edit-fields/` | `webhook.change` |
+| `POST /api/webhooks/bulk-delete/` | `webhook.delete`; `{ids, dry_run}` |
+
 ## Permissions and audit
 
 Webhooks are managed by users with the **Integrations** permission group, and

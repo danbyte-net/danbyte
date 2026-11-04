@@ -1,21 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { Send } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type Webhook } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { Webhook } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { useMe } from "@/lib/use-me"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
+import { buildWebhookColumns } from "@/components/columns/webhook-columns"
 import { WebhookDeleteDialog } from "@/components/webhook-delete-dialog"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { BulkFlagActions } from "@/components/bulk-flag-actions"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -52,112 +53,47 @@ function TestButton({ webhook }: { webhook: Webhook }) {
   )
 }
 
-function triggers(w: Webhook): string {
-  return (
-    [w.on_create && "create", w.on_update && "update", w.on_delete && "delete"]
-      .filter(Boolean)
-      .join(" · ") || "-"
-  )
-}
-
 export const Route = createFileRoute("/webhooks/")({ component: WebhooksPage })
+
+const ENDPOINT = "/api/webhooks/"
+const NOUN: [string, string] = ["webhook", "webhooks"]
 
 function WebhooksPage() {
   const { canDo } = useMe()
   const canAdd = canDo("webhook", "add")
+  const canEdit = canDo("webhook", "change")
+  const canDelete = canDo("webhook", "delete")
+  const selectable = canEdit || canDelete
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Webhook | null>(null)
+  const [selected, setSelected] = useState<Webhook[]>([])
 
   const query = useQuery({
     queryKey: ["webhooks", q],
     queryFn: () =>
       apiAll<Webhook>(
-        `/api/webhooks/?${new URLSearchParams({ search: q }).toString()}`
+        `${ENDPOINT}?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
 
   const rows = query.data?.results ?? []
   const onDelete = useCallback((w: Webhook) => setDeleting(w), [])
-  const columns = useMemo<ColumnDef<Webhook>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/webhooks/$id/edit"
-            params={{ id: row.original.id }}
-            className="link flex items-center gap-2 font-medium"
-          >
-            {row.original.name}
-            {!row.original.enabled && (
-              <Badge variant="secondary" className="text-[10px]">
-                disabled
-              </Badge>
-            )}
-          </Link>
-        ),
-      },
-      {
-        id: "url",
-        accessorKey: "payload_url",
-        header: "URL",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block font-mono text-[11px] text-muted-foreground">
-            {row.original.http_method} {row.original.payload_url}
-          </span>
-        ),
-      },
-      {
-        id: "types",
-        accessorFn: (w) => w.object_types.join(", "),
-        header: "Object types",
-        cell: ({ row }) => {
-          const ts = row.original.object_types
-          return (
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {ts.includes("*") ? "All" : ts.join(", ") || "-"}
-            </span>
-          )
+  const columns = useMemo(
+    () =>
+      buildWebhookColumns({
+        selection: selectable,
+        actions: {
+          editTo: "/webhooks/$id/edit",
+          editParams: (w) => ({ id: w.id }),
+          canEdit: () => canEdit,
+          onDelete,
+          canDelete: () => canDelete,
+          extra: (w) => <TestButton webhook={w} />,
         },
-      },
-      {
-        id: "triggers",
-        header: "Triggers",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {triggers(row.original)}
-          </span>
-        ),
-      },
-      {
-        id: "secret",
-        header: "Signed",
-        cell: ({ row }) =>
-          row.original.secret_set ? (
-            <Badge variant="secondary" className="text-[10px]">
-              HMAC
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "actions",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <RowActions
-            editTo="/webhooks/$id/edit"
-            editParams={{ id: row.original.id }}
-            onDelete={() => onDelete(row.original)}
-            extra={<TestButton webhook={row.original} />}
-          />
-        ),
-      },
-    ],
-    [onDelete]
+      }),
+    [onDelete, canEdit, canDelete, selectable]
   )
+  const clear = () => setSelected([])
 
   return (
     <ListPageShell
@@ -186,6 +122,30 @@ function WebhooksPage() {
         columns={columns}
         flexColumn="url"
         tableId="webhooks"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint={ENDPOINT}
+        noun={NOUN}
+        invalidate={[["webhooks"]]}
+        onCleared={clear}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="webhook"
+        actions={
+          canEdit && (
+            <BulkFlagActions
+              endpoint={ENDPOINT}
+              field="enabled"
+              ids={selected.map((w) => w.id)}
+              noun={NOUN}
+              invalidate={[["webhooks"]]}
+              onDone={clear}
+            />
+          )
+        }
       />
       <WebhookDeleteDialog
         item={deleting}
