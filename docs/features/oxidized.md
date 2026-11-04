@@ -208,6 +208,17 @@ management:
 Without *view config* on the target a pin gives you nothing to read, so an
 administrator who does not read configs can still map every node.
 
+### Many links at once
+
+Tick rows under **Linked nodes** to reveal the bulk bar:
+
+- **Export** downloads the selected links as CSV, Excel or JSON.
+- **Confirm** confirms the selected proposed links, each under the rules
+  above; the toast names a link that was refused and why.
+- **Delete** unlinks: it first shows what would happen, keeps the links of a
+  connection you may not change, with the reason, and unlinks the rest - each
+  node remembering its device or VM as a single unlink does.
+
 ## API
 
 All under `/api/oxidized/`, 404 while the integration is off.
@@ -220,6 +231,8 @@ All under `/api/oxidized/`, 404 while the integration is off.
 | `connections/<id>/unmatched/` | The nodes the last sync left unmatched, with reasons, and `warnings`: the links it kept despite a namesake. A reason names a device or VM only when the caller can view it; otherwise it reads "a device" or "a virtual machine". The same goes for the `sync/` response. |
 | `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), `POST` to pin (`connection_id`, `full_name`, and one of `device_id` or `virtual_machine_id`), `DELETE` to unlink. A link reads back `device` or `virtual_machine`, the other null, and `proposed`. Pinning and unlinking need *change* on the connection (403); see [Who can pin and unlink](#who-can-pin-and-unlink). |
 | `links/<id>/confirm/` | `POST`. Confirm a proposed link. 400 when it is not proposed or the confirm would show you a config you cannot read. |
+| `links/bulk-confirm/` | `POST {ids}`. Confirm each as `confirm/` does; answers `{confirmed, skipped: [{id, name, reason}]}`. |
+| `links/bulk-delete/` | `POST {ids, dry_run}`. Unlink each as `DELETE` does; a link of a connection you may not change is skipped with the reason. |
 | `devices/<id>/` | The nodes linked to a device. A proposed link is left out until confirmed. |
 | `devices/<id>/config/` | The current config. `?link=` picks a node, `?refresh=1` skips the cache. |
 | `devices/<id>/versions/` | The history, newest first. |

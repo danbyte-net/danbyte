@@ -30,6 +30,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from api.bulk_delete import SafeBulkDeleteMixin
 from api.models import Device, VirtualMachine
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
@@ -109,8 +110,12 @@ class OxidizedConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         })
 
 
-class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
-    """The mapping table: list, pin a node to a device, unlink."""
+class OxidizedNodeLinkViewSet(SafeBulkDeleteMixin, IntegrationToggleMixin, TenantScopedViewSet):
+    """The mapping table: list, pin a node to a device, unlink.
+
+    ``bulk-delete`` unlinks the selection as the single unlink does, keeping
+    the links of a connection the caller may not change; ``bulk-confirm``
+    confirms each proposed link as ``confirm`` does."""
 
     integration_keys = ("oxidized",)
     http_method_names = ["get", "post", "delete", "head", "options"]
@@ -119,7 +124,22 @@ class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     ).order_by("full_name")
     serializer_class = OxidizedNodeLinkSerializer
     #: Confirming a proposed link is a pin in effect.
-    rbac_action_map = {"confirm": "add"}
+    rbac_action_map = {"confirm": "add", "bulk_confirm": "add", "bulk_delete": "delete"}
+
+    def bulk_blockers(self, rows):
+        out = super().bulk_blockers(rows)
+        allowed: dict = {}
+        for link in rows:
+            conn = link.connection
+            if conn.pk not in allowed:
+                allowed[conn.pk] = rbac.can_act_on(
+                    self.request.user, conn.tenant, "oxidizedconnection", "change", conn
+                )
+            if not allowed[conn.pk]:
+                out.setdefault(
+                    link.pk, "Unlinking needs the change permission on its connection."
+                )
+        return out
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -147,7 +167,11 @@ class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         ``add`` on the link in its site, and no config the confirmer could not
         already read."""
         link = self.get_object()
-        user, conn = request.user, link.connection
+        self._confirm(link)
+        return Response(self.get_serializer(link).data)
+
+    def _confirm(self, link) -> None:
+        user, conn = self.request.user, link.connection
         if not rbac.restrict_queryset(
             OxidizedNodeLink.objects.filter(pk=link.pk), user, conn.tenant,
             "oxidizednodelink", "add",
@@ -164,7 +188,42 @@ class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         )
         link.proposed = False
         link.save(update_fields=["proposed", "updated_at"])
-        return Response(self.get_serializer(link).data)
+
+    @extend_schema(
+        request=inline_serializer(
+            name="OxidizedBulkConfirmRequest",
+            fields={"ids": serializers.ListField(child=serializers.UUIDField())},
+        ),
+        responses=inline_serializer(
+            name="OxidizedBulkConfirmResponse",
+            fields={
+                "confirmed": serializers.ListField(child=serializers.UUIDField()),
+                "skipped": serializers.ListField(child=serializers.DictField()),
+            },
+        ),
+    )
+    @action(detail=False, methods=["post"], url_path="bulk-confirm")
+    def bulk_confirm(self, request):
+        """Confirm each proposed link of the selection as ``confirm`` does;
+        a link it would refuse is skipped with the reason."""
+        from rest_framework.exceptions import APIException
+
+        ids = self._bulk_ids(request)
+        confirmed, skipped = [], []
+        for link in self.get_queryset().filter(pk__in=ids):
+            try:
+                self._confirm(link)
+            except APIException as exc:
+                detail = exc.detail
+                if isinstance(detail, dict):
+                    detail = next(iter(detail.values()), "")
+                if isinstance(detail, list):
+                    detail = detail[0] if detail else ""
+                skipped.append({"id": str(link.pk), "name": link.full_name,
+                                "reason": str(detail)})
+                continue
+            confirmed.append(str(link.pk))
+        return Response({"confirmed": confirmed, "skipped": skipped})
 
 
 # ─── a device's or a virtual machine's configuration ─────────────────────────
