@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Pencil } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { BulkExport } from "@/components/bulk-export"
 import { ServerBulkEditDialog } from "@/components/bulk-edit-dialog"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 
@@ -17,6 +18,8 @@ export interface SafeBulkEditBarProps<T extends { id: string }> {
   onCleared: () => void
   canEdit?: boolean
   canDelete?: boolean
+  /** Object slug for "Export" of the selection (round-trip export). */
+  ioType?: string
 }
 
 /**
@@ -32,6 +35,7 @@ export function SafeBulkEditBar<T extends { id: string }>({
   onCleared,
   canEdit = true,
   canDelete = true,
+  ioType,
 }: SafeBulkEditBarProps<T>) {
   const [editOpen, setEditOpen] = useState(false)
   return (
@@ -44,15 +48,22 @@ export function SafeBulkEditBar<T extends { id: string }>({
         onCleared={onCleared}
         canDelete={canDelete}
         actions={
-          canEdit ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2"
-              onClick={() => setEditOpen(true)}
-            >
-              <Pencil className="mr-1 h-3 w-3" /> Edit
-            </Button>
+          ioType || canEdit ? (
+            <>
+              {ioType && (
+                <BulkExport ioType={ioType} ids={selected.map((r) => r.id)} />
+              )}
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  onClick={() => setEditOpen(true)}
+                >
+                  <Pencil className="mr-1 h-3 w-3" /> Edit
+                </Button>
+              )}
+            </>
           ) : undefined
         }
       />

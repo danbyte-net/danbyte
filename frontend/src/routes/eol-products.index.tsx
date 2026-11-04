@@ -1,18 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
 import type { EolCustomProduct } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
-import { timeAgoColumn } from "@/components/cells/time-ago"
+import { TableActions } from "@/components/table-actions"
+import { buildEolProductColumns } from "@/components/columns/eol-product-columns"
 import { useEolSettings } from "@/components/cells/eol-cell"
 import { EolProductDeleteDialog } from "@/components/eol-product-delete-dialog"
-import { RowActions } from "@/components/row-actions"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -25,11 +25,13 @@ export const Route = createFileRoute("/eol-products/")({
 function EolProductsPage() {
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<EolCustomProduct | null>(null)
+  const [selected, setSelected] = useState<EolCustomProduct[]>([])
   const { canDo } = useMe()
   const settings = useEolSettings()
   const canAdd = canDo("eolproduct", "add")
   const canEdit = canDo("eolproduct", "change")
   const canDelete = canDo("eolproduct", "delete")
+  const selectable = canEdit || canDelete
 
   const query = useQuery({
     queryKey: ["eol-custom-products", q],
@@ -42,12 +44,25 @@ function EolProductsPage() {
 
   const handleDelete = useCallback((p: EolCustomProduct) => setDeleting(p), [])
   const columns = useMemo(
-    () => eolProductColumns({ onDelete: handleDelete, canEdit, canDelete }),
-    [handleDelete, canEdit, canDelete]
+    () =>
+      buildEolProductColumns<EolCustomProduct>({
+        selection: selectable,
+        actions: {
+          editTo: "/eol-products/$id/edit",
+          editParams: (p) => ({ id: p.id }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: () => canDelete,
+        },
+      }),
+    [handleDelete, canEdit, canDelete, selectable]
   )
   const {
     rail,
     filteredRows,
+    snapshot,
+    restore,
+    activeCount,
     columns: wiredColumns,
   } = useUrlTableFilters(columns, rows)
 
@@ -56,17 +71,24 @@ function EolProductsPage() {
       title="End-of-life products"
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
+      savedViews={{
+        objectType: "eolproduct",
+        filters: { snapshot, restore, activeCount },
+      }}
       search={{
         value: q,
         onChange: setQ,
         placeholder: "Filter by name, key, notes…",
       }}
       actions={
-        canAdd && (
-          <Button size="sm" asChild>
-            <Link to="/eol-products/new">Add product</Link>
-          </Button>
-        )
+        <>
+          <TableActions ioType="eolproduct" />
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/eol-products/new">Add product</Link>
+            </Button>
+          )}
+        </>
       }
       query={query}
     >
@@ -80,6 +102,18 @@ function EolProductsPage() {
         columns={wiredColumns}
         flexColumn="notes"
         tableId="eol-products"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/eol/custom-products/"
+        noun={["product", "products"]}
+        invalidate={[["eol-custom-products"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="eolproduct"
       />
       <EolProductDeleteDialog
         product={deleting}
@@ -87,92 +121,4 @@ function EolProductsPage() {
       />
     </ListPageShell>
   )
-}
-
-function eolProductColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-}: {
-  onDelete: (p: EolCustomProduct) => void
-  canEdit: boolean
-  canDelete: boolean
-}): ColumnDef<EolCustomProduct>[] {
-  return [
-    {
-      id: "label",
-      accessorKey: "label",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link
-          to="/eol-products/$id"
-          params={{ id: row.original.id }}
-          className="link font-medium"
-        >
-          {row.original.label}
-        </Link>
-      ),
-    },
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Key" />,
-      cell: ({ row }) => (
-        <span className="font-mono text-xs">{row.original.name}</span>
-      ),
-    },
-    {
-      id: "cycles",
-      accessorKey: "cycle_count",
-      header: ({ column }) => <SortHeader column={column} label="Cycles" />,
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.cycle_count}</span>
-      ),
-    },
-    {
-      id: "applications",
-      accessorKey: "application_count",
-      header: ({ column }) => (
-        <SortHeader column={column} label="Applications" />
-      ),
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.application_count}</span>
-      ),
-    },
-    {
-      id: "platforms",
-      accessorKey: "platform_count",
-      header: ({ column }) => <SortHeader column={column} label="Platforms" />,
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.platform_count}</span>
-      ),
-    },
-    {
-      id: "notes",
-      accessorKey: "notes",
-      header: "Notes",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.notes || "-"}
-        </span>
-      ),
-    },
-    timeAgoColumn<EolCustomProduct>({
-      id: "updated",
-      header: "Updated",
-      get: (r) => r.updated_at,
-      align: "right",
-    }),
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/eol-products/$id/edit" : undefined}
-          editParams={{ id: row.original.id }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-        />
-      ),
-    },
-  ]
 }

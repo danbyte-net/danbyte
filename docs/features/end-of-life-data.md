@@ -147,6 +147,32 @@ touches them, and they are kept while the feature is off (nothing reads them
 until it is on again). A product an application or a platform still names
 cannot be deleted - map those to another product first.
 
+### The products list {#custom-products-list}
+
+**DCIM → End-of-life products** is a list like the others. The search box
+matches name, key and notes; the filter rail narrows by:
+
+| Facet | Narrows to |
+|---|---|
+| Cycles | A range of cycle counts - a minimum of 1 keeps the products with cycles. |
+| Applications | *In use* by at least one application, or *Unused*. |
+| Platforms | *In use* by at least one platform, or *Unused*. |
+
+Ticking both *Unused* boxes leaves the products nothing names - the ones a
+delete would take. Saved views keep the facets, and the Columns menu offers
+the remaining fields (Link, Created) as extra columns. **Import / Export**
+round-trips the products as a file: a row is matched by its key, and a new row
+without one gets a key made from its name.
+
+Tick rows - with the `change` or `delete` grant - to reveal the bulk bar:
+
+- **Export** downloads the selected products as CSV, Excel or JSON.
+- **Edit** sets the **Link** or the **Notes** on every selected product. The
+  key and the cycles stay per product.
+- **Delete** first shows what would happen: a product an application or a
+  platform still names is kept, with the same reason its own delete gives,
+  and the rest go, each with a change-log entry.
+
 Permissions are the **End-of-life products** object type (`eolproduct`, under
 Governance): view, add, change and delete. Picking a custom product for a
 platform or an application needs only that object's own change permission,
@@ -238,6 +264,9 @@ the feature is off these rules report nothing.
 | `DELETE /api/applications/<id>/eol/` | `application.change` |
 | `GET/POST /api/eol/custom-products/` | `eolproduct.view` / `eolproduct.add`; the tenant's custom products. `?search=` |
 | `GET/PATCH/PUT/DELETE /api/eol/custom-products/<id>/` | `eolproduct.view` / `change` / `delete`; delete answers `409` while an application or platform names it |
+| `POST /api/eol/custom-products/bulk-delete/` | `eolproduct.delete`; `{ids, dry_run}`. A product in use is skipped with the single delete's reason |
+| `POST /api/eol/custom-products/bulk-update/` | `eolproduct.change`; `{ids, fields}` with `link` and/or `notes` |
+| `GET /api/eol/custom-products/bulk-edit-fields/` | `eolproduct.change`; the fields the bulk edit offers |
 
 The tenant endpoints answer `404` while the feature is off; the custom
 products endpoint works either way.
