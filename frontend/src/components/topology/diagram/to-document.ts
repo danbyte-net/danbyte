@@ -328,6 +328,7 @@ export function photoDocNode(
     ...(nubs.length ? { nubs } : {}),
     ...(opts.link ? { link: opts.link } : {}),
   }
+  const badgeHex = p.badge ? normalizeHex(p.badge.color) : null
   let pill: DiagramPill | undefined
   let pillRect: Rect | undefined
   // A pill that shows takes back the room its lines may have used.
@@ -350,6 +351,15 @@ export function photoDocNode(
     kind: "photo",
     title: p.name,
     ...(pill ? { pill } : {}),
+    ...(p.badge && cap.badge
+      ? {
+          badge: {
+            text: p.badge.text,
+            fill: badgeHex ?? NEUTRAL_CARD.fill,
+            ink: badgeHex ? inkOn(badgeHex) : NEUTRAL_CARD.ink,
+          },
+        }
+      : {}),
     photo: {
       href: shown.url!,
       x,
@@ -368,6 +378,16 @@ export function photoDocNode(
       ...captionPlace(cap, x, y, opts.measure ?? measureText),
       lines: [],
       ...(pillRect ? { pill: pillRect } : {}),
+      ...(p.badge && cap.badge
+        ? {
+            badge: {
+              x: x + cap.badge.x,
+              y: y + cap.top + (PHOTO.CAPTION_LH - PILL.H) / 2,
+              w: cap.badge.w,
+              h: PILL.H,
+            },
+          }
+        : {}),
       ...(cap.tail
         ? {
             tail: {
@@ -423,7 +443,9 @@ function faceplateCard(
   const box = cardLayout(
     {
       name: p.name,
-      lines: p.lines.map((text, i) => ({ key: String(i), text })),
+      lines: (p.badge ? [p.badge.text, ...p.lines] : p.lines).map(
+        (text, i) => ({ key: String(i), text })
+      ),
       ...(opts.pill
         ? { pill: { kind: opts.pill.kind, text: opts.pill.text } }
         : {}),

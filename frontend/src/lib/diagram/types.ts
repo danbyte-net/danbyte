@@ -61,6 +61,9 @@ export interface DiagramPlace {
   /** A photo's caption: its card lines after the name, as drawn - cut to
    * fit, `text-anchor: start` at `x`, on baseline `y`. */
   tail?: Pt & { text: string }
+  /** A photo's role badge (`DiagramNode.badge`): its box, after the name
+   * on the caption's row. */
+  badge?: Rect
   /** A photo's whole caption - the name and every card line - when the
    * drawn one is cut: its tooltip, where the format has one. */
   full?: string
@@ -82,6 +85,10 @@ export interface DiagramNode extends Rect {
    * its caption draws them from `place.tail`. */
   lines: string[]
   pill?: DiagramPill
+  /** A photo whose card lines show its role: the role as a badge after
+   * its name, filled with the role colour (a photo has no card fill).
+   * Drawn at `place.badge`. */
+  badge?: { text: string; fill: string; ink: string }
   /** Detailed mode only; absent or empty in Simple. */
   nubs?: DiagramNub[]
   /** `kind: "photo"`: the image box inside the node box. */

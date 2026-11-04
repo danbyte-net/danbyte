@@ -204,7 +204,9 @@ names it at any zoom.
 The cards fetch their lines with the map (`include=card`, on the Hierarchy
 tab too), and the monitoring states load whenever a card lists the
 monitoring pill - not only with the sidebar open. The legend lists the roles on the map in their card
-colors, and the monitoring pill when a card can show it.
+colors - those the map draws in colour: on a card, or on a photo's role
+badge (a map of photos without badges lists none) - and the monitoring
+pill when a card can show it.
 
 ### Card lines
 
@@ -421,6 +423,14 @@ greyed out (it would change nothing).
   wide (a half-width type half that), at the photo's own proportions. The
   device's name is a caption under it, its card lines and the status pill
   after it, with no card fill.
+- **Role badge:** a photo has no card fill, so when its
+  [card lines](#card-lines) list **Role** the role is a badge in the
+  role's colour right after the name, before the other lines - on screen
+  and in the SVG, PNG and PDF; in draw.io a small coloured label in the
+  caption. It wraps with the name (the name is never cut). Without Role in
+  the lines a photo shows no role colour, and the legend leaves out the
+  roles only photos carry; a single device drawn as its photo on a card
+  map follows the same rule.
 - **Own size:** a device that is not rack gear - a DIN-rail switch, a
   desktop firewall - can be drawn at its photo's own size instead: its true
   size against a 19-inch device when the photo is
