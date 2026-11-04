@@ -213,6 +213,7 @@ export type CanvasBandEdit =
   | { type: "resize"; id: string; rect: Rect }
   | { type: "layers"; id: string; by: BandBy; ids: string[] }
   | { type: "layout"; id: string; layout: BandLayout }
+  | { type: "per_row"; id: string; perRow: number | undefined }
   | { type: "merge"; id: string }
   | { type: "split"; id: string }
 

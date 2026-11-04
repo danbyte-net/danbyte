@@ -1015,8 +1015,9 @@ role and stacks them: in the [Levels](#levels-role-tiers) order when you have
 set one (roles bonded to one level share a band, "Spine + Border"), otherwise
 in the order the layout ranked them, core on top. Devices with no role get a
 band of their own at the bottom. Each band's cards stand side by side in the
-order they stood, wrapping onto another line past 12 cards; every band is as
-wide as the widest. In **Detailed**, rows keep room for the port names (and
+order they stood, wrapping onto another line past 12 cards (or a line too
+wide) unless the band's [Cards per row](#cards-per-row) says otherwise;
+every band is as wide as the widest. In **Detailed**, rows keep room for the port names (and
 addresses) on the cables: a clear run above and below a row's cards where
 its cables leave that way, lanes between rows for the cables to turn in, and
 cabled cards side by side far enough apart for a name at each end - the
@@ -1109,6 +1110,21 @@ rows' edges. Side bands can stand side by side.
 - **Delete** it from the toolbar or by right-clicking it (**Delete**); its cards stay
   where they are. **Arrange ▸ Clear bands** removes every band (after a
   question when some were drawn by hand).
+
+**Cards per row.** Right-click a row → **Cards per row** sets how many cards
+stand on one line before the band wraps onto another:
+
+- **Auto** (the default) wraps past 12 cards, or sooner when the line gets
+  too wide.
+- **All on one line** never wraps - a leaf band of 20 switches stays one
+  line, however wide.
+- **A number** (2 to 24 in the menu) wraps past exactly that many cards,
+  however wide they are.
+
+The band is laid out again where it stands, the rows under it moving up or
+down with their cards, as one undo step. **Arrange ▸ Bands by role** (or
+*by type*) and **Reset layout** keep a band's setting when they rebuild it,
+and it saves with the view.
 
 A card belongs to the band its centre is in - nothing else is stored - so
 you can drag a card into another band, and the draw.io file nests it
@@ -2178,7 +2194,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto) and `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
 | `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |
