@@ -1,4 +1,9 @@
-import type { RoutingCardField, RoutingTopology } from "@/lib/api"
+import type {
+  RoutingCardField,
+  RoutingEdge,
+  RoutingLayer,
+  RoutingTopology,
+} from "@/lib/api"
 import type { LegendItem } from "@/components/map-legend"
 import { documentBounds } from "@/lib/diagram/geometry"
 import { measureText } from "@/lib/diagram/measure"
@@ -29,6 +34,12 @@ import {
   CIRCUIT_COLOR,
   CIRCUIT_DASH,
   IBGP_COLOR,
+  ISIS_COLOR,
+  ISIS_DASH,
+  OSPF_COLOR,
+  OSPF_DASH,
+  ROUTING_LAYERS,
+  STATIC_COLOR,
   layerOf,
   routerCardInput,
   routingEdgeLabel,
@@ -41,8 +52,14 @@ import type { RoutingMode } from "./routing-model"
 // where its cards stand, never from the screen. The cards are the
 // Diagram's cards (cardLayout: the name whole), the AS boxes its zones,
 // each line in its layer's look with its label at the middle and, for a
-// route reflector, an arrowhead at its client. Sessions sit on draw.io's
-// BGP layer; circuits and cables on the main one.
+// route reflector or a static route, an arrowhead at its far end. In
+// draw.io each routing layer is a layer of its own (eBGP, iBGP, OSPF,
+// IS-IS, Static, Circuits, Cables), to switch on and off there too.
+
+/** A routing layer's draw.io layer name. */
+export const LAYER_NAMES: Record<RoutingLayer, string> = Object.fromEntries(
+  ROUTING_LAYERS.map((l) => [l.key, l.label])
+) as Record<RoutingLayer, string>
 
 /** A cable drawn faint on screen, pre-mixed for paper (no opacity). */
 export const PRINT_CABLE = "#cbd5e1"
@@ -62,10 +79,18 @@ export interface RoutingDocumentInput {
   lanes?: ReadonlyMap<string, number>
 }
 
-/** The link back for a line: its first session, its circuit or cable. */
+/** The link back for a line: its first session, adjacency's instance or
+ * route, its circuit or cable. */
 function linePath(e: RoutingTopology["edges"][number]): string | null {
   if (e.type === "ebgp" || e.type === "ibgp")
     return e.data.sessions[0] ? `/bgp-sessions/${e.data.sessions[0].id}` : null
+  if (e.type === "ospf" || e.type === "isis")
+    // No page of its own: the router at its source.
+    return e.source.startsWith("dev:")
+      ? `/devices/${e.source.slice(4)}`
+      : `/virtual-machines/${e.source.slice(3)}`
+  if (e.type === "static")
+    return e.data.routes[0] ? `/static-routes/${e.data.routes[0].id}` : null
   if (e.type === "circuit")
     return e.data.circuit ? `/circuits/${e.data.circuit.id}` : null
   return e.data.cables[0] ? `/cables/${e.data.cables[0].id}` : null
@@ -127,7 +152,12 @@ export function routingDocument(
   }
 
   const links: DiagramLink[] = []
-  for (const e of input.map.edges) {
+  // Layer by layer, cables at the back: draw.io stacks its layers in the
+  // order they come.
+  const rank = (e: RoutingEdge) =>
+    -ROUTING_LAYERS.findIndex((l) => l.key === layerOf(e))
+  const edges = [...input.map.edges].sort((x, y) => rank(x) - rank(y))
+  for (const e of edges) {
     const s = rects.get(e.source)
     const t = rects.get(e.target)
     if (!s || !t) continue
@@ -168,6 +198,7 @@ export function routingDocument(
         }
       )
     )
+    links[links.length - 1].layer = LAYER_NAMES[layer]
   }
 
   const bands = regionBands(
@@ -196,6 +227,29 @@ export function routingLegendRows(
       label: "iBGP · RR → client",
       color: IBGP_COLOR,
       width: 1.25,
+    })
+  if (has("ospf"))
+    rows.push({
+      kind: "line",
+      label: "OSPF",
+      color: OSPF_COLOR,
+      width: 2,
+      dash: OSPF_DASH,
+    })
+  if (has("isis"))
+    rows.push({
+      kind: "line",
+      label: "IS-IS",
+      color: ISIS_COLOR,
+      width: 2,
+      dash: ISIS_DASH,
+    })
+  if (has("static"))
+    rows.push({
+      kind: "line",
+      label: "Static → next hop",
+      color: STATIC_COLOR,
+      width: 1,
     })
   if (has("circuit"))
     rows.push({

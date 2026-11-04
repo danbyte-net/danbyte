@@ -45,6 +45,7 @@ import {
   arrangeByAs,
   cardsInside,
   edgeLanes,
+  isFlagged,
   nodeSizes,
   routerBox,
   routingEdgeLabel,
@@ -270,6 +271,7 @@ const Inner = forwardRef<RoutingCanvasHandle, RoutingCanvasProps>(
             label: routingEdgeLabel(e),
             lane: lanes.get(e.id) ?? 0,
             dimmed,
+            flagged: isFlagged(e, settings),
           } satisfies RoutingEdgeData,
         }
       })
@@ -284,6 +286,7 @@ const Inner = forwardRef<RoutingCanvasHandle, RoutingCanvasProps>(
       lanes,
       settings.mode,
       settings.fields,
+      settings.checks,
     ])
 
     const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes)
@@ -458,6 +461,11 @@ const Inner = forwardRef<RoutingCanvasHandle, RoutingCanvasProps>(
             (a.position.y + b.position.y) / 2,
             { zoom: 1, duration: 500 }
           )
+          setEdges((cur) =>
+            cur.map((x) =>
+              x.selected !== (x.id === id) ? { ...x, selected: x.id === id } : x
+            )
+          )
         },
         focusZone: (box) => {
           void flow.fitBounds(
@@ -494,7 +502,17 @@ const Inner = forwardRef<RoutingCanvasHandle, RoutingCanvasProps>(
           )
         },
       }),
-      [flow, map, sizes, shownZones, settings, lanes, setNodes, arrangement]
+      [
+        flow,
+        map,
+        sizes,
+        shownZones,
+        settings,
+        lanes,
+        setNodes,
+        setEdges,
+        arrangement,
+      ]
     )
 
     return (

@@ -4,12 +4,15 @@ import { Crosshair } from "lucide-react"
 import type {
   RoutingBgpData,
   RoutingCableData,
+  RoutingCheckKind,
   RoutingEdge,
+  RoutingIgpEnd,
   RoutingNode,
   RoutingProcess,
   RoutingRef,
   RoutingRouterData,
   RoutingSessionRow,
+  RoutingStaticData,
 } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { StatusBadge } from "@/components/status-badge"
@@ -18,7 +21,7 @@ import { OpenLink } from "@/components/open-link"
 import { PanelRow, PanelSection, PanelShell } from "@/components/map-panel"
 import { Badge } from "@/components/ui/badge"
 import { CircuitPanel, ProviderNetworkPanel } from "../detail-panels"
-import { afShort } from "./routing-model"
+import { CHECK_LABELS, afShort, isisLevel } from "./routing-model"
 
 // The Routing tab's panels, in the shared map PanelShell: a router's
 // (router ID, ASes, loopback, the processes it runs) and a line's - for a
@@ -160,6 +163,16 @@ export function RoutingEdgePanel({
         onClose={onClose}
       />
     )
+  if (edge.type === "ospf" || edge.type === "isis")
+    return <IgpLinePanel edge={edge} name={name} onClose={onClose} />
+  if (edge.type === "static")
+    return (
+      <StaticLinePanel
+        data={edge.data}
+        title={`${name(edge.source)} → ${name(edge.target)}`}
+        onClose={onClose}
+      />
+    )
   return (
     <BgpLinePanel
       kind={edge.type}
@@ -231,6 +244,9 @@ function BgpLinePanel({
           <Badge variant="warning">One side only</Badge>
         </PanelRow>
       )}
+      <Problems
+        kinds={(d.problems ?? []).filter((k) => k !== "bgp_one_sided")}
+      />
       {d.sessions.map((s) => (
         <SessionSection key={s.id} s={s} owner={name(s.node)} />
       ))}
@@ -335,6 +351,215 @@ function SessionSection({ s, owner }: { s: RoutingSessionRow; owner: string }) {
         </PanelRow>
       )}
     </PanelSection>
+  )
+}
+
+/** The Checks items on a line, as warning badges. */
+function Problems({ kinds }: { kinds: readonly RoutingCheckKind[] }) {
+  if (!kinds.length) return null
+  return (
+    <PanelRow label="Checks">
+      <span className="flex flex-wrap gap-1">
+        {kinds.map((k) => (
+          <Badge key={k} variant="warning">
+            {CHECK_LABELS[k]}
+          </Badge>
+        ))}
+      </span>
+    </PanelRow>
+  )
+}
+
+/** Two ends' values, "10 ⇄ 20", or one when they agree. */
+function both(
+  a: string | number | null | undefined,
+  b: string | number | null | undefined
+): string | null {
+  const x = a ?? null
+  const y = b ?? null
+  if (x === null && y === null) return null
+  return x === y ? String(x) : `${x ?? "-"} ⇄ ${y ?? "-"}`
+}
+
+function CatalogLink({
+  to,
+  kind,
+}: {
+  to: RoutingRef | null
+  kind: "bfd" | "keychain"
+}) {
+  if (!to) return null
+  return kind === "bfd" ? (
+    <Link to="/bfd-profiles/$id" params={{ id: to.id }} className="link">
+      {to.name}
+    </Link>
+  ) : (
+    <Link to="/routing-keychains/$id" params={{ id: to.id }} className="link">
+      {to.name}
+    </Link>
+  )
+}
+
+/** One adjacency's end: its interface, BFD and authentication. */
+function IgpEndRows({ end, label }: { end: RoutingIgpEnd; label: string }) {
+  return (
+    <>
+      <PanelRow label={label}>
+        <span className="font-mono">{end.interface ?? "?"}</span>
+        {end.passive && (
+          <span className="text-muted-foreground"> · passive</span>
+        )}
+        {end.network_type && (
+          <span className="text-muted-foreground"> · {end.network_type}</span>
+        )}
+      </PanelRow>
+      <PanelRow label="BFD">
+        {end.bfd ? (
+          end.bfd_profile ? (
+            <CatalogLink to={end.bfd_profile} kind="bfd" />
+          ) : (
+            "On"
+          )
+        ) : (
+          "Off"
+        )}
+      </PanelRow>
+      {end.authentication && (
+        <PanelRow label="Auth">
+          {end.authentication.toUpperCase()}
+          {end.keychain && (
+            <>
+              {" · "}
+              <CatalogLink to={end.keychain} kind="keychain" />
+            </>
+          )}
+        </PanelRow>
+      )}
+    </>
+  )
+}
+
+function IgpLinePanel({
+  edge,
+  name,
+  onClose,
+}: {
+  edge: Extract<RoutingEdge, { type: "ospf" | "isis" }>
+  name: (id: string) => string
+  onClose: () => void
+}) {
+  const ospf = edge.type === "ospf"
+  const d = edge.data
+  return (
+    <PanelShell
+      label={ospf ? "OSPF" : "IS-IS"}
+      title={`${name(edge.source)} ⇄ ${name(edge.target)}`}
+      onClose={onClose}
+    >
+      {edge.type === "ospf" ? (
+        <PanelRow label="Area">
+          {both(edge.data.areas[0], edge.data.areas[1])}
+          {edge.data.version === 3 && " · OSPFv3"}
+        </PanelRow>
+      ) : (
+        <PanelRow label="Level">
+          {edge.data.level !== null
+            ? isisLevel(edge.data.level)
+            : `${isisLevel(edge.data.levels[0])} ⇄ ${isisLevel(edge.data.levels[1])}`}
+        </PanelRow>
+      )}
+      {d.vrf && <PanelRow label="VRF">{d.vrf}</PanelRow>}
+      <Problems kinds={d.problems ?? []} />
+      {d.links.map((l, i) => {
+        const a = l.a
+        const b = l.b
+        const cost = ospf ? both(a.cost, b.cost) : both(a.metric, b.metric)
+        return (
+          <PanelSection
+            key={`${a.id}|${b.id}`}
+            label={`${d.links.length > 1 ? `${i + 1}. ` : ""}${a.interface ?? "?"} ⇄ ${b.interface ?? "?"}`}
+          >
+            <PanelRow label="Via">
+              {l.via === "cable" && l.cable_id ? (
+                <Link
+                  to="/cables/$id"
+                  params={{ id: l.cable_id }}
+                  className="link"
+                >
+                  Cable
+                </Link>
+              ) : (
+                <span className="font-mono">{l.subnet}</span>
+              )}
+            </PanelRow>
+            {cost !== null && (
+              <PanelRow label={ospf ? "Cost" : "Metric"}>
+                <span className="num">{cost}</span>
+              </PanelRow>
+            )}
+            {ospf && both(a.hello, b.hello) !== null && (
+              <PanelRow label="Hello / dead">
+                <span className="num">
+                  {both(a.hello, b.hello)} / {both(a.dead, b.dead) ?? "-"} s
+                </span>
+              </PanelRow>
+            )}
+            {ospf && both(a.mtu, b.mtu) !== null && (
+              <PanelRow label="MTU">
+                <span className="num">{both(a.mtu, b.mtu)}</span>
+                {(a.mtu_ignore || b.mtu_ignore) && (
+                  <span className="text-muted-foreground"> · ignored</span>
+                )}
+              </PanelRow>
+            )}
+            {!ospf && both(a.level, b.level) !== null && (
+              <PanelRow label="Levels">{both(a.level, b.level)}</PanelRow>
+            )}
+            <IgpEndRows end={a} label={name(a.node)} />
+            <IgpEndRows end={b} label={name(b.node)} />
+          </PanelSection>
+        )
+      })}
+    </PanelShell>
+  )
+}
+
+function StaticLinePanel({
+  data: d,
+  title,
+  onClose,
+}: {
+  data: RoutingStaticData
+  title: string
+  onClose: () => void
+}) {
+  const more = d.count - d.routes.length
+  return (
+    <PanelShell label="Static" title={title} onClose={onClose}>
+      {d.vrf && <PanelRow label="VRF">{d.vrf}</PanelRow>}
+      <PanelSection label={`Routes · ${d.count}`}>
+        <div className="divide-y divide-border">
+          {d.routes.map((r) => (
+            <div key={r.id} className="flex items-baseline gap-2 py-1">
+              <Link
+                to="/static-routes/$id"
+                params={{ id: r.id }}
+                className="link font-mono"
+              >
+                {r.prefix}
+              </Link>
+              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+                via {r.next_hop}
+                {r.distance !== null && ` · ${r.distance}`}
+              </span>
+            </div>
+          ))}
+        </div>
+        {more > 0 && (
+          <p className="pt-1 text-muted-foreground">and {more} more</p>
+        )}
+      </PanelSection>
+    </PanelShell>
   )
 }
 

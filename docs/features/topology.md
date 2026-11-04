@@ -605,8 +605,8 @@ exported as "Core - physical" on the Diagram and "Core - routing" here.
 
 **Routers.** A card is a device or a VM that runs a routing process (a BGP,
 OSPF, IS-IS, EIGRP or LDP instance, or a static route) that you may view,
-or a device at the far end of a BGP session from one; such a far end has a
-dashed edge. Cards are the Diagram's: the role's color, the name bold and
+or a device at the far end of a BGP session or a static route's next hop
+from one; such a far end has a dashed edge. Cards are the Diagram's: the role's color, the name bold and
 never cut (see [Names are never cut](#diagram-view)), and under it the
 card lines - by default the **router ID** (`RID 10.255.0.1`), the **ASNs**
 (the local AS of each BGP instance, a VRF's AS with its VRF in brackets)
@@ -639,16 +639,57 @@ a box keeps the whole arrangement - every card and box - as one undo step.
 |---|---|---|
 | **eBGP** | solid and thick, one color per AS pair | `AS65001 ⇄ AS65050`, then the address families (`v4`, `v6`, `vpnv4`, `evpn`…) and the VRF |
 | **iBGP** | thin; from a route reflector to its client, an arrow at the client | the families, `RR client` and the cluster ID - only when there is more to say than IPv4 unicast |
+| **OSPF** | dashed, teal | `area 0` (`area 0 ⇄ 1` when the ends differ), `v3` for OSPFv3, `2x` for several links, the VRF; under it `cost 10 ⇄ 20` when the costs each way differ |
+| **IS-IS** | dotted, purple | the level (`L1`, `L2`, `L1-2`; `L1 ⇄ L2` when the ends share none), the metric (`metric 10`, or each way when they differ), the VRF |
+| **Static** | thin, an arrow from the route's router to its next hop's | `12 routes`, the VRF |
 | **Circuits** | dash-dot in the circuit type's color, to the [provider network](#provider-networks) the router is cabled to | the circuit ID |
 | **Cables** | faint, one line per pair of routers cabled together (through patch panels) | `2x` for several cables |
 
 A BGP line stands for every session between two routers in one table:
 both ends' sessions fold into it, and a session defined on one end only is
-marked *One side only* in its panel. Several lines between the same two
+marked *One side only* in its panel.
+
+An **OSPF** or **IS-IS** line is an adjacency: an interface of the
+process on each router, joined by a cable - walked through patch panels as
+the Cables layer does, an aggregate's members counting for the aggregate -
+or, where the interface is not cabled to one of the process, sharing a
+subnet with it (their addresses in one network; host routes don't count).
+Both ends run in the same table (and, for OSPF, the same version). One
+line stands for every adjacency between two routers in one table and area
+(OSPF) or level (IS-IS). A **Static** line runs from a route's router to
+the router (or any device or VM of the map's set) its next hop is an
+address of - looked up in the route's next-hop table when it leaks, else
+its own; one line per pair and table. Several lines between the same two
 cards run side by side. Cables are off until you switch them on; each
 layer's eye in the **Objects** sidebar (and **Display ▸ Layers**) switches
 it, saved with the view, and a line's own eye hides that one line. A layer
 you may not see is not offered.
+
+**VRF.** **Display ▸ VRF** picks the table the routing lines are drawn
+for: **Global** (the default), one of the VRFs the map's processes and
+routes run in (each in its color), or **All tables**. It narrows every
+routing layer - eBGP, iBGP, OSPF, IS-IS, static - to that table; a VRF
+also keeps the global table's VPNv4/VPNv6 BGP lines between two routers
+that run it (the PEs' transport), so an L3VPN shows its PE-CE eBGP and
+the VPN iBGP between its PEs. Circuits and cables belong to no table and
+always show. The pick is in the URL (`?vrf=all` or `?vrf=<id>`) and saved
+with the view (`filters.routing.vrf`).
+
+**Checks.** **Display ▸ Checks** (off by default, saved with the view as
+`filters.routing.checks`) puts a **Checks** chip over the map, its count
+on a badge, and draws the lines it names over a red halo. Its list:
+
+| Check | When |
+|---|---|
+| One-sided session | a BGP session only one of its two routers defines |
+| AS mismatch | a session's remote AS is not the peer's own AS (its local AS on the line, else the AS its BGP instance in that table runs) |
+| Area mismatch | the two ends of a cabled OSPF adjacency are in different areas |
+| Hello/dead mismatch | the two ends of an OSPF adjacency set different hello or dead intervals (both set) |
+| MTU mismatch | the two interfaces of an OSPF adjacency have different MTUs (both set) and neither ignores MTU |
+| Level mismatch | the two ends of a cabled IS-IS adjacency share no level |
+
+An item clicks to its line and opens its panel. Checks only read; they
+change nothing and are not compliance rules.
 
 **Panels.** A router's panel lists its role, status, site, router ID, ASNs,
 loopback and every routing process (`BGP AS65001`, `OSPF · VRF red`,
@@ -662,7 +703,17 @@ family's own policies and maximum where they differ, **Max prefixes**,
 **RPKI** caches - each as the session ends up with it (session, then peer
 group, then instance). A catalog row you may not view is left out. A
 circuit's and a provider network's panels are the Diagram's; a cable
-line's lists its cables.
+line's lists its cables. An **OSPF** or **IS-IS** line's panel names the
+area (or level) and VRF, then one section per adjacency: how the two
+interfaces meet (the cable, linked, or the shared subnet), the **Cost** or
+**Metric** (each way when they differ), OSPF's **Hello / dead** and
+**MTU**, and per end its interface (with *passive* and the network type
+where set), **BFD** (its profile, linked) and **Auth** - the
+authentication kind and the keychain's name, linked; the key itself never
+shows. A **Static** line's panel lists its routes (each a link, with its
+next hop and distance) - the first 25, then *and N more*. A line the
+Checks name shows its items as badges. Monitoring has no link to BGP
+sessions, so a session's panel shows no monitoring state.
 
 **Objects sidebar and legend.** The sidebar lists the **Layers** first
 (each with its eye, its line swatch and its lines), then the **AS boxes
@@ -673,23 +724,28 @@ and each AS pair's color.
 
 **Saved views.** A view keeps the Routing tab's arrangement apart from the
 other tabs' (`positions_by_style.routing`, `zones_by_style.routing`) and
-its display (`filters.routing`: card mode, layers, card lines), with the
-same Save, Undo, Redo and leave guard. The URL parameters are the
-Diagram's (`site`, `role`, `status`, `tag`, `device`, `depth`, `devices`,
-`view`, `q`).
+its display (`filters.routing`: card mode, layers, card lines, VRF,
+Checks), with the same Save, Undo, Redo and leave guard. The URL
+parameters are the Diagram's (`site`, `role`, `status`, `tag`, `device`,
+`depth`, `devices`, `view`, `q`) plus `vrf`. A focus (`device`, `depth`)
+follows every routing line drawn - BGP, OSPF, IS-IS and static.
 
 **Export.** The second bar's [Export](#export) draws the tab as **SVG**,
 **PNG**, **PDF**, **Print** and **draw.io**, titled *Routing topology*
 (the view's or site's name joins the filters line and the file name): the
 cards, the AS boxes, each line in its layer's look with its label, the
-route reflector's arrowhead, and the legend. In draw.io the sessions sit
-on the *BGP* layer.
+route reflector's and static routes' arrowheads, and the legend. In
+draw.io each routing layer is a layer of its own - *eBGP*, *iBGP*,
+*OSPF*, *IS-IS*, *Static*, *Circuits*, *Cables* - to switch on and off
+there too.
 
 **Who sees what.** A card needs view on the device (on the VM for a VM)
 and shows only the processes you may view; a line needs both ends on the
-map and, per layer, view on BGP sessions (eBGP, iBGP) or on circuits,
-provider networks and sites (Circuits). A missing grant hides that layer,
-never the map. See [Routing topology API](#routing-topology-api).
+map and, per layer, view on BGP sessions (eBGP, iBGP), on OSPF
+instances and OSPF interfaces (OSPF), on IS-IS instances and IS-IS
+interfaces (IS-IS), on static routes (Static) or on circuits, provider
+networks and sites (Circuits). A missing grant hides that layer, never the
+map. A keychain, BFD profile or OSPF area is named only with view on it. See [Routing topology API](#routing-topology-api).
 
 ## Big graphs
 
@@ -1736,6 +1792,7 @@ back button and a reload all keep it.
 | `chassis` | with `devices`: the virtual chassis placed on that map, comma-separated, up to 200 |
 | `q` | the **Find on map** box (never an edit of a saved view) |
 | `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
+| `vrf` | Routing view: the table drawn - `all` or a VRF id (the view's, else the global table, by default) |
 
 A setting on its default is left out, so a link stays short. A bare
 `/topology` opens the tenant's [default view](#default-view), or No view
@@ -2286,9 +2343,12 @@ All three are RBAC-scoped to the caller's `device.view` grant.
 the page sends it) - the [Routing tab](#routing-view)'s payload, one call.
 The query is the graph endpoint's: `site`, `location`, `role`, `status`,
 `tag`, `devices` (with `chassis`), `device` with `depth` (here: that many
-BGP hops around the router), plus `layers` - a comma-separated (or JSON)
-list of `ebgp`, `ibgp`, `circuits`, `cables`, default all but `cables`; an
-unknown layer or a malformed id is a 400, no `device.view` a 403. A VM has
+routing hops around the router, over the lines drawn), plus `layers` - a
+comma-separated (or JSON) list of `ebgp`, `ibgp`, `ospf`, `isis`,
+`static`, `circuits`, `cables`, default all but `cables` - and `vrf`, the
+table the routing lines are drawn for: `global` (the default), `all` or a
+VRF id. An unknown layer, a `vrf` that is none of those or a malformed id
+is a 400, no `device.view` a 403. A VM has
 no location: a `location` filter or a hand-picked set leaves VMs out.
 
 ```json
@@ -2329,12 +2389,45 @@ no location: a `location` filter or a hand-picked set leaves VMs out.
          "cluster_id": "1.1.1.1", "rpki_caches": [{"id": "…", "name": "rpki1"}]}]}},
     {"id": "ce:<circuit id>", "type": "circuit", "source": "dev:<id>",
      "target": "pn:<id>", "data": {…}},
+    {"id": "ospf:dev:<a>|dev:<b>||0|v2", "type": "ospf", "source": "dev:<a>",
+     "target": "dev:<b>", "data": {
+       "vrf": null, "vrf_id": null, "version": 2, "area": "0",
+       "areas": ["0", "0"], "cost": [10, 20], "problems": [],
+       "links": [{"via": "cable", "cable_id": "…", "subnet": null,
+         "a": {"node": "dev:<a>", "id": "…", "instance_id": "…", "process": "1",
+               "interface": "et-0/0/1", "interface_id": "…", "vm_interface_id": null,
+               "network_type": "point-to-point", "passive": false,
+               "bfd": true, "bfd_profile": {"id": "…", "name": "fast"},
+               "authentication": "md5", "keychain": {"id": "…", "name": "OSPF-KEYS"},
+               "area": "0", "area_ref": {"id": "…", "name": "backbone"},
+               "cost": 10, "priority": null, "hello": 10, "dead": 40,
+               "mtu": 9000, "mtu_ignore": false},
+         "b": {…}}]}},
+    {"id": "isis:dev:<a>|dev:<b>||2", "type": "isis", "source": "dev:<a>",
+     "target": "dev:<b>", "data": {
+       "vrf": null, "vrf_id": null, "level": "2", "levels": ["2", "1-2"],
+       "metric": [10, 10], "problems": [],
+       "links": [{"via": "subnet", "cable_id": null, "subnet": "10.0.0.0/31",
+         "a": {…, "level": "2", "metric": 10, "metric_l2": null,
+               "hello_interval": null, "hello_multiplier": null},
+         "b": {…}}]}},
+    {"id": "static:dev:<a>|dev:<b>|", "type": "static", "source": "dev:<a>",
+     "target": "dev:<b>", "data": {"vrf": null, "vrf_id": null, "count": 12,
+       "problems": [],
+       "routes": [{"id": "…", "numid": 3, "prefix": "10.8.0.0/16",
+                   "next_hop": "10.0.0.2", "distance": null}, …]}},
     {"id": "cable:dev:<a>|dev:<b>", "type": "cable", "source": "dev:<a>",
      "target": "dev:<b>", "data": {"cables": [{"id": "…", "numid": 12,
        "label": null, "a": "r1:et-0/0/1", "b": "r2:et-0/0/1"}]}}
   ],
-  "meta": {"layers": {"ebgp": true, "ibgp": true, "circuits": false, "cables": true},
-           "requested": ["circuits", "ebgp", "ibgp"]}
+  "checks": [{"id": "ospf:…#0", "kind": "ospf_timers", "edge": "ospf:…",
+              "layer": "ospf", "title": "r1 ⇄ r2",
+              "text": "Hello 10 ⇄ 5 s on r1 et-0/0/1 ⇄ r2 et-0/0/1"}],
+  "meta": {"layers": {"ebgp": true, "ibgp": true, "ospf": true, "isis": true,
+                      "static": true, "circuits": false, "cables": true},
+           "requested": ["circuits", "ebgp", "ibgp", "isis", "ospf", "static"],
+           "vrf": "global",
+           "vrfs": [{"id": "…", "name": "red", "color": "#ef4444"}]}
 }
 ```
 
@@ -2351,12 +2444,45 @@ no location: a `location` filter or a hand-picked set leaves VMs out.
   source's AS. Each session's values are its effective ones (session, then
   peer group, then instance); a peer group, policy, BFD profile or RPKI
   cache the caller may not view is `null` or left out.
+- **OSPF and IS-IS lines** are adjacencies: an interface row of the
+  process on each end, joined by a cable through patch panels (`via:
+  "cable"`, an aggregate's members counting for the aggregate) or, when the
+  interface is not cabled to one of the process, sharing a subnet (`via:
+  "subnet"`, `subnet` the network). Both ends are in the same table and,
+  for OSPF, version. One line per router pair, table and area (OSPF; the
+  sorted pair of areas when the ends differ) or adjacency level (IS-IS,
+  `null` when they share none); `links` lists each adjacency, `a` on the
+  source. `areas`, `cost`, `levels` and `metric` are the first link's, the
+  source first. An end's `passive` is its own, else its OSPF instance's
+  default; its BFD profile its own, else its instance's; `keychain` is a
+  name and id only - never the key.
+- **Static lines** run from a route's owner to the one box of the map's
+  set its next hop is an address of (in the route's next-hop table, else
+  its own), one per pair and the route's table; that box is a card even
+  with no routing process. `routes` holds the first 25 (by prefix),
+  `count` all.
+- **VRF.** `vrf_id` (and `vrf`, its name) is a routing line's table. With
+  `vrf=global` only the global table's lines come; with a VRF id that
+  VRF's, plus the global table's BGP lines with VPNv4/VPNv6 between two
+  routers that run that VRF; with `all` every table's. `meta.vrfs` lists
+  the VRFs the map's processes and static routes run in (whatever is
+  drawn), `meta.vrf` the table drawn. Circuits and cables are never
+  narrowed.
+- **Checks** (`checks`) are worked out over the routing lines returned:
+  `bgp_one_sided`, `bgp_as_mismatch`, `ospf_area` (cabled only),
+  `ospf_timers` (hello or dead, both set), `ospf_mtu` (both set, neither
+  `mtu_ignore`), `isis_level` (cabled only). Each names its line (`edge`),
+  and the line's `data.problems` lists the kinds. Monitoring has no link to
+  BGP sessions, so no monitoring state is returned.
 - **Circuits** are the [provider network](#provider-networks) lines of the
   graph endpoint, from the routers on the map.
 - **`meta.layers`** says which layers the caller may see: the BGP layers
-  need `bgpsession.view`, circuits need `circuit`, `providernetwork` and
+  need `bgpsession.view`, OSPF `ospfinstance.view` and
+  `ospfinterface.view`, IS-IS `isisinstance.view` and `isisinterface.view`,
+  static `staticroute.view`, circuits `circuit`, `providernetwork` and
   `site` view. A missing grant leaves that layer's lines out, never a
-  card.
+  card. A keychain, BFD profile or OSPF area the caller may not view is
+  `null`.
 
 Everything is inside the active tenant, and the endpoint costs the same
 handful of queries whatever the size of the map.
@@ -2423,7 +2549,7 @@ earlier versions load and save unchanged.
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
 | `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |
-| `filters.routing` | the Routing tab's display: `{mode: simple\|detailed, layers: {ebgp, ibgp, circuits, cables: bool}, fields: [role, router_id, asn, loopback, site, primary_ip, status]}`, each optional; any other key is a 400. Absent layers are their defaults (all on but `cables`); absent `fields` is `router_id, asn, loopback`. |
+| `filters.routing` | the Routing tab's display: `{mode: simple\|detailed, layers: {ebgp, ibgp, ospf, isis, static, circuits, cables: bool}, fields: [role, router_id, asn, loopback, site, primary_ip, status], vrf: global\|all\|<VRF id>, checks: bool}`, each optional; any other key is a 400. Absent layers are their defaults (all on but `cables`); absent `fields` is `router_id, asn, loopback`; absent `vrf` the global table; absent `checks` off. |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
 | `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |

@@ -26,6 +26,7 @@ import { routingLegendRows } from "./routing-document"
 import { RouterMenuItems, RoutingPaneMenuItems } from "./routing-menus"
 import { hiddenRouting, shownRouting } from "./routing-model"
 import type { RoutingSettings } from "./routing-model"
+import { RoutingChecksChip } from "./routing-checks"
 import { RoutingEdgePanel, RoutingNodePanel } from "./routing-panels"
 import { RoutingObjectsSidebar } from "./routing-sidebar"
 
@@ -168,6 +169,12 @@ export function RoutingTab({
   )
 
   const hiddenHere = data ? hiddenRouting(data, hidden) : 0
+  /** The Checks items on the lines drawn. */
+  const shownChecks = useMemo(() => {
+    if (!shown) return []
+    const ids = new Set(shown.edges.map((e) => e.id))
+    return (data?.checks ?? []).filter((c) => ids.has(c.edge))
+  }, [data, shown])
   /** The boxes as the canvas draws them (By AS's until arranged). */
   const [sidebarZones, setSidebarZones] = useState<readonly Zone[]>([])
 
@@ -230,6 +237,18 @@ export function RoutingTab({
               onShowAll={() =>
                 onHiddenChange({ ...hidden, devices: [], edges: [] })
               }
+            />
+          )}
+          {settings.checks && shown && (
+            <RoutingChecksChip
+              checks={shownChecks}
+              onPick={(c) => {
+                const e = shown.edges.find((x) => x.id === c.edge)
+                if (!e) return
+                canvasRef.current?.focusEdge(e.id)
+                clearSel()
+                setSelEdge(e)
+              }}
             />
           )}
         </div>

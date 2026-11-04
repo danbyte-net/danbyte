@@ -5011,11 +5011,16 @@ export function fetchTopology(
 
 /** A line layer of the Routing tab; each is an edge `type` too (the
  * Circuits layer's lines are `circuit`, the Cables layer's `cable`). */
-export type RoutingLayer = "ebgp" | "ibgp" | "circuits" | "cables"
+export type RoutingLayer =
+  "ebgp" | "ibgp" | "ospf" | "isis" | "static" | "circuits" | "cables"
 
 /** A Routing card's lines (`filters.routing.fields`). */
 export type RoutingCardField =
   "role" | "router_id" | "asn" | "loopback" | "site" | "primary_ip" | "status"
+
+/** The routing table the Routing tab draws: the global one, every one, or
+ * a VRF by id. */
+export type RoutingVrf = "global" | "all" | (string & {})
 
 /** The Routing tab's display a saved view keeps (`filters.routing`). */
 export interface RoutingDisplay {
@@ -5024,6 +5029,30 @@ export interface RoutingDisplay {
   layers?: Partial<Record<RoutingLayer, boolean>>
   /** The card lines; absent = the default list. */
   fields?: RoutingCardField[]
+  /** The table drawn; absent = the global one. */
+  vrf?: RoutingVrf
+  /** The Checks chip on; absent = off. */
+  checks?: boolean
+}
+
+/** A Checks item: something that looks wrong on one line. */
+export type RoutingCheckKind =
+  | "bgp_one_sided"
+  | "bgp_as_mismatch"
+  | "ospf_area"
+  | "ospf_timers"
+  | "ospf_mtu"
+  | "isis_level"
+
+export interface RoutingCheck {
+  id: string
+  kind: RoutingCheckKind
+  /** The line it is on. */
+  edge: string
+  layer: "ebgp" | "ibgp" | "ospf" | "isis" | "static"
+  /** The line's two ends ("r1 ⇄ r2"). */
+  title: string
+  text: string
 }
 
 /** A routing process on a router. */
@@ -5113,6 +5142,96 @@ export interface RoutingBgpData {
   rr: { reflector: string; client: string; cluster_id: string | null } | null
   /** Only one end defines the session. */
   one_sided: boolean
+  vrf_id?: string | null
+  /** The Checks kinds on this line. */
+  problems?: RoutingCheckKind[]
+}
+
+/** One end of an OSPF or IS-IS adjacency. */
+export interface RoutingIgpEnd {
+  node: string
+  /** The OSPF / IS-IS interface row. */
+  id: string
+  instance_id: string
+  process: string | null
+  interface: string | null
+  interface_id: string | null
+  vm_interface_id: string | null
+  network_type: string | null
+  passive: boolean
+  bfd: boolean
+  bfd_profile: RoutingRef | null
+  /** The authentication kind (md5, sha…), null for none. */
+  authentication: string | null
+  /** The keychain's name - never its key. */
+  keychain: RoutingRef | null
+  // OSPF
+  area?: string
+  area_ref?: RoutingRef | null
+  cost?: number | null
+  priority?: number | null
+  hello?: number | null
+  dead?: number | null
+  mtu?: number | null
+  mtu_ignore?: boolean
+  // IS-IS
+  level?: "1" | "2" | "1-2"
+  metric?: number | null
+  metric_l2?: number | null
+  hello_interval?: number | null
+  hello_multiplier?: number | null
+}
+
+/** One adjacency on an IGP line: two interfaces joined by a cable (through
+ * patch panels) or sharing a subnet. */
+export interface RoutingIgpLink {
+  via: "cable" | "subnet"
+  cable_id: string | null
+  subnet: string | null
+  /** The end on the line's source, then its target's. */
+  a: RoutingIgpEnd
+  b: RoutingIgpEnd
+}
+
+export interface RoutingOspfData {
+  vrf: string | null
+  vrf_id: string | null
+  version: 2 | 3
+  /** The area both ends are in; null when they differ. */
+  area: string | null
+  /** Each end's area (the first link's), source first. */
+  areas: [string, string]
+  /** Each end's cost (the first link's), source first. */
+  cost: [number | null, number | null]
+  links: RoutingIgpLink[]
+  problems?: RoutingCheckKind[]
+}
+
+export interface RoutingIsisData {
+  vrf: string | null
+  vrf_id: string | null
+  /** The level the two ends meet at; null when they share none. */
+  level: "1" | "2" | "1-2" | null
+  levels: [string, string]
+  metric: [number | null, number | null]
+  links: RoutingIgpLink[]
+  problems?: RoutingCheckKind[]
+}
+
+/** Static routes from the source to the router their next hop is on. */
+export interface RoutingStaticData {
+  vrf: string | null
+  vrf_id: string | null
+  count: number
+  /** The first routes; `count` has them all. */
+  routes: {
+    id: string
+    numid: number | null
+    prefix: string
+    next_hop: string
+    distance: number | null
+  }[]
+  problems?: RoutingCheckKind[]
 }
 
 export interface RoutingCableData {
@@ -5157,6 +5276,27 @@ export type RoutingEdge =
       type: "cable"
       data: RoutingCableData
     }
+  | {
+      id: string
+      source: string
+      target: string
+      type: "ospf"
+      data: RoutingOspfData
+    }
+  | {
+      id: string
+      source: string
+      target: string
+      type: "isis"
+      data: RoutingIsisData
+    }
+  | {
+      id: string
+      source: string
+      target: string
+      type: "static"
+      data: RoutingStaticData
+    }
 
 /** An AS box: the cards whose global table runs this AS. */
 export interface RoutingAsGroup {
@@ -5176,13 +5316,19 @@ export interface RoutingTopology {
     /** The layers the caller may see. */
     layers: Record<RoutingLayer, boolean>
     requested: RoutingLayer[]
+    /** The table drawn. */
+    vrf?: RoutingVrf
+    /** The VRFs the map's processes and routes run in. */
+    vrfs?: (RoutingRef & { color: string | null })[]
   }
+  /** What looks wrong on the lines drawn. */
+  checks?: RoutingCheck[]
 }
 
 export type RoutingQuery = Omit<
   TopologyQuery,
   "include" | "card_fields" | "group_by" | "collapse_panels"
-> & { chassis?: string[]; layers?: RoutingLayer[] }
+> & { chassis?: string[]; layers?: RoutingLayer[]; vrf?: RoutingVrf }
 
 /** The Routing tab's map, the query as a JSON body (a device set would
  * overflow a URL). */

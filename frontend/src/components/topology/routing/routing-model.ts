@@ -1,12 +1,14 @@
 import type {
   RoutingAsGroup,
   RoutingCardField,
+  RoutingCheckKind,
   RoutingDisplay,
   RoutingEdge,
   RoutingLayer,
   RoutingNode,
   RoutingRouterData,
   RoutingTopology,
+  RoutingVrf,
 } from "@/lib/api"
 import { measureText } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
@@ -23,11 +25,13 @@ import type { PosMap, Zone } from "../view-positions"
 // Arrange ▸ By AS puts the AS boxes and their cards. The canvas, the
 // sidebar, the legend and the exports all read these, so they agree.
 
-/** The line layers, in legend order. Phase 3 adds OSPF, IS-IS and static
- * here (and their edge types in `layerOf`). */
+/** The line layers, in legend order. Each is an edge type too (`layerOf`). */
 export const ROUTING_LAYERS: readonly { key: RoutingLayer; label: string }[] = [
   { key: "ebgp", label: "eBGP" },
   { key: "ibgp", label: "iBGP" },
+  { key: "ospf", label: "OSPF" },
+  { key: "isis", label: "IS-IS" },
+  { key: "static", label: "Static" },
   { key: "circuits", label: "Circuits" },
   { key: "cables", label: "Cables" },
 ]
@@ -37,9 +41,56 @@ export const ROUTING_LAYERS: readonly { key: RoutingLayer; label: string }[] = [
 export const DEFAULT_LAYERS: Readonly<Record<RoutingLayer, boolean>> = {
   ebgp: true,
   ibgp: true,
+  ospf: true,
+  isis: true,
+  static: true,
   circuits: true,
   cables: false,
 }
+
+/** The layers the map always asks the server for; cables come only while
+ * their layer is on. */
+export const FETCHED_LAYERS: readonly RoutingLayer[] = [
+  "ebgp",
+  "ibgp",
+  "ospf",
+  "isis",
+  "static",
+  "circuits",
+]
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A table the picker can name: `global`, `all` or a VRF id. Anything
+ * else reads as the global table. */
+export function readVrf(raw: unknown): RoutingVrf {
+  if (raw === "all") return "all"
+  if (typeof raw === "string" && UUID_RE.test(raw)) return raw.toLowerCase()
+  return "global"
+}
+
+/** What each Checks item is called in the chip's list. */
+export const CHECK_LABELS: Record<RoutingCheckKind, string> = {
+  bgp_one_sided: "One-sided session",
+  bgp_as_mismatch: "AS mismatch",
+  ospf_area: "Area mismatch",
+  ospf_timers: "Hello/dead mismatch",
+  ospf_mtu: "MTU mismatch",
+  isis_level: "Level mismatch",
+}
+
+/** The Checks kinds on a line (none for circuits and cables). */
+export function problemsOf(e: RoutingEdge): readonly RoutingCheckKind[] {
+  if (e.type === "circuit" || e.type === "cable") return []
+  return e.data.problems ?? []
+}
+
+/** A line drawn over a red halo: the Checks chip is on and names it. */
+export const isFlagged = (
+  e: RoutingEdge,
+  s: Pick<RoutingSettings, "checks">
+): boolean => s.checks && problemsOf(e).length > 0
 
 /** A router card's possible lines, in the order a card lists them. */
 export const ROUTING_FIELDS: readonly {
@@ -69,6 +120,10 @@ export interface RoutingSettings {
   mode: RoutingMode
   layers: Record<RoutingLayer, boolean>
   fields: RoutingCardField[]
+  /** The table drawn. */
+  vrf: RoutingVrf
+  /** The Checks chip on the map. */
+  checks: boolean
 }
 
 export function readRoutingDisplay(raw: unknown): RoutingSettings {
@@ -86,6 +141,8 @@ export function readRoutingDisplay(raw: unknown): RoutingSettings {
     mode: d.mode === "simple" ? "simple" : "detailed",
     layers,
     fields,
+    vrf: readVrf(d.vrf),
+    checks: d.checks === true,
   }
 }
 
@@ -101,6 +158,8 @@ export function routingDisplay(s: RoutingSettings): RoutingDisplay {
     s.fields.length === DEFAULT_FIELDS.length &&
     s.fields.every((f, i) => f === DEFAULT_FIELDS[i])
   if (!same) out.fields = s.fields
+  if (s.vrf !== "global") out.vrf = s.vrf
+  if (s.checks) out.checks = true
   return out
 }
 
@@ -108,9 +167,11 @@ export function routingDisplay(s: RoutingSettings): RoutingDisplay {
 export function layerOf(e: Pick<RoutingEdge, "type">): RoutingLayer {
   switch (e.type) {
     case "ebgp":
-      return "ebgp"
     case "ibgp":
-      return "ibgp"
+    case "ospf":
+    case "isis":
+    case "static":
+      return e.type
     case "circuit":
       return "circuits"
     default:
@@ -184,9 +245,65 @@ export function routingEdgeLabel(e: RoutingEdge): string[] {
       : []
     return [[...afs, ...(d.vrf ? [`VRF ${d.vrf}`] : []), ...rr].join(" · ")]
   }
+  if (e.type === "ospf") {
+    const d = e.data
+    const [ca, cb] = d.cost
+    const head = [
+      d.area !== null ? `area ${d.area}` : `area ${d.areas[0]} ⇄ ${d.areas[1]}`,
+      ...(d.version === 3 ? ["v3"] : []),
+      ...(d.links.length > 1 ? [`${d.links.length}x`] : []),
+      ...(d.vrf ? [`VRF ${d.vrf}`] : []),
+    ].join(" · ")
+    return ca !== cb ? [head, `cost ${ca ?? "-"} ⇄ ${cb ?? "-"}`] : [head]
+  }
+  if (e.type === "isis") {
+    const d = e.data
+    const [ma, mb] = d.metric
+    const level =
+      d.level !== null
+        ? isisLevel(d.level)
+        : `${isisLevel(d.levels[0])} ⇄ ${isisLevel(d.levels[1])}`
+    const metric =
+      ma === mb
+        ? ma !== null
+          ? `metric ${ma}`
+          : null
+        : `metric ${ma ?? "-"} ⇄ ${mb ?? "-"}`
+    return [
+      [
+        level,
+        ...(metric ? [metric] : []),
+        ...(d.links.length > 1 ? [`${d.links.length}x`] : []),
+        ...(d.vrf ? [`VRF ${d.vrf}`] : []),
+      ].join(" · "),
+    ]
+  }
+  if (e.type === "static") {
+    const n = e.data.count
+    return [
+      [
+        `${n} route${n === 1 ? "" : "s"}`,
+        ...(e.data.vrf ? [`VRF ${e.data.vrf}`] : []),
+      ].join(" · "),
+    ]
+  }
   if (e.type === "circuit")
     return e.data.circuit?.cid ? [e.data.circuit.cid] : []
   return e.data.cables.length > 1 ? [`${e.data.cables.length}x`] : []
+}
+
+/** An IS-IS level as a label writes it: L1, L2, L1-2. */
+export const isisLevel = (level: string | null | undefined) =>
+  level ? `L${level}` : "L?"
+
+const KIND_NAME: Record<RoutingEdge["type"], string> = {
+  ebgp: "eBGP",
+  ibgp: "iBGP",
+  ospf: "OSPF",
+  isis: "IS-IS",
+  static: "Static",
+  circuit: "Circuit",
+  cable: "Cable",
 }
 
 /** A line's name: its two ends and what it is ("r1 ⇄ isp1 · eBGP"). */
@@ -194,15 +311,8 @@ export function routingEdgeTitle(
   e: RoutingEdge,
   name: (id: string) => string
 ): string {
-  const kind =
-    e.type === "ebgp"
-      ? "eBGP"
-      : e.type === "ibgp"
-        ? "iBGP"
-        : e.type === "circuit"
-          ? "Circuit"
-          : "Cable"
-  return `${name(e.source)} ⇄ ${name(e.target)} · ${kind}`
+  const arrow = e.type === "static" ? "→" : "⇄"
+  return `${name(e.source)} ${arrow} ${name(e.target)} · ${KIND_NAME[e.type]}`
 }
 
 // ── Looks ──────────────────────────────────────────────────────────────────
@@ -232,6 +342,11 @@ export const IBGP_COLOR = "#475569"
 export const CIRCUIT_COLOR = "#64748b"
 export const CABLE_COLOR = "#94a3b8"
 export const CIRCUIT_DASH = "10 4 2 4"
+export const OSPF_COLOR = "#0e7490"
+export const OSPF_DASH = "6 4"
+export const ISIS_COLOR = "#9333ea"
+export const ISIS_DASH = "2 3"
+export const STATIC_COLOR = "#57534e"
 
 export interface RoutingEdgeLook {
   stroke: string
@@ -244,10 +359,29 @@ export interface RoutingEdgeLook {
 }
 
 /** How a line is drawn: eBGP solid and thick in its AS pair's colour, iBGP
- * thin (an arrow from a route reflector to its client), a circuit
- * dash-dot in its type's colour, a cable faint. */
+ * thin (an arrow from a route reflector to its client), OSPF and IS-IS
+ * dashed each in its own colour, static routes a thin arrow to the next
+ * hop, a circuit dash-dot in its type's colour, a cable faint. */
 export function routingEdgeLook(e: RoutingEdge): RoutingEdgeLook {
   switch (e.type) {
+    case "ospf":
+      return {
+        stroke: OSPF_COLOR,
+        width: 2,
+        dash: OSPF_DASH,
+        arrow: false,
+        faint: false,
+      }
+    case "isis":
+      return {
+        stroke: ISIS_COLOR,
+        width: 2,
+        dash: ISIS_DASH,
+        arrow: false,
+        faint: false,
+      }
+    case "static":
+      return { stroke: STATIC_COLOR, width: 1, arrow: true, faint: false }
     case "ebgp":
       return {
         stroke: asPairColor(e.data.a_asn, e.data.b_asn),
