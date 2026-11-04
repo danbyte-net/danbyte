@@ -204,8 +204,9 @@ The file is named `sbom-<site name>-<date>.cdx.json` for one site and
 
 ### Metadata
 
-`metadata.component` is the site when the export covers exactly one, else
-`selection`. `metadata.properties` reports:
+`metadata.component` is the site when the export covers exactly one you
+may view, else `selection`: a site outside your scope reads like an unknown
+id, so its name is in neither the document nor the file name. `metadata.properties` reports:
 
 | Property | |
 |---|---|

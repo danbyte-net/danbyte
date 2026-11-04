@@ -252,7 +252,12 @@ def build_sbom(request, tenant, params) -> tuple[dict, str]:
     if tenant is not None:
         devices, vms, sites = _hosts(request, tenant, params)
         if sites is not None and len(sites) == 1:
-            site = Site.objects.filter(tenant=tenant, pk=sites[0]).first()
+            # Through the caller's site scope, as the site list reads it: a
+            # site they can't view is named nowhere - the subject is then
+            # "selection", the same as an unknown id (#468).
+            site = restrict_queryset(
+                Site.objects.filter(tenant=tenant), request.user, tenant, "site", "view",
+            ).filter(pk=sites[0]).first()
         refs = [b.host(d, "device") for d in devices] + [
             b.host(vm, "virtual_machine") for vm in vms
         ]

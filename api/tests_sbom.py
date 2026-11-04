@@ -307,6 +307,31 @@ class SbomScopeTests(_Base):
         _, doc = self.sbom(f"?device={self.n2.id}")
         self.assertEqual(doc["components"], [])
 
+    def test_a_site_out_of_scope_is_not_named(self):
+        # #468: a Site A reader asking for Site B got its name as the subject
+        # and in the file name; it reads like an unknown id now.
+        self.site_b.name = "Secret B"
+        self.site_b.save()
+        user = User.objects.create_user("siteonly", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        p = ObjectPermission.objects.create(
+            name="s", object_types=["site", "device", "virtualmachine"], actions=["view"])
+        p.users.add(user)
+        p.tenants.add(self.tenant)
+        p.sites.set([self.site_a])
+        self.login(user)
+        r, doc = self.sbom(f"?site={self.site_b.id}")
+        self.assertEqual(doc["components"], [])
+        self.assertEqual(doc["metadata"]["component"]["name"], "selection")
+        self.assertNotIn("Secret B", r.content.decode())
+        self.assertNotIn(str(self.site_b.id), r.content.decode())
+        self.assertNotIn("secret", r["Content-Disposition"].lower())
+        r = self.client.post(URL, {"site": [str(self.site_b.id)]}, content_type="application/json")
+        self.assertNotIn("Secret B", r.content.decode())
+        # Their own site is still the subject.
+        _, doc = self.sbom(f"?site={self.site_a.id}")
+        self.assertEqual(doc["metadata"]["component"]["name"], self.site_a.name)
+
     def test_software_needs_its_own_view_permission(self):
         self.install(self.pg, self.n1, "16")
         user = User.objects.create_user("devonly", password="x")
