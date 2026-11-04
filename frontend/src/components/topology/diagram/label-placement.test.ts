@@ -7,8 +7,11 @@ import { aarhusGraph, aarhusPositions } from "../__fixtures__/aarhus-graph"
 import { boxOf } from "../__fixtures__/route-checks"
 import { buildDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
+import type { PortPlace } from "@/lib/diagram/geometry"
 import {
   chipCentre,
+  crossesSteeply,
+  curveBoxes,
   inlineBox,
   LabelScene,
   placeInline,
@@ -71,6 +74,10 @@ const build = (graph: TopologyGraph, o: Partial<DiagramOptions>) =>
 interface Placed {
   what: string
   box: TurnedBox
+  /** An end label on a curve: the pieces along it it takes. */
+  boxes?: TurnedBox[]
+  /** An end label on a bendy line: it reads over a cable crossing it. */
+  curve?: boolean
   /** An end label: the line it sits on. */
   on?: string
 }
@@ -94,10 +101,12 @@ function scene(b: ReturnType<typeof build>) {
     )
     d.plan.forEach((p, i) => {
       const on = `${e.id}#${i}`
-      const add = (text: string, place: Pt & { rotate: number }) =>
+      const add = (text: string, place: PortPlace) =>
         labels.push({
           what: `${text}@${on}`,
           box: inlineBox(place, measure(text, LABEL.END_SIZE, 400)),
+          ...(place.path ? { boxes: curveBoxes(place.path) } : {}),
+          ...((p.line ?? d.line) === "bendy" ? { curve: true } : {}),
           on,
         })
       for (const end of ["a", "b"] as const) {
@@ -156,12 +165,15 @@ function faults(b: ReturnType<typeof build>): string[] {
     hw: x.hw - 0.5,
     hh: x.hh - 0.5,
   })
+  const pieces = (l: Placed) => (l.boxes ?? [l.box]).map(tight)
+  const overlap = (x: Placed, y: Placed) =>
+    pieces(x).some((p) => pieces(y).some((q) => boxesOverlap(p, q)))
   for (let i = 0; i < labels.length; i++) {
     for (let j = i + 1; j < labels.length; j++)
-      if (boxesOverlap(tight(labels[i].box), tight(labels[j].box)))
+      if (overlap(labels[i], labels[j]))
         out.push(`${labels[i].what} over ${labels[j].what}`)
     for (const c of cards)
-      if (boxesOverlap(tight(labels[i].box), c.box))
+      if (pieces(labels[i]).some((p) => boxesOverlap(p, c.box)))
         out.push(`${labels[i].what} on ${c.id}`)
   }
   for (const l of labels) {
@@ -173,7 +185,14 @@ function faults(b: ReturnType<typeof build>): string[] {
     for (const line of lines) {
       if (line.edge === l.on) continue
       for (let k = 1; k < line.pts.length; k++)
-        if (segHitsBox(line.pts[k - 1], line.pts[k], tight(l.box))) {
+        if (
+          pieces(l).some(
+            (p) =>
+              segHitsBox(line.pts[k - 1], line.pts[k], p) &&
+              // On a curve a label reads over a cable crossing it.
+              !(l.curve && crossesSteeply(line.pts[k - 1], line.pts[k], p))
+          )
+        ) {
           out.push(`${l.what} on ${line.edge}`)
           break
         }

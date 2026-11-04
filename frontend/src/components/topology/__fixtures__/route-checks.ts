@@ -1,8 +1,13 @@
 import type { Edge, Node } from "@xyflow/react"
 
+import type { PortPlace } from "@/lib/diagram/geometry"
 import type { Measure } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
-import { inlineBox } from "../diagram/label-placement"
+import {
+  crossesSteeply,
+  curveBoxes,
+  inlineBox,
+} from "../diagram/label-placement"
 import { routeThrough, leaves } from "../diagram/link-geometry"
 import { boxesOverlap, segHitsBox, segHitsRect } from "../diagram/spatial"
 import type { TurnedBox } from "../diagram/spatial"
@@ -28,6 +33,8 @@ export interface Drawn {
     end: "a" | "b"
     text: string
     box: TurnedBox
+    /** What it takes: its box, or on a curve the pieces along it. */
+    boxes: TurnedBox[]
     along: number
     /** An address, after the port name. */
     ip?: boolean
@@ -70,14 +77,17 @@ export function drawn(
       const labels: Drawn["labels"] = []
       for (const end of ["a", "b"] as const) {
         const start = end === "a" ? route.pts[0] : route.pts.at(-1)!
-        const add = (text: string, place: Pt & { rotate: number }, ip?: true) =>
+        const add = (text: string, place: PortPlace, ip?: true) => {
+          const box = inlineBox(place, measure(text, LABEL.END_SIZE, 400, true))
           labels.push({
             end,
             text,
-            box: inlineBox(place, measure(text, LABEL.END_SIZE, 400, true)),
+            box,
+            boxes: place.path ? curveBoxes(place.path) : [box],
             along: Math.hypot(place.x - start.x, place.y - start.y),
             ...(ip ? { ip } : {}),
           })
+        }
         const place = p[end]
         const anchor = d[end][i] as Anchor | undefined
         if (
@@ -194,6 +204,15 @@ function offLine(pts: readonly Pt[], p: Pt): number {
   return best
 }
 
+/** Do two placed end labels overlap - piece by piece on a curve? */
+export function labelsOverlap(
+  x: Pick<Drawn["labels"][number], "box" | "boxes">,
+  y: Pick<Drawn["labels"][number], "box" | "boxes">
+): boolean {
+  if (!boxesOverlap(x.box, y.box)) return false
+  return x.boxes.some((p) => y.boxes.some((q) => boxesOverlap(p, q)))
+}
+
 /** End labels that sit off their own line, a port name past its cable's
  * first straight run, labels that overlap, or lie on another cable. */
 export function labelFaults(cables: readonly Drawn[]): string[] {
@@ -216,13 +235,20 @@ export function labelFaults(cables: readonly Drawn[]): string[] {
     for (const d of cables) {
       if (d === c) continue
       for (const s of segs(d.pts))
-        if (segHitsBox(s.p, s.q, l.box))
+        if (
+          l.boxes.some(
+            (b) =>
+              segHitsBox(s.p, s.q, b) &&
+              // On a curve a label reads over a cable crossing it.
+              !(c.line === "bendy" && crossesSteeply(s.p, s.q, b))
+          )
+        )
           out.push(`${l.text} on ${d.edge}#${d.cable}`)
     }
   }
   for (let i = 0; i < all.length; i++)
     for (let j = i + 1; j < all.length; j++)
-      if (boxesOverlap(all[i].l.box, all[j].l.box))
+      if (labelsOverlap(all[i].l, all[j].l))
         out.push(`${all[i].l.text} over ${all[j].l.text}`)
   return out
 }
