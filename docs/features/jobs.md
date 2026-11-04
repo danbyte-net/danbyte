@@ -117,6 +117,14 @@ Two actions are available to anyone with `jobs.manage`:
 - **Cancel** - remove a **queued**, deferred, scheduled, or running job from the
   queue and delete it.
 
+Tick rows in the **Queue** tab to do either for many jobs at once. **Requeue**
+puts the failed ones back and **Cancel** - after a confirmation - removes
+them; the toast says how many went through and why the rest did not (a job
+that is not failed is not requeued, one that has expired is not found).
+`POST /api/jobs/bulk-requeue/` and `POST /api/jobs/bulk-cancel/` take
+`{ids}`, at most 500 per call, and answer `{done, skipped: [{id, reason}]}`.
+Jobs have no export: they are queue entries, not records.
+
 !!! tip "Clearing orphaned jobs"
     A job enqueued by code or an integration that no longer exists can't be read
     back - it shows as **unreadable** with its arguments unavailable (its
