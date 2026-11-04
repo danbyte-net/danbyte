@@ -94,6 +94,24 @@ export interface Zone {
    * bottom (`v`) or left and right (`h`). Absent: whichever faces the far
    * end (Auto). */
   exits?: BandExits
+  /** A row: at most this many cards on a line before it wraps (1-200;
+   * `BAND_PER_ROW_MAX` keeps them all on one line). Absent: Auto - wrap
+   * past 12 cards or a line too wide. */
+  per_row?: number
+}
+
+/** The most cards a row may set on one line: "All on one line". */
+export const BAND_PER_ROW_MAX = 200
+
+/** A saved `per_row` the map can use: a whole number from 1 to
+ * BAND_PER_ROW_MAX, else undefined (Auto). */
+export function bandPerRow(v: unknown): number | undefined {
+  return typeof v === "number" &&
+    Number.isInteger(v) &&
+    v >= 1 &&
+    v <= BAND_PER_ROW_MAX
+    ? v
+    : undefined
 }
 
 /** Which sides a row's cables to other bands leave by: top and bottom, or

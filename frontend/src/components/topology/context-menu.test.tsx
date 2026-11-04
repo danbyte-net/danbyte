@@ -518,6 +518,45 @@ describe("RegionMenuItems", () => {
     expect(onChange).toHaveBeenCalledWith("h")
   })
 
+  it("sets a row's cards per row from a sub-menu", async () => {
+    const onChange = vi.fn()
+    await openMenu(
+      <RegionMenuItems
+        {...region("band", null)}
+        perRow={{ value: undefined, onChange }}
+      />
+    )
+    expect(rows()).toEqual([
+      "Rename",
+      "More colors",
+      "Cards per row",
+      "--",
+      "Delete",
+    ])
+    fireEvent.click(screen.getByRole("menuitem", { name: "Cards per row" }))
+    const auto = await screen.findByRole("menuitemradio", { name: "Auto" })
+    expect(auto.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: "All on one line" })
+    )
+    expect(onChange).toHaveBeenLastCalledWith(200)
+  })
+
+  it("picks a count, and lists a saved count that is no preset", async () => {
+    const onChange = vi.fn()
+    await openMenu(
+      <RegionMenuItems
+        {...region("band", null)}
+        perRow={{ value: 7, onChange }}
+      />
+    )
+    fireEvent.click(screen.getByRole("menuitem", { name: "Cards per row" }))
+    const seven = await screen.findByRole("menuitemradio", { name: "7" })
+    expect(seven.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "8" }))
+    expect(onChange).toHaveBeenLastCalledWith(8)
+  })
+
   it("draws Delete as the destructive item", async () => {
     const p = region("band", null)
     await openMenu(<RegionMenuItems {...p} />)

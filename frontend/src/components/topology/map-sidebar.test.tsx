@@ -169,3 +169,48 @@ describe("the Objects sidebar's cables", () => {
     expect(onHiddenChange).toHaveBeenCalledWith(NO_TOPO_HIDDEN)
   })
 })
+
+// A circuit between two of the map's devices, both ends cabled.
+const withCircuit: TopologyGraph = {
+  nodes: graph.nodes,
+  edges: [
+    ...graph.edges,
+    {
+      id: "cc:c9",
+      source: "dev:core",
+      target: "dev:sw1",
+      type: "circuit",
+      data: {
+        circuit: {
+          id: "c9",
+          cid: "MPLS-9",
+          provider: { name: "Telco" },
+        } as never,
+        ends: [{ side: "A" }, { side: "Z" }] as never,
+      },
+    },
+  ],
+}
+
+describe("the Objects sidebar's circuits", () => {
+  it("lists them by cid under Circuits, never as a cable", () => {
+    sidebar(NO_TOPO_HIDDEN, withCircuit)
+    expect(screen.getByText("MPLS-9")).toBeTruthy()
+    fireEvent.click(screen.getByText("cat6"))
+    expect(screen.getAllByText("core ↔ sw1")).toHaveLength(2)
+  })
+
+  it("hide all with the group's eye, one with its row's", () => {
+    const { onHiddenChange } = sidebar(NO_TOPO_HIDDEN, withCircuit)
+    fireEvent.click(screen.getByRole("button", { name: "Hide Circuits" }))
+    expect(onHiddenChange).toHaveBeenLastCalledWith({
+      ...NO_TOPO_HIDDEN,
+      kinds: ["Circuits"],
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Hide MPLS-9" }))
+    expect(onHiddenChange).toHaveBeenLastCalledWith({
+      ...NO_TOPO_HIDDEN,
+      edges: ["cc:c9"],
+    })
+  })
+})

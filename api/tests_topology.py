@@ -535,6 +535,13 @@ class DiagramViewStateTests(_Base):
             {"id": "old", "label": "Spine + Border", "x": 0, "y": 700,
              "w": 900, "h": 200, "color": None, "kind": "band",
              "orient": "h", "rule": {"by": "role", "ids": [a, b]}},
+            # Cards per row: a count, or absent for Auto.
+            {"id": "leaf", "label": "Leaf", "x": 0, "y": 950, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "per_row": 200},
+            {"id": "one", "label": "One", "x": 0, "y": 1200, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "per_row": 1},
         ]}}
         resp = self._save(state)
         self.assertEqual(resp.status_code, 201, resp.content)
@@ -547,6 +554,8 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(zones[1]["layout"], "row")
         self.assertEqual(len(zones[1]["rule"]["ids"]), 100)
         self.assertNotIn("layout", zones[2])
+        self.assertNotIn("per_row", zones[2])
+        self.assertEqual([z["per_row"] for z in zones[3:]], [200, 1])
 
     def test_diagram_colour_is_a_hex_or_neutral(self):
         zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
@@ -582,6 +591,11 @@ class DiagramViewStateTests(_Base):
             {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "role", "ids": [a] * 101}}]}},
             {"zones_by_style": {"diagram": [{**zone, "layout": "grid"}]}},
             {"zones_by_style": {"diagram": [{**zone, "layout": ["stack"]}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": 0}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": 201}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": 4.5}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": "8"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": True}]}},
             {"filters": {"diagram": "detailed"}},
             {"filters": {"diagram": {"mode": "photo"}}},
             {"filters": {"diagram": {"face": "rear"}}},

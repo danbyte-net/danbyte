@@ -484,3 +484,53 @@ describe("Provider networks", () => {
     expect(within(aside).queryByText("Commit rate")).toBeNull()
   })
 })
+
+// A circuit between two of your sites: one line, device to device.
+describe("Site-to-site circuits", () => {
+  const end = (side: "A" | "Z", dev: string, site: string, via: string[]) => ({
+    side,
+    termination: {
+      id: `t${side}`,
+      side,
+      port_speed_kbps: null,
+      upstream_speed_kbps: null,
+    },
+    site: { id: `s${side}`, name: site },
+    device: { id: `d${side}`, name: dev },
+    port: { id: `i${side}`, name: "xe-0/0/0", kind: "interface" },
+    via,
+  })
+
+  it("opens the circuit's panel with both ends", async () => {
+    const data: NonNullable<TopoEdge["data"]> = {
+      circuit,
+      ends: [
+        end("A", "NSP1-PE2", "Aarhus", []),
+        end("Z", "NSP2-PE2", "Odense", ["pp-9"]),
+      ],
+      via: ["pp-9"],
+    }
+    const { aside, router } = await show(
+      <EdgePanel data={data} onClose={() => {}} />
+    )
+    expect(aside.getAttribute("aria-label")).toBe("Circuit")
+    expect(within(aside).getByText("MPLS-0001")).toBeTruthy()
+    expect(within(aside).getByText("Telco")).toBeTruthy()
+    expect(within(aside).getByText("100 Mbps")).toBeTruthy()
+    const a = within(aside).getByRole("region", { name: "Side A" })
+    expect(within(a).getByText("Aarhus")).toBeTruthy()
+    expect(within(a).getByText("NSP1-PE2:xe-0/0/0")).toBeTruthy()
+    const z = within(aside).getByRole("region", { name: "Side Z" })
+    expect(within(z).getByText("Odense")).toBeTruthy()
+    expect(within(z).getByText("NSP2-PE2:xe-0/0/0")).toBeTruthy()
+    expect(within(z).getByText("pp-9")).toBeTruthy()
+    // Both ends cabled: never "Not cabled", no provider network.
+    expect(within(aside).queryByText("Not cabled")).toBeNull()
+    expect(within(aside).queryByText("Network")).toBeNull()
+    fireEvent.click(within(aside).getByRole("link", { name: /Open circuit/ }))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/circuits/c1")
+    )
+    expectNoDots(aside)
+  })
+})

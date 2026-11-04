@@ -285,7 +285,10 @@ Admins also get **Role card lines** in the card's menu, which opens
 **Lines** in the Display popover sets the view's line, as icon tabs (hover
 one for its name). LLDP ghosts stay straight and dashed; BGP sessions stay
 the faint dotted overlay from card centre to card centre, and hovering one
-names its peers, the session kind and the VRF.
+names its peers, the session kind and the VRF. A
+[circuit between two of your sites](#circuits-between-sites) is a long-dashed
+line in its circuit's colour, named by its circuit id, so it reads as a
+provider's service rather than a cable.
 
 - **Straight** - the direct line; a card's side is still chosen so the line
   does not leave it straight into a neighbour.
@@ -760,6 +763,7 @@ stays on the map.
 | The line between two cards | The number of cables and their **Cable types**. |
 | A provider network | **Provider**, **Service ID**, and **Circuits**: each circuit id with its site and status. *Open provider network*. |
 | A line to a provider network | The circuit id as the title, **Provider**, **Type**, **Status**, **Commit rate**, **Network**, **Site**, **Port** (the device port the site end is cabled to, or *Not cabled*), **Via**. *Open circuit*. |
+| A circuit between two sites | The same circuit panel: **Provider**, **Type**, **Status**, **Commit rate**, then **Side A** and **Side Z**, each with its **Site**, **Port** (device and port) and **Via**. *Open circuit*. |
 
 A status left unset has no row, rather than a dash.
 
@@ -831,6 +835,35 @@ You see a network and its circuits only with view on circuits and on
 provider networks, and only the circuits whose site end is at a site you may
 view - a reader scoped to some sites never sees a card built from circuits
 at the others.
+
+## Circuits between sites
+
+A circuit with **both** ends on your own sites - an MPLS or point-to-point
+service between NSP1-PE2 and NSP2-PE2, side A cabled to one router's port
+and side Z to the other's - is drawn as one line between the two devices.
+There is no hub card: the circuit is the link.
+
+- **The line** runs from the device side A is cabled to, to the device side
+  Z is cabled to - through patch panels, like any collapsed run, or with
+  **Collapse panels** off from the device each cable lands on. It is
+  **dashed** (long dashes, apart from a patch-panel run's), wears the
+  circuit's colour (its type's, else its status's) whatever the colour
+  mode, and is named by its circuit id on the Diagram. It is never folded
+  into a LAG or a bundle with the cables between the same two devices.
+- **Both ends must be cabled** to devices on the map. An end not cabled,
+  or cabled to a device a filter, the focus or a hand-picked set leaves
+  off, draws nothing - on a hand-picked map, put both routers on it.
+- **Grouped by site or location**, it is a line between the two cards when
+  its devices are in different groups, and stays inside the card when both
+  are in one, like cables.
+- **Click** it for the circuit's panel (see [Detail panels](#detail-panels)).
+- **Hide** them in the Objects sidebar: its **Circuits** section lists each
+  by circuit id with its two devices; the group's eye takes every such line
+  off the map, a row's eye one. Both save with the view.
+
+You see the line only with view on circuits and on **both** devices: when
+one end's device is outside your `device.view` scope the line is left out,
+so the far device is never named.
 
 ## Hand-picked maps {#building-a-diagram}
 
@@ -948,8 +981,9 @@ The map has the same eyes as the [site map](site-map.md) and the
 header has one - a **role**, a **site** or a **location** (whichever the
 Devices list is grouped by), a **link family** (a cable type, **No type**
 for cables without one, **LLDP** for discovered links, or **BGP sessions**,
-and **Provider networks**) - and so does every device row, every cable row
-and every provider network row. Right-click a card →
+and **Provider networks**, and **Circuits** for the circuits between your
+sites) - and so does every device row, every cable row, every provider
+network row and every circuit row. Right-click a card →
 **Hide** is the same thing for one card, from the canvas, and right-click a
 line → **Hide** for one line: a cable, a bundle or LAG (its cables), a
 breakout (the whole cable), an LLDP neighbour or a BGP session.
@@ -992,8 +1026,9 @@ role and stacks them: in the [Levels](#levels-role-tiers) order when you have
 set one (roles bonded to one level share a band, "Spine + Border"), otherwise
 in the order the layout ranked them, core on top. Devices with no role get a
 band of their own at the bottom. Each band's cards stand side by side in the
-order they stood, wrapping onto another line past 12 cards; every band is as
-wide as the widest. In **Detailed**, rows keep room for the port names (and
+order they stood, wrapping onto another line past 12 cards (or a line too
+wide) unless the band's [Cards per row](#cards-per-row) says otherwise;
+every band is as wide as the widest. In **Detailed**, rows keep room for the port names (and
 addresses) on the cables: a clear run above and below a row's cards where
 its cables leave that way, lanes between rows for the cables to turn in, and
 cabled cards side by side far enough apart for a name at each end - the
@@ -1086,6 +1121,21 @@ rows' edges. Side bands can stand side by side.
 - **Delete** it from the toolbar or by right-clicking it (**Delete**); its cards stay
   where they are. **Arrange ▸ Clear bands** removes every band (after a
   question when some were drawn by hand).
+
+**Cards per row.** Right-click a row → **Cards per row** sets how many cards
+stand on one line before the band wraps onto another:
+
+- **Auto** (the default) wraps past 12 cards, or sooner when the line gets
+  too wide.
+- **All on one line** never wraps - a leaf band of 20 switches stays one
+  line, however wide.
+- **A number** (2 to 24 in the menu) wraps past exactly that many cards,
+  however wide they are.
+
+The band is laid out again where it stands, the rows under it moving up or
+down with their cards, as one undo step. **Arrange ▸ Bands by role** (or
+*by type*) and **Reset layout** keep a band's setting when they rebuild it,
+and it saves with the view.
 
 A card belongs to the band its centre is in - nothing else is stored - so
 you can drag a card into another band, and the draw.io file nests it
@@ -1657,7 +1707,11 @@ measures nothing itself.
 A [provider network](#provider-networks) is drawn as a neutral card like a
 site card - its name, then its provider - linking back to the network, and
 each circuit to it is its own line in its circuit's colour, linking back to
-the circuit; a Simple export never folds two circuits into one line.
+the circuit; a Simple export never folds two circuits into one line. A
+[circuit between two sites](#circuits-between-sites) prints as its dashed
+line between the two cards, its circuit id at the middle, linking back to
+the circuit - in the SVG, PNG, PDF and draw.io exports of the Diagram and
+of the Hierarchy alike.
 
 - **SVG** is plain vector drawing: shapes, lines and text, no embedded HTML.
   It opens in a browser, Inkscape or Illustrator and stays editable. Text is
@@ -1874,6 +1928,40 @@ site end must be at a site the caller may view (`site.view`); on the device
 graph the device follows `device.view`, and a patch panel outside it is not
 walked. Every map costs the same few queries whatever the number of
 circuits. `include` enrichment never touches these nodes and lines.
+
+**Circuits between sites.** A circuit with both ends on sites, each cabled
+to a device port (through patch panels with `collapse_panels=1`), is one
+edge between the two devices (see
+[Circuits between sites](#circuits-between-sites)), side A the `source`:
+
+```json
+{"id": "cc:<circuit uuid>", "source": "dev:<A uuid>", "target": "dev:<Z uuid>",
+ "type": "circuit", "data": {
+  "circuit": {"id", "cid", "provider", "type", "status", "commit_rate_kbps"},
+  "color": "aa00ff", "status": "active", "status_mini": {…},
+  "ends": [
+    {"side": "A",
+     "termination": {"id", "side", "port_speed_kbps", "upstream_speed_kbps"},
+     "site": {"id", "name"}, "device": {"id", "name"},
+     "port": {"id", "name", "kind"}, "via": []},
+    {"side": "Z", …, "via": ["pp-1"]}],
+  "via": ["pp-1"],
+  "pairs": [{"a": "NSP1-PE2:xe-0/0/0", "b": "NSP2-PE2:xe-0/0/0",
+             "a_port": "xe-0/0/0", "b_port": "xe-0/0/0",
+             "a_id": "…", "a_kind": "interface",
+             "b_id": "…", "b_kind": "interface"}]}}
+```
+
+It has no `provider_network`, and carries no `lag`, so it is never folded
+into a bundle. `via` is both ends' panels, A's first. On the grouped graph
+the `source` and `target` are the two groups (`grp:<id>`), with no `pairs`;
+when both devices are in one group there is no edge. Both ends must be
+cabled to devices on the map - an uncabled end, or one cabled to a device
+the map leaves out, draws nothing. It needs `circuit.view`, and both devices
+must be in the caller's `device.view` scope (a panel outside it is not
+walked); otherwise the edge is left out. A device's card carries the port
+the edge anchors to in its `ports`. The same fixed number of queries covers
+these and the provider-network circuits.
 
 `GET /api/topology/chassis/` lists the virtual chassis the Diagram's device
 list offers: `{results: [{id, name, master_id, members: [{id, name,
@@ -2121,7 +2209,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto) and `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
 | `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |

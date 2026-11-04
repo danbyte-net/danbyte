@@ -24,6 +24,7 @@ import {
   sameGeometry,
   setLayers,
   setLayout,
+  setPerRow,
   snapSide,
   splitLayers,
 } from "./bands"
@@ -234,6 +235,19 @@ export function useBands(opts: {
               room: room(),
               id: e.id,
               layout: e.layout,
+            })
+          )
+          return
+        }
+        if (e.type === "per_row") {
+          apply(
+            setPerRow({
+              regions: now,
+              cards: allCards(),
+              levels,
+              room: room(),
+              id: e.id,
+              perRow: e.perRow,
             })
           )
           return

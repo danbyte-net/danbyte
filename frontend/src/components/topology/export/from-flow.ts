@@ -92,6 +92,10 @@ function cables(d: FlowEdgeData): number {
   return 1
 }
 
+/** The circuit a Hierarchy line stands for (#466), if it is one. */
+const circuitOf = (e: Edge) =>
+  (e.data as FlowEdgeData | undefined)?.raw?.circuit
+
 const WIRING = new Set(["cable", "lagbundle", "bundle", "groupedge"])
 
 const overlaps = (a: Rect, b: Rect) =>
@@ -183,7 +187,8 @@ export function fromFlow(
   for (const e of flowEdges) {
     if (e.hidden || !rects.has(e.source) || !rects.has(e.target)) continue
     const sem = (e.data as FlowEdgeData | undefined)?.sem
-    if (sem === "ghost" || sem === "bgp") {
+    // A circuit (#466) is its own line, never a pair's folded cables.
+    if (sem === "ghost" || sem === "bgp" || circuitOf(e)) {
       order.push(e)
       continue
     }
@@ -222,16 +227,24 @@ export function fromFlow(
     const s = rects.get(e.source)!
     const t = rects.get(e.target)!
     const [[a, b]] = linkEnds({ a: [], b: [], simple: true }, s, t)
-    const mid =
-      sem === "ghost" ? ["LLDP"] : sem !== "bgp" && n > 1 ? [`${n}x`] : []
+    const circuit = group.length === 1 ? circuitOf(e) : undefined
+    const mid = circuit
+      ? [circuit.cid]
+      : sem === "ghost"
+        ? ["LLDP"]
+        : sem !== "bgp" && n > 1
+          ? [`${n}x`]
+          : []
     const cableId =
       group.length === 1 && d.sem === "cable" ? d.raw?.cable_id : undefined
     const session = sem === "bgp" ? d.bgp?.sessions?.[0] : undefined
-    const link = cableId
-      ? danbyteUrl(opts.origin, `/cables/${cableId}`)
-      : session
-        ? danbyteUrl(opts.origin, `/bgp-sessions/${session}`)
-        : undefined
+    const link = circuit
+      ? danbyteUrl(opts.origin, `/circuits/${circuit.id}`)
+      : cableId
+        ? danbyteUrl(opts.origin, `/cables/${cableId}`)
+        : session
+          ? danbyteUrl(opts.origin, `/bgp-sessions/${session}`)
+          : undefined
     links.push(
       routeLink(
         group.length > 1 ? `${e.id}+${group.length - 1}` : e.id,

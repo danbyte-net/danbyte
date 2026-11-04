@@ -5075,6 +5075,9 @@ class TopologyViewSerializer(NumIdModelSerializer):
     MAX_BAND_RULE_IDS = 100
     #: A row of several layers: a sub-row per layer, or one mixed row.
     BAND_LAYOUTS = ("stack", "row")
+    # A band's cards per row: 1 up to this (a view holds at most 200 zones'
+    # worth of cards on a line); absent is Auto.
+    MAX_BAND_PER_ROW = 200
     DIAGRAM_MODES = ("simple", "detailed")
     DIAGRAM_FACES = ("card", "photo")
     #: Where cables meet a photo: on its ports, or spread along its edge.
@@ -5233,6 +5236,17 @@ class TopologyViewSerializer(NumIdModelSerializer):
                     )
                 color = color.lower()
                 region["color"] = color if self.REGION_COLOR_RE.match(color) else None
+            # Cards per row: a count, or absent (None) for Auto.
+            per_row = region.get("per_row")
+            if per_row is not None and (
+                isinstance(per_row, bool)
+                or not isinstance(per_row, int)
+                or not 1 <= per_row <= self.MAX_BAND_PER_ROW
+            ):
+                raise serializers.ValidationError(
+                    f"{where}.per_row must be a whole number from 1 to "
+                    f"{self.MAX_BAND_PER_ROW}, or absent for Auto"
+                )
             rule = region.get("rule")
             if rule is None:
                 continue

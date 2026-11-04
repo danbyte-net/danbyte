@@ -42,7 +42,7 @@ import { STRIP_SIDE_ITEMS } from "./diagram/chassis-node"
 import { LINE_LOOKS } from "./diagram/line-tabs"
 import type { LineType, Side } from "./diagram/types"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
-import { ZONE_COLORS } from "./view-positions"
+import { BAND_PER_ROW_MAX, ZONE_COLORS } from "./view-positions"
 import type { BandExits } from "./view-positions"
 
 // The topology map's right-click menus, one set of items per thing clicked,
@@ -429,11 +429,16 @@ export function regionSwatches(kind: "band" | "zone"): Swatch[] {
   ]
 }
 
+/** The counts a row's Cards per row offers, besides Auto and All on one
+ * line. A count saved by hand that is none of these is listed too. */
+export const PER_ROW_CHOICES = [2, 3, 4, 6, 8, 10, 12, 16, 20, 24] as const
+
 /** Right-click on a band or a zone. */
 export function RegionMenuItems({
   kind,
   color,
   exits,
+  perRow,
   onRename,
   onRecolor,
   onDelete,
@@ -446,6 +451,12 @@ export function RegionMenuItems({
   exits?: {
     value: BandExits | undefined
     onChange: (exits: BandExits | undefined) => void
+  }
+  /** A row: how many cards stand on a line before it wraps (undefined
+   * value: Auto). Left out for side bands and zones. */
+  perRow?: {
+    value: number | undefined
+    onChange: (perRow: number | undefined) => void
   }
   onRename: () => void
   onRecolor: (color: string | null) => void
@@ -527,6 +538,41 @@ export function RegionMenuItems({
               <DropdownMenuRadioItem value="h">
                 <ArrowLeftRight /> Left and right
               </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
+      {perRow && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger inset>Cards per row</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-36">
+            <DropdownMenuRadioGroup
+              value={perRow.value === undefined ? "auto" : String(perRow.value)}
+              onValueChange={(v) => {
+                const n = v === "auto" ? undefined : Number(v)
+                if (n !== perRow.value) perRow.onChange(n)
+              }}
+            >
+              <DropdownMenuRadioItem value="auto">Auto</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value={String(BAND_PER_ROW_MAX)}>
+                All on one line
+              </DropdownMenuRadioItem>
+              <DropdownMenuSeparator />
+              {[
+                ...new Set<number>([
+                  ...PER_ROW_CHOICES,
+                  ...(perRow.value !== undefined &&
+                  perRow.value !== BAND_PER_ROW_MAX
+                    ? [perRow.value]
+                    : []),
+                ]),
+              ]
+                .sort((a, b) => a - b)
+                .map((n) => (
+                  <DropdownMenuRadioItem key={n} value={String(n)}>
+                    <span className="num">{n}</span>
+                  </DropdownMenuRadioItem>
+                ))}
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>

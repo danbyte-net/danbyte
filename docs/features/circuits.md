@@ -85,6 +85,20 @@ Every circuit to the same network meets at the one node. Both maps can hide
 the networks and their lines, and show them only to someone who may view
 circuits and provider networks, and only for circuits at sites they may view.
 
+### Circuits between two sites on the topology
+
+A circuit with **both** ends on your own sites - side A cabled to a port on
+one router, side Z to a port on another - is drawn on the
+[topology](topology.md#circuits-between-sites) as one dashed line between
+the two devices, named by its circuit id and in its type's colour (else its
+status's). The cables are walked through patch panels. Grouped by site or
+location it is a line between the two cards when the devices are in
+different groups. Clicking it opens the circuit's panel with both ends.
+
+Both ends must be cabled to devices on the map, and the line needs view on
+circuits and on both devices; otherwise nothing is drawn. The Objects
+sidebar's **Circuits** eye hides these lines.
+
 ## Add a circuit
 
 1. Open **Circuits → Circuits** and click **Add circuit**.

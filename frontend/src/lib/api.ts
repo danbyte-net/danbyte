@@ -4525,6 +4525,23 @@ export interface TopoCircuitRef {
   site?: { id: string; name: string }
 }
 
+/** One end of a circuit between two of your sites, as its line on the
+ * topology carries it: the termination, its site, and the device port it
+ * is cabled to (through the panels in `via`). */
+export interface TopoCircuitEnd {
+  side: "A" | "Z"
+  termination: {
+    id: string
+    side: string
+    port_speed_kbps: number | null
+    upstream_speed_kbps: number | null
+  }
+  site: { id: string; name: string }
+  device: { id: string; name: string }
+  port: { id: string; name: string; kind: string }
+  via: string[]
+}
+
 /** A provider network node's data (#466): the hub its circuits meet at. */
 export interface TopoProviderNetworkData {
   kind: "provider_network"
@@ -4682,6 +4699,10 @@ export interface TopoEdge {
      * its network, its site-side termination and site, and - when cabled -
      * the device port it lands on. */
     circuit?: TopoCircuitRef
+    /** A circuit between two of your sites (`id: "cc:<circuit id>"`): its
+     * two ends, the source's first. Absent on a line to a provider
+     * network. */
+    ends?: TopoCircuitEnd[]
     provider_network?: {
       id: string
       name: string

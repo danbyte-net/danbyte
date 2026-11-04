@@ -27,7 +27,9 @@ chassis, member number and whether it is the master), and a hand-picked map
 ``GET /api/topology/chassis/`` lists the chassis the Diagram can place.
 
 A circuit from a site to a provider network adds that network as a node of
-its own and a ``circuit`` edge to it (#466) - ``api/topology_provider.py``.
+its own and a ``circuit`` edge to it (#466), and a circuit between two sites
+whose ends are both cabled to devices on the map one ``circuit`` edge
+between them - ``api/topology_provider.py``.
 """
 from __future__ import annotations
 

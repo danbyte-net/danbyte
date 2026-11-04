@@ -4004,6 +4004,15 @@ function TopologyPage() {
                         value: region.exits,
                         onChange: (exits) => setExits(id, exits),
                       },
+                      ...(isDiagram
+                        ? {
+                            perRow: {
+                              value: region.per_row,
+                              onChange: (perRow: number | undefined) =>
+                                bands.edit({ type: "per_row", id, perRow }),
+                            },
+                          }
+                        : {}),
                     }
                   : {})}
                 onRename={() => canvas.current?.renameRegion(id)}

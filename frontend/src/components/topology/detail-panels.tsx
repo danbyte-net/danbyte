@@ -222,17 +222,38 @@ export function CircuitPanel({ data: d, onClose, line }: EdgePanelProps) {
           </Link>
         </PanelRow>
       )}
-      {d.site && <PanelRow label="Site">{d.site.name}</PanelRow>}
-      <PanelRow label="Port">
-        {d.device && d.port ? (
-          <span className="font-mono">
-            {d.device.name}:{d.port.name}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">Not cabled</span>
-        )}
-      </PanelRow>
-      {!!d.via?.length && <PanelRow label="Via">{d.via.join(", ")}</PanelRow>}
+      {d.ends?.length ? (
+        // A circuit between two of your sites: each end's site and port.
+        d.ends.map((end) => (
+          <PanelSection key={end.side} label={`Side ${end.side}`}>
+            <PanelRow label="Site">{end.site.name}</PanelRow>
+            <PanelRow label="Port">
+              <span className="font-mono">
+                {end.device.name}:{end.port.name}
+              </span>
+            </PanelRow>
+            {!!end.via.length && (
+              <PanelRow label="Via">{end.via.join(", ")}</PanelRow>
+            )}
+          </PanelSection>
+        ))
+      ) : (
+        <>
+          {d.site && <PanelRow label="Site">{d.site.name}</PanelRow>}
+          <PanelRow label="Port">
+            {d.device && d.port ? (
+              <span className="font-mono">
+                {d.device.name}:{d.port.name}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">Not cabled</span>
+            )}
+          </PanelRow>
+          {!!d.via?.length && (
+            <PanelRow label="Via">{d.via.join(", ")}</PanelRow>
+          )}
+        </>
+      )}
       {line && <PanelSection label="Line">{line}</PanelSection>}
     </PanelShell>
   )
