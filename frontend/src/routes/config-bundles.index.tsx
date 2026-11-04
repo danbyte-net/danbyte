@@ -79,7 +79,6 @@ function ConfigBundlesPage() {
         total={query.data?.count}
         columns={columns}
         flexColumn="description"
-        tableId="config-bundles"
         onSelectedRowsChange={selectable ? setSelected : undefined}
         selectedRows={selectable ? selected : undefined}
       />
