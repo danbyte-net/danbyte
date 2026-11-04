@@ -23,6 +23,7 @@ import {
 import { apiErrorToast } from "@/lib/api-toast"
 import { SafeBulkDeleteDialog } from "@/components/safe-bulk-delete-bar"
 import { ApplyProfileBulkButton } from "@/components/device-profile-bulk"
+import { reportExport, useObjectReport } from "@/components/object-report"
 
 // Floating action bar for /devices - appears when rows are selected: deploy
 // the selection to an automation target (Danbyte hands off to the runner; it
@@ -48,7 +49,9 @@ export function DeviceBulkBar({
 }: DeviceBulkBarProps) {
   const [open, setOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const report = useObjectReport("device")
   if (selected.length === 0) return null
+  const ids = selected.map((d) => d.id)
   return (
     <>
       <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center">
@@ -80,7 +83,16 @@ export function DeviceBulkBar({
             label={`Print labels (${selected.length})`}
             variant="ghost"
           />
-          <BulkExport ioType="device" ids={selected.map((d) => d.id)} />
+          <BulkExport
+            ioType="device"
+            ids={ids}
+            extraExports={[
+              reportExport(report.openReport, () => ({
+                ids,
+                scope: "selected",
+              })),
+            ]}
+          />
           <AddToSlaButton
             objectType="api.device"
             ids={selected.map((d) => d.id)}
@@ -106,6 +118,7 @@ export function DeviceBulkBar({
           </Button>
         </div>
       </div>
+      {report.dialog}
       {deleting && (
         <SafeBulkDeleteDialog
           ids={selected.map((d) => d.id)}

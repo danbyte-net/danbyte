@@ -654,3 +654,13 @@ and images - or, from the same menu, the **hardware sheet**: CPU, memory and
 storage totals first, then one table of parts per kind with the slot each
 sits in - or **All in one**, both on one sheet. The file is named after the
 device and its serial number. See [Spec sheets](../features/spec-sheets.md).
+
+## PDF report
+
+**PDF report…** in the page actions prints the device with the sections you
+pick - overview and custom fields, interfaces, IP addresses, cables,
+installed software, power and console ports, lifecycle, monitoring, journal
+and change log - each with its own columns. The device list's **Import /
+Export** menu and the bulk bar's **Export** menu make one report of the rows
+shown or selected: a table with the list's columns, a summary and, if you
+like, a page per device. See [PDF reports](../features/reports.md).

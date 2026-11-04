@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { reportExport, useObjectReport } from "@/components/object-report"
 
 export interface IpBulkBarProps {
   selected: IPAddress[]
@@ -59,6 +60,7 @@ export function IpBulkBar({ selected, onCleared, returnTo }: IpBulkBarProps) {
     },
     onError: (err) => apiErrorToast(err),
   })
+  const report = useObjectReport("ipaddress")
 
   if (selected.length === 0) return null
   const ids = selected.map((p) => p.id)
@@ -66,6 +68,7 @@ export function IpBulkBar({ selected, onCleared, returnTo }: IpBulkBarProps) {
 
   return (
     <>
+      {report.dialog}
       <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center lg:left-60">
         <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
           <span className="pl-2 text-xs font-medium text-foreground">
@@ -91,7 +94,16 @@ export function IpBulkBar({ selected, onCleared, returnTo }: IpBulkBarProps) {
               <Pencil className="mr-1 h-3 w-3" /> Edit
             </Link>
           </Button>
-          <BulkExport ioType="ipaddress" ids={ids} />
+          <BulkExport
+            ioType="ipaddress"
+            ids={ids}
+            extraExports={[
+              reportExport(report.openReport, () => ({
+                ids,
+                scope: "selected",
+              })),
+            ]}
+          />
           <Button
             size="sm"
             variant="ghost"

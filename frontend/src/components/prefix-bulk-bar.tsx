@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { PendingLabel } from "@/components/pending-label"
 import { apiErrorToast } from "@/lib/api-toast"
+import { reportExport, useObjectReport } from "@/components/object-report"
 import {
   BatchFailure,
   IDS_PER_CALL,
@@ -129,12 +130,14 @@ export function PrefixBulkBar({ selected, onCleared }: PrefixBulkBarProps) {
     },
     onError: (err) => apiErrorToast(err),
   })
+  const report = useObjectReport("prefix")
 
   if (selected.length === 0) return null
   const ids = selected.map((p) => p.id)
 
   return (
     <>
+      {report.dialog}
       <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center">
         <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
           <span className="pl-2 text-xs font-medium text-foreground">
@@ -190,7 +193,16 @@ export function PrefixBulkBar({ selected, onCleared }: PrefixBulkBarProps) {
               <Pencil className="mr-1 h-3 w-3" /> Edit
             </Link>
           </Button>
-          <BulkExport ioType="prefix" ids={ids} />
+          <BulkExport
+            ioType="prefix"
+            ids={ids}
+            extraExports={[
+              reportExport(report.openReport, () => ({
+                ids,
+                scope: "selected",
+              })),
+            ]}
+          />
           <Button
             size="sm"
             variant="ghost"

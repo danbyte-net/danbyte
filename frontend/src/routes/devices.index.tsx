@@ -30,6 +30,7 @@ import { useCanApplyProfiles } from "@/components/device-profile-bulk"
 import { useMe, objCan } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 import { useSbomExport } from "@/components/sbom-export"
+import { reportExport, useObjectReport } from "@/components/object-report"
 
 export const Route = createFileRoute("/devices/")({
   // Typed deep-link params, e.g. the "Devices by status / type / site /
@@ -192,6 +193,17 @@ function DevicesPage() {
     [filteredRows]
   )
   const sbom = useSbomExport(sbomFilter, filteredRows.length === 0)
+  // The PDF report of the rows the list shows now.
+  const report = useObjectReport("device")
+  const reportItem = reportExport(
+    report.openReport,
+    () => ({
+      ids: filteredRows.map((d) => d.id),
+      filters: q ? { search: q } : undefined,
+      scope: "filtered",
+    }),
+    filteredRows.length === 0
+  )
 
   return (
     <ListPageShell
@@ -210,7 +222,7 @@ function DevicesPage() {
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
-          <TableActions ioType="device" extraExports={[sbom]} />
+          <TableActions ioType="device" extraExports={[sbom, reportItem]} />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/devices/new">Add device</Link>
@@ -236,6 +248,7 @@ function DevicesPage() {
         }
         selectedRows={selected}
       />
+      {report.dialog}
       <DeviceDeleteDialog
         device={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

@@ -17081,3 +17081,67 @@ export interface PrtgTestResult {
   v2_available: boolean | null
   v2_detail: string
 }
+
+// ─── Object reports (api/object_report.py) ──────────────────────────────────
+
+/** The types a PDF report covers, by RBAC slug. */
+export type ObjectReportKind = "device" | "prefix" | "ipaddress"
+
+export interface ObjectReportColumn {
+  key: string
+  label: string
+}
+
+export interface ObjectReportSection {
+  key: string
+  label: string
+  kind: string
+  /** On when nothing was chosen before. */
+  default: boolean
+  /** False when the reader may not view it; `note` says why. */
+  available: boolean
+  note?: string
+  /** A section of the latest N entries (journal, change log). */
+  last: boolean
+  columns: ObjectReportColumn[]
+  default_columns: string[]
+}
+
+/** `GET /api/<type>/report/`: what a report can hold for this reader. */
+export interface ObjectReportSchema {
+  type: ObjectReportKind
+  label: string
+  plural: string
+  columns: ObjectReportColumn[]
+  default_columns: string[]
+  group_by: ObjectReportColumn[]
+  sections: ObjectReportSection[]
+  papers: string[]
+  limits: {
+    objects: number
+    object_pages: number
+    section_rows: number
+    total_rows: number
+    columns: number
+    last: number
+  }
+}
+
+/** `POST /api/<type>/report/`'s body. */
+export interface ObjectReportRequest {
+  ids?: string[]
+  filters?: Record<string, string | string[]>
+  sections?: string[]
+  /** Per section, and `list` for the objects' table. */
+  columns?: Record<string, string[]>
+  options?: {
+    title?: string
+    paper?: "a4" | "letter" | "a3"
+    orientation?: "portrait" | "landscape"
+    group_by?: string | null
+    include_summary?: boolean
+    list_table?: boolean
+    per_object?: boolean
+    last?: number
+  }
+}

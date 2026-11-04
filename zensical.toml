@@ -118,6 +118,7 @@ nav = [
     { "Import & export"   = "features/import-export.md" },
     { "Printing labels"   = "features/label-templates.md" },
     { "Spec sheets"       = "features/spec-sheets.md" },
+    { "PDF reports"       = "features/reports.md" },
     { "Documents"         = "features/documents.md" },
     { "Journals"          = "features/journals.md" },
     { "Change log"        = "features/change-log.md" },

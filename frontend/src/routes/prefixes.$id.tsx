@@ -49,6 +49,7 @@ import {
   useDnsEnabled,
 } from "@/components/integrations/dns-records-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
+import { ObjectReportButton } from "@/components/object-report"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import {
   formatCustomValue,
@@ -241,6 +242,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         <>
           <AutoDiscoverButton prefixId={p.id} initial={p.auto_discover} />
           <PrefixScanGroup prefixId={p.id} />
+          <ObjectReportButton kind="prefix" id={p.id} name={p.cidr} />
           {canEditPrefix && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/prefixes/$id/edit" params={{ id: p.id }}>

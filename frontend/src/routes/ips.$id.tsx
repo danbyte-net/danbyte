@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner"
 
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
+import { ObjectReportButton } from "@/components/object-report"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 
@@ -476,6 +477,11 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           <Button variant="outline" size="sm" onClick={copyAllAsTable}>
             <TableIcon className="h-3.5 w-3.5" /> Copy as table
           </Button>
+          <ObjectReportButton
+            kind="ipaddress"
+            id={ip.id}
+            name={ip.ip_address}
+          />
           {canDo("ipaddress", "add") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/ips/new" search={{ clone: ip.id }}>
