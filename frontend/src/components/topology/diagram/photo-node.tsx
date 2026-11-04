@@ -14,9 +14,8 @@ import type { DiagramCardData } from "./types"
 // A device drawn as its front photo (photo-anchors.ts): the image to
 // scale, a thin outline on each port a cable is plugged into, a grey tab
 // on the image edge for a cabled port without a marker, and the name as a
-// caption under the image - its role badge after the name when its card
-// lines show the role (a photo has no role fill), its card lines after
-// that, muted, then the status pill, which wins any room the lines took from it; a cut caption
+// caption under the image - its role badge after the name (a photo has
+// no role fill; `roleBadge` says when), its card lines after that, muted, then the status pill, which wins any room the lines took from it; a cut caption
 // names itself in full on hover. No card fill.
 // Taking its cables at its edge, it has no outlines: in Detailed mode each
 // cable leaves a nub on the image's side, as on a card.

@@ -271,8 +271,8 @@ export interface PhotoModel {
   /** Its status pill shows whatever the monitoring says: the lines never
    * take the pill's room. */
   statusPill?: true
-  /** Its role as a badge after the name, when its card lines show the
-   * role (`roleBadge`); that line is then not in `lines`. */
+  /** Its role as a badge after the name (`roleBadge`); a role line in
+   * its card lines is then not in `lines`. */
   badge?: RoleBadge
 }
 

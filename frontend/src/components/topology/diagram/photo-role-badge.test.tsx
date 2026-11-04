@@ -29,21 +29,27 @@ import type { FacedData } from "./photo-anchors"
 import { toDocument } from "./to-document"
 import type { DiagramCardData } from "./types"
 
-// On the Photo face a device has no card fill, so its role colour shows
-// nowhere - unless its card lines list the role: then the role is a badge
-// in its caption, after the name and before the other lines, coloured as
-// its card would be. The legend lists a role only when the map draws its
-// colour: on a card, or on a photo's badge.
+// On the Photo face a device has no card fill, so its role is a badge in
+// its caption, after the name and before the other lines, coloured as its
+// card would be - unless its card lines were chosen without the role (a
+// list set on the device, view, role, tenant or deployment); Danbyte's
+// built-in default lines keep it. The legend lists a role only when the
+// map draws its colour: on a card, or on a photo's badge.
 
 afterEach(cleanup)
 
 const fwId = aarhusId("aarhus-fw1")
 
-/** The photo map, every device's card lines `fields`, its photo face from
- * the view (`face`) or for the firewall alone (`own`). */
+/** The photo map, every device's card lines `fields` - chosen on the view
+ * unless `source` says where they came from - its photo face from the
+ * view (`face`) or for the firewall alone (`own`). */
 function graphWith(
   fields: string[],
-  o: { face?: "photo" | "card"; own?: boolean } = {}
+  o: {
+    face?: "photo" | "card"
+    own?: boolean
+    source?: "view" | "tenant" | "default"
+  } = {}
 ): TopologyGraph {
   const g: TopologyGraph = {
     ...aarhusPhotoGraph,
@@ -53,7 +59,7 @@ function graphWith(
         ...n.data,
         card: {
           fields,
-          source: "default" as const,
+          source: o.source ?? "view",
           values: { serial: "FOC1234" },
         },
       },
@@ -96,13 +102,32 @@ const fwData = (g: TopologyGraph) =>
   g.nodes.find((n) => n.id === fwId)!.data as FacedData
 
 describe("a role badge in a photo's caption", () => {
-  it("shows when the card lines list the role, and only then", () => {
+  it("shows by default, and on chosen lines only when they list the role", () => {
     const on = fwData(graphWith(["role", "serial"]))
-    expect(roleBadge(on)).toEqual({
-      text: on.role!.name,
-      color: on.role!.color,
-    })
+    const badge = { text: on.role!.name, color: on.role!.color }
+    expect(roleBadge(on)).toEqual(badge)
+    // Danbyte's default lines are no choice: the badge shows.
+    for (const fields of [["serial"], ["monitor", "primary_ip", "serial"]])
+      expect(
+        roleBadge(fwData(graphWith(fields, { source: "default" })))
+      ).toEqual(badge)
+    // Without card lines in the payload, too.
+    const { card: _card, ...bare } = on
+    expect(roleBadge(bare)).toEqual(badge)
+    // Lines chosen on the view or the tenant without the role: none.
     expect(roleBadge(fwData(graphWith(["serial"])))).toBeNull()
+    expect(
+      roleBadge(fwData(graphWith(["serial"], { source: "tenant" })))
+    ).toBeNull()
+    // No role, no badge.
+    expect(roleBadge({ ...on, role: null })).toBeNull()
+  })
+
+  it("is built for a photo on the default lines out of the box", () => {
+    const b = build(graphWith(["monitor", "serial"], { source: "default" }))
+    const p = b.model.photos!.get(fwId)!
+    expect(p.badge?.text).toBe(fwData(graphWith([])).role!.name)
+    expect(p.lines).toEqual(["SN FOC1234"])
   })
 
   it("sits after the name, before the lines, its width measured whole", () => {
@@ -220,6 +245,12 @@ describe("a role badge in a photo's caption", () => {
 
 describe("roles in the legend", () => {
   const names = (g: TopologyGraph) => graphLegend(g).roles.map((r) => r.name)
+
+  it("lists them on a map of photos on the default lines", () => {
+    expect(
+      names(graphWith(["serial"], { source: "default" })).length
+    ).toBeGreaterThan(0)
+  })
 
   it("lists none on a map of photos without role badges", () => {
     const g = graphWith(["serial"])

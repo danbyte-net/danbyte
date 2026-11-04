@@ -476,18 +476,25 @@ export function photoAnchors(
 }
 
 /** A photo caption's role badge: the device's role, coloured as its card
- * would be, when its card lines show the role. A photo has no card fill,
- * so the badge is where its role colour shows. */
+ * would be. A photo has no card fill, so the badge is where its role
+ * colour shows. */
 export interface RoleBadge {
   text: string
   color: string | null
 }
 
-/** The role badge a device's photo caption carries: its role, when its
- * card lines list `role`. */
+/** The role badge a device's photo caption carries: its role, unless
+ * its card lines were chosen without it. Lines from Danbyte's built-in
+ * default (`card.source` `default`, or no card in the payload) are not a
+ * choice, so the badge shows; a list set on the device, the saved view,
+ * the role, the tenant or the deployment shows it only when it lists
+ * `role`. */
 export function roleBadge(data: TopoNode["data"]): RoleBadge | null {
   const name = data.role?.name
-  if (!name || !(data.card?.fields ?? []).includes("role")) return null
+  if (!name) return null
+  const card = data.card
+  if (card && card.source !== "default" && !card.fields.includes("role"))
+    return null
   return { text: name, color: data.role?.color || null }
 }
 
