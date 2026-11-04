@@ -66,6 +66,7 @@ from . import (
     elevation_pdf,
     floor_plan_pdf,
     floor_plan_report,
+    object_report,
     ip_usage,
     scene_geo,
     software_target,
@@ -1128,7 +1129,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         .all()
     )
     serializer_class = PrefixSerializer
-    rbac_action_map = {"bulk_delete": "delete"}
+    rbac_action_map = {"bulk_delete": "delete", **object_report.RBAC_ACTIONS}
     # Clone carries the routing/classification context; the CIDR is the unique
     # identifier and is left blank for the user to fill.
     clone_fields = (
@@ -1152,6 +1153,20 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         from .views import reparent_ips_out_of
 
         return Response(reparent_ips_out_of(self.get_object(), dry_run=True))
+
+    @object_report.describe_schema(object_report.PREFIX)
+    @object_report.report_schema(object_report.PREFIX)
+    @action(detail=False, methods=["get", "post"], url_path="report")
+    def report(self, request):
+        """A PDF report of these objects (api.object_report); GET says what
+        one can hold."""
+        return object_report.export(request, object_report.PREFIX)
+
+    @object_report.file_schema(object_report.PREFIX)
+    @action(detail=False, methods=["get"], url_name="report-file",
+            url_path=r"report/file/(?P<token>[A-Za-z0-9_-]+)")
+    def report_file(self, request, token=None):
+        return object_report.export_file(request, object_report.PREFIX, token)
 
     def perform_create(self, serializer):
         prefix = serializer.save(
@@ -1749,7 +1764,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         .all()
     )
     serializer_class = IPAddressSerializer
-    rbac_action_map = {"bulk_delete": "delete"}
+    rbac_action_map = {"bulk_delete": "delete", **object_report.RBAC_ACTIONS}
     # The address itself + its device/interface assignment are identity; a clone
     # keeps the classification and lands unassigned at a fresh address.
     clone_fields = (
@@ -1863,6 +1878,20 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         if page is not None and getattr(self, "action", None) == "list":
             attach_dhcp_flags(page)
         return page
+
+    @object_report.describe_schema(object_report.IP)
+    @object_report.report_schema(object_report.IP)
+    @action(detail=False, methods=["get", "post"], url_path="report")
+    def report(self, request):
+        """A PDF report of these objects (api.object_report); GET says what
+        one can hold."""
+        return object_report.export(request, object_report.IP)
+
+    @object_report.file_schema(object_report.IP)
+    @action(detail=False, methods=["get"], url_name="report-file",
+            url_path=r"report/file/(?P<token>[A-Za-z0-9_-]+)")
+    def report_file(self, request, token=None):
+        return object_report.export_file(request, object_report.IP, token)
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
@@ -3889,6 +3918,7 @@ class DeviceViewSet(
     )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
+    rbac_action_map = {**PrtgCleanupDeleteMixin.rbac_action_map, **object_report.RBAC_ACTIONS}
     # Field-level write allow-list, read by api.editable_fields - devices have
     # NO bulk-update endpoint, so this only powers planned changes and any
     # future single-field write path. Rack *placement* scalars (position, face,
@@ -3934,6 +3964,20 @@ class DeviceViewSet(
             f'{disposition}; filename="{spec_filename(obj, suffix)}"'
         )
         return resp
+
+    @object_report.describe_schema(object_report.DEVICE)
+    @object_report.report_schema(object_report.DEVICE)
+    @action(detail=False, methods=["get", "post"], url_path="report")
+    def report(self, request):
+        """A PDF report of these objects (api.object_report); GET says what
+        one can hold."""
+        return object_report.export(request, object_report.DEVICE)
+
+    @object_report.file_schema(object_report.DEVICE)
+    @action(detail=False, methods=["get"], url_name="report-file",
+            url_path=r"report/file/(?P<token>[A-Za-z0-9_-]+)")
+    def report_file(self, request, token=None):
+        return object_report.export_file(request, object_report.DEVICE, token)
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     @action(detail=True, methods=["get"], url_path="cooling-path")
