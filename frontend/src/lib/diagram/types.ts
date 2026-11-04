@@ -165,6 +165,9 @@ export interface DiagramLink {
   /** Arrowheads: at the target (`end`), at both ends, or none (absent =
    * none). An application flow's direction (#163). */
   arrow?: "end" | "both" | "none"
+  /** The draw.io layer it goes on, by name (absent = by `sem`: the page's
+   * own layer, LLDP or BGP sessions). */
+  layer?: string
 }
 
 /** Where a breakout cable splits: its trunk ends here and each leg leaves

@@ -13,8 +13,10 @@ and the Routing tab, add to a topology view's ``state``, checked the way
 * ``zones_by_style.diagram[i].exits`` - a row's sides for its cables to
   other bands: ``v`` (top and bottom) or ``h`` (left and right);
 * ``filters.routing`` - the Routing tab's display: ``mode`` (``simple`` |
-  ``detailed``), ``layers`` (``{layer: bool}``, the line layers on or off)
-  and ``fields`` (its card lines, from ``ROUTING_FIELDS``);
+  ``detailed``), ``layers`` (``{layer: bool}``, the line layers on or off),
+  ``fields`` (its card lines, from ``ROUTING_FIELDS``), ``vrf`` (the table
+  drawn: ``global``, ``all`` or a VRF id) and ``checks`` (the Checks chip
+  on or off);
 * ``zones_by_style.routing`` - its AS boxes and zones: plain zones (no
   bands) with a number box, a ``#rrggbb`` colour (or neutral) and, for an
   AS box, the ``asn`` it frames.
@@ -49,7 +51,9 @@ _SETTING_KEYS = frozenset({"orient", "off", "side"})
 #: The Routing tab's card modes and card lines.
 ROUTING_MODES = ("simple", "detailed")
 ROUTING_FIELDS = ("role", "router_id", "asn", "loopback", "site", "primary_ip", "status")
-_ROUTING_KEYS = frozenset({"mode", "layers", "fields"})
+_ROUTING_KEYS = frozenset({"mode", "layers", "fields", "vrf", "checks"})
+#: ``filters.routing.vrf`` besides a VRF id.
+ROUTING_TABLES = ("global", "all")
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 #: Largest coordinate or size a routing box may have (as the Diagram's).
 _MAX_COORD = 10_000_000
@@ -126,6 +130,15 @@ def _routing_display(display):
                 f"filters.routing.fields must be a list of {', '.join(ROUTING_FIELDS)}"
             )
         display["fields"] = list(dict.fromkeys(fields))
+    vrf = display.get("vrf")
+    if vrf is not None and not (
+        isinstance(vrf, str) and (vrf in ROUTING_TABLES or _UUID_RE.match(vrf))
+    ):
+        raise serializers.ValidationError(
+            "filters.routing.vrf must be global, all or a VRF id"
+        )
+    if "checks" in display and not isinstance(display["checks"], bool):
+        raise serializers.ValidationError("filters.routing.checks must be true or false")
 
 
 def _number(value, label, lo=None):

@@ -80,7 +80,15 @@ const map: RoutingTopology = {
     },
   ],
   meta: {
-    layers: { ebgp: true, ibgp: true, circuits: true, cables: true },
+    layers: {
+      ebgp: true,
+      ibgp: true,
+      ospf: true,
+      isis: true,
+      static: true,
+      circuits: true,
+      cables: true,
+    },
     requested: ["ebgp", "ibgp", "circuits"],
   },
 }

@@ -444,7 +444,19 @@ function page(
   // Ids: the document's own where they are free, so the file lines up with
   // Danbyte; a clash gets a `~n` suffix. Primary ids first, in document
   // order, so the same document always gets the same ids.
-  const used = new Set(["0", "1", LAYER_LLDP, LAYER_BGP])
+  // Lines that name their draw.io layer get one each, in the order they
+  // first appear (the Routing tab's layers).
+  const namedLayers = new Map<string, string>()
+  for (const l of doc.links)
+    if (l.layer && !namedLayers.has(l.layer))
+      namedLayers.set(l.layer, `layer-${namedLayers.size + 1}`)
+  const used = new Set([
+    "0",
+    "1",
+    LAYER_LLDP,
+    LAYER_BGP,
+    ...namedLayers.values(),
+  ])
   const take = (want: string) => {
     const base = want || "cell"
     let id = base
@@ -1162,9 +1174,15 @@ function page(
   const early = (n: DiagramNode) => drawsImage(n, opts.photos)
   for (const n of doc.nodes)
     if (!nodeParent.get(n) && early(n)) node(n, null, "1")
-  const onLayer = (sem: DiagramLink["sem"]) =>
-    sem === "ghost" ? LAYER_LLDP : sem === "bgp" ? LAYER_BGP : "1"
-  for (const l of doc.links) if (onLayer(l.sem) === "1") link(l, "1")
+  const onLayer = (l: DiagramLink) =>
+    l.layer
+      ? namedLayers.get(l.layer)!
+      : l.sem === "ghost"
+        ? LAYER_LLDP
+        : l.sem === "bgp"
+          ? LAYER_BGP
+          : "1"
+  for (const l of doc.links) if (onLayer(l) === "1") link(l, "1")
   for (const j of doc.junctions ?? []) junction(j)
   for (const n of doc.nodes)
     if (!nodeParent.get(n) && !early(n)) node(n, null, "1")
@@ -1172,8 +1190,9 @@ function page(
   for (const [layer, name] of [
     [LAYER_LLDP, "LLDP"],
     [LAYER_BGP, "BGP sessions"],
+    ...[...namedLayers].map(([n, id]) => [id, n] as const),
   ] as const) {
-    const links = doc.links.filter((l) => onLayer(l.sem) === layer)
+    const links = doc.links.filter((l) => onLayer(l) === layer)
     if (!links.length) continue
     out.push(`<mxCell${attrs({ id: layer, value: name, parent: "0" })}/>`)
     for (const l of links) link(l, layer)

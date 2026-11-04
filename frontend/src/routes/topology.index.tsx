@@ -35,6 +35,7 @@ import type {
   DevicePaletteRow,
   GhostEdgeData,
   Paginated,
+  RoutingDisplay,
   RoutingLayer,
   RoutingQuery,
   Status,
@@ -151,7 +152,9 @@ import type { RoutingCanvasHandle } from "@/components/topology/routing/routing-
 import { routingLegendRows } from "@/components/topology/routing/routing-document"
 import { RoutingDisplayPopover } from "@/components/topology/routing/routing-display"
 import {
+  FETCHED_LAYERS,
   readRoutingDisplay,
+  readVrf,
   routingDisplay,
   shownRouting,
 } from "@/components/topology/routing/routing-model"
@@ -379,6 +382,9 @@ export interface TopologySearch {
   /** Logical tab. */
   vlangroup?: string
   vms?: boolean
+  /** Routing tab: the table drawn - `global` or a VRF id (absent = the
+   * view's, else every table). */
+  vrf?: string
 }
 
 const str = (v: unknown): string | undefined =>
@@ -417,6 +423,7 @@ export const Route = createFileRoute("/topology/")({
       "vlangroup",
       "device",
       "levels",
+      "vrf",
     ] as const) {
       const v = str(s[k])
       if (v) out[k] = v
@@ -687,6 +694,8 @@ type ViewFilters = Partial<
     /** The virtual chassis placed on a hand-picked map. */
     chassis: string[]
     diagram: Partial<TopologyDiagramDisplay>
+    /** The Routing tab's display (its table, `vrf`, is read here). */
+    routing: RoutingDisplay
   }
 >
 function readStoredDisplay(): StoredDisplay {
@@ -1857,6 +1866,10 @@ function TopologyPage() {
     })
   const setRoutingLayer = (layer: RoutingLayer, on: boolean) =>
     setRoutingSettings({ layers: { ...routingSettings.layers, [layer]: on } })
+  // The table drawn lives in the URL (`?vrf=`) over the view's own, like
+  // the Diagram's switches; Save writes it to `filters.routing.vrf`.
+  const [vrfParam, setVrfParam] = useUrlText("vrf", readVrf(vf.routing?.vrf))
+  const routingVrf = readVrf(vrfParam)
   const routingCables = routingSettings.layers.cables
   const routingQuery = useMemo<RoutingQuery>(() => {
     const {
@@ -1866,12 +1879,12 @@ function TopologyPage() {
       group_by: _group,
       ...map
     } = graphQuery
-    const layers: RoutingLayer[] = ["ebgp", "ibgp", "circuits"]
+    const layers: RoutingLayer[] = [...FETCHED_LAYERS]
     if (routingCables) layers.push("cables")
     // Grouping by site or location has no routing picture of its own: the
     // routers of the whole set (or of the group drilled into).
-    return { ...map, layers }
-  }, [graphQuery, routingCables])
+    return { ...map, layers, vrf: routingVrf }
+  }, [graphQuery, routingCables, routingVrf])
   const rq = useQuery({
     queryKey: ["topology-routing", routingQuery],
     queryFn: ({ signal }) => fetchRoutingTopology(routingQuery, { signal }),
@@ -2181,6 +2194,12 @@ function TopologyPage() {
         groupBy,
         lag: lagMode,
         ...(withDiagram ? { diagram: diagramDisplay } : {}),
+        // The Routing tab's table, the URL's.
+        ...(doc.doc.filters.routing !== undefined || routingVrf !== "all"
+          ? {
+              routing: routingDisplay({ ...routingSettings, vrf: routingVrf }),
+            }
+          : {}),
       },
       devices: custom,
       chassis: placedChassis,
@@ -3287,6 +3306,9 @@ function TopologyPage() {
                 <RoutingDisplayPopover
                   settings={routingSettings}
                   onChange={setRoutingSettings}
+                  vrfs={rq.data?.meta.vrfs ?? []}
+                  vrf={routingVrf}
+                  onVrf={setVrfParam}
                 />
               ) : (
                 <Popover>

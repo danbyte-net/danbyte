@@ -18,8 +18,13 @@ export interface RoutingEdgeData {
    * middle one, ±1, ±2… beside it. */
   lane: number
   dimmed?: boolean
+  /** A Checks item is on it (with the chip on): drawn over a red halo. */
+  flagged?: boolean
   [key: string]: unknown
 }
+
+/** The halo under a line a Checks item names. */
+export const FLAG_WIDTH = 7
 
 /** How far apart side-by-side lines run, px. */
 export const LANE_GAP = 12
@@ -62,6 +67,17 @@ export const RoutingEdge = memo(function RoutingEdge({
   const opacity = d.dimmed ? 0.15 : look.faint ? 0.5 : 1
   return (
     <>
+      {d.flagged && (
+        <path
+          d={path}
+          data-flag=""
+          fill="none"
+          stroke="var(--destructive)"
+          strokeWidth={look.width + FLAG_WIDTH}
+          strokeLinecap="round"
+          opacity={d.dimmed ? 0.1 : 0.3}
+        />
+      )}
       <BaseEdge
         id={id}
         path={path}
