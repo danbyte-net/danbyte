@@ -164,7 +164,7 @@ const ROWS: Row[] = [
   ["support-contract-devices", "Support contract · Devices", "DCIM", "/api/devices/", sub],
   ["lifecycle", "Lifecycle", "DCIM", null],
   ["lifecycle-versions", "Lifecycle · Versions", "DCIM", null],
-  ["eol-products", "End-of-life products", "DCIM", "/api/eol/custom-products/"],
+  ["eol-products", "End-of-life products", "DCIM", "/api/eol/custom-products/", { ioType: "eolproduct" }],
   ["eol-product-cycles", "End-of-life product · Cycles", "DCIM", null, sub],
   ["eol-product-applications", "End-of-life product · Applications", "DCIM", "/api/applications/", sub],
   ["platform-groups", "Platform groups", "DCIM", "/api/platform-groups/"],
