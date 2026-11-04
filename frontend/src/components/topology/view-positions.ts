@@ -102,6 +102,9 @@ export interface Zone {
    * `BAND_PER_ROW_MAX` keeps them all on one line). Absent: Auto - wrap
    * past 12 cards or a line too wide. */
   per_row?: number
+  /** A row: where its cards line up across its width, each line on its
+   * own when it wraps. Absent: Auto - each line centred. */
+  align?: BandAlign
   /** The Routing tab: the AS this box frames. An AS box carries the cards
    * inside it when it moves; Arrange ▸ By AS finds it again by it. */
   asn?: number
@@ -119,6 +122,14 @@ export function bandPerRow(v: unknown): number | undefined {
     v <= BAND_PER_ROW_MAX
     ? v
     : undefined
+}
+
+/** Where a row's cards line up across its width. */
+export type BandAlign = "left" | "center" | "right"
+
+/** A saved `align` the map can use, else undefined (Auto). */
+export function bandAlign(v: unknown): BandAlign | undefined {
+  return v === "left" || v === "center" || v === "right" ? v : undefined
 }
 
 /** Which sides a row's cables to other bands leave by: top and bottom, or

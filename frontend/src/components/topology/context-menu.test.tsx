@@ -557,6 +557,51 @@ describe("RegionMenuItems", () => {
     expect(onChange).toHaveBeenLastCalledWith(8)
   })
 
+  it("aligns a row's cards Left, Center or Right, after Cards per row", async () => {
+    const onChange = vi.fn()
+    await openMenu(
+      <RegionMenuItems
+        {...region("band", null)}
+        perRow={{ value: undefined, onChange: vi.fn() }}
+        align={{ value: undefined, onChange }}
+      />
+    )
+    expect(rows()).toEqual([
+      "Rename",
+      "More colors",
+      "Cards per row",
+      "Align",
+      "--",
+      "Delete",
+    ])
+    fireEvent.click(screen.getByRole("menuitem", { name: "Align" }))
+    const auto = await screen.findByRole("menuitemradio", { name: "Auto" })
+    expect(auto.getAttribute("aria-checked")).toBe("true")
+    for (const name of ["Left", "Center", "Right"])
+      expect(
+        screen.getByRole("menuitemradio", { name }).getAttribute("aria-checked")
+      ).toBe("false")
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Right" }))
+    expect(onChange).toHaveBeenLastCalledWith("right")
+  })
+
+  it("shows a saved alignment checked, and goes back to Auto", async () => {
+    const onChange = vi.fn()
+    await openMenu(
+      <RegionMenuItems
+        {...region("band", null)}
+        align={{ value: "left", onChange }}
+      />
+    )
+    fireEvent.click(screen.getByRole("menuitem", { name: "Align" }))
+    const left = await screen.findByRole("menuitemradio", { name: "Left" })
+    expect(left.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Left" }))
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Auto" }))
+    expect(onChange).toHaveBeenLastCalledWith(undefined)
+  })
+
   it("draws Delete as the destructive item", async () => {
     const p = region("band", null)
     await openMenu(<RegionMenuItems {...p} />)

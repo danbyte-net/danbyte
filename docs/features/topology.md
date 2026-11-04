@@ -1241,6 +1241,15 @@ down with their cards, as one undo step. **Arrange ▸ Bands by role** (or
 *by type*) and **Reset layout** keep a band's setting when they rebuild it,
 and it saves with the view.
 
+**Align.** Right-click a row → **Align** (under **Cards per row**) lines its
+cards up across the band's width: **Left**, **Center** or **Right**, each line
+on its own when the band wraps - a short last line sits under the left end,
+the middle or the right end of the full ones. **Auto** (the default) is what
+bands always did: every line centred, so Center looks the same. The band is
+laid out again where it stands, as one undo step; Arrange and Reset layout
+keep it, it saves with the view, and the exports draw the cards where it put
+them.
+
 A card belongs to the band its centre is in - nothing else is stored - so
 you can drag a card into another band, and the draw.io file nests it
 there too. Bands draw behind the cables as well as the cards.
@@ -2396,7 +2405,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto) and `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto), `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400) and `align` (`left`, `center` or `right`: where its cards line up across its width; absent is Auto, centred - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
 | `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |
