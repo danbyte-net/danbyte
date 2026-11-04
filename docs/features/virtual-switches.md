@@ -21,6 +21,12 @@ run from a VM all the way to a cabled port.
 Its detail page has a **Networks** tab - the port groups / bridges on the
 switch, the VLAN each maps to, and the VMs attached to them.
 
+The **Virtual switches** list shows each switch's **VRF** next to its cluster.
+Tick rows - with the `change` grant on virtual switches - for the bulk bar:
+**Export** downloads the selected switches as CSV, Excel or JSON, and **Edit**
+sets the **Address VRF** (see [below](#routing-context-vrf)) on all of them at
+once. The sync owns the rest of a switch, so the list has no bulk delete.
+
 ## Uplinks · physical adapters
 
 A switch's uplinks are what tie virtual networking to the physical plant: the

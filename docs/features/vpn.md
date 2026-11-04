@@ -268,6 +268,18 @@ interface**, or a **VM interface** - from the L2VPN's detail page.
 Which leaves carry a VXLAN VNI is a different question - that is the
 **VTEPs** tab, fed by each device's [VTEP](routing.md#overlay-evpn-and-vxlan).
 
+### The L2VPN list
+
+Tick rows on **VPN → L2VPNs** - with the `change` or `delete` grant on L2VPNs -
+for the bulk bar:
+
+- **Export** downloads the selected L2VPNs as CSV, Excel or JSON.
+- **Edit** sets the **Status**, **VRF**, **Description**, tags and custom fields
+  on every selected L2VPN. A VRF only lands on an EVPN type, as in the form: a
+  selection holding another type is refused, naming it.
+- **Delete** shows a preview first - the terminations and VTEP memberships that
+  go with the L2VPNs - then deletes them, each with a change-log entry.
+
 ## Tags & custom fields
 
 Need to track something extra - a peer IP, a pre-shared-key reference, a contract
