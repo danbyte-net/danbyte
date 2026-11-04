@@ -189,7 +189,7 @@ describe("a role badge in a photo's caption", () => {
     const fw = doc.nodes.find((n) => n.id === fwId)!
     const role = fwData(graphWith([])).role!
     expect(fw.badge?.text).toBe(role.name)
-    expect(fw.badge?.fill).toBe(role.color!.toLowerCase())
+    expect(fw.badge?.fill).toBe(role.color.toLowerCase())
     expect(fw.place?.badge).toBeDefined()
     const svg = toSvg(doc, { measure: approxMeasure })
     const dom = new DOMParser().parseFromString(svg, "image/svg+xml")

@@ -308,7 +308,6 @@ import {
   ZONE_COLORS,
   ZONE_H,
   ZONE_W,
-  type BandAlign,
   type PosByStyle,
   type PosMap,
 } from "@/components/topology/view-positions"
@@ -4261,8 +4260,9 @@ function TopologyPage() {
                             },
                             align: {
                               value: region.align,
-                              onChange: (align: BandAlign | undefined) =>
-                                bands.edit({ type: "align", id, align }),
+                              onChange: (
+                                align: NonNullable<typeof region>["align"]
+                              ) => bands.edit({ type: "align", id, align }),
                             },
                           }
                         : {}),
