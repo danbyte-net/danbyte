@@ -410,7 +410,11 @@ template never repeats the resolution.
 Sessions whose far end is a device Danbyte knows draw on the
 [topology map](topology.md) as their own link family - a dotted line per
 device pair and table, hidden with the eyes like any other family, with
-the session a click away.
+the session a click away. The topology's [Routing tab](topology.md#routing-view)
+draws the routing picture on its own: routers in boxes per AS, eBGP and iBGP
+lines (a route reflector's to its client as an arrow) with each session's
+peer group, policies, max-prefix, BFD, timers and RPKI caches in the line's
+panel, and the same export menu.
 
 ### Address families per neighbour
 
@@ -658,8 +662,9 @@ routes, BGP, OSPF, IS-IS and EIGRP work there exactly as on a device:
   segments.
 - Deleting the VM deletes its routing, as deleting a device does.
 
-BGP sessions to or from a VM do not draw on the topology map, which shows
-devices only.
+BGP sessions to or from a VM do not draw on the topology's Diagram, which
+shows devices only; the [Routing tab](topology.md#routing-view) draws a VM
+with a routing process as a router card of its own.
 
 ## Rendering a config
 
