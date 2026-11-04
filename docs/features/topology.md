@@ -204,7 +204,10 @@ names it at any zoom.
 The cards fetch their lines with the map (`include=card`, on the Hierarchy
 tab too), and the monitoring states load whenever a card lists the
 monitoring pill - not only with the sidebar open. The legend lists the roles on the map in their card
-colors, and the monitoring pill when a card can show it.
+colors - those the map draws in colour: on a card, or on a photo's
+[role badge](#photo-nodes) (a map of photos whose chosen card lines leave
+the role out lists none) - and the monitoring pill when a card can show
+it.
 
 ### Card lines
 
@@ -369,7 +372,10 @@ and of the link (`labels=`).
   curved label steeply passes under it (the gap breaks it there).
 - **IPs** - each end's full address in the subnet the two ends share, the
   same way on the same cable, after its port name (a dual-stack end shows
-  both, one after the other).
+  both, one after the other, IPv4 first). They may sit anywhere along their
+  end's half of the cable - all of it when the other end has no labels -
+  nearest the port name first. Where the run does not fit anywhere, the
+  IPv6 address goes and the IPv4 stays; an address is never cut.
 - **Subnets** - the shared subnet as the chip on the middle of the line
   (both, stacked, on a dual-stack link; under a bundle's count).
 
@@ -390,10 +396,12 @@ link's chip sits over its raised line. Which labels exist:
   view IP addresses - or with none recorded - there are no subnet or address
   labels, and no error. The cable's panel lists every address of each end,
   and the subnets they share.
-- Labels are best effort: one with no free stretch of its line, clear of the
-  cards, the other labels and the other lines, is left off (the nub's
-  tooltip and the panel still name the port). With Ports off the cables
-  carry no names.
+- Labels are best effort, placed in order: port names, then each end's
+  addresses, then the subnet chips - a chip moves along its line (or beside
+  it) round the end labels, never the other way. One with no free stretch
+  of its line, clear of the cards, the other labels and the other lines, is
+  left off (the nub's tooltip and the panel still name the port). With
+  Ports off the cables carry no names.
 
 ### Photo nodes
 
@@ -416,6 +424,17 @@ greyed out (it would change nothing).
   wide (a half-width type half that), at the photo's own proportions. The
   device's name is a caption under it, its card lines and the status pill
   after it, with no card fill.
+- **Role badge:** a photo has no card fill, so its role is a badge in the
+  role's colour right after the name, before the other lines - on screen
+  and in the SVG, PNG and PDF; in draw.io a small coloured label in the
+  caption. It wraps with the name (the name is never cut). It shows by
+  default: on Danbyte's built-in [card lines](#card-lines) a photo always
+  carries it. Card lines chosen on purpose - on the device, the saved
+  view, the role, the tenant or the deployment - are followed: the badge
+  shows only when they list **Role**. A photo without the badge shows no
+  role colour, and the legend leaves out the roles only such photos
+  carry. A single device drawn as its photo on a card map follows the same
+  rule.
 - **Own size:** a device that is not rack gear - a DIN-rail switch, a
   desktop firewall - can be drawn at its photo's own size instead: its true
   size against a 19-inch device when the photo is
@@ -1235,6 +1254,15 @@ The band is laid out again where it stands, the rows under it moving up or
 down with their cards, as one undo step. **Arrange ▸ Bands by role** (or
 *by type*) and **Reset layout** keep a band's setting when they rebuild it,
 and it saves with the view.
+
+**Align.** Right-click a row → **Align** (under **Cards per row**) lines its
+cards up across the band's width: **Left**, **Center** or **Right**, each line
+on its own when the band wraps - a short last line sits under the left end,
+the middle or the right end of the full ones. **Auto** (the default) is what
+bands always did: every line centred, so Center looks the same. The band is
+laid out again where it stands, as one undo step; Arrange and Reset layout
+keep it, it saves with the view, and the exports draw the cards where it put
+them.
 
 A card belongs to the band its centre is in - nothing else is stored - so
 you can drag a card into another band, and the draw.io file nests it
@@ -2391,7 +2419,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto) and `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto), `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400) and `align` (`left`, `center` or `right`: where its cards line up across its width; absent is Auto, centred - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
 | `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |

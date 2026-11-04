@@ -263,6 +263,7 @@ import {
   anchorOf,
   canShowPhoto,
   faceOf,
+  roleColourShown,
   wantsPhotos,
   withFaces,
 } from "@/components/topology/diagram/photo-anchors"
@@ -2941,6 +2942,14 @@ function TopologyPage() {
         seen.set(n.data.role.name, n.data.role.color)
     return [...seen].map(([name, color]) => ({ name, color }))
   }, [graph])
+  /** The roles the legend lists: those whose colour the map draws - on a
+   * card's fill, or a photo's role badge. A photo without one shows none. */
+  const legendRoles = useMemo(() => {
+    const drawn = new Set<string>()
+    for (const n of graph?.nodes ?? [])
+      if (n.data.role && roleColourShown(n.data)) drawn.add(n.data.role.name)
+    return rolesInGraph.filter((r) => drawn.has(r.name))
+  }, [graph, rolesInGraph])
   /** The Arrange menu's "Levels…": reordering, bonding or spacing the
    * levels drops pinned coordinates and lays the map out again. */
   const relevel = () => {
@@ -3785,7 +3794,7 @@ function TopologyPage() {
                   colorMode,
                   types: presentTypes,
                   speeds: presentSpeeds,
-                  roles: rolesInGraph,
+                  roles: legendRoles,
                   monitorPill: cardMonitor,
                 })}
                 document={(req) =>
@@ -4103,7 +4112,7 @@ function TopologyPage() {
                 colorMode={colorMode}
                 types={presentTypes}
                 speeds={presentSpeeds}
-                roles={rolesInGraph}
+                roles={legendRoles}
                 monitorPill={cardMonitor}
               />
             </div>
@@ -4248,6 +4257,12 @@ function TopologyPage() {
                               value: region.per_row,
                               onChange: (perRow: number | undefined) =>
                                 bands.edit({ type: "per_row", id, perRow }),
+                            },
+                            align: {
+                              value: region.align,
+                              onChange: (
+                                align: NonNullable<typeof region>["align"]
+                              ) => bands.edit({ type: "align", id, align }),
                             },
                           }
                         : {}),

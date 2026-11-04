@@ -1,8 +1,13 @@
 import { layerRules } from "@/lib/diagram/geometry"
 import { approxMeasure } from "@/lib/diagram/measure"
 import { BAND as PRINT_BAND } from "@/lib/diagram/theme"
-import { bandPerRow, isZoneColor, ZONE_COLORS } from "../view-positions"
-import type { BandExits, Zone } from "../view-positions"
+import {
+  bandAlign,
+  bandPerRow,
+  isZoneColor,
+  ZONE_COLORS,
+} from "../view-positions"
+import type { BandAlign, BandExits, Zone } from "../view-positions"
 import { resolveLevels } from "../levels-param"
 import type { Centre, RowSlot, RowsAt } from "./placement"
 import type { Pt, Rect, Side } from "./types"
@@ -230,6 +235,8 @@ export function normalizeRegions(raw: unknown): Region[] {
         region.exits = o.exits
       const perRow = bandPerRow(o.per_row)
       if (region.orient === "h" && perRow !== undefined) region.per_row = perRow
+      const align = bandAlign(o.align)
+      if (region.orient === "h" && align) region.align = align
     } else if (o.kind === "zone") region.kind = "zone"
     out.push(region)
   }
@@ -975,14 +982,15 @@ function padFor(l: Laid, i: number, rowOf: ReadonlyMap<string, number>): Laid {
   }
 }
 
-/** A laid-out row's cards placed: its lines centred across `w` from
- * `left`, the first from `top` down. */
+/** A laid-out row's cards placed: each line across `w` from `left` as
+ * the row's `align` says (Auto: centred), the first from `top` down. */
 function placeLaid(
   l: Laid,
   left: number,
   w: number,
   top: number,
-  into: Record<string, Centre>
+  into: Record<string, Centre>,
+  align?: BandAlign
 ): void {
   const { sp } = l
   let y = top
@@ -991,7 +999,13 @@ function placeLaid(
     b.lines.forEach((line, j) => {
       if (j) y += sp.lineGap
       const lh = lineHeight(line)
-      let x = left + (w - lineWidth(line, sp)) / 2
+      const free = w - lineWidth(line, sp)
+      let x =
+        align === "left"
+          ? left
+          : align === "right"
+            ? left + free
+            : left + free / 2
       line.forEach((c, k) => {
         if (k) x += sp.gapX(line[k - 1].id, c.id)
         into[c.id] = [Math.round(x + c.box.w / 2), Math.round(y + lh / 2)]
@@ -1093,10 +1107,13 @@ export function arrangeBands(input: ArrangeInput): {
     const layers = g.kept ? layersOf(g.kept, input) : null
     // A row's cards per line stay through a re-run.
     const perRow = (g.kept ?? matched.get(g))?.per_row
+    // And their alignment.
+    const align = (g.kept ?? matched.get(g))?.align
     return {
       g,
       layers,
       l: padFor(layOut(g.cards, axis, layers, sp, perRow), i, rowOf),
+      align,
     }
   })
   const contentW = Math.max(0, ...laid.map(({ l }) => l.w))
@@ -1108,7 +1125,7 @@ export function arrangeBands(input: ArrangeInput): {
   const positions: Record<string, Centre> = {}
   const rows: Region[] = []
   let y = y0
-  for (const { g, layers, l } of laid) {
+  for (const { g, layers, l, align } of laid) {
     const h = rowHeight(l)
     const box = { x: x0, y: Math.round(y), w, h: Math.round(h) }
     if (g.kept) {
@@ -1131,11 +1148,19 @@ export function arrangeBands(input: ArrangeInput): {
         color: old?.color ?? null,
         ...(old?.exits ? { exits: old.exits } : {}),
         ...(old?.per_row ? { per_row: old.per_row } : {}),
+        ...(old?.align ? { align: old.align } : {}),
         ...box,
         rule: { by: input.by, ids: [...g.ids].sort() },
       })
     }
-    placeLaid(l, x0 + pad, contentW, y + BAND.TITLE + l.padTop, positions)
+    placeLaid(
+      l,
+      x0 + pad,
+      contentW,
+      y + BAND.TITLE + l.padTop,
+      positions,
+      align
+    )
     y += h + sp.rowGap
   }
 
@@ -1665,7 +1690,14 @@ function reflow(
       const pad = Math.max(BAND.PAD_X, l.gutter)
       const w = Math.round(Math.max(r.w, l.w + 2 * pad))
       const h = cards.length ? Math.round(rowHeight(l)) : r.h
-      placeLaid(l, r.x + pad, w - 2 * pad, top + BAND.TITLE + l.padTop, moves)
+      placeLaid(
+        l,
+        r.x + pad,
+        w - 2 * pad,
+        top + BAND.TITLE + l.padTop,
+        moves,
+        r.align
+      )
       if (w > r.w) widened.push({ x: r.x, w: r.w, to: w })
       rows.set(id, { ...r, y: Math.round(top), w, h })
       bottom = top + h
@@ -1812,6 +1844,25 @@ export function setPerRow(
     if (r.id !== id) return r
     const { per_row: _was, ...rest } = r
     return perRow === undefined ? rest : { ...rest, per_row: perRow }
+  })
+  const rowOf = rowOfCards(regions, cards)
+  const mine = cards.filter((c) => rowOf.get(c.id) === id)
+  return reflowAll(regions, after, new Map([[id, mine]]), input)
+}
+
+/** Where a row's cards line up across its width (`align`; undefined:
+ * Auto, centred), its cards laid out again that way where it stands. */
+export function setAlign(
+  input: LayersInput & { id: string; align: BandAlign | undefined }
+): BandEdit {
+  const { regions, cards, id } = input
+  const row = regions.find((r) => r.id === id)
+  const align = bandAlign(input.align)
+  if (!row || !isRow(row) || row.align === align) return noEdit(regions)
+  const after = regions.map((r) => {
+    if (r.id !== id) return r
+    const { align: _was, ...rest } = r
+    return align === undefined ? rest : { ...rest, align }
   })
   const rowOf = rowOfCards(regions, cards)
   const mine = cards.filter((c) => rowOf.get(c.id) === id)

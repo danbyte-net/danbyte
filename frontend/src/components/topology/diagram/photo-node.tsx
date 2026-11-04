@@ -2,6 +2,7 @@ import { lazy, memo, Suspense } from "react"
 import { Handle, Position, useStore } from "@xyflow/react"
 import type { NodeProps, ReactFlowState } from "@xyflow/react"
 
+import { ColorBadge } from "@/components/cells/color-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { cn } from "@/lib/utils"
@@ -13,8 +14,8 @@ import type { DiagramCardData } from "./types"
 // A device drawn as its front photo (photo-anchors.ts): the image to
 // scale, a thin outline on each port a cable is plugged into, a grey tab
 // on the image edge for a cabled port without a marker, and the name as a
-// caption under the image - its card lines after it, muted, then the
-// status pill, which wins any room the lines took from it; a cut caption
+// caption under the image - its role badge after the name (a photo has
+// no role fill; `roleBadge` says when), its card lines after that, muted, then the status pill, which wins any room the lines took from it; a cut caption
 // names itself in full on hover. No card fill.
 // Taking its cables at its edge, it has no outlines: in Detailed mode each
 // cable leaves a nub on the image's side, as on a card.
@@ -33,6 +34,9 @@ const HANDLE =
 const STATUS_PILL =
   "block h-4 max-w-24 shrink-0 truncate px-1.5 py-0 text-[9px] leading-[14px]"
 const CHECK_PILL = "h-4 max-w-24 px-[7px] text-[9px] leading-[14px]"
+/** The role badge at the pill's size, measured whole (`badgeWidth`). */
+const ROLE_BADGE =
+  "block h-4 shrink-0 px-1.5 py-0 text-[9px] leading-[14px] whitespace-nowrap"
 
 /** The schematic faceplate: loaded with the first node that needs one. */
 const TypeFaceplate = lazy(() =>
@@ -201,6 +205,19 @@ export const PhotoNode = memo(function PhotoNode({
         >
           {cap.text}
         </span>
+        {cap.badge && d.role && (
+          <span
+            className="flex"
+            style={{ marginLeft: PILL.GAP }}
+            data-role-badge
+          >
+            <ColorBadge
+              name={d.role.name}
+              color={d.role.color || undefined}
+              className={ROLE_BADGE}
+            />
+          </span>
+        )}
         {cap.tail && (
           <span
             className="text-muted-foreground"

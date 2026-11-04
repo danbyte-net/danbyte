@@ -1,5 +1,8 @@
 import { Link } from "@tanstack/react-router"
 import {
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyEnd,
+  AlignHorizontalJustifyStart,
   ArrowLeftRight,
   ArrowUpDown,
   ArrowUpRight,
@@ -43,7 +46,7 @@ import { LINE_LOOKS } from "./diagram/line-tabs"
 import type { LineType, Side } from "./diagram/types"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
 import { BAND_PER_ROW_MAX, ZONE_COLORS } from "./view-positions"
-import type { BandExits } from "./view-positions"
+import type { BandAlign, BandExits } from "./view-positions"
 
 // The topology map's right-click menus, one set of items per thing clicked,
 // for PointerMenu (components/pointer-menu.tsx) to show at the pointer. An
@@ -439,6 +442,7 @@ export function RegionMenuItems({
   color,
   exits,
   perRow,
+  align,
   onRename,
   onRecolor,
   onDelete,
@@ -457,6 +461,12 @@ export function RegionMenuItems({
   perRow?: {
     value: number | undefined
     onChange: (perRow: number | undefined) => void
+  }
+  /** A row: where its cards line up across its width (undefined value:
+   * Auto, centred). Left out for side bands and zones. */
+  align?: {
+    value: BandAlign | undefined
+    onChange: (align: BandAlign | undefined) => void
   }
   onRename: () => void
   onRecolor: (color: string | null) => void
@@ -573,6 +583,34 @@ export function RegionMenuItems({
                     <span className="num">{n}</span>
                   </DropdownMenuRadioItem>
                 ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
+      {align && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger inset>Align</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-36">
+            <DropdownMenuRadioGroup
+              value={align.value ?? "auto"}
+              onValueChange={(v) => {
+                const next =
+                  v === "left" || v === "center" || v === "right"
+                    ? v
+                    : undefined
+                if (next !== align.value) align.onChange(next)
+              }}
+            >
+              <DropdownMenuRadioItem value="auto">Auto</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="left">
+                <AlignHorizontalJustifyStart /> Left
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="center">
+                <AlignHorizontalJustifyCenter /> Center
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="right">
+                <AlignHorizontalJustifyEnd /> Right
+              </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>

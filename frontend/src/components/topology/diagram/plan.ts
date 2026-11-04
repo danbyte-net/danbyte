@@ -932,8 +932,8 @@ export function planEdges(
     routeOf.set(it.key, routeThrough(it.line, pts, it.a.dir))
   }
 
-  // Labels: port names first (they belong to one spot), then the chips,
-  // then the addresses after each port name.
+  // Labels: port names first (they belong to one spot), then the
+  // addresses after each port name, then the chips.
   const scene = new LabelScene(
     all.map((it): [string, Pt[]] => [
       it.key,
@@ -979,6 +979,38 @@ export function planEdges(
     }
   }
   const ports = placeInline(asks, scene)
+
+  // End addresses next, after their port names and before the chips:
+  // anywhere along their end's half of the route (all of it when the
+  // other end has none), IPv6 dropped before IPv4 where they do not all
+  // fit. A chip moves along its line round them, never the other way.
+  const addrAsks: InlineAsk[] = []
+  for (const it of all) {
+    const route = routeOf.get(it.key)!
+    if (route.length < 1) continue
+    for (const end of ["a", "b"] as const) {
+      const lines = end === "a" ? it.ia : it.ib
+      if (!lines) continue
+      const ws = end === "a" ? it.wia : it.wib
+      const port = ports.get(`${it.key}${end}`)
+      const from = port ? port.reach + LABEL.LEAD : leadOf(it, end) + LABEL.LEAD
+      const line = lineOf(ptsOf.get(it.key)!, end === "b", leadOf(it, end))
+      addrAsks.push({
+        key: `${it.key}${end}`,
+        cable: it.key,
+        ws,
+        walk: walker(route, end === "b"),
+        ...(curved(it) ? { curved: true } : {}),
+        ...(line ? { line } : {}),
+        from,
+        until: labelledAt(it, end === "a" ? "b" : "a")
+          ? route.length / 2
+          : route.length - LABEL.LEAD,
+        least: 1,
+      })
+    }
+  }
+  const addrs = placeInline(addrAsks, scene)
 
   const byEdge = new Map<string, Item[]>()
   for (const it of all) {
@@ -1037,32 +1069,6 @@ export function planEdges(
       }
     }
   }
-  // End addresses last, after their port names: best effort round the
-  // names and chips.
-  const addrAsks: InlineAsk[] = []
-  for (const it of all) {
-    const route = routeOf.get(it.key)!
-    if (route.length < 1) continue
-    for (const end of ["a", "b"] as const) {
-      const lines = end === "a" ? it.ia : it.ib
-      if (!lines) continue
-      const ws = end === "a" ? it.wia : it.wib
-      const port = ports.get(`${it.key}${end}`)
-      const from = port ? port.reach + LABEL.LEAD : leadOf(it, end) + LABEL.LEAD
-      const line = lineOf(ptsOf.get(it.key)!, end === "b", leadOf(it, end))
-      addrAsks.push({
-        key: `${it.key}${end}`,
-        cable: it.key,
-        ws,
-        walk: walker(route, end === "b"),
-        ...(curved(it) ? { curved: true } : {}),
-        ...(line ? { line } : {}),
-        from,
-        until: reach(route, from, ws, labelledAt(it, end === "a" ? "b" : "a")),
-      })
-    }
-  }
-  const addrs = placeInline(addrAsks, scene)
 
   // Each chip by the edge that draws it, with the edge it belongs to.
   const chipFor = new Map<

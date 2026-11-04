@@ -87,8 +87,9 @@ import {
   photoFace,
   photoLod,
   photoShown,
+  roleBadge,
 } from "./photo-anchors"
-import type { PhotoFace, PhotoShown } from "./photo-anchors"
+import type { PhotoFace, PhotoShown, RoleBadge } from "./photo-anchors"
 import { packLoose } from "./pack"
 import { settleGrown } from "./placement"
 import { endRun, planEdges } from "./plan"
@@ -270,6 +271,9 @@ export interface PhotoModel {
   /** Its status pill shows whatever the monitoring says: the lines never
    * take the pill's room. */
   statusPill?: true
+  /** Its role as a badge after the name (`roleBadge`); a role line in
+   * its card lines is then not in `lines`. */
+  badge?: RoleBadge
 }
 
 /** A breakout cable as the anchoring sees it. */
@@ -1434,7 +1438,8 @@ function photosShown(
         model.measure,
         lod,
         p.lines,
-        p.statusPill
+        p.statusPill,
+        p.badge?.text
       )
     )
   return out
@@ -2059,10 +2064,22 @@ export function buildDiagram(
       // Drawn as its photo: a fixed box, not a card that grows - but tall
       // enough for its whole name under the image.
       const content = cardContent(n.data, { checkLabels: opts.checkLabels })
+      // A photo has no card fill: its role, when its lines show it, is a
+      // badge after the name.
+      const badge = roleBadge(n.data)
       const p: PhotoModel = {
-        face: withCaptionRows(face, content.name, content.pillSlot, measure),
+        face: withCaptionRows(
+          face,
+          content.name,
+          content.pillSlot,
+          measure,
+          badge?.text
+        ),
         name: content.name,
-        lines: content.lines.map((l) => l.text),
+        lines: content.lines
+          .filter((l) => !(badge && l.key === "role"))
+          .map((l) => l.text),
+        ...(badge ? { badge } : {}),
         slot: content.pillSlot,
         ...(content.pill ? { statusPill: true as const } : {}),
       }

@@ -5075,6 +5075,8 @@ class TopologyViewSerializer(NumIdModelSerializer):
     MAX_BAND_RULE_IDS = 100
     #: A row of several layers: a sub-row per layer, or one mixed row.
     BAND_LAYOUTS = ("stack", "row")
+    # How a band lines up its cards across its width; absent = Auto.
+    BAND_ALIGNS = ("left", "center", "right")
     # A band's cards per row: 1 up to this (a view holds at most 200 zones'
     # worth of cards on a line); absent is Auto.
     MAX_BAND_PER_ROW = 200
@@ -5246,6 +5248,15 @@ class TopologyViewSerializer(NumIdModelSerializer):
                 raise serializers.ValidationError(
                     f"{where}.per_row must be a whole number from 1 to "
                     f"{self.MAX_BAND_PER_ROW}, or absent for Auto"
+                )
+            # Card alignment: left, center or right, or absent for Auto.
+            align = region.get("align")
+            if align is not None and (
+                not isinstance(align, str) or align not in self.BAND_ALIGNS
+            ):
+                raise serializers.ValidationError(
+                    f"{where}.align must be one of {', '.join(self.BAND_ALIGNS)}, "
+                    "or absent for Auto"
                 )
             rule = region.get("rule")
             if rule is None:

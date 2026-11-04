@@ -1,0 +1,5944 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "dev:border-2",
+        "type": "device",
+        "data": {
+          "device_id": "border-2",
+          "name": "border-2",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "ce-border",
+            "name": "CE (border)",
+            "slug": "ce-border",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.102",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/6",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/5",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/4",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-border-2",
+                "address": "203.0.113.102",
+                "cidr": "203.0.113.102/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:compute-3",
+        "type": "device",
+        "data": {
+          "device_id": "compute-3",
+          "name": "compute-3",
+          "status": null,
+          "device_type": "server-2u",
+          "role": {
+            "id": "openstack-compute",
+            "name": "OpenStack compute",
+            "slug": "openstack-compute",
+            "color": "#0f62fe"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.153",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "LAN-2",
+              "kind": "interface"
+            },
+            {
+              "name": "LAN-1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-compute-3",
+                "address": "203.0.113.153",
+                "cidr": "203.0.113.153/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-5b",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-5b",
+          "name": "leaf-5b",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.130",
+          "interface_count": 44,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-5b",
+                "address": "203.0.113.130",
+                "cidr": "203.0.113.130/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:isp-pe-1",
+        "type": "device",
+        "data": {
+          "device_id": "isp-pe-1",
+          "name": "isp-pe-1",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "isp-pe",
+            "name": "ISP PE",
+            "slug": "isp-pe",
+            "color": "#8a3ffc"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.161",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/5",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/4",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/3",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/6",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-isp-pe-1",
+                "address": "203.0.113.161",
+                "cidr": "203.0.113.161/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:compute-1",
+        "type": "device",
+        "data": {
+          "device_id": "compute-1",
+          "name": "compute-1",
+          "status": null,
+          "device_type": "server-2u",
+          "role": {
+            "id": "openstack-compute",
+            "name": "OpenStack compute",
+            "slug": "openstack-compute",
+            "color": "#0f62fe"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.151",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "LAN-2",
+              "kind": "interface"
+            },
+            {
+              "name": "LAN-1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-compute-1",
+                "address": "203.0.113.151",
+                "cidr": "203.0.113.151/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-1b",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-1b",
+          "name": "leaf-1b",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.122",
+          "interface_count": 47,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/3",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-1b",
+                "address": "203.0.113.122",
+                "cidr": "203.0.113.122/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-4b",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-4b",
+          "name": "leaf-4b",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.128",
+          "interface_count": 44,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-4b",
+                "address": "203.0.113.128",
+                "cidr": "203.0.113.128/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:spine-2",
+        "type": "device",
+        "data": {
+          "device_id": "spine-2",
+          "name": "spine-2",
+          "status": null,
+          "device_type": "switch-64c",
+          "role": {
+            "id": "spine",
+            "name": "Spine",
+            "slug": "spine",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.112",
+          "interface_count": 66,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/10",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/8",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/6",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/4",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/9",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/7",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/5",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/3",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/64",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/63",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-spine-2",
+                "address": "203.0.113.112",
+                "cidr": "203.0.113.112/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-3a",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-3a",
+          "name": "leaf-3a",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.125",
+          "interface_count": 46,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-3a",
+                "address": "203.0.113.125",
+                "cidr": "203.0.113.125/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:border-1",
+        "type": "device",
+        "data": {
+          "device_id": "border-1",
+          "name": "border-1",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "ce-border",
+            "name": "CE (border)",
+            "slug": "ce-border",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.101",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/6",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/5",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/4",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-border-1",
+                "address": "203.0.113.101",
+                "cidr": "203.0.113.101/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-1a",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-1a",
+          "name": "leaf-1a",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.121",
+          "interface_count": 47,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/3",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-1a",
+                "address": "203.0.113.121",
+                "cidr": "203.0.113.121/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-5a",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-5a",
+          "name": "leaf-5a",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.129",
+          "interface_count": 44,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-5a",
+                "address": "203.0.113.129",
+                "cidr": "203.0.113.129/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:mpls-p-1",
+        "type": "device",
+        "data": {
+          "device_id": "mpls-p-1",
+          "name": "mpls-p-1",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "mpls-p",
+            "name": "MPLS P",
+            "slug": "mpls-p",
+            "color": "#24a148"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.172",
+          "interface_count": 4,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-mpls-p-1",
+                "address": "203.0.113.172",
+                "cidr": "203.0.113.172/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:remote-ce",
+        "type": "device",
+        "data": {
+          "device_id": "remote-ce",
+          "name": "remote-ce",
+          "status": null,
+          "device_type": null,
+          "role": null,
+          "site": "site-2",
+          "location": null,
+          "primary_ip": "203.0.113.192",
+          "interface_count": 3,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-remote-ce",
+                "address": "203.0.113.192",
+                "cidr": "203.0.113.192/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-2b",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-2b",
+          "name": "leaf-2b",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.124",
+          "interface_count": 46,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-2b",
+                "address": "203.0.113.124",
+                "cidr": "203.0.113.124/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:isp-pe-2",
+        "type": "device",
+        "data": {
+          "device_id": "isp-pe-2",
+          "name": "isp-pe-2",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "isp-pe",
+            "name": "ISP PE",
+            "slug": "isp-pe",
+            "color": "#8a3ffc"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.164",
+          "interface_count": 4,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-isp-pe-2",
+                "address": "203.0.113.164",
+                "cidr": "203.0.113.164/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:controller-2",
+        "type": "device",
+        "data": {
+          "device_id": "controller-2",
+          "name": "controller-2",
+          "status": null,
+          "device_type": "server-2u",
+          "role": {
+            "id": "openstack-controller",
+            "name": "OpenStack controller",
+            "slug": "openstack-controller",
+            "color": "#0f62fe"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.142",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "LAN-2",
+              "kind": "interface"
+            },
+            {
+              "name": "LAN-1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-controller-2",
+                "address": "203.0.113.142",
+                "cidr": "203.0.113.142/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:mpls-pe-1",
+        "type": "device",
+        "data": {
+          "device_id": "mpls-pe-1",
+          "name": "mpls-pe-1",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "mpls-pe",
+            "name": "MPLS PE",
+            "slug": "mpls-pe",
+            "color": "#24a148"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.171",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/6",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/5",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/4",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/3",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-mpls-pe-1",
+                "address": "203.0.113.171",
+                "cidr": "203.0.113.171/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:mpls-p-2",
+        "type": "device",
+        "data": {
+          "device_id": "mpls-p-2",
+          "name": "mpls-p-2",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "mpls-p",
+            "name": "MPLS P",
+            "slug": "mpls-p",
+            "color": "#24a148"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.173",
+          "interface_count": 4,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-mpls-p-2",
+                "address": "203.0.113.173",
+                "cidr": "203.0.113.173/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:spine-3",
+        "type": "device",
+        "data": {
+          "device_id": "spine-3",
+          "name": "spine-3",
+          "status": null,
+          "device_type": "switch-64c",
+          "role": {
+            "id": "spine",
+            "name": "Spine",
+            "slug": "spine",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.113",
+          "interface_count": 66,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/10",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/8",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/6",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/4",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/9",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/7",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/5",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/3",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/64",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/63",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-spine-3",
+                "address": "203.0.113.113",
+                "cidr": "203.0.113.113/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:mpls-pe-2",
+        "type": "device",
+        "data": {
+          "device_id": "mpls-pe-2",
+          "name": "mpls-pe-2",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "mpls-pe",
+            "name": "MPLS PE",
+            "slug": "mpls-pe",
+            "color": "#24a148"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.174",
+          "interface_count": 5,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/3",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-mpls-pe-2",
+                "address": "203.0.113.174",
+                "cidr": "203.0.113.174/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:deploy-1",
+        "type": "device",
+        "data": {
+          "device_id": "deploy-1",
+          "name": "deploy-1",
+          "status": null,
+          "device_type": "server-2u",
+          "role": {
+            "id": "openstack-deploy",
+            "name": "OpenStack deploy",
+            "slug": "openstack-deploy",
+            "color": "#0f62fe"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.140",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "LAN-2",
+              "kind": "interface"
+            },
+            {
+              "name": "LAN-1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-deploy-1",
+                "address": "203.0.113.140",
+                "cidr": "203.0.113.140/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:controller-3",
+        "type": "device",
+        "data": {
+          "device_id": "controller-3",
+          "name": "controller-3",
+          "status": null,
+          "device_type": "server-2u",
+          "role": {
+            "id": "openstack-controller",
+            "name": "OpenStack controller",
+            "slug": "openstack-controller",
+            "color": "#0f62fe"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.143",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "LAN-2",
+              "kind": "interface"
+            },
+            {
+              "name": "LAN-1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-controller-3",
+                "address": "203.0.113.143",
+                "cidr": "203.0.113.143/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:compute-2",
+        "type": "device",
+        "data": {
+          "device_id": "compute-2",
+          "name": "compute-2",
+          "status": null,
+          "device_type": "server-2u",
+          "role": {
+            "id": "openstack-compute",
+            "name": "OpenStack compute",
+            "slug": "openstack-compute",
+            "color": "#0f62fe"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.152",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "LAN-2",
+              "kind": "interface"
+            },
+            {
+              "name": "LAN-1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-compute-2",
+                "address": "203.0.113.152",
+                "cidr": "203.0.113.152/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-3b",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-3b",
+          "name": "leaf-3b",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.126",
+          "interface_count": 46,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-3b",
+                "address": "203.0.113.126",
+                "cidr": "203.0.113.126/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:sdwan-2",
+        "type": "device",
+        "data": {
+          "device_id": "sdwan-2",
+          "name": "sdwan-2",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "sd-wan-edge",
+            "name": "SD-WAN edge",
+            "slug": "sd-wan-edge",
+            "color": "#ff832b"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.182",
+          "interface_count": 4,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-sdwan-2",
+                "address": "203.0.113.182",
+                "cidr": "203.0.113.182/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:controller-1",
+        "type": "device",
+        "data": {
+          "device_id": "controller-1",
+          "name": "controller-1",
+          "status": null,
+          "device_type": "server-2u",
+          "role": {
+            "id": "openstack-controller",
+            "name": "OpenStack controller",
+            "slug": "openstack-controller",
+            "color": "#0f62fe"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.141",
+          "interface_count": 8,
+          "panel": false,
+          "ports": [
+            {
+              "name": "LAN-2",
+              "kind": "interface"
+            },
+            {
+              "name": "LAN-1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-controller-1",
+                "address": "203.0.113.141",
+                "cidr": "203.0.113.141/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:sdwan-1",
+        "type": "device",
+        "data": {
+          "device_id": "sdwan-1",
+          "name": "sdwan-1",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "sd-wan-edge",
+            "name": "SD-WAN edge",
+            "slug": "sd-wan-edge",
+            "color": "#ff832b"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.181",
+          "interface_count": 4,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-sdwan-1",
+                "address": "203.0.113.181",
+                "cidr": "203.0.113.181/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:isp-p-2",
+        "type": "device",
+        "data": {
+          "device_id": "isp-p-2",
+          "name": "isp-p-2",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "isp-p",
+            "name": "ISP P",
+            "slug": "isp-p",
+            "color": "#8a3ffc"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.163",
+          "interface_count": 4,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-isp-p-2",
+                "address": "203.0.113.163",
+                "cidr": "203.0.113.163/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:isp-p-1",
+        "type": "device",
+        "data": {
+          "device_id": "isp-p-1",
+          "name": "isp-p-1",
+          "status": null,
+          "device_type": "switch-48y",
+          "role": {
+            "id": "isp-p",
+            "name": "ISP P",
+            "slug": "isp-p",
+            "color": "#8a3ffc"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.162",
+          "interface_count": 4,
+          "panel": false,
+          "ports": [
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-isp-p-1",
+                "address": "203.0.113.162",
+                "cidr": "203.0.113.162/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:spine-1",
+        "type": "device",
+        "data": {
+          "device_id": "spine-1",
+          "name": "spine-1",
+          "status": null,
+          "device_type": "switch-64c",
+          "role": {
+            "id": "spine",
+            "name": "Spine",
+            "slug": "spine",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.111",
+          "interface_count": 66,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/10",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/8",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/6",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/4",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/9",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/7",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/5",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/3",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/64",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/63",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-spine-1",
+                "address": "203.0.113.111",
+                "cidr": "203.0.113.111/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-2a",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-2a",
+          "name": "leaf-2a",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.123",
+          "interface_count": 46,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/2",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/1",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-2a",
+                "address": "203.0.113.123",
+                "cidr": "203.0.113.123/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "dev:leaf-4a",
+        "type": "device",
+        "data": {
+          "device_id": "leaf-4a",
+          "name": "leaf-4a",
+          "status": null,
+          "device_type": "switch-36c",
+          "role": {
+            "id": "leaf",
+            "name": "Leaf",
+            "slug": "leaf",
+            "color": "#1192e8"
+          },
+          "site": "site-1",
+          "location": null,
+          "primary_ip": "203.0.113.127",
+          "interface_count": 44,
+          "panel": false,
+          "ports": [
+            {
+              "name": "Ethernet1/33",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/32",
+              "kind": "interface"
+            },
+            {
+              "name": "Ethernet1/31",
+              "kind": "interface"
+            },
+            {
+              "name": "mgmt0",
+              "kind": "interface"
+            }
+          ],
+          "card": {
+            "fields": ["monitor", "primary_ip", "loopback", "serial"],
+            "source": "default",
+            "values": {
+              "primary_ip": {
+                "id": "ip-leaf-4a",
+                "address": "203.0.113.127",
+                "cidr": "203.0.113.127/24"
+              },
+              "loopback": [],
+              "serial": ""
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e:c1",
+        "source": "dev:compute-3",
+        "target": "dev:leaf-3b",
+        "type": "cable",
+        "data": {
+          "cable_id": "c1",
+          "cable_type": "dac-passive",
+          "cable_label": "C01",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "compute-3:LAN-2",
+              "b": "leaf-3b:Ethernet1/2",
+              "a_port": "LAN-2",
+              "b_port": "Ethernet1/2",
+              "a_id": "if1",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if2",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag3",
+              "name": "ext0"
+            },
+            "b": {
+              "id": "lag4",
+              "name": "bond-s2"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c2",
+        "source": "dev:compute-3",
+        "target": "dev:leaf-3a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c2",
+          "cable_type": "dac-passive",
+          "cable_label": "C02",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "compute-3:LAN-1",
+              "b": "leaf-3a:Ethernet1/2",
+              "a_port": "LAN-1",
+              "b_port": "Ethernet1/2",
+              "a_id": "if5",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if6",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag3",
+              "name": "ext0"
+            },
+            "b": {
+              "id": "lag7",
+              "name": "bond-s2"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c3",
+        "source": "dev:leaf-2b",
+        "target": "dev:compute-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c3",
+          "cable_type": "dac-passive",
+          "cable_label": "C03",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-2b:Ethernet1/2",
+              "b": "compute-2:LAN-2",
+              "a_port": "Ethernet1/2",
+              "b_port": "LAN-2",
+              "a_id": "if8",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if9",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag10",
+              "name": "bond-s2"
+            },
+            "b": {
+              "id": "lag11",
+              "name": "ext0"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c4",
+        "source": "dev:compute-2",
+        "target": "dev:leaf-2a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c4",
+          "cable_type": "dac-passive",
+          "cable_label": "C04",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "compute-2:LAN-1",
+              "b": "leaf-2a:Ethernet1/2",
+              "a_port": "LAN-1",
+              "b_port": "Ethernet1/2",
+              "a_id": "if12",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if13",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag11",
+              "name": "ext0"
+            },
+            "b": {
+              "id": "lag14",
+              "name": "bond-s2"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c5",
+        "source": "dev:compute-1",
+        "target": "dev:leaf-1b",
+        "type": "cable",
+        "data": {
+          "cable_id": "c5",
+          "cable_type": "dac-passive",
+          "cable_label": "C05",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "compute-1:LAN-2",
+              "b": "leaf-1b:Ethernet1/3",
+              "a_port": "LAN-2",
+              "b_port": "Ethernet1/3",
+              "a_id": "if15",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if16",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag17",
+              "name": "ext0"
+            },
+            "b": {
+              "id": "lag18",
+              "name": "bond-s3"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c6",
+        "source": "dev:compute-1",
+        "target": "dev:leaf-1a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c6",
+          "cable_type": "dac-passive",
+          "cable_label": "C06",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "compute-1:LAN-1",
+              "b": "leaf-1a:Ethernet1/3",
+              "a_port": "LAN-1",
+              "b_port": "Ethernet1/3",
+              "a_id": "if19",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if20",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag17",
+              "name": "ext0"
+            },
+            "b": {
+              "id": "lag21",
+              "name": "bond-s3"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c7",
+        "source": "dev:controller-3",
+        "target": "dev:leaf-3b",
+        "type": "cable",
+        "data": {
+          "cable_id": "c7",
+          "cable_type": "dac-passive",
+          "cable_label": "C07",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "controller-3:LAN-2",
+              "b": "leaf-3b:Ethernet1/1",
+              "a_port": "LAN-2",
+              "b_port": "Ethernet1/1",
+              "a_id": "if22",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if23",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag24",
+              "name": "ext0"
+            },
+            "b": {
+              "id": "lag25",
+              "name": "bond-s1"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c8",
+        "source": "dev:leaf-3a",
+        "target": "dev:controller-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c8",
+          "cable_type": "dac-passive",
+          "cable_label": "C08",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-3a:Ethernet1/1",
+              "b": "controller-3:LAN-1",
+              "a_port": "Ethernet1/1",
+              "b_port": "LAN-1",
+              "a_id": "if26",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if27",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag28",
+              "name": "bond-s1"
+            },
+            "b": {
+              "id": "lag24",
+              "name": "ext0"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c9",
+        "source": "dev:leaf-2b",
+        "target": "dev:controller-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c9",
+          "cable_type": "dac-passive",
+          "cable_label": "C09",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-2b:Ethernet1/1",
+              "b": "controller-2:LAN-2",
+              "a_port": "Ethernet1/1",
+              "b_port": "LAN-2",
+              "a_id": "if29",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if30",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag31",
+              "name": "bond-s1"
+            },
+            "b": {
+              "id": "lag32",
+              "name": "ext0"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c10",
+        "source": "dev:controller-2",
+        "target": "dev:leaf-2a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c10",
+          "cable_type": "dac-passive",
+          "cable_label": "C10",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "controller-2:LAN-1",
+              "b": "leaf-2a:Ethernet1/1",
+              "a_port": "LAN-1",
+              "b_port": "Ethernet1/1",
+              "a_id": "if33",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if34",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag32",
+              "name": "ext0"
+            },
+            "b": {
+              "id": "lag35",
+              "name": "bond-s1"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c11",
+        "source": "dev:leaf-1b",
+        "target": "dev:controller-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c11",
+          "cable_type": "dac-passive",
+          "cable_label": "C11",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1b:Ethernet1/2",
+              "b": "controller-1:LAN-2",
+              "a_port": "Ethernet1/2",
+              "b_port": "LAN-2",
+              "a_id": "if36",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if37",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag38",
+              "name": "bond-s2"
+            },
+            "b": {
+              "id": "lag39",
+              "name": "ext0"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c12",
+        "source": "dev:leaf-1a",
+        "target": "dev:controller-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c12",
+          "cable_type": "dac-passive",
+          "cable_label": "C12",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1a:Ethernet1/2",
+              "b": "controller-1:LAN-1",
+              "a_port": "Ethernet1/2",
+              "b_port": "LAN-1",
+              "a_id": "if40",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if41",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag42",
+              "name": "bond-s2"
+            },
+            "b": {
+              "id": "lag39",
+              "name": "ext0"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c13",
+        "source": "dev:leaf-1b",
+        "target": "dev:deploy-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c13",
+          "cable_type": "dac-passive",
+          "cable_label": "C13",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1b:Ethernet1/1",
+              "b": "deploy-1:LAN-2",
+              "a_port": "Ethernet1/1",
+              "b_port": "LAN-2",
+              "a_id": "if43",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if44",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag45",
+              "name": "bond-s1"
+            },
+            "b": {
+              "id": "lag46",
+              "name": "ext0"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c14",
+        "source": "dev:leaf-1a",
+        "target": "dev:deploy-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c14",
+          "cable_type": "dac-passive",
+          "cable_label": "C14",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1a:Ethernet1/1",
+              "b": "deploy-1:LAN-1",
+              "a_port": "Ethernet1/1",
+              "b_port": "LAN-1",
+              "a_id": "if47",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if48",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": [],
+              "b_ips": [],
+              "subnets": [],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": {
+              "id": "lag49",
+              "name": "bond-s1"
+            },
+            "b": {
+              "id": "lag46",
+              "name": "ext0"
+            }
+          },
+          "subnets": []
+        }
+      },
+      {
+        "id": "e:c15",
+        "source": "dev:leaf-5b",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c15",
+          "cable_type": "smf-os2",
+          "cable_label": "C15",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-5b:Ethernet1/33",
+              "b": "spine-3:Ethernet1/10",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/10",
+              "a_id": "if50",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if51",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.151/31", "2001:db8:aaaa:1003::23/127"],
+              "b_ips": ["192.0.2.150/31", "2001:db8:aaaa:1003::22/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.150/31",
+                  "family": 4,
+                  "a": "192.0.2.151",
+                  "b": "192.0.2.150",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::22/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::23",
+                  "b": "2001:db8:aaaa:1003::22",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.150/31", "2001:db8:aaaa:1003::22/127"]
+        }
+      },
+      {
+        "id": "e:c16",
+        "source": "dev:leaf-4b",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c16",
+          "cable_type": "smf-os2",
+          "cable_label": "C16",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-4b:Ethernet1/33",
+              "b": "spine-3:Ethernet1/8",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/8",
+              "a_id": "if52",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if53",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.147/31", "2001:db8:aaaa:1003::19/127"],
+              "b_ips": ["192.0.2.146/31", "2001:db8:aaaa:1003::18/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.146/31",
+                  "family": 4,
+                  "a": "192.0.2.147",
+                  "b": "192.0.2.146",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::18/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::19",
+                  "b": "2001:db8:aaaa:1003::18",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.146/31", "2001:db8:aaaa:1003::18/127"]
+        }
+      },
+      {
+        "id": "e:c17",
+        "source": "dev:spine-3",
+        "target": "dev:leaf-3b",
+        "type": "cable",
+        "data": {
+          "cable_id": "c17",
+          "cable_type": "smf-os2",
+          "cable_label": "C17",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-3:Ethernet1/6",
+              "b": "leaf-3b:Ethernet1/33",
+              "a_port": "Ethernet1/6",
+              "b_port": "Ethernet1/33",
+              "a_id": "if54",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if55",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.142/31", "2001:db8:aaaa:1003::14/127"],
+              "b_ips": ["192.0.2.143/31", "2001:db8:aaaa:1003::15/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.142/31",
+                  "family": 4,
+                  "a": "192.0.2.142",
+                  "b": "192.0.2.143",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::14/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::14",
+                  "b": "2001:db8:aaaa:1003::15",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.142/31", "2001:db8:aaaa:1003::14/127"]
+        }
+      },
+      {
+        "id": "e:c18",
+        "source": "dev:leaf-2b",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c18",
+          "cable_type": "smf-os2",
+          "cable_label": "C18",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-2b:Ethernet1/33",
+              "b": "spine-3:Ethernet1/4",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/4",
+              "a_id": "if56",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if57",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.139/31", "2001:db8:aaaa:1003::11/127"],
+              "b_ips": ["192.0.2.138/31", "2001:db8:aaaa:1003::10/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.138/31",
+                  "family": 4,
+                  "a": "192.0.2.139",
+                  "b": "192.0.2.138",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::10/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::11",
+                  "b": "2001:db8:aaaa:1003::10",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.138/31", "2001:db8:aaaa:1003::10/127"]
+        }
+      },
+      {
+        "id": "e:c19",
+        "source": "dev:leaf-1b",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c19",
+          "cable_type": "smf-os2",
+          "cable_label": "C19",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1b:Ethernet1/33",
+              "b": "spine-3:Ethernet1/2",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/2",
+              "a_id": "if58",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if59",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.135/31", "2001:db8:aaaa:1003::7/127"],
+              "b_ips": ["192.0.2.134/31", "2001:db8:aaaa:1003::6/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.134/31",
+                  "family": 4,
+                  "a": "192.0.2.135",
+                  "b": "192.0.2.134",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::6/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::7",
+                  "b": "2001:db8:aaaa:1003::6",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.134/31", "2001:db8:aaaa:1003::6/127"]
+        }
+      },
+      {
+        "id": "e:c20",
+        "source": "dev:leaf-5a",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c20",
+          "cable_type": "smf-os2",
+          "cable_label": "C20",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-5a:Ethernet1/33",
+              "b": "spine-3:Ethernet1/9",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/9",
+              "a_id": "if60",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if61",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.149/31", "2001:db8:aaaa:1003::21/127"],
+              "b_ips": ["192.0.2.148/31", "2001:db8:aaaa:1003::20/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.148/31",
+                  "family": 4,
+                  "a": "192.0.2.149",
+                  "b": "192.0.2.148",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::20/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::21",
+                  "b": "2001:db8:aaaa:1003::20",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.148/31", "2001:db8:aaaa:1003::20/127"]
+        }
+      },
+      {
+        "id": "e:c21",
+        "source": "dev:spine-3",
+        "target": "dev:leaf-4a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c21",
+          "cable_type": "smf-os2",
+          "cable_label": "C21",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-3:Ethernet1/7",
+              "b": "leaf-4a:Ethernet1/33",
+              "a_port": "Ethernet1/7",
+              "b_port": "Ethernet1/33",
+              "a_id": "if62",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if63",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.144/31", "2001:db8:aaaa:1003::16/127"],
+              "b_ips": ["192.0.2.145/31", "2001:db8:aaaa:1003::17/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.144/31",
+                  "family": 4,
+                  "a": "192.0.2.144",
+                  "b": "192.0.2.145",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::16/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::16",
+                  "b": "2001:db8:aaaa:1003::17",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.144/31", "2001:db8:aaaa:1003::16/127"]
+        }
+      },
+      {
+        "id": "e:c22",
+        "source": "dev:leaf-3a",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c22",
+          "cable_type": "smf-os2",
+          "cable_label": "C22",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-3a:Ethernet1/33",
+              "b": "spine-3:Ethernet1/5",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/5",
+              "a_id": "if64",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if65",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.141/31", "2001:db8:aaaa:1003::13/127"],
+              "b_ips": ["192.0.2.140/31", "2001:db8:aaaa:1003::12/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.140/31",
+                  "family": 4,
+                  "a": "192.0.2.141",
+                  "b": "192.0.2.140",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::12/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::13",
+                  "b": "2001:db8:aaaa:1003::12",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.140/31", "2001:db8:aaaa:1003::12/127"]
+        }
+      },
+      {
+        "id": "e:c23",
+        "source": "dev:spine-3",
+        "target": "dev:leaf-2a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c23",
+          "cable_type": "smf-os2",
+          "cable_label": "C23",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-3:Ethernet1/3",
+              "b": "leaf-2a:Ethernet1/33",
+              "a_port": "Ethernet1/3",
+              "b_port": "Ethernet1/33",
+              "a_id": "if66",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if67",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.136/31", "2001:db8:aaaa:1003::8/127"],
+              "b_ips": ["192.0.2.137/31", "2001:db8:aaaa:1003::9/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.136/31",
+                  "family": 4,
+                  "a": "192.0.2.136",
+                  "b": "192.0.2.137",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::8/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::8",
+                  "b": "2001:db8:aaaa:1003::9",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.136/31", "2001:db8:aaaa:1003::8/127"]
+        }
+      },
+      {
+        "id": "e:c24",
+        "source": "dev:leaf-1a",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c24",
+          "cable_type": "smf-os2",
+          "cable_label": "C24",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1a:Ethernet1/33",
+              "b": "spine-3:Ethernet1/1",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/1",
+              "a_id": "if68",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if69",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.133/31", "2001:db8:aaaa:1003::5/127"],
+              "b_ips": ["192.0.2.132/31", "2001:db8:aaaa:1003::4/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.132/31",
+                  "family": 4,
+                  "a": "192.0.2.133",
+                  "b": "192.0.2.132",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::4/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::5",
+                  "b": "2001:db8:aaaa:1003::4",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.132/31", "2001:db8:aaaa:1003::4/127"]
+        }
+      },
+      {
+        "id": "e:c25",
+        "source": "dev:leaf-5b",
+        "target": "dev:spine-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c25",
+          "cable_type": "smf-os2",
+          "cable_label": "C25",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-5b:Ethernet1/32",
+              "b": "spine-2:Ethernet1/10",
+              "a_port": "Ethernet1/32",
+              "b_port": "Ethernet1/10",
+              "a_id": "if70",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if71",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.87/31", "2001:db8:aaaa:1002::23/127"],
+              "b_ips": ["192.0.2.86/31", "2001:db8:aaaa:1002::22/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.86/31",
+                  "family": 4,
+                  "a": "192.0.2.87",
+                  "b": "192.0.2.86",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::22/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::23",
+                  "b": "2001:db8:aaaa:1002::22",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.86/31", "2001:db8:aaaa:1002::22/127"]
+        }
+      },
+      {
+        "id": "e:c26",
+        "source": "dev:leaf-4b",
+        "target": "dev:spine-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c26",
+          "cable_type": "smf-os2",
+          "cable_label": "C26",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-4b:Ethernet1/32",
+              "b": "spine-2:Ethernet1/8",
+              "a_port": "Ethernet1/32",
+              "b_port": "Ethernet1/8",
+              "a_id": "if72",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if73",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.83/31", "2001:db8:aaaa:1002::19/127"],
+              "b_ips": ["192.0.2.82/31", "2001:db8:aaaa:1002::18/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.82/31",
+                  "family": 4,
+                  "a": "192.0.2.83",
+                  "b": "192.0.2.82",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::18/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::19",
+                  "b": "2001:db8:aaaa:1002::18",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.82/31", "2001:db8:aaaa:1002::18/127"]
+        }
+      },
+      {
+        "id": "e:c27",
+        "source": "dev:spine-2",
+        "target": "dev:leaf-3b",
+        "type": "cable",
+        "data": {
+          "cable_id": "c27",
+          "cable_type": "smf-os2",
+          "cable_label": "C27",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-2:Ethernet1/6",
+              "b": "leaf-3b:Ethernet1/32",
+              "a_port": "Ethernet1/6",
+              "b_port": "Ethernet1/32",
+              "a_id": "if74",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if75",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.78/31", "2001:db8:aaaa:1002::14/127"],
+              "b_ips": ["192.0.2.79/31", "2001:db8:aaaa:1002::15/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.78/31",
+                  "family": 4,
+                  "a": "192.0.2.78",
+                  "b": "192.0.2.79",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::14/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::14",
+                  "b": "2001:db8:aaaa:1002::15",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.78/31", "2001:db8:aaaa:1002::14/127"]
+        }
+      },
+      {
+        "id": "e:c28",
+        "source": "dev:spine-2",
+        "target": "dev:leaf-2b",
+        "type": "cable",
+        "data": {
+          "cable_id": "c28",
+          "cable_type": "smf-os2",
+          "cable_label": "C28",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-2:Ethernet1/4",
+              "b": "leaf-2b:Ethernet1/32",
+              "a_port": "Ethernet1/4",
+              "b_port": "Ethernet1/32",
+              "a_id": "if76",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if77",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.74/31", "2001:db8:aaaa:1002::10/127"],
+              "b_ips": ["192.0.2.75/31", "2001:db8:aaaa:1002::11/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.74/31",
+                  "family": 4,
+                  "a": "192.0.2.74",
+                  "b": "192.0.2.75",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::10/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::10",
+                  "b": "2001:db8:aaaa:1002::11",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.74/31", "2001:db8:aaaa:1002::10/127"]
+        }
+      },
+      {
+        "id": "e:c29",
+        "source": "dev:leaf-1b",
+        "target": "dev:spine-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c29",
+          "cable_type": "smf-os2",
+          "cable_label": "C29",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1b:Ethernet1/32",
+              "b": "spine-2:Ethernet1/2",
+              "a_port": "Ethernet1/32",
+              "b_port": "Ethernet1/2",
+              "a_id": "if78",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if79",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.71/31", "2001:db8:aaaa:1002::7/127"],
+              "b_ips": ["192.0.2.70/31", "2001:db8:aaaa:1002::6/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.70/31",
+                  "family": 4,
+                  "a": "192.0.2.71",
+                  "b": "192.0.2.70",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::6/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::7",
+                  "b": "2001:db8:aaaa:1002::6",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.70/31", "2001:db8:aaaa:1002::6/127"]
+        }
+      },
+      {
+        "id": "e:c30",
+        "source": "dev:spine-2",
+        "target": "dev:leaf-5a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c30",
+          "cable_type": "smf-os2",
+          "cable_label": "C30",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-2:Ethernet1/9",
+              "b": "leaf-5a:Ethernet1/32",
+              "a_port": "Ethernet1/9",
+              "b_port": "Ethernet1/32",
+              "a_id": "if80",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if81",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.84/31", "2001:db8:aaaa:1002::20/127"],
+              "b_ips": ["192.0.2.85/31", "2001:db8:aaaa:1002::21/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.84/31",
+                  "family": 4,
+                  "a": "192.0.2.84",
+                  "b": "192.0.2.85",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::20/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::20",
+                  "b": "2001:db8:aaaa:1002::21",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.84/31", "2001:db8:aaaa:1002::20/127"]
+        }
+      },
+      {
+        "id": "e:c31",
+        "source": "dev:spine-2",
+        "target": "dev:leaf-4a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c31",
+          "cable_type": "smf-os2",
+          "cable_label": "C31",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-2:Ethernet1/7",
+              "b": "leaf-4a:Ethernet1/32",
+              "a_port": "Ethernet1/7",
+              "b_port": "Ethernet1/32",
+              "a_id": "if82",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if83",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.80/31", "2001:db8:aaaa:1002::16/127"],
+              "b_ips": ["192.0.2.81/31", "2001:db8:aaaa:1002::17/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.80/31",
+                  "family": 4,
+                  "a": "192.0.2.80",
+                  "b": "192.0.2.81",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::16/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::16",
+                  "b": "2001:db8:aaaa:1002::17",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.80/31", "2001:db8:aaaa:1002::16/127"]
+        }
+      },
+      {
+        "id": "e:c32",
+        "source": "dev:spine-2",
+        "target": "dev:leaf-3a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c32",
+          "cable_type": "smf-os2",
+          "cable_label": "C32",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-2:Ethernet1/5",
+              "b": "leaf-3a:Ethernet1/32",
+              "a_port": "Ethernet1/5",
+              "b_port": "Ethernet1/32",
+              "a_id": "if84",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if85",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.76/31", "2001:db8:aaaa:1002::12/127"],
+              "b_ips": ["192.0.2.77/31", "2001:db8:aaaa:1002::13/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.76/31",
+                  "family": 4,
+                  "a": "192.0.2.76",
+                  "b": "192.0.2.77",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::12/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::12",
+                  "b": "2001:db8:aaaa:1002::13",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.76/31", "2001:db8:aaaa:1002::12/127"]
+        }
+      },
+      {
+        "id": "e:c33",
+        "source": "dev:spine-2",
+        "target": "dev:leaf-2a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c33",
+          "cable_type": "smf-os2",
+          "cable_label": "C33",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-2:Ethernet1/3",
+              "b": "leaf-2a:Ethernet1/32",
+              "a_port": "Ethernet1/3",
+              "b_port": "Ethernet1/32",
+              "a_id": "if86",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if87",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.72/31", "2001:db8:aaaa:1002::8/127"],
+              "b_ips": ["192.0.2.73/31", "2001:db8:aaaa:1002::9/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.72/31",
+                  "family": 4,
+                  "a": "192.0.2.72",
+                  "b": "192.0.2.73",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::8/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::8",
+                  "b": "2001:db8:aaaa:1002::9",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.72/31", "2001:db8:aaaa:1002::8/127"]
+        }
+      },
+      {
+        "id": "e:c34",
+        "source": "dev:spine-2",
+        "target": "dev:leaf-1a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c34",
+          "cable_type": "smf-os2",
+          "cable_label": "C34",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-2:Ethernet1/1",
+              "b": "leaf-1a:Ethernet1/32",
+              "a_port": "Ethernet1/1",
+              "b_port": "Ethernet1/32",
+              "a_id": "if88",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if89",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.68/31", "2001:db8:aaaa:1002::4/127"],
+              "b_ips": ["192.0.2.69/31", "2001:db8:aaaa:1002::5/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.68/31",
+                  "family": 4,
+                  "a": "192.0.2.68",
+                  "b": "192.0.2.69",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::4/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::4",
+                  "b": "2001:db8:aaaa:1002::5",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.68/31", "2001:db8:aaaa:1002::4/127"]
+        }
+      },
+      {
+        "id": "e:c35",
+        "source": "dev:leaf-5b",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c35",
+          "cable_type": "smf-os2",
+          "cable_label": "C35",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-5b:Ethernet1/31",
+              "b": "spine-1:Ethernet1/10",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/10",
+              "a_id": "if90",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if91",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.23/31", "2001:db8:aaaa:1001::23/127"],
+              "b_ips": ["192.0.2.22/31", "2001:db8:aaaa:1001::22/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.22/31",
+                  "family": 4,
+                  "a": "192.0.2.23",
+                  "b": "192.0.2.22",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::22/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::23",
+                  "b": "2001:db8:aaaa:1001::22",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.22/31", "2001:db8:aaaa:1001::22/127"]
+        }
+      },
+      {
+        "id": "e:c36",
+        "source": "dev:leaf-4b",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c36",
+          "cable_type": "smf-os2",
+          "cable_label": "C36",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-4b:Ethernet1/31",
+              "b": "spine-1:Ethernet1/8",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/8",
+              "a_id": "if92",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if93",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.19/31", "2001:db8:aaaa:1001::19/127"],
+              "b_ips": ["192.0.2.18/31", "2001:db8:aaaa:1001::18/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.18/31",
+                  "family": 4,
+                  "a": "192.0.2.19",
+                  "b": "192.0.2.18",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::18/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::19",
+                  "b": "2001:db8:aaaa:1001::18",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.18/31", "2001:db8:aaaa:1001::18/127"]
+        }
+      },
+      {
+        "id": "e:c37",
+        "source": "dev:leaf-3b",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c37",
+          "cable_type": "smf-os2",
+          "cable_label": "C37",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-3b:Ethernet1/31",
+              "b": "spine-1:Ethernet1/6",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/6",
+              "a_id": "if94",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if95",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.15/31", "2001:db8:aaaa:1001::15/127"],
+              "b_ips": ["192.0.2.14/31", "2001:db8:aaaa:1001::14/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.14/31",
+                  "family": 4,
+                  "a": "192.0.2.15",
+                  "b": "192.0.2.14",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::14/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::15",
+                  "b": "2001:db8:aaaa:1001::14",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.14/31", "2001:db8:aaaa:1001::14/127"]
+        }
+      },
+      {
+        "id": "e:c38",
+        "source": "dev:leaf-2b",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c38",
+          "cable_type": "smf-os2",
+          "cable_label": "C38",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-2b:Ethernet1/31",
+              "b": "spine-1:Ethernet1/4",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/4",
+              "a_id": "if96",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if97",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.11/31", "2001:db8:aaaa:1001::11/127"],
+              "b_ips": ["192.0.2.10/31", "2001:db8:aaaa:1001::10/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.10/31",
+                  "family": 4,
+                  "a": "192.0.2.11",
+                  "b": "192.0.2.10",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::10/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::11",
+                  "b": "2001:db8:aaaa:1001::10",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.10/31", "2001:db8:aaaa:1001::10/127"]
+        }
+      },
+      {
+        "id": "e:c39",
+        "source": "dev:leaf-1b",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c39",
+          "cable_type": "smf-os2",
+          "cable_label": "C39",
+          "color": "#FF7A00",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1b:Ethernet1/31",
+              "b": "spine-1:Ethernet1/2",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/2",
+              "a_id": "if98",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if99",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.7/31", "2001:db8:aaaa:1001::7/127"],
+              "b_ips": ["192.0.2.6/31", "2001:db8:aaaa:1001::6/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.6/31",
+                  "family": 4,
+                  "a": "192.0.2.7",
+                  "b": "192.0.2.6",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::6/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::7",
+                  "b": "2001:db8:aaaa:1001::6",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.6/31", "2001:db8:aaaa:1001::6/127"]
+        }
+      },
+      {
+        "id": "e:c40",
+        "source": "dev:leaf-5a",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c40",
+          "cable_type": "smf-os2",
+          "cable_label": "C40",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-5a:Ethernet1/31",
+              "b": "spine-1:Ethernet1/9",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/9",
+              "a_id": "if100",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if101",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.21/31", "2001:db8:aaaa:1001::21/127"],
+              "b_ips": ["192.0.2.20/31", "2001:db8:aaaa:1001::20/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.20/31",
+                  "family": 4,
+                  "a": "192.0.2.21",
+                  "b": "192.0.2.20",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::20/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::21",
+                  "b": "2001:db8:aaaa:1001::20",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.20/31", "2001:db8:aaaa:1001::20/127"]
+        }
+      },
+      {
+        "id": "e:c41",
+        "source": "dev:spine-1",
+        "target": "dev:leaf-4a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c41",
+          "cable_type": "smf-os2",
+          "cable_label": "C41",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-1:Ethernet1/7",
+              "b": "leaf-4a:Ethernet1/31",
+              "a_port": "Ethernet1/7",
+              "b_port": "Ethernet1/31",
+              "a_id": "if102",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if103",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.16/31", "2001:db8:aaaa:1001::16/127"],
+              "b_ips": ["192.0.2.17/31", "2001:db8:aaaa:1001::17/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.16/31",
+                  "family": 4,
+                  "a": "192.0.2.16",
+                  "b": "192.0.2.17",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::16/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::16",
+                  "b": "2001:db8:aaaa:1001::17",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.16/31", "2001:db8:aaaa:1001::16/127"]
+        }
+      },
+      {
+        "id": "e:c42",
+        "source": "dev:leaf-3a",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c42",
+          "cable_type": "smf-os2",
+          "cable_label": "C42",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-3a:Ethernet1/31",
+              "b": "spine-1:Ethernet1/5",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/5",
+              "a_id": "if104",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if105",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.13/31", "2001:db8:aaaa:1001::13/127"],
+              "b_ips": ["192.0.2.12/31", "2001:db8:aaaa:1001::12/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.12/31",
+                  "family": 4,
+                  "a": "192.0.2.13",
+                  "b": "192.0.2.12",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::12/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::13",
+                  "b": "2001:db8:aaaa:1001::12",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.12/31", "2001:db8:aaaa:1001::12/127"]
+        }
+      },
+      {
+        "id": "e:c43",
+        "source": "dev:spine-1",
+        "target": "dev:leaf-2a",
+        "type": "cable",
+        "data": {
+          "cable_id": "c43",
+          "cable_type": "smf-os2",
+          "cable_label": "C43",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-1:Ethernet1/3",
+              "b": "leaf-2a:Ethernet1/31",
+              "a_port": "Ethernet1/3",
+              "b_port": "Ethernet1/31",
+              "a_id": "if106",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if107",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.8/31", "2001:db8:aaaa:1001::8/127"],
+              "b_ips": ["192.0.2.9/31", "2001:db8:aaaa:1001::9/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.8/31",
+                  "family": 4,
+                  "a": "192.0.2.8",
+                  "b": "192.0.2.9",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::8/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::8",
+                  "b": "2001:db8:aaaa:1001::9",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.8/31", "2001:db8:aaaa:1001::8/127"]
+        }
+      },
+      {
+        "id": "e:c44",
+        "source": "dev:leaf-1a",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c44",
+          "cable_type": "smf-os2",
+          "cable_label": "C44",
+          "color": "#E4002B",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "leaf-1a:Ethernet1/31",
+              "b": "spine-1:Ethernet1/1",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/1",
+              "a_id": "if108",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if109",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.5/31", "2001:db8:aaaa:1001::5/127"],
+              "b_ips": ["192.0.2.4/31", "2001:db8:aaaa:1001::4/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.4/31",
+                  "family": 4,
+                  "a": "192.0.2.5",
+                  "b": "192.0.2.4",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::4/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::5",
+                  "b": "2001:db8:aaaa:1001::4",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.4/31", "2001:db8:aaaa:1001::4/127"]
+        }
+      },
+      {
+        "id": "e:c45",
+        "source": "dev:border-2",
+        "target": "dev:sdwan-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c45",
+          "cable_type": "smf-os2",
+          "cable_label": "C45",
+          "color": "#17A2B8",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-2:Ethernet1/6",
+              "b": "sdwan-2:Ethernet1/2",
+              "a_port": "Ethernet1/6",
+              "b_port": "Ethernet1/2",
+              "a_id": "if110",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if111",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["198.51.100.130/31", "2001:db8:aaaa:30::2/127"],
+              "b_ips": ["198.51.100.131/31", "2001:db8:aaaa:30::3/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.130/31",
+                  "family": 4,
+                  "a": "198.51.100.130",
+                  "b": "198.51.100.131",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:30::2/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:30::2",
+                  "b": "2001:db8:aaaa:30::3",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.130/31", "2001:db8:aaaa:30::2/127"]
+        }
+      },
+      {
+        "id": "e:c46",
+        "source": "dev:border-1",
+        "target": "dev:sdwan-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c46",
+          "cable_type": "smf-os2",
+          "cable_label": "C46",
+          "color": "#17A2B8",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-1:Ethernet1/6",
+              "b": "sdwan-1:Ethernet1/2",
+              "a_port": "Ethernet1/6",
+              "b_port": "Ethernet1/2",
+              "a_id": "if112",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if113",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["198.51.100.128/31", "2001:db8:aaaa:30::/127"],
+              "b_ips": ["198.51.100.129/31", "2001:db8:aaaa:30::1/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.128/31",
+                  "family": 4,
+                  "a": "198.51.100.128",
+                  "b": "198.51.100.129",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:30::/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:30::",
+                  "b": "2001:db8:aaaa:30::1",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.128/31", "2001:db8:aaaa:30::/127"]
+        }
+      },
+      {
+        "id": "e:c47",
+        "source": "dev:mpls-p-2",
+        "target": "dev:mpls-pe-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c47",
+          "cable_type": "smf-os2",
+          "cable_label": "C47",
+          "color": "#8246AF",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "mpls-p-2:Ethernet1/2",
+              "b": "mpls-pe-2:Ethernet1/2",
+              "a_port": "Ethernet1/2",
+              "b_port": "Ethernet1/2",
+              "a_id": "if114",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if115",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["198.51.100.70/31", "2001:db8:bbbb:1::6/127"],
+              "b_ips": ["198.51.100.71/31", "2001:db8:bbbb:1::7/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.70/31",
+                  "family": 4,
+                  "a": "198.51.100.70",
+                  "b": "198.51.100.71",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:bbbb:1::6/127",
+                  "family": 6,
+                  "a": "2001:db8:bbbb:1::6",
+                  "b": "2001:db8:bbbb:1::7",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.70/31", "2001:db8:bbbb:1::6/127"]
+        }
+      },
+      {
+        "id": "e:c48",
+        "source": "dev:mpls-p-1",
+        "target": "dev:mpls-pe-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c48",
+          "cable_type": "smf-os2",
+          "cable_label": "C48",
+          "color": "#8246AF",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "mpls-p-1:Ethernet1/2",
+              "b": "mpls-pe-2:Ethernet1/1",
+              "a_port": "Ethernet1/2",
+              "b_port": "Ethernet1/1",
+              "a_id": "if116",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if117",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["198.51.100.68/31", "2001:db8:bbbb:1::4/127"],
+              "b_ips": ["198.51.100.69/31", "2001:db8:bbbb:1::5/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.68/31",
+                  "family": 4,
+                  "a": "198.51.100.68",
+                  "b": "198.51.100.69",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:bbbb:1::4/127",
+                  "family": 6,
+                  "a": "2001:db8:bbbb:1::4",
+                  "b": "2001:db8:bbbb:1::5",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.68/31", "2001:db8:bbbb:1::4/127"]
+        }
+      },
+      {
+        "id": "e:c49",
+        "source": "dev:mpls-pe-1",
+        "target": "dev:mpls-p-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c49",
+          "cable_type": "smf-os2",
+          "cable_label": "C49",
+          "color": "#8246AF",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "mpls-pe-1:Ethernet1/2",
+              "b": "mpls-p-2:Ethernet1/1",
+              "a_port": "Ethernet1/2",
+              "b_port": "Ethernet1/1",
+              "a_id": "if118",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if119",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["198.51.100.66/31", "2001:db8:bbbb:1::2/127"],
+              "b_ips": ["198.51.100.67/31", "2001:db8:bbbb:1::3/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.66/31",
+                  "family": 4,
+                  "a": "198.51.100.66",
+                  "b": "198.51.100.67",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:bbbb:1::2/127",
+                  "family": 6,
+                  "a": "2001:db8:bbbb:1::2",
+                  "b": "2001:db8:bbbb:1::3",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.66/31", "2001:db8:bbbb:1::2/127"]
+        }
+      },
+      {
+        "id": "e:c50",
+        "source": "dev:mpls-p-1",
+        "target": "dev:mpls-pe-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c50",
+          "cable_type": "smf-os2",
+          "cable_label": "C50",
+          "color": "#8246AF",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "mpls-p-1:Ethernet1/1",
+              "b": "mpls-pe-1:Ethernet1/1",
+              "a_port": "Ethernet1/1",
+              "b_port": "Ethernet1/1",
+              "a_id": "if120",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if121",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["198.51.100.65/31", "2001:db8:bbbb:1::1/127"],
+              "b_ips": ["198.51.100.64/31", "2001:db8:bbbb:1::/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.64/31",
+                  "family": 4,
+                  "a": "198.51.100.65",
+                  "b": "198.51.100.64",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:bbbb:1::/127",
+                  "family": 6,
+                  "a": "2001:db8:bbbb:1::1",
+                  "b": "2001:db8:bbbb:1::",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.64/31", "2001:db8:bbbb:1::/127"]
+        }
+      },
+      {
+        "id": "e:c51",
+        "source": "dev:isp-pe-2",
+        "target": "dev:isp-p-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c51",
+          "cable_type": "smf-os2",
+          "cable_label": "C51",
+          "color": "#8246AF",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "isp-pe-2:Ethernet1/2",
+              "b": "isp-p-2:Ethernet1/2",
+              "a_port": "Ethernet1/2",
+              "b_port": "Ethernet1/2",
+              "a_id": "if122",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if123",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["198.51.100.7/31", "2001:db8:cccc:1::7/127"],
+              "b_ips": ["198.51.100.6/31", "2001:db8:cccc:1::6/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.6/31",
+                  "family": 4,
+                  "a": "198.51.100.7",
+                  "b": "198.51.100.6",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:cccc:1::6/127",
+                  "family": 6,
+                  "a": "2001:db8:cccc:1::7",
+                  "b": "2001:db8:cccc:1::6",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.6/31", "2001:db8:cccc:1::6/127"]
+        }
+      },
+      {
+        "id": "e:c52",
+        "source": "dev:isp-pe-2",
+        "target": "dev:isp-p-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c52",
+          "cable_type": "smf-os2",
+          "cable_label": "C52",
+          "color": "#8246AF",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "isp-pe-2:Ethernet1/1",
+              "b": "isp-p-1:Ethernet1/2",
+              "a_port": "Ethernet1/1",
+              "b_port": "Ethernet1/2",
+              "a_id": "if124",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if125",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["198.51.100.5/31", "2001:db8:cccc:1::5/127"],
+              "b_ips": ["198.51.100.4/31", "2001:db8:cccc:1::4/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.4/31",
+                  "family": 4,
+                  "a": "198.51.100.5",
+                  "b": "198.51.100.4",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:cccc:1::4/127",
+                  "family": 6,
+                  "a": "2001:db8:cccc:1::5",
+                  "b": "2001:db8:cccc:1::4",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.4/31", "2001:db8:cccc:1::4/127"]
+        }
+      },
+      {
+        "id": "e:c53",
+        "source": "dev:isp-pe-1",
+        "target": "dev:isp-p-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c53",
+          "cable_type": "smf-os2",
+          "cable_label": "C53",
+          "color": "#8246AF",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "isp-pe-1:Ethernet1/2",
+              "b": "isp-p-2:Ethernet1/1",
+              "a_port": "Ethernet1/2",
+              "b_port": "Ethernet1/1",
+              "a_id": "if126",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if127",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["198.51.100.2/31", "2001:db8:cccc:1::2/127"],
+              "b_ips": ["198.51.100.3/31", "2001:db8:cccc:1::3/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.2/31",
+                  "family": 4,
+                  "a": "198.51.100.2",
+                  "b": "198.51.100.3",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:cccc:1::2/127",
+                  "family": 6,
+                  "a": "2001:db8:cccc:1::2",
+                  "b": "2001:db8:cccc:1::3",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.2/31", "2001:db8:cccc:1::2/127"]
+        }
+      },
+      {
+        "id": "e:c54",
+        "source": "dev:isp-pe-1",
+        "target": "dev:isp-p-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c54",
+          "cable_type": "smf-os2",
+          "cable_label": "C54",
+          "color": "#8246AF",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "isp-pe-1:Ethernet1/1",
+              "b": "isp-p-1:Ethernet1/1",
+              "a_port": "Ethernet1/1",
+              "b_port": "Ethernet1/1",
+              "a_id": "if128",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if129",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["198.51.100.0/31", "2001:db8:cccc:1::/127"],
+              "b_ips": ["198.51.100.1/31", "2001:db8:cccc:1::1/127"],
+              "subnets": [
+                {
+                  "cidr": "198.51.100.0/31",
+                  "family": 4,
+                  "a": "198.51.100.0",
+                  "b": "198.51.100.1",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:cccc:1::/127",
+                  "family": 6,
+                  "a": "2001:db8:cccc:1::",
+                  "b": "2001:db8:cccc:1::1",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["198.51.100.0/31", "2001:db8:cccc:1::/127"]
+        }
+      },
+      {
+        "id": "e:c55",
+        "source": "dev:border-2",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c55",
+          "cable_type": "smf-os2",
+          "cable_label": "C55",
+          "color": "#FFB81C",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-2:Ethernet1/33",
+              "b": "spine-3:Ethernet1/64",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/64",
+              "a_id": "if130",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if131",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.131/31", "2001:db8:aaaa:1003::3/127"],
+              "b_ips": ["192.0.2.130/31", "2001:db8:aaaa:1003::2/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.130/31",
+                  "family": 4,
+                  "a": "192.0.2.131",
+                  "b": "192.0.2.130",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::2/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::3",
+                  "b": "2001:db8:aaaa:1003::2",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.130/31", "2001:db8:aaaa:1003::2/127"]
+        }
+      },
+      {
+        "id": "e:c56",
+        "source": "dev:border-2",
+        "target": "dev:spine-2",
+        "type": "cable",
+        "data": {
+          "cable_id": "c56",
+          "cable_type": "smf-os2",
+          "cable_label": "C56",
+          "color": "#FFB81C",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-2:Ethernet1/32",
+              "b": "spine-2:Ethernet1/64",
+              "a_port": "Ethernet1/32",
+              "b_port": "Ethernet1/64",
+              "a_id": "if132",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if133",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.67/31", "2001:db8:aaaa:1002::3/127"],
+              "b_ips": ["192.0.2.66/31", "2001:db8:aaaa:1002::2/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.66/31",
+                  "family": 4,
+                  "a": "192.0.2.67",
+                  "b": "192.0.2.66",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::2/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::3",
+                  "b": "2001:db8:aaaa:1002::2",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.66/31", "2001:db8:aaaa:1002::2/127"]
+        }
+      },
+      {
+        "id": "e:c57",
+        "source": "dev:border-2",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c57",
+          "cable_type": "smf-os2",
+          "cable_label": "C57",
+          "color": "#FFB81C",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-2:Ethernet1/31",
+              "b": "spine-1:Ethernet1/64",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/64",
+              "a_id": "if134",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if135",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.3/31", "2001:db8:aaaa:1001::3/127"],
+              "b_ips": ["192.0.2.2/31", "2001:db8:aaaa:1001::2/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.2/31",
+                  "family": 4,
+                  "a": "192.0.2.3",
+                  "b": "192.0.2.2",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::2/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::3",
+                  "b": "2001:db8:aaaa:1001::2",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.2/31", "2001:db8:aaaa:1001::2/127"]
+        }
+      },
+      {
+        "id": "e:c58",
+        "source": "dev:border-1",
+        "target": "dev:spine-3",
+        "type": "cable",
+        "data": {
+          "cable_id": "c58",
+          "cable_type": "smf-os2",
+          "cable_label": "C58",
+          "color": "#FFB81C",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-1:Ethernet1/33",
+              "b": "spine-3:Ethernet1/63",
+              "a_port": "Ethernet1/33",
+              "b_port": "Ethernet1/63",
+              "a_id": "if136",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if137",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.129/31", "2001:db8:aaaa:1003::1/127"],
+              "b_ips": ["192.0.2.128/31", "2001:db8:aaaa:1003::/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.128/31",
+                  "family": 4,
+                  "a": "192.0.2.129",
+                  "b": "192.0.2.128",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1003::/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1003::1",
+                  "b": "2001:db8:aaaa:1003::",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.128/31", "2001:db8:aaaa:1003::/127"]
+        }
+      },
+      {
+        "id": "e:c59",
+        "source": "dev:spine-2",
+        "target": "dev:border-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c59",
+          "cable_type": "smf-os2",
+          "cable_label": "C59",
+          "color": "#FFB81C",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "spine-2:Ethernet1/63",
+              "b": "border-1:Ethernet1/32",
+              "a_port": "Ethernet1/63",
+              "b_port": "Ethernet1/32",
+              "a_id": "if138",
+              "a_kind": "interface",
+              "a_end": "A",
+              "b_id": "if139",
+              "b_kind": "interface",
+              "b_end": "B",
+              "a_ips": ["192.0.2.64/31", "2001:db8:aaaa:1002::/127"],
+              "b_ips": ["192.0.2.65/31", "2001:db8:aaaa:1002::1/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.64/31",
+                  "family": 4,
+                  "a": "192.0.2.64",
+                  "b": "192.0.2.65",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1002::/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1002::",
+                  "b": "2001:db8:aaaa:1002::1",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.64/31", "2001:db8:aaaa:1002::/127"]
+        }
+      },
+      {
+        "id": "e:c60",
+        "source": "dev:border-1",
+        "target": "dev:spine-1",
+        "type": "cable",
+        "data": {
+          "cable_id": "c60",
+          "cable_type": "smf-os2",
+          "cable_label": "C60",
+          "color": "#FFB81C",
+          "status": "connected",
+          "length": null,
+          "length_unit": "m",
+          "speed": null,
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-1:Ethernet1/31",
+              "b": "spine-1:Ethernet1/63",
+              "a_port": "Ethernet1/31",
+              "b_port": "Ethernet1/63",
+              "a_id": "if140",
+              "a_kind": "interface",
+              "a_end": "B",
+              "b_id": "if141",
+              "b_kind": "interface",
+              "b_end": "A",
+              "a_ips": ["192.0.2.1/31", "2001:db8:aaaa:1001::1/127"],
+              "b_ips": ["192.0.2.0/31", "2001:db8:aaaa:1001::/127"],
+              "subnets": [
+                {
+                  "cidr": "192.0.2.0/31",
+                  "family": 4,
+                  "a": "192.0.2.1",
+                  "b": "192.0.2.0",
+                  "a_via": null,
+                  "b_via": null
+                },
+                {
+                  "cidr": "2001:db8:aaaa:1001::/127",
+                  "family": 6,
+                  "a": "2001:db8:aaaa:1001::1",
+                  "b": "2001:db8:aaaa:1001::",
+                  "a_via": null,
+                  "b_via": null
+                }
+              ],
+              "subnets_truncated": false
+            }
+          ],
+          "lag": {
+            "a": null,
+            "b": null
+          },
+          "subnets": ["192.0.2.0/31", "2001:db8:aaaa:1001::/127"]
+        }
+      },
+      {
+        "id": "cc:k61",
+        "source": "dev:border-1",
+        "target": "dev:isp-pe-1",
+        "type": "circuit",
+        "data": {
+          "circuit": {
+            "id": "k61",
+            "cid": "CIR-61",
+            "provider": {
+              "id": "provider-1",
+              "name": "provider-1"
+            },
+            "type": {
+              "id": "transit",
+              "name": "Internet transit",
+              "color": "#0071CE"
+            },
+            "status": {
+              "id": "active",
+              "name": "Active",
+              "slug": "active",
+              "color": "#10b981",
+              "text_color": "#fff"
+            },
+            "commit_rate_kbps": null
+          },
+          "color": "#0071CE",
+          "status": "active",
+          "ends": [
+            {
+              "side": "A",
+              "termination": {
+                "id": "t142",
+                "side": "A",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "border-1",
+                "name": "border-1"
+              },
+              "port": {
+                "id": "if143",
+                "name": "Ethernet1/4",
+                "kind": "interface"
+              },
+              "via": []
+            },
+            {
+              "side": "Z",
+              "termination": {
+                "id": "t144",
+                "side": "Z",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "isp-pe-1",
+                "name": "isp-pe-1"
+              },
+              "port": {
+                "id": "if145",
+                "name": "Ethernet1/3",
+                "kind": "interface"
+              },
+              "via": []
+            }
+          ],
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-1:Ethernet1/4",
+              "b": "isp-pe-1:Ethernet1/3",
+              "a_port": "Ethernet1/4",
+              "b_port": "Ethernet1/3",
+              "a_id": "if143",
+              "a_kind": "interface",
+              "b_id": "if145",
+              "b_kind": "interface"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cc:k62",
+        "source": "dev:border-2",
+        "target": "dev:isp-pe-1",
+        "type": "circuit",
+        "data": {
+          "circuit": {
+            "id": "k62",
+            "cid": "CIR-62",
+            "provider": {
+              "id": "provider-1",
+              "name": "provider-1"
+            },
+            "type": {
+              "id": "transit",
+              "name": "Internet transit",
+              "color": "#0071CE"
+            },
+            "status": {
+              "id": "active",
+              "name": "Active",
+              "slug": "active",
+              "color": "#10b981",
+              "text_color": "#fff"
+            },
+            "commit_rate_kbps": null
+          },
+          "color": "#0071CE",
+          "status": "active",
+          "ends": [
+            {
+              "side": "A",
+              "termination": {
+                "id": "t146",
+                "side": "A",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "border-2",
+                "name": "border-2"
+              },
+              "port": {
+                "id": "if147",
+                "name": "Ethernet1/4",
+                "kind": "interface"
+              },
+              "via": []
+            },
+            {
+              "side": "Z",
+              "termination": {
+                "id": "t148",
+                "side": "Z",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "isp-pe-1",
+                "name": "isp-pe-1"
+              },
+              "port": {
+                "id": "if149",
+                "name": "Ethernet1/4",
+                "kind": "interface"
+              },
+              "via": []
+            }
+          ],
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-2:Ethernet1/4",
+              "b": "isp-pe-1:Ethernet1/4",
+              "a_port": "Ethernet1/4",
+              "b_port": "Ethernet1/4",
+              "a_id": "if147",
+              "a_kind": "interface",
+              "b_id": "if149",
+              "b_kind": "interface"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cc:k63",
+        "source": "dev:sdwan-1",
+        "target": "dev:isp-pe-1",
+        "type": "circuit",
+        "data": {
+          "circuit": {
+            "id": "k63",
+            "cid": "CIR-63",
+            "provider": {
+              "id": "provider-1",
+              "name": "provider-1"
+            },
+            "type": {
+              "id": "transit",
+              "name": "Internet transit",
+              "color": "#0071CE"
+            },
+            "status": {
+              "id": "active",
+              "name": "Active",
+              "slug": "active",
+              "color": "#10b981",
+              "text_color": "#fff"
+            },
+            "commit_rate_kbps": null
+          },
+          "color": "#0071CE",
+          "status": "active",
+          "ends": [
+            {
+              "side": "A",
+              "termination": {
+                "id": "t150",
+                "side": "A",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "sdwan-1",
+                "name": "sdwan-1"
+              },
+              "port": {
+                "id": "if151",
+                "name": "Ethernet1/1",
+                "kind": "interface"
+              },
+              "via": []
+            },
+            {
+              "side": "Z",
+              "termination": {
+                "id": "t152",
+                "side": "Z",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "isp-pe-1",
+                "name": "isp-pe-1"
+              },
+              "port": {
+                "id": "if153",
+                "name": "Ethernet1/5",
+                "kind": "interface"
+              },
+              "via": []
+            }
+          ],
+          "via": [],
+          "pairs": [
+            {
+              "a": "sdwan-1:Ethernet1/1",
+              "b": "isp-pe-1:Ethernet1/5",
+              "a_port": "Ethernet1/1",
+              "b_port": "Ethernet1/5",
+              "a_id": "if151",
+              "a_kind": "interface",
+              "b_id": "if153",
+              "b_kind": "interface"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cc:k64",
+        "source": "dev:isp-pe-1",
+        "target": "dev:mpls-pe-1",
+        "type": "circuit",
+        "data": {
+          "circuit": {
+            "id": "k64",
+            "cid": "CIR-64",
+            "provider": {
+              "id": "provider-1",
+              "name": "provider-1"
+            },
+            "type": {
+              "id": "transit",
+              "name": "Private peering (PNI)",
+              "color": "#17A2B8"
+            },
+            "status": {
+              "id": "active",
+              "name": "Active",
+              "slug": "active",
+              "color": "#10b981",
+              "text_color": "#fff"
+            },
+            "commit_rate_kbps": null
+          },
+          "color": "#17A2B8",
+          "status": "active",
+          "ends": [
+            {
+              "side": "A",
+              "termination": {
+                "id": "t154",
+                "side": "A",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "isp-pe-1",
+                "name": "isp-pe-1"
+              },
+              "port": {
+                "id": "if155",
+                "name": "Ethernet1/6",
+                "kind": "interface"
+              },
+              "via": []
+            },
+            {
+              "side": "Z",
+              "termination": {
+                "id": "t156",
+                "side": "Z",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "mpls-pe-1",
+                "name": "mpls-pe-1"
+              },
+              "port": {
+                "id": "if157",
+                "name": "Ethernet1/6",
+                "kind": "interface"
+              },
+              "via": []
+            }
+          ],
+          "via": [],
+          "pairs": [
+            {
+              "a": "isp-pe-1:Ethernet1/6",
+              "b": "mpls-pe-1:Ethernet1/6",
+              "a_port": "Ethernet1/6",
+              "b_port": "Ethernet1/6",
+              "a_id": "if155",
+              "a_kind": "interface",
+              "b_id": "if157",
+              "b_kind": "interface"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cc:k65",
+        "source": "dev:border-1",
+        "target": "dev:mpls-pe-1",
+        "type": "circuit",
+        "data": {
+          "circuit": {
+            "id": "k65",
+            "cid": "CIR-65",
+            "provider": {
+              "id": "provider-1",
+              "name": "provider-1"
+            },
+            "type": {
+              "id": "transit",
+              "name": "Internet transit",
+              "color": "#0071CE"
+            },
+            "status": {
+              "id": "active",
+              "name": "Active",
+              "slug": "active",
+              "color": "#10b981",
+              "text_color": "#fff"
+            },
+            "commit_rate_kbps": null
+          },
+          "color": "#0071CE",
+          "status": "active",
+          "ends": [
+            {
+              "side": "A",
+              "termination": {
+                "id": "t158",
+                "side": "A",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "border-1",
+                "name": "border-1"
+              },
+              "port": {
+                "id": "if159",
+                "name": "Ethernet1/5",
+                "kind": "interface"
+              },
+              "via": []
+            },
+            {
+              "side": "Z",
+              "termination": {
+                "id": "t160",
+                "side": "Z",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "mpls-pe-1",
+                "name": "mpls-pe-1"
+              },
+              "port": {
+                "id": "if161",
+                "name": "Ethernet1/3",
+                "kind": "interface"
+              },
+              "via": []
+            }
+          ],
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-1:Ethernet1/5",
+              "b": "mpls-pe-1:Ethernet1/3",
+              "a_port": "Ethernet1/5",
+              "b_port": "Ethernet1/3",
+              "a_id": "if159",
+              "a_kind": "interface",
+              "b_id": "if161",
+              "b_kind": "interface"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cc:k66",
+        "source": "dev:border-2",
+        "target": "dev:mpls-pe-1",
+        "type": "circuit",
+        "data": {
+          "circuit": {
+            "id": "k66",
+            "cid": "CIR-66",
+            "provider": {
+              "id": "provider-1",
+              "name": "provider-1"
+            },
+            "type": {
+              "id": "transit",
+              "name": "Internet transit",
+              "color": "#0071CE"
+            },
+            "status": {
+              "id": "active",
+              "name": "Active",
+              "slug": "active",
+              "color": "#10b981",
+              "text_color": "#fff"
+            },
+            "commit_rate_kbps": null
+          },
+          "color": "#0071CE",
+          "status": "active",
+          "ends": [
+            {
+              "side": "A",
+              "termination": {
+                "id": "t162",
+                "side": "A",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "border-2",
+                "name": "border-2"
+              },
+              "port": {
+                "id": "if163",
+                "name": "Ethernet1/5",
+                "kind": "interface"
+              },
+              "via": []
+            },
+            {
+              "side": "Z",
+              "termination": {
+                "id": "t164",
+                "side": "Z",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "mpls-pe-1",
+                "name": "mpls-pe-1"
+              },
+              "port": {
+                "id": "if165",
+                "name": "Ethernet1/4",
+                "kind": "interface"
+              },
+              "via": []
+            }
+          ],
+          "via": [],
+          "pairs": [
+            {
+              "a": "border-2:Ethernet1/5",
+              "b": "mpls-pe-1:Ethernet1/4",
+              "a_port": "Ethernet1/5",
+              "b_port": "Ethernet1/4",
+              "a_id": "if163",
+              "a_kind": "interface",
+              "b_id": "if165",
+              "b_kind": "interface"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cc:k67",
+        "source": "dev:sdwan-2",
+        "target": "dev:mpls-pe-1",
+        "type": "circuit",
+        "data": {
+          "circuit": {
+            "id": "k67",
+            "cid": "CIR-67",
+            "provider": {
+              "id": "provider-1",
+              "name": "provider-1"
+            },
+            "type": {
+              "id": "transit",
+              "name": "MPLS L3VPN",
+              "color": "#8246AF"
+            },
+            "status": {
+              "id": "active",
+              "name": "Active",
+              "slug": "active",
+              "color": "#10b981",
+              "text_color": "#fff"
+            },
+            "commit_rate_kbps": null
+          },
+          "color": "#8246AF",
+          "status": "active",
+          "ends": [
+            {
+              "side": "A",
+              "termination": {
+                "id": "t166",
+                "side": "A",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "sdwan-2",
+                "name": "sdwan-2"
+              },
+              "port": {
+                "id": "if167",
+                "name": "Ethernet1/1",
+                "kind": "interface"
+              },
+              "via": []
+            },
+            {
+              "side": "Z",
+              "termination": {
+                "id": "t168",
+                "side": "Z",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "mpls-pe-1",
+                "name": "mpls-pe-1"
+              },
+              "port": {
+                "id": "if169",
+                "name": "Ethernet1/5",
+                "kind": "interface"
+              },
+              "via": []
+            }
+          ],
+          "via": [],
+          "pairs": [
+            {
+              "a": "sdwan-2:Ethernet1/1",
+              "b": "mpls-pe-1:Ethernet1/5",
+              "a_port": "Ethernet1/1",
+              "b_port": "Ethernet1/5",
+              "a_id": "if167",
+              "a_kind": "interface",
+              "b_id": "if169",
+              "b_kind": "interface"
+            }
+          ]
+        }
+      },
+      {
+        "id": "cc:k68",
+        "source": "dev:remote-ce",
+        "target": "dev:mpls-pe-2",
+        "type": "circuit",
+        "data": {
+          "circuit": {
+            "id": "k68",
+            "cid": "CIR-68",
+            "provider": {
+              "id": "provider-1",
+              "name": "provider-1"
+            },
+            "type": {
+              "id": "transit",
+              "name": "MPLS L3VPN",
+              "color": "#8246AF"
+            },
+            "status": {
+              "id": "active",
+              "name": "Active",
+              "slug": "active",
+              "color": "#10b981",
+              "text_color": "#fff"
+            },
+            "commit_rate_kbps": null
+          },
+          "color": "#8246AF",
+          "status": "active",
+          "ends": [
+            {
+              "side": "A",
+              "termination": {
+                "id": "t170",
+                "side": "A",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-2",
+                "name": "site-2"
+              },
+              "device": {
+                "id": "remote-ce",
+                "name": "remote-ce"
+              },
+              "port": {
+                "id": "if171",
+                "name": "Ethernet1/1",
+                "kind": "interface"
+              },
+              "via": []
+            },
+            {
+              "side": "Z",
+              "termination": {
+                "id": "t172",
+                "side": "Z",
+                "port_speed_kbps": null,
+                "upstream_speed_kbps": null
+              },
+              "site": {
+                "id": "site-1",
+                "name": "site-1"
+              },
+              "device": {
+                "id": "mpls-pe-2",
+                "name": "mpls-pe-2"
+              },
+              "port": {
+                "id": "if173",
+                "name": "Ethernet1/3",
+                "kind": "interface"
+              },
+              "via": []
+            }
+          ],
+          "via": [],
+          "pairs": [
+            {
+              "a": "remote-ce:Ethernet1/1",
+              "b": "mpls-pe-2:Ethernet1/3",
+              "a_port": "Ethernet1/1",
+              "b_port": "Ethernet1/3",
+              "a_id": "if171",
+              "a_kind": "interface",
+              "b_id": "if173",
+              "b_kind": "interface"
+            }
+          ]
+        }
+      }
+    ],
+    "meta": {
+      "card": {
+        "fields": ["monitor", "primary_ip", "loopback", "serial"],
+        "source": "default",
+        "uses_monitor": true
+      }
+    }
+  },
+  "positions": {
+    "dev:border-2": [3780, 884],
+    "dev:compute-3": [2949.9532710280373, 2549.92523364486],
+    "dev:leaf-5b": [4528.271028037383, 2284.7757009345796],
+    "dev:isp-pe-1": [840, 476],
+    "dev:compute-1": [933.9532710280373, 2549.92523364486],
+    "dev:leaf-1b": [496.2710280373831, 2284.7757009345796],
+    "dev:leaf-4b": [3520.271028037383, 2284.7757009345796],
+    "dev:spine-2": [2310, 1253],
+    "dev:leaf-3a": [2008.271028037383, 2284.7757009345796],
+    "dev:border-1": [840, 884],
+    "dev:leaf-1a": [-7.728971962616924, 2284.7757009345796],
+    "dev:leaf-5a": [4024.271028037383, 2284.7757009345796],
+    "dev:mpls-p-1": [3150, 238],
+    "dev:remote-ce": [4704, 0],
+    "dev:leaf-2b": [1504.271028037383, 2284.7757009345796],
+    "dev:isp-pe-2": [840, 0],
+    "dev:controller-2": [1437.9532710280373, 2549.92523364486],
+    "dev:mpls-pe-1": [3780, 476],
+    "dev:mpls-p-2": [4410, 238],
+    "dev:spine-3": [3780, 1253],
+    "dev:mpls-pe-2": [3780, 0],
+    "dev:deploy-1": [-74.0467289719627, 2549.92523364486],
+    "dev:controller-3": [2445.9532710280373, 2549.92523364486],
+    "dev:compute-2": [1941.9532710280373, 2549.92523364486],
+    "dev:leaf-3b": [2499, 1598],
+    "dev:sdwan-2": [4620, 731],
+    "dev:controller-1": [429.9532710280373, 2549.92523364486],
+    "dev:sdwan-1": [0, 731],
+    "dev:isp-p-2": [1470, 238],
+    "dev:isp-p-1": [210, 238],
+    "dev:spine-1": [840, 1253],
+    "dev:leaf-2a": [1000.2710280373831, 2284.7757009345796],
+    "dev:leaf-4a": [3016.271028037383, 2284.7757009345796]
+  },
+  "zones": [
+    {
+      "h": 646,
+      "w": 5460,
+      "x": -336,
+      "y": -70,
+      "id": "band-0",
+      "kind": "band",
+      "color": "#64748b",
+      "label": "Provider",
+      "layout": "row",
+      "orient": "h"
+    },
+    {
+      "h": 323,
+      "w": 5460,
+      "x": -336,
+      "y": 661,
+      "id": "band-1",
+      "kind": "band",
+      "color": "#0ea5e9",
+      "label": "Edge",
+      "layout": "row",
+      "orient": "h"
+    },
+    {
+      "h": 170,
+      "w": 5460,
+      "x": -336,
+      "y": 1154,
+      "id": "band-2",
+      "kind": "band",
+      "color": "#10b981",
+      "label": "Spine",
+      "layout": "row",
+      "orient": "h",
+      "per_row": 200
+    },
+    {
+      "h": 170,
+      "w": 5460,
+      "x": -323,
+      "y": 2215,
+      "id": "band-3",
+      "kind": "band",
+      "color": "#f59e0b",
+      "label": "Leaf",
+      "layout": "row",
+      "orient": "h",
+      "per_row": 200
+    },
+    {
+      "h": 170,
+      "w": 5460,
+      "x": -326,
+      "y": 2452,
+      "id": "band-4",
+      "kind": "band",
+      "color": "#8b5cf6",
+      "label": "Compute",
+      "layout": "row",
+      "orient": "h",
+      "per_row": 200
+    }
+  ]
+}

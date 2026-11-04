@@ -80,7 +80,7 @@ import {
 } from "./diagram/bands"
 import type { BandBy, BandLayout, BandRow, LabelRoom } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
-import type { BandExits, Zone } from "./view-positions"
+import type { BandAlign, BandExits, Zone } from "./view-positions"
 import { lagBundleLabel, sharedLag } from "./lag-bundles"
 import {
   CANVAS_MINIMAP_AT,
@@ -214,6 +214,7 @@ export type CanvasBandEdit =
   | { type: "layers"; id: string; by: BandBy; ids: string[] }
   | { type: "layout"; id: string; layout: BandLayout }
   | { type: "per_row"; id: string; perRow: number | undefined }
+  | { type: "align"; id: string; align: BandAlign | undefined }
   | { type: "merge"; id: string }
   | { type: "split"; id: string }
 

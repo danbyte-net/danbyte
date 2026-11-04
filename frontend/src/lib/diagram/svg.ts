@@ -533,6 +533,31 @@ function nodeSvg(
       })
     )
   }
+  // A photo's role badge: the role colour its card would be filled with.
+  const tag = n.kind === "photo" ? n.place?.badge : undefined
+  if (tag && n.badge) {
+    const bf = col(n.badge.fill, PRINT.wash)
+    out.push(
+      el("rect", {
+        x: tag.x,
+        y: tag.y,
+        width: tag.w,
+        height: tag.h,
+        rx: PILL.RADIUS,
+        fill: bf,
+        stroke: mix("#000000", bf, CARD.EDGE_DARKEN),
+        "stroke-width": 1,
+      }),
+      text(n.badge.text, {
+        x: tag.x + tag.w / 2,
+        y: baselineAt(tag.y, PILL.SIZE, tag.h),
+        "text-anchor": "middle",
+        "font-size": PILL.SIZE,
+        "font-weight": PILL.WEIGHT,
+        fill: col(n.badge.ink, PRINT.text),
+      })
+    )
+  }
   // On a photo the name is a caption on the page, not on a fill.
   const titleInk = n.kind === "photo" ? PRINT.text : ink
   const lineInk =

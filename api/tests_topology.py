@@ -541,7 +541,14 @@ class DiagramViewStateTests(_Base):
              "per_row": 200},
             {"id": "one", "label": "One", "x": 0, "y": 1200, "w": 900,
              "h": 200, "color": None, "kind": "band", "orient": "h",
-             "per_row": 1},
+             "per_row": 1, "align": "right"},
+            # Card alignment: left, center or right, or absent for Auto.
+            {"id": "mid", "label": "Mid", "x": 0, "y": 1450, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "align": "center"},
+            {"id": "lft", "label": "Left", "x": 0, "y": 1700, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "align": "left"},
         ]}}
         resp = self._save(state)
         self.assertEqual(resp.status_code, 201, resp.content)
@@ -555,7 +562,11 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(len(zones[1]["rule"]["ids"]), 100)
         self.assertNotIn("layout", zones[2])
         self.assertNotIn("per_row", zones[2])
-        self.assertEqual([z["per_row"] for z in zones[3:]], [200, 1])
+        self.assertEqual([z["per_row"] for z in zones[3:5]], [200, 1])
+        self.assertNotIn("align", zones[3])
+        self.assertEqual(
+            [z["align"] for z in zones[4:]], ["right", "center", "left"]
+        )
 
     def test_diagram_colour_is_a_hex_or_neutral(self):
         zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
@@ -596,6 +607,10 @@ class DiagramViewStateTests(_Base):
             {"zones_by_style": {"diagram": [{**zone, "per_row": 4.5}]}},
             {"zones_by_style": {"diagram": [{**zone, "per_row": "8"}]}},
             {"zones_by_style": {"diagram": [{**zone, "per_row": True}]}},
+            {"zones_by_style": {"diagram": [{**zone, "align": "middle"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "align": "Left"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "align": ["left"]}]}},
+            {"zones_by_style": {"diagram": [{**zone, "align": 1}]}},
             {"filters": {"diagram": "detailed"}},
             {"filters": {"diagram": {"mode": "photo"}}},
             {"filters": {"diagram": {"face": "rear"}}},

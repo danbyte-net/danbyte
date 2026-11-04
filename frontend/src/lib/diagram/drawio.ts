@@ -644,16 +644,29 @@ function page(
       whiteSpace: "nowrap",
       fontFamily: FONT,
       fontSize: CARD.TITLE_SIZE,
-      // With card lines after it, the name is bold in the label itself.
-      fontStyle: t.tail ? 0 : 1,
+      // With a badge or card lines after it, the name is bold in the
+      // label itself.
+      fontStyle: t.tail || n.badge ? 0 : 1,
       fontColor: PRINT.text,
     })
     const name = nameLabel(t)
-    const label = t.tail
-      ? `<b>${name}</b> <span style="font-weight:normal;` +
-        `font-size:${CARD.LINE_SIZE}px;color:${PRINT.muted}">` +
-        `${h(t.tail.text)}</span>`
-      : name
+    // The role badge: a small rounded label in the role colour, inline
+    // after the name, so it wraps and moves with the caption.
+    const badge = n.badge
+      ? ` <span style="background-color:${hex6(n.badge.fill) ?? PRINT.wash};` +
+        `color:${hex6(n.badge.ink) ?? PRINT.text};border-radius:${PILL.RADIUS}px;` +
+        `padding:0 ${PILL.PAD_X - 1}px;font-weight:${PILL.WEIGHT};` +
+        `font-size:${PILL.SIZE}px">${h(n.badge.text)}</span>`
+      : ""
+    const label =
+      t.tail || badge
+        ? `<b>${name}</b>${badge}` +
+          (t.tail
+            ? ` <span style="font-weight:normal;` +
+              `font-size:${CARD.LINE_SIZE}px;color:${PRINT.muted}">` +
+              `${h(t.tail.text)}</span>`
+            : "")
+        : name
     out.push(
       `<object${attrs({
         label,
