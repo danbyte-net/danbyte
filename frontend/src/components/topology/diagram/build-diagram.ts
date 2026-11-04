@@ -13,6 +13,7 @@ import {
   edgeLook,
   edgeStroke,
   flowEdgeStyle,
+  isSiteCircuit,
 } from "../edge-style"
 import type { EdgeColorMode, EdgeSem } from "../edge-style"
 import { sharedLag } from "../lag-bundles"
@@ -440,6 +441,8 @@ function diagramEdge(
       // A circuit to a provider network (#466): one line from the card's
       // side to the network's, named by its circuit id. The network card
       // has no ports, so its line anchors as a Simple one in either mode.
+      // A circuit between two sites' devices is the same line between the
+      // two cards, dashed: a provider's service, not a cable.
       if (r?.circuit)
         return {
           ...ends,
@@ -455,6 +458,7 @@ function diagramEdge(
             edgeLook("cable", {
               stroke: edgeStroke(r, opts.colorMode),
               via: !!r.via?.length,
+              circuit: isSiteCircuit(r),
             })
           ),
         }

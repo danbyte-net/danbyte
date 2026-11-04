@@ -87,7 +87,13 @@ import {
   MiniMapCanvas,
   NoMiniMapNode,
 } from "./minimap-canvas"
-import { bundleStroke, edgeLook, edgeStroke, flowEdgeStyle } from "./edge-style"
+import {
+  bundleStroke,
+  edgeLook,
+  edgeStroke,
+  flowEdgeStyle,
+  isSiteCircuit,
+} from "./edge-style"
 import type { EdgeColorMode } from "./edge-style"
 import { classifyEdges, orientHubToLeaf } from "./edge-semantics"
 import type { BundleMember, EdgeClass } from "./edge-semantics"
@@ -582,11 +588,17 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
       if (colorMode === "speed" && r?.speed) labelBits.push(r.speed)
       // A circuit to a provider network (#466): named by its circuit id,
       // and the network card meets it on its own sides.
+      // A circuit between two sites runs port to port on the device map,
+      // and between the cards' own sides on the grouped one.
       if (r?.circuit) labelBits.unshift(r.circuit.cid)
+      const siteCircuit = isSiteCircuit(r)
       return {
         ...ends,
         ...portHandles(first),
-        ...(r?.circuit ? { targetHandle: "n" } : {}),
+        ...(r?.circuit && !siteCircuit ? { targetHandle: "n" } : {}),
+        ...(siteCircuit && !pairs.length
+          ? { sourceHandle: "n", targetHandle: "n" }
+          : {}),
         ...smoothstep(),
         label: labelBits.length ? labelBits.join(" · ") : undefined,
         animated: r?.marked,
@@ -597,6 +609,7 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
             count,
             via: via.length > 0,
             marked: r?.marked,
+            circuit: siteCircuit,
           })
         ),
       }

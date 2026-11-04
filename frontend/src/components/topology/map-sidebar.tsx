@@ -50,6 +50,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import type { TopoGroupData } from "./group-node"
 import {
   BGP_SESSIONS,
+  CIRCUITS,
   DISCOVERED,
   NO_LOCATION,
   NO_ROLE,
@@ -68,6 +69,7 @@ import { typeColor } from "./topology-canvas"
 import { ZONE_COLORS } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { isRow, isSide } from "./diagram/bands"
+import { isSiteCircuit } from "./edge-style"
 import { bandLook } from "./diagram/band-node"
 import { naturalCompare } from "@/lib/natural-sort"
 
@@ -215,6 +217,22 @@ export function TopologyObjectsSidebar({
     .filter((n) => n.type === "provider_network")
     .filter((n) => matchNode(n.data))
     .sort((a, b) => byName(a.data, b.data))
+  // The circuits between two sites, drawn device to device.
+  const circuitRows = graph.edges
+    .filter((e) => e.type === "circuit" && isSiteCircuit(e.data))
+    .filter(
+      (e) =>
+        !filter ||
+        (e.data?.circuit?.cid ?? "").toLowerCase().includes(filter) ||
+        (e.data?.circuit?.provider.name ?? "").toLowerCase().includes(filter)
+    )
+    .sort((a, b) =>
+      (a.data?.circuit?.cid ?? "").localeCompare(
+        b.data?.circuit?.cid ?? "",
+        undefined,
+        { numeric: true }
+      )
+    )
 
   const deviceGroups = (() => {
     const map = new Map<
@@ -629,6 +647,51 @@ export function TopologyObjectsSidebar({
                     {n.data.provider.name}
                   </span>
                 )}
+              </ObjectRow>
+            ))}
+          </FoldableGroup>
+        </ObjectsSection>
+      )}
+
+      {circuitRows.length > 0 && !status && (
+        <ObjectsSection heading="Circuits">
+          <FoldableGroup
+            name={CIRCUITS}
+            count={circuitRows.length}
+            storageId={FOLDS}
+            visibility={{
+              shown: !hidden.kinds.includes(CIRCUITS),
+              onChange: (v) => toggle("kinds", CIRCUITS, v),
+              what: CIRCUITS,
+            }}
+          >
+            {circuitRows.map((e) => (
+              <ObjectRow
+                key={e.id}
+                onClick={() => onPickEdge(e)}
+                selected={selectedEdgeId === e.id}
+                className={cn(
+                  "pl-6 text-[12px]",
+                  edgeDim(e) && "text-muted-foreground/60"
+                )}
+                trailing={
+                  <VisibilityToggle
+                    vis={{
+                      shown: !hidden.edges.includes(e.id),
+                      onChange: (v) => toggle("edges", e.id, v),
+                      what: e.data?.circuit?.cid ?? edgeEnds(e),
+                    }}
+                  />
+                }
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-mono">
+                    {e.data?.circuit?.cid}
+                  </span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {edgeEnds(e)}
+                  </span>
+                </span>
               </ObjectRow>
             ))}
           </FoldableGroup>

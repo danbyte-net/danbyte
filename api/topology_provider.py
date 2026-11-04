@@ -14,6 +14,14 @@ network meets at that node, hub and spoke.
   only - a termination names a site, never a location).
 * The site map draws it from the termination's site (``site_map_views``).
 
+A circuit with both ends on sites (a provider's point-to-point or MPLS
+service between two of your routers) has no hub: when both ends are cabled
+to device ports, through any patch panels, the device map draws one
+``circuit`` edge between the two devices (``cc:<circuit id>``), and the
+grouped map one between their groups when those differ. An end not cabled
+to a device the caller may view on the map draws nothing - the far device is
+never leaked.
+
 What the caller sees follows their grants: a circuit needs ``circuit.view``,
 its network ``providernetwork.view``, and the site its site-side end lands on
 ``site.view`` - a reader scoped to some sites never gets a node built from a
@@ -34,6 +42,13 @@ from .models import Circuit, CircuitTermination, Device, ProviderNetwork, Site
 #: The node type and the edge type these add to a topology graph.
 NODE_TYPE = "provider_network"
 EDGE_TYPE = "circuit"
+
+
+class SiteCircuit(NamedTuple):
+    """A circuit whose two ends both land on sites."""
+    circuit: Circuit
+    a_term: CircuitTermination
+    z_term: CircuitTermination
 
 
 class ProviderCircuit(NamedTuple):
@@ -90,6 +105,30 @@ def provider_circuits(user, tenant, sites=None) -> list[ProviderCircuit]:
         seen.add(t.circuit_id)
         out.append(ProviderCircuit(t.circuit, st, t))
     return out
+
+
+def site_circuits(user, tenant) -> list[SiteCircuit]:
+    """The circuits the caller may view with both ends on sites, ordered by
+    circuit id (``cid``). One query beyond the grant lookup."""
+    circuits = rbac.restrict_queryset(
+        Circuit.objects.filter(tenant=tenant), user, tenant, "circuit", "view"
+    )
+    by_circuit: dict = {}
+    for t in (
+        CircuitTermination.objects.filter(
+            circuit__in=circuits.values("id"), site__isnull=False
+        )
+        .select_related(
+            "site", "circuit__provider", "circuit__type", "circuit__status",
+        )
+        .order_by("circuit__cid", "circuit_id", "term_side")
+    ):
+        by_circuit.setdefault(t.circuit_id, {})[t.term_side] = t
+    return [
+        SiteCircuit(sides["A"].circuit, sides["A"], sides["Z"])
+        for sides in by_circuit.values()
+        if "A" in sides and "Z" in sides
+    ]
 
 
 # ─── Payload pieces ─────────────────────────────────────────────────────────
@@ -208,10 +247,20 @@ def cabled_ends(tenant, rows, scope_q=None, collapse=True) -> dict:
     device port each end is cabled to, through patch panels with
     ``collapse`` (else the device the cable lands on, panel or not). Only
     devices in ``scope_q`` count; panels outside it are not crossed."""
+    return cabled_terminations(
+        tenant, {r.circuit.id for r in rows}, {r.site_term.id for r in rows},
+        scope_q, collapse,
+    )
+
+
+def cabled_terminations(tenant, circuit_ids, term_ids, scope_q=None,
+                        collapse=True) -> dict:
+    """``{termination id: (device, port, kind, vias)}`` for the terminations
+    ``term_ids`` of the circuits ``circuit_ids`` - see ``cabled_ends``. A
+    fixed number of queries, whatever the number of circuits."""
     from .topology_views import _collapse, _links_around, _preloaded_strand
 
-    ids = {r.circuit.id for r in rows}
-    links = _links_around(tenant, ids) if ids else []
+    links = _links_around(tenant, set(circuit_ids)) if circuit_ids else []
     if not links:
         return {}
     if scope_q is not None:
@@ -234,7 +283,7 @@ def cabled_ends(tenant, rows, scope_q=None, collapse=True) -> dict:
         out, _ = _collapse(links, strand_of=_preloaded_strand(links))
     else:
         out = [link + ([],) for link in links]
-    wanted = {r.site_term.id for r in rows}
+    wanted = set(term_ids)
     ends: dict = {}
     for _cab, da, pa, ka, db, pb, kb, vias in out:
         for k1, p1, d2, p2, k2 in ((ka, pa, db, pb, kb), (kb, pb, da, pa, ka)):
@@ -244,30 +293,110 @@ def cabled_ends(tenant, rows, scope_q=None, collapse=True) -> dict:
     return ends
 
 
+# ─── Site-to-site circuits ──────────────────────────────────────────────────
+
+def site_edge_id(circuit) -> str:
+    return f"cc:{circuit.id}"
+
+
+def _end_ref(term, end) -> dict:
+    dev, port, kind, vias = end
+    return {
+        "side": term.term_side,
+        "termination": termination_ref(term),
+        "site": {"id": str(term.site_id), "name": term.site.name},
+        "device": {"id": str(dev.id), "name": dev.name},
+        "port": {"id": str(port.id), "name": port.name, "kind": kind},
+        "via": list(vias),
+    }
+
+
+def _site_edge(row, source, target, a_end, z_end, pairs=True) -> dict:
+    """The line between a site-to-site circuit's two ends, side A the
+    source. ``pairs`` - the port pair the device map anchors it to."""
+    c = row.circuit
+    a = _end_ref(row.a_term, a_end)
+    z = _end_ref(row.z_term, z_end)
+    ref = circuit_ref(c)
+    data = {
+        "circuit": ref,
+        "color": circuit_color(c),
+        "status": c.status.slug if c.status_id else None,
+        "status_mini": ref["status"],
+        "ends": [a, z],
+        "via": a["via"] + z["via"],
+    }
+    if pairs:
+        data["pairs"] = [{
+            "a": f"{a['device']['name']}:{a['port']['name']}",
+            "b": f"{z['device']['name']}:{z['port']['name']}",
+            "a_port": a["port"]["name"],
+            "b_port": z["port"]["name"],
+            "a_id": a["port"]["id"],
+            "a_kind": a["port"]["kind"],
+            "b_id": z["port"]["id"],
+            "b_kind": z["port"]["kind"],
+        }]
+    return {
+        "id": site_edge_id(c),
+        "source": source,
+        "target": target,
+        "type": EDGE_TYPE,
+        "data": data,
+    }
+
+
+def _ensure_port(node, port, kind) -> None:
+    """Give a device card the row a circuit line anchors to: a scoped map
+    drops the cable to the circuit end before the cards are built, and the
+    port's row with it."""
+    from .topology_views import _KIND_OF
+
+    ports = node["data"].setdefault("ports", [])
+    if any(port.name in (p.get("name"), p.get("pair")) for p in ports):
+        return
+    ports.append({"name": port.name, "kind": _KIND_OF.get(kind, "interface")})
+
+
+def _load(user, tenant, scope_q, collapse):
+    """The provider-network circuits, the site-to-site circuits and where
+    every end of both is cabled - one walk for the two."""
+    rows = provider_circuits(user, tenant)
+    pairs = site_circuits(user, tenant)
+    if not rows and not pairs:
+        return rows, pairs, {}
+    ends = cabled_terminations(
+        tenant,
+        {r.circuit.id for r in rows} | {p.circuit.id for p in pairs},
+        {r.site_term.id for r in rows}
+        | {t.id for p in pairs for t in (p.a_term, p.z_term)},
+        scope_q, collapse,
+    )
+    return rows, pairs, ends
+
+
 # ─── Topology graphs ────────────────────────────────────────────────────────
 
 def add_to_device_graph(graph, user, tenant, scope_q=None, collapse=True) -> dict:
     """Add the provider networks the device map's cards are cabled to: one
     node per network and one edge per circuit, from the card whose port the
-    site-side end is cabled to. An end not cabled to a card on the map draws
-    nothing."""
-    on_map = {
-        n["data"]["device_id"] for n in graph.get("nodes", ())
+    site-side end is cabled to. A site-to-site circuit whose two ends are
+    cabled to cards on the map is one edge between them. An end not cabled
+    to a card on the map draws nothing."""
+    cards = {
+        n["data"]["device_id"]: n for n in graph.get("nodes", ())
         if n.get("type") == "device"
     }
-    if not on_map:
+    if not cards:
         return graph
-    rows = provider_circuits(user, tenant)
-    if not rows:
-        return graph
-    ends = cabled_ends(tenant, rows, scope_q, collapse)
+    rows, pairs, ends = _load(user, tenant, scope_q, collapse)
     used = []
     for row in rows:
         end = ends.get(row.site_term.id)
         if end is None:
             continue
         dev, port, kind, vias = end
-        if str(dev.id) not in on_map:
+        if str(dev.id) not in cards:
             continue
         cid = row.circuit.cid
         used.append((row, _edge(row, f"dev:{dev.id}", {
@@ -285,26 +414,39 @@ def add_to_device_graph(graph, user, tenant, scope_q=None, collapse=True) -> dic
                 "b_kind": "circuit_termination",
             }],
         })))
-    return _attach(graph, used)
+    _attach(graph, used)
+    for p in pairs:
+        a_end, z_end = ends.get(p.a_term.id), ends.get(p.z_term.id)
+        if a_end is None or z_end is None:
+            continue
+        a_card = cards.get(str(a_end[0].id))
+        z_card = cards.get(str(z_end[0].id))
+        if a_card is None or z_card is None or a_card is z_card:
+            continue
+        _ensure_port(a_card, a_end[1], a_end[2])
+        _ensure_port(z_card, z_end[1], z_end[2])
+        graph["edges"].append(
+            _site_edge(p, a_card["id"], z_card["id"], a_end, z_end)
+        )
+    return graph
 
 
 def add_to_grouped_graph(graph, user, tenant, group_by, device_q, scope_q=None,
                          collapse=True) -> dict:
     """Add the provider networks to a grouped map: an edge per circuit from
     the card of the group its cabled device belongs to, or - not cabled,
-    grouped by site - from its own site's card. ``device_q`` is the map's
-    device set (filters and scope) as a queryset; only cards on the map
-    draw."""
+    grouped by site - from its own site's card. A site-to-site circuit whose
+    ends are cabled to devices in two groups is a line between their cards;
+    within one group it stays inside the card, as cables do. ``device_q`` is
+    the map's device set (filters and scope) as a queryset; only cards on
+    the map draw."""
     groups = {
         n["data"]["group_id"] for n in graph.get("nodes", ())
         if n.get("type") == "group" and n["data"].get("group_id")
     }
     if not groups:
         return graph
-    rows = provider_circuits(user, tenant)
-    if not rows:
-        return graph
-    ends = cabled_ends(tenant, rows, scope_q, collapse)
+    rows, pairs, ends = _load(user, tenant, scope_q, collapse)
     reached = {end[0].id for end in ends.values()}
     group_of = {
         str(did): str(g) if g is not None else None
@@ -332,4 +474,18 @@ def add_to_grouped_graph(graph, user, tenant, group_by, device_q, scope_q=None,
         if gid not in groups:
             continue
         used.append((row, _edge(row, f"grp:{gid}", extra)))
-    return _attach(graph, used)
+    _attach(graph, used)
+    for p in pairs:
+        a_end, z_end = ends.get(p.a_term.id), ends.get(p.z_term.id)
+        if a_end is None or z_end is None:
+            continue
+        ga = group_of.get(str(a_end[0].id))
+        gz = group_of.get(str(z_end[0].id))
+        if ga is None or gz is None or ga == gz:
+            continue
+        if ga not in groups or gz not in groups:
+            continue
+        graph["edges"].append(_site_edge(
+            p, f"grp:{ga}", f"grp:{gz}", a_end, z_end, pairs=False
+        ))
+    return graph
