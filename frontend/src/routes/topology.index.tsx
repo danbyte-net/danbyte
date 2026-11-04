@@ -3542,6 +3542,7 @@ function TopologyPage() {
           {viewId !== "none" && canChangeViews && (
             <BarTip tip="Save" shortcut={`${modKey()}S`}>
               <BarButton
+                variant="default"
                 onClick={() => save(viewId)}
                 disabled={saveView.isPending || !docReady}
               >
