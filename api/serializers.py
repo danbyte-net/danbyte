@@ -3649,6 +3649,35 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     else "cooling_method"
                 )
                 raise serializers.ValidationError({field: message})
+        if rack is not None and inst is not None and changed("rack"):
+            # What the device carries comes into the rack with it (#469):
+            # its modules, and the blades in its bays with no rack of their
+            # own, judged as their own placement would be.
+            from .cooling import contents_error
+
+            message = contents_error(rack, inst)
+            if message:
+                raise serializers.ValidationError({"rack_id": message})
+        if rack is None and inst is not None and changed("rack", "device_type", "cooling_method"):
+            # A blade with no rack of its own is judged by its chassis' rack
+            # (#469), with its modules, when it is re-typed or re-marked there.
+            from .cooling import chassis_rack, installed_error
+
+            parent_rack = chassis_rack(inst)
+            if parent_rack is not None:
+                probe = Device(
+                    pk=inst.pk, device_type=eff_type,
+                    cooling_method=attrs.get("cooling_method", inst.cooling_method),
+                )
+                probe._state.adding = False
+                message = installed_error(parent_rack, probe)
+                if message:
+                    field = (
+                        "device_type_id" if changed("device_type")
+                        else "cooling_method" if changed("cooling_method")
+                        else "rack_id"
+                    )
+                    raise serializers.ValidationError({field: message})
         position = attrs.get("position", getattr(self.instance, "position", None))
         face = attrs.get("face", getattr(self.instance, "face", ""))
         dt = attrs.get("device_type", getattr(self.instance, "device_type", None))
@@ -5589,6 +5618,18 @@ class DeviceBaySerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
                      f"“{child.name}” is a parent chassis - only child-class "
                      "devices install into bays."}
                 )
+            inst = self.instance
+            installing = inst is None or (
+                child.pk != inst.installed_device_id or parent.pk != inst.device_id
+            )
+            if installing and child.rack_id is None and parent.rack_id is not None:
+                # The parent's rack cools a blade with no rack of its own
+                # (#469): its cooling, and its modules', must suit that rack.
+                from .cooling import installed_error
+
+                message = installed_error(parent.rack, child)
+                if message:
+                    raise serializers.ValidationError({"installed_device_id": message})
         return attrs
 
     cf_model = "devicebay"
@@ -5702,6 +5743,19 @@ class ModuleSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, Num
                 {"module_bay_id": f"Bay “{bay.name}” already has a module - "
                                   "remove it first."}
             )
+        inst = self.instance
+        mtype = attrs.get("module_type") or (inst.module_type if inst else None)
+        type_changed = inst is None or (mtype is not None and mtype.pk != inst.module_type_id)
+        device_changed = inst is not None and device is not None and device.pk != inst.device_id
+        if device is not None and (type_changed or device_changed):
+            # The rack that cools the module's device takes the module type's
+            # cooling (#469): the device's own rack, else its chassis'.
+            from .cooling import cooling_rack, module_placement_error
+
+            message = module_placement_error(cooling_rack(device), mtype)
+            if message:
+                field = "module_type_id" if type_changed else "device_id"
+                raise serializers.ValidationError({field: message})
         return attrs
 
     cf_model = "module"

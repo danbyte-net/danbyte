@@ -35,8 +35,9 @@ is a [built-in field](../dcim/devices.md#built-in-fields), hidden until an
 administrator turns on **Cooling method** under **Settings → Device fields**.
 
 A [module type](../dcim/device-catalog.md#module-types) records its own
-cooling method as well, on its form and page. It is a fact about the module
-and does not change its host device's.
+cooling method as well, on its form and page. It does not change its host
+device's method, but the rack that cools the host must take it (see
+[Blades and modules](#blades-and-modules)).
 
 The Devices, Device types and Module types lists offer a **Cooling** column -
 a device's effective method, a type's own - hidden until you tick it in
@@ -80,12 +81,41 @@ every write: the form, the API and the
 [spreadsheet import](import-export.md), and a device's own method is checked
 even while the field is hidden.
 
+### Blades and modules
+
+Hardware that sits in a rack through another device is judged by that rack
+too:
+
+- A **device in a device bay** with no rack of its own - a blade in a
+  chassis - by the rack of the device whose bay holds it, on its effective
+  cooling method. A blade that has a rack of its own is judged by that rack
+  only. One bay level counts: the chassis must itself be in the rack.
+- An **installed module** by the rack of its device - the device's own rack,
+  else its chassis' - on its module type's cooling method. Blank reads as
+  air.
+
+They are refused where a direct placement would be:
+
+| What changes | Refused on |
+|---|---|
+| A device is installed in a bay | the bay's **Installed device** - the device's own method or type's, else one of its modules': *Rack R12 is air-cooled; this device type is liquid-cooled.* |
+| A module is installed, re-typed or moved to another device | **Module type**, or **Device** when it moved: *Rack R12 is air-cooled; this module type is liquid-cooled.* |
+| An installed blade is re-typed or re-marked | **Device type** or **Cooling**, as for a racked device |
+| A device moves into a rack | **Rack**, naming the module or blade it carries that the rack does not take: *Rack R12 is air-cooled; blade-3 in bay 3 is liquid-cooled.* |
+
+A chassis with no rack checks nothing. A module bay's **default module
+type** that the device's rack does not take is left out when the device is
+created or synced from its type, as a default whose ports collide is.
+
 Making a rack's capability stricter is allowed. Its devices stay where they
 are and nothing is judged again until a device's placement, type or own
 method changes, so they keep editing from their forms. The rack page's
 **Capacity** card counts them - *2 mismatched* beside the capability - and
 the count opens the **Devices** tab on **Mismatched cooling**, which lists
-just those devices with their cooling. Moving a rack to another site takes
+just those devices with their cooling. A blade the rack does not take counts
+and is listed there as one of the rack's devices; a module the rack does not
+take counts its device as mismatched, once however many of its modules do
+not fit. Moving a rack to another site takes
 its devices along in their rack, so the move has nothing new to judge.
 
 ## Heat load and capacity
@@ -94,7 +124,14 @@ A rack's **heat** adds up its devices: each device's type **heat output**
 where it has one, else the power the device draws - the allocated draw where
 you recorded it, the nameplate (maximum) sum beside it. Devices with power
 outlets are distributors (PDUs) and add no heat, as they add no power
-demand. The rack's **capacity** is what the heat is measured against:
+demand. A blade in the bay of one of its devices, with no rack of its own,
+adds its heat the same way - once: a blade with a rack of its own counts in
+that rack. Modules carry no heat output, so a device's figure covers its
+modules: record the device type's heat output, or the device's draw, with
+them installed.
+
+A rack's [power](power.md) does not add blades up: the chassis' supplies
+feed them, so the chassis' draw already includes theirs. The rack's **capacity** is what the heat is measured against:
 its own capacity, else what its primary cooling feeds deliver (see
 [Capacity](#capacity)).
 
@@ -137,7 +174,9 @@ A site's [Capacity](../models/site.md#the-capacity-tab) tab measures by
 A rack's `cooling` holds `available_w` (its capacity, 0 without one),
 `heat_allocated_w`, `heat_maximum_w`, `supply` (`budget` when the rack has a
 capacity, `feed` when its primary cooling feeds give one, else null) and
-`mismatched`, the devices its capability does not take. `cooling_free_w` is
+`mismatched`, the devices its capability does not take - blades in its
+devices' bays among them, and a device counted once for a module that does
+not fit. `cooling_free_w` is
 the capacity less the allocated heat, null without a capacity. Both are worked out from the rack's devices as the list already
 loads them, so a page of racks costs the same queries whatever stands in
 them.
@@ -149,7 +188,8 @@ Filters:
 | `GET /api/racks/` | `?cooling_capability=liquid` | racks with that capability; `none` for racks without one |
 | `GET /api/racks/` | `?cooling_free_w_gte=5000` | racks whose capacity (their own, else their primary feeds') less their allocated heat is at least that many watts - the racks that can still take 5 kW. Racks without a capacity are left out. |
 | `GET /api/devices/` | `?cooling_method=liquid` | devices whose *effective* method is that one |
-| `GET /api/devices/` | `?cooling_mismatch=1` | devices whose rack does not take their effective method; `0` the rest |
+| `GET /api/devices/` | `?cooling_mismatch=1` | devices whose rack does not take their effective method or an installed module's - a blade with no rack of its own by its chassis' rack; `0` the rest |
+| `GET /api/devices/` | `?rack=<id>&bay_children=1` | the rack's devices and the blades in their bays with no rack of their own - what the rack page's **Mismatched cooling** lists |
 
 A value outside the lists, or a figure that is no whole number, is a 400.
 Watts are whole numbers. `GET /api/dcim/choices/` serves the two lists as

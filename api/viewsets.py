@@ -3839,7 +3839,18 @@ def _device_rows(*, one: bool = False, counts: bool = False):
             location=OpenApiParameter.QUERY,
             description=(
                 "1: only devices whose rack's cooling capability does not take "
-                "their effective method; 0: the rest."
+                "their effective method or an installed module's - a device "
+                "in a bay with no rack of its own by its parent's rack; "
+                "0: the rest."
+            ),
+        ),
+        OpenApiParameter(
+            name="bay_children",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "With rack: 1 also lists the devices in the rack's devices' "
+                "bays that have no rack of their own."
             ),
         ),
         OpenApiParameter(
@@ -4574,7 +4585,16 @@ class DeviceViewSet(
             # every rack's devices in one request, not one per rack (#431).
             racks = _uuid_list_param(self.request.query_params, "rack", limit=1000)
             if racks:
-                qs = qs.filter(rack_id__in=racks)
+                # ?bay_children=1 adds the devices in the racks' devices'
+                # bays with no rack of their own - the blades a rack cools
+                # (#469), as its cooling counts them.
+                if self.request.query_params.get("bay_children") in ("1", "true"):
+                    qs = qs.filter(
+                        Q(rack_id__in=racks)
+                        | Q(rack__isnull=True, parent_bay__device__rack_id__in=racks)
+                    )
+                else:
+                    qs = qs.filter(rack_id__in=racks)
             for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id"),
                                ("room", "room_id")):
                 v = _uuid_param(self.request.query_params, key)

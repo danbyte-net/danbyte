@@ -202,7 +202,8 @@ type CoolingFilter = (typeof COOLING_FILTERS)[number]
 // The device list filter behind each cooling filter.
 const COOLING_QUERY: Record<CoolingFilter, string> = {
   all: "",
-  mismatched: "&cooling_mismatch=1",
+  // Blades in its chassis count too (#469).
+  mismatched: "&cooling_mismatch=1&bay_children=1",
   unconnected: "&cooling_unconnected=1",
 }
 
