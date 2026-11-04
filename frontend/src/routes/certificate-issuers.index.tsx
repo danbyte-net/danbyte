@@ -1,21 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type { DnsProvider, Issuer, Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
-import { TimeCell } from "@/components/cells/time-ago"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { IconTip } from "@/components/icon-tip"
+import { buildIssuerColumns } from "@/components/columns/issuer-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { useUrlTableFilters } from "@/components/table-filters"
 import {
   Dialog,
   DialogContent,
@@ -29,16 +28,12 @@ export const Route = createFileRoute("/certificate-issuers/")({
   component: IssuersPage,
 })
 
-const DNS_LABEL: Record<DnsProvider, string> = {
-  "": "Manual",
-  rfc2136: "RFC2136 / TSIG",
-  "gss-tsig": "Windows AD (GSS-TSIG)",
-}
-
 function IssuersPage() {
   const { canDo } = useMe()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Issuer | null>(null)
+  const [deleting, setDeleting] = useState<Issuer | null>(null)
+  const [selected, setSelected] = useState<Issuer[]>([])
 
   const query = useQuery({
     queryKey: ["issuers"],
@@ -47,101 +42,42 @@ function IssuersPage() {
   })
   const rows = useMemo(() => query.data?.results ?? [], [query.data])
   const canManage = canDo("issuer", "change")
+  const canDelete = canDo("issuer", "delete")
+  const selectable = canManage || canDelete
 
-  const columns = useMemo<ColumnDef<Issuer>[]>(
-    () => [
-      {
-        id: "name",
-        accessorFn: (r) => r.name,
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <button
-            type="button"
-            className="link font-medium"
-            onClick={() => {
-              setEditing(row.original)
-              setFormOpen(true)
-            }}
-          >
-            {row.original.name}
-          </button>
-        ),
-      },
-      {
-        id: "directory_url",
-        accessorFn: (r) => r.directory_url,
-        header: "Directory",
-        cell: ({ row }) => (
-          <span className="font-mono text-[12px] text-muted-foreground">
-            {row.original.directory_url}
-          </span>
-        ),
-      },
-      {
-        id: "account",
-        header: "Account",
-        cell: ({ row }) =>
-          row.original.account_registered ? (
-            <Badge variant="success">Registered</Badge>
-          ) : (
-            <Badge variant="outline">Not registered</Badge>
-          ),
-      },
-      {
-        id: "dns",
-        header: "DNS-01",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {DNS_LABEL[row.original.dns_provider]}
-          </span>
-        ),
-      },
-      {
-        id: "enabled",
-        header: "Enabled",
-        cell: ({ row }) =>
-          row.original.enabled ? (
-            <Badge variant="secondary">On</Badge>
-          ) : (
-            <Badge variant="outline">Off</Badge>
-          ),
-      },
-      {
-        id: "created",
-        header: "Created",
-        cell: ({ row }) => <TimeCell iso={row.original.created_at} />,
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) =>
-          canManage ? (
-            <div className="flex justify-end gap-1">
-              <RegisterButton issuer={row.original} />
-              <IconTip label="Edit">
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setEditing(row.original)
-                    setFormOpen(true)
-                  }}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              </IconTip>
-              <DeleteButton issuer={row.original} />
-            </div>
-          ) : null,
-      },
-    ],
-    [canManage]
+  const columns = useMemo(
+    () =>
+      buildIssuerColumns<Issuer>({
+        selection: selectable,
+        onOpen: (r) => {
+          setEditing(r)
+          setFormOpen(true)
+        },
+        actions: {
+          extra: (r) => (canManage ? <RegisterButton issuer={r} /> : null),
+          onEdit: (r) => {
+            setEditing(r)
+            setFormOpen(true)
+          },
+          canEdit: () => canManage,
+          onDelete: setDeleting,
+          canDelete: () => canDelete,
+          deleteLabel: "Delete issuer",
+        },
+      }),
+    [canManage, canDelete, selectable]
   )
+  const {
+    rail,
+    filteredRows,
+    columns: wiredColumns,
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell
       title="Certificate authorities"
-      count={rows.length}
+      count={query.data ? filteredRows.length : undefined}
+      rail={rows.length > 0 ? rail : undefined}
       actions={
         canDo("issuer", "add") ? (
           <Button
@@ -155,6 +91,7 @@ function IssuersPage() {
           </Button>
         ) : undefined
       }
+      query={query}
     >
       {rows.length === 0 ? (
         <EmptyState title="No issuers yet.">
@@ -163,13 +100,34 @@ function IssuersPage() {
           Security).
         </EmptyState>
       ) : (
-        <DataTable data={rows} columns={columns} />
+        <DataTable
+          data={filteredRows}
+          columns={wiredColumns}
+          flexColumn="directory_url"
+          tableId="certificate-issuers"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
+        />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/monitoring/issuers/"
+        noun={["issuer", "issuers"]}
+        invalidate={[["issuers"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canManage}
+        canDelete={canDelete}
+        ioType="issuer"
+      />
       <IssuerFormDialog
         key={editing?.id ?? "new"}
         issuer={editing}
         open={formOpen}
         onOpenChange={setFormOpen}
+      />
+      <IssuerDeleteDialog
+        issuer={deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
       />
     </ListPageShell>
   )
@@ -205,55 +163,48 @@ function RegisterButton({ issuer }: { issuer: Issuer }) {
   )
 }
 
-function DeleteButton({ issuer }: { issuer: Issuer }) {
+function IssuerDeleteDialog({
+  issuer,
+  onOpenChange,
+}: {
+  issuer: Issuer | null
+  onOpenChange: (open: boolean) => void
+}) {
   const qc = useQueryClient()
-  const [open, setOpen] = useState(false)
   const m = useMutation({
-    mutationFn: () =>
-      api<void>(`/api/monitoring/issuers/${issuer.id}/`, { method: "DELETE" }),
+    mutationFn: (i: Issuer) =>
+      api<void>(`/api/monitoring/issuers/${i.id}/`, { method: "DELETE" }),
     onSuccess: () => {
       toast.success("Issuer deleted")
       qc.invalidateQueries({ queryKey: ["issuers"] })
-      setOpen(false)
+      onOpenChange(false)
     },
     onError: (e) => apiErrorToast(e),
   })
   return (
-    <>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-        title="Delete issuer"
-        onClick={() => setOpen(true)}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-        <span className="sr-only">Delete issuer</span>
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Delete “{issuer.name}”?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            The issuer and its stored ACME account key are removed. Certificates
-            it already issued are kept.
-          </p>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={m.isPending}
-              onClick={() => m.mutate()}
-            >
-              {m.isPending ? "Deleting…" : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <Dialog open={!!issuer} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Delete “{issuer?.name}”?</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          The issuer and its stored ACME account key are removed. Certificates
+          it already issued are kept.
+        </p>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={m.isPending}
+            onClick={() => issuer && m.mutate(issuer)}
+          >
+            {m.isPending ? "Deleting…" : "Delete"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

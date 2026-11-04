@@ -369,6 +369,17 @@ the request **issued**. Deleting a request also deletes its stored private key.
 download, key re-fetch (change grant), and import actions. Without a secret store
 the create call is a clean 400 - the feature is fail-closed.
 
+On **Governance → Certificate requests**, tick rows - with the `change` or
+`delete` grant on certificate requests - for the bulk bar:
+
+- **Export** downloads the selected requests as CSV, Excel or JSON: the
+  subject, SANs, key type, status and the public CSR. The key's location in
+  the secret store is never a column, and the key itself never leaves it.
+- **Edit** sets the **Notes** on every selected request - the one field a
+  request edits.
+- **Delete** shows a preview first, then removes each request as its own
+  delete does, its stored private key included.
+
 ## Issuers (ACME) - automated issuance
 
 An **Issuer** is a connector to an external certificate authority - any ACME
@@ -378,6 +389,14 @@ External Account Binding (a key id plus an HMAC, stored encrypted). The ACME
 account key is generated on first use and kept in the [secret
 store](#the-secret-store-for-issuance-keys); it never lands in the database.
 `GET/POST /api/monitoring/issuers/` manages them.
+
+The **Certificate authorities** list filters on account, DNS-01 publisher and
+enabled. Tick rows - with the `change` or `delete` grant on issuers - for the
+bulk bar: **Export** (the settings, never the EAB HMAC, the TSIG secret or the
+account key), **Edit** (**Enabled**, **Contact e-mail** and **Verify TLS**
+on every selected issuer; the directory, DNS-01 setup and secrets stay per
+issuer) and **Delete**, whose preview counts the ACME orders that go with the
+issuers.
 
 An **ACME order** fulfils a [certificate request](#requesting-a-certificate-csr)
 against an issuer: it carries the DNS-01 / HTTP-01 challenge data to satisfy and
@@ -599,6 +618,18 @@ The list arrives ordered soonest-to-expire first, so the top of the page is
 always what needs attention. The **Expiry** column sorts by urgency (remaining
 days ascending, expired first) rather than alphabetically.
 
+Tick rows - with the `change` or `delete` grant on certificates - to reveal the
+bulk bar:
+
+- **Export** downloads the selected certificates as CSV, Excel or JSON. A
+  certificate holds public data only, so there is no key to leave out.
+- **Edit** sets the **Notes** on every selected certificate. The name stays per
+  certificate and the facts stay read-only; notes holding private key material
+  are refused, as on a single edit.
+- **Delete** first shows what would happen - the bindings that go with the
+  certificates - then deletes them, each with a change-log entry. An observed
+  certificate comes back on its next poll, as after a single delete.
+
 ### The expiry column and its colours
 
 Expiry is the headline, so it reads at a glance. Each row shows a coloured tag
@@ -815,6 +846,20 @@ a `400`; an unparseable PEM is a `400`.
 `PATCH /api/monitoring/certificates/{id}/` edits **only** `name` and `notes`;
 every other field is read-only and silently ignored. `DELETE` removes the
 tenant's row.
+
+The three lists share the bulk endpoints every list has:
+
+| Endpoint | Grant | Body / fields |
+|---|---|---|
+| `POST /api/monitoring/certificates/bulk-delete/` | `certificate.delete` | `{ids, dry_run}` |
+| `POST /api/monitoring/certificates/bulk-update/` | `certificate.change` | `{ids, fields}` with `notes` |
+| `POST /api/monitoring/certificate-requests/bulk-delete/` | `certificaterequest.delete` | `{ids, dry_run}`; each request's stored key goes too |
+| `POST /api/monitoring/certificate-requests/bulk-update/` | `certificaterequest.change` | `notes` |
+| `POST /api/monitoring/issuers/bulk-delete/` | `issuer.delete` | `{ids, dry_run}` |
+| `POST /api/monitoring/issuers/bulk-update/` | `issuer.change` | `enabled`, `contact_email`, `verify_tls` |
+
+`GET …/bulk-edit-fields/` on each names the fields its bulk edit offers
+(`change` grant). Another tenant's ids fall out of every call.
 
 Each record also exposes derived, always-current values: `is_expired`,
 `days_until_expiry` (negative once expired), and `origin`. These are computed at

@@ -21,6 +21,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.bulk_delete import SafeBulkDeleteMixin
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.parsers import ObjectJSONParser
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
@@ -219,7 +220,7 @@ class SnmpProfileViewSet(TenantScopedViewSet):
     serializer_class = SnmpProfileSerializer
 
 
-class CertificateViewSet(TenantScopedViewSet):
+class CertificateViewSet(BulkEditMixin, TenantScopedViewSet):
     """Certificates - tenant-scoped, authenticated, and authored-or-observed.
 
     Observed rows are written by the collector; uploaded rows are authored by an
@@ -246,7 +247,22 @@ class CertificateViewSet(TenantScopedViewSet):
     parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
     # Importing a bundle creates rows, so it needs an ``add`` grant, not the
     # ``change`` a custom mutating action defaults to.
-    rbac_action_map = {"import_bundle": "add"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "import_bundle": "add"}
+    # The one authored field a list edits at once; the name is per certificate
+    # and every fact is read-only.
+    bulk_edit = BulkEditSpec(fields=("notes",), tags=False)
+
+    def normalize_bulk_updates(self, updates: dict) -> dict:
+        """The bulk write skips ``Certificate.save()`` and its key guard, so
+        the same refusal runs here."""
+        from .models import contains_private_key_material
+
+        for key, value in updates.items():
+            if contains_private_key_material(value):
+                raise ValidationError({key: "Private key material must never be stored "
+                                            "on a certificate. Certificates hold public "
+                                            "data only."})
+        return updates
 
     def get_queryset(self):
         from django.db.models import Count
@@ -918,7 +934,7 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
         return Response(self.get_serializer(assignment).data, status=201)
 
 
-class CertificateRequestViewSet(TenantScopedViewSet):
+class CertificateRequestViewSet(BulkEditMixin, TenantScopedViewSet):
     """Certificate signing requests - Danbyte generates the key + CSR.
 
     * **create** generates a key pair and CSR from the posted subject/SANs/key
@@ -934,9 +950,13 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         "issued_certificate", "created_by"
     )
     serializer_class = CertificateRequestSerializer
+    # Notes are the one writable field. A bulk delete goes row by row through
+    # perform_destroy, so each request's stored private key goes with it.
+    bulk_edit = BulkEditSpec(fields=("notes",), tags=False)
     # create defaults to `add`; the key-revealing + issue actions need `change`,
     # and downloading the public CSR is a read.
     rbac_action_map = {
+        **BulkEditMixin.rbac_action_map,
         "csr": "view",
         "private_key": "change",
         "import_issued": "change",
@@ -1189,7 +1209,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         super().perform_destroy(instance)
 
 
-class IssuerViewSet(TenantScopedViewSet):
+class IssuerViewSet(BulkEditMixin, TenantScopedViewSet):
     """External CA connectors (ACME directories). The EAB HMAC is write-only and
     stored encrypted; the ACME account key never leaves the secret store."""
 
@@ -1197,7 +1217,10 @@ class IssuerViewSet(TenantScopedViewSet):
     serializer_class = IssuerSerializer
     # Registering the ACME account mutates the issuer (stores the account key +
     # URI), so it needs `change`, not the default read.
-    rbac_action_map = {"register_account": "change"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "register_account": "change"}
+    # Plain settings only: the directory, DNS-01 setup and the write-only
+    # secrets stay per issuer.
+    bulk_edit = BulkEditSpec(fields=("enabled", "contact_email", "verify_tls"), tags=False)
 
     def perform_create(self, serializer):
         serializer.save(

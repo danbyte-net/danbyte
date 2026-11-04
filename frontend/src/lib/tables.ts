@@ -269,6 +269,7 @@ const ROWS: Row[] = [
   ["watched-endpoints", "Watched endpoints", "Monitoring", "/api/monitoring/watched-endpoints/"],
   ["certificates", "Certificates", "Monitoring", "/api/monitoring/certificates/"],
   ["certificate-requests", "Certificate requests", "Monitoring", "/api/monitoring/certificate-requests/"],
+  ["certificate-issuers", "Certificate authorities", "Monitoring", "/api/monitoring/issuers/"],
   ["certificate-assignments", "Certificate · Assignments", "Monitoring", "/api/monitoring/certificate-assignments/", sub],
   ["certificate-bindings", "Certificate · Bindings", "Monitoring", "/api/monitoring/certificate-bindings/", sub],
   ["sla-agreements", "SLA agreements", "Monitoring", "/api/monitoring/sla-agreements/"],
