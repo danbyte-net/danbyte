@@ -178,6 +178,11 @@ budget (W)** replaces both when set: demand is then measured against what the
 rack may draw, marked *budget*, and the site's Capacity tab counts the racks
 on a budget.
 
+A rack's demand counts the devices placed in it, not the blades in their
+device bays: a chassis' supplies feed its blades, so record the chassis' draw
+with its blades in. A rack's [heat](cooling.md#heat-load-and-capacity) does
+add blades up.
+
 To see where power runs short, colour a floor plan's racks by **Power**
 ([Color by](floor-plans.md#color-by)): each rack's demand over its supply on
 the shared scale - green up to the tenant's warning level, amber above it,

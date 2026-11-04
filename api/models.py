@@ -1101,8 +1101,8 @@ class ModuleType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
         "null → automatic layout. Composed into the host device's render at "
         "the bay it's installed in.",
     )
-    # A fact about the module (#434); its host device's own method is what
-    # rack placement reads.
+    # How the module is cooled (#434): its host device's rack must take it
+    # (#469, api.cooling.module_placement_error).
     cooling_method = models.CharField(
         max_length=16, choices=COOLING_METHOD_CHOICES, blank=True,
         default="", db_default="",
@@ -2220,6 +2220,19 @@ def _seat_default_modules(device, pos) -> int:
     }
     if not wanted:
         return 0
+    # A default the device's rack cannot cool is left out (#469), as an
+    # operator's install of it would be refused.
+    from .cooling import cooling_rack, refused
+
+    rack = cooling_rack(device)
+    bad = refused(rack.cooling_capability) if rack is not None else []
+    if bad:
+        uncooled = set(
+            ModuleType.objects.filter(
+                pk__in=set(wanted.values()), cooling_method__in=bad
+            ).values_list("pk", flat=True)
+        )
+        wanted = {n: t for n, t in wanted.items() if t not in uncooled}
     count = 0
     bays = device.module_bays.filter(name__in=wanted).select_related("module")
     for bay in bays:

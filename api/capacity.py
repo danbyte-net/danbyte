@@ -29,22 +29,54 @@ def racked_devices_prefetch(prefix: str = ""):
     distinct inlets its outlets name: two or more mark a PDU whose inlets
     feed separate outlet banks (see :func:`pdu_rating`).
 
+    For cooling (#469) each device also carries ``module_cooling``, its
+    modules' methods, and ``cooling_bays``, its device bays holding a device
+    with no rack of its own - the blades whose heat and cooling count in the
+    rack (:func:`rack_cooling`), loaded the same way.
+
     A page of racks, or every rack on a floor plan, then costs the same
     queries whatever stands in them; without it ``rack_power`` paid two per
     device - the floor plan's 30-second poll among them."""
     from django.db.models import Count, Prefetch
 
-    from .models import Device
+    from .cooling import module_methods_sql
+    from .models import Device, DeviceBay
 
-    racked = (
-        Device.objects.select_related("device_type", "role")
-        .annotate(
-            outlet_n=Count("power_outlets", distinct=True),
-            outlet_inlet_n=Count("power_outlets__power_port", distinct=True),
+    def heated(qs):
+        return (
+            qs.select_related("device_type")
+            .annotate(
+                outlet_n=Count("power_outlets", distinct=True),
+                module_cooling=module_methods_sql(),
+            )
+            .prefetch_related("power_ports")
         )
-        .prefetch_related("power_ports")
+
+    children = heated(Device.objects.filter(rack__isnull=True))
+    bays = DeviceBay.objects.filter(
+        installed_device__isnull=False, installed_device__rack__isnull=True,
+    ).prefetch_related(Prefetch("installed_device", queryset=children))
+    racked = (
+        heated(Device.objects.select_related("role"))
+        .annotate(outlet_inlet_n=Count("power_outlets__power_port", distinct=True))
+        .prefetch_related(Prefetch("device_bays", queryset=bays, to_attr="cooling_bays"))
     )
     return Prefetch(f"{prefix}devices", queryset=racked)
+
+
+def bay_children(device) -> list:
+    """The devices in ``device``'s bays with no rack of its own (#469) - its
+    blades, which count in its rack's cooling. Reads ``cooling_bays``
+    (:func:`racked_devices_prefetch`) where loaded."""
+    bays = getattr(device, "cooling_bays", None)
+    if bays is None:
+        from .models import DeviceBay
+
+        bays = DeviceBay.objects.filter(
+            device=device, installed_device__isnull=False,
+            installed_device__rack__isnull=True,
+        ).select_related("installed_device__device_type")
+    return [b.installed_device for b in bays if b.installed_device is not None]
 
 
 def used_units(devices) -> int:
@@ -185,24 +217,33 @@ def rack_cooling(rack, devices=None) -> dict:
     ``"feed"``; with neither, ``supply`` is None and ``available_w`` 0. Reads
     ``rack.cooling_feeds`` - prefetch them, as ``rack_power``'s callers do
     ``power_feeds``. ``mismatched``
-    counts the devices whose effective cooling method the rack's capability
-    does not take (``api.cooling``), 0 for a rack without one.
+    counts the devices whose effective cooling method - or a module's - the
+    rack's capability does not take (``api.cooling.mismatched``), 0 for a
+    rack without one.
+
+    A device in a bay of a racked device with no rack of its own - a blade -
+    counts here as its chassis does, heat and mismatch (#469); one with a
+    rack of its own counts there only. A module adds no heat of its own: its
+    device's figure covers it, as module types carry no heat output. Power
+    (:func:`rack_power`) leaves blades out - the chassis' supplies feed
+    them, and its draw already includes theirs.
 
     ``devices`` defaults to ``rack.devices.all()`` - prefetch them with
     :func:`racked_devices_prefetch`. ``cooling_free_annotation`` is the same
     allocated figure in SQL, for filtering a list of racks."""
-    from .cooling import admits
+    from .cooling import mismatched as is_mismatched
 
     if devices is None:
         devices = rack.devices.all()
     capability = getattr(rack, "cooling_capability", "") or ""
     allocated = maximum = mismatched = 0
     for d in devices:
-        if capability and not admits(capability, d.effective_cooling_method):
-            mismatched += 1
-        a, m = device_heat(d)
-        allocated += a
-        maximum += m
+        for one in (d, *bay_children(d)):
+            if capability and is_mismatched(capability, one):
+                mismatched += 1
+            a, m = device_heat(one)
+            allocated += a
+            maximum += m
     capacity = getattr(rack, "cooling_capacity_w", None)
     fed = 0
     if not capacity and getattr(rack, "pk", None) is not None:
@@ -370,8 +411,10 @@ def cooling_free_annotation():
         Exists,
         ExpressionWrapper,
         F,
+        Func,
         IntegerField,
         OuterRef,
+        Q,
         Subquery,
         Sum,
         Value,
@@ -394,10 +437,16 @@ def cooling_free_annotation():
         ),
         output_field=IntegerField(),
     )
+    # The rack's devices and the blades in their bays with no rack of their
+    # own (#469), as rack_cooling counts them. Func, not Sum: one row, no
+    # GROUP BY - a blade has no rack to group by.
     heat = (
-        Device.objects.filter(rack=OuterRef("pk"))
+        Device.objects.filter(
+            Q(rack=OuterRef("pk"))
+            | Q(rack__isnull=True, parent_bay__device__rack=OuterRef("pk"))
+        )
         .order_by().annotate(heat=device_heat)
-        .values("rack").annotate(total=Sum("heat")).values("total")
+        .values(total=Func(F("heat"), function="SUM", output_field=IntegerField()))
     )
     fed = (
         CoolingFeed.objects.filter(
