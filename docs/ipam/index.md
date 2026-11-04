@@ -17,6 +17,7 @@ live on it.
 | [VLANs, VRFs & route targets](../features/ipam-objects.md) | The objects that segment and scope your address space. |
 | [IP statuses & roles](../features/catalogs-and-settings.md) | Define your own status and role vocabularies for addresses. |
 | [Search & MAC tracking](../features/search-and-macs.md) | Find anything fast, and trace a MAC across the network. |
+| [PDF reports](../features/reports.md) | Print a prefix or address, or a list of them, with the columns and sections you pick. |
 
 !!! tip "New to IPAM here?"
     Start with **Prefixes** to create a subnet, then open it to add addresses.
