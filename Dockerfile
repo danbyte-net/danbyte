@@ -1,7 +1,8 @@
 #
 # Production image for Danbyte, built in stages:
 #   frontend  - Node builds the React SPA (frontend/dist)
-#   web       - nginx serving that SPA + proxying api/ws/static/media
+#   docs      - Zensical builds the static docs site (site/)
+#   web       - nginx serving that SPA + the docs + proxying api/ws/static/media
 #   cad-tools - builds LibreDWG's dwg2dxf (DWG floor-plan drawings), static
 #   cad-dist  - just that build's output, for the release bundle
 #   runtime   - Python app (gunicorn WSGI, daphne ASGI/WS, rq workers)
@@ -26,7 +27,18 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# ─── 2. nginx: reverse-proxy the SPA server + backend, with self-signed TLS ───
+# ─── 2. Build the docs site ──────────────────────────────────────────────────
+# The same `zensical build` as `make docs-build`, pinned to requirements.txt's
+# zensical line. Static output only; nginx serves it at /docs/ (#472).
+FROM ${BASE_IMAGE_REGISTRY}/python:3.13-slim AS docs
+WORKDIR /src
+COPY requirements.txt ./
+RUN pip install --no-cache-dir "$(grep -E '^zensical' requirements.txt)"
+COPY zensical.toml ./
+COPY docs/ docs/
+RUN zensical build
+
+# ─── 3. nginx: reverse-proxy the SPA server + backend, with self-signed TLS ───
 # The SPA is a TanStack Start SSR build (no static index.html), so nginx proxies
 # `/` to the `frontend` service (vite preview) rather than serving files. A
 # self-signed cert is baked in so browsers that force HTTPS still connect (they
@@ -39,8 +51,9 @@ RUN apk add --no-cache openssl \
         -subj "/CN=danbyte" >/dev/null 2>&1
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/maintenance.html /usr/share/nginx/maintenance/maintenance.html
+COPY --from=docs /src/site/ /usr/share/nginx/docs/
 
-# ─── 3. LibreDWG's dwg2dxf, the DWG converter for floor-plan drawings ────────
+# ─── 4. LibreDWG's dwg2dxf, the DWG converter for floor-plan drawings ────────
 # Neither Debian trixie nor Ubuntu 26.04 packages LibreDWG, so it is built from
 # the GNU release tarball, pinned by version and SHA-256 in
 # deploy/cad/build-dwg2dxf.sh - the one recipe, also behind the release
@@ -60,7 +73,7 @@ RUN GNU_MIRROR="${GNU_MIRROR}" sh /build/build-dwg2dxf.sh /out
 FROM scratch AS cad-dist
 COPY --from=cad-tools /out/ /
 
-# ─── 4. Python application runtime ───────────────────────────────────────────
+# ─── 5. Python application runtime ───────────────────────────────────────────
 FROM ${BASE_IMAGE_REGISTRY}/python:3.13-slim AS runtime
 # Marks this as the container deployment: in-app self-upgrade is refused here
 # (a process in a container can't rebuild its image or recreate itself), and

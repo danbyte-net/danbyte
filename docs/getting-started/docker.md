@@ -201,6 +201,12 @@ bug.
 so browsers that force HTTPS still connect (one-time cert warning). Put a real
 TLS terminator in front for production and set `DANBYTE_HTTPS=True`.
 
+The documentation is built into the `web` image (`zensical build` in the
+Dockerfile's `docs` stage) and served as static files at **`/docs/`** on the
+same ports, e.g. `http://localhost:8080/docs/`. The in-app Docs links point
+there; there is no separate docs container. Rebuilding `web` picks up docs
+changes.
+
 ## Environment
 
 All configuration is in `.env` (see `deploy/docker/.env.example` for the full,
