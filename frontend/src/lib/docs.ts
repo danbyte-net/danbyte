@@ -1,5 +1,6 @@
-// Where the docs site lives. Behind the nginx proxy everything is same-origin
-// under /docs/; in dev the Zensical server runs on :8001. Pass a page path
+// Where the docs site lives. Every deployment (native nginx, Docker on any
+// port) serves it same-origin under /docs/; only the Vite dev server sends it
+// to the Zensical server on :8001 (#472). Pass a page path
 // (Zensical uses directory URLs, e.g. "features/iac-runner/") plus an optional
 // "#anchor" to deep-link a section.
 /** Zensical serves directory URLs, so "features/iac-runner" (no trailing
@@ -14,11 +15,7 @@ function withDirSlash(path: string): string {
 
 export function docsUrl(path = ""): string {
   const clean = withDirSlash(path.replace(/^\/+/, ""))
-  if (typeof window === "undefined") return `/docs/${clean}`
-  const { protocol, hostname, port } = window.location
-  const base =
-    port === "" || port === "80" || port === "443"
-      ? "/docs/"
-      : `${protocol}//${hostname}:8001/`
-  return `${base}${clean}`
+  if (!import.meta.env.DEV || typeof window === "undefined") return `/docs/${clean}`
+  const { protocol, hostname } = window.location
+  return `${protocol}//${hostname}:8001/${clean}`
 }
