@@ -591,7 +591,9 @@ function RuleRow({
       className={cn("rounded-md", error && "ring-1 ring-destructive")}
       data-testid="expr-row"
     >
-      <div className="grid grid-cols-[10rem_8.5rem_minmax(0,1fr)_auto_2rem] items-center gap-1.5">
+      {/* Below sm (a phone) the row stacks: field, operator and remove on
+          the first line, the value on its own full-width line under them. */}
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,8.5rem)_2rem] items-center gap-1.5 sm:grid-cols-[10rem_8.5rem_minmax(0,1fr)_auto_2rem]">
         {ctx.fields.length === 0 ? (
           <Input
             value={rule.field}
@@ -635,31 +637,39 @@ function RuleRow({
           </SelectContent>
         </Select>
         {isEmptyOp(rule.cmp) ? (
-          <div />
+          <div className="max-sm:hidden" />
         ) : (
-          <RuleValue
-            rule={rule}
-            spec={spec}
-            ctx={ctx}
-            onChange={onChange}
-            fieldChosen={
-              ctx.fields.length === 0 ||
-              ctx.fields.some((f) => f.key === rule.field)
-            }
-          />
+          <div
+            className="min-w-0 max-sm:col-span-3 max-sm:row-start-2"
+            data-testid="expr-value"
+          >
+            <RuleValue
+              rule={rule}
+              spec={spec}
+              ctx={ctx}
+              onChange={onChange}
+              fieldChosen={
+                ctx.fields.length === 0 ||
+                ctx.fields.some((f) => f.key === rule.field)
+              }
+            />
+          </div>
         )}
         {marker ? (
-          <Badge variant="outline" className="whitespace-nowrap">
+          <Badge
+            variant="outline"
+            className="whitespace-nowrap max-sm:col-span-3 max-sm:row-start-3 max-sm:justify-self-start"
+          >
             {marker}
           </Badge>
         ) : (
-          <span />
+          <span className="max-sm:hidden" />
         )}
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground max-sm:col-start-3 max-sm:row-start-1"
           aria-label="Remove condition"
           onClick={onRemove}
         >

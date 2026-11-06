@@ -327,7 +327,8 @@ things - task spans, milestone flags, planned-change markers. Click a day
 header to zoom into it. With task-change rights you can **drag a task bar onto
 another day** - the whole span shifts, keeping its length (month view also
 re-dates milestone flags by drag). The view, its anchor and the board all live
-in the URL, so a calendar can be linked.
+in the URL, so a calendar can be linked. On a phone the toolbars wrap, the
+Month/Week/Day tabs become a select, and the controls grow to 44 px targets.
 
 **Add task** in the header creates a task due on the selected day (today unless
 you picked a day), on the board the calendar is filtered to - the same dialog
