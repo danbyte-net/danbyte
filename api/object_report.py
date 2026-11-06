@@ -1057,10 +1057,15 @@ def _weight(c: Column) -> float:
 
 
 def column_widths(cols: list[Column]) -> list[float]:
-    """Each column's width in percent of the table."""
+    """Each column's width in percent of the table, to the hundredth and
+    adding up to exactly 100 (rounded up, they printed a little wider than
+    the page)."""
     weights = [_weight(c) for c in cols]
     total = sum(weights) or 1.0
-    return [100 * w / total for w in weights]
+    cents = [int(10000 * w / total) for w in weights]
+    if cents:
+        cents[-1] += 10000 - sum(cents)
+    return [c / 100 for c in cents]
 
 
 def _head_html(cols: list[Column]) -> str:
@@ -1538,8 +1543,9 @@ def report_html(
         "th{text-align:left;font-weight:600;color:#52525b;padding:0.9mm 1.2mm;"
         "vertical-align:bottom}"
         "table.grid{table-layout:fixed}"
-        "table.grid th{border-bottom:0.3mm solid #a1a1aa;overflow-wrap:anywhere}"
-        "td{padding:0.9mm 1.2mm;vertical-align:top;overflow-wrap:anywhere}"
+        "th,td{box-sizing:border-box;overflow-wrap:anywhere}"
+        "table.grid th{border-bottom:0.3mm solid #a1a1aa}"
+        "td{padding:0.9mm 1.2mm;vertical-align:top}"
         "table.grid td{border-bottom:0.15mm solid #e4e4e7}"
         "tr.under>td{padding:0 0 1.5mm 5mm}"
         "tr.band{break-after:avoid}"
