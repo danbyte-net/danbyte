@@ -268,6 +268,11 @@ can't drift page to page (source of truth:
 - Tables are paged by `DataTable` alone. When the API pages server-side, hand it
   `serverPagination={{ page, pageCount, totalRows, onPageChange }}` so that one
   pager drives the server - don't add a second Prev/Next row.
+- A **grouped** table (`groupBy`, e.g. Prefixes by VRF) pages like any other:
+  a page counts rows after expansion, group banners included, at the user's
+  page size (#479). The header checkbox ticks the page's rows, never a whole
+  group behind a banner; *Select all N* ticks the rest. `pagedWhenGrouped={false}`
+  opts out, only for a grouped table that stays short.
 - A list page that fetches its rows in one capped request hands the shell the
   server's answer, `page={query.data}`. When `count` exceeds the rows that
   arrived, the count chip reads *N of M* in the `warning` badge, an amber notice
