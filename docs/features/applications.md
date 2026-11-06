@@ -22,7 +22,10 @@ Nothing ships pre-filled: no applications, no groups, no installs.
 An application has a **name**, a **slug** (its import key; a rename keeps
 it), an optional **manufacturer**, a **license** (an SPDX licence
 expression such as `PostgreSQL` or `MIT OR Apache-2.0`, which its installs
-inherit; see [Licences](sbom.md#licences)), a description, tags and
+inherit; see [Licences](sbom.md#licences)), optional **Package URL** and
+**CPE** templates (`purl_template`, `cpe_template`, with `{version}` and
+`{os_version}` placeholders; see [Package URLs and
+CPEs](sbom.md#package-urls-and-cpes)), a description, tags and
 [custom fields](tags-and-custom-fields.md). Applications are tenant-wide, like
 platforms; a site role reads them, so its editors can pick them on their
 devices.
@@ -99,6 +102,7 @@ virtual machine. The same version is recorded once per device or VM.
 | Service | Optional: the [service](../dcim/devices.md#other-tabs) it answers on - one of the same device's or VM's. |
 | Released, End of support | Optional dates; each wins over the cycle's. |
 | License | Optional SPDX licence expression for this install only; blank uses the application's. The [SBOM](sbom.md) reports this one, else the application's. |
+| Package URL, CPE | Optional finished `purl` / `cpe` for this install only; blank fills in the application's template. See [Package URLs and CPEs](sbom.md#package-urls-and-cpes). |
 | Description, tags, custom fields | |
 | Source | `manual`, `import`, `discovery` or `group`. Rows you add are manual, an import's are import, an [application group](#application-groups)'s are group. Discovery is kept for later. |
 | Group | The application group whose assignment made the install, while it is its. Read-only. |
@@ -107,7 +111,7 @@ virtual machine. The same version is recorded once per device or VM.
 The **Software** tab on device and VM pages lists the installs with their
 version, service, *Group*, *License* (the install's own, marked
 *override*, else the application's), *End of life* status and lifetime bar
-(*Cycle*, *Source* and *Last seen* are in the Columns menu). **Add software** and the
+(*Cycle*, *Source*, *Last seen*, *Package URL* and *CPE* are in the Columns menu). **Add software** and the
 row's edit open the same dialog; tick rows to delete several at once.
 **Assign group** assigns an [application group](#application-groups). The tab
 label carries the count (`install_count` on `/api/devices/` and
@@ -240,11 +244,13 @@ software and the endpoint are recorded together.
 Both are in [Import & export](import-export.md):
 
 - **Applications** (`application`) - matched by `slug`; `parent` by slug,
-  `manufacturer` by name. `license` is the SPDX licence expression.
+  `manufacturer` by name. `license` is the SPDX licence expression;
+  `purl_template` and `cpe_template` the package identifier templates.
 - **Installed software** (`installedsoftware`) - matched by `application`
   (slug), `device` or `virtual_machine` (name) and `version`. A row an import
   creates is marked `source=import`; `group` by slug. `license` sets the
-  install's own licence (blank: the application's).
+  install's own licence (blank: the application's); `purl` and `cpe` its
+  own package identifiers.
 - **Application groups** (`applicationgroup`) - matched by `slug`. Their
   applications are kept on the group page or through the API.
 - **Application group assignments** (`applicationgroupassignment`) - export
@@ -256,7 +262,8 @@ postgresql,db-01,,16.4,
 openjdk,,app-vm-02,17.0.9,GPL-2.0-only WITH Classpath-exception-2.0
 ```
 
-A licence that isn't an SPDX expression fails its row.
+A licence that isn't an SPDX expression, or a purl or CPE that fails
+the [check](sbom.md#package-urls-and-cpes), fails its row.
 
 ## Permissions
 
@@ -285,7 +292,7 @@ the installs are written as you.
 | `/api/application-group-assignments/` | List, `POST` (assign), `DELETE` (unassign). `?group=`, `?device=`, `?virtual_machine=`. `POST set/` makes a host's groups exactly a list. |
 
 An application carries `parent`, `path`, `depth`, `manufacturer`,
-`license`, `eol_source`, `eol_product`, `eol` (`{source, product, cycles}`, `null` while
+`license`, `purl_template`, `cpe_template`, `eol_source`, `eol_product`, `eol` (`{source, product, cycles}`, `null` while
 the feature is off), `install_count`, `child_count` and `flow_count`. The
 detail adds `ancestors` (root first) and `children` (three levels deep), each
 `{id, name, install_count}`, children with `child_count` and their own
@@ -297,9 +304,10 @@ An install carries `application` (`{id, name, slug, path}`), `device` or
 `release_date`, `end_of_support`, `eol` (the cycle's status and facts),
 `effective_release`, `effective_end`, `effective_source`, `source`,
 `last_seen`, `group` (`{id, name, slug}` or `null`), `license` (its own)
-and `effective_license` (its own, else the application's). Write
-`application_id`, `device_id` or `virtual_machine_id`, `service_id`, `cycle`
-(blank to derive it) and `license`. A `license` that isn't an SPDX licence
+and `effective_license` (its own, else the application's), `purl` and
+`cpe` (its own) and `effective_purl` / `effective_cpe` (what the SBOM
+writes). Write `application_id`, `device_id` or `virtual_machine_id`,
+`service_id`, `cycle` (blank to derive it), `license`, `purl` and `cpe`. A `license` that isn't an SPDX licence
 expression answers `400`. Every reference must be the
 active tenant's; the service must be on the same device or VM.
 

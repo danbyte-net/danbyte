@@ -338,7 +338,8 @@ class ApplicationSerializer(
         model = Application
         fields = ["id", "name", "slug", "parent", "parent_id", "path", "depth",
                   "manufacturer", "manufacturer_id", "eol_source", "eol_product", "eol",
-                  "license", "description", "tags", "tag_ids", "custom_fields",
+                  "license", "purl_template", "cpe_template", "description", "tags", "tag_ids",
+                  "custom_fields",
                   "install_count", "child_count", "flow_count", "requirement_count",
                   "ancestors", "children",
                   "created_at", "updated_at"]
@@ -446,6 +447,9 @@ class InstalledSoftwareSerializer(
     effective_source = serializers.SerializerMethodField()
     #: The licence the SBOM reports: the install's own, else the application's.
     effective_license = serializers.SerializerMethodField()
+    #: The package URL and CPE the SBOM writes (``api.package_ids``).
+    effective_purl = serializers.SerializerMethodField()
+    effective_cpe = serializers.SerializerMethodField()
     list_columns_exclude = ("effective_release", "effective_end", "effective_source")
 
     class Meta:
@@ -454,7 +458,9 @@ class InstalledSoftwareSerializer(
                   "virtual_machine", "virtual_machine_id", "version", "cycle",
                   "cycle_manual", "service", "service_id", "release_date",
                   "end_of_support", "eol", "effective_release", "effective_end",
-                  "effective_source", "license", "effective_license", "source", "last_seen",
+                  "effective_source", "license", "effective_license", "purl", "cpe",
+                  "effective_purl", "effective_cpe",
+                  "source", "last_seen",
                   "group", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "cycle_manual", "group", "created_at", "updated_at"]
@@ -512,6 +518,12 @@ class InstalledSoftwareSerializer(
 
     def get_effective_license(self, obj) -> str:
         return obj.effective_license
+
+    def get_effective_purl(self, obj) -> str:
+        return obj.effective_purl
+
+    def get_effective_cpe(self, obj) -> str:
+        return obj.effective_cpe
 
     def validate_version(self, value):
         return (value or "").strip()

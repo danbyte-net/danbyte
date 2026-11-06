@@ -1071,7 +1071,10 @@ for devices and VMs on it; see [Software
 target](../features/lifecycle.md#software-target) and [Version
 pattern](../features/lifecycle.md#version-pattern). Its **License** is
 the OS's SPDX licence expression (`license` in the API and import), reported
-by the [SBOM](../features/sbom.md).
+by the [SBOM](../features/sbom.md). Its **Package URL** and **CPE**
+(`purl_template`, `cpe_template`) are templates for the OS component's
+`purl` and `cpe`, filled in with the host's software version; see [Package
+URLs and CPEs](../features/sbom.md#package-urls-and-cpes).
 
 A platform's page has a **Devices** tab and a **Virtual machines** tab, each
 listing what runs it; the API gives both counts (`device_count`, `vm_count`).

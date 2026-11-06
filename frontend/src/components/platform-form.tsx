@@ -70,6 +70,10 @@ export function PlatformForm({
     platform?.version_pattern ?? ""
   )
   const [license, setLicense] = useState(platform?.license ?? "")
+  const [purlTemplate, setPurlTemplate] = useState(
+    platform?.purl_template ?? ""
+  )
+  const [cpeTemplate, setCpeTemplate] = useState(platform?.cpe_template ?? "")
   const [description, setDescription] = useState(platform?.description ?? "")
   const [lifecycle, setLifecycle] = useState(lifecycleFormValue(platform))
   const [tagIds, setTagIds] = useState<number[]>(
@@ -87,6 +91,8 @@ export function PlatformForm({
     setTargetVersion(platform.target_version ?? "")
     setVersionPattern(platform.version_pattern ?? "")
     setLicense(platform.license ?? "")
+    setPurlTemplate(platform.purl_template ?? "")
+    setCpeTemplate(platform.cpe_template ?? "")
     setDescription(platform.description)
     setLifecycle(lifecycleFormValue(platform))
     setTagIds(platform.tags?.map((t) => t.id) ?? [])
@@ -127,6 +133,8 @@ export function PlatformForm({
         target_version: targetVersion.trim(),
         version_pattern: versionPattern.trim(),
         license: license.trim(),
+        purl_template: purlTemplate.trim(),
+        cpe_template: cpeTemplate.trim(),
         description: description.trim(),
         tag_ids: tagIds,
         ...lifecyclePayload(lifecycle),
@@ -292,6 +300,33 @@ export function PlatformForm({
           mono
           placeholder="GPL-2.0-only"
           error={fieldErrors.license}
+        />
+        <FormText
+          label="Package URL"
+          info={
+            <>
+              A purl template for the SBOM, such as{" "}
+              <code>pkg:deb/debian/frr@{"{version}"}</code>.{" "}
+              <code>{"{version}"}</code> and <code>{"{os_version}"}</code> are
+              filled in per host.
+            </>
+          }
+          value={purlTemplate}
+          onChange={setPurlTemplate}
+          mono
+          placeholder="pkg:deb/debian/debian@{version}"
+          error={fieldErrors.purl_template}
+        />
+        <FormText
+          label="CPE"
+          info={
+            <>A CPE 2.3 template for the SBOM, with the same placeholders.</>
+          }
+          value={cpeTemplate}
+          onChange={setCpeTemplate}
+          mono
+          placeholder="cpe:2.3:o:debian:debian_linux:{version}:*:*:*:*:*:*:*"
+          error={fieldErrors.cpe_template}
         />
         <FormTextarea
           label="Description"

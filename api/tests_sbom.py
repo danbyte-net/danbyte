@@ -28,6 +28,7 @@ from api.models import (
     Site,
     VirtualMachine,
 )
+from api.package_ids import render_cpe, render_purl, validate_cpe, validate_purl
 from api.spdx import license_entry, validate_license_expression
 from auth_api.models import ObjectPermission, UserProfile
 from core.models import Organization, Tag, Tenant
@@ -58,6 +59,11 @@ class LicenseExpressionTests(SimpleTestCase):
                          {"expression": "MIT OR Apache-2.0"})
         self.assertEqual(license_entry("LicenseRef-acme"), {"expression": "LicenseRef-acme"})
         self.assertEqual(license_entry("GPL-2.0+"), {"expression": "GPL-2.0+"})
+
+
+def _csv(resp):
+    content = b"".join(resp.streaming_content) if resp.streaming else resp.content
+    return list(csv.DictReader(io.StringIO(content.decode().lstrip("\ufeff"))))
 
 
 class _Base(APITestCase):
@@ -157,10 +163,6 @@ class LicenseFieldTests(_Base):
         self.assertEqual(r.status_code, 400)
 
     def test_import_export_carries_the_license(self):
-        def _csv(resp):
-            content = b"".join(resp.streaming_content) if resp.streaming else resp.content
-            return list(csv.DictReader(io.StringIO(content.decode().lstrip("\ufeff"))))
-
         rows = _csv(self.client.get("/api/io/application/export/?fmt=csv"))
         self.assertEqual({r["slug"]: r["license"] for r in rows}["postgresql"], "PostgreSQL")
         content = "application,device,version,license\nnginx,n1,1.24,BSD-2-Clause\n"
@@ -276,8 +278,20 @@ class SbomFilterTests(_Base):
         self.assertEqual(self.names(f"?device={self.r1.id}&virtual_machine={self.vm.id}"),
                          {"r1", "svc1"})
 
-    def test_bad_id_is_a_400(self):
-        self.assertEqual(self.client.get(URL + "?site=nope").status_code, 400)
+    def test_site_by_name_or_slug(self):
+        Site.objects.create(tenant=self.other, name="Nope")
+        self.site_b.name = "DKW 01"
+        self.site_b.save()
+        for v in ("DKW 01", "dkw%2001", "dkw-01"):
+            _, doc = self.sbom(f"?site={v}")
+            self.assertEqual(set(self.hosts(doc)), {"n2"}, v)
+            self.assertEqual(doc["metadata"]["component"]["name"], "DKW 01")
+        self.assertEqual(self.names(f"?site=a,{self.site_b.id}"),
+                         {"r1", "n1", "n2", "svc1"})
+        # An unknown name, or another tenant's, matches nothing.
+        _, doc = self.sbom("?site=nope")
+        self.assertEqual(doc["components"], [])
+        self.assertEqual(doc["metadata"]["component"]["name"], "selection")
 
 
 class SbomScopeTests(_Base):
@@ -328,6 +342,10 @@ class SbomScopeTests(_Base):
         self.assertNotIn("secret", r["Content-Disposition"].lower())
         r = self.client.post(URL, {"site": [str(self.site_b.id)]}, content_type="application/json")
         self.assertNotIn("Secret B", r.content.decode())
+        # By name it is just as unknown.
+        r, doc = self.sbom("?site=secret-b")
+        self.assertEqual(doc["components"], [])
+        self.assertNotIn("Secret B", r.content.decode())
         # Their own site is still the subject.
         _, doc = self.sbom(f"?site={self.site_a.id}")
         self.assertEqual(doc["metadata"]["component"]["name"], self.site_a.name)
@@ -377,3 +395,96 @@ class SbomFileNameTests(_Base):
         r, _ = self.sbom()
         self.assertTrue(re.search(r'filename="sbom-selection-\d{8}\.cdx\.json"',
                                   r["Content-Disposition"]))
+
+
+FRR_TEMPLATE = "pkg:deb/debian/frr@{version}?arch=amd64&distro=debian-{os_version}"
+
+
+class PackageIdTests(SimpleTestCase):
+    def test_purl_escaping(self):
+        self.assertEqual(
+            render_purl(FRR_TEMPLATE, version="10.3-3+deb13u1", os_version="13"),
+            "pkg:deb/debian/frr@10.3-3%2Bdeb13u1?arch=amd64&distro=debian-13")
+        self.assertEqual(render_purl("pkg:deb/debian/x@{version}", version="1:2.0~rc1"),
+                         "pkg:deb/debian/x@1%3A2.0~rc1")
+        self.assertEqual(render_purl("pkg:generic/x@{version}?q={os_version}",
+                                     version="1 &2", os_version="a=b"),
+                         "pkg:generic/x@1%20%262?q=a%3Db")
+        # A blank placeholder resolves to nothing; no template, no purl.
+        self.assertEqual(render_purl(FRR_TEMPLATE, version="1"), "")
+        self.assertEqual(render_purl("", version="1"), "")
+        self.assertEqual(render_purl("pkg:pypi/django@5.2"), "pkg:pypi/django@5.2")
+
+    def test_cpe_escaping(self):
+        self.assertEqual(
+            render_cpe("cpe:2.3:a:frrouting:frrouting:{version}:*:*:*:*:*:*:*",
+                       version="10.3-3+deb13u1"),
+            "cpe:2.3:a:frrouting:frrouting:10.3-3\\+deb13u1:*:*:*:*:*:*:*")
+        self.assertEqual(render_cpe("cpe:2.3:o:cisco:ios:{version}:*:*:*:*:*:*:*",
+                                    version="15.2(7)E8"),
+                         "cpe:2.3:o:cisco:ios:15.2\\(7\\)E8:*:*:*:*:*:*:*")
+
+    def test_validation(self):
+        for v in ("", FRR_TEMPLATE, "pkg:pypi/django@5.2", "pkg:npm/%40scope/x@{version}"):
+            validate_purl(v)
+        for v in ("deb/debian/frr", "pkg:/frr", "pkg:deb", "pkg:deb/x@{ver}",
+                  "pkg:1deb/x", "pkg:deb/ x"):
+            with self.assertRaises(ValidationError, msg=v):
+                validate_purl(v)
+        for v in ("", "cpe:2.3:a:frrouting:frrouting:{version}:*:*:*:*:*:*:*",
+                  "cpe:2.3:o:cisco:ios:15.2\\(7\\)e8:*:*:*:*:*:*:*",
+                  "cpe:2.3:a:x:y\\:z:1:*:*:*:*:*:*:*"):
+            validate_cpe(v)
+        for v in ("cpe:/a:x:y:1", "cpe:2.3:a:x:y:1", "cpe:2.2:a:x:y:1:*:*:*:*:*:*:*",
+                  "cpe:2.3:q:x:y:1:*:*:*:*:*:*:*", "cpe:2.3:a::y:1:*:*:*:*:*:*:*",
+                  "cpe:2.3:a:x:y:{os}:*:*:*:*:*:*:*"):
+            with self.assertRaises(ValidationError, msg=v):
+                validate_cpe(v)
+
+
+class SbomPackageIdTests(_Base):
+    def test_frr_on_debian(self):
+        debian = Platform.objects.create(
+            tenant=self.tenant, name="Debian", slug="debian",
+            purl_template="pkg:deb/debian/debian@{version}",
+            cpe_template="cpe:2.3:o:debian:debian_linux:{version}:*:*:*:*:*:*:*")
+        frr = Application.objects.create(
+            tenant=self.tenant, name="FRRouting", slug="frr", purl_template=FRR_TEMPLATE,
+            cpe_template="cpe:2.3:a:frrouting:frrouting:{version}:*:*:*:*:*:*:*")
+        rtr = Device.objects.create(tenant=self.tenant, name="edge1", site=self.site_a,
+                                    platform=debian, software_version="13")
+        self.install(frr, rtr, "10.3-3+deb13u1")
+        own = self.install(self.nginx, rtr, "1.26", purl="pkg:deb/debian/nginx-light@1.26")
+        self.install(self.pg, rtr, "17")  # no template: neither field
+        host = self.hosts(self.sbom()[1])["edge1"]
+        by = {c["name"]: c for c in host["components"]}
+        self.assertEqual(
+            by["FRRouting"]["purl"],
+            "pkg:deb/debian/frr@10.3-3%2Bdeb13u1?arch=amd64&distro=debian-13")
+        self.assertEqual(by["FRRouting"]["cpe"],
+                         "cpe:2.3:a:frrouting:frrouting:10.3-3\\+deb13u1:*:*:*:*:*:*:*")
+        self.assertEqual(by["Debian"]["purl"], "pkg:deb/debian/debian@13")
+        self.assertEqual(by["Debian"]["cpe"],
+                         "cpe:2.3:o:debian:debian_linux:13:*:*:*:*:*:*:*")
+        self.assertEqual(by["nginx"]["purl"], "pkg:deb/debian/nginx-light@1.26")
+        self.assertNotIn("purl", by["PostgreSQL"])
+        self.assertNotIn("cpe", by["PostgreSQL"])
+        # The API shows the same resolved values.
+        r = self.client.get(f"/api/installed-software/{own.id}/")
+        self.assertEqual(r.json()["effective_purl"], "pkg:deb/debian/nginx-light@1.26")
+
+    def test_api_validation(self):
+        r = self.client.patch(f"/api/applications/{self.nginx.id}/",
+                              {"purl_template": "nginx@{version}"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("purl_template", r.json())
+        r = self.client.patch(f"/api/platforms/{self.ubuntu.id}/",
+                              {"cpe_template": "cpe:2.3:o:canonical"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        r = self.client.patch(f"/api/platforms/{self.ubuntu.id}/",
+                              {"purl_template": "pkg:deb/ubuntu/ubuntu@{version}"},
+                              format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        rows = _csv(self.client.get("/api/io/platform/export/?fmt=csv"))
+        self.assertEqual({r["slug"]: r["purl_template"] for r in rows}["ubuntu"],
+                         "pkg:deb/ubuntu/ubuntu@{version}")

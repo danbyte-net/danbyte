@@ -146,6 +146,14 @@ With the PRTG integration on, an address PRTG reaches a device on gets a
 sensors and channels can be pinned to the address's Overview
 ([Pinned sensors](../features/prtg.md#pinned-sensors)).
 
+## API filters
+
+`GET /api/ips/` narrows by `search`, `dns_name`, `prefix`, `vrf`, `site`,
+`status`, `role`, `assigned_interface`, `assigned_vm`, `device`,
+`virtual_machine`, `monitoring_excluded` and `scope`, and by tag:
+`?tag=<slug>` and `?tag_id=<id>`, each repeatable, every tag named
+required. See [Filtering by tag](../reference/api.md#filtering-by-tag).
+
 ## Related
 
 - [Prefix](prefix.md) - parent model

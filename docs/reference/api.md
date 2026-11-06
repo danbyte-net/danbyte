@@ -77,6 +77,11 @@ Every list endpoint pages its answer:
   is not a positive number is ignored. A cut page still carries `next`, so a
   script that follows it reads every row whatever the cap.
 - **`page`** - which page, from 1. A page past the end answers `404`.
+- **`limit` / `offset`** are not read. `?limit=500` answers the default
+  100 rows, with a `next` to the rest; ask with `page_size` instead.
+  `/api/installed-software/` is one of these lists: 100 rows by default,
+  at most 2,000 with `page_size`. A client that reads only the first page
+  of any list misses rows, so follow `next`.
 - **`count`** - every matching row, not only the rows on this page.
 - **`next`** / **`previous`** - full links to the neighbouring pages, with
   your filters and `page_size` kept, or `null` at either end. To read a
@@ -118,6 +123,19 @@ rows a page whatever `page_size` says; follow `next` for more. The monitoring ch
 the MAC lists answer `{count, page, page_size, num_pages, results}` with
 their own default and cap, as their schema entries say. The script SDK's
 `db.list()` follows `next` for you ([Scripts SDK](scripts-sdk.md)).
+
+## Filtering by tag
+
+The device, IP address (`/api/ips/`) and prefix (`/api/prefixes/`) lists
+take `?tag=<slug>` and `?tag_id=<id>`. Each is repeatable, and a row must
+carry every tag named: `?tag=pod-1&tag=anycast-gw` answers the rows tagged
+with both. A slug no row carries answers an empty list; a `tag_id` that is
+not a number answers `400`.
+
+```bash
+curl -s -H "Authorization: Token $TOKEN" \
+  "https://danbyte.example/api/ips/?tag=anycast-gw&page_size=1000"
+```
 
 ## Asking the API what it accepts
 

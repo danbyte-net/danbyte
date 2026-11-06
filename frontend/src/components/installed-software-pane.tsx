@@ -269,6 +269,8 @@ export function InstalledSoftwareDialog({
   const [releaseDate, setReleaseDate] = useState("")
   const [endOfSupport, setEndOfSupport] = useState("")
   const [license, setLicense] = useState("")
+  const [purl, setPurl] = useState("")
+  const [cpe, setCpe] = useState("")
   const [description, setDescription] = useState("")
 
   useEffect(() => {
@@ -283,6 +285,8 @@ export function InstalledSoftwareDialog({
     setReleaseDate(install?.release_date ?? "")
     setEndOfSupport(install?.end_of_support ?? "")
     setLicense(install?.license ?? "")
+    setPurl(install?.purl ?? "")
+    setCpe(install?.cpe ?? "")
     setDescription(install?.description ?? "")
     reset()
   }, [open, install, application?.id, reset])
@@ -320,6 +324,8 @@ export function InstalledSoftwareDialog({
           release_date: releaseDate || null,
           end_of_support: endOfSupport || null,
           license: license.trim(),
+          purl: purl.trim(),
+          cpe: cpe.trim(),
           description: description.trim(),
         },
       }),
@@ -452,6 +458,34 @@ export function InstalledSoftwareDialog({
             mono
             placeholder="From application"
             error={fieldErrors.license}
+          />
+          <FormText
+            label="Package URL"
+            info={
+              <>
+                A purl for this install only. Blank fills in the
+                application&apos;s template.
+              </>
+            }
+            value={purl}
+            onChange={setPurl}
+            mono
+            placeholder={install?.effective_purl || "From application"}
+            error={fieldErrors.purl}
+          />
+          <FormText
+            label="CPE"
+            info={
+              <>
+                A CPE 2.3 name for this install only. Blank fills in the
+                application&apos;s template.
+              </>
+            }
+            value={cpe}
+            onChange={setCpe}
+            mono
+            placeholder={install?.effective_cpe || "From application"}
+            error={fieldErrors.cpe}
           />
           <FormTextarea
             label="Description"
