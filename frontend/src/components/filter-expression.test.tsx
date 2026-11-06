@@ -187,6 +187,39 @@ describe("expression builder", () => {
     expect(date.value).toBe("2027-01-01")
   })
 
+  it("stacks the value on its own line below sm (#477)", () => {
+    const tree: TreeGroup = {
+      kind: "group",
+      id: treeId(),
+      op: "and",
+      items: [rule({ field: "warranty_end", cmp: "<", value: "2027-01-01" })],
+    }
+    render(
+      withQuery(
+        <ExpressionBuilder
+          fields={[WARRANTY]}
+          value={tree}
+          onChange={() => {}}
+        />
+      )
+    )
+    const grid = screen.getByTestId("expr-row").firstElementChild!
+    // Phone: field · operator · remove, then the value full width.
+    expect(grid.className).toContain(
+      "grid-cols-[minmax(0,1fr)_minmax(0,8.5rem)_2rem]"
+    )
+    // sm and up: the desktop grid, unchanged.
+    expect(grid.className).toContain(
+      "sm:grid-cols-[10rem_8.5rem_minmax(0,1fr)_auto_2rem]"
+    )
+    const value = screen.getByTestId("expr-value")
+    expect(value.className).toContain("max-sm:col-span-3")
+    expect(value.className).toContain("max-sm:row-start-2")
+    expect(
+      screen.getByRole("button", { name: "Remove condition" }).className
+    ).toContain("max-sm:row-start-1")
+  })
+
   it("names a hidden or deleted value from the rule's refs", () => {
     const tree: TreeGroup = {
       kind: "group",

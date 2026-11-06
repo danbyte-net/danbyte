@@ -29,17 +29,19 @@ export function AddTaskButton({
   link = null,
   defaultBoard = null,
   defaultDueDate = "",
+  className,
 }: {
   link?: TaskLinkTarget | null
   defaultBoard?: string | null
   defaultDueDate?: string
+  className?: string
 }) {
   const [open, setOpen] = useState(false)
   const canAdd = useCanAddTask({ linked: !!link })
   if (!canAdd) return null
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button size="sm" className={className} onClick={() => setOpen(true)}>
         <Plus className="h-3.5 w-3.5" /> Add task
       </Button>
       {open && (

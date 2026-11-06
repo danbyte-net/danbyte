@@ -17,7 +17,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { BarTip } from "@/components/map-toolbar"
+import {
+  BarTip,
+  MAP_HEADER,
+  MAP_HEADER_CONTROLS,
+} from "@/components/map-toolbar"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 
 import {
@@ -104,7 +108,7 @@ export function PlanHeader({
   // A plan made from the Site map: its map can be refreshed and grown.
   const geo = !view && plan.geo ? plan.geo : null
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
+    <header className={MAP_HEADER}>
       <BarTip tip="Floor plans">
         <Button variant="ghost" size="icon-sm" asChild className="-ml-2">
           <Link to="/floorplans" aria-label="Floor plans">
@@ -214,7 +218,7 @@ export function PlanHeader({
           )}
         </div>
       )}
-      <div className="ml-auto flex items-center gap-2">
+      <div className={MAP_HEADER_CONTROLS}>
         {canEdit && !view3d && onEditingChange && (
           <SegmentedTabs<"view" | "edit">
             value={editing ? "edit" : "view"}

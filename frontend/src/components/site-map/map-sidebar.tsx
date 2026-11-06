@@ -144,6 +144,18 @@ function checkRank(check: string | null | undefined): number {
   return check === "down" ? 0 : check === "degraded" ? 1 : 2
 }
 
+/** Whether the Objects panel opens with the page. Below md (a phone) it
+ *  starts closed, since it would cover the map; wider screens keep the
+ *  choice stored under `storageKey`. */
+export function objectsStartOpen(storageKey: string): boolean {
+  if (window.matchMedia?.("(max-width: 767px)").matches) return false
+  try {
+    return localStorage.getItem(storageKey) !== "closed"
+  } catch {
+    return true
+  }
+}
+
 export function MapObjectsSidebar({
   sites,
   devices,
@@ -163,6 +175,7 @@ export function MapObjectsSidebar({
   outlines = [],
   onPickOutline,
   providerNetworks = [],
+  onClose,
 }: {
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
@@ -189,6 +202,8 @@ export function MapObjectsSidebar({
   onPickOutline?: (outline: SiteMapOutline) => void
   /** The provider networks the map's circuits meet at (#466). */
   providerNetworks?: SiteMapProviderNetwork[]
+  /** Closes the panel; below md it is an overlay with a close button. */
+  onClose?: () => void
 }) {
   const typeLabel = useCableTypeLabel()
   const [q, setQ] = useState("")
@@ -399,6 +414,7 @@ export function MapObjectsSidebar({
       statusCounts={statusCounts}
       hiddenCount={hiddenCount(hidden)}
       onShowAll={() => onHiddenChange(NO_HIDDEN)}
+      onClose={onClose}
     >
       {total === 0 && <ObjectsEmpty filtered={!!filter || !!status} />}
 

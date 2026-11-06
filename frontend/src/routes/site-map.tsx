@@ -46,7 +46,13 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Loading } from "@/components/loading"
-import { BarIconButton, BarTip, BarToggle } from "@/components/map-toolbar"
+import {
+  BarIconButton,
+  BarTip,
+  BarToggle,
+  MAP_HEADER,
+  MAP_HEADER_CONTROLS,
+} from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { Input } from "@/components/ui/input"
 import {
@@ -82,6 +88,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   MAP_HIDDEN_KEYS,
   MapObjectsSidebar,
+  objectsStartOpen,
   NO_HIDDEN,
   type MapSelected,
   type MarkerTypeOption,
@@ -364,8 +371,10 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     localStorage.setItem("site-map:basemap", b)
     setBasemap(b)
   }
-  const [showObjects, setShowObjects] = useState(
-    () => localStorage.getItem("site-map:sidebar") !== "closed"
+  // Below md (a phone) the panel would cover the map, so it starts closed
+  // there and opens as an overlay; the stored choice is for wider screens.
+  const [showObjects, setShowObjects] = useState(() =>
+    objectsStartOpen("site-map:sidebar")
   )
   const toggleObjects = () =>
     setShowObjects((v) => {
@@ -1696,7 +1705,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
+      <header className={MAP_HEADER}>
         <div className="min-w-0">
           <h1 className="truncate text-base font-semibold">Site map</h1>
           <p className="truncate text-[11px] text-muted-foreground">
@@ -1724,7 +1733,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             )}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className={MAP_HEADER_CONTROLS}>
           {canEditAny && (
             <SegmentedTabs<"view" | "layout" | "cables">
               value={mode}
@@ -1822,7 +1831,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       </header>
 
       {/* ── Body: palette rail · map · inspector · objects ──────────── */}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {mode === "cables" && (
           <RouteRail
             routes={routes}
@@ -1915,8 +1924,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             placed.length === 0 &&
             data.devices.length === 0 &&
             data.markers.length === 0 && (
-              <div className="pointer-events-none absolute inset-0 z-[900] flex items-center justify-center">
-                <div className="pointer-events-auto flex flex-col items-center gap-2 rounded-lg border border-border bg-background/95 px-6 py-5 text-center shadow-sm backdrop-blur">
+              <div className="pointer-events-none absolute inset-0 z-[900] flex items-center justify-center p-4">
+                <div className="pointer-events-auto flex max-w-full flex-col items-center gap-2 rounded-lg border border-border bg-background/95 px-6 py-5 text-center shadow-sm backdrop-blur">
                   <MapPin className="size-5 text-muted-foreground" />
                   <p className="text-sm font-medium">Nothing placed yet</p>
                   <p className="max-w-64 text-[12px] text-muted-foreground">
@@ -2194,6 +2203,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
         {showObjects && (
           <MapObjectsSidebar
+            onClose={() => setShowObjects(false)}
             sites={data.sites}
             devices={data.devices}
             markers={data.markers}

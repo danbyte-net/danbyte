@@ -65,6 +65,7 @@ The scope and the conditions are built the same way: rows of *field ·
 operator · value* in groups. Each group matches **All** or **Any** of its rows;
 **+ Condition** adds a row and **+ Group** a nested group, up to three levels -
 `(type is Device and device type is C9300) or type is Virtual machine`.
+On a phone each row stacks, with the value on its own full-width line.
 
 The fields depend on the chosen types. A device or VM offers name,
 description, software version, status, device role, platform, site, region,
