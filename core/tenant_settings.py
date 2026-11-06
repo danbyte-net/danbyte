@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core import mail
+from django.http import HttpResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiResponse,
@@ -19,7 +20,8 @@ from drf_spectacular.utils import (
     inline_serializer,
 )
 from rest_framework import serializers
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -35,6 +37,7 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     smtp_password_set = serializers.SerializerMethodField()
+    report_cover_image_set = serializers.SerializerMethodField()
 
     class Meta:
         model = TenantSettings
@@ -95,12 +98,44 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "cable_service_loop_mm",
             "cable_length_step_mm",
             "cable_standalone_height_mm",
+            # report cover page (api/report_cover.py)
+            "report_cover_style",
+            "report_cover_horizon",
+            "report_cover_wave",
+            "report_cover_crest",
+            "report_cover_image_set",
+            "report_cover_image_type",
             "updated_at",
         ]
-        read_only_fields = ["updated_at", "digest_last_run", "cert_digest_last_run"]
+        read_only_fields = [
+            "updated_at",
+            "digest_last_run",
+            "cert_digest_last_run",
+            "report_cover_image_type",
+        ]
 
     def get_smtp_password_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("password"))
+
+    def get_report_cover_image_set(self, obj) -> bool:
+        return bool(obj.report_cover_image)
+
+    @staticmethod
+    def _colour(value):
+        from api.report_cover import HEX
+
+        if not HEX.match(value or ""):
+            raise serializers.ValidationError("A colour as #rrggbb.")
+        return value.lower()
+
+    def validate_report_cover_horizon(self, value):
+        return self._colour(value)
+
+    def validate_report_cover_wave(self, value):
+        return self._colour(value)
+
+    def validate_report_cover_crest(self, value):
+        return self._colour(value)
 
     # Same allowlist as the deployment editor - a tenant must not be able to
     # store a field key the popover registry doesn't know.
@@ -132,6 +167,12 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
         if warn >= crit:
             raise serializers.ValidationError(
                 {"capacity_critical_pct": "Must be above the warning level."}
+            )
+        if attrs.get("report_cover_style") == "upload" and not (
+            inst is not None and inst.report_cover_image
+        ):
+            raise serializers.ValidationError(
+                {"report_cover_style": "Upload a cover image first."}
             )
         return attrs
 
@@ -245,6 +286,78 @@ def tenant_settings(request):
         ser = TenantSettingsSerializer(obj, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         ser.save()
+    data = TenantSettingsSerializer(obj).data
+    data["deployment_defaults"] = _deployment_defaults()
+    return Response(data)
+
+
+@extend_schema(
+    methods=["GET"],
+    summary="The active tenant's report cover image (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=None,
+    responses={(200, "image/*"): OpenApiTypes.BINARY, 404: OpenApiTypes.OBJECT},
+)
+@extend_schema(
+    methods=["POST"],
+    summary="Upload the active tenant's report cover image (tenant-admin only)",
+    tags=["tenant-settings"],
+    request={"multipart/form-data": {"type": "object", "properties": {
+        "image": {"type": "string", "format": "binary"}}}},
+    responses=OpenApiTypes.OBJECT,
+)
+@extend_schema(
+    methods=["DELETE"],
+    summary="Remove the active tenant's report cover image (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiTypes.OBJECT,
+)
+@api_view(["GET", "POST", "DELETE"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def tenant_report_cover(request):
+    """The image a PDF report's cover can show (``api/report_cover.py``):
+    PNG, JPEG or SVG, at most 2 MB. A raster upload must be the image it
+    claims to be; an SVG is rebuilt by the sanitiser and only the clean copy
+    is kept. It is stored in the tenant's settings row - never under the
+    unauthenticated media path - and ``GET`` serves it back to tenant admins
+    for the Settings preview, sandboxed."""
+    tenant, err = _tenant_or_403(request)
+    if err:
+        return err
+    from api.report_cover import MAX_IMAGE_BYTES, CoverImageRejected, clean_image
+
+    obj = TenantSettings.for_tenant(tenant)
+    if request.method == "GET":
+        if not obj.report_cover_image:
+            return Response({"detail": "No cover image."}, status=404)
+        resp = HttpResponse(bytes(obj.report_cover_image), content_type=obj.report_cover_image_type)
+        resp["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        resp["X-Content-Type-Options"] = "nosniff"
+        resp["Cache-Control"] = "private, no-cache"
+        return resp
+    if request.method == "DELETE":
+        obj.report_cover_image = b""
+        obj.report_cover_image_type = ""
+        fields = ["report_cover_image", "report_cover_image_type", "updated_at"]
+        if obj.report_cover_style == "upload":
+            obj.report_cover_style = "waves"
+            fields.append("report_cover_style")
+        obj.save(update_fields=fields)
+    else:
+        upload = request.FILES.get("image")
+        if not upload:
+            return Response({"image": ["No image file provided."]}, status=400)
+        if upload.size > MAX_IMAGE_BYTES:
+            return Response({"image": ["The image is over 2 MB."]}, status=400)
+        try:
+            data, mime = clean_image(upload.read(MAX_IMAGE_BYTES + 1), upload.content_type)
+        except CoverImageRejected as exc:
+            return Response({"image": [str(exc)]}, status=400)
+        obj.report_cover_image = data
+        obj.report_cover_image_type = mime
+        obj.save(update_fields=["report_cover_image", "report_cover_image_type", "updated_at"])
     data = TenantSettingsSerializer(obj).data
     data["deployment_defaults"] = _deployment_defaults()
     return Response(data)

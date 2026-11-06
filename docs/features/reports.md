@@ -53,13 +53,73 @@ printing) by itself when it is ready. Keep the dialog open until then.
 
 - **Journal and change log entries** - the latest N (20 until you change it,
   at most 200).
+- **Include cover page** - a title page before the report. See
+  [Cover page](#cover-page).
 
-The dialog remembers your choices per type in this browser.
+The dialog remembers your choices per type in this browser (the cover tick,
+its project line and image choice included).
 
 Under the options a line says what the report costs as you change it:
 *About 1,200 cells* renders at once, *About 14,200 cells · renders in the
 background* takes longer, and *Too large: … · leave out …* names what to
 drop. **Download** and **Print** are off only while it is too large.
+
+## Cover page
+
+Tick **Include cover page** for a title page of its own, at the report's
+paper size and orientation, with no running header or footer. The cover is
+a full-page background with white text on it:
+
+- at the top, the deployment's logo - the **Login-page logo** under
+  **Settings → Branding & identity** when one is uploaded, else the white
+  Danbyte wordmark - over a thin translucent rule;
+- in the middle, the tenant's name in spaced capitals (or the
+  **Organisation or project** you type), the **Cover title** large and
+  heavy (the report's title until you change it), the **Subtitle**
+  (generated - *48 prefixes · Group by VRF*, or the type for one object -
+  and editable; clear it for none) and *Prepared by* with your full name
+  (your user name when it is blank);
+- the date at the bottom left in your date format, and Danbyte with its
+  version at the bottom right.
+
+The top and the bottom of the background are darkened a little so the text
+reads on any background.
+
+**Background** picks this report's background: **Default** (the tenant's),
+or another of **Waves**, **Plain colour**, **Your upload** (when the tenant
+has one) and **None** (white paper, dark text and the colour wordmark).
+Everything else is the tenant's, so every report in a tenant matches - see
+[Report cover settings](#report-cover-settings) below.
+
+The cover counts as one page in the estimate.
+
+### Report cover settings {#report-cover-settings}
+
+Tenant admins set the look under **Settings → Tenant policy → Report cover**,
+with a thumbnail that follows the choices as you make them:
+
+| Setting | Choices |
+|---|---|
+| Background | **Waves** (default): softly rolling waves fading into a dark horizon. **Plain colour**: the horizon colour. **Your upload**: the cover image. **None**: white paper. |
+| Colours | **Horizon** (the darkest tone, and the plain background), **Wave** (moves the mid tones) and **Crest** (the light on the crests). **Presets** set all three: **Danbyte** (the default blue), then each colour family of the colour picker - its darkest shade for the horizon and its 600 shade for the waves. |
+| Cover image | A PNG, JPEG or SVG, at most 2 MB. **Upload…** replaces it, **Remove** deletes it. |
+
+The waves are a still shipped with Danbyte in grey, coloured on the server
+with the three colours (the default colours give the Danbyte blue). The
+coloured page is kept in the media folder's `cache/report-covers/` as a
+JPEG, so a tenant's covers are coloured once (about a third of a second for
+an A4 page); deleting that folder is safe. A cover adds well under 100 KB to
+the PDF.
+
+A photo fills the page, cropped, with the same darkening at the top and the
+bottom; an SVG is shown whole over the plain colour. A PNG or JPEG must be
+the image it says it is (and at most 36 megapixels); an SVG is rebuilt by
+the same sanitiser as the drawing PDFs - scripts, event handlers, external
+references and DOCTYPEs are refused or dropped - and only the clean copy is
+kept. The image is stored with the tenant's settings, not in the media
+folder, so it is never served without a session; only tenant admins can
+upload, view or remove it. Removing it while the background is **Your
+upload** sets the background back to **Waves**.
 
 ## Who sees what
 
@@ -115,7 +175,8 @@ columns.
 `GET /api/devices/report/`, `/api/prefixes/report/` and `/api/ips/report/`
 describe what a report can hold for the caller: `columns` and
 `default_columns` (the list's column catalog, custom fields as `cf.<key>`),
-`group_by`, `sections` (each `key`, `label`, `kind`, `available`, `note`,
+`group_by`, `cover` (`project`, the tenant's name; `upload`, whether the
+tenant has a cover image; `background`, its default), `sections` (each `key`, `label`, `kind`, `available`, `note`,
 `columns`, `default_columns`, `default`, `last`), `show_ips` (prefixes, with
 view on IP addresses) and `limits` (`cells` is the table cells rendered at
 once, `background_cells` the most in one report).
@@ -153,6 +214,10 @@ once, `background_cells` the most in one report).
 - `options.list_table` and `options.per_object` (details for each object)
   default to a table for many objects and details for one.
 - `options.show_ips` (prefixes) - each list row followed by its IP addresses.
+- `options.cover` - a cover page. `cover_title` (default: the title),
+  `cover_subtitle` (absent or null: generated; blank: none),
+  `cover_project` (default: the tenant's name) and `cover_background`
+  (`default`, `waves`, `plain`, `upload` or `none`).
 
 The answer is the PDF as an attachment, or with `?print=1` `{url}`: a link
 to it for five minutes, for the same user and tenant
@@ -173,7 +238,7 @@ while one is queued or running is 429.
 `POST …/report/?estimate=1` with the same body builds the report without
 rendering it: `{cells, pages, seconds, mode, fits}`, `mode` being `now`,
 `background` or `too_large` (with `detail`, what fits), `pages` the objects
-with details and `fits` the cells that fit `now` and in the `background`.
+with details plus one for a cover, and `fits` the cells that fit `now` and in the `background`.
 
 ```bash
 curl -H "Authorization: Token $TOKEN" -H "Content-Type: application/json" \

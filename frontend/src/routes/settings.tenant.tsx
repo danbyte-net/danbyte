@@ -16,6 +16,7 @@ import {
   SettingsHeader,
 } from "@/components/settings/settings-card"
 import { QueryError } from "@/components/query-error"
+import { ReportCoverCard } from "@/components/settings/report-cover-card"
 import { Loading } from "@/components/loading"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useTimezoneOptions } from "@/lib/use-timezones"
@@ -349,6 +350,8 @@ function TenantGeneralPage() {
           />
         </div>
       </SettingsCard>
+
+      {server && <ReportCoverCard settings={server} />}
     </div>
   )
 }

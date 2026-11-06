@@ -47,6 +47,18 @@ length - `{"slack_pct", "service_loop_mm", "step_mm",
 `cable_length_step_mm` and `cable_standalone_height_mm` (10 / 0 / 500 / 0
 without a row; Settings → Floor plans → Cable lengths;
 [stored routes and lengths](../features/floor-plans.md#lengths)).
+The PDF report cover's look is per tenant only (no deployment layer):
+`report_cover_style` (`waves`/`plain`/`upload`/`none`; `upload` needs an
+image), the colours `report_cover_horizon`, `report_cover_wave` and
+`report_cover_crest` (`#rrggbb`, default `#063d66`/`#0b6fb0`/`#ffffff`), and
+the image itself in `report_cover_image` (bytes, with
+`report_cover_image_type`) - kept in the row rather than under `/media/`,
+which is served without a session. `api/report_cover.py` reads them
+(`look_for`) and lays out the cover; `api/report_background.py` colours the
+greyscale wave still (`api/report_assets/`) with a gradient map and caches
+the page JPEG under `MEDIA_ROOT/cache/report-covers/`; see
+[PDF reports](../features/reports.md#cover-page). The change log records the
+image as its size and a short SHA-256, never the bytes.
 
 **Topology card lines have two more layers below the tenant.** What a device
 card on the topology Diagram shows under its name is an ordered list of keys
@@ -218,6 +230,10 @@ ordered **directory chain** (`ldap_directory_chain(username)`):
 - `GET/PUT /api/tenant-settings/` - overrides + non-secret
   `deployment_defaults` for the UI's inherit summaries (tenant admin).
 - `POST /api/tenant-settings/email/test/` - test through the *effective* SMTP.
+- `GET/POST/DELETE /api/tenant-settings/report-cover/` - the report cover
+  image (tenant admin): `POST` multipart `image` (PNG, JPEG or SVG, at most
+  2 MB; an SVG is sanitised), `DELETE` removes it, `GET` serves it back
+  sandboxed for the Settings preview. Both writes answer the tenant settings.
 - `GET /api/device-fields/` - effective device-field visibility (any member).
 - `GET/PUT /api/deployment/topology-card/` - deployment card lines
   (`can_manage_deployment`); `GET/PUT /api/tenant-settings/topology-card/` -

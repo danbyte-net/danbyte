@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import hashlib
 import json
 import uuid
 
@@ -50,6 +51,13 @@ def _ser(v):
     # (which isn't JSON serializable).
     if isinstance(v, FieldFile):
         return v.name or None
+    # A binary column (a tenant's report cover image) logs its size and a
+    # short digest: enough to see that it changed, never the bytes.
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        data = bytes(v)
+        if not data:
+            return None
+        return f"{len(data):,} bytes, sha256 {hashlib.sha256(data).hexdigest()[:12]}"
     return v
 
 

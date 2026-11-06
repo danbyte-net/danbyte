@@ -33,6 +33,7 @@ import type {
   ObjectReportRequest,
   ObjectReportSchema,
   ObjectReportStarted,
+  ReportCoverBackground,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
@@ -69,8 +70,10 @@ import {
  * report can hold for this reader (`GET`), the dialog picks it - the
  * columns of the list table, the summary, details for each object and
  * their sections with their columns - and remembers the picks per type in
- * this browser. A live estimate (`?estimate=1`) says whether it renders now
- * or in the background; a background report is polled until it is ready,
+ * this browser. An optional cover page (api/report_cover.py) takes its
+ * look from the tenant's settings; the dialog picks only its title,
+ * subtitle, project line and background. A live estimate (`?estimate=1`)
+ * says whether it renders now or in the background; a background report is polled until it is ready,
  * then downloaded or printed like a quick one.
  */
 
@@ -104,7 +107,25 @@ export interface ReportPrefs {
   perObject: boolean
   showIps: boolean
   last: number
+  cover: boolean
+  coverBackground: ReportCoverBackground
+  coverProject: string
 }
+
+/** The cover's per-report text: `null` follows the report (the title) or
+ * the server (the generated subtitle). */
+export interface CoverText {
+  title: string
+  subtitle: string | null
+}
+
+const COVER_BACKGROUNDS: ReportCoverBackground[] = [
+  "default",
+  "waves",
+  "plain",
+  "upload",
+  "none",
+]
 
 const PAPER_ITEMS: { value: Paper; label: string }[] = [
   { value: "a4", label: "A4" },
@@ -188,7 +209,51 @@ export function initialPrefs(
       typeof saved?.last === "number" && saved.last >= 1
         ? Math.min(saved.last, schema.limits.last)
         : 20,
+    cover: saved?.cover === true,
+    coverBackground: coverBackgroundItems(schema).some(
+      (i) => i.value === saved?.coverBackground
+    )
+      ? (saved!.coverBackground as ReportCoverBackground)
+      : "default",
+    coverProject:
+      typeof saved?.coverProject === "string" ? saved.coverProject : "",
   }
+}
+
+/** The cover's background choices: the tenant's default, then the others
+ * it can be - the upload only when there is one. */
+export function coverBackgroundItems(
+  schema: ObjectReportSchema
+): { value: ReportCoverBackground; label: string }[] {
+  const cover = schema.cover
+  const tenant = cover?.background ?? "waves"
+  return COVER_BACKGROUNDS.filter(
+    (v) =>
+      v === "default" || (v !== tenant && (v !== "upload" || !!cover?.upload))
+  ).map((value) => ({
+    value,
+    label: {
+      default: "Default",
+      waves: "Waves",
+      plain: "Plain colour",
+      upload: "Your upload",
+      none: "None",
+    }[value],
+  }))
+}
+
+/** The cover's generated subtitle, as the server makes it: *48 prefixes ·
+ * Group by VRF*, or the type for one object. */
+export function coverSubtitle(
+  target: ReportTarget,
+  prefs: ReportPrefs,
+  schema: ObjectReportSchema
+): string {
+  const n = target.ids.length
+  if (n === 1) return schema.label
+  const what = `${n.toLocaleString()} ${schema.plural.toLowerCase()}`
+  const group = schema.group_by.find((g) => g.key === prefs.groupBy)
+  return group ? `${what} · Group by ${group.label}` : what
 }
 
 /** The POST body for the dialog's picks. */
@@ -196,7 +261,8 @@ export function reportRequest(
   target: ReportTarget,
   prefs: ReportPrefs,
   schema: ObjectReportSchema,
-  title: string
+  title: string,
+  cover: CoverText = { title: "", subtitle: null }
 ): ObjectReportRequest {
   const one = target.ids.length === 1
   const perObject = one || prefs.perObject
@@ -224,6 +290,19 @@ export function reportRequest(
       per_object: perObject,
       ...(schema.show_ips && !one ? { show_ips: prefs.showIps } : {}),
       last: prefs.last,
+      ...(prefs.cover
+        ? {
+            cover: true,
+            ...(cover.title.trim() ? { cover_title: cover.title.trim() } : {}),
+            ...(cover.subtitle !== null
+              ? { cover_subtitle: cover.subtitle.trim() }
+              : {}),
+            ...(prefs.coverProject.trim()
+              ? { cover_project: prefs.coverProject.trim() }
+              : {}),
+            cover_background: prefs.coverBackground,
+          }
+        : {}),
     },
   }
 }
@@ -368,6 +447,7 @@ function ReportForm({
     initialPrefs(schema, readReportPrefs(kind))
   )
   const [title, setTitle] = useState("")
+  const [cover, setCover] = useState<CoverText>({ title: "", subtitle: null })
   const [busy, setBusy] = useState(false)
   const [job, setJob] = useState<ObjectReportJobStatus | null>(null)
   const alive = useRef(true)
@@ -407,8 +487,8 @@ function ReportForm({
   // The live estimate: the body as it would be posted, a moment after the
   // last change, built on the server without rendering.
   const body = useMemo(
-    () => JSON.stringify(reportRequest(target, prefs, schema, title)),
-    [target, prefs, schema, title]
+    () => JSON.stringify(reportRequest(target, prefs, schema, title, cover)),
+    [target, prefs, schema, title, cover]
   )
   const settled = useDebounced(body, 400)
   const estimate = useQuery({
@@ -531,6 +611,11 @@ function ReportForm({
     </>
   )
 
+  const titlePlaceholder =
+    one && target.name
+      ? `${schema.label} ${target.name}`
+      : `${schema.plural} report`
+
   return (
     <>
       <div className="grid gap-4">
@@ -538,11 +623,7 @@ function ReportForm({
           label="Title"
           value={title}
           onChange={setTitle}
-          placeholder={
-            one && target.name
-              ? `${schema.label} ${target.name}`
-              : `${schema.plural} report`
-          }
+          placeholder={titlePlaceholder}
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Paper">
@@ -616,6 +697,43 @@ function ReportForm({
               {sectionsBlock}
             </div>
           ))}
+        <FormCheckbox
+          label="Include cover page"
+          checked={prefs.cover}
+          onChange={(v) => set("cover", v)}
+          className="items-center text-[13px] whitespace-nowrap"
+        />
+        {prefs.cover && (
+          <div className="ml-1 grid gap-4 border-l pl-4" data-part="cover">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormText
+                label="Cover title"
+                value={cover.title}
+                onChange={(v) => setCover((c) => ({ ...c, title: v }))}
+                placeholder={title.trim() || titlePlaceholder}
+              />
+              <FormText
+                label="Subtitle"
+                value={cover.subtitle ?? coverSubtitle(target, prefs, schema)}
+                onChange={(v) => setCover((c) => ({ ...c, subtitle: v }))}
+              />
+              <FormText
+                label="Organisation or project"
+                value={prefs.coverProject}
+                onChange={(v) => set("coverProject", v)}
+                placeholder={schema.cover?.project ?? ""}
+              />
+              <Field label="Background">
+                <SegmentedTabs<ReportCoverBackground>
+                  wrap
+                  items={coverBackgroundItems(schema)}
+                  value={prefs.coverBackground}
+                  onValueChange={(v) => set("coverBackground", v)}
+                />
+              </Field>
+            </div>
+          </div>
+        )}
         {limitNote ? (
           <p className="text-xs text-destructive" role="alert">
             {limitNote}

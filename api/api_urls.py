@@ -780,6 +780,8 @@ urlpatterns = [
          name="tenant-settings-email-test"),
     path("tenant-settings/digest/test/", tenant_settings_mod.tenant_test_digest,
          name="tenant-settings-digest-test"),
+    path("tenant-settings/report-cover/", tenant_settings_mod.tenant_report_cover,
+         name="tenant-settings-report-cover"),
     # First-run onboarding wizard state (any tenant member; core/tenant_settings).
     path("onboarding/", tenant_settings_mod.onboarding_state, name="onboarding"),
     # Per-SITE settings (email v1) - site-admin gated, see core.site_settings.
