@@ -9,7 +9,7 @@ familiar front/rear diagram showing what's mounted in each rack unit.
 
 ## Add a rack
 
-1. Open **DCIM → Racks** and click **Add rack**.
+1. Open **DCIM → Racks & cabinets → Racks** and click **Add rack**.
 2. Name it and set its **height** in rack units (e.g. 42U) and **starting unit**
    (usually 1).
 3. Optionally assign a **site**, a **rack role**, and tags.
@@ -44,8 +44,8 @@ starting unit and numbering direction, outer width/depth (mm), the load
 rating, the **power budget (W)** a rack of the model may draw, and its
 **cooling** - what the cooling takes (air, hybrid, liquid or immersion) and
 how much heat it removes (see [Cooling](../features/cooling.md)). Define them
-on **DCIM → Rack types**; picking one on the rack form **pre-fills all of
-those fields** (each stays editable - the rack remains the source of truth,
+on **DCIM → Racks & cabinets → Rack types**; picking one on the rack form
+**pre-fills all of those fields** (each stays editable - the rack remains the source of truth,
 so a one-off odd cabinet just overrides a value). The API carries them as
 `max_power_w`, `cooling_capability` and `cooling_capacity_w` (watts) on the
 rack type and on the `rack_type` a rack embeds.

@@ -16,7 +16,7 @@ records each member's position and master-election priority.
 
 ## Create a stack
 
-1. Open **DCIM → Virtual chassis** in the sidebar and click **Add**.
+1. Open **DCIM → Devices → Virtual chassis** in the sidebar and click **Add**.
 2. Fill in the form:
 
 | Field | What it records |

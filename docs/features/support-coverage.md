@@ -14,8 +14,8 @@ import them, and everything below derives from what you entered.
 
 ## Contracts
 
-**DCIM → Support contracts** lists every contract of the tenant. A contract
-has:
+**Software & lifecycle → Support contracts** lists every contract of the
+tenant. A contract has:
 
 | Field | Meaning |
 |---|---|

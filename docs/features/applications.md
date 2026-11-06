@@ -4,7 +4,7 @@ icon: lucide/app-window
 
 # Applications & installed software
 
-**DCIM → Devices → Applications** is the catalog of software your tenant
+**Software & lifecycle → Applications** is the catalog of software your tenant
 runs - PostgreSQL, nginx, a Java runtime, an in-house service. Each device
 and virtual machine records what is installed on it, at which version, on its
 **Software** tab. With [end-of-life data](end-of-life-data.md) on, each
@@ -159,8 +159,8 @@ software row on the Lifecycle overview.
 
 ## Application groups
 
-**DCIM → Devices → Application groups** holds named sets of applications -
-*RDS*, *SCADA*, *Web front end* - so a server is marked with everything it
+**Software & lifecycle → Application groups** holds named sets of
+applications - *RDS*, *SCADA*, *Web front end* - so a server is marked with everything it
 runs in one step, and automation reads that from the
 [Ansible inventory](#ansible-inventory) to set the host up.
 

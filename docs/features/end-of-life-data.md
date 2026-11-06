@@ -103,8 +103,8 @@ mappings like platform mappings. All of it is in the change log.
 ## Custom products
 
 endoflife.date does not list every product - an in-house application, a niche
-appliance, a vendor's own support matrix. **DCIM → End-of-life products**
-holds the tenant's own products. They are picked like any fetched product,
+appliance, a vendor's own support matrix. **Software & lifecycle →
+End-of-life products** holds the tenant's own products. They are picked like any fetched product,
 marked *Custom*, on platforms and applications, and from then on every
 reader - the status, the lists' *End of life* column and filter, the OS and
 software lifetime bars, the [Lifecycle overview](lifecycle-overview.md)
@@ -149,8 +149,8 @@ cannot be deleted - map those to another product first.
 
 ### The products list {#custom-products-list}
 
-**DCIM → End-of-life products** is a list like the others. The search box
-matches name, key and notes; the filter rail narrows by:
+**Software & lifecycle → End-of-life products** is a list like the others.
+The search box matches name, key and notes; the filter rail narrows by:
 
 | Facet | Narrows to |
 |---|---|

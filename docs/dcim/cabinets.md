@@ -12,7 +12,7 @@ rack of a different height.
 
 ## Add a cabinet
 
-1. Open **DCIM → Cabinets** and click **Add cabinet**.
+1. Open **DCIM → Racks & cabinets → Cabinets** and click **Add cabinet**.
 2. Name it and pick its **site**. Names are unique per site, like rack names.
 3. Optionally pick a [**cabinet type**](#cabinet-types), a
    [**role**](#cabinet-roles), a **location** within the site and a
