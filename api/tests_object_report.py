@@ -538,6 +538,44 @@ class RenderTests(_Report):
         # The list and summary, then a page for each device.
         self.assertGreaterEqual(pages, 3)
 
+    def test_every_table_fits_the_page_on_every_paper(self):
+        """No table runs past the right margin: widths in percent with the
+        cells' padding inside them, and a long value wraps."""
+        import weasyprint
+
+        self.net.description = "x" * 300  # one unbreakable word
+        self.net.save()
+
+        def boxes(box):
+            yield box
+            for child in getattr(box, "children", None) or ():
+                yield from boxes(child)
+
+        body = {
+            "ids": [str(self.net.pk), str(self.child.pk)],
+            "sections": ["overview", "child_prefixes", "ip_addresses"],
+            "columns": {"list": ["cidr", "status", "site", "vlan", "description", "tags"]},
+            "options": {"per_object": True, "include_summary": True, "show_ips": True},
+        }
+        for paper in rep.PAPERS:
+            for orientation in rep.ORIENTATIONS:
+                body["options"].update(paper=paper, orientation=orientation)
+                r, html = self.html("prefixes", body)
+                self.assertEqual(r.status_code, 200, r.content[:300])
+                doc = weasyprint.HTML(
+                    string=html, base_url=rep.BASE_URL, url_fetcher=rep.PdfUrlFetcher(b"")
+                ).render()
+                tables = 0
+                for page in doc.pages:
+                    box = page._page_box
+                    right = box.content_box_x() + box.width
+                    for b in boxes(box):
+                        if type(b).__name__ == "TableBox":
+                            tables += 1
+                            with self.subTest(paper=paper, orientation=orientation):
+                                self.assertLessEqual(b.position_x + b.margin_width(), right + 0.01)
+                self.assertGreater(tables, 4)
+
     def test_a_real_render_of_an_ip(self):
         r = self.client.post("/api/ips/report/", {"ids": [str(self.ip.pk)]}, format="json")
         self.assertEqual(r.status_code, 200, r.content[:300])
