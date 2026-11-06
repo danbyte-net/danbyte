@@ -4950,6 +4950,17 @@ export interface TopologyViewSummary {
   updated_at: string
 }
 
+/** A saved view as the Topology page lists it
+ * (GET /api/topology-views/?summary=1): who made it and changed it last,
+ * from the change log ("" when the log has none), and whether it is the
+ * tenant's default. */
+export interface TopologyViewListRow extends TopologyViewSummary {
+  created_at: string
+  created_by: string
+  updated_by: string
+  is_default: boolean
+}
+
 export interface TopologyGraphMeta {
   /** `include=card`: the tenant/deployment global list (before role, view
    * and device lists). `uses_monitor` = some node lists `monitor` (fetch
@@ -17134,6 +17145,10 @@ export interface PrtgTestResult {
 /** The types a PDF report covers, by RBAC slug. */
 export type ObjectReportKind = "device" | "prefix" | "ipaddress"
 
+/** Every report the report dialog makes: the object reports and the
+ * topology report (api/reports/kinds/topology.py). */
+export type ReportKind = ObjectReportKind | "topology"
+
 export interface ObjectReportColumn {
   key: string
   label: string
@@ -17156,7 +17171,7 @@ export interface ObjectReportSection {
 
 /** `GET /api/<type>/report/`: what a report can hold for this reader. */
 export interface ObjectReportSchema {
-  type: ObjectReportKind
+  type: ReportKind
   label: string
   plural: string
   columns: ObjectReportColumn[]
@@ -17186,6 +17201,44 @@ export interface ObjectReportSchema {
     cells?: number
     /** Table cells a background report may hold before it is refused. */
     background_cells?: number
+    /** The topology report: devices a view's tables list. */
+    devices?: number
+  }
+}
+
+/** One topology view in a topology report, drawn by the browser as the
+ * map's Export ▸ PDF draws it (lib/diagram/pdf-drawing.ts). */
+export interface TopologyReportView {
+  /** The saved view, when it is one. */
+  view?: string | null
+  title: string
+  filters: string
+  /** The drawing (sanitised on the server); "" for an estimate. */
+  svg: string
+  /** The devices the drawing shows. */
+  device_ids: string[]
+}
+
+/** `POST /api/topology/report/`'s body. */
+export interface TopologyReportRequest {
+  views: TopologyReportView[]
+  sections?: string[]
+  columns?: Record<string, string[]>
+  options?: {
+    title?: string
+    paper?: "a4" | "letter" | "a3"
+    orientation?: "portrait" | "landscape"
+    diagram_orientation?: "portrait" | "landscape"
+    title_block?: boolean
+    toc?: boolean | null
+    dividers?: "auto" | "full" | "compact"
+    /** Several views: one PDF with a chapter each, or a ZIP of PDFs. */
+    output?: "pdf" | "zip"
+    cover?: boolean
+    cover_title?: string
+    cover_subtitle?: string
+    cover_project?: string
+    cover_background?: ReportCoverBackground
   }
 }
 
