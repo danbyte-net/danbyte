@@ -128,10 +128,21 @@ def document_html(ctx: ReportContext, body: str, *, cover: str = "") -> str:
         f"{MARKING_CSS if ctx.marking else ''}"
         f"{''.join(ctx.extra_css)}"
         "</style></head><body>"
-        f"{running_marking(ctx.marking)}"
-        f"{cover}{body}"
+        f"{_lead(cover + body, running_marking(ctx.marking))}"
         "</body></html>"
     )
+
+
+def _lead(html: str, running: str) -> str:
+    """``html`` with the running elements first. Inside the first section
+    when it is one (a cover or a divider, on a named page of its own), so
+    they do not make a page of their own before it."""
+    if not running:
+        return html
+    if html.startswith("<section"):
+        end = html.index(">") + 1
+        return html[:end] + running + html[end:]
+    return running + html
 
 
 def render(html: str, url_fetcher=None) -> bytes:

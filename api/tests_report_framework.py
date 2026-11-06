@@ -73,6 +73,22 @@ class MarkingTests(SimpleTestCase):
         self.assertIn("background:#b91c1c", body)
         self.assertIn(">Confidential</span>", body)
 
+    def test_no_page_of_its_own_before_a_cover(self):
+        import weasyprint
+
+        from .drawing_pdf import BASE_URL, PdfUrlFetcher
+        from .reports.cover import cover_css
+
+        c = ctx(marking={"name": "Internal"})
+        c.extra_css.append(cover_css(210, 297))
+        cover = cover_html(Cover(title="T"), NONE, 210, 297, marking=c.marking)
+        html = engine.document_html(c, "<p>body</p>", cover=cover)
+        self.assertTrue(html.split("<body>", 1)[1].startswith("<section class='cover"))
+        doc = weasyprint.HTML(
+            string=html, base_url=BASE_URL, url_fetcher=PdfUrlFetcher(b"")
+        ).render()
+        self.assertEqual(len(doc.pages), 2)
+
     def test_the_cover_shows_it_and_its_text_is_escaped(self):
         m = Marking(name="<Secret>", color="#b91c1c")
         html = cover_html(Cover(title="T"), NONE, 210, 297, marking=m)
