@@ -247,6 +247,7 @@ const ROWS: Row[] = [
   ["label-templates", "Label templates", "Customize", "/api/label-templates/"],
   ["config-contexts", "Config contexts", "Customize", "/api/config-contexts/"],
   ["dashboards", "Dashboards", "Customize", "/api/dashboards/"],
+  ["topology-views", "Topology views", "Customize", null],
 
   // ─── Governance & access ───────────────────────────────────────────────
   ["audit-log", "Audit log", "Governance", "/api/changelog/"],

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import { Route } from "./topology.index"
-import type { TopologySearch } from "./topology.index"
+import { Route } from "./topology.map"
+import type { TopologySearch } from "./topology.map"
 
 // The topology map's address. Wiring and Flat are retired into the
 // Diagram: a link that still names them opens the Diagram in the mode that

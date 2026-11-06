@@ -5507,6 +5507,34 @@ class TopologyViewSummarySerializer(NumIdModelSerializer):
         read_only_fields = fields
 
 
+class TopologyViewListSerializer(NumIdModelSerializer):
+    """A saved view as the Topology page lists it (``?summary=1``): no
+    ``state``; who made it and who changed it last, from the change log
+    (blank when the log has no entry); and whether it is the tenant's
+    default view."""
+
+    created_by = serializers.SerializerMethodField()
+    updated_by = serializers.SerializerMethodField()
+    is_default = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TopologyView
+        fields = [
+            "id", "numid", "name", "created_at", "updated_at",
+            "created_by", "updated_by", "is_default",
+        ]
+        read_only_fields = fields
+
+    def get_created_by(self, obj) -> str:
+        return getattr(obj, "created_by_name", None) or ""
+
+    def get_updated_by(self, obj) -> str:
+        return getattr(obj, "updated_by_name", None) or ""
+
+    def get_is_default(self, obj) -> bool:
+        return str(obj.pk) == self.context.get("default_view")
+
+
 class TopologyDefaultViewSerializer(serializers.Serializer):
     """The saved view a bare ``/topology`` opens for the tenant; null = No
     view. The body of ``/api/topology-views/default/`` both ways."""

@@ -30,11 +30,13 @@ import type {
   ObjectReportColumn,
   ObjectReportEstimate,
   ObjectReportJobStatus,
-  ObjectReportKind,
   ObjectReportRequest,
   ObjectReportSchema,
   ObjectReportStarted,
   ReportCoverBackground,
+  ReportKind,
+  TopologyReportRequest,
+  TopologyReportView,
   SensitivityLabelRef,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
@@ -46,6 +48,7 @@ import {
   sendPdf,
 } from "@/lib/diagram/export-file"
 import { cn } from "@/lib/utils"
+import type { ReportDrawing } from "@/components/topology/export/export-menu"
 import {
   Field,
   FormCheckbox,
@@ -91,12 +94,29 @@ import {
  * subtitle, project line and background. A live estimate (`?estimate=1`)
  * says whether it renders now or in the background; a background report is polled until it is ready,
  * then downloaded or printed like a quick one.
+ *
+ * The same dialog makes the **topology report** (api/reports/kinds/topology.py)
+ * for one or more topology views: its sections and their columns, the
+ * cover, and for several views one PDF or a ZIP. Each view is drawn as the
+ * map's Export ▸ PDF draws it (`TopologyTargetView.draw`) when the report
+ * is made.
  */
 
-export const REPORT_PATHS: Record<ObjectReportKind, string> = {
+export const REPORT_PATHS: Record<ReportKind, string> = {
   device: "/api/devices/report/",
   prefix: "/api/prefixes/report/",
   ipaddress: "/api/ips/report/",
+  topology: "/api/topology/report/",
+}
+
+/** One view of a topology report: its name, the saved view it is, the
+ * devices it shows when known before drawing (for the live estimate), and
+ * how to draw it. */
+export interface TopologyTargetView {
+  id?: string | null
+  name: string
+  devices?: string[]
+  draw: () => Promise<ReportDrawing | null>
 }
 
 /** What a report covers: `ids` (a detail page's one, a list's selection or
@@ -107,6 +127,8 @@ export interface ReportTarget {
   scope: "one" | "selected" | "filtered"
   /** The object's name, for a detail page's title. */
   name?: string
+  /** The topology report: the views, in `ids`' order. */
+  views?: TopologyTargetView[]
 }
 
 type Paper = "a4" | "letter" | "a3"
@@ -126,6 +148,8 @@ export interface ReportPrefs {
   cover: boolean
   coverBackground: ReportCoverBackground
   coverProject: string
+  /** The topology report of several views: one PDF or a ZIP of them. */
+  output: "pdf" | "zip"
   /** The sensitivity label's id; null for none. */
   sensitivityLabel: string | null
 }
@@ -158,11 +182,9 @@ const ORIENTATION_ITEMS: { value: Orientation; label: string }[] = [
   { value: "landscape", label: "Landscape" },
 ]
 
-const prefsKey = (kind: ObjectReportKind) => `object-report:${kind}`
+const prefsKey = (kind: ReportKind) => `object-report:${kind}`
 
-export function readReportPrefs(
-  kind: ObjectReportKind
-): Partial<ReportPrefs> | null {
+export function readReportPrefs(kind: ReportKind): Partial<ReportPrefs> | null {
   try {
     const raw = window.localStorage.getItem(prefsKey(kind))
     if (!raw) return null
@@ -173,7 +195,7 @@ export function readReportPrefs(
   }
 }
 
-export function writeReportPrefs(kind: ObjectReportKind, prefs: ReportPrefs) {
+export function writeReportPrefs(kind: ReportKind, prefs: ReportPrefs) {
   try {
     // "No grouping" is kept as "": a remembered null is from before a type
     // had a default grouping, and starts from that default.
@@ -249,6 +271,7 @@ export function initialPrefs(
       : "default",
     coverProject:
       typeof saved?.coverProject === "string" ? saved.coverProject : "",
+    output: saved?.output === "zip" ? "zip" : "pdf",
     sensitivityLabel: initialLabel(saved, labels),
   }
 }
@@ -298,6 +321,8 @@ export function coverSubtitle(
   schema: ObjectReportSchema
 ): string {
   const n = target.ids.length
+  if (schema.type === "topology")
+    return n === 1 ? "Topology" : `${n.toLocaleString()} topology views`
   if (n === 1) return schema.label
   const what = `${n.toLocaleString()} ${schema.plural.toLowerCase()}`
   const group = schema.group_by.find((g) => g.key === prefs.groupBy)
@@ -360,13 +385,77 @@ export function reportRequest(
   }
 }
 
+/** The topology report's POST body for the dialog's picks and the views
+ * as drawn (`drawn`, in the target's order; without it, the estimate's
+ * body: no drawings, the devices known before drawing). */
+export function topologyRequest(
+  target: ReportTarget,
+  prefs: ReportPrefs,
+  schema: ObjectReportSchema,
+  title: string,
+  cover: CoverText = { title: "", subtitle: null },
+  coverColors: CoverColors | null = null,
+  drawn?: (ReportDrawing | null)[]
+): TopologyReportRequest {
+  const available = new Set(
+    schema.sections.filter((s) => s.available).map((s) => s.key)
+  )
+  const sections = schema.sections
+    .map((s) => s.key)
+    .filter((k) => prefs.sections.includes(k) && available.has(k))
+  const columns: Record<string, string[]> = {}
+  for (const k of sections)
+    if (k !== "diagram") columns[k] = prefs.columns[k] ?? []
+  const views: TopologyReportView[] = (target.views ?? []).map((v, i) => {
+    const d = drawn?.[i]
+    return {
+      view: v.id ?? null,
+      title: d?.drawing.title ?? v.name,
+      filters: d?.drawing.filters ?? "",
+      svg: d?.drawing.svg ?? "",
+      device_ids: d?.devices ?? v.devices ?? [],
+    }
+  })
+  const titleBlock = drawn?.find(Boolean)?.titleBlock
+  return {
+    views,
+    sections,
+    columns,
+    options: {
+      ...(title.trim() ? { title: title.trim() } : {}),
+      paper: prefs.paper,
+      orientation: prefs.orientation,
+      ...(titleBlock === undefined ? {} : { title_block: titleBlock }),
+      ...(views.length > 1 ? { output: prefs.output } : {}),
+      ...(prefs.cover
+        ? {
+            cover: true,
+            ...(cover.title.trim() ? { cover_title: cover.title.trim() } : {}),
+            ...(cover.subtitle !== null
+              ? { cover_subtitle: cover.subtitle.trim() }
+              : {}),
+            ...(prefs.coverProject.trim()
+              ? { cover_project: prefs.coverProject.trim() }
+              : {}),
+            cover_background: prefs.coverBackground,
+          }
+        : {}),
+      // The chapter banners take the cover's colours too.
+      ...(coverColors ? { cover_colors: coverColors } : {}),
+      ...(prefs.sensitivityLabel
+        ? { sensitivity_label: prefs.sensitivityLabel }
+        : {}),
+    },
+  }
+}
+
 export function ObjectReportDialog({
   kind,
   target,
   open,
   onOpenChange,
 }: {
-  kind: ObjectReportKind
+  kind: ReportKind
   target: ReportTarget | null
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -417,18 +506,14 @@ export function ObjectReportDialog({
   )
 }
 
-function describeTarget(
-  kind: ObjectReportKind,
-  target: ReportTarget | null
-): string {
+function describeTarget(kind: ReportKind, target: ReportTarget | null): string {
   if (!target) return ""
-  const noun = { device: "device", prefix: "prefix", ipaddress: "IP address" }[
-    kind
-  ]
+  const noun = NOUNS[kind]
   const plural = {
     device: "devices",
     prefix: "prefixes",
     ipaddress: "IP addresses",
+    topology: "topology views",
   }[kind]
   const n = target.ids.length
   if (target.scope === "one") return target.name ?? `One ${noun}`
@@ -438,10 +523,11 @@ function describeTarget(
     : `${what} in the list`
 }
 
-const NOUNS: Record<ObjectReportKind, string> = {
+const NOUNS: Record<ReportKind, string> = {
   device: "device",
   prefix: "prefix",
   ipaddress: "IP address",
+  topology: "topology view",
 }
 
 /** How often a background report's status is asked for. */
@@ -504,7 +590,7 @@ function ReportForm({
   target,
   onDone,
 }: {
-  kind: ObjectReportKind
+  kind: ReportKind
   schema: ObjectReportSchema
   labels: SensitivityLabelRef[]
   target: ReportTarget
@@ -519,6 +605,7 @@ function ReportForm({
   const [coverColors, setCoverColors] = useState<CoverColors | null>(null)
   const [busy, setBusy] = useState(false)
   const [job, setJob] = useState<ObjectReportJobStatus | null>(null)
+  const [drawing, setDrawing] = useState<string | null>(null)
   const alive = useRef(true)
   useEffect(() => {
     alive.current = true
@@ -526,7 +613,10 @@ function ReportForm({
       alive.current = false
     }
   }, [])
-  const one = target.ids.length === 1
+  const topology = kind === "topology"
+  const one = topology || target.ids.length === 1
+  const many = target.ids.length > 1
+  const zip = topology && many && prefs.output === "zip"
   const perObject = one || prefs.perObject
   const set = <TKey extends keyof ReportPrefs>(k: TKey, v: ReportPrefs[TKey]) =>
     setPrefs((p) => ({ ...p, [k]: v }))
@@ -558,10 +648,15 @@ function ReportForm({
   const body = useMemo(
     () =>
       JSON.stringify(
-        reportRequest(target, prefs, schema, title, cover, coverColors)
+        topology
+          ? topologyRequest(target, prefs, schema, title, cover, coverColors)
+          : reportRequest(target, prefs, schema, title, cover, coverColors)
       ),
-    [target, prefs, schema, title, cover, coverColors]
+    [topology, target, prefs, schema, title, cover, coverColors]
   )
+  // A view's devices are known before it is drawn only on the map itself.
+  const estimable =
+    !topology || (target.views ?? []).every((v) => v.devices !== undefined)
   const settled = useDebounced(body, 400)
   const estimate = useQuery({
     queryKey: ["object-report-estimate", kind, settled],
@@ -570,7 +665,7 @@ function ReportForm({
         method: "POST",
         body: settled,
       }),
-    enabled: !limitNote,
+    enabled: !limitNote && estimable,
     staleTime: 60_000,
     retry: false,
     placeholderData: (prev) => prev,
@@ -591,15 +686,47 @@ function ReportForm({
         })
       : ""
 
+  /** Each view drawn as the map's Export ▸ PDF draws it, one at a time. */
+  const drawViews = async () => {
+    const views = target.views ?? []
+    const out: (ReportDrawing | null)[] = []
+    for (const [i, v] of views.entries()) {
+      if (!alive.current) return null
+      setDrawing(
+        views.length > 1 ? `Drawing ${i + 1} of ${views.length}…` : "Drawing…"
+      )
+      out.push(await v.draw())
+    }
+    setDrawing(null)
+    return out
+  }
+
   const run = async (print: boolean) => {
     const tab = print ? openPrintTab() : null
     let printing = false
     setBusy(true)
     try {
       writeReportPrefs(kind, prefs)
+      let posted = body
+      if (topology) {
+        const drawn = await drawViews()
+        if (!drawn) return
+        if (drawn.some((d) => !d)) throw new Error("A view could not be drawn.")
+        posted = JSON.stringify(
+          topologyRequest(
+            target,
+            prefs,
+            schema,
+            title,
+            cover,
+            coverColors,
+            drawn
+          )
+        )
+      }
       const started = await api<ObjectReportStarted>(
         `${REPORT_PATHS[kind]}?print=1`,
-        { method: "POST", body }
+        { method: "POST", body: posted }
       )
       let url: string | null
       if ("job" in started) {
@@ -611,7 +738,12 @@ function ReportForm({
       printing = sendPdf(url, {
         print,
         tab,
-        fileName: exportFileName(name, "pdf", undefined, "report"),
+        fileName: exportFileName(
+          name,
+          zip ? "zip" : "pdf",
+          undefined,
+          "report"
+        ),
       })
       onDone()
     } catch (err) {
@@ -621,12 +753,14 @@ function ReportForm({
       if (alive.current) {
         setBusy(false)
         setJob(null)
+        setDrawing(null)
       }
     }
   }
 
   const generating =
-    job?.progress != null ? `Generating… ${job.progress}%` : "Generating…"
+    drawing ??
+    (job?.progress != null ? `Generating… ${job.progress}%` : "Generating…")
 
   const sectionsBlock = perObject && (
     <>
@@ -683,8 +817,11 @@ function ReportForm({
     </>
   )
 
-  const titlePlaceholder =
-    one && target.name
+  const titlePlaceholder = topology
+    ? many
+      ? "Topology report"
+      : (target.name ?? "Topology report")
+    : one && target.name
       ? `${schema.label} ${target.name}`
       : `${schema.plural} report`
   // The colours count only on a background drawn in them.
@@ -719,6 +856,18 @@ function ReportForm({
             />
           </Field>
         </div>
+        {topology && many && (
+          <Field label="Output">
+            <SegmentedTabs<"pdf" | "zip">
+              items={[
+                { value: "pdf", label: "One PDF" },
+                { value: "zip", label: "ZIP of PDFs" },
+              ]}
+              value={prefs.output}
+              onValueChange={(v) => set("output", v)}
+            />
+          </Field>
+        )}
         {labels.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2" data-part="sensitivity">
             <FormCombobox
@@ -872,7 +1021,7 @@ function ReportForm({
         </Button>
         <Button
           variant="outline"
-          disabled={busy || !!limitNote || tooLarge}
+          disabled={busy || !!limitNote || tooLarge || zip}
           onClick={() => void run(true)}
         >
           <Printer /> Print
@@ -1106,7 +1255,7 @@ function ShownRow({
 
 /** The report dialog for a page, opened on a target: `open(target)`, and
  * the `dialog` to render once. */
-export function useObjectReport(kind: ObjectReportKind) {
+export function useObjectReport(kind: ReportKind) {
   const [target, setTarget] = useState<ReportTarget | null>(null)
   const [open, setOpen] = useState(false)
   const openReport = useCallback((t: ReportTarget) => {
@@ -1150,7 +1299,7 @@ export function ObjectReportButton({
   id,
   name,
 }: {
-  kind: ObjectReportKind
+  kind: ReportKind
   id: string
   name: string
 }) {

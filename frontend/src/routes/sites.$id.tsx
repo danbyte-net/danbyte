@@ -127,7 +127,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/topology" search={{ site: s.id }}>
+            <Link to="/topology/map" search={{ site: s.id }}>
               <Network className="h-3.5 w-3.5" /> Topology
             </Link>
           </Button>

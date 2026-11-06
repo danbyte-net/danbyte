@@ -162,7 +162,7 @@ function Body({ cable: c }: { cable: Cable }) {
           {topoDevices && (
             <Button variant="outline" size="sm" asChild>
               <Link
-                to="/topology"
+                to="/topology/map"
                 search={{
                   devices: topoDevices,
                   ...(topoPanels ? { panels: true } : {}),

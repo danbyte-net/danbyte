@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+from dataclasses import dataclass
+from html import escape
 
 from django.core.cache import cache  # noqa: F401 - the print links' store
 from django.urls import reverse
@@ -64,10 +66,12 @@ from .drawing_pdf import (  # noqa: F401 - the sheet's names, as this module alw
     RENDER_LOCK_TTL,
     RENDER_SLOTS,
     RENDER_TIMEOUT,
+    SHEET_CSS,
     TITLE_MM,
     TITLE_W_MM,
     PdfUrlFetcher,
     RenderTimeout,
+    _font_faces,
     body_too_large,
     deliver,
     detail,
@@ -78,6 +82,7 @@ from .drawing_pdf import (  # noqa: F401 - the sheet's names, as this module alw
     render_guarded,
     render_pdf,
     run_with_deadline,
+    sheet_frame,
     sheet_html,
     svg_size,
 )
@@ -89,6 +94,48 @@ log = logging.getLogger(__name__)
 
 
 # ─── The sheet ──────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class TopologySheet:
+    """A topology drawing laid out on its sheet: where it sits
+    (:func:`api.drawing_pdf.plan_sheet`) and the sheet's HTML."""
+
+    plan: dict
+    html: str
+
+
+def topology_sheet(
+    svg: bytes,
+    *,
+    title: str,
+    tenant: str = "",
+    filters: str = "",
+    generated: dt.datetime,
+    paper: str = "a3",
+    orientation: str = "landscape",
+    title_block: bool = True,
+    src: str = DIAGRAM_URL,
+    page_label: str = "Page 1 / 1",
+    attrs: str = "",
+) -> TopologySheet:
+    """The one way a topology drawing is put on paper: the **Export ▸ PDF**
+    sheet and the topology report's diagram page both come from here, so a
+    change to the sheet changes both. ``svg`` is the sanitised drawing; the
+    title block names the view, the tenant and the filters."""
+    w, h = svg_size(svg)
+    plan = plan_sheet(w, h, paper, orientation, title_block)
+    html = sheet_frame(
+        plan,
+        title=title,
+        subtitle=" · ".join(s for s in (tenant, filters) if s),
+        generated=generated,
+        title_block=title_block,
+        src=src,
+        page_label=page_label,
+        attrs=attrs,
+    )
+    return TopologySheet(plan=plan, html=html)
 
 
 def _sheet_html(
@@ -107,6 +154,26 @@ def _sheet_html(
         subtitle=" · ".join(s for s in (tenant, filters) if s),
         generated=generated,
         title_block=title_block,
+    )
+
+
+def sheet_document(sheet: TopologySheet, title: str) -> str:
+    """The Export's page: the one sheet on a page of its paper."""
+    from danbyte import __version__
+
+    pw, ph = sheet.plan["page"]
+    mm = lambda v: f"{v:.3f}mm"  # noqa: E731
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        f"<title>{escape(title)}</title>"
+        f"<meta name='generator' content='Danbyte {escape(__version__)}'>"
+        "<style>"
+        f"{_font_faces()}"
+        f"@page{{size:{mm(pw)} {mm(ph)};margin:{mm(MARGIN_MM)}}}"
+        "html,body{margin:0;padding:0}"
+        "body{font-family:Inter,'DejaVu Sans',sans-serif;color:#18181b}"
+        f"{SHEET_CSS}"
+        f"</style></head><body>{sheet.html}</body></html>"
     )
 
 
@@ -133,16 +200,23 @@ def render_topology_pdf(
     orientation: str = "landscape",
     title_block: bool = True,
 ) -> bytes:
-    """A sanitized drawing on one sheet of ``paper``, as PDF bytes."""
-    return render_pdf(
+    """A sanitized drawing on one sheet of ``paper`` (:func:`topology_sheet`),
+    as PDF bytes."""
+    import weasyprint
+
+    sheet = topology_sheet(
         svg,
         title=title,
-        subtitle=" · ".join(s for s in (tenant, filters) if s),
-        generated=generated,
+        tenant=tenant,
+        filters=filters,
+        generated=generated or timezone.now(),
         paper=paper,
         orientation=orientation,
         title_block=title_block,
     )
+    return weasyprint.HTML(
+        string=sheet_document(sheet, title), base_url=BASE_URL, url_fetcher=PdfUrlFetcher(svg)
+    ).write_pdf()
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────

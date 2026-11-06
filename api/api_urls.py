@@ -203,6 +203,12 @@ from .site_map_views import site_map, site_map_cables, site_map_connections
 from .software_versions_api import software_versions_summary
 from .support_coverage_api import SupportContractViewSet, SupportCoverageViewSet
 from .terraform_views import vm_render_view
+from .reports.kinds.topology import (
+    topology_report_file_view,
+    topology_report_job_file_view,
+    topology_report_job_view,
+    topology_report_view,
+)
 from .topology_export import topology_pdf_file_view, topology_pdf_view
 from .topology_views import (
     topology_logical_view,
@@ -653,6 +659,14 @@ urlpatterns = [
     path("topology/export/pdf/", topology_pdf_view, name="topology-export-pdf"),
     path("topology/export/pdf/<str:token>/", topology_pdf_file_view,
          name="topology-export-pdf-file"),
+    # The topology report: the drawing above plus cover, chapters and tables.
+    path("topology/report/", topology_report_view, name="topology-report"),
+    path("topology/report/job/<str:token>/", topology_report_job_view,
+         name="topology-report-job"),
+    path("topology/report/job/<str:token>/file/", topology_report_job_file_view,
+         name="topology-report-job-file"),
+    path("topology/report/<str:token>/", topology_report_file_view,
+         name="topology-report-file"),
     # Any diagram as a PDF, by kind (#163); the topology paths above are the
     # same views.
     path("diagram/export/pdf/", topology_pdf_view, name="diagram-export-pdf"),

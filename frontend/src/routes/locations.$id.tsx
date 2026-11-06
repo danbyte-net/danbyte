@@ -106,7 +106,7 @@ function Body({ location: l }: { location: Location }) {
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link
-              to="/topology"
+              to="/topology/map"
               search={{ group: "location" as const, location: l.id }}
             >
               <Network className="h-3.5 w-3.5" /> Topology

@@ -13,14 +13,14 @@ no marking until the tenant names a default or the reader picks one.
 **Marking.** :func:`marking_for` turns a label into the dict a report renders
 on its cover and on every page's header and footer -
 ``{name, color, text_color, icon_svg}`` (the report framework's
-``ReportContext.marking``). The icon is the label's Lucide icon from the
-bundled SVGs (``api/lucide/``), stroked in the text colour.
+``ReportContext.marking``, which ``api/reports/marking.py`` renders). The icon
+is the label's Lucide icon from the bundled SVGs (``api/lucide/``), stroked in
+the text colour.
 """
 
 from __future__ import annotations
 
 import re
-from html import escape
 
 from rest_framework.exceptions import ValidationError
 
@@ -126,43 +126,3 @@ def default_label(request, tenant):
         request.user, tenant, "sensitivitylabel", "view",
     )
     return qs.first()
-
-
-# ─── Rendering ───────────────────────────────────────────────────────────────
-
-
-def pill_html(marking: dict, cls: str = "marking") -> str:
-    """The marking as a pill: icon and name in capitals on its colour."""
-    return (
-        f"<span class='{cls}' style='background:{marking['color']};"
-        f"color:{marking['text_color']}'>{marking['icon_svg']}"
-        f"<span class='marking-name'>{escape(marking['name'])}</span></span>"
-    )
-
-
-def running_html(marking: dict | None) -> str:
-    """The running elements the page header and footer show: the first thing
-    in the report's ``<body>``."""
-    if not marking:
-        return ""
-    return (
-        f"<div class='marking-top'>{pill_html(marking)}</div>"
-        f"<div class='marking-bottom'>{pill_html(marking)}</div>"
-    )
-
-
-def marking_css(marking: dict | None) -> str:
-    """The marking's rules for the report's ``<style>``: the pill, at the
-    centre of every page's header and footer."""
-    if not marking:
-        return ""
-    return (
-        "@page{@top-center{content:element(marking-top);vertical-align:middle}"
-        "@bottom-center{content:element(marking-bottom);vertical-align:middle}}"
-        ".marking-top{position:running(marking-top)}"
-        ".marking-bottom{position:running(marking-bottom)}"
-        ".marking{display:inline-block;padding:0.5mm 2.4mm;border-radius:0.8mm;"
-        "font-family:Inter,'DejaVu Sans',sans-serif;font-size:7pt;font-weight:700;"
-        "letter-spacing:0.08em;text-transform:uppercase;white-space:nowrap;line-height:1.3}"
-        ".marking svg{vertical-align:-1pt;margin-right:1.2mm}"
-    )

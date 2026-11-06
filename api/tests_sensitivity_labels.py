@@ -246,8 +246,10 @@ class MarkingTests(SimpleTestCase):
                          (sens.NEUTRAL, sens.INK, ""))
 
     def test_the_name_is_escaped(self):
+        from .reports.marking import Marking, marking_badge
+
         m = sens.marking_for(SensitivityLabel(name="<b>x</b>", color="#000000"))
-        self.assertIn("&lt;b&gt;", sens.pill_html(m))
+        self.assertIn("&lt;b&gt;", marking_badge(Marking.from_dict(m)))
 
 
 class ReportMarkingTests(_Report):
@@ -277,7 +279,8 @@ class ReportMarkingTests(_Report):
         self.assertTrue(body.startswith("<body><div class='marking-top'>"))
         self.assertEqual(body.count("<span class='marking-name'>Confidential</span>"), 2)
         self.assertIn("background:#d97706;color:#ffffff", body)
-        self.assertIn("<svg", body)
+        # The label's icon, sanitised, as an image.
+        self.assertIn("<img class='marking-icon' src='data:image/svg+xml;base64,", body)
 
     def test_cover_badge_top_right(self):
         _r, html = self.report(cover=True, sensitivity_label=str(self.conf.id))
