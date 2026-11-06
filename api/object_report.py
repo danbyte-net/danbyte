@@ -26,7 +26,10 @@ The PDF obeys the drawing PDFs' limits (``api/drawing_pdf.py``): one render
 per user and a few across the server, the render deadline, and ``?print=1``'s
 five-minute link. A report lists at most ``MAX_OBJECTS`` objects and gives a
 page to at most ``MAX_OBJECT_PAGES``; past either it is refused (400) with
-the limit. A section lists at most ``MAX_SECTION_ROWS`` rows, and the whole
+the limit. A report whose estimated render time (``estimate_seconds``: table
+cells and pages per object) is past ``RENDER_BUDGET`` is refused (400) before
+it renders, saying what fits; one that still runs past the deadline is 503.
+A section lists at most ``MAX_SECTION_ROWS`` rows, and the whole
 report ``MAX_TOTAL_ROWS``; past those a section says how many it left out.
 """
 
@@ -78,6 +81,14 @@ log = logging.getLogger(__name__)
 #: Objects a report may list, and give a page each.
 MAX_OBJECTS = 2000
 MAX_OBJECT_PAGES = 50
+#: What a render costs, measured on WeasyPrint with the fixed table layout
+#: (#474): about 1.5 ms per table cell and 50 ms per object page on a 2-vCPU
+#: box. A report estimated past ``RENDER_BUDGET`` - the deadline less a
+#: margin for a busier or slower server - is refused before it renders.
+SECONDS_PER_CELL = 0.0016
+SECONDS_PER_PAGE = 0.06
+SECONDS_BASE = 0.5
+RENDER_BUDGET = RENDER_TIMEOUT * 0.7
 #: Rows one section of one object lists, and all sections together.
 MAX_SECTION_ROWS = 500
 MAX_TOTAL_ROWS = 20000
@@ -834,6 +845,7 @@ class ObjectReportOptionsSerializer(serializers.Serializer):
     include_summary = serializers.BooleanField(required=False)
     list_table = serializers.BooleanField(required=False)
     per_object = serializers.BooleanField(required=False)
+    show_ips = serializers.BooleanField(required=False)
     last = serializers.IntegerField(
         required=False, min_value=1, max_value=MAX_LAST, default=DEFAULT_LAST
     )
@@ -991,17 +1003,86 @@ def _kv_html(row, cols: list[Column]) -> str:
     )
 
 
-def table_html(rows: list[dict], cols: list[Column], cls: str = "") -> str:
-    head = "".join(f"<th>{escape(c.label)}</th>" for c in cols)
+#: A column's share of a table's width, by key and then by kind; a fixed
+#: layout is far cheaper to render than one sized from every cell (#474).
+_WIDE_KEYS = ("description", "comments", "dns_name", "assigned_interface", "tags")
+_NARROW_KINDS = ("bool", "date", "choice")
+
+
+def _weight(c: Column) -> float:
+    if c.key in _WIDE_KEYS or c.key.endswith("description"):
+        return 1.6
+    if c.kind in _NARROW_KINDS or c.key.endswith(("_pct", "_count")):
+        return 0.7
+    if c.kind == "datetime":
+        return 1.1
+    return 1.0
+
+
+def column_widths(cols: list[Column]) -> list[float]:
+    """Each column's width in percent of the table."""
+    weights = [_weight(c) for c in cols]
+    total = sum(weights) or 1.0
+    return [100 * w / total for w in weights]
+
+
+def table_html(rows: list[dict], cols: list[Column], cls: str = "", after=None) -> str:
+    """A grid of ``rows``; ``after(row)``, when given, is HTML for a full-width
+    row printed under each one (empty for none)."""
+    head = "".join(
+        f"<th style='width:{w:.2f}%'>{escape(c.label)}</th>"
+        for c, w in zip(cols, column_widths(cols), strict=True)
+    )
     body = "".join(
         "<tr>"
         + "".join(
             f"<td{' class=b' if i == 0 else ''}>{cell(r, c)}</td>" for i, c in enumerate(cols)
         )
         + "</tr>"
+        + _after_row(after, r, len(cols))
         for r in rows
     )
     return f"<table class='grid {cls}'><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def _after_row(after, row: dict, span: int) -> str:
+    html = after(row) if after else ""
+    return f"<tr class='under'><td colspan='{span}'>{html}</td></tr>" if html else ""
+
+
+#: The IP columns a prefix list row is followed by with ``show_ips``.
+SHOW_IPS_COLUMNS = ("ip_address", "status", "role", "dns_name")
+
+
+def prefix_ips(ctx: Context, budget: Budget):
+    """``after`` for a prefix list's table: each prefix's IP addresses, read
+    through the reader's own IP list (so their scope applies) and counted
+    against the report's row budget. None when they may not view IPs."""
+    if not _can_view_ips(ctx):
+        return None
+    cat = ctx.catalog("/api/ips/") or {}
+    cols = [cat[k] for k in SHOW_IPS_COLUMNS if k in cat]
+    device, iface = cat.get("assigned_device"), cat.get("assigned_interface")
+    assigned = Column("assigned", "Assigned to", "auto", "assigned")
+
+    def html(prefix: dict) -> str:
+        view = ctx.view("/api/ips/", {"prefix": _id(prefix)})
+        if view is None:
+            return ""
+        limit = budget.take(MAX_SECTION_ROWS)
+        rows, total = read_rows(view, limit=limit)
+        budget.left += limit - len(rows)
+        if not rows:
+            return ""
+        for r in rows:
+            parts = [plain(r, c) for c in (device, iface) if c is not None]
+            r["assigned"] = " · ".join(x for x in parts if x)
+        note = _left_out(total, len(rows), "IP addresses")
+        return table_html(rows, [*cols, assigned], "ips") + (
+            f"<p class='muted'>{escape(note)}</p>" if note else ""
+        )
+
+    return html
 
 
 def _left_out(total: int, shown: int, what: str) -> str:
@@ -1220,19 +1301,19 @@ def _summary_html(rt: ReportType, rows: list[dict], cat: dict[str, Column]) -> s
     return f"<section class='summary'><h2>Summary</h2>{''.join(blocks)}</section>"
 
 
-def _list_html(rt: ReportType, rows: list[dict], cols: list[Column], group: Column | None) -> str:
+def _list_html(
+    rt: ReportType, rows: list[dict], cols: list[Column], group: Column | None, after=None
+) -> str:
     if not rows:
         return "<section class='list'><p class='muted'>No objects.</p></section>"
     if group is None:
-        return (
-            f"<section class='list'><h2>{escape(rt.plural)}</h2>{table_html(rows, cols)}</section>"
-        )
+        return f"<section class='list'><h2>{escape(rt.plural)}</h2>{table_html(rows, cols, after=after)}</section>"
     groups: dict[str, list] = {}
     for r in rows:
         groups.setdefault(plain(r, group) or "None", []).append(r)
     body = "".join(
         f"<h3>{escape(name)} <span>{_plural(len(g), rt.label.lower(), rt.plural.lower())}</span></h3>"
-        f"{table_html(g, [c for c in cols if c.key != group.key])}"
+        f"{table_html(g, [c for c in cols if c.key != group.key], after=after)}"
         for name, g in sorted(groups.items(), key=lambda x: (x[0] == "None", x[0].lower()))
     )
     return (
@@ -1322,9 +1403,14 @@ def report_html(
         "tr{break-inside:avoid}"
         "th{text-align:left;font-weight:600;color:#52525b;padding:0.9mm 1.2mm;"
         "vertical-align:bottom}"
-        "table.grid th{border-bottom:0.3mm solid #a1a1aa;white-space:nowrap}"
+        "table.grid{table-layout:fixed}"
+        "table.grid th{border-bottom:0.3mm solid #a1a1aa;overflow-wrap:anywhere}"
         "td{padding:0.9mm 1.2mm;vertical-align:top;overflow-wrap:anywhere}"
         "table.grid td{border-bottom:0.15mm solid #e4e4e7}"
+        "tr.under>td{padding:0 0 1.5mm 5mm}"
+        "table.ips{margin:0;font-size:6.8pt}"
+        "table.ips th{border-bottom-width:0.15mm;padding:0.5mm 1.2mm}"
+        "table.ips td{padding:0.5mm 1.2mm}"
         "table.kv{table-layout:fixed}"
         "table.kv th{font-weight:500;color:#71717a;border-bottom:0.15mm solid #e4e4e7}"
         "table.kv td{border-bottom:0.15mm solid #e4e4e7}"
@@ -1419,6 +1505,7 @@ def describe(request, rt: ReportType) -> Response:
             "group_by": [cat[k].payload() for k in rt.groups if k in cat],
             "sections": sections,
             "papers": list(PAPERS),
+            "show_ips": rt is PREFIX and _can_view_ips(ctx),
             "limits": {
                 "objects": MAX_OBJECTS,
                 "object_pages": MAX_OBJECT_PAGES,
@@ -1426,6 +1513,7 @@ def describe(request, rt: ReportType) -> Response:
                 "total_rows": MAX_TOTAL_ROWS,
                 "columns": MAX_COLUMNS,
                 "last": MAX_LAST,
+                "cells": cells_that_fit(),
             },
         }
     )
@@ -1435,9 +1523,52 @@ def _print_key(slug, user_id, tenant_id) -> str:
     return f"object-report-print:{slug}:{user_id}:{tenant_id}"
 
 
-def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str] | Response:
-    """``(title, body html)`` of the report ``data`` asks for, or the
-    refusal."""
+def estimate_seconds(cells: int, pages: int = 0) -> float:
+    """About how long WeasyPrint takes for ``cells`` table cells and
+    ``pages`` pages per object."""
+    return SECONDS_BASE + cells * SECONDS_PER_CELL + pages * SECONDS_PER_PAGE
+
+
+def cells_that_fit(pages: int = 0) -> int:
+    """Table cells a report with ``pages`` pages per object may hold."""
+    left = RENDER_BUDGET - SECONDS_BASE - pages * SECONDS_PER_PAGE
+    return max(0, int(left / SECONDS_PER_CELL))
+
+
+def too_slow(body: str, shape: dict) -> Response | None:
+    """The 400 for a report that would not render before the deadline,
+    saying what fits; None when it should."""
+    cells = body.count("<td")
+    pages = shape["pages"]
+    if estimate_seconds(cells, pages) <= RENDER_BUDGET:
+        return None
+    fit = cells_that_fit(pages)
+    hints, drop = [], []
+    rows, cols = shape["rows"], shape["list_columns"]
+    other = cells - rows * cols if cols else cells
+    if cols and fit > other:
+        room = fit - other
+        hints.append(f"at most {room // cols:,} rows with these {cols} columns")
+        if room // rows:
+            hints.append(f"at most {room // rows} columns for these {rows:,} rows")
+    if pages:
+        drop.append("the pages per object or some of their sections")
+    if shape.get("show_ips"):
+        drop.append("Show IPs")
+    tail = f" Report on {' or '.join(hints)}." if hints else " Report on fewer rows."
+    if drop:
+        tail += f" Or leave out {' or '.join(drop)}."
+    return detail(
+        f"This report is too large to render in time: {cells:,} table cells, and "
+        f"about {fit:,} fit.{tail}",
+        400,
+    )
+
+
+def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str, dict] | Response:
+    """``(title, body html, shape)`` of the report ``data`` asks for, or the
+    refusal. ``shape`` counts the objects, the list's columns (0 without a
+    list) and the pages per object, for :func:`too_slow`."""
     options = {"last": DEFAULT_LAST, "paper": "a4", **(data.get("options") or {})}
     columns = data.get("columns") or {}
     ctx = Context(request, rt, tenant)
@@ -1476,6 +1607,7 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str]
     cat = ctx.catalog(rt.path) or {}
     title = _title(rt, rows, options, many)
     budget = Budget(MAX_TOTAL_ROWS)
+    shape = {"rows": len(rows), "list_columns": 0, "pages": len(rows) if per_object else 0}
     facts = [("Tenant", tenant.name), ("Generated", stamp(timezone.now()))]
     if many:
         facts += [
@@ -1487,9 +1619,14 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str]
         body.append(_summary_html(rt, rows, cat))
     if list_table:
         cols = pick(cat, columns.get("list"), rt.list_columns)
+        shape["list_columns"] = len(cols)
         group_key = options.get("group_by") or ""
         group = cat.get(group_key) if group_key in rt.groups else None
-        body.append(_list_html(rt, rows, cols, group))
+        after = None
+        if rt is PREFIX and options.get("show_ips"):
+            after = prefix_ips(ctx, budget)
+            shape["show_ips"] = after is not None
+        body.append(_list_html(rt, rows, cols, group, after))
     if per_object:
         keys = data.get("sections")
         if keys is None:
@@ -1513,7 +1650,7 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str]
                 f"<p class='muted'>The report reached its {MAX_TOTAL_ROWS:,} rows; "
                 "later sections are cut short.</p>"
             )
-    return title, "".join(body)
+    return title, "".join(body), shape
 
 
 def export(request, rt: ReportType):
@@ -1533,7 +1670,10 @@ def export(request, rt: ReportType):
     built = build_report(request, rt, data, tenant)
     if isinstance(built, Response):
         return built
-    title, body = built
+    title, body, shape = built
+    refused = too_slow(body, shape)
+    if refused is not None:
+        return refused
     paper = opts.get("paper") or "a4"
     many_cols = len((data.get("columns") or {}).get("list") or rt.list_columns) > 8
     orientation = opts.get("orientation") or ("landscape" if many_cols else "portrait")
@@ -1557,9 +1697,9 @@ def export(request, rt: ReportType):
             "%s report for user %s stopped after %ss", rt.label, request.user.pk, RENDER_TIMEOUT
         )
         return detail(
-            "The report took too long to render. Leave out sections or pages "
-            "per object, or report on fewer rows.",
-            413,
+            "The report took too long to render and was stopped. Try again "
+            "when the server is less busy, or report on fewer rows or columns.",
+            503,
         )
     if isinstance(pdf, Response):
         return pdf
@@ -1596,7 +1736,9 @@ def report_schema(rt: ReportType):
             "site; `options.per_object` gives each a page of `sections`, each with its "
             "`columns.<section>`. Read through the lists, so ids and rows the reader "
             f"may not view are left out. At most {MAX_OBJECTS:,} objects and "
-            f"{MAX_OBJECT_PAGES} pages per object (400 past either). The drawing "
+            f"{MAX_OBJECT_PAGES} pages per object (400 past either), and a report "
+            f"estimated past about {cells_that_fit():,} table cells is refused "
+            "with a 400 that says what fits; a render past the deadline is 503. The drawing "
             "PDFs' limits apply; `?print=1` returns `{url}`, a five-minute link."
         ),
         tags=["reports"],
@@ -1614,7 +1756,8 @@ def report_schema(rt: ReportType):
             (200, "application/json"): OpenApiTypes.OBJECT,
             400: OpenApiResponse(description="Invalid body, nothing to report, or over a limit."),
             403: OpenApiResponse(description=f"No view on {rt.plural.lower()}."),
-            413: OpenApiResponse(description="Too slow to render."),
+            413: OpenApiResponse(description="The request is over 10 MB."),
+            503: OpenApiResponse(description="The render ran past its deadline."),
             429: OpenApiResponse(
                 description="A PDF for this user is being made, or the "
                 "server is making as many as it may."

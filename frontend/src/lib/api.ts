@@ -17146,6 +17146,8 @@ export interface ObjectReportSchema {
   group_by: ObjectReportColumn[]
   sections: ObjectReportSection[]
   papers: string[]
+  /** The list can show each prefix's IP addresses (`options.show_ips`). */
+  show_ips?: boolean
   limits: {
     objects: number
     object_pages: number
@@ -17153,6 +17155,8 @@ export interface ObjectReportSchema {
     total_rows: number
     columns: number
     last: number
+    /** Table cells a report may hold before it is refused as too slow. */
+    cells?: number
   }
 }
 
@@ -17171,6 +17175,8 @@ export interface ObjectReportRequest {
     include_summary?: boolean
     list_table?: boolean
     per_object?: boolean
+    /** Prefixes: each list row followed by its IP addresses. */
+    show_ips?: boolean
     last?: number
   }
 }

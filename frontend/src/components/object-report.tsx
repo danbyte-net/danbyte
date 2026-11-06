@@ -97,6 +97,7 @@ export interface ReportPrefs {
   groupBy: string | null
   includeSummary: boolean
   perObject: boolean
+  showIps: boolean
   last: number
 }
 
@@ -177,6 +178,7 @@ export function initialPrefs(
       saved?.groupBy && groupKeys.has(saved.groupBy) ? saved.groupBy : null,
     includeSummary: saved?.includeSummary ?? true,
     perObject: saved?.perObject ?? false,
+    showIps: saved?.showIps ?? false,
     last:
       typeof saved?.last === "number" && saved.last >= 1
         ? Math.min(saved.last, schema.limits.last)
@@ -215,6 +217,7 @@ export function reportRequest(
       include_summary: !one && prefs.includeSummary,
       list_table: !one,
       per_object: perObject,
+      ...(schema.show_ips && !one ? { show_ips: prefs.showIps } : {}),
       last: prefs.last,
     },
   }
@@ -418,6 +421,14 @@ function ReportForm({
                     onChange={(v) => set("perObject", v)}
                     className="items-center text-[13px] whitespace-nowrap"
                   />
+                  {schema.show_ips && (
+                    <FormCheckbox
+                      label="Show IPs"
+                      checked={prefs.showIps}
+                      onChange={(v) => set("showIps", v)}
+                      className="items-center text-[13px] whitespace-nowrap"
+                    />
+                  )}
                 </div>
               </Field>
             </div>

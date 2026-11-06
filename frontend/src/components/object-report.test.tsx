@@ -188,6 +188,17 @@ describe("reportRequest", () => {
     expect(prefs.groupBy).toBe("site")
     expect(prefs.last).toBe(200)
   })
+
+  it("sends show_ips only where the schema offers it", () => {
+    const prefs = { ...initialPrefs(SCHEMA, null), showIps: true }
+    expect(
+      reportRequest(many, prefs, SCHEMA, "").options?.show_ips
+    ).toBeUndefined()
+    expect(
+      reportRequest(many, prefs, { ...SCHEMA, show_ips: true }, "").options
+        ?.show_ips
+    ).toBe(true)
+  })
 })
 
 describe("ObjectReportDialog", () => {

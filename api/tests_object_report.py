@@ -252,7 +252,7 @@ class DeviceTests(_Report):
         )
         head = re.search(r"<section class='list'>.*?<thead><tr>(.*?)</tr>", html).group(1)
         self.assertEqual(
-            re.findall(r"<th>(.*?)</th>", head), ["Serial number", "Name", "Owner team"]
+            re.findall(r"<th(?: [^>]*)?>(.*?)</th>", head), ["Serial number", "Name", "Owner team"]
         )
         self.assertIn("Core net", html)
 
@@ -265,7 +265,9 @@ class DeviceTests(_Report):
                 "columns": {"interfaces": ["name", "description"]},
             },
         )
-        self.assertIn("<th>Name</th><th>Description</th></tr>", html)
+        self.assertEqual(
+            re.findall(r"<th(?: [^>]*)?>(.*?)</th>", html)[:2], ["Name", "Description"]
+        )
 
     def test_the_list_with_a_summary_and_groups(self):
         html = self.ok(
@@ -320,6 +322,57 @@ class PrefixAndIpTests(_Report):
         ):
             self.assertIn(text, html)
         self.assertIn("background:#7c3aed", html)  # the IP role's badge
+
+    def test_the_list_shows_each_prefixs_ips(self):
+        ids = [str(self.net.pk), str(self.child.pk)]
+        html = self.ok("prefixes", {"ids": ids})
+        self.assertNotIn("table class='grid ips'", html)
+        html = self.ok("prefixes", {"ids": ids, "options": {"show_ips": True, "list_table": True}})
+        self.assertEqual(html.count("table class='grid ips'"), 1)  # the /28 has none
+        for text in ("gw.ams.example", "10.9.0.40", "sw-a · eth-uplink", "Assigned to"):
+            self.assertIn(text, html)
+        self.assertIn("background:#7c3aed", html)
+        self.assertTrue(self.client.get("/api/prefixes/report/").json()["show_ips"])
+        self.assertFalse(self.client.get("/api/devices/report/").json()["show_ips"])
+
+    def test_show_ips_counts_against_the_row_caps(self):
+        with mock.patch.object(rep, "MAX_SECTION_ROWS", 1):
+            html = self.ok(
+                "prefixes",
+                {"ids": [str(self.net.pk)], "options": {"show_ips": True, "list_table": True}},
+            )
+        self.assertIn("Only the first 1 of 2 IP addresses are listed.", html)
+        with mock.patch.object(rep, "MAX_TOTAL_ROWS", 0):
+            html = self.ok(
+                "prefixes",
+                {"ids": [str(self.net.pk)], "options": {"show_ips": True, "list_table": True}},
+            )
+        self.assertNotIn("gw.ams.example", html)
+
+    def test_show_ips_cells_count_in_the_estimate(self):
+        lean = {"list_table": True, "per_object": False}
+        body = {"ids": [str(self.net.pk)], "options": {**lean, "show_ips": True}}
+        _, plain = self.html("prefixes", {**body, "options": lean})
+        _, more = self.html("prefixes", body)
+        cells = plain.count("<td")
+        self.assertGreater(more.count("<td"), cells)
+        with mock.patch.object(
+            rep, "RENDER_BUDGET", rep.estimate_seconds(cells) + rep.SECONDS_PER_CELL / 2
+        ):
+            self.ok("prefixes", {**body, "options": lean})
+            r, _ = self.html("prefixes", body)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Or leave out Show IPs", r.json()["detail"])
+
+    def test_show_ips_needs_view_on_ips(self):
+        self.login(self.member("p", (["prefix"], ["view"])))
+        self.assertFalse(self.client.get("/api/prefixes/report/").json()["show_ips"])
+        html = self.ok(
+            "prefixes",
+            {"ids": [str(self.net.pk)], "options": {"show_ips": True, "list_table": True}},
+        )
+        self.assertIn("10.9.0.0/24", html)
+        self.assertNotIn("gw.ams.example", html)
 
     def test_an_ip(self):
         NATRule.objects.create(
@@ -484,3 +537,90 @@ class RenderTests(_Report):
         r = self.client.post("/api/ips/report/", {"ids": [str(self.ip.pk)]}, format="json")
         self.assertEqual(r.status_code, 200, r.content[:300])
         self.assertTrue(r.content.startswith(b"%PDF-"))
+
+
+class RenderCostTests(_Report):
+    """The estimate a report is refused on before it renders (#474)."""
+
+    def test_the_estimate_grows_with_cells_and_pages(self):
+        self.assertLess(rep.estimate_seconds(100), rep.estimate_seconds(1000))
+        self.assertLess(rep.estimate_seconds(100), rep.estimate_seconds(100, pages=10))
+        fit = rep.cells_that_fit()
+        self.assertLessEqual(rep.estimate_seconds(fit), rep.RENDER_BUDGET)
+        self.assertGreater(rep.estimate_seconds(fit + 10), rep.RENDER_BUDGET)
+        self.assertLess(rep.cells_that_fit(pages=50), fit)
+        self.assertLess(rep.RENDER_BUDGET, rep.RENDER_TIMEOUT)
+
+    def test_too_slow_says_what_fits(self):
+        fit = rep.cells_that_fit()
+        rows, cols = 2000, 9
+        body = "<td>x</td>" * (rows * cols)
+        r = rep.too_slow(body, {"rows": rows, "list_columns": cols, "pages": 0})
+        self.assertEqual(r.status_code, 400)
+        msg = r.data["detail"]
+        self.assertIn(f"at most {fit // cols:,} rows with these 9 columns", msg)
+        self.assertIn(f"at most {fit // rows} columns for these 2,000 rows", msg)
+        small = "<td>x</td>" * 100
+        self.assertIsNone(rep.too_slow(small, {"rows": 10, "list_columns": 10, "pages": 0}))
+
+    def test_a_report_past_the_budget_is_refused_before_it_renders(self):
+        with (
+            mock.patch.object(rep, "RENDER_BUDGET", rep.SECONDS_BASE + rep.SECONDS_PER_CELL),
+            mock.patch.object(rep, "render_with_deadline") as render,
+        ):
+            r = self.client.post("/api/devices/report/", {"filters": {}}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("too large to render in time", r.json()["detail"])
+        self.assertIn("rows with these", r.json()["detail"])
+        render.assert_not_called()
+
+    def test_pages_per_object_are_named_in_the_refusal(self):
+        with mock.patch.object(rep, "RENDER_BUDGET", rep.SECONDS_BASE):
+            r, _ = self.html(
+                "devices", {"filters": {}, "options": {"per_object": True, "list_table": False}}
+            )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Or leave out the pages per object", r.json()["detail"])
+
+    def test_a_render_past_the_deadline_is_503(self):
+        with mock.patch.object(rep, "render_with_deadline", side_effect=rep.RenderTimeout):
+            r = self.client.post("/api/devices/report/", {"filters": {}}, format="json")
+        self.assertEqual(r.status_code, 503)
+        self.assertIn("took too long to render", r.json()["detail"])
+
+    def test_describe_says_how_many_cells_fit(self):
+        r = self.client.get("/api/ips/report/")
+        self.assertEqual(r.json()["limits"]["cells"], rep.cells_that_fit())
+
+    def test_rows_render_within_the_estimate(self):
+        import time
+
+        from django.utils import timezone
+
+        cols = [rep.Column(f"c{i}", f"Column {i}", "text", f"c{i}") for i in range(9)]
+        cols[1] = rep.Column("status", "Status", "object", "status")
+        rows = [
+            {
+                **{f"c{i}": f"value-{n}-{i}" for i in range(9)},
+                "status": {"name": "Active", "color": "#16a34a"},
+            }
+            for n in range(150)
+        ]
+        body = rep.table_html(rows, cols)
+        self.assertIn("width:", body.split("</thead>")[0])
+        html = rep.report_html(
+            title="t",
+            tenant="t",
+            generated=timezone.now(),
+            paper="a4",
+            orientation="landscape",
+            body=body,
+        )
+        self.assertIn("table-layout:fixed", html)
+        rep.render_report_pdf(b"", html="<p>warm</p>")
+        start = time.perf_counter()
+        pdf = rep.render_report_pdf(b"", html=html)
+        took = time.perf_counter() - start
+        self.assertTrue(pdf.startswith(b"%PDF-"))
+        # Generous: a loaded test box is slower than the calibration box.
+        self.assertLess(took, rep.estimate_seconds(body.count("<td")) * 2)

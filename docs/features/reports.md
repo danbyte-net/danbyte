@@ -34,6 +34,11 @@ page. You pick what goes in it.
   badge.
 - **One page per object** - after the table, a page for each object with
   the sections you tick. A single object always gets its page.
+- **Show IPs** (prefixes) - each prefix in the table is followed by a small
+  table of its IP addresses: address, status and role badges, DNS name and
+  what it is assigned to. They are read like the IP list, so only the
+  addresses you may view are shown, and they count towards the row limits.
+  The per-object *IP addresses* section is separate.
 - **Sections** - each with its own column picker:
 
 | Type | Sections |
@@ -69,10 +74,20 @@ A report reads exactly what the lists show you:
 | Rows in one section of one object | 500 (the report notes the rest) |
 | Rows in all sections together | 20,000 |
 | Columns in one table | 40 |
+| Table cells in one report | about 12,800 (pages per object lower it) |
 
 The PDF is made under the drawing PDFs' limits: one at a time per user, a few
-across the server, and a 30-second render deadline; a report that takes
-longer is refused - leave out sections or pages per object.
+across the server, and a 30-second render deadline. Rendering costs about
+1.5 ms per table cell and 60 ms per object page, so before it renders a
+report is estimated from its cells (rows times columns, Show IPs and
+section tables included) and pages per object. One that would not finish in
+about 70% of the deadline is refused at once (400) with what fits: how many
+rows with these columns, how many columns for these rows, or to leave out
+pages per object or Show IPs. For example, 2,000 IP addresses fit with six
+list columns but not with the default nine; about 1,400 fit with nine.
+
+A report that still runs past the deadline on a busy server is stopped and
+answered with 503; try again later or with fewer rows or columns.
 
 ## API
 
@@ -80,7 +95,9 @@ longer is refused - leave out sections or pages per object.
 describe what a report can hold for the caller: `columns` and
 `default_columns` (the list's column catalog, custom fields as `cf.<key>`),
 `group_by`, `sections` (each `key`, `label`, `kind`, `available`, `note`,
-`columns`, `default_columns`, `default`, `last`) and `limits`.
+`columns`, `default_columns`, `default`, `last`), `show_ips` (prefixes, with
+view on IP addresses) and `limits` (`cells` is the estimate's table-cell
+budget).
 
 `POST` to the same path makes the PDF:
 
@@ -101,6 +118,7 @@ describe what a report can hold for the caller: `columns` and
     "include_summary": true,
     "list_table": true,
     "per_object": false,
+    "show_ips": false,
     "last": 20
   }
 }
@@ -113,11 +131,14 @@ describe what a report can hold for the caller: `columns` and
   from `columns` uses its defaults.
 - `options.list_table` and `options.per_object` default to a table for many
   objects and a page for one.
+- `options.show_ips` (prefixes) - each list row followed by its IP addresses.
 
 The answer is the PDF as an attachment, or with `?print=1` `{url}`: a link
 to it for five minutes, for the same user and tenant
 (`GET /api/<type>/report/file/<token>/`, `?download=1` to save it). A 400
-names the limit it hit; a 403 means no view on the type.
+names the limit it hit, or what fits when the report is too large to render
+in time; a 403 means no view on the type; a 503 means the render ran past
+its deadline.
 
 ```bash
 curl -H "Authorization: Token $TOKEN" -H "Content-Type: application/json" \
