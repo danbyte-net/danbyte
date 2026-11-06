@@ -545,7 +545,7 @@ pre-0.17 tables, with the same rules, until its next poll.
 
 ### Ghost cables on the topology map
 
-LLDP also feeds the **topology map** (`/topology`). Real cables render as solid
+LLDP also feeds the **topology map** (`/topology/map`). Real cables render as solid
 edges; where two devices are LLDP-adjacent but **have no cable in Danbyte**, a
 dashed **ghost** edge appears (and a "N LLDP links" chip in the header). LLDP
 neighbours are matched to devices by name *or* observed `sysName`, so links show

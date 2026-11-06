@@ -4,7 +4,9 @@ icon: lucide/share-2
 
 # Topology {#topology-map}
 
-**Maps → Topology** draws your network four ways, switched by the
+**Maps → Topology** opens the [list of saved views](#topology-views-list);
+**Open map** there, or a view's name, opens the map at `/topology/map`.
+The map draws your network four ways, switched by the
 **Diagram / Hierarchy / Logical / Routing** tabs in the header:
 
 - **Diagram** (default) - a clean, printable network diagram: one solid
@@ -1631,6 +1633,27 @@ connects on their touching edges, uplinks sit on top and downlinks on the
 bottom, and cables never wrap around a card. Port strips size to their own
 counts.
 
+## Topology views list {#topology-views-list}
+
+**Maps → Topology** (`/topology`) lists the tenant's saved views:
+
+| Column | |
+|---|---|
+| View | The name, which opens the view on the map, and a **Default** badge on the [default view](#default-view) |
+| Created by, Updated by | From the change log: who saved it first and who saved it last (blank for a view the log has no entry for) |
+| Updated | When it was last saved |
+
+**Open map** opens the map with the default view. The search box matches
+the name and the people. Tick views for the bulk bar:
+
+- **PDF report…** - a [topology report](reports.md#topology-report) of the
+  selected views: one PDF with a chapter per view, or a ZIP of one PDF a
+  view. Each view is drawn as it is saved, one after another, in a hidden
+  copy of the map page in this tab (*Drawing 2 of 5…*), then the server
+  makes the report. Up to 20 views.
+- **Delete** - asks first, like every bulk delete; needs the delete
+  permission on topology views. Deleting the default view clears it.
+
 ## Saved views
 
 Drag cards where you want them, then **Save as…** - a saved view stores,
@@ -1722,9 +1745,10 @@ for everyone in the tenant: **Set as default** on a view, **Clear default**
 on the one that is. The select marks it with a **Default** pill; setting it
 reports *Default: "name"*, clearing it *Default cleared*.
 
-- **Topology** from the sidebar - a bare `/topology` - opens the default
-  view as last saved, with its own tab and Diagram mode. The address becomes
-  `?view=<id>` in place, so Back leaves the page.
+- **Open map** on the [Topology page](#topology-views-list) - a bare
+  `/topology/map` - opens the default view as last saved, with its own tab
+  and Diagram mode. The address becomes `?view=<id>` in place, so Back
+  leaves the page. The list marks the default view with a **Default** badge.
 - Links keep what they show. A link naming a view opens that view, and a
   link from a site, location, cable or device page - any address with other
   parameters - opens No view with them. Such an address gains `view=none`
@@ -1815,9 +1839,12 @@ back button and a reload all keep it.
 | `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
 | `vrf` | Routing view: the table drawn - `global` or a VRF id (the view's, else every table, by default) |
 
-A setting on its default is left out, so a link stays short. A bare
-`/topology` opens the tenant's [default view](#default-view), or No view
-when there is none. A value the page doesn't recognise reads as the
+These are parameters of the map's address, `/topology/map`. A setting on
+its default is left out, so a link stays short. A bare `/topology/map`
+opens the tenant's [default view](#default-view), or No view when there is
+none. A link from before the map moved - `/topology?view=…`,
+`/topology?site=…`, any `/topology` address with a map parameter - still
+works: it goes on to `/topology/map` with every parameter it had. A value the page doesn't recognise reads as the
 setting's default rather than breaking the page.
 Grouping by site while scoped to one site *is* that site's device view, so
 `?group=site&site=<id>` is the drill-in - the same link the breadcrumb gives
@@ -1847,6 +1874,11 @@ titled *Routing topology*.
 | **SVG** | A vector drawing: cards, lines and text, each card and cable a link back to Danbyte | Inkscape or Illustrator, documentation |
 | **PDF** | The map on one sheet of paper, fitted to the page, with a title block | Printing, a change record, a handover pack |
 | **draw.io** | An editable `.drawio` file (see [draw.io](#drawio) below) | A diagram you keep editing in draw.io |
+
+**PDF report…** opens the [topology report](reports.md#topology-report)
+for the map as drawn: the same diagram as **PDF**, with a cover, a contents
+page and tables of the devices on the map, their IP addresses and the
+cables between them.
 
 **Print** makes the same PDF and opens it in a new tab, where the browser's
 PDF viewer prints it. The page is already the paper's size, so print it at
@@ -2535,11 +2567,16 @@ and the query count doesn't grow with the number of devices.
 `/api/topology-views/` is a CRUD endpoint, gated by the `topologyview`
 view, add, change and delete permissions. `GET /api/topology-views/?picker=1`
 lists `{id, numid, name, updated_at}` only, without `state`, for the views
-select; one view's state can run to megabytes. `GET` of a view that is gone,
-or another tenant's, is a 404.
+select; one view's state can run to megabytes. `GET /api/topology-views/?summary=1`
+is the [views list](#topology-views-list)'s shape: also without `state`,
+with `created_at`, `created_by` and `updated_by` (user names from the change
+log, `""` when it has none) and `is_default`. `POST
+/api/topology-views/bulk-delete/` with `{"ids": [...]}` deletes several, with
+the usual dry run. `GET` of a view that is gone, or another tenant's, is a
+404.
 
 **Default view.** `GET /api/topology-views/default/` returns `{"id": ...}`,
-the view a bare `/topology` opens for the tenant, or `null` for No view. It
+the view a bare `/topology/map` opens for the tenant, or `null` for No view. It
 needs view on topology views, as does `PUT`, and a default the caller can't
 see (row limits) reads as `null`. `PUT` with `{"id": "<view id>"}` sets it and `{"id": null}`
 clears it. It is allowed for superusers and tenant admins, and for anyone with

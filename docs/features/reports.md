@@ -8,7 +8,8 @@ A **PDF report** prints devices, prefixes or IP addresses as clean tables,
 in the [floor plan report](floor-plans.md#the-report)'s style: statuses,
 roles and tags as square badges in their own colours, a table header that
 repeats on every page, and the tenant, the date and the page number on each
-page. You pick what goes in it.
+page. You pick what goes in it. The [topology report](#topology-report)
+adds the topology diagram to the tables of what is on it.
 
 ## Where to start one
 
@@ -17,6 +18,8 @@ page. You pick what goes in it.
 | A device, prefix or IP address page | **PDF report…** in the page actions | That object, with the sections you tick |
 | The Devices, Prefixes or IP addresses list | **Import / Export ▸ PDF report…** | Every row the list shows now (its search and filters) |
 | The same lists, rows selected | **Export ▸ PDF report…** in the bulk bar | The selected rows |
+| The topology map | **Export ▸ PDF report…** | The view on the map - see [Topology report](#topology-report) |
+| **Topology**, views selected | **PDF report…** in the bulk bar | Each selected saved view |
 
 **Print** opens the PDF in a new tab for the browser to print;
 **Download** saves it. A large report renders in the background: the button
@@ -142,6 +145,91 @@ folder, so it is never served without a session; only tenant admins can
 upload, view or remove it. Removing it while the background is **Your
 upload** sets the background back to **Waves**.
 
+## Topology report
+
+A topology report puts a topology view on paper with the tables that
+explain it:
+
+- an optional [cover](#cover-page) and a [contents page](#contents-page);
+- the **Diagram**: the map exactly as **Export ▸ PDF** draws it, on a page
+  of its own, fitted to the paper, landscape, with the same title block;
+- **Devices**: the devices on the map - name, role, type, site, primary IP
+  and status by default, any column of the Devices list;
+- **IP addresses**: the addresses assigned to those devices;
+- **Cabling**: the cables between them - label, both ends with their
+  ports, type, length and status.
+
+Statuses and roles print as their badges. Untick a section to leave it out,
+and pick its columns as for the other reports.
+
+**From the map:** **Export ▸ PDF report…** reports on the map as it is
+drawn - the current view, edited or not, or No view. Hidden cards are not
+drawn, so they are not in the tables either. The Export menu's **Title and
+legend** choice is the diagram's title block here too.
+
+**From the Topology page:** select saved views and click **PDF report…**.
+Each view is drawn in turn as it is saved (the button reads *Drawing 2 of
+5…*), then the report is made. **Output** picks **One PDF**, with a
+[chapter](#chapters-and-contents) per view, or a **ZIP of PDFs**, one PDF
+a view. **Print** is for one PDF only. A report holds at most 20 views.
+
+How the views are drawn: each one opens in the real map page in a hidden
+frame of this browser tab, which loads the view, lays it out and draws it
+the way **Export ▸ PDF** does, then hands the drawing back. So a report
+looks like the map, but takes about as long per view as opening it. The
+server never draws a map.
+
+The diagram page and the PDF export are the same code on both sides: the
+browser makes the drawing with one function, and the server lays it out
+on paper with one function, so a change to the PDF export changes the
+report's diagram too.
+
+## Chapters and contents
+
+Long reports are split into **chapters**. A report of several topology
+views has one chapter per view, each opening with a **divider page**: a
+banner across the top third in the cover's background (the tenant's waves
+or colour), the chapter's number and title on it, and below it the
+view's filters and what the chapter holds. A report of one view makes each
+section a chapter, opening with a short **banner** at the top of its first
+page instead, so it does not cost a page.
+
+### Contents page
+
+A report with two or more chapters gets a **contents page** after the
+cover: the chapters and their sections with their page numbers. The page
+numbers are filled in when the PDF is laid out, so they always match. The
+chapters and sections are also the PDF's **bookmarks**, for the viewer's
+sidebar.
+
+## Markings
+
+A report can carry a **marking**: a short label such as *Internal* or
+*Confidential* in its own colour, with an optional icon. When it has one,
+the marking prints as a square badge at the top and the bottom of every
+page, on the cover and on the chapter dividers. Reports have none yet: the
+labels and how they are picked come with the label catalog.
+
+## The report framework
+
+Every report above is laid out by one framework, `api/reports/`, so they
+share their look and their limits:
+
+| Part | What it does |
+|---|---|
+| `engine.py` | The document: paper size, margins, the running header (the tenant, top right) and footer (title, date and Danbyte version, bottom left; *Page n / N*, bottom right), the shared CSS, and `ReportContext`, what every page of a report shares |
+| `blocks.py` | Tables with a header that repeats, rows that never split, band rows, key/value tables; square badges; utilisation bars; photo figures |
+| `cover.py` | The [cover page](#cover-page) in the tenant's look |
+| `divider.py` | [Chapter](#chapters-and-contents) divider pages and banners, in the cover's background |
+| `toc.py` | The [contents page](#contents-page) and the PDF bookmarks |
+| `marking.py` | The [marking](#markings) every page band, the cover and the dividers show |
+| `registry.py` | Report **kinds** (the device, prefix, IP address and topology reports) and their **sections** as plug-ins: each section registers its key, label, the object types it needs view on, its columns and how it is built |
+
+Sections read their rows only through the list endpoints, as you, so a
+report never shows more than the lists do. The floor plan report, cable
+schedule, spec sheets, rack and cabinet PDFs, SLA reports and labels still
+lay out their own pages; they move onto the framework one at a time.
+
 ## Who sees what
 
 A report reads exactly what the lists show you:
@@ -154,6 +242,11 @@ A report reads exactly what the lists show you:
   note. Its rows are the rows its list would show you; a column the list
   shows (an interface's cable peer, say) prints as the list shows it.
 - Nothing is written: a report is not recorded in the change log.
+- A topology report's devices are the ones the drawing shows, read through
+  the Devices list as you; a device you may not view is dropped and never
+  named, and so are its addresses and cables. A saved view you may not view
+  is dropped from a bulk report. It needs view on devices, like the PDF
+  export.
 
 ## Limits
 
@@ -186,6 +279,10 @@ section tables included) and its objects with details:
 
 For example, 48 prefixes with every detail section and Show IPs (about 14,200
 cells) render in the background in about half a minute.
+
+A topology report is estimated the same way, with each diagram page at
+about 0.4 s and each divider and cover at about 60 ms. It renders in the
+background past the same budget.
 
 A report that still runs past its deadline on a busy server is stopped (503,
 or a failed background report); try again later or with fewer rows or
@@ -272,3 +369,56 @@ curl -H "Authorization: Token $TOKEN" -H "Content-Type: application/json" \
   -d '{"filters": {"site": "…"}, "options": {"include_summary": true}}' \
   -o devices.pdf https://danbyte.example/api/devices/report/
 ```
+
+### Topology report API
+
+`GET /api/topology/report/` describes the report for the caller in the same
+shape as the object reports (`type` is `topology`; `sections` are
+`diagram`, `devices`, `ip_addresses` and `cables`, each with its columns;
+`limits.objects` is the most views). It needs view on devices.
+
+`POST /api/topology/report/` makes it:
+
+```json
+{
+  "views": [
+    {
+      "view": "…saved view id, or null…",
+      "title": "DC1 fabric",
+      "filters": "Site DC1",
+      "svg": "<svg …>…</svg>",
+      "device_ids": ["…", "…"]
+    }
+  ],
+  "sections": ["diagram", "devices", "ip_addresses", "cables"],
+  "columns": {"devices": ["name", "role", "device_type", "site", "primary_ip", "status"]},
+  "options": {
+    "title": "Core network",
+    "paper": "a4",
+    "orientation": "portrait",
+    "diagram_orientation": "landscape",
+    "title_block": true,
+    "toc": null,
+    "dividers": "auto",
+    "output": "pdf",
+    "cover": true
+  }
+}
+```
+
+- `views` - 1 to 20. Each is a drawing as `POST /api/topology/export/pdf/`
+  takes it (`svg`, sanitised the same way, with the same caps), its
+  title-block `title` and `filters`, and the `device_ids` it shows (at most
+  2,000). `view` names the saved view; one the caller may not view is
+  dropped, and a blank `title` takes the view's name.
+- `options.toc` - `null` (default): a contents page with two or more
+  chapters; `true` or `false` to force it.
+- `options.dividers` - `auto` (default: full divider pages for several
+  views, banners for one), `full` or `compact`.
+- `options.output` - `pdf` (default) or `zip`: one PDF per view, in a ZIP.
+- The cover options are the object reports'.
+
+The answer, the print link (`GET /api/topology/report/<token>/`), the
+background job (`/api/topology/report/job/<token>/` and its `file/`) and
+`?estimate=1` (`svg` may be blank) work as for the object reports; a ZIP is
+`application/zip`.
