@@ -93,6 +93,7 @@ from .drawing_pdf import (
 )
 from .field_labels import humanize
 from .floor_plan_report import _pill, _plural
+from .report_cover import BACKGROUND_CHOICES, cover_css, cover_for_request, look_for
 
 log = logging.getLogger(__name__)
 
@@ -886,6 +887,19 @@ class ObjectReportOptionsSerializer(serializers.Serializer):
     last = serializers.IntegerField(
         required=False, min_value=1, max_value=MAX_LAST, default=DEFAULT_LAST
     )
+    cover = serializers.BooleanField(required=False, default=False)
+    cover_title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    cover_subtitle = serializers.CharField(
+        max_length=300,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Blank for none; absent or null for the generated one.",
+    )
+    cover_project = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    cover_background = serializers.ChoiceField(
+        choices=BACKGROUND_CHOICES, required=False, default="default"
+    )
 
 
 def _filters(value):
@@ -1500,14 +1514,27 @@ def _css_str(text: str) -> str:
     return text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
 
 
-def report_html(
-    *, title: str, tenant: str, generated, paper: str, orientation: str, body: str
-) -> str:
-    from danbyte import __version__
-
+def page_size(paper: str, orientation: str) -> tuple[float, float]:
+    """``(width, height)`` of the sheet in mm."""
     pw, ph = PAPERS_MM[paper]
     if orientation == "portrait":
         pw, ph = ph, pw
+    return pw, ph
+
+
+def report_html(
+    *,
+    title: str,
+    tenant: str,
+    generated,
+    paper: str,
+    orientation: str,
+    body: str,
+    cover: str = "",
+) -> str:
+    from danbyte import __version__
+
+    pw, ph = page_size(paper, orientation)
     mm = lambda v: f"{v:.3f}mm"  # noqa: E731
     running = f"{title} · {stamp(generated)} · Danbyte {__version__}"
     font = "font-family:Inter,'DejaVu Sans',sans-serif;font-size:6.5pt;color:#71717a"
@@ -1582,8 +1609,9 @@ def report_html(
         ".photos figure{display:inline-block;margin:0 6mm 0 0;vertical-align:top}"
         ".photos img{max-width:110mm;max-height:45mm;border:0.2mm solid #d4d4d8}"
         ".photos figcaption{color:#71717a;font-size:6.5pt;margin-top:0.8mm}"
+        f"{cover_css(pw, ph) if cover else ''}"
         "</style></head><body>"
-        f"{body}"
+        f"{cover}{body}"
         "</body></html>"
     )
 
@@ -1655,6 +1683,7 @@ def describe(request, rt: ReportType) -> Response:
             "sections": sections,
             "papers": list(PAPERS),
             "show_ips": rt is PREFIX and _can_view_ips(ctx),
+            "cover": _cover_info(tenant),
             "limits": {
                 "objects": MAX_OBJECTS,
                 "object_pages": MAX_OBJECT_PAGES,
@@ -1667,6 +1696,18 @@ def describe(request, rt: ReportType) -> Response:
             },
         }
     )
+
+
+def _cover_info(tenant) -> dict:
+    """What the dialog needs for the cover: the tenant's name (the
+    project line's default), whether it has an uploaded image, and its
+    background."""
+    look = look_for(tenant)
+    return {
+        "project": tenant.name,
+        "upload": bool(look.image),
+        "background": look.style,
+    }
 
 
 def _print_key(slug, user_id, tenant_id) -> str:
@@ -1702,11 +1743,16 @@ def cells_that_fit(pages: int = 0, budget: float | None = None) -> int:
     return max(0, int(left / SECONDS_PER_CELL))
 
 
+def _pages(shape: dict) -> int:
+    """Pages the estimate counts: the objects with details, and the cover."""
+    return shape["pages"] + (1 if shape.get("cover") else 0)
+
+
 def estimate(body: str, shape: dict) -> dict:
     """What rendering ``body`` costs, and where: ``now`` in the request,
     ``background`` as a job, or ``too_large`` for either."""
     cells = body.count("<td")
-    pages = shape["pages"]
+    pages = _pages(shape)
     seconds = estimate_seconds(cells, pages)
     if seconds <= RENDER_BUDGET:
         mode = "now"
@@ -1732,7 +1778,7 @@ def too_slow(body: str, shape: dict, budget: float | None = None) -> Response | 
     fits; None when it would."""
     budget = job_budget() if budget is None else budget
     cells = body.count("<td")
-    pages = shape["pages"]
+    pages = _pages(shape)
     if estimate_seconds(cells, pages) <= budget:
         return None
     fit = cells_that_fit(pages, budget)
@@ -1744,7 +1790,7 @@ def too_slow(body: str, shape: dict, budget: float | None = None) -> Response | 
         hints.append(f"at most {room // cols:,} rows with these {cols} columns")
         if room // rows:
             hints.append(f"at most {room // rows} columns for these {rows:,} rows")
-    if pages:
+    if shape["pages"]:
         drop.append("the details for each object or some of their sections")
     if shape.get("show_ips"):
         drop.append("Show IPs")
@@ -1801,6 +1847,9 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str,
     title = _title(rt, rows, options, many)
     budget = Budget(MAX_TOTAL_ROWS)
     shape = {"rows": len(rows), "list_columns": 0, "pages": len(rows) if per_object else 0}
+    if options.get("cover"):
+        shape["cover"] = True
+        shape["subtitle"] = _cover_subtitle(rt, rows, cat, options, many, list_table)
     facts = [("Tenant", tenant.name), ("Generated", stamp(timezone.now()))]
     if many:
         facts += [
@@ -1855,6 +1904,18 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str,
     return title, "".join(body), shape
 
 
+def _cover_subtitle(rt, rows, cat, options, many: bool, list_table: bool) -> str:
+    """The cover's generated subtitle: *48 prefixes · Group by VRF*, or the
+    type for one object."""
+    if not many:
+        return rt.label
+    out = _plural(len(rows), rt.label.lower(), rt.plural.lower())
+    group = cat.get(options.get("group_by") or "")
+    if list_table and group is not None and group.key in rt.groups:
+        out += f" · Group by {group.label}"
+    return out
+
+
 def _validated(rt: ReportType, raw) -> dict:
     """The request body, checked."""
     ser = ObjectReportRequestSerializer(data=raw, context={"type": rt})
@@ -1866,13 +1927,40 @@ def _validated(rt: ReportType, raw) -> dict:
     return data
 
 
-def _page_html(rt: ReportType, data: dict, tenant, title: str, body: str):
-    """``(html, generated)``: the whole page around ``body``."""
+def _page_html(
+    rt: ReportType,
+    data: dict,
+    tenant,
+    title: str,
+    body: str,
+    *,
+    request=None,
+    shape: dict | None = None,
+):
+    """``(html, generated)``: the whole page around ``body``, after its
+    cover when the options ask for one."""
     opts = data["options"]
     paper = opts.get("paper") or "a4"
     many_cols = len((data.get("columns") or {}).get("list") or rt.list_columns) > 8
     orientation = opts.get("orientation") or ("landscape" if many_cols else "portrait")
     generated = timezone.now()
+    cover = ""
+    if opts.get("cover"):
+        pw, ph = page_size(paper, orientation)
+        subtitle = opts.get("cover_subtitle")
+        if subtitle is None:
+            subtitle = (shape or {}).get("subtitle", "")
+        cover = cover_for_request(
+            request,
+            tenant,
+            title=(opts.get("cover_title") or "").strip() or title,
+            pw=pw,
+            ph=ph,
+            project=(opts.get("cover_project") or "").strip(),
+            subtitle=subtitle.strip(),
+            background=opts.get("cover_background") or "default",
+            when=generated,
+        )
     html = report_html(
         title=title,
         tenant=tenant.name,
@@ -1880,6 +1968,7 @@ def _page_html(rt: ReportType, data: dict, tenant, title: str, body: str):
         paper=paper,
         orientation=orientation,
         body=body,
+        cover=cover,
     )
     return html, generated
 
@@ -1940,7 +2029,7 @@ def export(request, rt: ReportType):
         return too_slow(body, shape)
     if cost["mode"] == "background":
         return start_job(request, rt, tenant, data, cost["seconds"])
-    html, generated = _page_html(rt, data, tenant, title, body)
+    html, generated = _page_html(rt, data, tenant, title, body, request=request, shape=shape)
 
     def render(_svg: bytes) -> bytes:
         return render_with_deadline(html=html)
@@ -2174,7 +2263,9 @@ def run_report_job(token, slug, user_id, tenant_id, auth_id, host, secure, raw) 
             return fail("Other PDFs are being made. Try again in a few minutes.")
         try:
             _job_update(token, state="running", started=time.time())
-            html, generated = _page_html(rt, data, tenant, title, body)
+            html, generated = _page_html(
+                rt, data, tenant, title, body, request=request, shape=shape
+            )
             pdf = render_with_deadline(html=html, timeout=job_timeout())
         finally:
             for lock in locks:

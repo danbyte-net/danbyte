@@ -10696,9 +10696,23 @@ export interface TenantSettings {
   cable_service_loop_mm: number
   cable_length_step_mm: number
   cable_standalone_height_mm: number
+  /** The PDF report cover's look (api/report_cover.py): its full-page
+   * background and the wave background's horizon, wave and crest colours
+   * (a plain background is the horizon colour). The image itself goes
+   * through /api/tenant-settings/report-cover/. */
+  report_cover_style: ReportCoverStyle
+  report_cover_horizon: string
+  report_cover_wave: string
+  report_cover_crest: string
+  report_cover_image_set: boolean
+  report_cover_image_type: string
   updated_at: string
   deployment_defaults: TenantSettingsDefaults
 }
+
+export type ReportCoverStyle = "waves" | "plain" | "upload" | "none"
+/** A report's background: `default` is the tenant's. */
+export type ReportCoverBackground = "default" | ReportCoverStyle
 
 // ─── LDAP / Active Directory (admin) ────────────────────────────────────────
 export type LdapGroupType = "ad" | "group_of_names" | "posix"
@@ -17154,6 +17168,13 @@ export interface ObjectReportSchema {
   papers: string[]
   /** The list can show each prefix's IP addresses (`options.show_ips`). */
   show_ips?: boolean
+  /** The cover page: the tenant's name (the project line's default), whether
+   * it has an uploaded image, and its default background. */
+  cover?: {
+    project: string
+    upload: boolean
+    background: ReportCoverStyle
+  }
   limits: {
     objects: number
     object_pages: number
@@ -17171,7 +17192,7 @@ export interface ObjectReportSchema {
 /** `POST /api/<type>/report/?estimate=1`: what the report would cost. */
 export interface ObjectReportEstimate {
   cells: number
-  /** Objects with details. */
+  /** Objects with details, and the cover page. */
   pages: number
   seconds: number
   mode: "now" | "background" | "too_large"
@@ -17214,5 +17235,12 @@ export interface ObjectReportRequest {
     /** Prefixes: each list row followed by its IP addresses. */
     show_ips?: boolean
     last?: number
+    /** A cover page before the report (api/report_cover.py). */
+    cover?: boolean
+    cover_title?: string
+    /** Blank for none; absent for the generated one. */
+    cover_subtitle?: string
+    cover_project?: string
+    cover_background?: ReportCoverBackground
   }
 }

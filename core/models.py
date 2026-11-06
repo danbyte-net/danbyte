@@ -1280,6 +1280,41 @@ class TenantSettings(TimestampedModel):
     # never pops up again for this tenant.
     onboarding_dismissed = models.BooleanField(default=False)
 
+    # ─── report cover page (api/report_cover.py) ───────────────────────────
+    # The look of every PDF report's cover in this tenant. The uploaded
+    # image is kept in the row, not under /media/: media is served without
+    # a session, and an upload may be an SVG (sanitised, but still never
+    # served from the app's origin).
+    COVER_STYLE_CHOICES = [
+        ("waves", "Waves"),
+        ("plain", "Plain colour"),
+        ("upload", "Your upload"),
+        ("none", "None"),
+    ]
+    report_cover_style = models.CharField(
+        max_length=10, choices=COVER_STYLE_CHOICES, default="waves", db_default="waves",
+        help_text="The full-page background behind the cover's text.",
+    )
+    report_cover_horizon = models.CharField(
+        max_length=7, default="#063d66", db_default="#063d66",
+        help_text="The darkest colour of the waves; the plain background's colour.",
+    )
+    report_cover_wave = models.CharField(
+        max_length=7, default="#0b6fb0", db_default="#0b6fb0",
+        help_text="The waves' mid tones.",
+    )
+    report_cover_crest = models.CharField(
+        max_length=7, default="#ffffff", db_default="#ffffff",
+        help_text="The light the crests catch.",
+    )
+    report_cover_image = models.BinaryField(
+        blank=True, default=b"", db_default=b"", editable=False,
+        help_text="The uploaded cover image: PNG, JPEG or sanitised SVG.",
+    )
+    report_cover_image_type = models.CharField(
+        max_length=20, blank=True, default="", db_default="", editable=False,
+    )
+
     class Meta:
         verbose_name = "tenant settings"
         verbose_name_plural = "tenant settings"

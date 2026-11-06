@@ -94,7 +94,7 @@ SLOT_KEY = "topology-pdf-slot:{}"
 log = logging.getLogger(__name__)
 
 FONT_DIR = Path(__file__).resolve().parent / "pdf_fonts"
-FONT_WEIGHTS = (400, 500, 600, 700)
+FONT_WEIGHTS = (400, 500, 600, 700, 800)
 # From @fontsource-variable/inter's @font-face rules.
 FONT_RANGES = {
     "latin": (

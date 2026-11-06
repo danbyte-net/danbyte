@@ -22,6 +22,8 @@ import { BulkExport } from "./bulk-export"
 import {
   ObjectReportButton,
   ObjectReportDialog,
+  coverBackgroundItems,
+  coverSubtitle,
   estimateLine,
   initialPrefs,
   readReportPrefs,
@@ -456,6 +458,123 @@ describe("details for each object", () => {
     )
     await screen.findByRole("checkbox", {
       name: "Details for each IP address",
+    })
+  })
+})
+
+describe("cover page", () => {
+  const COVERED: ObjectReportSchema = {
+    ...SCHEMA,
+    cover: { project: "Acme", upload: true, background: "waves" },
+  }
+
+  it("sends nothing about a cover until it is ticked", () => {
+    const body = reportRequest(many, initialPrefs(SCHEMA, null), SCHEMA, "")
+    expect(body.options?.cover).toBeUndefined()
+  })
+
+  it("sends the cover's text and image when ticked", () => {
+    const prefs = {
+      ...initialPrefs(COVERED, null),
+      cover: true,
+      coverProject: " Falcon ",
+      coverBackground: "upload" as const,
+    }
+    expect(reportRequest(many, prefs, COVERED, "").options).toMatchObject({
+      cover: true,
+      cover_project: "Falcon",
+      cover_background: "upload",
+    })
+    const body = reportRequest(many, prefs, COVERED, "", {
+      title: "Q4",
+      subtitle: "",
+    })
+    expect(body.options).toMatchObject({
+      cover_title: "Q4",
+      cover_subtitle: "",
+    })
+    // Untouched, the subtitle is the server's to generate.
+    expect(
+      reportRequest(many, prefs, COVERED, "").options?.cover_subtitle
+    ).toBeUndefined()
+  })
+
+  it("offers the upload only when there is one", () => {
+    expect(coverBackgroundItems(COVERED).map((i) => i.label)).toEqual([
+      "Default",
+      "Plain colour",
+      "Your upload",
+      "None",
+    ])
+    expect(
+      coverBackgroundItems({
+        ...COVERED,
+        cover: { project: "Acme", upload: false, background: "waves" },
+      }).map((i) => i.label)
+    ).toEqual(["Default", "Plain colour", "None"])
+    expect(
+      coverBackgroundItems({
+        ...COVERED,
+        cover: { project: "Acme", upload: true, background: "upload" },
+      }).map((i) => i.label)
+    ).toEqual(["Default", "Waves", "Plain colour", "None"])
+    // A remembered upload that is gone falls back to the default.
+    const prefs = initialPrefs(
+      {
+        ...COVERED,
+        cover: { project: "A", upload: false, background: "waves" },
+      },
+      { cover: true, coverBackground: "upload" }
+    )
+    expect(prefs.coverBackground).toBe("default")
+    expect(prefs.cover).toBe(true)
+  })
+
+  it("generates the subtitle from the count and grouping", () => {
+    const prefs = { ...initialPrefs(SCHEMA, null), groupBy: "site" }
+    expect(coverSubtitle(many, prefs, SCHEMA)).toBe("3 devices · Group by Site")
+    expect(coverSubtitle({ ids: ["d1"], scope: "one" }, prefs, SCHEMA)).toBe(
+      "Device"
+    )
+  })
+
+  it("is a tick that is remembered per type", async () => {
+    apiMock.mockImplementation((path, init) => {
+      if (path.includes("estimate=1")) return answerEstimate(init)
+      if (init?.method === "POST") {
+        posted.push({
+          path,
+          body: JSON.parse(String(init.body)) as ObjectReportRequest,
+        })
+        return Promise.resolve({ url: "/api/devices/report/file/tok/" })
+      }
+      return Promise.resolve(COVERED)
+    })
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    const box = await screen.findByRole("checkbox", {
+      name: "Include cover page",
+    })
+    expect(screen.queryByText("Cover title")).toBeNull()
+    fireEvent.click(box)
+    expect(screen.getByText("Cover title")).toBeTruthy()
+    expect(screen.getByDisplayValue("3 devices")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Your upload" }))
+    fireEvent.click(downloadButton())
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].body.options).toMatchObject({
+      cover: true,
+      cover_background: "upload",
+    })
+    expect(readReportPrefs("device")).toMatchObject({
+      cover: true,
+      coverBackground: "upload",
     })
   })
 })
