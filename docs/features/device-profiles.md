@@ -59,7 +59,7 @@ each item naming the profile it comes from.
 
 ## The screens
 
-**DCIM → Devices → Device profiles**, after Application groups, lists the
+**DCIM → Devices → Device profiles**, after Device roles, lists the
 profiles: the name as the profile's colour badge, the **Parent** (the chain
 above it, the parent itself a link), **Applies to**, the number of
 **Application groups**, how many objects it is **Assigned** to, and tags.

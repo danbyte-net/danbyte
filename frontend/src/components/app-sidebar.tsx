@@ -57,6 +57,7 @@ import {
   MonitorSmartphone,
   MoreHorizontal,
   Network,
+  Package,
   Plus,
   Printer,
   Puzzle,
@@ -663,6 +664,29 @@ export const sections: NavSection[] = [
             objectType: "virtualchassis",
           },
           {
+            title: "Device roles",
+            url: "/device-roles",
+            icon: Tag,
+            objectType: "devicerole",
+          },
+          {
+            title: "Device profiles",
+            url: "/device-profiles",
+            icon: Layers3,
+            objectType: "deviceprofile",
+          },
+        ],
+      },
+      {
+        label: "Catalog",
+        items: [
+          {
+            title: "Manufacturers",
+            url: "/manufacturers",
+            icon: Factory,
+            objectType: "manufacturer",
+          },
+          {
             title: "Device types",
             url: "/device-types",
             icon: ArrowDownUp,
@@ -673,12 +697,6 @@ export const sections: NavSection[] = [
             url: "/module-types",
             icon: ArrowDownUp,
             objectType: "moduletype",
-          },
-          {
-            title: "Device roles",
-            url: "/device-roles",
-            icon: Tag,
-            objectType: "devicerole",
           },
           {
             title: "Platforms",
@@ -692,52 +710,10 @@ export const sections: NavSection[] = [
             icon: Layers,
             objectType: "platformgroup",
           },
-          {
-            title: "Applications",
-            url: "/applications",
-            icon: AppWindow,
-            objectType: "application",
-          },
-          {
-            title: "Application groups",
-            url: "/application-groups",
-            icon: LayoutGrid,
-            objectType: "applicationgroup",
-          },
-          {
-            title: "Device profiles",
-            url: "/device-profiles",
-            icon: Layers3,
-            objectType: "deviceprofile",
-          },
-          {
-            title: "Manufacturers",
-            url: "/manufacturers",
-            icon: Factory,
-            objectType: "manufacturer",
-          },
-          {
-            title: "Support contracts",
-            url: "/support-contracts",
-            icon: ShieldCheck,
-            objectType: "supportcontract",
-          },
-          {
-            title: "Lifecycle",
-            url: "/lifecycle",
-            icon: CalendarClock,
-            anyOf: ["device", "virtualmachine"],
-          },
-          {
-            title: "End-of-life products",
-            url: "/eol-products",
-            icon: CalendarX,
-            objectType: "eolproduct",
-          },
         ],
       },
       {
-        label: "Racks",
+        label: "Racks & cabinets",
         items: [
           {
             title: "Racks",
@@ -803,6 +779,49 @@ export const sections: NavSection[] = [
             url: "/port-utilization",
             icon: Gauge,
             objectType: "device",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Software, support and end-of-life cover virtual machines as well as
+    // devices, so they sit beside DCIM rather than inside it.
+    id: "software",
+    label: "Software & lifecycle",
+    icon: Package,
+    clusters: [
+      {
+        items: [
+          {
+            title: "Applications",
+            url: "/applications",
+            icon: AppWindow,
+            objectType: "application",
+          },
+          {
+            title: "Application groups",
+            url: "/application-groups",
+            icon: LayoutGrid,
+            objectType: "applicationgroup",
+          },
+          {
+            title: "Lifecycle",
+            url: "/lifecycle",
+            icon: CalendarClock,
+            anyOf: ["device", "virtualmachine"],
+          },
+          {
+            title: "End-of-life products",
+            url: "/eol-products",
+            icon: CalendarX,
+            objectType: "eolproduct",
+          },
+          {
+            title: "Support contracts",
+            url: "/support-contracts",
+            icon: ShieldCheck,
+            objectType: "supportcontract",
           },
         ],
       },

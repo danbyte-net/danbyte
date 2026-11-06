@@ -941,8 +941,8 @@ and port tables, so one habit covers every component list.
 ## Module types
 
 A **module type** is a pluggable hardware model - a line card, uplink module,
-or PSU sled (e.g. a Cisco `C9300-NM-8X`). It lives under **DCIM → Module
-types** and carries its own **interface templates**, whose names may use the
+or PSU sled (e.g. a Cisco `C9300-NM-8X`). It lives under **DCIM → Catalog →
+Module types** and carries its own **interface templates**, whose names may use the
 **`{module}` token**: when a module is installed into a device's bay, the
 token resolves to the bay's *position* (`TenGigabitEthernet1/{module}/1` in
 bay position 1 → `…1/1/1`), and the [`{position}` stack

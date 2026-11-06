@@ -4,7 +4,7 @@ icon: lucide/calendar-clock
 
 # Lifecycle overview
 
-**DCIM → Devices → Lifecycle** lists every device and virtual machine
+**Software & lifecycle → Lifecycle** lists every device and virtual machine
 against the end dates that matter to it, soonest first: the hardware's end of
 support, the operating system's end of life, the end of the device's
 support coverage and the end of life of the software installed on it. It

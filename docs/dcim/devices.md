@@ -10,7 +10,7 @@ detail page.
 
 ## Add a device
 
-1. Open **DCIM → Devices** in the sidebar and click **Add device**.
+1. Open **DCIM → Devices → Devices** in the sidebar and click **Add device**.
 2. Give it a **name** (must be unique within the tenant).
 3. Pick a **device type** - the hardware model. The box searches as you type;
    **Search** opens the full picker, which matches on name, model **and part

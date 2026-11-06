@@ -313,7 +313,7 @@ export function InstallModuleDialog({
             onChange={setModuleTypeId}
             placeholder="Pick a module type"
             searchPlaceholder="Search module types…"
-            emptyText="No module types - import or add them under DCIM → Module types."
+            emptyText="No module types - import or add them under DCIM → Catalog → Module types."
             options={(types.data?.results ?? []).map((t) => ({
               value: t.id,
               label: t.part_number ? `${t.name} (${t.part_number})` : t.name,
