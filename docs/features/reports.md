@@ -27,6 +27,8 @@ printing) by itself when it is ready. Keep the dialog open until then.
 
 - **Title** - defaults to the object (*Device sw-a*) or *Devices report*.
 - **Paper** - A4, Letter or A3, portrait or landscape.
+- **Sensitivity label** - marks the report; see
+  [Sensitivity label](#sensitivity-label).
 - **List columns** (more than one object) - the same columns the list page
   offers, custom fields included. Tick a column to add it, drag its handle to
   order them.
@@ -58,7 +60,20 @@ printing) by itself when it is ready. Keep the dialog open until then.
   [Cover page](#cover-page).
 
 The dialog remembers your choices per type in this browser (the cover tick,
-its project line and image choice included).
+its project line and image choice, and the sensitivity label included).
+
+### Sensitivity label
+
+**Sensitivity label** picks one of the tenant's
+[sensitivity labels](sensitivity-labels.md), each shown as its coloured pill
+with its icon, or **None**. It starts on the label you picked last time for
+this type, else the tenant's default label, else none. The picker is hidden
+when the tenant has no labels you may view.
+
+A labelled report carries the label as a coloured pill - its icon and its
+name in capitals - in the middle of every page's header and footer, the top
+and bottom of the page as classification markings conventionally sit, and as
+a larger badge at the top right of the cover.
 
 ### Prefixes by VRF
 
@@ -110,7 +125,12 @@ reads on any background.
 or another of **Waves**, **Plain colour**, **Your upload** (when the tenant
 has one) and **None** (white paper, dark text and the colour wordmark).
 Everything else is the tenant's, so every report in a tenant matches - see
-[Report cover settings](#report-cover-settings) below.
+[Report cover settings](#report-cover-settings) below. Tenant admins see a
+**Change cover colours…** link under the choice that opens those settings.
+
+**Cover colours** (on the Waves and Plain colour backgrounds) colours this
+report's cover alone: **Tenant default**, or one of the settings' presets -
+Danbyte, then each colour family. The tenant's settings are not changed.
 
 The cover counts as one page in the estimate.
 
@@ -224,7 +244,10 @@ once, `background_cells` the most in one report).
     "list_table": true,
     "per_object": false,
     "show_ips": false,
-    "last": 20
+    "last": 20,
+    "cover": true,
+    "cover_colors": {"horizon": "#14532d", "wave": "#16a34a", "crest": "#ffffff"},
+    "sensitivity_label": "…"
   }
 }
 ```
@@ -237,6 +260,13 @@ once, `background_cells` the most in one report).
 - `options.list_table` and `options.per_object` (details for each object)
   default to a table for many objects and details for one.
 - `options.show_ips` (prefixes) - each list row followed by its IP addresses.
+- `options.sensitivity_label` - a [sensitivity label](sensitivity-labels.md)'s
+  id, or null for none. Another tenant's label, or one the caller may not
+  view, is refused (400 naming `options.sensitivity_label`).
+- `options.cover_colors` - `horizon`, `wave` and `crest`, each a `#rrggbb`
+  colour, for this report's cover in place of the tenant's; all three are
+  required, and anything else is refused (400). Absent or null keeps the
+  tenant's.
 - `options.group_by` - left out, a prefix report is grouped by VRF (banner
   rows, nested prefixes); `null` or `""` prints the flat table; any other
   key from `group_by` groups by it. A banner row is one table cell in the

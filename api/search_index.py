@@ -241,6 +241,9 @@ SPECS: dict[str, IndexSpec] = {
     "configcontext": IndexSpec("api.ConfigContext", "/config-contexts/{id}", weight=4, site=None),
     "exporttemplate": IndexSpec("api.ExportTemplate", "/export-templates/{id}", weight=3, site=None),
     "status": IndexSpec("api.Status", "/statuses/{id}", weight=3, site=None),
+    "sensitivitylabel": IndexSpec(
+        "api.SensitivityLabel", "/sensitivity-labels/{id}", weight=3, site=None
+    ),
     "tag": IndexSpec("core.Tag", "/tags/{id}", weight=4, site=None),
     "dnszone": IndexSpec("integrations.DnsZone", "/dns-zones/{id}", weight=6, site=None),
     "dnsrecord": IndexSpec("integrations.DnsRecord", "/dns-records/{id}", weight=5, site=None,

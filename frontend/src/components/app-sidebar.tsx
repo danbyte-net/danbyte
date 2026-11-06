@@ -1305,6 +1305,12 @@ export const sections: NavSection[] = [
             objectType: "status",
           },
           {
+            title: "Sensitivity labels",
+            url: "/sensitivity-labels",
+            icon: Shield,
+            objectType: "sensitivitylabel",
+          },
+          {
             title: "Custom fields",
             url: "/custom-fields",
             icon: SquareStack,

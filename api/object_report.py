@@ -94,6 +94,7 @@ from .drawing_pdf import (
 from .field_labels import humanize
 from .floor_plan_report import _pill, _plural
 from .report_cover import BACKGROUND_CHOICES, cover_css, cover_for_request, look_for
+from .sensitivity import label_for_request, marking_css, marking_for, running_html
 
 log = logging.getLogger(__name__)
 
@@ -873,6 +874,21 @@ def plain(row: dict, col: Column) -> str:
 # ─── The request ────────────────────────────────────────────────────────────
 
 
+_HEX_COLOR = r"^#[0-9a-fA-F]{6}$"
+
+
+class CoverColorsSerializer(serializers.Serializer):
+    """One report's cover colours, in place of the tenant's."""
+
+    horizon = serializers.RegexField(_HEX_COLOR, error_messages={"invalid": "A #rrggbb colour."})
+    wave = serializers.RegexField(_HEX_COLOR, error_messages={"invalid": "A #rrggbb colour."})
+    crest = serializers.RegexField(_HEX_COLOR, error_messages={"invalid": "A #rrggbb colour."})
+
+    def to_internal_value(self, data):
+        out = super().to_internal_value(data)
+        return {k: v.lower() for k, v in out.items()}
+
+
 class ObjectReportOptionsSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=200, required=False, allow_blank=True)
     paper = serializers.ChoiceField(choices=PAPERS, required=False, default="a4")
@@ -899,6 +915,16 @@ class ObjectReportOptionsSerializer(serializers.Serializer):
     cover_project = serializers.CharField(max_length=200, required=False, allow_blank=True)
     cover_background = serializers.ChoiceField(
         choices=BACKGROUND_CHOICES, required=False, default="default"
+    )
+    cover_colors = CoverColorsSerializer(
+        required=False,
+        allow_null=True,
+        help_text="This report's cover colours; absent or null for the tenant's.",
+    )
+    sensitivity_label = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        help_text="The sensitivity label to mark the report with; null for none.",
     )
 
 
@@ -1531,7 +1557,10 @@ def report_html(
     orientation: str,
     body: str,
     cover: str = "",
+    marking: dict | None = None,
 ) -> str:
+    """The report page; ``marking`` (``api/sensitivity.marking_for``) puts
+    the sensitivity label in every page's header and footer."""
     from danbyte import __version__
 
     pw, ph = page_size(paper, orientation)
@@ -1610,8 +1639,9 @@ def report_html(
         ".photos img{max-width:110mm;max-height:45mm;border:0.2mm solid #d4d4d8}"
         ".photos figcaption{color:#71717a;font-size:6.5pt;margin-top:0.8mm}"
         f"{cover_css(pw, ph) if cover else ''}"
+        f"{marking_css(marking)}"
         "</style></head><body>"
-        f"{cover}{body}"
+        f"{running_html(marking)}{cover}{body}"
         "</body></html>"
     )
 
@@ -1809,6 +1839,9 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str,
     refusal. ``shape`` counts the objects, the list's columns (0 without a
     list) and the pages per object, for :func:`too_slow`."""
     options = {"last": DEFAULT_LAST, "paper": "a4", **(data.get("options") or {})}
+    # Refused before any work: another tenant's label, or one the reader
+    # may not view.
+    label_for_request(request, tenant, options.get("sensitivity_label"))
     columns = data.get("columns") or {}
     ctx = Context(request, rt, tenant)
     filters = data.get("filters") or {}
@@ -1944,6 +1977,7 @@ def _page_html(
     many_cols = len((data.get("columns") or {}).get("list") or rt.list_columns) > 8
     orientation = opts.get("orientation") or ("landscape" if many_cols else "portrait")
     generated = timezone.now()
+    marking = marking_for(label_for_request(request, tenant, opts.get("sensitivity_label")))
     cover = ""
     if opts.get("cover"):
         pw, ph = page_size(paper, orientation)
@@ -1960,6 +1994,8 @@ def _page_html(
             subtitle=subtitle.strip(),
             background=opts.get("cover_background") or "default",
             when=generated,
+            marking=marking,
+            colors=opts.get("cover_colors"),
         )
     html = report_html(
         title=title,
@@ -1969,6 +2005,7 @@ def _page_html(
         orientation=orientation,
         body=body,
         cover=cover,
+        marking=marking,
     )
     return html, generated
 

@@ -3746,6 +3746,61 @@ class Status(_LabeledChoice):
                 )
 
 
+class SensitivityLabel(NumIdMixin, TimestampedModel):
+    """A sensitivity label (Public, Internal, Confidential…): an editable
+    tenant catalog a PDF report can be marked with, shown on its cover and in
+    every page's header and footer. Coloured like a status, with an optional
+    Lucide icon. ``is_default`` names the label a new report starts with; at
+    most one per tenant. A small starter set is seeded once per tenant
+    (``api/sensitivity.py``); every row is the tenant's to edit or delete."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="sensitivity_labels"
+    )
+    name = models.CharField(max_length=64)
+    slug = models.SlugField(max_length=80)
+    color = models.CharField(max_length=7, blank=True, default="")
+    icon = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. shield, lock, eye-off).",
+    )
+    description = models.TextField(blank=True, default="")
+    weight = models.PositiveIntegerField(
+        default=100,
+        db_default=100,
+        help_text="Lower weights sort first in dropdowns and lists.",
+    )
+    is_default = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="New reports start with this label. At most one per tenant.",
+    )
+
+    class Meta:
+        ordering = ["weight", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_sensitivitylabel_tenant_slug"
+            ),
+            models.UniqueConstraint(
+                fields=["tenant"],
+                condition=models.Q(is_default=True),
+                name="uniq_sensitivitylabel_tenant_default",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def text_color(self) -> str:
+        """Black or white text on the label's colour, as statuses pick it."""
+        return _LabeledChoice.text_color.fget(self)
+
+
 class Zone(_LabeledChoice, CustomFieldsMixin, TaggableMixin):
     """A security zone - models zone-based firewalling (Palo Alto style).
 

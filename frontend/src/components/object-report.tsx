@@ -16,6 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
+import { Link } from "@tanstack/react-router"
 import {
   ChevronDown,
   Download,
@@ -34,7 +35,10 @@ import type {
   ObjectReportSchema,
   ObjectReportStarted,
   ReportCoverBackground,
+  SensitivityLabelRef,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
   exportFileName,
@@ -42,10 +46,22 @@ import {
   sendPdf,
 } from "@/lib/diagram/export-file"
 import { cn } from "@/lib/utils"
-import { Field, FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import {
+  Field,
+  FormCheckbox,
+  FormCombobox,
+  FormSelect,
+  FormText,
+} from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { COVER_PRESETS } from "@/components/settings/report-cover-card"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import type { ExtraExport } from "@/components/table-io"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -110,7 +126,12 @@ export interface ReportPrefs {
   cover: boolean
   coverBackground: ReportCoverBackground
   coverProject: string
+  /** The sensitivity label's id; null for none. */
+  sensitivityLabel: string | null
 }
+
+/** One report's cover colours, in place of the tenant's. */
+export type CoverColors = { horizon: string; wave: string; crest: string }
 
 /** The cover's per-report text: `null` follows the report (the title) or
  * the server (the generated subtitle). */
@@ -169,7 +190,8 @@ export function writeReportPrefs(kind: ObjectReportKind, prefs: ReportPrefs) {
  * server's defaults. */
 export function initialPrefs(
   schema: ObjectReportSchema,
-  saved: Partial<ReportPrefs> | null
+  saved: Partial<ReportPrefs> | null,
+  labels: SensitivityLabelRef[] = []
 ): ReportPrefs {
   const sectionKeys = new Set(schema.sections.map((s) => s.key))
   const known = (
@@ -227,7 +249,23 @@ export function initialPrefs(
       : "default",
     coverProject:
       typeof saved?.coverProject === "string" ? saved.coverProject : "",
+    sensitivityLabel: initialLabel(saved, labels),
   }
+}
+
+/** The label a report starts with: the one picked last time for this type
+ * (none counts) while it still exists, else the tenant's default, else
+ * none. */
+export function initialLabel(
+  saved: Partial<ReportPrefs> | null,
+  labels: SensitivityLabelRef[]
+): string | null {
+  if (saved && "sensitivityLabel" in saved) {
+    const id = saved.sensitivityLabel
+    if (id === null) return null
+    if (labels.some((l) => l.id === id)) return id as string
+  }
+  return labels.find((l) => l.is_default)?.id ?? null
 }
 
 /** The cover's background choices: the tenant's default, then the others
@@ -272,7 +310,8 @@ export function reportRequest(
   prefs: ReportPrefs,
   schema: ObjectReportSchema,
   title: string,
-  cover: CoverText = { title: "", subtitle: null }
+  cover: CoverText = { title: "", subtitle: null },
+  coverColors: CoverColors | null = null
 ): ObjectReportRequest {
   const one = target.ids.length === 1
   const perObject = one || prefs.perObject
@@ -311,7 +350,11 @@ export function reportRequest(
               ? { cover_project: prefs.coverProject.trim() }
               : {}),
             cover_background: prefs.coverBackground,
+            ...(coverColors ? { cover_colors: coverColors } : {}),
           }
+        : {}),
+      ...(prefs.sensitivityLabel
+        ? { sensitivity_label: prefs.sensitivityLabel }
         : {}),
     },
   }
@@ -334,6 +377,17 @@ export function ObjectReportDialog({
     enabled: open,
     staleTime: 60_000,
   })
+  // The labels this reader may mark with; none when they may not view any.
+  const labels = useQuery({
+    queryKey: ["sensitivity-labels-picker"],
+    queryFn: () =>
+      apiAll<SensitivityLabelRef>("/api/sensitivity-labels/?picker=1").then(
+        (r) => r.results,
+        () => [] as SensitivityLabelRef[]
+      ),
+    enabled: open,
+    staleTime: 60_000,
+  })
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="2xl" data-part="object-report">
@@ -341,7 +395,7 @@ export function ObjectReportDialog({
           <DialogTitle>PDF report</DialogTitle>
           <DialogDescription>{describeTarget(kind, target)}</DialogDescription>
         </DialogHeader>
-        {schema.isPending ? (
+        {schema.isPending || labels.isPending ? (
           <Loading />
         ) : schema.isError ? (
           <QueryError error={schema.error} />
@@ -352,6 +406,7 @@ export function ObjectReportDialog({
               key={`${kind}:${target.scope}`}
               kind={kind}
               schema={schema.data}
+              labels={labels.data ?? []}
               target={target}
               onDone={() => onOpenChange(false)}
             />
@@ -445,19 +500,23 @@ async function waitForJob(
 function ReportForm({
   kind,
   schema,
+  labels,
   target,
   onDone,
 }: {
   kind: ObjectReportKind
   schema: ObjectReportSchema
+  labels: SensitivityLabelRef[]
   target: ReportTarget
   onDone: () => void
 }) {
+  const { canManage } = useMe()
   const [prefs, setPrefs] = useState<ReportPrefs>(() =>
-    initialPrefs(schema, readReportPrefs(kind))
+    initialPrefs(schema, readReportPrefs(kind), labels)
   )
   const [title, setTitle] = useState("")
   const [cover, setCover] = useState<CoverText>({ title: "", subtitle: null })
+  const [coverColors, setCoverColors] = useState<CoverColors | null>(null)
   const [busy, setBusy] = useState(false)
   const [job, setJob] = useState<ObjectReportJobStatus | null>(null)
   const alive = useRef(true)
@@ -497,8 +556,11 @@ function ReportForm({
   // The live estimate: the body as it would be posted, a moment after the
   // last change, built on the server without rendering.
   const body = useMemo(
-    () => JSON.stringify(reportRequest(target, prefs, schema, title, cover)),
-    [target, prefs, schema, title, cover]
+    () =>
+      JSON.stringify(
+        reportRequest(target, prefs, schema, title, cover, coverColors)
+      ),
+    [target, prefs, schema, title, cover, coverColors]
   )
   const settled = useDebounced(body, 400)
   const estimate = useQuery({
@@ -625,6 +687,12 @@ function ReportForm({
     one && target.name
       ? `${schema.label} ${target.name}`
       : `${schema.plural} report`
+  // The colours count only on a background drawn in them.
+  const coverStyle =
+    prefs.coverBackground === "default"
+      ? (schema.cover?.background ?? "waves")
+      : prefs.coverBackground
+  const coloured = coverStyle === "waves" || coverStyle === "plain"
 
   return (
     <>
@@ -651,6 +719,26 @@ function ReportForm({
             />
           </Field>
         </div>
+        {labels.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-2" data-part="sensitivity">
+            <FormCombobox
+              label="Sensitivity label"
+              value={prefs.sensitivityLabel}
+              onChange={(v) => set("sensitivityLabel", v)}
+              noneLabel="None"
+              placeholder="None"
+              searchPlaceholder="Search labels…"
+              emptyText="No labels."
+              options={labels.map((l) => ({
+                value: l.id,
+                label: l.name,
+                color: l.color,
+                icon: l.icon,
+                badge: true,
+              }))}
+            />
+          </div>
+        )}
         {!one && (
           <>
             <Field label="List columns">
@@ -734,14 +822,29 @@ function ReportForm({
                 placeholder={schema.cover?.project ?? ""}
               />
               <Field label="Background">
-                <SegmentedTabs<ReportCoverBackground>
-                  wrap
-                  items={coverBackgroundItems(schema)}
-                  value={prefs.coverBackground}
-                  onValueChange={(v) => set("coverBackground", v)}
-                />
+                <div className="grid justify-items-start gap-1.5">
+                  <SegmentedTabs<ReportCoverBackground>
+                    wrap
+                    items={coverBackgroundItems(schema)}
+                    value={prefs.coverBackground}
+                    onValueChange={(v) => set("coverBackground", v)}
+                  />
+                  {canManage && (
+                    <Link
+                      to="/settings/tenant"
+                      hash="report-cover"
+                      className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      data-part="cover-settings-link"
+                    >
+                      Change cover colours…
+                    </Link>
+                  )}
+                </div>
               </Field>
             </div>
+            {coloured && (
+              <CoverColorPicker value={coverColors} onChange={setCoverColors} />
+            )}
           </div>
         )}
         {limitNote ? (
@@ -782,6 +885,65 @@ function ReportForm({
         </Button>
       </DialogFooter>
     </>
+  )
+}
+
+/** This report's cover colours: the tenant's, or one of the settings
+ * card's presets (Danbyte, then the palette families). */
+export function CoverColorPicker({
+  value,
+  onChange,
+}: {
+  value: CoverColors | null
+  onChange: (v: CoverColors | null) => void
+}) {
+  const picked = value
+    ? COVER_PRESETS.find(
+        (p) =>
+          p.horizon === value.horizon &&
+          p.wave === value.wave &&
+          p.crest === value.crest
+      )?.key
+    : null
+  return (
+    <Field label="Cover colours" group>
+      <div
+        className="flex flex-wrap items-center gap-1.5"
+        data-part="cover-colors"
+      >
+        <Button
+          type="button"
+          variant={value ? "outline" : "secondary"}
+          size="sm"
+          className="h-6 px-2 text-xs"
+          aria-pressed={!value}
+          onClick={() => onChange(null)}
+        >
+          Tenant default
+        </Button>
+        {COVER_PRESETS.map((p) => (
+          <Tooltip key={p.key}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={p.label}
+                aria-pressed={picked === p.key}
+                className={cn(
+                  "size-6 rounded-md border border-border",
+                  picked === p.key &&
+                    "ring-2 ring-ring ring-offset-1 ring-offset-background"
+                )}
+                style={{ background: p.horizon }}
+                onClick={() =>
+                  onChange({ horizon: p.horizon, wave: p.wave, crest: p.crest })
+                }
+              />
+            </TooltipTrigger>
+            <TooltipContent variant="panel">{p.label}</TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+    </Field>
   )
 }
 

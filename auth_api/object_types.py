@@ -345,6 +345,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("compliance.EolProduct", "End-of-life products", "Governance"),
     # ─── Customize ──────────────────────────────────────────────────
     ("api.Status", "Statuses", "Customize"),
+    ("api.SensitivityLabel", "Sensitivity labels", "Customize"),
     # CustomField + CustomFieldGroup live in the `customization` app, not `api` -
     # the old "api.CustomField" path silently failed to resolve (LookupError →
     # skipped), leaving custom-field management RBAC-uncontrolled.

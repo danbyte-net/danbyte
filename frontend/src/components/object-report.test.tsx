@@ -13,9 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type * as Api from "@/lib/api"
 import { ApiError } from "@/lib/api"
 import type {
+  Me,
   ObjectReportEstimate,
   ObjectReportRequest,
   ObjectReportSchema,
+  SensitivityLabelRef,
 } from "@/lib/api"
 
 import { BulkExport } from "./bulk-export"
@@ -50,6 +52,24 @@ vi.mock("@/lib/api", async (orig) => ({
   api: apiMock,
 }))
 vi.mock("@/lib/api-toast", () => ({ apiErrorToast: toastMock }))
+// The settings link is a router Link; a plain anchor shows where it goes.
+vi.mock("@tanstack/react-router", async (orig) => ({
+  ...(await orig<object>()),
+  Link: ({
+    to,
+    hash,
+    children,
+    ...rest
+  }: {
+    to: string
+    hash?: string
+    children: ReactNode
+  }) => (
+    <a href={`${to}${hash ? `#${hash}` : ""}`} {...rest}>
+      {children}
+    </a>
+  ),
+}))
 
 const SCHEMA: ObjectReportSchema = {
   type: "device",
@@ -114,6 +134,36 @@ const SCHEMA: ObjectReportSchema = {
   },
 }
 
+// The label picker is a cmdk combobox: it measures and scrolls; jsdom has
+// neither.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+if (!("ResizeObserver" in globalThis)) {
+  ;(globalThis as unknown as Record<string, unknown>).ResizeObserver =
+    ResizeObserverStub
+}
+Element.prototype.scrollIntoView = () => {}
+
+/** The tenant's sensitivity labels the reader may view, and who they are. */
+let labels: SensitivityLabelRef[] = []
+let me: Partial<Me> = { is_authenticated: true, perms: [], permissions: {} }
+
+/** A GET: the reader, the labels picker, else the report's schema. */
+function get(path: string, schema: ObjectReportSchema = SCHEMA) {
+  if (path.startsWith("/api/me/")) return Promise.resolve(me)
+  if (path.startsWith("/api/sensitivity-labels/"))
+    return Promise.resolve({
+      count: labels.length,
+      next: null,
+      previous: null,
+      results: labels,
+    })
+  return Promise.resolve(schema)
+}
+
 let posted: { path: string; body: ObjectReportRequest }[] = []
 let estimated: ObjectReportRequest[] = []
 const NOW: ObjectReportEstimate = {
@@ -135,6 +185,8 @@ function answerEstimate(init?: RequestInit) {
 
 beforeEach(() => {
   localStorage.clear()
+  labels = []
+  me = { is_authenticated: true, perms: [], permissions: {} }
   posted = []
   estimated = []
   estimate = NOW
@@ -149,7 +201,7 @@ beforeEach(() => {
       })
       return Promise.resolve({ url: "/api/devices/report/file/tok/" })
     }
-    return Promise.resolve(SCHEMA)
+    return get(path)
   })
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
 })
@@ -262,7 +314,7 @@ describe("ObjectReportDialog", () => {
         })
         return new Promise((resolve) => (finish = resolve))
       }
-      return Promise.resolve(SCHEMA)
+      return get(path)
     })
     const onOpenChange = vi.fn()
     wrap(
@@ -548,7 +600,7 @@ describe("cover page", () => {
         })
         return Promise.resolve({ url: "/api/devices/report/file/tok/" })
       }
-      return Promise.resolve(COVERED)
+      return get(path, COVERED)
     })
     wrap(
       <ObjectReportDialog
@@ -601,7 +653,7 @@ describe("background report", () => {
       }
       if (path === STATUS)
         return Promise.resolve(states[Math.min(polls++, states.length - 1)])
-      return Promise.resolve(SCHEMA)
+      return get(path)
     })
   }
 
@@ -688,5 +740,186 @@ describe("entry points", () => {
     )
     fireEvent.click(screen.getByRole("menuitem", { name: "PDF report…" }))
     expect(open).toHaveBeenCalledWith({ ids: ["d1", "d2"], scope: "selected" })
+  })
+})
+
+describe("sensitivity label", () => {
+  const CONF: SensitivityLabelRef = {
+    id: "l-conf",
+    numid: 3,
+    name: "Confidential",
+    slug: "confidential",
+    color: "#d97706",
+    text_color: "#fff",
+    icon: "shield",
+    is_default: false,
+  }
+  const INTERNAL: SensitivityLabelRef = {
+    ...CONF,
+    id: "l-int",
+    name: "Internal",
+    slug: "internal",
+    color: "#2563eb",
+    icon: "building-2",
+    is_default: true,
+  }
+
+  it("starts on the remembered pick, else the tenant's default, else none", () => {
+    expect(initialPrefs(SCHEMA, null, []).sensitivityLabel).toBeNull()
+    expect(initialPrefs(SCHEMA, null, [CONF, INTERNAL]).sensitivityLabel).toBe(
+      "l-int"
+    )
+    expect(
+      initialPrefs(SCHEMA, { sensitivityLabel: "l-conf" }, [CONF, INTERNAL])
+        .sensitivityLabel
+    ).toBe("l-conf")
+    // None picked on purpose stays none.
+    expect(
+      initialPrefs(SCHEMA, { sensitivityLabel: null }, [CONF, INTERNAL])
+        .sensitivityLabel
+    ).toBeNull()
+    // A remembered label that is gone falls back to the default.
+    expect(
+      initialPrefs(SCHEMA, { sensitivityLabel: "gone" }, [CONF, INTERNAL])
+        .sensitivityLabel
+    ).toBe("l-int")
+  })
+
+  it("sends the label only when one is picked", () => {
+    const prefs = initialPrefs(SCHEMA, null, [])
+    expect(
+      reportRequest(many, prefs, SCHEMA, "").options?.sensitivity_label
+    ).toBeUndefined()
+    expect(
+      reportRequest(many, { ...prefs, sensitivityLabel: "l-conf" }, SCHEMA, "")
+        .options?.sensitivity_label
+    ).toBe("l-conf")
+  })
+
+  it("is a picker of coloured pills, defaulted, posted and remembered", async () => {
+    labels = [CONF, INTERNAL]
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    const trigger = await screen.findByRole("combobox", {
+      name: "Sensitivity label",
+    })
+    // The tenant's default, as its badge with its icon.
+    const badge = trigger.querySelector('[data-slot="badge"]')
+    expect(badge?.textContent).toBe("Internal")
+    expect(badge?.querySelector("svg")).not.toBeNull()
+    fireEvent.click(trigger)
+    const option = await screen.findByRole("option", { name: "Confidential" })
+    expect(option.querySelector('[data-slot="badge"] svg')).not.toBeNull()
+    fireEvent.click(option)
+    fireEvent.click(downloadButton())
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].body.options?.sensitivity_label).toBe("l-conf")
+    expect(readReportPrefs("device")).toMatchObject({
+      sensitivityLabel: "l-conf",
+    })
+  })
+
+  it("is hidden when the reader has no labels", async () => {
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    await screen.findByRole("checkbox", { name: "Include cover page" })
+    expect(screen.queryByText("Sensitivity label")).toBeNull()
+  })
+})
+
+describe("cover colours", () => {
+  const COVERED: ObjectReportSchema = {
+    ...SCHEMA,
+    cover: { project: "Acme", upload: false, background: "waves" },
+  }
+
+  function openDialog() {
+    apiMock.mockImplementation((path, init) => {
+      if (path.includes("estimate=1")) return answerEstimate(init)
+      if (init?.method === "POST") {
+        posted.push({
+          path,
+          body: JSON.parse(String(init.body)) as ObjectReportRequest,
+        })
+        return Promise.resolve({ url: "/api/devices/report/file/tok/" })
+      }
+      return get(path, COVERED)
+    })
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+  }
+
+  async function tickCover() {
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Include cover page" })
+    )
+  }
+
+  it("sends the colours only when overridden", () => {
+    const prefs = { ...initialPrefs(COVERED, null), cover: true }
+    expect(
+      reportRequest(many, prefs, COVERED, "").options?.cover_colors
+    ).toBeUndefined()
+    const green = { horizon: "#14532d", wave: "#16a34a", crest: "#ffffff" }
+    expect(
+      reportRequest(many, prefs, COVERED, "", undefined, green).options
+        ?.cover_colors
+    ).toEqual(green)
+  })
+
+  it("picks a preset for this report, or the tenant default", async () => {
+    openDialog()
+    await tickCover()
+    const tenant = screen.getByRole("button", { name: "Tenant default" })
+    expect(tenant.getAttribute("aria-pressed")).toBe("true")
+    const danbyte = screen.getByRole("button", { name: "Danbyte" })
+    fireEvent.click(danbyte)
+    expect(danbyte.getAttribute("aria-pressed")).toBe("true")
+    expect(tenant.getAttribute("aria-pressed")).toBe("false")
+    fireEvent.click(downloadButton())
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].body.options?.cover_colors).toEqual({
+      horizon: "#063d66",
+      wave: "#0b6fb0",
+      crest: "#ffffff",
+    })
+  })
+
+  it("hides the colours on a background not drawn in them", async () => {
+    openDialog()
+    await tickCover()
+    expect(screen.getByText("Cover colours")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "None" }))
+    expect(screen.queryByText("Cover colours")).toBeNull()
+  })
+
+  it("links tenant admins to the cover settings", async () => {
+    openDialog()
+    await tickCover()
+    expect(screen.queryByText("Change cover colours…")).toBeNull()
+    cleanup()
+    me = { ...me, can_manage_users: true }
+    openDialog()
+    await tickCover()
+    const link = await screen.findByText("Change cover colours…")
+    expect(link.getAttribute("href")).toBe("/settings/tenant#report-cover")
   })
 })

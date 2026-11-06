@@ -404,6 +404,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 + PROFILES.NEW_CATALOGS + REQUIREMENTS.NEW_CATALOGS
                 + OUTLINES.NEW_CATALOGS + AREA_TYPES.NEW_CATALOGS
                 + ROUTING_ROWS.NEW_CATALOGS + RPKI.NEW_CATALOGS
+                + SENSITIVITY.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -831,6 +832,9 @@ class SiteRoleRoutingRowsUpgradeTests(SiteRoleUpgradeTests):
 
 
 RPKI = importlib.import_module("auth_api.migrations.0050_site_roles_rpki_caches")
+SENSITIVITY = importlib.import_module(
+    "auth_api.migrations.0051_site_roles_sensitivity_labels"
+)
 
 
 class SiteRoleRPKIUpgradeTests(SiteRoleRoutingRowsUpgradeTests):
