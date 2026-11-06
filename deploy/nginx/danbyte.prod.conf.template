@@ -92,6 +92,14 @@ server {
     # Only /assets/ gets a value (the map above); not `always`, so a 404
     # there is never cached.
     add_header Cache-Control $danbyte_asset_cache;
+    # Django sends its own copy of the headers above for installs without
+    # nginx (#490); drop it so each goes out once, with the value here. A
+    # location with its own proxy_hide_header must repeat these lines.
+    proxy_hide_header Strict-Transport-Security;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header Referrer-Policy;
+    proxy_hide_header Cross-Origin-Opener-Policy;
 
     client_max_body_size 512m;
 
@@ -117,6 +125,11 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         # The server-level immutable header stands in for vite's no-cache.
         proxy_hide_header Cache-Control;
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Referrer-Policy;
+        proxy_hide_header Cross-Origin-Opener-Policy;
     }
 
     # ── Django static (admin + DRF browsable API), served straight from disk
