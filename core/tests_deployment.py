@@ -901,6 +901,7 @@ class SystemUpgradeApiTests(APITestCase):
         rel = [{"tag": "v0.1.0", "name": "0.1.0", "body": "", "published_at": None,
                 "prerelease": False, "has_binary": False}]
         with patch("core.github.list_releases", return_value=rel), \
+             patch("core.upgrade._is_git_install", return_value=True), \
              patch("core.upgrade._launch", return_value="systemd-run") as launch:
             r = self.client.post("/api/system/upgrade/",
                                   {"version": "v0.1.0"}, format="json")
