@@ -88,6 +88,9 @@ export interface DeviceMenuProps {
     roleSlug?: string
     /** A member of a virtual chassis: its stack's items. */
     chassis?: ChassisMenu
+    /** The line this device's cables take (Default: the band's or the
+     * view's); left out on a grouped map. */
+    line?: LineChoice
   }
 }
 
@@ -120,7 +123,9 @@ export function DeviceMenuItems({
   diagram: d,
 }: DeviceMenuProps) {
   const extras =
-    !!id && !!d && !!(d.face || d.onCardLines || d.roleSlug || d.chassis)
+    !!id &&
+    !!d &&
+    !!(d.face || d.line || d.onCardLines || d.roleSlug || d.chassis)
   return (
     <>
       {id && (
@@ -161,6 +166,7 @@ export function DeviceMenuItems({
         <>
           <DropdownMenuSeparator />
           {d.face && <FaceItems face={d.face} />}
+          {d.line && <LineSubmenu {...d.line} />}
           {d.onCardLines && (
             <DropdownMenuItem inset onSelect={d.onCardLines}>
               Card lines…
@@ -349,11 +355,43 @@ export function groupMenuKeys({ onHide }: { onHide: () => void }): MenuKeys {
 /** A line's own look in a Diagram view, or the view's (`default`). */
 export type LinkLine = LineType | "default"
 
+/** A Line sub-menu: Default, then the four line types. A link's, a
+ * card's and a band's (diagram/line-source.ts says which wins). */
+export interface LineChoice {
+  value: LinkLine
+  onChange: (value: LinkLine) => void
+}
+
+function LineSubmenu({ value: now, onChange }: LineChoice) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger inset>Line</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="min-w-36">
+        <DropdownMenuRadioGroup
+          value={now}
+          onValueChange={(v) => {
+            if (v !== now) onChange(v as LinkLine)
+          }}
+        >
+          <DropdownMenuRadioItem value="default" inset>
+            Default
+          </DropdownMenuRadioItem>
+          {LINE_LOOKS.map(({ value, label, icon: Icon }) => (
+            <DropdownMenuRadioItem key={value} value={value}>
+              <Icon /> {label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
+}
+
 export interface EdgeMenuProps {
   /** The one cable the line draws; Open cable is offered only then. */
   cableId?: string
   /** A Diagram link: its own line, as its panel's Line row sets it. */
-  line?: { value: LinkLine; onChange: (value: LinkLine) => void }
+  line?: LineChoice
   /** Hide the line, as its eye in the Objects sidebar would. */
   onHide: () => void
 }
@@ -370,28 +408,7 @@ export function EdgeMenuItems({ cableId, line, onHide }: EdgeMenuProps) {
           </Link>
         </DropdownMenuItem>
       )}
-      {line && (
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger inset>Line</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="min-w-36">
-            <DropdownMenuRadioGroup
-              value={line.value}
-              onValueChange={(v) => {
-                if (v !== line.value) line.onChange(v as LinkLine)
-              }}
-            >
-              <DropdownMenuRadioItem value="default" inset>
-                Default
-              </DropdownMenuRadioItem>
-              {LINE_LOOKS.map(({ value, label, icon: Icon }) => (
-                <DropdownMenuRadioItem key={value} value={value}>
-                  <Icon /> {label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      )}
+      {line && <LineSubmenu {...line} />}
       {(cableId || line) && <DropdownMenuSeparator />}
       <DropdownMenuItem onSelect={onHide}>
         <EyeOff /> Hide
@@ -443,6 +460,7 @@ export function RegionMenuItems({
   exits,
   perRow,
   align,
+  line,
   onRename,
   onRecolor,
   onDelete,
@@ -468,6 +486,9 @@ export function RegionMenuItems({
     value: BandAlign | undefined
     onChange: (align: BandAlign | undefined) => void
   }
+  /** A Diagram row: the line its cards' cables take (`default`: the
+   * view's). Left out for side bands and zones. */
+  line?: LineChoice
   onRename: () => void
   onRecolor: (color: string | null) => void
   onDelete: () => void
@@ -615,6 +636,7 @@ export function RegionMenuItems({
           </DropdownMenuSubContent>
         </DropdownMenuSub>
       )}
+      {line && <LineSubmenu {...line} />}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={onDelete}>
         <Trash2 /> Delete

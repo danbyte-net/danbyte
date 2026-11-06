@@ -10,7 +10,8 @@ import {
 import type { BandAlign, BandExits, Zone } from "../view-positions"
 import { resolveLevels } from "../levels-param"
 import type { Centre, RowSlot, RowsAt } from "./placement"
-import type { Pt, Rect, Side } from "./types"
+import type { LineType, Pt, Rect, Side } from "./types"
+import { lineTypeOf } from "./line-source"
 
 // Layer bands on the Diagram: labelled rows stacked top to bottom ("Spine",
 // "Leaf", "Compute"), and side bands beside them spanning several rows
@@ -237,6 +238,8 @@ export function normalizeRegions(raw: unknown): Region[] {
       if (region.orient === "h" && perRow !== undefined) region.per_row = perRow
       const align = bandAlign(o.align)
       if (region.orient === "h" && align) region.align = align
+      const line = lineTypeOf(o.line)
+      if (region.orient === "h" && line) region.line = line
     } else if (o.kind === "zone") region.kind = "zone"
     out.push(region)
   }
@@ -530,6 +533,32 @@ export function bandExits(
   const out: Record<string, BandExits> = {}
   for (const r of regions ?? []) if (isRow(r) && r.exits) out[r.id] = r.exits
   return out
+}
+
+/** Each row's line, by row id: the rows that set one (line-source.ts).
+ * Apart from the rows' geometry, like `bandExits`. */
+export function bandLines(
+  regions: readonly Region[] | undefined
+): Record<string, LineType> {
+  const out: Record<string, LineType> = {}
+  for (const r of regions ?? []) if (isRow(r) && r.line) out[r.id] = r.line
+  return out
+}
+
+/** A row's line (undefined: Default). Only the row changes: its cards
+ * stay where they are. */
+export function setBandLine<T extends Region>(
+  regions: readonly T[],
+  id: string,
+  line: LineType | undefined
+): T[] {
+  const row = regions.find((r) => r.id === id)
+  if (!row || !isRow(row) || row.line === line) return [...regions]
+  return regions.map((r) => {
+    if (r.id !== id) return r
+    const { line: _was, ...rest } = r
+    return (line ? { ...rest, line } : rest) as T
+  })
 }
 
 /** The sides a row's `exits` lets its cables to other bands leave by. */
@@ -1149,6 +1178,7 @@ export function arrangeBands(input: ArrangeInput): {
         ...(old?.exits ? { exits: old.exits } : {}),
         ...(old?.per_row ? { per_row: old.per_row } : {}),
         ...(old?.align ? { align: old.align } : {}),
+        ...(old?.line ? { line: old.line } : {}),
         ...box,
         rule: { by: input.by, ids: [...g.ids].sort() },
       })

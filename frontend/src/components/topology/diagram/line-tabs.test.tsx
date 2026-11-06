@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { TopologyLinkOverride } from "@/lib/api"
 import { emptyDocument, historyReducer, initHistory } from "../view-document"
-import { LineTabs, LinkLineRow, linkOverride } from "./line-tabs"
+import { LineTabs, LinkLineRow, OwnLineTabs, linkOverride } from "./line-tabs"
 
 // A link's own line in its panel: Default follows the view, a line type
 // pins it, and an arc can be turned over. Each change is one undoable edit
@@ -108,5 +108,83 @@ describe("LinkLineRow", () => {
   it("has no flip where the view's Cyclical draws the link bendy", () => {
     wired("cyclical")
     expect(screen.queryByRole("button", { name: "Flip the arc" })).toBeNull()
+  })
+})
+
+describe("where a Default line comes from", () => {
+  const names = (kind: "device" | "band", id: string) =>
+    kind === "band" ? (id === "b1" ? "Leaf-lag" : undefined) : "leaf-3a"
+
+  it("names the device or band whose line a link takes", () => {
+    const { rerender } = render(
+      <LinkLineRow
+        link={{
+          pairKey: KEY,
+          inherited: { line: "bendy", kind: "device", id: "d1" },
+        }}
+        override={undefined}
+        viewLine="straight"
+        nameOf={names}
+        onChange={vi.fn()}
+      />
+    )
+    expect(screen.getByText("Bendy (from leaf-3a)")).toBeTruthy()
+    rerender(
+      <LinkLineRow
+        link={{
+          pairKey: KEY,
+          inherited: { line: "elbow", kind: "band", id: "b1" },
+        }}
+        override={undefined}
+        viewLine="straight"
+        nameOf={names}
+        onChange={vi.fn()}
+      />
+    )
+    expect(screen.getByText("Elbow (from band Leaf-lag)")).toBeTruthy()
+  })
+
+  it("says nothing once the link has its own line", () => {
+    render(
+      <LinkLineRow
+        link={{
+          pairKey: KEY,
+          inherited: { line: "bendy", kind: "device", id: "d1" },
+        }}
+        override={{ line: "straight" }}
+        viewLine="straight"
+        nameOf={names}
+        onChange={vi.fn()}
+      />
+    )
+    expect(screen.queryByText(/\(from /)).toBeNull()
+  })
+
+  it("offers the flip for a device's Cyclical where it arcs", () => {
+    render(
+      <LinkLineRow
+        link={{
+          pairKey: KEY,
+          arc: 1,
+          inherited: { line: "cyclical", kind: "device", id: "d1" },
+        }}
+        override={undefined}
+        viewLine="straight"
+        onChange={vi.fn()}
+      />
+    )
+    expect(screen.getByRole("button", { name: "Flip the arc" })).toBeTruthy()
+    expect(screen.getByText("Cyclical (from a device)")).toBeTruthy()
+  })
+})
+
+describe("OwnLineTabs", () => {
+  it("is Default when unset, and Default clears it", () => {
+    const onChange = vi.fn()
+    render(<OwnLineTabs value={undefined} onChange={onChange} />)
+    fireEvent.click(screen.getByRole("button", { name: "Elbow" }))
+    expect(onChange).toHaveBeenLastCalledWith("elbow")
+    fireEvent.click(screen.getByRole("button", { name: "Default" }))
+    expect(onChange).toHaveBeenLastCalledWith(undefined)
   })
 })

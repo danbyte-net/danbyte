@@ -483,14 +483,17 @@ class DiagramViewStateTests(_Base):
                  "color": "#0EA5E9"},
                 {"id": "b1", "label": "Spine", "x": 0, "y": 300, "w": 900,
                  "h": 180, "color": None, "kind": "band", "orient": "h",
-                 "rule": {"by": "role", "ids": [self.A]}},
+                 "rule": {"by": "role", "ids": [self.A]}, "line": "bendy"},
                 {"id": "b2", "label": "OOB", "x": 950, "y": 0, "w": 200,
                  "h": 900, "color": "", "kind": "band", "orient": "v"},
             ]},
             "links": {
                 f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1},
             },
-            "nodes": {self.A: {"face": "card"}, self.B: {"anchor": "ports"}},
+            "nodes": {
+                self.A: {"face": "card", "line": "elbow"},
+                self.B: {"anchor": "ports"},
+            },
             "notes": [
                 {"id": "n1", "kind": "text", "x": 5, "y": -5.5, "text": "WAN",
                  "size": "l", "outline": True},
@@ -512,9 +515,11 @@ class DiagramViewStateTests(_Base):
         zones = state["zones_by_style"]["diagram"]
         self.assertEqual(zones[0]["color"], "#0ea5e9")
         self.assertEqual(zones[1]["rule"], {"by": "role", "ids": [self.A]})
+        self.assertEqual(zones[1]["line"], "bendy")
+        self.assertNotIn("line", zones[2])
         self.assertEqual(state["positions_by_style"]["diagram"], {f"dev:{self.A}": [10, 20]})
         self.assertEqual(state["links"], {f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1}})
-        self.assertEqual(state["nodes"][self.A], {"face": "card"})
+        self.assertEqual(state["nodes"][self.A], {"face": "card", "line": "elbow"})
         self.assertEqual(state["nodes"][self.B], {"anchor": "ports"})
         self.assertEqual(diagram["photo_anchor"], "edge")
         self.assertEqual([n["id"] for n in state["notes"]], ["n1", "n2"])
@@ -611,6 +616,10 @@ class DiagramViewStateTests(_Base):
             {"zones_by_style": {"diagram": [{**zone, "align": "Left"}]}},
             {"zones_by_style": {"diagram": [{**zone, "align": ["left"]}]}},
             {"zones_by_style": {"diagram": [{**zone, "align": 1}]}},
+            {"zones_by_style": {"diagram": [{**zone, "line": "curved"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "line": "Bendy"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "line": ["elbow"]}]}},
+            {"zones_by_style": {"diagram": [{**zone, "line": 1}]}},
             {"filters": {"diagram": "detailed"}},
             {"filters": {"diagram": {"mode": "photo"}}},
             {"filters": {"diagram": {"face": "rear"}}},
@@ -636,6 +645,10 @@ class DiagramViewStateTests(_Base):
             {"nodes": {a: "photo"}},
             {"nodes": {a: {"face": "rear"}}},
             {"nodes": {a: {"anchor": "edges"}}},
+            {"nodes": {a: {"line": "curved"}}},
+            {"nodes": {a: {"line": "default"}}},
+            {"nodes": {a: {"line": ["bendy"]}}},
+            {"nodes": {a: {"line": True}}},
             {"notes": {}},
             {"notes": ["x"]},
             {"notes": [{"x": 0, "y": 0}]},
