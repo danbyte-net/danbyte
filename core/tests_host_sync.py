@@ -107,6 +107,7 @@ class HostSandbox(SimpleTestCase):
                 .replace("@@STATIC_ROOT@@", f"{self.app}/staticfiles")
                 .replace("@@MEDIA_ROOT@@", f"{self.app}/media")
                 .replace("@@MAINTENANCE_ROOT@@", f"{self.app}/deploy")
+                .replace("@@FRONTEND_ROOT@@", f"{self.app}/frontend/dist/client")
                 .replace("@@H2_LISTEN@@", " http2").replace("@@H2_DIRECTIVE@@", ""))
 
     def stamp(self) -> dict:

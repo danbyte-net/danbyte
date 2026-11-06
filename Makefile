@@ -207,11 +207,12 @@ css-watch:        ; npm run watch:css
 # ---- frontend (Vite + React + TanStack Start SSR) ---------------------------
 # Lives in frontend/. In dev, `frontend-dev` runs the Vite dev server (:3000)
 # which proxies /api to Django. In production, `frontend-build` emits the SSR
-# bundle to frontend/dist and danbyte-frontend-prod serves it (vite preview);
-# nginx routes /api, /ws, /static, /admin to Django and / to the frontend.
+# bundle to frontend/dist (with .gz copies of the assets) and danbyte-frontend-prod
+# serves its HTML (vite preview); nginx serves /assets/ from disk, routes
+# /api, /ws, /static, /admin to Django and / to the frontend.
 frontend-install: ; cd frontend && npm install
 frontend-dev:     ; cd frontend && npm run dev
-frontend-build:   ; cd frontend && npx vite build
+frontend-build:   ; cd frontend && npm run build
 
 # ---- nginx reverse proxy (single-port 443) ----------------------------------
 # Puts SPA (/), API (/api), admin (/admin) and docs (/docs) behind one HTTPS
@@ -264,6 +265,7 @@ sed -e "s|@@SERVER_NAME@@|$(PROXY_HOST)|g" \
     -e "s|@@STATIC_ROOT@@|$(STATIC_ROOT)|g" \
     -e "s|@@MEDIA_ROOT@@|$(MEDIA_ROOT)|g" \
     -e "s|@@MAINTENANCE_ROOT@@|$(PROJECT_DIR)/deploy|g" \
+    -e "s|@@FRONTEND_ROOT@@|$(PROJECT_DIR)/frontend/dist/client|g" \
     -e "s|@@H2_LISTEN@@|$$h2l|g" \
     -e "s|@@H2_DIRECTIVE@@|$$h2d|g" \
     $(NGINX_TMPL) | sudo tee $(NGINX_SITE) >/dev/null

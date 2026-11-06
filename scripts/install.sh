@@ -465,6 +465,8 @@ as_user mkdir -p "$APP"
 tar -C "$BUNDLE" --exclude=./install.sh -cf - . | as_user tar -C "$APP" -xpf -
 chmod o+x "$SERVICE_HOME"
 as_user chmod o+x "$APP"   # let nginx traverse to staticfiles
+# …and to the frontend's build files, which it serves at /assets/ (#485).
+as_user chmod o+x "$APP/frontend" "$APP/frontend/dist" 2>/dev/null || true
 
 # ── 5. Python venv from the bundled wheelhouse ───────────────────────────────
 step "Python venv (offline wheelhouse)"

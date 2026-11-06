@@ -85,6 +85,9 @@ export PATH="$STAGE/vendor/node/bin:$PATH"
 # ── 3. Frontend: build with the bundled node, keep node_modules for runtime ───
 log "Building frontend (node $(node -v))"
 ( cd "$STAGE/frontend" && npm ci --no-audit --no-fund && npm run build )
+# nginx serves dist/client/assets (and their .gz copies, which the build
+# writes) from disk as another user; the tarball keeps the modes (#485).
+chmod -R u=rwX,go=rX "$STAGE/frontend/dist/client"
 
 # ── 4. Standalone CPython 3.13 (relocatable base for the target venv) ─────────
 log "Fetching standalone CPython ${PBS_PYTHON}"
