@@ -156,7 +156,7 @@ import { useMe } from "@/lib/use-me"
 import { useBookmarks } from "@/lib/use-bookmarks"
 import { usePluginUi } from "@/lib/plugins"
 import { useUserPrefs } from "@/lib/use-user-prefs"
-import { DynamicIcon } from "@/components/dynamic-icon"
+import { LazyDynamicIcon } from "@/components/dynamic-icon-lazy"
 import { apiErrorToast } from "@/lib/api-toast"
 import { naturalCompare } from "@/lib/natural-sort"
 import {
@@ -349,7 +349,7 @@ function EntryIcon({
 }) {
   if (entry.icon) return <entry.icon className={className} />
   if (entry.iconName)
-    return <DynamicIcon name={entry.iconName} className={className} />
+    return <LazyDynamicIcon name={entry.iconName} className={className} />
   return null
 }
 

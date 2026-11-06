@@ -64,11 +64,9 @@ import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
 import { HistoryView } from "@/components/monitoring/history-view"
 import { TemplatesList } from "@/components/monitoring/templates-list"
-import {
-  CONFIG_TABS,
-  MonitoringConfiguration,
-} from "@/components/monitoring/configuration"
-import type { ConfigTab } from "@/components/monitoring/configuration"
+import { MonitoringConfiguration } from "@/components/monitoring/configuration"
+import { CONFIG_TABS } from "@/components/monitoring/configuration/tabs"
+import type { ConfigTab } from "@/components/monitoring/configuration/tabs"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 import { SourceBadge } from "@/components/monitoring/source-badge"
 import { ExploreView } from "@/components/monitoring/explore-view"
