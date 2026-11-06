@@ -211,9 +211,11 @@ class SlaScopeTests(_Base):
 
         a = SlaAgreement.objects.create(tenant=self.tenant, name="Gold", target_pct=Decimal("99"))
         g = SlaCheckGroup.objects.create(tenant=self.tenant, agreement=a, name="All")
+        # joined_at's default is the unpatched clock, which runs past the
+        # pinned one; join an hour before the pinned "now".
         SlaMember.objects.create(
             tenant=self.tenant, agreement=a, group=g, object_type="api.ipaddress",
-            object_id=self.ip_b.id,
+            object_id=self.ip_b.id, joined_at=timezone.now() - timedelta(hours=1),
         )
         r = self.client.get(f"/api/monitoring/explore/?group_by=site&sla={a.id}")
         self.assertEqual([x["name"] for x in r.json()["rows"]], ["Bravo"])
