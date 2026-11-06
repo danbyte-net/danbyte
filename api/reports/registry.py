@@ -108,4 +108,4 @@ def _load() -> None:
     if _loaded:
         return
     _loaded = True
-    from .kinds import objects  # noqa: F401
+    from .kinds import objects, topology  # noqa: F401

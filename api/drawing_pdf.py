@@ -119,6 +119,12 @@ MAX_MEDIA_BYTES = 12 * 1024 * 1024
 TOKEN = re.compile(r"^[A-Za-z0-9_-]{24,64}$")
 
 
+def drawing_url(n: int) -> str:
+    """The URL a report's ``n``-th drawing is read from (the first is
+    ``DIAGRAM_URL``)."""
+    return DIAGRAM_URL if n == 0 else f"{BASE_URL}_/diagram-{n}.svg"
+
+
 # ─── The sheet ──────────────────────────────────────────────────────────────
 
 
@@ -224,17 +230,37 @@ def stamp(when: dt.datetime) -> str:
     return when.astimezone(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
 
 
-def sheet_html(
+#: The sheet's look; its geometry is on each sheet (:func:`sheet_frame`), so
+#: a report can hold several sheets of different drawings.
+SHEET_CSS = (
+    ".sheet{position:relative;overflow:hidden}"
+    ".sheet .drawing{position:absolute;display:block}"
+    ".sheet .block{position:absolute;right:0;bottom:0;"
+    "box-sizing:border-box;border:0.25mm solid #d4d4d8;border-radius:1mm;"
+    "padding:1.4mm 2.5mm 0;text-align:right}"
+    ".sheet .block div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+    ".sheet .block .t{font-size:11pt;font-weight:700;line-height:1.2}"
+    ".sheet .block .s{font-size:7.5pt;color:#52525b;line-height:1.35}"
+    ".sheet .block .m{font-size:7pt;color:#71717a;line-height:1.35}"
+)
+
+
+def sheet_frame(
     plan: dict,
     *,
     title: str,
     subtitle: str,
     generated: dt.datetime,
     title_block: bool,
+    src: str = DIAGRAM_URL,
+    page_label: str = "Page 1 / 1",
+    attrs: str = "",
 ) -> str:
-    """The page WeasyPrint lays out: the drawing where ``plan`` puts it and,
-    with ``title_block``, the block in the bottom-right corner - the title,
-    the subtitle, then the date, the Danbyte version and the page."""
+    """One sheet inside a page of ``plan``'s paper with ``MARGIN_MM``
+    margins: the drawing at ``src`` where ``plan`` puts it and, with
+    ``title_block``, the block in the bottom-right corner - the title, the
+    subtitle, then the date, the Danbyte version and ``page_label``.
+    ``attrs`` goes on the sheet's element (an anchor, a bookmark)."""
     from danbyte import __version__
 
     pw, ph = plan["page"]
@@ -243,15 +269,43 @@ def sheet_html(
     mm = lambda v: f"{v:.3f}mm"  # noqa: E731
     block = ""
     if title_block:
-        small = " · ".join((stamp(generated), f"Danbyte {__version__}", "Page 1 / 1"))
+        small = " · ".join(
+            p for p in (stamp(generated), f"Danbyte {__version__}", page_label) if p
+        )
         block = (
-            '<div class="block">'
+            f'<div class="block" style="width:{mm(min(TITLE_W_MM, aw))};height:{mm(TITLE_MM)}">'
             f'<div class="t">{escape(title)}</div>'
             f'<div class="s">{escape(subtitle)}</div>'
             f'<div class="m">{escape(small)}</div>'
             "</div>"
         )
     # Positions are relative to the page area (inside the 10 mm margin).
+    return (
+        f"<div class='sheet'{(' ' + attrs) if attrs else ''} "
+        f"style='width:{mm(pw - 2 * MARGIN_MM)};height:{mm(ph - 2 * MARGIN_MM - 0.5)}'>"
+        f"<img class='drawing' src='{escape(src)}' alt='' "
+        f"style='left:{mm(x - ax)};top:{mm(y - ay)};width:{mm(w)};height:{mm(h)}'>"
+        f"{block}</div>"
+    )
+
+
+def sheet_html(
+    plan: dict,
+    *,
+    title: str,
+    subtitle: str,
+    generated: dt.datetime,
+    title_block: bool,
+) -> str:
+    """The page WeasyPrint lays out: one sheet (:func:`sheet_frame`) on a
+    page of ``plan``'s paper."""
+    from danbyte import __version__
+
+    pw, ph = plan["page"]
+    mm = lambda v: f"{v:.3f}mm"  # noqa: E731
+    frame = sheet_frame(
+        plan, title=title, subtitle=subtitle, generated=generated, title_block=title_block
+    )
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         f"<title>{escape(title)}</title>"
@@ -261,21 +315,8 @@ def sheet_html(
         f"@page{{size:{mm(pw)} {mm(ph)};margin:{mm(MARGIN_MM)}}}"
         "html,body{margin:0;padding:0}"
         "body{font-family:Inter,'DejaVu Sans',sans-serif;color:#18181b}"
-        f".sheet{{position:relative;width:{mm(pw - 2 * MARGIN_MM)};"
-        f"height:{mm(ph - 2 * MARGIN_MM - 0.5)};overflow:hidden}}"
-        f".drawing{{position:absolute;display:block;left:{mm(x - ax)};"
-        f"top:{mm(y - ay)};width:{mm(w)};height:{mm(h)}}}"
-        f".block{{position:absolute;right:0;bottom:0;"
-        f"width:{mm(min(TITLE_W_MM, aw))};height:{mm(TITLE_MM)};"
-        "box-sizing:border-box;border:0.25mm solid #d4d4d8;border-radius:1mm;"
-        "padding:1.4mm 2.5mm 0;text-align:right}"
-        ".block div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
-        ".t{font-size:11pt;font-weight:700;line-height:1.2}"
-        ".s{font-size:7.5pt;color:#52525b;line-height:1.35}"
-        ".m{font-size:7pt;color:#71717a;line-height:1.35}"
-        "</style></head><body><div class='sheet'>"
-        f"<img class='drawing' src='{DIAGRAM_URL}' alt=''>"
-        f"{block}</div></body></html>"
+        f"{SHEET_CSS}"
+        f"</style></head><body>{frame}</body></html>"
     )
 
 
@@ -297,12 +338,17 @@ class PdfUrlFetcher:
     vendored fonts and device-type photos. Anything else - http(s), other
     files, other media - raises, and WeasyPrint leaves it out."""
 
-    def __init__(self, svg: bytes):
+    def __init__(self, svg: bytes, drawings: dict[str, bytes] | None = None):
         self.svg = svg
+        # More drawings by their URL (:func:`drawing_url`), for a report
+        # with several.
+        self.drawings = drawings or {}
 
     def __call__(self, url: str):
         if url == DIAGRAM_URL:
             return _response(url, self.svg, "image/svg+xml")
+        if url in self.drawings:
+            return _response(url, self.drawings[url], "image/svg+xml")
         scheme = url.split(":", 1)[0].lower()
         if scheme == "data":
             with DataHandler().data_open(Request(url)) as res:
@@ -475,6 +521,11 @@ def file_name(title: str, when: dt.datetime, fallback: str) -> str:
     return f"{file_slug(title, fallback)}-{when.astimezone(dt.UTC):%Y-%m-%d}.pdf"
 
 
+def file_mime(name: str) -> str:
+    """A kept file's type by its name: a report of several views is a ZIP."""
+    return "application/zip" if name.endswith(".zip") else "application/pdf"
+
+
 def take(key: str, ttl: int) -> str | None:
     """A lock in the cache: its token when taken, None when someone holds
     it, "" when there is no cache (the render goes ahead unguarded)."""
@@ -562,7 +613,7 @@ def deliver(
             log.warning("%s PDF print link not kept", label, exc_info=True)
             return detail("The PDF could not be kept for its link. Try again in a minute.", 503)
         return Response({"url": link(token)})
-    resp = HttpResponse(pdf, content_type="application/pdf")
+    resp = HttpResponse(pdf, content_type=file_mime(name))
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
     resp["Cache-Control"] = "private, no-store"
     return resp
@@ -589,7 +640,7 @@ def kept_pdf(
         or any(entry.get(k) != v for k, v in (match or {}).items())
     ):
         return detail("Not found.", 404)
-    resp = HttpResponse(entry["pdf"], content_type="application/pdf")
+    resp = HttpResponse(entry["pdf"], content_type=file_mime(entry["name"]))
     how = "attachment" if flag(request, "download") else "inline"
     resp["Content-Disposition"] = f'{how}; filename="{entry["name"]}"'
     resp["Cache-Control"] = "private, no-store"
