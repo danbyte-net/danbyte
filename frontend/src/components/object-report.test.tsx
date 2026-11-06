@@ -11,12 +11,18 @@ import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type * as Api from "@/lib/api"
-import type { ObjectReportRequest, ObjectReportSchema } from "@/lib/api"
+import { ApiError } from "@/lib/api"
+import type {
+  ObjectReportEstimate,
+  ObjectReportRequest,
+  ObjectReportSchema,
+} from "@/lib/api"
 
 import { BulkExport } from "./bulk-export"
 import {
   ObjectReportButton,
   ObjectReportDialog,
+  estimateLine,
   initialPrefs,
   readReportPrefs,
   reportExport,
@@ -26,9 +32,11 @@ import type { ReportTarget } from "./object-report"
 
 // The PDF report of devices, prefixes and IP addresses
 // (api/object_report.py): the dialog reads what a report can hold from the
-// server, picks the list columns, summary, pages per object and sections,
-// posts one request and remembers the picks per type in this browser. It
-// opens from a detail page's button and from a list's or bulk bar's menu.
+// server, picks the list columns, summary, details for each object and
+// their sections, shows a live estimate, posts one request (polling a
+// background report until it is ready) and remembers the picks per type in
+// this browser. It opens from a detail page's button and from a list's or
+// bulk bar's menu.
 
 const { apiMock, toastMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -104,13 +112,33 @@ const SCHEMA: ObjectReportSchema = {
 }
 
 let posted: { path: string; body: ObjectReportRequest }[] = []
+let estimated: ObjectReportRequest[] = []
+const NOW: ObjectReportEstimate = {
+  cells: 120,
+  pages: 0,
+  seconds: 0.7,
+  mode: "now",
+  fits: { now: 12800, background: 130000 },
+}
+let estimate: ObjectReportEstimate | Error = NOW
+
+/** The estimate endpoint's answer, or its refusal. */
+function answerEstimate(init?: RequestInit) {
+  estimated.push(JSON.parse(String(init?.body)) as ObjectReportRequest)
+  return estimate instanceof Error
+    ? Promise.reject(estimate)
+    : Promise.resolve(estimate)
+}
 
 beforeEach(() => {
   localStorage.clear()
   posted = []
+  estimated = []
+  estimate = NOW
   apiMock.mockReset()
   toastMock.mockReset()
   apiMock.mockImplementation((path, init) => {
+    if (path.includes("estimate=1")) return answerEstimate(init)
     if (init?.method === "POST") {
       posted.push({
         path,
@@ -205,6 +233,7 @@ describe("ObjectReportDialog", () => {
   it("posts the picks, says Generating… and remembers them", async () => {
     let finish: (v: unknown) => void = () => {}
     apiMock.mockImplementation((path, init) => {
+      if (path.includes("estimate=1")) return answerEstimate(init)
       if (init?.method === "POST") {
         posted.push({
           path,
@@ -277,6 +306,223 @@ describe("ObjectReportDialog", () => {
         .disabled
     ).toBe(true)
   })
+})
+
+const downloadButton = () =>
+  screen.getByRole<HTMLButtonElement>("button", { name: /Download/ })
+const printButton = () =>
+  screen.getByRole<HTMLButtonElement>("button", { name: /Print/ })
+
+describe("live estimate", () => {
+  it("says what the report costs and where it renders", () => {
+    const plain = { showIps: false, details: false }
+    expect(estimateLine(NOW, plain)).toBe("About 120 cells")
+    expect(
+      estimateLine({ ...NOW, cells: 14207, mode: "background" }, plain)
+    ).toBe("About 14,200 cells · renders in the background")
+    expect(
+      estimateLine(
+        { ...NOW, cells: 150000, mode: "too_large" },
+        { showIps: true, details: true }
+      )
+    ).toBe(
+      "Too large: 150,000 cells, 130,000 fit · leave out Show IPs or the details or some rows or columns"
+    )
+  })
+
+  it("shows the line under the options, following the picks", async () => {
+    estimate = { ...NOW, cells: 14207, seconds: 25, mode: "background" }
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    await screen.findByText("About 14,200 cells · renders in the background")
+    expect(estimated[0].columns?.list).toEqual(["name", "status", "site"])
+    expect(downloadButton().disabled).toBe(false)
+    expect(printButton().disabled).toBe(false)
+    fireEvent.click(screen.getByRole("checkbox", { name: "Summary" }))
+    await waitFor(() => expect(estimated).toHaveLength(2))
+    expect(estimated[1].options?.include_summary).toBe(false)
+  })
+
+  it("disables Download and Print when too large", async () => {
+    estimate = {
+      ...NOW,
+      cells: 150000,
+      mode: "too_large",
+      detail: "This report is too large to render in time.",
+    }
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    await screen.findByText(/^Too large: 150,000 cells/)
+    expect(downloadButton().disabled).toBe(true)
+    expect(printButton().disabled).toBe(true)
+  })
+
+  it("shows the server's refusal and disables", async () => {
+    estimate = new ApiError(400, {
+      detail: "A report gives details for at most 50 devices.",
+    })
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    await screen.findByText("A report gives details for at most 50 devices.")
+    expect(downloadButton().disabled).toBe(true)
+  })
+
+  it("says nothing and stays enabled when the estimate fails", async () => {
+    estimate = new ApiError(503, { detail: "Busy" })
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    await waitFor(() => expect(estimated).toHaveLength(1))
+    expect(screen.queryByText("Busy")).toBeNull()
+    expect(downloadButton().disabled).toBe(false)
+  })
+})
+
+describe("details for each object", () => {
+  it("is a tick under Include; its sections show only when ticked", async () => {
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    const box = await screen.findByRole("checkbox", {
+      name: "Details for each device",
+    })
+    expect(screen.queryByText("One page per object")).toBeNull()
+    expect(screen.queryByText("Detail sections")).toBeNull()
+    expect(screen.queryByRole("checkbox", { name: "Overview" })).toBeNull()
+    fireEvent.click(box)
+    expect(screen.getByText("Detail sections")).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "Overview" })).toBeTruthy()
+    fireEvent.click(downloadButton())
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].body.options?.per_object).toBe(true)
+    expect(posted[0].body.sections).toEqual(["overview"])
+  })
+
+  it("names the type", async () => {
+    wrap(
+      <ObjectReportDialog
+        kind="ipaddress"
+        target={many}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    await screen.findByRole("checkbox", {
+      name: "Details for each IP address",
+    })
+  })
+})
+
+describe("background report", () => {
+  const STATUS = "/api/devices/report/job/tok/"
+  const FILE = "/api/devices/report/job/tok/file/"
+
+  function serve(states: unknown[]) {
+    let polls = 0
+    apiMock.mockImplementation((path, init) => {
+      if (path.includes("estimate=1")) return answerEstimate(init)
+      if (init?.method === "POST") {
+        posted.push({
+          path,
+          body: JSON.parse(String(init.body)) as ObjectReportRequest,
+        })
+        return Promise.resolve({
+          job: "tok",
+          status: STATUS,
+          state: "queued",
+          seconds: 30,
+        })
+      }
+      if (path === STATUS)
+        return Promise.resolve(states[Math.min(polls++, states.length - 1)])
+      return Promise.resolve(SCHEMA)
+    })
+  }
+
+  it("shows progress, then downloads when ready", async () => {
+    serve([
+      { state: "running", progress: 40 },
+      { state: "done", url: FILE },
+    ])
+    const saved: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      saved.push(this.getAttribute("href") ?? "")
+    })
+    const onOpenChange = vi.fn()
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={onOpenChange}
+      />
+    )
+    await screen.findByText("List columns", { selector: "label" })
+    fireEvent.click(downloadButton())
+    await screen.findByRole(
+      "button",
+      { name: /Generating… 40%/ },
+      { timeout: 4000 }
+    )
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false), {
+      timeout: 5000,
+    })
+    expect(saved).toEqual([`${FILE}?download=1`])
+    expect(toastMock).not.toHaveBeenCalled()
+  }, 12_000)
+
+  it("says why a job failed", async () => {
+    serve([{ state: "failed", detail: "The report took too long." }])
+    const onOpenChange = vi.fn()
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={many}
+        open
+        onOpenChange={onOpenChange}
+      />
+    )
+    await screen.findByText("List columns", { selector: "label" })
+    fireEvent.click(downloadButton())
+    await waitFor(() => expect(toastMock).toHaveBeenCalled(), {
+      timeout: 4000,
+    })
+    expect((toastMock.mock.calls[0][0] as Error).message).toBe(
+      "The report took too long."
+    )
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(downloadButton().textContent).toContain("Download")
+  }, 8_000)
 })
 
 describe("entry points", () => {
