@@ -222,6 +222,15 @@ takes, in bytes. The default is `26214400` (25 MB); a larger upload is
 refused with the limit in the message. Keep it under the web server's
 `client_max_body_size` (512 MB in the shipped nginx templates).
 
+## PDF reports (`DANBYTE_REPORT_JOB_TIMEOUT`)
+
+A [PDF report](../features/reports.md) too large to render within a request
+renders in the background, as a job on the `low` queue.
+`DANBYTE_REPORT_JOB_TIMEOUT` is that render's deadline in seconds (default
+`300`); a report estimated past about 70% of it is refused.
+`DANBYTE_REPORT_JOB_KEEP` is how long the finished PDF is kept for the user
+who asked for it, in seconds (default `3600`).
+
 ## CAD drawings (`DANBYTE_CAD_CONVERTER`)
 
 `DANBYTE_CAD_CONVERTER` is the absolute path of the program that turns a DWG
