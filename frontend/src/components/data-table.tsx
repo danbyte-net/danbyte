@@ -104,6 +104,10 @@ interface DataTableProps<T> {
    * handed it. When the parent empties it (a bulk bar's Clear, a finished
    * bulk action) the ticks clear to match. */
   selectedRows?: readonly T[]
+  /** Fired when the rows on screen change - the current page after search,
+   * filters and sorting (group header rows left out) - so a page can fetch
+   * per-row extras for what is shown instead of the whole list. */
+  onPageRowsChange?: (rows: T[]) => void
   /** Initial column-visibility map. Useful for hiding columns that are
    * only kept around for grouping (e.g. vrfName behind a VRF group
    * header). */
@@ -221,6 +225,7 @@ export function DataTable<T>({
   renderGroupHeader,
   onSelectedRowsChange,
   selectedRows,
+  onPageRowsChange,
   initialColumnVisibility,
   flexColumn,
   stickyHeader,
@@ -666,6 +671,25 @@ export function DataTable<T>({
     // table is stable; re-emit when selection or data changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowSelection, data])
+
+  // The rows on screen, re-emitted only when they change (same guard).
+  const lastPage = useRef<T[] | null>(null)
+  useEffect(() => {
+    if (!onPageRowsChange) return
+    const pageRows = table
+      .getRowModel()
+      .rows.filter((r) => !r.getIsGrouped())
+      .map((r) => r.original as T)
+    const prev = lastPage.current
+    if (
+      prev &&
+      prev.length === pageRows.length &&
+      prev.every((row, i) => row === pageRows[i])
+    )
+      return
+    lastPage.current = pageRows
+    onPageRowsChange(pageRows)
+  })
 
   const hscroll = useTableScroll(stickyHeader)
 

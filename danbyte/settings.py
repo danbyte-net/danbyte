@@ -443,6 +443,12 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": API_PAGE_SIZE,
     # JSON bodies must be objects: a string or list reached views reading
     # request.data.get(...) and crashed (#373). See api/parsers.py.
+    # JSON through orjson when it is installed, else DRF's renderer: the same
+    # bytes either way (api/renderers.py, #488). orjson is not a requirement.
+    "DEFAULT_RENDERER_CLASSES": [
+        "api.renderers.FastJSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
+    ],
     "DEFAULT_PARSER_CLASSES": [
         "api.parsers.ObjectJSONParser",
         "rest_framework.parsers.FormParser",

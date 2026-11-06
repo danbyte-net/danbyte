@@ -554,6 +554,9 @@ class BGPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
                 "rpki_caches",
             )
             .annotate(session_count_annotated=Count("sessions", distinct=True))
+            # A GROUP BY query ignores Meta.ordering: page in a stable order
+            # (#488), VM-hosted instances after the devices, id last.
+            .order_by("device__name", "virtual_machine__name", "vrf__name", "pk")
         )
         if not self.request:
             return qs
@@ -891,6 +894,9 @@ class _IGPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
             .select_related("device__site", "virtual_machine__site", "vrf", "status")
             .prefetch_related(TAGS, "redistributions__policy")
             .annotate(interface_count_annotated=Count("interfaces", distinct=True))
+            # A GROUP BY query ignores Meta.ordering: page in a stable order
+            # (#488) - the model's own, with the VM and id as tie-breakers.
+            .order_by(*_stable_order(self.queryset.model))
         )
         if not self.request:
             return qs
@@ -917,6 +923,17 @@ class _IGPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
         elif vrf:
             qs = qs.filter(vrf_id=vrf)
         return qs.distinct()
+
+
+def _stable_order(model) -> list[str]:
+    """``Meta.ordering`` with the VM name after the device name, and the pk
+    last, so equal keys never swap places between pages."""
+    out = []
+    for f in model._meta.ordering:
+        out.append(f)
+        if f == "device__name":
+            out.append("virtual_machine__name")
+    return [*out, "pk"]
 
 
 class OSPFInstanceViewSet(_IGPInstanceViewSet):

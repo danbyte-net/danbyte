@@ -248,7 +248,9 @@ first row you see (`GET /api/devices/port-utilization/`). It lists only the
 devices you can view. `?site=<id>` or `?rack=<id>` opens it with that facet
 ticked. A device with nothing counted - a router with only loopbacks - has
 no fill level, so it is not listed. The **Devices list** carries the same
-number as a **Ports** bar column (like the prefix utilization bar), and
+number as a **Ports** bar column (like the prefix utilization bar), read for
+the rows on screen only (`?ids=<id>,<id>,…`, up to 100 per request; a longer
+page reads the whole roll-up), and
 **port utilization rules** on the Alerts → Rules tab can notify when a
 device's fill crosses a threshold - see
 [Monitoring](../features/monitoring.md#alert-rules).
