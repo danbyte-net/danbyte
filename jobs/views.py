@@ -119,6 +119,7 @@ SCHEDULED_TASKS = [
     {"name": "digest", "label": "Email digest", "cadence": "daily 07:00"},
     {"name": "eol-refresh", "label": "End-of-life data", "cadence": "daily 05:35"},
     {"name": "acme-renew", "label": "ACME renewal", "cadence": "every 4h"},
+    {"name": "update-check", "label": "Update check", "cadence": "every 6h"},
     {"name": "cleanup-ips", "label": "Stale-IP cleanup", "cadence": "daily"},
     {"name": "flow-requirements", "label": "Flow requirements sweep", "cadence": "daily"},
     {"name": "prune-changelog", "label": "Prune changelog", "cadence": "daily"},

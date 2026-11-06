@@ -38,10 +38,15 @@ def release_assets(git_url: str, tag: str, token: str = "") -> dict[str, str]:
         }
 
 
-def list_releases(git_url: str, token: str = "", per_page: int = 30) -> list[dict]:
+def list_releases(
+    git_url: str, token: str = "", per_page: int = 30, timeout: float = 5
+) -> list[dict]:
     """A repo's releases, newest first →
     ``[{tag, name, body, published_at, prerelease, has_binary}]``. ``body`` is the
-    release notes (changelog). ``[]`` for a non-GitHub URL."""
+    release notes (changelog). ``[]`` for a non-GitHub URL.
+
+    ``timeout`` defaults to 5 s, the most a request may wait on it (#478); the
+    background refresh in ``core.update_check`` passes a longer one."""
     import httpx
 
     owner, repo = _owner_repo(git_url)
@@ -50,7 +55,7 @@ def list_releases(git_url: str, token: str = "", per_page: int = 30) -> list[dic
     headers = {"Accept": "application/vnd.github+json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    with httpx.Client(timeout=20, follow_redirects=True) as client:
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
         r = client.get(
             f"https://api.github.com/repos/{owner}/{repo}/releases?per_page={per_page}",
             headers=headers,

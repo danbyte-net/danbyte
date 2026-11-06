@@ -173,6 +173,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Renew ACME certificates due for renewal",
     ),
     ScheduledTask(
+        unit="danbyte-update-check",
+        commands=("update_check",),
+        at=("00:50", "06:50", "12:50", "18:50"),
+        label="Refresh the cached release list the update check reads",
+    ),
+    ScheduledTask(
         unit="danbyte-prune",
         commands=("prune_check_results", "prune_changelog", "housekeeping"),
         at=("04:17",),

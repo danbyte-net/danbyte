@@ -36,14 +36,20 @@ current `/opt` layout.
     certificate. The
     running version and the environment come from a local, network-free
     check - so the page renders immediately even on an airgapped or offline
-    box. The release-repo check (the list of available versions) runs
-    separately; if it's slow, failing, or disabled, the version and
-    environment still show right away.
+    box. The list of available versions never comes from the release repo
+    during a page load: the `danbyte-update-check` timer (`manage.py
+    update_check`, every 6 hours; `run_scheduler` in a container) fetches it
+    into Redis, and the page and the badge read that copy. Until the first
+    fetch has run the Releases card says *Checking for releases…* and one
+    background refresh is queued (it needs `danbyte-workers`). A slow or
+    unreachable repo only makes the list older; the error shows under the
+    version line. Changing the release source or token starts a fresh check.
 
 !!! info "The top-bar update badge"
     When a newer release exists, a blue **Update available** badge appears
     beside the product name in the top bar - only for users who can manage
-    deployment settings (it links to **Settings → Updates**). The running
+    deployment settings (it links to **Settings → Updates**). It reads the
+    cached release list once per browser session. The running
     Danbyte version also shows at the bottom of the account menu. To hide the
     badge while still checking for updates, tick **Settings → Updates → Hide the
     "update available" badge** (airgapped mode hides it too, since no check

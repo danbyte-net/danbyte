@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
 import { Markdown } from "@/components/markdown"
 import { ServicesSection } from "@/components/settings/services-section"
 import { SiteCertificateCard } from "@/components/settings/site-certificate-card"
@@ -60,6 +61,7 @@ function UpdatesSettingsPage() {
     queryKey: ["system-updates"],
     queryFn: () => api<SystemUpdates>("/api/system/updates/"),
     enabled: canManage,
+    refetchInterval: (query) => (query.state.data?.checking ? 5_000 : false),
   })
   const settings = useQuery({
     queryKey: ["deployment-email"],
@@ -229,7 +231,9 @@ function UpdatesSettingsPage() {
               Update available
             </Badge>
           ) : (
-            d && !d.error && <Badge variant="secondary">Up to date</Badge>
+            d &&
+            !d.error &&
+            !d.checking && <Badge variant="secondary">Up to date</Badge>
           )
         }
       >
@@ -554,7 +558,11 @@ docker compose -f docker-compose.prod.yml up -d`}
           {/* Releases + changelog */}
           <SettingsCard title="Releases" layout="plain">
             {updates.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <Loading />
+            ) : d?.checking ? (
+              <p className="text-sm text-muted-foreground">
+                Checking for releases…
+              </p>
             ) : !d?.releases.length ? (
               <p className="text-sm text-muted-foreground">
                 No releases found in the repo yet.
