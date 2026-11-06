@@ -24,6 +24,8 @@ from rest_framework import serializers
 from core.hidden_fields import PermissionHiddenFieldsMixin, hidden_related_spec
 from core.models import Tag, Tenant, TenantGroup
 from core.tags import tags_of
+from .listed import ListedManySerializer, listed
+from .list_table import TableSerializerMixin
 from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
@@ -122,7 +124,7 @@ def _device_profiles(serializer, obj) -> list[dict]:
     return [
         {"id": str(a.profile_id), "assignment_id": str(a.pk), "name": a.profile.name,
          "slug": a.profile.slug, "color": a.profile.color, "state": a.state}
-        for a in obj.device_profile_assignments.all()
+        for a in listed(obj, "device_profile_assignments")
     ]
 
 
@@ -2716,6 +2718,24 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
                         for f in ("width_mm", "height_mm", "depth_mm", "din_rail_mm")}
 
 
+class DeviceTypeTableSerializer(NumIdModelSerializer):
+    """A device's type in the device table's slim row (#487): what the Type
+    and Manufacturer columns print - not the images, calibration and sizes
+    the rack and 3D views read."""
+
+    lifecycle_state = serializers.ReadOnlyField()
+    manufacturer = serializers.SerializerMethodField()
+    manufacturer_id = serializers.ReadOnlyField()
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_manufacturer(self, obj) -> str | None:
+        return obj.manufacturer.name if obj.manufacturer_id else None
+
+    class Meta:
+        model = DeviceType
+        fields = ["id", "name", "manufacturer", "manufacturer_id", "icon", "lifecycle_state"]
+
+
 class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "devicetype"
     # The 3D model's placement settings are render plumbing, not columns.
@@ -3231,7 +3251,7 @@ def clean_prtg_host(value: str) -> str:
     return value.lower()
 
 
-class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "device"
     # Render settings and write-back plumbing: real fields, but not columns
     # anyone reads a device list for (see api.list_fields).
@@ -3251,6 +3271,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
+    # The slim table row's type (api.list_table, #487).
+    table_nested = {"device_type": lambda: DeviceTypeTableSerializer(read_only=True)}
     # The device's own 3D model (a URL, never its stored path), and what the
     # 3D room draws for it - its own, else its type's.
     model_3d = serializers.SerializerMethodField()
@@ -4131,7 +4153,7 @@ class ChoiceLabelField(serializers.CharField):
 def _point_cable(point, context=None):
     # ≤1 due to the per-port unique rule. Read the prefetch directly: .first()
     # clones and re-slices the queryset on every row of a component list.
-    t = next(iter(point.terminations.all()), None)
+    t = next(iter(listed(point, "terminations")), None)
     if t is None:
         return None
     if context is None:
@@ -4148,7 +4170,7 @@ def _point_far_end(point, context=None):
     """The far end of ``point``'s cable, named only when the caller may view
     its device (#473). The visible device ids are read once per request and
     kept in the serializer context."""
-    term = next(iter(point.terminations.all()), None)
+    term = next(iter(listed(point, "terminations")), None)
     request = (context or {}).get("request")
     user = getattr(request, "user", None)
     if user is None:
@@ -4163,7 +4185,7 @@ def _point_far_end(point, context=None):
 
 
 def _point_reservation(point):
-    r = next(iter(point.reservations.all()), None)  # ≤1 (per-port unique rule)
+    r = next(iter(listed(point, "reservations")), None)  # ≤1 (per-port unique rule)
     if r is None:
         return None
     return {
@@ -4174,7 +4196,7 @@ def _point_reservation(point):
     }
 
 
-class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class InterfaceSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "interface"
 
     def update(self, instance, validated_data):
@@ -4190,7 +4212,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     # device's own (#333). Set by module install only.
     module_id = serializers.UUIDField(read_only=True, allow_null=True)
     vlan = VLANMiniSerializer(read_only=True)
-    tagged_vlans = VLANMiniSerializer(many=True, read_only=True)
+    tagged_vlans = ListedManySerializer(child=VLANMiniSerializer(), read_only=True)
     vrf = VRFMiniSerializer(read_only=True)
     mode_display = ChoiceLabelField("mode")
     mac_addresses = serializers.SerializerMethodField()
@@ -4203,7 +4225,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         return [
             {"id": str(m.id), "mac_address": m.mac_address,
              "is_primary": m.mac_address == primary}
-            for m in obj.mac_addresses.all()
+            for m in listed(obj, "mac_addresses")
         ]
     cable_count = serializers.SerializerMethodField()
     parent = serializers.SerializerMethodField()
@@ -4300,7 +4322,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         return _point_reservation(obj)
 
     def get_cable_count(self, obj) -> int:
-        return obj.terminations.count()
+        return len(listed(obj, "terminations"))
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_parent(self, obj):
@@ -4324,10 +4346,10 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     def get_child_count(self, obj) -> int:
         # Prefetched via `children` on the viewset querysets - no N+1.
-        return len(obj.children.all())
+        return len(listed(obj, "children"))
 
     def get_lag_member_count(self, obj) -> int:
-        return len(obj.lag_members.all())
+        return len(listed(obj, "lag_members"))
 
     def get_type_display(self, obj) -> str:
         return _choice_label(obj, "type")
@@ -4356,7 +4378,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
             {"id": str(t.id), "role": t.role,
              "role_display": t.get_role_display(),
              "tunnel": {"id": str(t.tunnel_id), "name": t.tunnel.name}}
-            for t in obj.tunnel_terminations.all()
+            for t in listed(obj, "tunnel_terminations")
             if t.tunnel.tenant_id == obj.device.tenant_id
         ]
 
@@ -6158,7 +6180,7 @@ class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
         ]
 
 
-class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     """Read+write cable with A/B termination sets (1:1, breakout 1:N, M:N).
 
     Read: ``a_terminations`` / ``b_terminations`` (lists of
@@ -6886,7 +6908,7 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
                             "created_at", "updated_at"]
 
 
-class VirtualMachineSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
+class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFieldsSerializerMixin,
                                TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "virtualmachine"
     # Its own column, Next end of life (vm-columns.tsx).
@@ -6903,7 +6925,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, CustomFieldsSerializerMixi
     def validate_prtg_host(self, value):
         return clean_prtg_host(value)
 
-    disks = VirtualDiskSerializer(many=True, read_only=True)
+    disks = ListedManySerializer(child=VirtualDiskSerializer(), read_only=True)
     # Detail-only tab counters (like the device page). Zero on list responses so
     # a table of VMs doesn't fire a COUNT per row.
     interface_count = serializers.SerializerMethodField()

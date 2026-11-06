@@ -60,9 +60,7 @@ const EXPR_FACET_ID = "__expr"
 // ─── Type extension ────────────────────────────────────────────────────
 
 export type FacetDef<TRow> =
-  | EnumFacet<TRow>
-  | TagsFacet<TRow>
-  | RangeFacet<TRow>
+  EnumFacet<TRow> | TagsFacet<TRow> | RangeFacet<TRow>
 
 interface EnumFacet<TRow> {
   kind: "enum"
@@ -219,7 +217,15 @@ function useLocalFacetStore(
 }
 
 /** Params a facet can never be named, because the list uses them itself. */
-const RESERVED_PARAMS = new Set(["q", "expr", "tab", "sub", "page", "view"])
+const RESERVED_PARAMS = new Set([
+  "q",
+  "expr",
+  "tab",
+  "sub",
+  "page",
+  "view",
+  "ordering",
+])
 
 /** The URL param each facet is kept under: the facet's id, `tag` for a tags
  * facet, or an explicit name from `params` (a legacy deep-link name). */
@@ -255,10 +261,7 @@ function useUrlFacetStore<TRow>(
   const search = useListSearch()
   const write = useSearchWriter()
   const paramsKey = JSON.stringify(params ?? {})
-  const map = useMemo(
-    () => facetParams(facets, params),
-    [facets, paramsKey]
-  )
+  const map = useMemo(() => facetParams(facets, params), [facets, paramsKey])
   const mapRef = useRef(map)
   mapRef.current = map
 
@@ -548,104 +551,22 @@ function useFilterEngine<TRow>(
     }
   }
 
-  // Render the rail.
-  const rail =
-    facets.length === 0 && !railOpts?.railExtras ? null : (
-      <FilterRail>
-        {railOpts?.railExtras}
-        <HideableFacet
-          id={EXPR_FACET_ID}
-          label="Advanced"
-          active={exprText.trim() !== ""}
-        >
-          {(onHide) => (
-            <ExpressionFilter
-              value={exprText}
-              onChange={setExprText}
-              rows={rows}
-              onHide={onHide}
-            />
-          )}
-        </HideableFacet>
-        {facets.map(({ id, def }) => {
-          const label = def.label ?? id
-          if (def.kind === "range") {
-            const cur = (selection[id] as RangeState | undefined) ?? OPEN_RANGE
-            return (
-              <HideableFacet
-                key={id}
-                id={id}
-                label={label}
-                active={cur.min !== "" || cur.max !== ""}
-              >
-                {(onHide) => (
-                  <RangeFacetGroup
-                    label={label}
-                    value={cur}
-                    onChange={(next) => setRange(id, next)}
-                    onHide={onHide}
-                    min={def.min}
-                    max={def.max}
-                    unit={def.unit}
-                    placeholder={def.placeholder}
-                  />
-                )}
-              </HideableFacet>
-            )
-          }
-          const opts = options[id] ?? []
-          // A single-bucket enum filters nothing - drop it rather than spend a
-          // rail row on it. (FacetGroup already hides an empty one.)
-          if (def.kind === "enum" && def.hideWhenSingle && opts.length < 2)
-            return null
-          return (
-            <FacetGroup
-              key={id}
-              facetId={id}
-              label={label}
-              options={opts}
-              selected={selectedValues(id)}
-              onToggle={(v) => toggleValue(id, v)}
-            />
-          )
-        })}
-      </FilterRail>
-    )
-
-  const snapshot = useCallback((): FilterSnapshot => {
-    const out: FilterSnapshot = {}
-    for (const [id, value] of Object.entries(selection)) {
-      if (value instanceof Set) {
-        if (value.size) out[id] = [...value].sort()
-      } else if (value && (value.min !== "" || value.max !== "")) {
-        out[id] = value
-      }
-    }
-    if (exprText.trim()) out.__expr = exprText
-    return out
-  }, [selection, exprText])
-
-  const { replaceAll } = store
-  const restore = useCallback(
-    (saved: FilterSnapshot | null | undefined) => {
-      // Replaces the selection outright rather than merging: applying a saved
-      // view must show exactly what it describes, not what it describes plus
-      // whatever was already ticked.
-      const next: FacetState = {}
-      let expr = ""
-      for (const [id, value] of Object.entries(saved ?? {})) {
-        if (id === "__expr") {
-          if (typeof value === "string") expr = value
-          continue
-        }
-        if (typeof value === "string") continue // future reserved keys
-        next[id] = Array.isArray(value)
-          ? new Set(value)
-          : { min: String(value.min ?? ""), max: String(value.max ?? "") }
-      }
-      replaceAll(next, expr)
-    },
-    [replaceAll]
+  const rail = renderFacetRail({
+    facets,
+    options,
+    selection,
+    exprText,
+    setExprText,
+    rows,
+    railExtras: railOpts?.railExtras,
+    selectedValues,
+    toggleValue,
+    setRange,
+  })
+  const { snapshot, restore } = useSnapshot(
+    selection,
+    exprText,
+    store.replaceAll
   )
 
   // Facet columns get the rail's selection + toggle wired into their cells:
@@ -667,6 +588,344 @@ function useFilterEngine<TRow>(
     selectedValues,
     snapshot,
     restore,
+  }
+}
+
+// ─── The rail and saved-view snapshot, shared by both engines ─────────
+
+function renderFacetRail<TRow>({
+  facets,
+  options,
+  selection,
+  exprText,
+  setExprText,
+  rows,
+  railExtras,
+  selectedValues,
+  toggleValue,
+  setRange,
+}: {
+  facets: FacetEntry<TRow>[]
+  options: Record<string, FacetOption[]>
+  selection: FacetState
+  exprText: string
+  setExprText: (text: string) => void
+  rows: TRow[]
+  railExtras?: React.ReactNode
+  selectedValues: (id: string) => Set<string>
+  toggleValue: (id: string, value: string) => void
+  setRange: (id: string, next: RangeState) => void
+}): React.ReactNode {
+  if (facets.length === 0 && !railExtras) return null
+  return (
+    <FilterRail>
+      {railExtras}
+      <HideableFacet
+        id={EXPR_FACET_ID}
+        label="Advanced"
+        active={exprText.trim() !== ""}
+      >
+        {(onHide) => (
+          <ExpressionFilter
+            value={exprText}
+            onChange={setExprText}
+            rows={rows}
+            onHide={onHide}
+          />
+        )}
+      </HideableFacet>
+      {facets.map(({ id, def }) => {
+        const label = def.label ?? id
+        if (def.kind === "range") {
+          const cur = (selection[id] as RangeState | undefined) ?? OPEN_RANGE
+          return (
+            <HideableFacet
+              key={id}
+              id={id}
+              label={label}
+              active={cur.min !== "" || cur.max !== ""}
+            >
+              {(onHide) => (
+                <RangeFacetGroup
+                  label={label}
+                  value={cur}
+                  onChange={(next) => setRange(id, next)}
+                  onHide={onHide}
+                  min={def.min}
+                  max={def.max}
+                  unit={def.unit}
+                  placeholder={def.placeholder}
+                />
+              )}
+            </HideableFacet>
+          )
+        }
+        const opts = options[id] ?? []
+        // A single-bucket enum filters nothing - drop it rather than spend a
+        // rail row on it. (FacetGroup already hides an empty one.)
+        if (def.kind === "enum" && def.hideWhenSingle && opts.length < 2)
+          return null
+        return (
+          <FacetGroup
+            key={id}
+            facetId={id}
+            label={label}
+            options={opts}
+            selected={selectedValues(id)}
+            onToggle={(v) => toggleValue(id, v)}
+          />
+        )
+      })}
+    </FilterRail>
+  )
+}
+
+function useSnapshot(
+  selection: FacetState,
+  exprText: string,
+  replaceAll: FacetStore["replaceAll"]
+) {
+  const snapshot = useCallback((): FilterSnapshot => {
+    const out: FilterSnapshot = {}
+    for (const [id, value] of Object.entries(selection)) {
+      if (value instanceof Set) {
+        if (value.size) out[id] = [...value].sort()
+      } else if (value && (value.min !== "" || value.max !== "")) {
+        out[id] = value
+      }
+    }
+    if (exprText.trim()) out.__expr = exprText
+    return out
+  }, [selection, exprText])
+
+  const restore = useCallback(
+    (saved: FilterSnapshot | null | undefined) => {
+      // Replaces the selection outright rather than merging: applying a saved
+      // view must show exactly what it describes, not what it describes plus
+      // whatever was already ticked.
+      const next: FacetState = {}
+      let expr = ""
+      for (const [id, value] of Object.entries(saved ?? {})) {
+        if (id === "__expr") {
+          if (typeof value === "string") expr = value
+          continue
+        }
+        if (typeof value === "string") continue // future reserved keys
+        next[id] = Array.isArray(value)
+          ? new Set(value)
+          : { min: String(value.min ?? ""), max: String(value.max ?? "") }
+      }
+      replaceAll(next, expr)
+    },
+    [replaceAll]
+  )
+  return { snapshot, restore }
+}
+
+// ─── Server-side facets (#482) ─────────────────────────────────────────
+
+/** One bucket of a server facet count (api.list_table). A null label leaves
+ * the wording to the column's `formatValue`. */
+export interface ServerFacetOption {
+  value: string
+  label: string | null
+  count: number
+  color?: string | null
+  text_color?: string | null
+  /** A tag's id, for the rail's link to everything carrying it. */
+  id?: string | number
+}
+
+export type ServerFacets = Record<string, ServerFacetOption[]>
+
+/** A facet the server counts that no column of the table carries (the
+ * interface list's Status), declared by the page. */
+export interface ServerFacetExtra {
+  id: string
+  label: string
+  kind: "enum" | "tags" | "range"
+}
+
+export interface ServerTableFilterOpts extends UrlTableFilterOpts {
+  /** The facets the server counts and filters, by column id: a column facet
+   * outside this list (one computed from another request, like Monitoring)
+   * stays out of the rail and out of the request. */
+  facets: string[]
+  extra?: ServerFacetExtra[]
+  /** The counts, from `<list>/facets/`. */
+  counts?: ServerFacets
+}
+
+export interface UseServerTableFiltersResult<TRow> extends Omit<
+  UseTableFiltersResult<TRow>,
+  "filteredRows"
+> {
+  /** The selection as list params: `f_<facet>` per facet, `expr` for the
+   * advanced filter. */
+  apiParams: Record<string, string>
+}
+
+/**
+ * The rail of a server-paged list (#482): the selection lives in the URL as
+ * on any list page, the counts come from the server (every row, not the
+ * page), and the selection goes back to the server as `f_<facet>` params -
+ * the page holds only the matching rows already. `rows` is the page, for the
+ * advanced filter's field list and the wording of coded values.
+ */
+export function useServerTableFilters<TRow>(
+  columns: ColumnDef<TRow, unknown>[],
+  rows: TRow[],
+  opts: ServerTableFilterOpts
+): UseServerTableFiltersResult<TRow> {
+  const fromColumns = useFacetEntries(columns)
+  const allowedSig = opts.facets.join(" ")
+  const extraSig = JSON.stringify(opts.extra ?? [])
+  const facets = useMemo<FacetEntry<TRow>[]>(() => {
+    const allowed = new Set(allowedSig.split(" "))
+    const out = fromColumns.filter((f) => allowed.has(f.id))
+    for (const e of opts.extra ?? []) {
+      if (out.some((f) => f.id === e.id)) continue
+      const def: FacetDef<TRow> =
+        e.kind === "range"
+          ? { kind: "range", label: e.label, get: () => null }
+          : e.kind === "tags"
+            ? { kind: "tags", label: e.label, get: () => [] }
+            : { kind: "enum", label: e.label, get: () => null }
+      out.push({ id: e.id, def })
+    }
+    return out
+    // Keyed on the lists' text: pages pass them inline.
+  }, [fromColumns, allowedSig, extraSig])
+  const store = useUrlFacetStore(facets, opts.params)
+  const { state, expr: exprText, update, setExpr: setExprText } = store
+
+  const options = useMemo(() => {
+    const map: Record<string, FacetOption[]> = {}
+    for (const { id, def } of facets) {
+      if (def.kind === "range") {
+        map[id] = []
+        continue
+      }
+      map[id] = (opts.counts?.[id] ?? []).map((o) => {
+        let fmt: { label: string; color?: string; textColor?: string } | null =
+          null
+        if (def.kind === "enum" && def.formatValue) {
+          const sample = rows.find((r) => def.get(r) === o.value)
+          try {
+            fmt = def.formatValue(o.value, sample as TRow)
+          } catch {
+            fmt = null // a formatter that needs a row this page lacks
+          }
+        }
+        return {
+          value: o.value,
+          label: o.label ?? fmt?.label ?? o.value,
+          count: o.count,
+          color: o.color ?? fmt?.color ?? undefined,
+          textColor: o.text_color ?? fmt?.textColor ?? undefined,
+          link:
+            def.kind === "tags" && o.id !== undefined && o.id !== null
+              ? tagObjectsLink(o.id)
+              : undefined,
+        }
+      })
+    }
+    return map
+  }, [facets, opts.counts, rows])
+
+  // A value the server never counted (a stale link) is ignored once the
+  // counts are in, rather than emptying the list.
+  const loaded = !!opts.counts
+  const selection = useMemo(() => {
+    const out: FacetState = {}
+    for (const { id } of facets) {
+      const s = state[id]
+      if (!s) continue
+      out[id] =
+        s instanceof Set
+          ? pruneUnknown(
+              s,
+              loaded ? (options[id] ?? []).map((o) => o.value) : null
+            )
+          : s
+    }
+    return out
+  }, [state, facets, options, loaded])
+
+  const toggleValue = useCallback(
+    (id: string, value: string) =>
+      update(id, (cur) => {
+        const next = new Set(cur instanceof Set ? cur : EMPTY_SET)
+        if (next.has(value)) next.delete(value)
+        else next.add(value)
+        return next
+      }),
+    [update]
+  )
+  const setRange = (id: string, next: RangeState) => update(id, () => next)
+  const selectedValues = useCallback(
+    (id: string) => {
+      const s = selection[id]
+      return s instanceof Set ? s : EMPTY_SET
+    },
+    [selection]
+  )
+
+  const exprAst = useMemo<Expr | null>(() => {
+    try {
+      return parse(exprText)
+    } catch {
+      return null // an invalid committed expression filters nothing
+    }
+  }, [exprText])
+
+  const apiParams = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const { id } of facets) {
+      const v = selection[id]
+      const text = v ? writeFacet(v) : undefined
+      if (text) out[`f_${id}`] = text
+    }
+    if (exprAst) out.expr = JSON.stringify(exprAst)
+    return out
+  }, [facets, selection, exprAst])
+
+  let activeCount = exprAst ? 1 : 0
+  for (const v of Object.values(selection)) {
+    if (v instanceof Set ? v.size > 0 : v.min !== "" || v.max !== "")
+      activeCount++
+  }
+
+  const rail = renderFacetRail({
+    facets,
+    options,
+    selection,
+    exprText,
+    setExprText,
+    rows,
+    railExtras: opts.railExtras,
+    selectedValues,
+    toggleValue,
+    setRange,
+  })
+  const { snapshot, restore } = useSnapshot(
+    selection,
+    exprText,
+    store.replaceAll
+  )
+  const wiredColumns = useMemo(
+    () => wireFacetColumns(columns, selectedValues, toggleValue),
+    [columns, selectedValues, toggleValue]
+  )
+  return {
+    rail,
+    columns: wiredColumns,
+    activeCount,
+    toggleValue,
+    selectedValues,
+    snapshot,
+    restore,
+    apiParams,
   }
 }
 

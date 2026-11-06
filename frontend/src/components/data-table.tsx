@@ -190,6 +190,17 @@ interface DataTableProps<T> {
     /** Total matching rows on the server (not just this page). */
     totalRows: number
     onPageChange: (page: number) => void
+    /** Rows per page, when the caller lets the pager's Rows control set it
+     * (the user's "Default page size" preference). */
+    pageSize?: number
+    onPageSizeChange?: (size: number) => void
+    /** Every id the list's filters match, for "Select all N" across pages.
+     * Without it the header checkbox ticks the page only. */
+    selectAll?: () => Promise<string[]>
+    /** The filters the rows answer to. A selection spans pages while this
+     * stays the same, and clears when it changes - a row that no longer
+     * matches leaves the selection, as on a client-side list. */
+    selectionScope?: string
   }
   /** Server-sorted lists hand their sort state in, so a `SortHeader` click
    * asks the server for a different order instead of shuffling the page it
@@ -198,7 +209,15 @@ interface DataTableProps<T> {
   serverSorting?: {
     sorting: SortingState
     onSortingChange: (sorting: SortingState) => void
+    /** Which columns the server sorts by - catalog columns included. A
+     * column it cannot sort shows a plain header. Omit and catalog columns
+     * do not sort while hand-written ones keep their headers. */
+    sortable?: (id: string) => boolean
   }
+  /** A server-paged list's slim rows carry only its own columns' fields: the
+   * table offers every catalog column regardless of the rows, and reports
+   * the catalog fields shown so the page can ask the server for them. */
+  onAutoFieldsChange?: (keys: string[]) => void
   /** Catalog columns (#243): every field the list's rows carry and every
    * custom field, offered hidden in the Columns menu. On by default for a
    * `tableId` registered with an `api` in lib/tables.ts. `false` opts out;
@@ -247,6 +266,7 @@ export function DataTable<T>({
   searchPlaceholder,
   serverPagination,
   serverSorting,
+  onAutoFieldsChange,
   autoColumns,
 }: DataTableProps<T>) {
   const [localSorting, setLocalSorting] = useState<SortingState>([])
@@ -327,6 +347,10 @@ export function DataTable<T>({
   const savedAutoShown = pref.order.some(
     (id) => !ownIds.has(id) && !pref.hidden.includes(id)
   )
+  // Slim server rows name only the table's own fields: the catalog is offered
+  // whole, and what is shown is asked of the server (onAutoFieldsChange).
+  const serverRows = !!onAutoFieldsChange
+  const serverSortable = serverSorting?.sortable
   const [catalogWanted, setCatalogWanted] = useState(false)
   const catalogQuery = useListFields(autoApi, catalogWanted || savedAutoShown)
   const catalog = catalogQuery.data
@@ -382,21 +406,24 @@ export function DataTable<T>({
     }
     const fields = catalog.fields.filter(
       (f) =>
-        keys.has(f.key.split(".")[0]) &&
+        (serverRows || keys.has(f.key.split(".")[0])) &&
         !blank.has(f.key) &&
         !(f.setting && deviceFields[f.setting] === false)
     )
+    // A server-sorted table sorts its catalog columns where the server can;
+    // the wrap below turns the rest into plain headers.
+    const autoSortable = !serverSorting || !!serverSortable
     return [
       ...listFieldColumns<T>(fields, {
         get,
-        sortable: !serverSorting,
+        sortable: autoSortable,
         choiceLabel,
       }),
-      ...(keys.has("custom_fields")
+      ...(serverRows || keys.has("custom_fields")
         ? customFieldColumns<T>(catalog.custom_fields, {
             get,
             defaultHidden: true,
-            sortable: !serverSorting,
+            sortable: autoSortable,
             queryClient: qc,
           })
         : []),
@@ -408,18 +435,33 @@ export function DataTable<T>({
     deviceFields,
     dcimQuery.data,
     serverSorting,
+    serverSortable,
+    serverRows,
     qc,
   ])
   const excludeSig = (autoColumns && autoColumns.exclude?.join(" ")) || ""
-  const columns = useMemo(
-    () =>
-      mergeAutoColumns(
-        ownColumns,
-        autoCols,
-        excludeSig ? excludeSig.split(" ") : []
-      ),
-    [ownColumns, autoCols, excludeSig]
-  )
+  const columns = useMemo(() => {
+    const merged = mergeAutoColumns(
+      ownColumns,
+      autoCols,
+      excludeSig ? excludeSig.split(" ") : []
+    )
+    if (!serverSortable) return merged
+    // The server sorts what it says it can; any other column gets a plain
+    // header rather than an arrow that would reorder nothing.
+    return merged.map((c): ColumnDef<T, unknown> =>
+      c.id && c.enableSorting !== false && !serverSortable(c.id)
+        ? ({
+            ...c,
+            enableSorting: false,
+            header:
+              typeof c.header === "function"
+                ? resolveColumnLabel(c.id, c)
+                : c.header,
+          } as ColumnDef<T, unknown>)
+        : c
+    )
+  }, [ownColumns, autoCols, excludeSig, serverSortable])
 
   // Natural leaf-column ids (in definition order) and the subset the user is
   // allowed to manage (hide / reorder). Pinned columns (select, actions) have
@@ -472,6 +514,23 @@ export function DataTable<T>({
     pref.hidden,
     initialColumnVisibility,
   ])
+
+  // The catalog columns on show, for a server-paged list to ask for their
+  // fields (slim rows carry only the table's own).
+  const shownAutoSig = useMemo(() => {
+    if (!serverRows) return ""
+    const auto = new Set(autoCols.map((c) => c.id))
+    return columns
+      .filter((c) => c.id && auto.has(c.id) && columnVisibility[c.id] !== false)
+      .map((c) => c.id as string)
+      .sort()
+      .join(" ")
+  }, [serverRows, autoCols, columns, columnVisibility])
+  const autoFieldsRef = useRef(onAutoFieldsChange)
+  autoFieldsRef.current = onAutoFieldsChange
+  useEffect(() => {
+    autoFieldsRef.current?.(shownAutoSig ? shownAutoSig.split(" ") : [])
+  }, [shownAutoSig])
 
   // The saved order, re-derived whenever the column set changes - data-gated
   // columns (monitoring, range) and catalog columns mount after their fetch,
@@ -616,7 +675,10 @@ export function DataTable<T>({
   // the list's filters or this table's own search box - leaves the selection
   // too, so a bulk action never reaches a row nobody can see. Rows on other
   // pages stay: that is what "Select all N" ticks.
+  // A server-paged table holds one page: a tick on another page is kept (the
+  // selection spans pages) and clears with the filters instead (below).
   useEffect(() => {
+    if (serverPagination) return
     setRowSelection((prev) => {
       const keys = Object.keys(prev)
       if (keys.length === 0) return prev
@@ -641,6 +703,22 @@ export function DataTable<T>({
       setRowSelection((prev) => (Object.keys(prev).length ? {} : prev))
   }, [selectedRows])
 
+  // Server pages: the filters changed, so the ticks on other pages may no
+  // longer match - start over, as a client-side list drops filtered rows.
+  const scope = serverPagination?.selectionScope
+  const firstScope = useRef(true)
+  useEffect(() => {
+    if (firstScope.current) {
+      firstScope.current = false
+      return
+    }
+    setRowSelection((prev) => (Object.keys(prev).length ? {} : prev))
+  }, [scope])
+  // Rows seen on any page, so a selection spanning pages hands its rows up.
+  const seenRows = useRef(new Map<string, T>())
+  if (serverPagination && keyById)
+    for (const r of data) seenRows.current.set(rowIdOf(r, 0), r)
+
   const selectedCount = Object.keys(rowSelection).length
   // The header checkbox ticks the page in front of you. When that is only
   // part of the list, the bar says so and offers the rest.
@@ -648,6 +726,27 @@ export function DataTable<T>({
   const allRowsSelected = spansPages && table.getIsAllRowsSelected()
   const pageSelected =
     spansPages && !allRowsSelected && pageSelectionState(table) === true
+  // Server pages: "Select all N" asks the server for every matching id.
+  const serverAll = serverPagination?.selectAll
+  const [selectingAll, setSelectingAll] = useState(false)
+  const serverAllSelected =
+    !!serverAll && selectedCount > 0 && selectedCount >= rowTotal
+  const serverPageSelected =
+    !!serverAll &&
+    !serverAllSelected &&
+    rowTotal > data.length &&
+    data.length > 0 &&
+    table.getIsAllPageRowsSelected()
+  const selectEverything = async () => {
+    if (!serverAll) return
+    setSelectingAll(true)
+    try {
+      const ids = await serverAll()
+      setRowSelection(Object.fromEntries(ids.map((id) => [id, true])))
+    } finally {
+      setSelectingAll(false)
+    }
+  }
 
   // Bubble the actual row originals up so parents don't have to map keys.
   // Only when the selection actually CHANGED: a parent typically stores this
@@ -657,10 +756,17 @@ export function DataTable<T>({
   const lastEmitted = useRef<T[] | null>(null)
   useEffect(() => {
     if (!onSelectedRowsChange) return
-    const leaves = table
-      .getSelectedRowModel()
-      .flatRows.filter((r) => !r.getIsGrouped())
-      .map((r) => r.original as T)
+    // Across server pages the selection is its keys: a row seen on some page
+    // hands up itself, one ticked by "Select all" its id.
+    const leaves =
+      serverPagination && keyById
+        ? Object.keys(rowSelection).map(
+            (id) => seenRows.current.get(id) ?? ({ id } as T)
+          )
+        : table
+            .getSelectedRowModel()
+            .flatRows.filter((r) => !r.getIsGrouped())
+            .map((r) => r.original as T)
     const prev = lastEmitted.current
     if (
       prev &&
@@ -748,6 +854,27 @@ export function DataTable<T>({
                 size="sm"
                 className="h-auto p-0 text-xs text-foreground"
                 onClick={() => table.toggleAllRowsSelected(false)}
+              >
+                Clear
+              </Button>
+            )}
+            {serverPageSelected && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs text-foreground"
+                disabled={selectingAll}
+                onClick={() => void selectEverything()}
+              >
+                {selectingAll ? "Selecting…" : `Select all ${rowTotal}`}
+              </Button>
+            )}
+            {serverAllSelected && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs text-foreground"
+                onClick={() => setRowSelection({})}
               >
                 Clear
               </Button>
@@ -1102,13 +1229,17 @@ export function DataTable<T>({
               {rowTotal} {rowTotal === 1 ? "row" : "rows"}
             </span>
             <div className="flex shrink-0 items-center gap-2">
-              {!serverPagination && (
+              {(!serverPagination || serverPagination.onPageSizeChange) && (
                 <span className="flex items-center gap-1">
                   Rows
                   <Select
-                    value={String(prefPageSize)}
+                    value={String(serverPagination?.pageSize ?? prefPageSize)}
                     onValueChange={(v) => {
                       const n = Number(v)
+                      if (serverPagination?.onPageSizeChange) {
+                        serverPagination.onPageSizeChange(n)
+                        return
+                      }
                       table.setPageSize(n)
                       setPref("page_size", n)
                     }}

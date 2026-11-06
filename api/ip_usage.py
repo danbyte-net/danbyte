@@ -124,6 +124,35 @@ def attach_address_counts(kind: str, objs) -> None:
         o.ip_count_annotated = counts.get(o.pk, 0)
 
 
+def address_counts(kind: str, qs) -> dict:
+    """``{pk: addresses used}`` for every row of ``qs`` (devices or VMs) -
+    :func:`attach_address_counts` over a whole filtered list, for the IPs
+    range filter of a server-paged list (#482). Rows using none are left
+    out."""
+    pairs_of = dict(qs.order_by().values_list("pk", "tenant_id"))
+    if not pairs_of:
+        return {}
+    direct, via_iface, slots = _KINDS[kind]
+    ids = list(pairs_of)
+    branches = [
+        IPAddress.objects.filter(**{f"{direct}__in": ids})
+        .order_by().values_list(direct, "pk", "tenant_id"),
+        IPAddress.objects.filter(**{f"{via_iface}__in": ids})
+        .order_by().values_list(via_iface, "pk", "tenant_id"),
+    ]
+    for slot in slots:
+        rel = slot.removesuffix("_id")
+        branches.append(
+            qs.model.objects.filter(pk__in=ids, **{f"{rel}__isnull": False})
+            .order_by().values_list("pk", slot, f"{rel}__tenant_id")
+        )
+    counts: dict = {}
+    for owner, _ip, tenant_id in branches[0].union(*branches[1:]):
+        if tenant_id == pairs_of.get(owner):
+            counts[owner] = counts.get(owner, 0) + 1
+    return counts
+
+
 def addresses_of(kind: str, obj):
     """The addresses ``obj`` uses, in its tenant."""
     return IPAddress.objects.filter(addresses_q(kind, obj), tenant_id=obj.tenant_id)

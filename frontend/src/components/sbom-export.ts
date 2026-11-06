@@ -9,17 +9,18 @@ import type { ExtraExport } from "@/components/table-io"
 /**
  * The "SBOM (CycloneDX)" entry for a list's Import / Export menu: downloads
  * the CycloneDX SBOM of the hosts the list shows now. `filter` is read on
- * click, so it follows the list's current filters.
+ * click, so it follows the list's current filters; a server-paged list
+ * answers it asynchronously, with every matching id.
  */
 export function useSbomExport(
-  filter: () => SbomFilter,
+  filter: () => SbomFilter | Promise<SbomFilter>,
   disabled = false
 ): ExtraExport {
   const [busy, setBusy] = useState(false)
   const run = useCallback(async () => {
     setBusy(true)
     try {
-      const { blob, filename } = await sbomFile(filter())
+      const { blob, filename } = await sbomFile(await filter())
       downloadBlob(filename, blob.type, blob)
     } catch (e) {
       apiErrorToast(e)

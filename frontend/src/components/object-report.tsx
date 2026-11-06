@@ -835,17 +835,22 @@ export function useObjectReport(kind: ObjectReportKind) {
 }
 
 /** The "PDF report…" entry for an Import / Export menu or a bulk bar's
- * Export menu: `target` is read on click, so it follows the list. */
+ * Export menu: `target` is read on click, so it follows the list. A
+ * server-paged list answers it asynchronously, with every matching id. */
 export function reportExport(
   openReport: (t: ReportTarget) => void,
-  target: () => ReportTarget,
+  target: () => ReportTarget | Promise<ReportTarget>,
   disabled = false
 ): ExtraExport {
   return {
     key: "pdf-report",
     label: "PDF report…",
     disabled,
-    onSelect: () => openReport(target()),
+    onSelect: () => {
+      const t = target()
+      if (t instanceof Promise) void t.then(openReport, apiErrorToast)
+      else openReport(t)
+    },
   }
 }
 

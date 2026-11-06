@@ -22,6 +22,32 @@ Down, Stale, Unknown), **Mixed** for a split badge whose checks sit in more
 than one state, and **Not monitored** for rows without a rollup; the column
 sorts.
 
+## Lists paged on the server
+
+**Devices**, **Interfaces**, **Cables** and **Virtual machines** fetch one
+page at a time and leave the work to the server: the page, the sort, the
+search box, the rail and the Advanced filter all go to the API, so a list of
+40,000 interfaces opens as fast as a list of 40. On these lists:
+
+- the rail's counts cover every matching row, not the page - each facet
+  counts the rows the other filters leave, so ticking a value never hides its
+  neighbours;
+- a column header sorts the whole list, names in natural order (`eth2` before
+  `eth10`); a column filled from another request for the page's rows -
+  **Monitoring**, **SLA**, **Availability**, **PRTG**, **Ports** - doesn't
+  sort and has no facet there;
+- the header checkbox ticks the page, and **Select all N** then ticks every
+  matching row on every page. Changing a filter clears the selection;
+- **Download**, the **SBOM** and the **PDF report** cover every matching
+  row, fetched from the server, not just the page;
+- the URL keeps the page and the sort too (`?page=3&ordering=-site`), so a
+  link or Back lands on the same page;
+- the page size is your **Default page size** preference (the **Rows**
+  control under the table sets it), up to 1,000.
+
+Catalog and custom-field columns picked from **Columns** sort on the server
+too, and the Advanced filter reaches their fields.
+
 ## Saving one
 
 1. Filter the list however you like - the search box, the filter rail, or both.

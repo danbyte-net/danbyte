@@ -124,6 +124,47 @@ the MAC lists answer `{count, page, page_size, num_pages, results}` with
 their own default and cap, as their schema entries say. The script SDK's
 `db.list()` follows `next` for you ([Scripts SDK](scripts-sdk.md)).
 
+## Sorting and facets on the big lists
+
+The device (`/api/devices/`), interface (`/api/interfaces/`), cable
+(`/api/cables/`) and virtual machine (`/api/virtual-machines/`) lists sort,
+filter and count on the server - the web app pages them this way. Every
+parameter here is optional, and a request without them answers as before.
+
+| Parameter | What it does |
+|---|---|
+| `ordering=<column>` / `-<column>` | Sort by one column of the list's table (`name`, `status`, `site`, `updated`…), a catalog field (`serial_number`, `site.region`) or a custom field (`custom_fields.<key>`). Names sort in natural order; empty values sort last both ways. A column the list cannot sort by is a `400`. |
+| `f_<facet>=a,b` | Rows in any of the listed buckets of one facet (`f_status=<id>,<id>`, `f_tags=core`, `f_manufacturer=Acme`). `__none__` is the empty bucket (the interface list's status uses `none`, which reads as Active). A comma inside a value is written `\,`. Facets combine with AND. An unknown facet is a `400`. |
+| `f_<facet>=min..max` | A range facet (the device list's `f_ips=2..10`); either side may be left out. |
+| `expr=<json>` | The Advanced filter as its JSON tree (`{"kind": "cmp", "field": "status.name", "cmp": "=", "value": "active"}`, groups as `{"kind": "group", "op": "and", "terms": [...]}`). Strings compare without case. A field the list does not have is a `400`. |
+| `view=table` | The slim row: only what the web app's table reads. The default row stays the full one. |
+| `include=a,b` | With `view=table`: add these fields of the full row. |
+
+`GET <list>/facets/` takes the same filters and answers the rail:
+`{"facets": {"<facet>": [{"value", "label", "count", "color", "text_color"}]}, "sortable": [...]}`.
+Each facet counts the rows every other filter leaves, so its own selection
+does not hide its other buckets; at most 500 buckets per facet, the selected
+ones always. `GET <list>/table-ids/` answers every matching id in list
+order (`{"count", "truncated", "results"}`, at most 50,000). Both are scoped
+exactly like the list: tenant, permissions and site scope.
+
+The facets per list:
+
+- **Devices**: `status`, `role`, `platform`, `eol`, `coverage`, `type`,
+  `manufacturer` (by name), `cooling`, `site`, `software_version`,
+  `software_target`, `ips` (range), `tags`.
+- **Interfaces**: `device`, `status`, `tags`.
+- **Cables**: `type`, `status`, `tags`.
+- **Virtual machines**: `cluster` and `group` (by name), `status`, `power`,
+  `synced_from`, `site`, `role`, `platform`, `eol`, `software_version`,
+  `software_target`, `tags`.
+
+```bash
+# The second page of planned devices at one site, by site then name
+curl -s -H "Authorization: Token $TOKEN" \
+  "https://danbyte.example/api/devices/?view=table&page=2&page_size=50&ordering=site&f_status=$PLANNED&f_site=$SITE"
+```
+
 ## Filtering by tag
 
 The device, IP address (`/api/ips/`) and prefix (`/api/prefixes/`) lists

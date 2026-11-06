@@ -5,12 +5,12 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
-import { apiAll } from "@/lib/api-all"
 import type {
   BulkStatusEntry,
   BulkStatusResponse,
   VirtualMachine,
 } from "@/lib/api"
+import { useServerList } from "@/lib/server-list"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildVmColumns } from "@/components/columns/vm-columns"
@@ -21,7 +21,7 @@ import {
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useUrlTableFilters } from "@/components/table-filters"
+import { wireFacetColumns } from "@/components/table-filters"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
 import { VmBulkBar } from "@/components/vm-bulk-bar"
 import { useCanApplyProfiles } from "@/components/device-profile-bulk"
@@ -56,6 +56,25 @@ export const Route = createFileRoute("/virtual-machines/")({
 // identity while the roll-up loads.
 const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
+/** The rail's facets, counted and filtered by the server over every VM
+ * (api/list_specs.py). Monitoring, SLA and PRTG come from other requests for
+ * the page's rows, so they stay out of the rail and their headers don't
+ * sort. */
+const VM_FACETS = [
+  "cluster",
+  "group",
+  "status",
+  "power",
+  "synced_from",
+  "site",
+  "role",
+  "platform",
+  "eol",
+  "software_version",
+  "software_target",
+  "tags",
+]
+
 function VirtualMachinesPage() {
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("virtualmachine", "add")
@@ -66,25 +85,23 @@ function VirtualMachinesPage() {
   const [selected, setSelected] = useState<VirtualMachine[]>([])
   const canProfiles = useCanApplyProfiles()
   const { device } = Route.useSearch()
+  const { enabled: eolOn } = useEolSettings()
 
-  const query = useQuery({
-    queryKey: ["virtual-machines", q, device],
-    queryFn: () =>
-      apiAll<VirtualMachine>(
-        `/api/virtual-machines/?${new URLSearchParams({
-          search: q,
-          ...(device ? { device } : {}),
-        }).toString()}`
-      ),
+  // One page at a time from the server (#482).
+  const facetColumns = useMemo(() => buildVmColumns({ eol: eolOn }), [eolOn])
+  const list = useServerList<VirtualMachine>({
+    endpoint: "/api/virtual-machines/",
+    queryKey: "virtual-machines",
+    columns: facetColumns,
+    facets: VM_FACETS,
+    params: { device },
   })
+  const { query, rows, selectedValues, toggleValue } = list
 
   const handleDelete = useCallback((vm: VirtualMachine) => setDeleting(vm), [])
 
   // Monitoring rolls up across each VM's addresses, like the device list.
-  const vmIds = useMemo(
-    () => (query.data?.results ?? []).map((vm) => vm.id),
-    [query.data]
-  )
+  const vmIds = useMemo(() => rows.map((vm) => vm.id), [rows])
   const monQuery = useQuery({
     queryKey: ["vm-monitoring", vmIds],
     queryFn: () =>
@@ -99,24 +116,27 @@ function VirtualMachinesPage() {
   const sla = useSlaStatus("vm", vmIds)
   const prtg = usePrtgVmStates()
 
-  const { enabled: eolOn } = useEolSettings()
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
     () =>
-      buildVmColumns({
-        selection: true,
-        humanIds,
-        eol: eolOn,
-        monitoring,
-        prtg,
-        sla: { entries: sla.entries, frame: sla.frame },
-        actions: {
-          editTo: "/virtual-machines/$id/edit",
-          editParams: (vm) => ({ id: vm.id }),
-          canEdit: () => canEdit,
-          onDelete: handleDelete,
-          canDelete: () => canDelete,
-        },
-      }),
+      wireFacetColumns(
+        buildVmColumns({
+          selection: true,
+          humanIds,
+          eol: eolOn,
+          monitoring,
+          prtg,
+          sla: { entries: sla.entries, frame: sla.frame },
+          actions: {
+            editTo: "/virtual-machines/$id/edit",
+            editParams: (vm) => ({ id: vm.id }),
+            canEdit: () => canEdit,
+            onDelete: handleDelete,
+            canDelete: () => canDelete,
+          },
+        }),
+        selectedValues,
+        toggleValue
+      ),
     [
       handleDelete,
       canEdit,
@@ -127,29 +147,23 @@ function VirtualMachinesPage() {
       prtg,
       sla.entries,
       sla.frame,
+      selectedValues,
+      toggleValue,
     ]
   )
 
-  const allRows = query.data?.results ?? []
-  const {
-    rail,
-    filteredRows,
-    snapshot,
-    restore,
-    activeCount,
-    columns: wiredColumns,
-  } = useUrlTableFilters(columns, allRows)
-  // The SBOM covers the VMs the list shows now.
+  const { rail, snapshot, restore, activeCount, allIds, total } = list
+  // The SBOM covers every VM the list's filters match, on any page.
   const sbomFilter = useCallback(
-    () => ({ virtual_machine: filteredRows.map((vm) => vm.id) }),
-    [filteredRows]
+    async () => ({ virtual_machine: await allIds() }),
+    [allIds]
   )
-  const sbom = useSbomExport(sbomFilter, filteredRows.length === 0)
+  const sbom = useSbomExport(sbomFilter, total === 0)
 
   return (
     <ListPageShell
       title="Virtual machines"
-      count={query.data ? filteredRows.length : undefined}
+      count={query.data ? total : undefined}
       rail={rail}
       savedViews={{
         objectType: "virtualmachine",
@@ -172,11 +186,11 @@ function VirtualMachinesPage() {
         </>
       }
       query={query}
-      page={query.data}
     >
       <DataTable
-        data={filteredRows}
-        columns={wiredColumns}
+        data={rows}
+        columns={columns}
+        {...list.tableProps}
         flexColumn="primary_ip"
         tableId="virtual-machines"
         onSelectedRowsChange={
