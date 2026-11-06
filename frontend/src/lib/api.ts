@@ -17159,9 +17159,39 @@ export interface ObjectReportSchema {
     total_rows: number
     columns: number
     last: number
-    /** Table cells a report may hold before it is refused as too slow. */
+    /** Table cells a report may hold before it renders in the background. */
     cells?: number
+    /** Table cells a background report may hold before it is refused. */
+    background_cells?: number
   }
+}
+
+/** `POST /api/<type>/report/?estimate=1`: what the report would cost. */
+export interface ObjectReportEstimate {
+  cells: number
+  /** Objects with details. */
+  pages: number
+  seconds: number
+  mode: "now" | "background" | "too_large"
+  /** Table cells that fit now and in the background. */
+  fits: { now: number; background: number }
+  /** Too large: what fits. */
+  detail?: string
+}
+
+/** `POST /api/<type>/report/?print=1`: a link now, or a background job
+ * (202) to poll at `status`. */
+export type ObjectReportStarted =
+  | { url: string }
+  | { job: string; status: string; state: string; seconds: number }
+
+/** `GET /api/<type>/report/job/<token>/`. */
+export interface ObjectReportJobStatus {
+  state: "queued" | "waiting" | "running" | "done" | "failed"
+  /** 0-95, the render's time so far against its estimate. */
+  progress?: number
+  url?: string
+  detail?: string
 }
 
 /** `POST /api/<type>/report/`'s body. */

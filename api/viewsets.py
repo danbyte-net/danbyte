@@ -1186,6 +1186,18 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     def report_file(self, request, token=None):
         return object_report.export_file(request, object_report.PREFIX, token)
 
+    @object_report.job_schema(object_report.PREFIX)
+    @action(detail=False, methods=["get"], url_name="report-job",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)")
+    def report_job(self, request, token=None):
+        return object_report.job_status(request, object_report.PREFIX, token)
+
+    @object_report.job_file_schema(object_report.PREFIX)
+    @action(detail=False, methods=["get"], url_name="report-job-file",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)/file")
+    def report_job_file(self, request, token=None):
+        return object_report.job_file(request, object_report.PREFIX, token)
+
     def perform_create(self, serializer):
         prefix = serializer.save(
             **{self.tenant_field: self._tenant_or_403()},
@@ -1912,6 +1924,18 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             url_path=r"report/file/(?P<token>[A-Za-z0-9_-]+)")
     def report_file(self, request, token=None):
         return object_report.export_file(request, object_report.IP, token)
+
+    @object_report.job_schema(object_report.IP)
+    @action(detail=False, methods=["get"], url_name="report-job",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)")
+    def report_job(self, request, token=None):
+        return object_report.job_status(request, object_report.IP, token)
+
+    @object_report.job_file_schema(object_report.IP)
+    @action(detail=False, methods=["get"], url_name="report-job-file",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)/file")
+    def report_job_file(self, request, token=None):
+        return object_report.job_file(request, object_report.IP, token)
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
@@ -4014,6 +4038,18 @@ class DeviceViewSet(
             url_path=r"report/file/(?P<token>[A-Za-z0-9_-]+)")
     def report_file(self, request, token=None):
         return object_report.export_file(request, object_report.DEVICE, token)
+
+    @object_report.job_schema(object_report.DEVICE)
+    @action(detail=False, methods=["get"], url_name="report-job",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)")
+    def report_job(self, request, token=None):
+        return object_report.job_status(request, object_report.DEVICE, token)
+
+    @object_report.job_file_schema(object_report.DEVICE)
+    @action(detail=False, methods=["get"], url_name="report-job-file",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)/file")
+    def report_job_file(self, request, token=None):
+        return object_report.job_file(request, object_report.DEVICE, token)
 
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     @action(detail=True, methods=["get"], url_path="cooling-path")

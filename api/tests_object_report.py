@@ -356,8 +356,10 @@ class PrefixAndIpTests(_Report):
         _, more = self.html("prefixes", body)
         cells = plain.count("<td")
         self.assertGreater(more.count("<td"), cells)
-        with mock.patch.object(
-            rep, "RENDER_BUDGET", rep.estimate_seconds(cells) + rep.SECONDS_PER_CELL / 2
+        budget = rep.estimate_seconds(cells) + rep.SECONDS_PER_CELL / 2
+        with (
+            mock.patch.object(rep, "RENDER_BUDGET", budget),
+            mock.patch.object(rep, "job_budget", return_value=budget),
         ):
             self.ok("prefixes", {**body, "options": lean})
             r, _ = self.html("prefixes", body)
@@ -405,7 +407,7 @@ class LimitTests(_Report):
         with mock.patch.object(rep, "MAX_OBJECT_PAGES", 1):
             r, _ = self.html("devices", {"filters": {}, "options": {"per_object": True}})
         self.assertEqual(r.status_code, 400)
-        self.assertIn("at most 1 objects", r.json()["detail"])
+        self.assertIn("details for at most 1 devices", r.json()["detail"])
 
     def test_section_rows_are_capped_with_a_note(self):
         with mock.patch.object(rep, "MAX_SECTION_ROWS", 1):
@@ -555,32 +557,49 @@ class RenderCostTests(_Report):
         fit = rep.cells_that_fit()
         rows, cols = 2000, 9
         body = "<td>x</td>" * (rows * cols)
-        r = rep.too_slow(body, {"rows": rows, "list_columns": cols, "pages": 0})
+        shape = {"rows": rows, "list_columns": cols, "pages": 0}
+        r = rep.too_slow(body, shape, rep.RENDER_BUDGET)
         self.assertEqual(r.status_code, 400)
         msg = r.data["detail"]
         self.assertIn(f"at most {fit // cols:,} rows with these 9 columns", msg)
         self.assertIn(f"at most {fit // rows} columns for these 2,000 rows", msg)
         small = "<td>x</td>" * 100
         self.assertIsNone(rep.too_slow(small, {"rows": 10, "list_columns": 10, "pages": 0}))
+        # By default, against the background budget.
+        self.assertIsNone(rep.too_slow(body, shape))
 
-    def test_a_report_past_the_budget_is_refused_before_it_renders(self):
+    def test_a_report_past_the_background_budget_is_refused_before_it_renders(self):
+        tiny = rep.SECONDS_BASE + rep.SECONDS_PER_CELL
         with (
-            mock.patch.object(rep, "RENDER_BUDGET", rep.SECONDS_BASE + rep.SECONDS_PER_CELL),
+            mock.patch.object(rep, "RENDER_BUDGET", tiny),
+            mock.patch.object(rep, "job_budget", return_value=tiny),
             mock.patch.object(rep, "render_with_deadline") as render,
+            mock.patch("django_rq.get_queue") as queue,
         ):
             r = self.client.post("/api/devices/report/", {"filters": {}}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertIn("too large to render in time", r.json()["detail"])
         self.assertIn("rows with these", r.json()["detail"])
         render.assert_not_called()
+        queue.assert_not_called()
 
-    def test_pages_per_object_are_named_in_the_refusal(self):
-        with mock.patch.object(rep, "RENDER_BUDGET", rep.SECONDS_BASE):
+    def test_details_are_named_in_the_refusal(self):
+        with (
+            mock.patch.object(rep, "RENDER_BUDGET", rep.SECONDS_BASE),
+            mock.patch.object(rep, "job_budget", return_value=rep.SECONDS_BASE),
+        ):
             r, _ = self.html(
                 "devices", {"filters": {}, "options": {"per_object": True, "list_table": False}}
             )
         self.assertEqual(r.status_code, 400)
-        self.assertIn("Or leave out the pages per object", r.json()["detail"])
+        self.assertIn("Or leave out the details for each object", r.json()["detail"])
+
+    def test_the_background_budget_is_the_job_deadlines(self):
+        with self.settings(REPORT_JOB_TIMEOUT=300):
+            self.assertEqual(rep.job_budget(), 210)
+            self.assertGreater(rep.cells_that_fit(0, rep.job_budget()), rep.cells_that_fit())
+            # The owner's 48 prefixes with details and their IPs (#474 follow-up).
+            self.assertLessEqual(rep.estimate_seconds(14207, 48), rep.job_budget())
 
     def test_a_render_past_the_deadline_is_503(self):
         with mock.patch.object(rep, "render_with_deadline", side_effect=rep.RenderTimeout):
@@ -624,3 +643,280 @@ class RenderCostTests(_Report):
         self.assertTrue(pdf.startswith(b"%PDF-"))
         # Generous: a loaded test box is slower than the calibration box.
         self.assertLess(took, rep.estimate_seconds(body.count("<td")) * 2)
+
+
+class _Queue:
+    """``django_rq.get_queue``'s stand-in: keeps each job, and runs it at
+    once when ``run``."""
+
+    def __init__(self, run=True):
+        self.run = run
+        self.jobs = []
+        self.name = None
+
+    def __call__(self, name="default"):
+        self.name = name
+        return self
+
+    def enqueue(self, func, *args, **kwargs):
+        self.jobs.append((func, args, kwargs))
+        if self.run:
+            func(*args)
+
+    def work(self):
+        for func, args, _kwargs in self.jobs:
+            func(*args)
+
+
+TINY = rep.SECONDS_BASE + rep.SECONDS_PER_CELL
+
+
+class EstimateTests(_Report):
+    """``?estimate=1``: the report built but not rendered."""
+
+    def estimate(self, body, path="devices"):
+        with mock.patch.object(rep, "render_with_deadline") as render:
+            r = self.client.post(f"/api/{path}/report/?estimate=1", body, format="json")
+        render.assert_not_called()
+        return r
+
+    def test_a_small_report_renders_now(self):
+        r = self.estimate({"filters": {}, "columns": {"list": ["name", "status"]}})
+        self.assertEqual(r.status_code, 200, r.content)
+        got = r.json()
+        self.assertEqual(got["mode"], "now")
+        self.assertEqual(got["cells"], 4)
+        self.assertEqual(got["pages"], 0)
+        self.assertEqual(got["seconds"], round(rep.estimate_seconds(4), 1))
+        self.assertEqual(got["fits"]["now"], rep.cells_that_fit())
+        self.assertEqual(got["fits"]["background"], rep.cells_that_fit(0, rep.job_budget()))
+        self.assertNotIn("detail", got)
+
+    def test_details_count_as_pages(self):
+        r = self.estimate({"filters": {}, "options": {"per_object": True}})
+        self.assertEqual(r.json()["pages"], 2)
+
+    def test_past_the_request_budget_it_renders_in_the_background(self):
+        with mock.patch.object(rep, "RENDER_BUDGET", TINY):
+            r = self.estimate({"filters": {}})
+        self.assertEqual(r.json()["mode"], "background")
+
+    def test_past_the_background_budget_it_is_too_large_and_says_why(self):
+        with (
+            mock.patch.object(rep, "RENDER_BUDGET", TINY),
+            mock.patch.object(rep, "job_budget", return_value=TINY),
+        ):
+            r = self.estimate({"filters": {}})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["mode"], "too_large")
+        self.assertIn("too large to render in time", r.json()["detail"])
+
+    def test_the_same_body_is_answered_from_the_cache(self):
+        body = {"filters": {}, "columns": {"list": ["name"]}}
+        first = self.estimate(body).json()
+        with mock.patch.object(rep, "build_report") as build:
+            again = self.estimate(body).json()
+        build.assert_not_called()
+        self.assertEqual(first, again)
+        with mock.patch.object(rep, "build_report", wraps=rep.build_report) as build:
+            self.estimate({"filters": {}, "columns": {"list": ["name", "site"]}})
+        build.assert_called_once()
+
+    def test_another_user_does_not_get_the_cached_estimate(self):
+        body = {
+            "filters": {},
+            "columns": {"list": ["name"]},
+            "options": {"list_table": True, "per_object": False},
+        }
+        self.assertEqual(self.estimate(body).json()["cells"], 2)
+        self.login(self.member("ams", (["device"], ["view"]), sites=[self.ams]))
+        # One AMS device, not the admin's two.
+        self.assertEqual(self.estimate(body).json()["cells"], 1)
+
+    def test_a_refusal_is_the_reports(self):
+        with mock.patch.object(rep, "MAX_OBJECTS", 1):
+            r = self.estimate({"filters": {}})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("at most 1 objects", r.json()["detail"])
+
+
+@override_settings(CACHES=LOCMEM, REPORT_JOB_TIMEOUT=300, REPORT_JOB_KEEP=3600)
+class BackgroundTests(_Report):
+    """A report past the request budget renders as an RQ job."""
+
+    def setUp(self):
+        super().setUp()
+        self.rendered = []
+
+        def fake(**kwargs):
+            self.rendered.append(kwargs)
+            return b"%PDF-1.7 background"
+
+        for p in (
+            mock.patch.object(rep, "RENDER_BUDGET", TINY),
+            mock.patch.object(rep, "render_with_deadline", side_effect=fake),
+            mock.patch.object(rep, "JOB_LOCK_POLL", 0.01),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def post(self, body, queue, path="devices"):
+        with mock.patch("django_rq.get_queue", queue):
+            return self.client.post(f"/api/{path}/report/?print=1", body, format="json")
+
+    def test_end_to_end(self):
+        queue = _Queue()
+        r = self.post({"filters": {}, "options": {"title": "All switches"}}, queue)
+        self.assertEqual(r.status_code, 202, r.content)
+        self.assertEqual(queue.name, "low")
+        job = r.json()
+        self.assertEqual(job["state"], "queued")
+        self.assertTrue(job["status"].startswith("/api/devices/report/job/"))
+        self.assertEqual(queue.jobs[0][2]["job_timeout"], rep._job_lifetime())
+        # Rendered in the job, with the long deadline.
+        self.assertEqual(self.rendered[0]["timeout"], 300)
+        self.assertIn("sw-a", self.rendered[0]["html"])
+        status = self.client.get(job["status"]).json()
+        self.assertEqual(status["state"], "done")
+        got = self.client.get(status["url"])
+        self.assertEqual(got.status_code, 200)
+        self.assertEqual(got.content, b"%PDF-1.7 background")
+        self.assertTrue(got["Content-Disposition"].startswith("inline;"))
+        self.assertIn("all-switches-", got["Content-Disposition"])
+        saved = self.client.get(status["url"] + "?download=1")
+        self.assertTrue(saved["Content-Disposition"].startswith("attachment;"))
+
+    def test_progress_while_it_runs(self):
+        job = self.post({"filters": {}}, _Queue(run=False)).json()
+        self.assertEqual(self.client.get(job["status"]).json(), {"state": "queued"})
+        token = job["job"]
+        rep._job_update(token, state="running", started=rep.time.time() - 1, seconds=2.0)
+        got = self.client.get(job["status"]).json()
+        self.assertEqual(got["state"], "running")
+        self.assertGreaterEqual(got["progress"], 45)
+        self.assertLessEqual(got["progress"], 95)
+        file_url = f"/api/devices/report/job/{token}/file/"
+        self.assertEqual(self.client.get(file_url).status_code, 404)
+
+    def test_small_reports_stay_in_the_request(self):
+        queue = _Queue()
+        with mock.patch.object(rep, "RENDER_BUDGET", 1000):
+            r = self.post({"filters": {}}, queue)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("url", r.json())
+        self.assertEqual(queue.jobs, [])
+
+    def test_one_job_per_user_at_a_time(self):
+        queue = _Queue(run=False)
+        self.assertEqual(self.post({"filters": {}}, queue).status_code, 202)
+        self.assertEqual(self.post({"filters": {}}, queue).status_code, 429)
+        queue.work()
+        self.assertEqual(self.post({"filters": {}}, _Queue()).status_code, 202)
+
+    def test_only_the_owner_reads_it(self):
+        job = self.post({"filters": {}}, _Queue()).json()
+        token = job["job"]
+        url = self.client.get(job["status"]).json()["url"]
+        self.login(self.member("o", (["device"], ["view"])))
+        self.assertEqual(self.client.get(job["status"]).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 404)
+        # Not through another type's endpoints.
+        self.login(self.admin)
+        self.assertEqual(self.client.get(f"/api/ips/report/job/{token}/").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/ips/report/job/{token}/file/").status_code, 404)
+        # Nor from another tenant.
+        org = Organization.objects.create(name="X", slug="x")
+        self.login(self.admin, Tenant.objects.create(org=org, name="X", slug="x"))
+        self.assertEqual(self.client.get(job["status"]).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_it_expires(self):
+        job = self.post({"filters": {}}, _Queue()).json()
+        url = self.client.get(job["status"]).json()["url"]
+        later = rep.time.time() + 3601
+        with mock.patch("django.core.cache.backends.locmem.time.time", return_value=later):
+            self.assertEqual(self.client.get(job["status"]).status_code, 404)
+            self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_the_job_rechecks_permissions(self):
+        user = self.member("d", (["device"], ["view"]))
+        self.login(user)
+        queue = _Queue(run=False)
+        job = self.post({"filters": {}}, queue).json()
+        ObjectPermission.objects.filter(users=user).delete()
+        queue.work()
+        entry = rep._job_get(job["job"])
+        self.assertEqual(entry["state"], "failed")
+        self.assertIn("may not view devices", entry["detail"])
+        self.assertEqual(self.rendered, [])
+
+    def test_the_job_reads_the_users_current_scope(self):
+        user = self.member("d", (["device"], ["view"]))
+        self.login(user)
+        queue = _Queue(run=False)
+        job = self.post({"filters": {}}, queue).json()
+        ObjectPermission.objects.get(users=user).sites.set([self.ams])
+        queue.work()
+        self.assertEqual(rep._job_get(job["job"])["state"], "done")
+        self.assertIn("sw-a", self.rendered[0]["html"])
+        self.assertNotIn("sw-b", self.rendered[0]["html"])
+
+    def test_the_job_stops_when_the_tenant_or_user_is_gone(self):
+        user = self.member("d", (["device"], ["view"]))
+        self.login(user)
+        queue = _Queue(run=False)
+        job = self.post({"filters": {}}, queue).json()
+        token = job["job"]
+        self.tenant.is_active = False
+        self.tenant.save()
+        queue.work()
+        self.assertEqual(rep._job_get(token)["state"], "failed")
+        self.assertEqual(self.rendered, [])
+        self.tenant.is_active = True
+        self.tenant.save()
+        user.is_active = False
+        user.save()
+        queue.work()
+        self.assertIn("no longer active", rep._job_get(token)["detail"])
+        self.assertEqual(self.rendered, [])
+
+    def test_a_render_past_the_long_deadline_fails_the_job(self):
+        with mock.patch.object(rep, "render_with_deadline", side_effect=rep.RenderTimeout):
+            job = self.post({"filters": {}}, _Queue()).json()
+        got = self.client.get(job["status"]).json()
+        self.assertEqual(got["state"], "failed")
+        self.assertIn("took too long to render", got["detail"])
+        # The user may start another.
+        self.assertEqual(self.post({"filters": {}}, _Queue()).status_code, 202)
+
+    def test_the_job_waits_for_the_locks_and_gives_up(self):
+        from .drawing_pdf import BUSY_KEY
+
+        cache.set(BUSY_KEY.format(self.admin.pk), "someone", 60)
+        with mock.patch.object(rep, "JOB_LOCK_WAIT", 0.05):
+            job = self.post({"filters": {}}, _Queue()).json()
+        got = self.client.get(job["status"]).json()
+        self.assertEqual(got["state"], "failed")
+        self.assertIn("Other PDFs are being made", got["detail"])
+        self.assertEqual(self.rendered, [])
+
+    def test_a_deleted_api_token_stops_the_job(self):
+        from auth_api.models import ApiToken, generate_api_key, hash_api_key
+
+        key = generate_api_key()
+        token = ApiToken.objects.create(
+            user=self.admin, tenant=self.tenant, name="ci", key_hash=hash_api_key(key)
+        )
+        self.client.logout()
+        queue = _Queue(run=False)
+        with mock.patch("django_rq.get_queue", queue):
+            r = self.client.post(
+                "/api/devices/report/",
+                {"filters": {}},
+                format="json",
+                HTTP_AUTHORIZATION=f"Token {key}",
+            )
+        self.assertEqual(r.status_code, 202, r.content)
+        token.delete()
+        queue.work()
+        self.assertIn("API token", rep._job_get(r.json()["job"])["detail"])

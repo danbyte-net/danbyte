@@ -14,12 +14,14 @@ page. You pick what goes in it.
 
 | From | Click | The report covers |
 |---|---|---|
-| A device, prefix or IP address page | **PDF report…** in the page actions | That object, on a page of sections |
+| A device, prefix or IP address page | **PDF report…** in the page actions | That object, with the sections you tick |
 | The Devices, Prefixes or IP addresses list | **Import / Export ▸ PDF report…** | Every row the list shows now (its search and filters) |
 | The same lists, rows selected | **Export ▸ PDF report…** in the bulk bar | The selected rows |
 
 **Print** opens the PDF in a new tab for the browser to print;
-**Download** saves it.
+**Download** saves it. A large report renders in the background: the button
+reads *Generating… 40%* while it runs, and the PDF downloads (or opens for
+printing) by itself when it is ready. Keep the dialog open until then.
 
 ## What you can choose
 
@@ -32,14 +34,16 @@ page. You pick what goes in it.
   table per value.
 - **Summary** - counts by status, role (or VRF) and site, each value as its
   badge.
-- **One page per object** - after the table, a page for each object with
-  the sections you tick. A single object always gets its page.
 - **Show IPs** (prefixes) - each prefix in the table is followed by a small
   table of its IP addresses: address, status and role badges, DNS name and
   what it is assigned to. They are read like the IP list, so only the
   addresses you may view are shown, and they count towards the row limits.
-  The per-object *IP addresses* section is separate.
-- **Sections** - each with its own column picker:
+  The *IP addresses* detail section is separate.
+- **Details for each device** (or prefix, or IP address) - after the table,
+  a block for each object with the sections you pick under it. Each object
+  starts a new page. A single object always gets its details.
+- **Detail sections** - shown under the tick once it is on, each with its
+  own column picker:
 
 | Type | Sections |
 |---|---|
@@ -51,6 +55,11 @@ page. You pick what goes in it.
   at most 200).
 
 The dialog remembers your choices per type in this browser.
+
+Under the options a line says what the report costs as you change it:
+*About 1,200 cells* renders at once, *About 14,200 cells · renders in the
+background* takes longer, and *Too large: … · leave out …* names what to
+drop. **Download** and **Print** are off only while it is too large.
 
 ## Who sees what
 
@@ -70,24 +79,36 @@ A report reads exactly what the lists show you:
 | | |
 |---|---|
 | Objects in one report | 2,000 - more is refused with the limit; narrow the filters or select fewer rows |
-| Objects with a page each | 50 |
+| Objects with details | 50 |
 | Rows in one section of one object | 500 (the report notes the rest) |
 | Rows in all sections together | 20,000 |
 | Columns in one table | 40 |
-| Table cells in one report | about 12,800 (pages per object lower it) |
+| Table cells rendered at once | about 12,800 (details lower it); more renders in the background |
+| Table cells in one report | about 130,000 with the default 5-minute background deadline |
 
 The PDF is made under the drawing PDFs' limits: one at a time per user, a few
 across the server, and a 30-second render deadline. Rendering costs about
-1.5 ms per table cell and 60 ms per object page, so before it renders a
-report is estimated from its cells (rows times columns, Show IPs and
-section tables included) and pages per object. One that would not finish in
-about 70% of the deadline is refused at once (400) with what fits: how many
-rows with these columns, how many columns for these rows, or to leave out
-pages per object or Show IPs. For example, 2,000 IP addresses fit with six
-list columns but not with the default nine; about 1,400 fit with nine.
+1.5 ms per table cell and 60 ms per object with details, so before it renders
+a report is estimated from its cells (rows times columns, Show IPs and
+section tables included) and its objects with details:
 
-A report that still runs past the deadline on a busy server is stopped and
-answered with 503; try again later or with fewer rows or columns.
+- One that finishes in about 70% of the 30 seconds renders in the request.
+- A longer one renders in the background, as a job on the `low` queue (so it
+  never holds up monitoring) with a 5-minute deadline
+  ([`DANBYTE_REPORT_JOB_TIMEOUT`](../reference/settings.md#pdf-reports-danbyte_report_job_timeout)).
+  The job reads the data again as you, so a permission taken away in the
+  meantime applies. One background report per user runs at a time, and one
+  across the server. The finished PDF is kept for an hour, for you only.
+- One past about 70% of the background deadline is refused at once (400)
+  with what fits: how many rows with these columns, how many columns for these
+  rows, or to leave out the details or Show IPs.
+
+For example, 48 prefixes with every detail section and Show IPs (about 14,200
+cells) render in the background in about half a minute.
+
+A report that still runs past its deadline on a busy server is stopped (503,
+or a failed background report); try again later or with fewer rows or
+columns.
 
 ## API
 
@@ -96,8 +117,8 @@ describe what a report can hold for the caller: `columns` and
 `default_columns` (the list's column catalog, custom fields as `cf.<key>`),
 `group_by`, `sections` (each `key`, `label`, `kind`, `available`, `note`,
 `columns`, `default_columns`, `default`, `last`), `show_ips` (prefixes, with
-view on IP addresses) and `limits` (`cells` is the estimate's table-cell
-budget).
+view on IP addresses) and `limits` (`cells` is the table cells rendered at
+once, `background_cells` the most in one report).
 
 `POST` to the same path makes the PDF:
 
@@ -129,16 +150,30 @@ budget).
   parameters are ignored).
 - `sections` and `columns` - unknown columns are dropped; a section missing
   from `columns` uses its defaults.
-- `options.list_table` and `options.per_object` default to a table for many
-  objects and a page for one.
+- `options.list_table` and `options.per_object` (details for each object)
+  default to a table for many objects and details for one.
 - `options.show_ips` (prefixes) - each list row followed by its IP addresses.
 
 The answer is the PDF as an attachment, or with `?print=1` `{url}`: a link
 to it for five minutes, for the same user and tenant
 (`GET /api/<type>/report/file/<token>/`, `?download=1` to save it). A 400
-names the limit it hit, or what fits when the report is too large to render
-in time; a 403 means no view on the type; a 503 means the render ran past
-its deadline.
+names the limit it hit, or what fits when the report is too large; a 403
+means no view on the type; a 503 means the render ran past its deadline.
+
+A report too large to render at once is answered with **202** and
+`{job, status, state, seconds}` instead. Poll `status`
+(`GET /api/<type>/report/job/<token>/`) for `{state, progress, url, detail}`:
+`state` is `queued`, `waiting`, `running`, `done` or `failed`; `progress`
+(0-95) is the render's time so far against its estimate; `url`
+(`…/report/job/<token>/file/`, `?download=1` to save it) is the PDF once
+`done`; `detail` says why it `failed`. Both answer only the user and tenant
+that asked, for an hour; anyone else gets 404. A second background report
+while one is queued or running is 429.
+
+`POST …/report/?estimate=1` with the same body builds the report without
+rendering it: `{cells, pages, seconds, mode, fits}`, `mode` being `now`,
+`background` or `too_large` (with `detail`, what fits), `pages` the objects
+with details and `fits` the cells that fit `now` and in the `background`.
 
 ```bash
 curl -H "Authorization: Token $TOKEN" -H "Content-Type: application/json" \

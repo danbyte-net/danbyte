@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -24,12 +24,15 @@ import {
   Printer,
 } from "lucide-react"
 
-import { api } from "@/lib/api"
+import { ApiError, api, apiErrorMessage } from "@/lib/api"
 import type {
   ObjectReportColumn,
+  ObjectReportEstimate,
+  ObjectReportJobStatus,
   ObjectReportKind,
   ObjectReportRequest,
   ObjectReportSchema,
+  ObjectReportStarted,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
@@ -64,9 +67,11 @@ import {
  * (api/object_report.py): one object from its detail page, the rows
  * selected on a list, or the rows the list shows. The server says what a
  * report can hold for this reader (`GET`), the dialog picks it - the
- * columns of the list table, the summary, a page per object and its
- * sections with their columns - and remembers the picks per type in this
- * browser.
+ * columns of the list table, the summary, details for each object and
+ * their sections with their columns - and remembers the picks per type in
+ * this browser. A live estimate (`?estimate=1`) says whether it renders now
+ * or in the background; a background report is polled until it is ready,
+ * then downloaded or printed like a quick one.
  */
 
 export const REPORT_PATHS: Record<ObjectReportKind, string> = {
@@ -289,6 +294,65 @@ function describeTarget(
     : `${what} in the list`
 }
 
+const NOUNS: Record<ObjectReportKind, string> = {
+  device: "device",
+  prefix: "prefix",
+  ipaddress: "IP address",
+}
+
+/** How often a background report's status is asked for. */
+export const JOB_POLL_MS = 1500
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [out, setOut] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setOut(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return out
+}
+
+/** A count as people say it: 14,207 → "14,200". */
+function about(n: number): string {
+  return (n >= 1000 ? Math.round(n / 100) * 100 : n).toLocaleString()
+}
+
+/** The line under the options: what the report costs and where it renders,
+ * or what to leave out. */
+export function estimateLine(
+  est: ObjectReportEstimate,
+  { showIps, details }: { showIps: boolean; details: boolean }
+): string {
+  const cells = `About ${about(est.cells)} cells`
+  if (est.mode === "now") return cells
+  if (est.mode === "background") return `${cells} · renders in the background`
+  const drop = [
+    showIps && "Show IPs",
+    details && "the details",
+    "some rows or columns",
+  ].filter(Boolean)
+  return `Too large: ${about(est.cells)} cells, ${about(est.fits.background)} fit · leave out ${drop.join(" or ")}`
+}
+
+/** A background report's link once it is done; throws its reason when it
+ * fails. `onState` hears each poll; `alive` stops it. */
+async function waitForJob(
+  status: string,
+  onState: (s: ObjectReportJobStatus) => void,
+  alive: () => boolean
+): Promise<string | null> {
+  for (;;) {
+    await new Promise((r) => setTimeout(r, JOB_POLL_MS))
+    if (!alive()) return null
+    const s = await api<ObjectReportJobStatus>(status)
+    if (!alive()) return null
+    onState(s)
+    if (s.state === "done" && s.url) return s.url
+    if (s.state === "failed")
+      throw new Error(s.detail ?? "The report could not be made.")
+  }
+}
+
 function ReportForm({
   kind,
   schema,
@@ -305,6 +369,14 @@ function ReportForm({
   )
   const [title, setTitle] = useState("")
   const [busy, setBusy] = useState(false)
+  const [job, setJob] = useState<ObjectReportJobStatus | null>(null)
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
   const one = target.ids.length === 1
   const perObject = one || prefs.perObject
   const set = <TKey extends keyof ReportPrefs>(k: TKey, v: ReportPrefs[TKey]) =>
@@ -322,6 +394,50 @@ function ReportForm({
   const tooManyPages =
     !one && prefs.perObject && target.ids.length > schema.limits.object_pages
   const empty = target.ids.length === 0
+  const noun = NOUNS[kind]
+
+  const limitNote = tooMany
+    ? `A report lists at most ${schema.limits.objects.toLocaleString()} ${schema.plural.toLowerCase()}.`
+    : tooManyPages
+      ? `Details: at most ${schema.limits.object_pages} ${schema.plural.toLowerCase()}.`
+      : empty
+        ? `No ${schema.plural.toLowerCase()} to report on.`
+        : ""
+
+  // The live estimate: the body as it would be posted, a moment after the
+  // last change, built on the server without rendering.
+  const body = useMemo(
+    () => JSON.stringify(reportRequest(target, prefs, schema, title)),
+    [target, prefs, schema, title]
+  )
+  const settled = useDebounced(body, 400)
+  const estimate = useQuery({
+    queryKey: ["object-report-estimate", kind, settled],
+    queryFn: () =>
+      api<ObjectReportEstimate>(`${REPORT_PATHS[kind]}?estimate=1`, {
+        method: "POST",
+        body: settled,
+      }),
+    enabled: !limitNote,
+    staleTime: 60_000,
+    retry: false,
+    placeholderData: (prev) => prev,
+  })
+  // A refusal (400) is the report's; any other failure says nothing.
+  const refused =
+    estimate.error instanceof ApiError && estimate.error.status === 400
+      ? apiErrorMessage(estimate.error)
+      : ""
+  const tooLarge =
+    !!refused || (!estimate.isError && estimate.data?.mode === "too_large")
+  const line = refused
+    ? refused
+    : estimate.data && !estimate.isError
+      ? estimateLine(estimate.data, {
+          showIps: !one && !!schema.show_ips && prefs.showIps,
+          details: !one && prefs.perObject,
+        })
+      : ""
 
   const run = async (print: boolean) => {
     const tab = print ? openPrintTab() : null
@@ -329,11 +445,16 @@ function ReportForm({
     setBusy(true)
     try {
       writeReportPrefs(kind, prefs)
-      const body = reportRequest(target, prefs, schema, title)
-      const { url } = await api<{ url: string }>(
+      const started = await api<ObjectReportStarted>(
         `${REPORT_PATHS[kind]}?print=1`,
-        { method: "POST", body: JSON.stringify(body) }
+        { method: "POST", body }
       )
+      let url: string | null
+      if ("job" in started) {
+        setJob({ state: "queued" })
+        url = await waitForJob(started.status, setJob, () => alive.current)
+        if (!url) return
+      } else url = started.url
       const name = title.trim() || target.name || `${schema.plural} report`
       printing = sendPdf(url, {
         print,
@@ -342,20 +463,73 @@ function ReportForm({
       })
       onDone()
     } catch (err) {
-      apiErrorToast(err, "Couldn't make the report")
+      if (alive.current) apiErrorToast(err, "Couldn't make the report")
     } finally {
       if (tab && !printing) tab.close()
-      setBusy(false)
+      if (alive.current) {
+        setBusy(false)
+        setJob(null)
+      }
     }
   }
 
-  const limitNote = tooMany
-    ? `A report lists at most ${schema.limits.objects.toLocaleString()} ${schema.plural.toLowerCase()}.`
-    : tooManyPages
-      ? `Pages per object: at most ${schema.limits.object_pages}.`
-      : empty
-        ? `No ${schema.plural.toLowerCase()} to report on.`
-        : ""
+  const generating =
+    job?.progress != null ? `Generating… ${job.progress}%` : "Generating…"
+
+  const sectionsBlock = perObject && (
+    <>
+      <Field label={one ? "Sections" : "Detail sections"}>
+        <div className="grid gap-1.5">
+          {schema.sections.map((s) => (
+            <div
+              key={s.key}
+              className="flex min-h-7 items-center gap-2"
+              data-section={s.key}
+            >
+              <FormCheckbox
+                label={s.label}
+                checked={s.available && prefs.sections.includes(s.key)}
+                disabled={!s.available}
+                onChange={(on) => toggleSection(s.key, on)}
+                className="flex-1 items-center text-[13px] whitespace-nowrap"
+              />
+              {!s.available && s.note && (
+                <span className="text-[11px] whitespace-nowrap text-muted-foreground">
+                  {s.note}
+                </span>
+              )}
+              {s.available &&
+                s.columns.length > 0 &&
+                prefs.sections.includes(s.key) && (
+                  <ColumnPicker
+                    label={`${s.label} columns`}
+                    columns={s.columns}
+                    value={prefs.columns[s.key] ?? []}
+                    onChange={(cols) => setColumns(s.key, cols)}
+                  />
+                )}
+            </div>
+          ))}
+        </div>
+      </Field>
+      {schema.sections.some(
+        (s) => s.last && s.available && prefs.sections.includes(s.key)
+      ) && (
+        <FormText
+          label="Journal and change log entries"
+          type="number"
+          value={String(prefs.last)}
+          onChange={(v) =>
+            set(
+              "last",
+              Math.max(1, Math.min(schema.limits.last, Number(v) || 1))
+            )
+          }
+          inputClassName="w-24"
+        />
+      )}
+    </>
+  )
 
   return (
     <>
@@ -415,12 +589,6 @@ function ReportForm({
                     onChange={(v) => set("includeSummary", v)}
                     className="items-center text-[13px]"
                   />
-                  <FormCheckbox
-                    label="One page per object"
-                    checked={prefs.perObject}
-                    onChange={(v) => set("perObject", v)}
-                    className="items-center text-[13px] whitespace-nowrap"
-                  />
                   {schema.show_ips && (
                     <FormCheckbox
                       label="Show IPs"
@@ -429,68 +597,42 @@ function ReportForm({
                       className="items-center text-[13px] whitespace-nowrap"
                     />
                   )}
+                  <FormCheckbox
+                    label={`Details for each ${noun}`}
+                    checked={prefs.perObject}
+                    onChange={(v) => set("perObject", v)}
+                    className="items-center text-[13px] whitespace-nowrap"
+                  />
                 </div>
               </Field>
             </div>
           </>
         )}
-        {perObject && (
-          <Field label="Sections">
-            <div className="grid gap-1.5">
-              {schema.sections.map((s) => (
-                <div
-                  key={s.key}
-                  className="flex min-h-7 items-center gap-2"
-                  data-section={s.key}
-                >
-                  <FormCheckbox
-                    label={s.label}
-                    checked={s.available && prefs.sections.includes(s.key)}
-                    disabled={!s.available}
-                    onChange={(on) => toggleSection(s.key, on)}
-                    className="flex-1 items-center text-[13px] whitespace-nowrap"
-                  />
-                  {!s.available && s.note && (
-                    <span className="text-[11px] whitespace-nowrap text-muted-foreground">
-                      {s.note}
-                    </span>
-                  )}
-                  {s.available &&
-                    s.columns.length > 0 &&
-                    prefs.sections.includes(s.key) && (
-                      <ColumnPicker
-                        label={`${s.label} columns`}
-                        columns={s.columns}
-                        value={prefs.columns[s.key] ?? []}
-                        onChange={(cols) => setColumns(s.key, cols)}
-                      />
-                    )}
-                </div>
-              ))}
+        {sectionsBlock &&
+          (one ? (
+            sectionsBlock
+          ) : (
+            <div className="ml-1 grid gap-4 border-l pl-4" data-part="details">
+              {sectionsBlock}
             </div>
-          </Field>
-        )}
-        {perObject &&
-          schema.sections.some(
-            (s) => s.last && s.available && prefs.sections.includes(s.key)
-          ) && (
-            <FormText
-              label="Journal and change log entries"
-              type="number"
-              value={String(prefs.last)}
-              onChange={(v) =>
-                set(
-                  "last",
-                  Math.max(1, Math.min(schema.limits.last, Number(v) || 1))
-                )
-              }
-              inputClassName="w-24"
-            />
-          )}
-        {limitNote && (
+          ))}
+        {limitNote ? (
           <p className="text-xs text-destructive" role="alert">
             {limitNote}
           </p>
+        ) : (
+          line && (
+            <p
+              className={cn(
+                "text-xs",
+                tooLarge ? "text-destructive" : "text-muted-foreground"
+              )}
+              role={tooLarge ? "alert" : "status"}
+              data-part="estimate"
+            >
+              {line}
+            </p>
+          )
         )}
       </div>
       <DialogFooter>
@@ -499,13 +641,16 @@ function ReportForm({
         </Button>
         <Button
           variant="outline"
-          disabled={busy || !!limitNote}
+          disabled={busy || !!limitNote || tooLarge}
           onClick={() => void run(true)}
         >
           <Printer /> Print
         </Button>
-        <Button disabled={busy || !!limitNote} onClick={() => void run(false)}>
-          <Download /> {busy ? "Generating…" : "Download"}
+        <Button
+          disabled={busy || !!limitNote || tooLarge}
+          onClick={() => void run(false)}
+        >
+          <Download /> {busy ? generating : "Download"}
         </Button>
       </DialogFooter>
     </>

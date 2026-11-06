@@ -890,3 +890,9 @@ DANBYTE_CAD_CONVERTER = resolve_cad_converter(
 # where bwrap cannot build one refuses DWG. `off` runs the converter without
 # it (limits only) - an explicit, documented risk, never the default.
 CAD_SANDBOX = os.getenv("DANBYTE_CAD_SANDBOX", "bwrap")
+
+# Object PDF reports too large to render inside a request (api/object_report.py)
+# render as an RQ job on the low queue with this deadline in seconds, and the
+# finished PDF is kept this many seconds for the user who asked for it.
+REPORT_JOB_TIMEOUT = int(os.getenv("DANBYTE_REPORT_JOB_TIMEOUT", "300"))
+REPORT_JOB_KEEP = int(os.getenv("DANBYTE_REPORT_JOB_KEEP", "3600"))

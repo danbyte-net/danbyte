@@ -5,8 +5,9 @@ One PDF of devices, prefixes or IP addresses - one object from its detail
 page, the rows selected on a list, or every row a list's filters match - in
 the floor-plan report's print style (``api/floor_plan_report.py``): a header
 block, an optional summary (counts by status, role, site…), a table of the
-objects with the columns the reader picks, and optionally a page per object
-with the sections the reader picks (overview, interfaces, IP addresses…).
+objects with the columns the reader picks, and optionally details for each
+object with the sections the reader picks (overview, interfaces, IP
+addresses…), each object starting a new page.
 
 ``GET`` answers what can go in a report of that type for this reader: the
 list columns (the list page's own column catalog, ``api.list_fields``, plus
@@ -24,11 +25,16 @@ the list drops it, and never named. Nothing is written or audited.
 
 The PDF obeys the drawing PDFs' limits (``api/drawing_pdf.py``): one render
 per user and a few across the server, the render deadline, and ``?print=1``'s
-five-minute link. A report lists at most ``MAX_OBJECTS`` objects and gives a
-page to at most ``MAX_OBJECT_PAGES``; past either it is refused (400) with
+five-minute link. A report lists at most ``MAX_OBJECTS`` objects and gives
+details to at most ``MAX_OBJECT_PAGES``; past either it is refused (400) with
 the limit. A report whose estimated render time (``estimate_seconds``: table
-cells and pages per object) is past ``RENDER_BUDGET`` is refused (400) before
-it renders, saying what fits; one that still runs past the deadline is 503.
+cells and objects with details) is past ``RENDER_BUDGET`` renders in the
+background instead, as an RQ job with a longer deadline (``start_job``,
+``run_report_job``; 202 and a status to poll). One estimated past that
+deadline's budget is refused (400) before it renders, saying what fits; a
+render that still runs past its deadline is 503 (or a failed job).
+``?estimate=1`` answers the estimate without rendering, for the dialog's
+live line.
 A section lists at most ``MAX_SECTION_ROWS`` rows, and the whole
 report ``MAX_TOTAL_ROWS``; past those a section says how many it left out.
 """
@@ -37,13 +43,19 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import hashlib
 import ipaddress
+import json
 import logging
 import re
+import secrets
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from html import escape
 
+from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Q
 from django.http import HttpResponse, QueryDict
 from django.urls import reverse
@@ -57,10 +69,13 @@ from rest_framework.response import Response
 
 from .drawing_pdf import (
     BASE_URL,
+    BUSY_KEY,
     MAX_BODY_BYTES,
+    MAX_PDF_BYTES,
     MEDIA_IMAGES_URL,
     PAPERS_MM,
     RENDER_TIMEOUT,
+    TOKEN,
     PdfUrlFetcher,
     RenderTimeout,
     _font_faces,
@@ -68,10 +83,13 @@ from .drawing_pdf import (
     deliver,
     detail,
     file_name,
+    flag,
     kept_pdf,
+    release,
     render_guarded,
     run_with_deadline,
     stamp,
+    take,
 )
 from .field_labels import humanize
 from .floor_plan_report import _pill, _plural
@@ -84,7 +102,7 @@ MAX_OBJECT_PAGES = 50
 #: What a render costs, measured on WeasyPrint with the fixed table layout
 #: (#474): about 1.5 ms per table cell and 50 ms per object page on a 2-vCPU
 #: box. A report estimated past ``RENDER_BUDGET`` - the deadline less a
-#: margin for a busier or slower server - is refused before it renders.
+#: margin for a busier or slower server - renders in the background.
 SECONDS_PER_CELL = 0.0016
 SECONDS_PER_PAGE = 0.06
 SECONDS_BASE = 0.5
@@ -125,7 +143,12 @@ _FILTER_DROP = frozenset(
 )
 _FILTER_KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 #: The viewsets' ``rbac_action_map`` entries: a report reads, whatever its method.
-RBAC_ACTIONS = {"report": "view", "report_file": "view"}
+RBAC_ACTIONS = {
+    "report": "view",
+    "report_file": "view",
+    "report_job": "view",
+    "report_job_file": "view",
+}
 
 
 # ─── The registry ───────────────────────────────────────────────────────────
@@ -1514,6 +1537,7 @@ def describe(request, rt: ReportType) -> Response:
                 "columns": MAX_COLUMNS,
                 "last": MAX_LAST,
                 "cells": cells_that_fit(),
+                "background_cells": cells_that_fit(0, job_budget()),
             },
         }
     )
@@ -1525,24 +1549,67 @@ def _print_key(slug, user_id, tenant_id) -> str:
 
 def estimate_seconds(cells: int, pages: int = 0) -> float:
     """About how long WeasyPrint takes for ``cells`` table cells and
-    ``pages`` pages per object."""
+    ``pages`` objects with details."""
     return SECONDS_BASE + cells * SECONDS_PER_CELL + pages * SECONDS_PER_PAGE
 
 
-def cells_that_fit(pages: int = 0) -> int:
-    """Table cells a report with ``pages`` pages per object may hold."""
-    left = RENDER_BUDGET - SECONDS_BASE - pages * SECONDS_PER_PAGE
+def job_timeout() -> int:
+    """A background render's deadline, in seconds."""
+    return int(getattr(settings, "REPORT_JOB_TIMEOUT", 300))
+
+
+def job_keep() -> int:
+    """How long a background report's PDF is kept, in seconds."""
+    return int(getattr(settings, "REPORT_JOB_KEEP", 3600))
+
+
+def job_budget() -> float:
+    """The estimate past which a report is refused outright."""
+    return job_timeout() * 0.7
+
+
+def cells_that_fit(pages: int = 0, budget: float | None = None) -> int:
+    """Table cells a report with ``pages`` objects with details may hold
+    within ``budget`` seconds (by default the in-request ``RENDER_BUDGET``)."""
+    budget = RENDER_BUDGET if budget is None else budget
+    left = budget - SECONDS_BASE - pages * SECONDS_PER_PAGE
     return max(0, int(left / SECONDS_PER_CELL))
 
 
-def too_slow(body: str, shape: dict) -> Response | None:
-    """The 400 for a report that would not render before the deadline,
-    saying what fits; None when it should."""
+def estimate(body: str, shape: dict) -> dict:
+    """What rendering ``body`` costs, and where: ``now`` in the request,
+    ``background`` as a job, or ``too_large`` for either."""
     cells = body.count("<td")
     pages = shape["pages"]
-    if estimate_seconds(cells, pages) <= RENDER_BUDGET:
+    seconds = estimate_seconds(cells, pages)
+    if seconds <= RENDER_BUDGET:
+        mode = "now"
+    elif seconds <= job_budget():
+        mode = "background"
+    else:
+        mode = "too_large"
+    return {
+        "cells": cells,
+        "pages": pages,
+        "seconds": round(seconds, 1),
+        "mode": mode,
+        "fits": {
+            "now": cells_that_fit(pages),
+            "background": cells_that_fit(pages, job_budget()),
+        },
+    }
+
+
+def too_slow(body: str, shape: dict, budget: float | None = None) -> Response | None:
+    """The 400 for a report that would not render before ``budget`` (by
+    default :func:`job_budget`, the background deadline's), saying what
+    fits; None when it would."""
+    budget = job_budget() if budget is None else budget
+    cells = body.count("<td")
+    pages = shape["pages"]
+    if estimate_seconds(cells, pages) <= budget:
         return None
-    fit = cells_that_fit(pages)
+    fit = cells_that_fit(pages, budget)
     hints, drop = [], []
     rows, cols = shape["rows"], shape["list_columns"]
     other = cells - rows * cols if cols else cells
@@ -1552,7 +1619,7 @@ def too_slow(body: str, shape: dict) -> Response | None:
         if room // rows:
             hints.append(f"at most {room // rows} columns for these {rows:,} rows")
     if pages:
-        drop.append("the pages per object or some of their sections")
+        drop.append("the details for each object or some of their sections")
     if shape.get("show_ips"):
         drop.append("Show IPs")
     tail = f" Report on {' or '.join(hints)}." if hints else " Report on fewer rows."
@@ -1599,9 +1666,9 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str,
         list_table = many
     if per_object and len(rows) > MAX_OBJECT_PAGES:
         return detail(
-            f"A report gives a page each to at most {MAX_OBJECT_PAGES} objects; "
-            f"this one has {len(rows):,}. Leave out the pages per object or "
-            "select fewer rows.",
+            f"A report gives details for at most {MAX_OBJECT_PAGES} "
+            f"{rt.plural.lower()}; this one has {len(rows):,}. Leave out the "
+            "details or select fewer rows.",
             400,
         )
     cat = ctx.catalog(rt.path) or {}
@@ -1653,27 +1720,20 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str,
     return title, "".join(body), shape
 
 
-def export(request, rt: ReportType):
-    """``GET`` describes, ``POST`` makes the PDF."""
-    if request.method == "GET":
-        return describe(request, rt)
-    if body_too_large(request, MAX_BODY_BYTES):
-        return detail("The request is over 10 MB.", 413)
-    tenant = _tenant(request)
-    ser = ObjectReportRequestSerializer(data=request.data, context={"type": rt})
+def _validated(rt: ReportType, raw) -> dict:
+    """The request body, checked."""
+    ser = ObjectReportRequestSerializer(data=raw, context={"type": rt})
     ser.is_valid(raise_exception=True)
     data = dict(ser.validated_data)
     if "filters" in data:
         data["filters"] = _filters(data["filters"])
-    opts = dict(data.get("options") or {})
-    data["options"] = opts
-    built = build_report(request, rt, data, tenant)
-    if isinstance(built, Response):
-        return built
-    title, body, shape = built
-    refused = too_slow(body, shape)
-    if refused is not None:
-        return refused
+    data["options"] = dict(data.get("options") or {})
+    return data
+
+
+def _page_html(rt: ReportType, data: dict, tenant, title: str, body: str):
+    """``(html, generated)``: the whole page around ``body``."""
+    opts = data["options"]
     paper = opts.get("paper") or "a4"
     many_cols = len((data.get("columns") or {}).get("list") or rt.list_columns) > 8
     orientation = opts.get("orientation") or ("landscape" if many_cols else "portrait")
@@ -1686,6 +1746,66 @@ def export(request, rt: ReportType):
         orientation=orientation,
         body=body,
     )
+    return html, generated
+
+
+#: An estimate is kept this many seconds per body.
+ESTIMATE_TTL = 60
+
+
+def _estimate_key(rt: ReportType, request, tenant, data: dict) -> str:
+    raw = json.dumps(data, sort_keys=True, default=str).encode()
+    digest = hashlib.sha256(raw).hexdigest()[:40]
+    return f"object-report-estimate:{rt.slug}:{request.user.pk}:{tenant.pk}:{digest}"
+
+
+def estimate_answer(request, rt: ReportType, data: dict, tenant) -> Response:
+    """``?estimate=1``: the report built but not rendered - its table cells,
+    objects with details, seconds and where it would render - kept a minute
+    per body, user and tenant."""
+    key = _estimate_key(rt, request, tenant, data)
+    try:
+        hit = cache.get(key)
+    except Exception:  # noqa: BLE001 - no cache: build it
+        hit = None
+    if isinstance(hit, dict):
+        return Response(hit)
+    built = build_report(request, rt, data, tenant)
+    if isinstance(built, Response):
+        return built
+    _title, body, shape = built
+    out = estimate(body, shape)
+    if out["mode"] == "too_large":
+        out["detail"] = too_slow(body, shape).data["detail"]
+    try:
+        cache.set(key, out, ESTIMATE_TTL)
+    except Exception:  # noqa: BLE001, S110 - only a shortcut
+        pass
+    return Response(out)
+
+
+def export(request, rt: ReportType):
+    """``GET`` describes, ``POST`` makes the PDF: in the request when it is
+    small, as a background job (202) when it is not. ``?estimate=1`` says
+    what it would cost instead."""
+    if request.method == "GET":
+        return describe(request, rt)
+    if body_too_large(request, MAX_BODY_BYTES):
+        return detail("The request is over 10 MB.", 413)
+    tenant = _tenant(request)
+    data = _validated(rt, request.data)
+    if flag(request, "estimate"):
+        return estimate_answer(request, rt, data, tenant)
+    built = build_report(request, rt, data, tenant)
+    if isinstance(built, Response):
+        return built
+    title, body, shape = built
+    cost = estimate(body, shape)
+    if cost["mode"] == "too_large":
+        return too_slow(body, shape)
+    if cost["mode"] == "background":
+        return start_job(request, rt, tenant, data, cost["seconds"])
+    html, generated = _page_html(rt, data, tenant, title, body)
 
     def render(_svg: bytes) -> bytes:
         return render_with_deadline(html=html)
@@ -1721,6 +1841,289 @@ def export_file(request, rt: ReportType, token: str) -> HttpResponse | Response:
     return kept_pdf(request, token, key=_print_key(rt.slug, request.user.pk, tenant.pk))
 
 
+# ─── Background reports ─────────────────────────────────────────────────────
+#
+# A report past the in-request budget renders as an RQ job on the ``low``
+# queue (monitoring runs on ``default``), with ``job_timeout()`` for its
+# deadline, in the same forked render child. The job rebuilds the report as
+# the user who asked - their scoped lists, their tenant, their API token if
+# they used one - so a permission or tenant taken away while it waited
+# applies. It waits for the user's PDF lock and one of ``JOB_SLOTS``
+# background slots, apart from the web renders' slots so a long render never
+# holds up a quick one. The PDF is kept in the cache under a random token
+# for ``job_keep()`` seconds, readable only by that user in that tenant
+# through that type's ``report/job/<token>/`` endpoints.
+
+#: Background renders at once across the deployment.
+JOB_SLOTS = 1
+JOB_SLOT_KEY = "object-report-job-slot:{}"
+#: How long a job waits for its locks, and how often it looks.
+JOB_LOCK_WAIT = 120
+JOB_LOCK_POLL = 2.0
+#: A user's one queued or running background report.
+JOB_PENDING_KEY = "object-report-job-pending:{}"
+JOB_KEY = "object-report-job:{}"
+JOB_PDF_KEY = "object-report-job-pdf:{}"
+
+
+def _job_lifetime() -> int:
+    """Seconds a job may take from its start: the lock wait, the build
+    and the render."""
+    return JOB_LOCK_WAIT + job_timeout() + 120
+
+
+def _job_get(token: str) -> dict | None:
+    entry = cache.get(JOB_KEY.format(token))
+    return entry if isinstance(entry, dict) else None
+
+
+def _job_update(token: str, **fields) -> None:
+    try:
+        entry = _job_get(token)
+        if entry is None:
+            return
+        entry.update(fields)
+        cache.set(JOB_KEY.format(token), entry, job_keep())
+    except Exception:  # noqa: BLE001 - the status is lost with the cache
+        log.warning("object report job status not kept", exc_info=True)
+
+
+def _job_link(rt: ReportType, name: str, token: str) -> str:
+    return reverse(f"{_ROUTE[rt.slug]}-{name}", kwargs={"token": token})
+
+
+def start_job(request, rt: ReportType, tenant, data: dict, seconds: float) -> Response:
+    """Queue the report ``data`` asks for: 202 with ``{job, status}``, 429
+    while the user already has one queued or running."""
+    import django_rq
+
+    from auth_api.models import ApiToken
+
+    token = secrets.token_urlsafe(32)
+    pending = JOB_PENDING_KEY.format(request.user.pk)
+    try:
+        if not cache.add(pending, token, _job_lifetime() + job_timeout()):
+            return detail("A report is already being made. Try again when it is ready.", 429)
+        cache.set(
+            JOB_KEY.format(token),
+            {
+                "user": request.user.pk,
+                "tenant": str(tenant.pk),
+                "type": rt.slug,
+                "state": "queued",
+                "seconds": seconds,
+            },
+            job_keep(),
+        )
+    except Exception:  # noqa: BLE001 - the cache is down or too slow
+        log.warning("%s report job not kept", rt.label, exc_info=True)
+        return detail("The report could not be queued. Try again in a minute.", 503)
+    auth = request.auth
+    try:
+        django_rq.get_queue("low").enqueue(
+            run_report_job,
+            token,
+            rt.slug,
+            request.user.pk,
+            str(tenant.pk),
+            auth.pk if isinstance(auth, ApiToken) else None,
+            request.get_host(),
+            request.is_secure(),
+            json.loads(json.dumps(data, default=str)),
+            job_timeout=_job_lifetime(),
+            result_ttl=job_keep(),
+            failure_ttl=job_keep(),
+            description=f"{rt.label} PDF report",
+        )
+    except Exception:  # noqa: BLE001 - Redis is down
+        log.warning("%s report job not queued", rt.label, exc_info=True)
+        release(pending, token)
+        return detail("The report could not be queued. Try again in a minute.", 503)
+    return Response(
+        {
+            "job": token,
+            "state": "queued",
+            "status": _job_link(rt, "report-job", token),
+            "seconds": seconds,
+        },
+        status=202,
+    )
+
+
+def job_request(user_id, tenant_id: str, auth_id, host: str, secure: bool):
+    """``(request, tenant)``: a request as the user who asked for a report,
+    in the tenant they asked in. PermissionDenied when the user, their API
+    token or their access to the tenant is gone."""
+    from django.contrib.auth import get_user_model
+    from rest_framework.test import APIRequestFactory
+
+    from auth_api.models import ApiToken
+    from auth_api.token_auth import token_tenant_allowed
+
+    user = get_user_model().objects.filter(pk=user_id, is_active=True).first()
+    if user is None:
+        raise PermissionDenied("The user who asked for this report is no longer active.")
+    token = None
+    if auth_id is not None:
+        token = ApiToken.objects.select_related("user", "tenant").filter(pk=auth_id).first()
+        if (
+            token is None
+            or token.user_id != user.pk
+            or token.is_expired
+            or not token_tenant_allowed(token)
+        ):
+            raise PermissionDenied("The API token that asked for this report is no longer valid.")
+    http = APIRequestFactory().get("/", HTTP_HOST=host, secure=secure)
+    # The tenant they asked in; the resolver still checks they may use it.
+    http.session = {"current_tenant_id": str(tenant_id)}
+    http.user = user
+    req = Request(http)
+    req.user = user
+    req.auth = token
+    tenant = _tenant(req)
+    if str(tenant.pk) != str(tenant_id):
+        raise PermissionDenied("You no longer have access to the tenant of this report.")
+    return req, tenant
+
+
+def _job_locks(user_id):
+    """The user's PDF lock and a background slot, ``[(key, token), …]``,
+    waited for up to ``JOB_LOCK_WAIT`` seconds; None when they stay taken."""
+    ttl = job_timeout() + 60
+    busy = BUSY_KEY.format(user_id)
+    deadline = time.monotonic() + JOB_LOCK_WAIT
+    while True:
+        mine = take(busy, ttl)
+        if mine is not None:
+            for i in range(JOB_SLOTS):
+                key = JOB_SLOT_KEY.format(i)
+                slot = take(key, ttl)
+                if slot is not None:
+                    return [(busy, mine), (key, slot)]
+            release(busy, mine)
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(JOB_LOCK_POLL)
+
+
+_RENDER_STOPPED = (
+    "The report took too long to render and was stopped. Try again "
+    "when the server is less busy, or report on fewer rows or columns."
+)
+
+
+def run_report_job(token, slug, user_id, tenant_id, auth_id, host, secure, raw) -> str:
+    """The RQ job: the report ``raw`` asks for, rebuilt and rendered as
+    ``user_id``, kept under ``token``. Returns the state it ended in."""
+    rt = REPORT_TYPES[slug]
+
+    def fail(msg: str) -> str:
+        _job_update(token, state="failed", detail=msg)
+        return "failed"
+
+    try:
+        if _job_get(token) is None:
+            return "gone"
+        request, tenant = job_request(user_id, tenant_id, auth_id, host, secure)
+        data = _validated(rt, raw)
+        built = build_report(request, rt, data, tenant)
+        if isinstance(built, Response):
+            return fail(str(built.data.get("detail") or "The report could not be made."))
+        title, body, shape = built
+        refused = too_slow(body, shape)
+        if refused is not None:
+            return fail(refused.data["detail"])
+        _job_update(token, state="waiting", seconds=estimate(body, shape)["seconds"])
+        locks = _job_locks(user_id)
+        if locks is None:
+            return fail("Other PDFs are being made. Try again in a few minutes.")
+        try:
+            _job_update(token, state="running", started=time.time())
+            html, generated = _page_html(rt, data, tenant, title, body)
+            pdf = render_with_deadline(html=html, timeout=job_timeout())
+        finally:
+            for lock in locks:
+                release(*lock)
+        if len(pdf) > MAX_PDF_BYTES:
+            return fail("The PDF is too large to keep. Report on fewer rows or columns.")
+        cache.set(JOB_PDF_KEY.format(token), pdf, job_keep())
+        _job_update(token, state="done", name=file_name(title, generated, rt.file_stem))
+        return "done"
+    except RenderTimeout:
+        log.warning("%s report job for user %s stopped after %ss", rt.label, user_id, job_timeout())
+        return fail(_RENDER_STOPPED)
+    except PermissionDenied as exc:
+        return fail(str(exc.detail))
+    except serializers.ValidationError:
+        return fail("The report's options are no longer valid.")
+    except Exception:  # noqa: BLE001 - told to the dialog, logged here
+        log.exception("%s report job failed", rt.label)
+        return fail("The report could not be made.")
+    finally:
+        release(JOB_PENDING_KEY.format(user_id), token)
+
+
+def _my_job(request, rt: ReportType, token: str) -> dict | None:
+    """The job ``token`` names when it is this user's, in this tenant, of
+    this type; None otherwise."""
+    if not TOKEN.match(token):
+        return None
+    tenant = _tenant(request)
+    entry = _job_get(token)
+    if (
+        entry is None
+        or entry.get("user") != request.user.pk
+        or entry.get("tenant") != str(tenant.pk)
+        or entry.get("type") != rt.slug
+    ):
+        return None
+    return entry
+
+
+def job_status(request, rt: ReportType, token: str) -> Response:
+    """``{state, progress?, url?, detail?}`` of a background report. The
+    state is ``queued``, ``waiting``, ``running``, ``done`` or ``failed``;
+    ``progress`` (0-95) is the render's time so far against its estimate."""
+    try:
+        entry = _my_job(request, rt, token)
+    except PermissionDenied:
+        raise
+    except Exception:  # noqa: BLE001 - the cache is down or too slow
+        return detail("Report status is unavailable right now.", 503)
+    if entry is None:
+        return detail("Not found.", 404)
+    state = entry.get("state", "queued")
+    out: dict = {"state": state}
+    if state == "running" and entry.get("started") and entry.get("seconds"):
+        took = time.time() - float(entry["started"])
+        out["progress"] = max(0, min(95, int(100 * took / float(entry["seconds"]))))
+    if state == "done":
+        out["url"] = _job_link(rt, "report-job-file", token)
+    if state == "failed":
+        out["detail"] = entry.get("detail") or "The report could not be made."
+    return Response(out)
+
+
+def job_file(request, rt: ReportType, token: str) -> HttpResponse | Response:
+    """A finished background report's PDF, to the user who asked for it;
+    inline, or as a download with ``?download=1``."""
+    try:
+        entry = _my_job(request, rt, token)
+        pdf = cache.get(JOB_PDF_KEY.format(token)) if entry else None
+    except PermissionDenied:
+        raise
+    except Exception:  # noqa: BLE001 - the cache is down or too slow
+        return detail("Reports are unavailable right now.", 503)
+    if entry is None or entry.get("state") != "done" or not isinstance(pdf, bytes):
+        return detail("Not found.", 404)
+    resp = HttpResponse(pdf, content_type="application/pdf")
+    how = "attachment" if flag(request, "download") else "inline"
+    resp["Content-Disposition"] = f'{how}; filename="{entry.get("name") or "report.pdf"}"'
+    resp["Cache-Control"] = "private, no-store"
+    resp["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
 # ─── Schema ─────────────────────────────────────────────────────────────────
 
 
@@ -1733,13 +2136,17 @@ def report_schema(rt: ReportType):
             "selected rows of a list), or every row `filters` - the list's own query "
             "parameters - match. `options.list_table` prints a table of them with "
             "`columns.list`; `options.include_summary` counts them by status, role and "
-            "site; `options.per_object` gives each a page of `sections`, each with its "
-            "`columns.<section>`. Read through the lists, so ids and rows the reader "
-            f"may not view are left out. At most {MAX_OBJECTS:,} objects and "
-            f"{MAX_OBJECT_PAGES} pages per object (400 past either), and a report "
-            f"estimated past about {cells_that_fit():,} table cells is refused "
-            "with a 400 that says what fits; a render past the deadline is 503. The drawing "
-            "PDFs' limits apply; `?print=1` returns `{url}`, a five-minute link."
+            "site; `options.per_object` adds details for each of them: the `sections`, "
+            "each with its `columns.<section>`. Read through the lists, so ids and rows "
+            f"the reader may not view are left out. At most {MAX_OBJECTS:,} objects and "
+            f"{MAX_OBJECT_PAGES} with details (400 past either). A report estimated past "
+            f"about {cells_that_fit():,} table cells renders in the background: 202 with "
+            "`{job, status}`; poll `status` until `state` is `done` and fetch its `url`. "
+            "One estimated past the background deadline is refused with a 400 that says "
+            "what fits. `?estimate=1` builds the report without rendering it and answers "
+            "`{cells, pages, seconds, mode, fits}`, `mode` being `now`, `background` or "
+            "`too_large`. The drawing PDFs' limits apply; `?print=1` returns `{url}`, a "
+            "five-minute link."
         ),
         tags=["reports"],
         parameters=[
@@ -1748,19 +2155,26 @@ def report_schema(rt: ReportType):
                 type=OpenApiTypes.BOOL,
                 location=OpenApiParameter.QUERY,
                 description="Answer with a short-lived link.",
-            )
+            ),
+            OpenApiParameter(
+                name="estimate",
+                type=OpenApiTypes.BOOL,
+                location=OpenApiParameter.QUERY,
+                description="Say what the report would cost instead of making it.",
+            ),
         ],
         request=ObjectReportRequestSerializer,
         responses={
             (200, "application/pdf"): OpenApiTypes.BINARY,
             (200, "application/json"): OpenApiTypes.OBJECT,
+            202: OpenApiResponse(description="Rendering in the background: `{job, status}`."),
             400: OpenApiResponse(description="Invalid body, nothing to report, or over a limit."),
             403: OpenApiResponse(description=f"No view on {rt.plural.lower()}."),
             413: OpenApiResponse(description="The request is over 10 MB."),
             503: OpenApiResponse(description="The render ran past its deadline."),
             429: OpenApiResponse(
-                description="A PDF for this user is being made, or the "
-                "server is making as many as it may."
+                description="A PDF or background report for this user is being "
+                "made, or the server is making as many as it may."
             ),
         },
     )
@@ -1797,5 +2211,41 @@ def file_schema(rt: ReportType):
         responses={
             (200, "application/pdf"): OpenApiTypes.BINARY,
             404: OpenApiResponse(description="No such link."),
+        },
+    )
+
+
+def job_schema(rt: ReportType):
+    return extend_schema(
+        summary=f"A background {rt.label.lower()} report's state",
+        description=(
+            "`{state, progress?, url?, detail?}`: `state` is `queued`, `waiting`, "
+            "`running`, `done` or `failed`; `progress` (0-95) is the render's time so far "
+            "against its estimate; `url` the PDF once done; `detail` why it failed. Only "
+            "to the user and tenant that asked for it."
+        ),
+        tags=["reports"],
+        request=None,
+        responses={200: OpenApiTypes.OBJECT, 404: OpenApiResponse(description="No such job.")},
+    )
+
+
+def job_file_schema(rt: ReportType):
+    return extend_schema(
+        summary=f"A background {rt.label.lower()} report's PDF",
+        description=(
+            "The finished PDF, kept for an hour to the user and tenant that asked for "
+            "it; inline, or as a download with `?download=1`."
+        ),
+        tags=["reports"],
+        parameters=[
+            OpenApiParameter(
+                name="download", type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY
+            )
+        ],
+        request=None,
+        responses={
+            (200, "application/pdf"): OpenApiTypes.BINARY,
+            404: OpenApiResponse(description="No such report, or not done."),
         },
     )
