@@ -4225,13 +4225,13 @@ class DeviceViewSet(
         if not ids:
             return Response({})
         devices = self.get_queryset().filter(pk__in=ids).select_related("device_type")
-        loader = FacePortLoader(
-            devices, user=request.user, tenant=_get_active_tenant(request)
-        )
+        tenant = _get_active_tenant(request)
+        loader = FacePortLoader(devices, user=request.user, tenant=tenant)
+        peers = PeerScope(request.user, tenant, loader.far_components())
         with_drift = (request.query_params.get("drift") or "").lower() in ("1", "true", "yes")
         out = {}
         for device in loader.devices:
-            payload = loader.payload(device)
+            payload = loader.payload(device, peer=peers.far_end)
             if with_drift:
                 self._add_face_drift(device, payload)
             out[str(device.id)] = payload
@@ -4240,9 +4240,10 @@ class DeviceViewSet(
     def _face_ports_payload(self, device) -> dict:
         """The resolved markers of one device, with drift - see
         ``face_ports``."""
-        payload = FacePortLoader(
-            [device], user=self.request.user, tenant=_get_active_tenant(self.request)
-        ).payload(device)
+        tenant = _get_active_tenant(self.request)
+        loader = FacePortLoader([device], user=self.request.user, tenant=tenant)
+        peers = PeerScope(self.request.user, tenant, loader.far_components())
+        payload = loader.payload(device, peer=peers.far_end)
         self._add_face_drift(device, payload)
         return payload
 

@@ -89,7 +89,9 @@ from .port_state import (
     FAR_END_PREFETCH as FAR_END_PREFETCH,
     far_end as far_end,
     module_interfaces,
+    scoped_far_end,
     termination_component as termination_component,
+    visible_device_ids,
 )
 from .visible_counts import path_count, related_count, tagged_count, tenant_count, view_filter
 
@@ -4142,8 +4144,22 @@ def _point_cable(point, context=None):
     return ser.to_representation(t.cable)
 
 
-def _point_far_end(point):
-    return far_end(next(iter(point.terminations.all()), None))
+def _point_far_end(point, context=None):
+    """The far end of ``point``'s cable, named only when the caller may view
+    its device (#473). The visible device ids are read once per request and
+    kept in the serializer context."""
+    term = next(iter(point.terminations.all()), None)
+    request = (context or {}).get("request")
+    user = getattr(request, "user", None)
+    if user is None:
+        return far_end(term)
+    if "_peer_visible_devices" not in context:
+        from api.views import _get_active_tenant
+
+        context["_peer_visible_devices"] = visible_device_ids(
+            user, _get_active_tenant(request)
+        )
+    return scoped_far_end(term, context["_peer_visible_devices"])
 
 
 def _point_reservation(point):
@@ -4275,7 +4291,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_link_peer(self, obj):
-        return _point_far_end(obj)
+        return _point_far_end(obj, self.context)
 
     reservation = serializers.SerializerMethodField()
 

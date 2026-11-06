@@ -97,6 +97,14 @@ A [port reservation](port-reservation.md) holding this (uncabled) port -
 who claimed it, the note, and since when. Read-only here; managed through
 the reserve actions or `/api/port-reservations/`.
 
+### Link peer
+
+What the port's cable reaches, read-only: `link_peer` is
+`{"device", "port", "port_label"}` for the far end, or `null` on an
+uncabled port. A far end on a device you may not view is not named: it reads
+`{"device": "", "port": "", "port_label": "", "hidden": true}`, in the API,
+the faceplate and rack port labels, export templates and the device report.
+
 ### Uplink
 
 **Automatic**, **Always** or **Never** - two fields on the API:
