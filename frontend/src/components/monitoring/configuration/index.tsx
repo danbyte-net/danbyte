@@ -15,18 +15,7 @@ import { PolicyTable } from "./policy-table"
 import { PrefixPolicyTable } from "./prefix-panel"
 import { ProfilesPanel } from "./profiles-panel"
 
-export const CONFIG_TABS = [
-  "global",
-  "regions",
-  "sites",
-  "prefixes",
-  "platforms",
-  "types",
-  "roles",
-  "devices",
-  "deny",
-] as const
-export type ConfigTab = (typeof CONFIG_TABS)[number]
+import type { ConfigTab } from "./tabs"
 
 // Monitoring configuration: scope-based policy (what checks apply to what)
 // across the inheritance hierarchy. One module per panel - see the sibling

@@ -259,7 +259,6 @@ export function ViolationsTab({
           exportName="compliance-violations"
           exportTitle="Compliance violations"
           groupBy={grouped ? "rule" : undefined}
-          pagedWhenGrouped
           initialColumnVisibility={grouped ? { rule: false } : undefined}
           renderGroupHeader={({ count, sampleRow }) => (
             <span className="inline-flex items-center gap-2 tracking-normal normal-case">

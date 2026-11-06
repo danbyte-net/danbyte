@@ -375,7 +375,7 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 | deps, check | dependencies installed, `manage.py check`, the migration plan | maintenance page |
 | snapshot | `pg_dump` of the database - only when migrations are pending - into the run folder beside the app, which only the service user can read | maintenance page |
 | migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was; the deferred foreign-key checks run after each migration and after each of its data steps, as separate commits would; when the one transaction hits a database limit (too many locks, pending trigger events) it is rolled back and the migrations run one by one on a new connection; a migration that lost its database to a restart and rolled back whole runs once more, and if the database stays away only the code is rolled back | maintenance page |
-| static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
+| static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static and frontend build files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
 | verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |
 | start | web, websockets, frontend, docs, workers - while the site still answers 503; `/api/health/` must say `ok` with the new version, the admin page must render, and nothing may keep restarting | 503 |
 | resume | the site opens; the timers that ran before start again (a timer you turned off stays off); a release's new timers are turned on | up |
@@ -513,6 +513,14 @@ replaced: the new render lands next to it as `danbyte.conf.new`, and
 with `--no-nginx` gets no nginx site from it while it has none, and no
 certificate unit either; `sudo make install-tls-unit APP=<app directory>`,
 in the same bundle, installs the unit alone.
+
+From 0.19 the site serves the frontend's hashed `/assets/` from disk, cached
+for good (see [Frontend files and
+compression](installation.md#frontend-files-and-compression)); the step
+*Let nginx serve the frontend's build files* stays up until the root steps
+have run. Until then the site works as before, only without that caching. A
+site you manage yourself needs the `/assets/` block and the
+`$danbyte_asset_cache` map from `deploy/nginx/danbyte.prod.conf.template`.
 
 !!! warning "Root runs only files root owns"
     The app directory belongs to the service account. A script or template

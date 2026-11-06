@@ -10,6 +10,7 @@ import {
   type Updater,
   type VisibilityState,
   type RowSelectionState,
+  type Table as TanstackTable,
   flexRender,
   getCoreRowModel,
   getExpandedRowModel,
@@ -161,9 +162,9 @@ interface DataTableProps<T> {
    * appears when rows are ticked; with nothing selected the toolbar bar is
    * omitted entirely so there's no empty spacer above the table. */
   embedded?: boolean
-  /** Grouped views show the whole hierarchy by default. Opt in to paging the
-   * post-expansion rows (group banners interleaved) when a grouped table can
-   * hold hundreds of interactive rows - e.g. the monitoring policy tables. */
+  /** Grouped views page like any list: the page counts the rows after
+   * expansion, group banners interleaved (#479). Pass `false` only for a
+   * grouped table that must show its whole hierarchy and stays small. */
   pagedWhenGrouped?: boolean
   /** Never page or show the row-count footer: a fixed short list, like a
    * top ten, where "10 rows" and a page size are chrome. */
@@ -284,14 +285,15 @@ export function DataTable<T>({
 
   // ─── Pagination ────────────────────────────────────────────────────────
   // Client-side paging driven by the user's "Default page size" preference
-  // (Settings → Preferences). Grouped/tree views aren't paged - they show the
-  // whole hierarchy. `0` (or grouping) means "show all".
+  // (Settings → Preferences). Grouped views page too, unless the table opts
+  // out with `pagedWhenGrouped={false}`: an unpaged grouped list of
+  // thousands of rows froze the Prefixes page (#479). `0` means "show all".
   const prefPageSize = Number(displayPrefs.page_size) || 25
   const paged =
     !serverPagination &&
     !unpaged &&
     prefPageSize > 0 &&
-    (!groupBy || pagedWhenGrouped === true)
+    (!groupBy || pagedWhenGrouped !== false)
   const [pagination, setPagination] = useState({
     pageIndex: 0,
     pageSize: paged ? prefPageSize : 100000,
@@ -642,10 +644,10 @@ export function DataTable<T>({
   const selectedCount = Object.keys(rowSelection).length
   // The header checkbox ticks the page in front of you. When that is only
   // part of the list, the bar says so and offers the rest.
-  const spansPages = paged && pageTotal > 1 && grouping.length === 0
+  const spansPages = paged && pageTotal > 1
   const allRowsSelected = spansPages && table.getIsAllRowsSelected()
   const pageSelected =
-    spansPages && !allRowsSelected && table.getIsAllPageRowsSelected()
+    spansPages && !allRowsSelected && pageSelectionState(table) === true
 
   // Bubble the actual row originals up so parents don't have to map keys.
   // Only when the selection actually CHANGED: a parent typically stores this
@@ -1528,6 +1530,46 @@ function rowIdOf<T>(row: T, index: number, parent?: { id: string }): string {
     : String((row as { id: string | number }).id)
 }
 
+// The data rows on the current page of a grouped table. A group banner is
+// not one: ticking it would tick its whole group, rows on other pages too.
+function groupedPageRows<T>(table: TanstackTable<T>) {
+  return table
+    .getRowModel()
+    .rows.filter((r) => !r.getIsGrouped() && r.getCanSelect())
+}
+
+// The header checkbox state for the page in front of you.
+function pageSelectionState<T>(
+  table: TanstackTable<T>
+): boolean | "indeterminate" {
+  if (!table.getState().grouping.length)
+    return (
+      table.getIsAllPageRowsSelected() ||
+      (table.getIsSomePageRowsSelected() && "indeterminate")
+    )
+  const rows = groupedPageRows(table)
+  const ticked = rows.filter((r) => r.getIsSelected()).length
+  if (rows.length > 0 && ticked === rows.length) return true
+  return ticked > 0 ? "indeterminate" : false
+}
+
+// Tick or clear the page's rows; on a grouped table only its data rows.
+function togglePageRows<T>(table: TanstackTable<T>, value: boolean) {
+  if (!table.getState().grouping.length) {
+    table.toggleAllPageRowsSelected(value)
+    return
+  }
+  const ids = groupedPageRows(table).map((r) => r.id)
+  table.setRowSelection((old) => {
+    const next = { ...old }
+    for (const id of ids) {
+      if (value) next[id] = true
+      else delete next[id]
+    }
+    return next
+  })
+}
+
 // Selection cell helpers
 export const selectionColumn = <T,>(): ColumnDef<T> => ({
   id: "select",
@@ -1535,11 +1577,8 @@ export const selectionColumn = <T,>(): ColumnDef<T> => ({
   enableHiding: false,
   header: ({ table }) => (
     <Checkbox
-      checked={
-        table.getIsAllPageRowsSelected() ||
-        (table.getIsSomePageRowsSelected() && "indeterminate")
-      }
-      onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
+      checked={pageSelectionState(table)}
+      onCheckedChange={(v) => togglePageRows(table, !!v)}
       aria-label="Select all"
     />
   ),

@@ -38,3 +38,16 @@ class DockerDocsTests(SimpleTestCase):
         # Trailing-slash redirects must keep /docs and the published port (#123).
         self.assertIn("absolute_redirect off;", body)
         self.assertIn("location = /docs { absolute_redirect off; return 301 /docs/; }", conf)
+
+
+class DockerAssetsTests(SimpleTestCase):
+    """The web image serves the SPA's hashed build files itself (#485)."""
+
+    def test_web_image_carries_the_frontend_assets(self):
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        self.assertRegex(stage(dockerfile, "frontend"), r"(?m)^RUN\s+npm run build$")
+        self.assertRegex(
+            stage(dockerfile, "web"),
+            r"(?m)^COPY\s+--from=frontend\s+/app/frontend/dist/client/assets/\s+"
+            r"/usr/share/nginx/frontend/assets/$",
+        )

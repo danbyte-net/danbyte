@@ -432,6 +432,12 @@ if [ -d "$APP/staticfiles" ]; then
     [ "$_c" != 403 ] || warn "nginx answers HTTP 403 for /static/: it cannot read $APP/staticfiles (every folder above it needs o+x)"
   fi
 fi
+# nginx serves the frontend's build files from disk too (#485); one it
+# cannot read still comes from the frontend server, only slower.
+if [ -d "$APP/frontend/dist/client" ]; then
+  chmod -R u=rwX,go=rX "$APP/frontend/dist/client" 2>/dev/null \
+    || warn "some frontend build files could not be made readable for the web server"
+fi
 # Private uploads are served only through Django since 0.16.12 (#227).
 for _d in documents image-attachments floor-plans oui-imports outpost-releases script-outputs; do
   [ -d "$APP/media/$_d" ] && chmod -R o-rwx "$APP/media/$_d" 2>/dev/null

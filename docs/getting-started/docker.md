@@ -73,13 +73,17 @@ matching lines in the compose file to have `bootstrap` do it):
 | `workers`  | app (`runtime`)      | `rqworker-pool` (`RQ_WORKERS` processes; ICMP-capable) |
 | `scheduler`| app (`runtime`)      | the periodic beat - the container's systemd timers |
 | `frontend` | node (`frontend`)    | the SPA server (`vite preview`) - SSR build      |
-| `web`      | nginx (`web`)        | proxies the SPA + `/api` `/ws`, serves `/static` `/media`; HTTP :80 + HTTPS :443 |
+| `web`      | nginx (`web`)        | proxies the SPA + `/api` `/ws`, serves `/assets` `/static` `/media`; HTTP :80 + HTTPS :443 |
 
 WebSockets run as a **separate daphne process**, never channels-in-`runserver` -
 putting ASGI in front of all HTTP wedges plain requests. The frontend is a
-TanStack Start **SSR** build, so `web` proxies `/` to the `frontend` node server
-rather than serving files. Collected static and uploaded media live on shared
-volumes the backend writes and nginx serves.
+TanStack Start **SSR** build, so `web` proxies the pages to the `frontend` node
+server. The build's hashed files under `/assets/` are copied into the `web`
+image from the same build and served by nginx, cached for a year as
+`immutable` and sent as the `.gz` the build writes. Build `web` and `frontend`
+together (`docker compose build` does); an asset the `web` image lacks still
+comes from the `frontend` server, uncached. Collected static and uploaded media
+live on shared volumes the backend writes and nginx serves.
 
 ### The scheduler
 

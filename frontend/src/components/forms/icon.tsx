@@ -1,4 +1,4 @@
-import { IconPicker } from "@/components/icon-picker"
+import { LazyIconPicker as IconPicker } from "@/components/icon-picker-lazy"
 
 import { Field } from "./field"
 import type { FieldProps } from "./field"

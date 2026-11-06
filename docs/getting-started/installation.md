@@ -399,6 +399,22 @@ A stalled or restarting Redis no longer takes the web tier down: the one
 cache read every request makes falls back to the database, and Redis calls
 give up after two seconds.
 
+### Frontend files and compression
+
+The frontend server (`danbyte-frontend-prod`, `vite preview`) renders each
+page's HTML. The JavaScript, CSS and fonts that HTML loads are files under
+`/assets/` named by their content hash, and nginx serves those straight from
+`frontend/dist/client/assets/` with `Cache-Control: public, max-age=31536000,
+immutable`: a browser keeps them a year and never asks again, and a new
+release brings new names. `npm run build` (and `make frontend-build`) writes
+a `.gz` beside each, which nginx sends as it is (`gzip_static`). A file nginx
+cannot find or read still comes from the frontend server, uncached.
+
+nginx compresses only files on disk (`/assets/`, `/static/`). API responses
+are compressed by Django's `GZipMiddleware`, which pads each response with a
+random length against BREACH-style attacks on compressed HTTPS; nginx's own
+gzip has no such padding, so it stays off for them.
+
 ### DWG converter
 
 [Floor-plan drawings](../features/floor-plans.md#cad-drawings) read DXF

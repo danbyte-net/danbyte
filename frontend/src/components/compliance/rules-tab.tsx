@@ -136,7 +136,6 @@ export function RulesTab({
                 ? "applies"
                 : undefined
           }
-          pagedWhenGrouped
           renderGroupHeader={({ count, sampleRow }) => (
             <span className="inline-flex items-center gap-2 tracking-normal normal-case">
               {by === "severity" ? (

@@ -368,6 +368,22 @@ def _no_kept_access_grant() -> bool:
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
     UpgradeNote(
+        id="0.19.0-nginx-assets",
+        version="0.19.0",
+        title="Let nginx serve the frontend's build files",
+        body=(
+            "nginx now serves the hashed files under /assets/ from disk, cached "
+            "for a year, with the compressed copies the build writes. Until "
+            "the site is re-rendered they still come from the frontend server, "
+            "revalidated on every page load. Root runs this from the bundle "
+            "of this release, never from the app directory."
+        ),
+        docs="getting-started/upgrading/#after-an-upgrade",
+        platforms=("systemd",),
+        check=_host_files_applied,
+        host=True,
+    ),
+    UpgradeNote(
         id="0.17.0-host-files",
         version="0.17.0",
         title="Apply this release's nginx, logrotate and certificate-unit files",

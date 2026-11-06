@@ -40,7 +40,7 @@ RUN zensical build
 
 # ─── 3. nginx: reverse-proxy the SPA server + backend, with self-signed TLS ───
 # The SPA is a TanStack Start SSR build (no static index.html), so nginx proxies
-# `/` to the `frontend` service (vite preview) rather than serving files. A
+# `/` to the `frontend` service (vite preview) and serves only `/assets/`. A
 # self-signed cert is baked in so browsers that force HTTPS still connect (they
 # show a one-time warning); terminate real TLS in front for production.
 FROM ${BASE_IMAGE_REGISTRY}/nginx:1.27.5-alpine AS web
@@ -52,6 +52,9 @@ RUN apk add --no-cache openssl \
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/maintenance.html /usr/share/nginx/maintenance/maintenance.html
 COPY --from=docs /src/site/ /usr/share/nginx/docs/
+# The SPA's hashed build files (and their .gz copies), served from disk with
+# immutable caching; the HTML still comes from the frontend service (#485).
+COPY --from=frontend /app/frontend/dist/client/assets/ /usr/share/nginx/frontend/assets/
 
 # ─── 4. LibreDWG's dwg2dxf, the DWG converter for floor-plan drawings ────────
 # Neither Debian trixie nor Ubuntu 26.04 packages LibreDWG, so it is built from
