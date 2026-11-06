@@ -126,7 +126,7 @@ class GrantSuperuserTests(APITestCase):
         self.client.force_login(actor)
         r = self.client.post(
             "/api/users/",
-            {"username": "newsuper", "password": "pw-pw-pw",
+            {"username": "newsuper", "password": "Str0ngPazz99",
              "is_superuser": True},
             format="json",
         )

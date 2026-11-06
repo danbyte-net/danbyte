@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils.text import slugify
 
 from api.status_registry import seed_builtin_statuses
@@ -56,6 +56,7 @@ class Command(BaseCommand):
         self._seed_statuses()
         self._seed_roles()
         self._seed_connect_protocols()
+        self._seed_sensitivity_labels()
         self._seed_backup_target()
         self._maybe_create_superuser()
 
@@ -114,6 +115,18 @@ class Command(BaseCommand):
                 )
             )
 
+    def _seed_sensitivity_labels(self):
+        from api.sensitivity import seed_sensitivity_labels
+
+        for tenant in Tenant.objects.all():
+            created = seed_sensitivity_labels(tenant)
+            if created:
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"Seeded sensitivity labels for {tenant.name}: {created} new."
+                    )
+                )
+
     def _seed_backup_target(self):
         from backups.seeds import default_target
 
@@ -134,5 +147,18 @@ class Command(BaseCommand):
         if User.objects.filter(username=username).exists():
             self.stdout.write(f"Superuser {username!r} already exists.")
             return
+        # The env password meets AUTH_PASSWORD_VALIDATORS like any other (#489).
+        # Superuser creation runs last, so the seeds above are already done.
+        from django.contrib.auth import password_validation
+        from django.core.exceptions import ValidationError
+
+        try:
+            password_validation.validate_password(
+                password, User(username=username, email=email)
+            )
+        except ValidationError as exc:
+            raise CommandError(
+                "DJANGO_SUPERUSER_PASSWORD is too weak: " + " ".join(exc.messages)
+            ) from exc
         User.objects.create_superuser(username=username, email=email, password=password)
         self.stdout.write(self.style.SUCCESS(f"Created superuser {username!r}."))

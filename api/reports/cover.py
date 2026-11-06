@@ -29,7 +29,7 @@ from __future__ import annotations
 import base64
 import io
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from html import escape
 from pathlib import Path
@@ -85,13 +85,28 @@ def _hex(value: str, fallback: str) -> str:
     return value.lower() if HEX.match(value or "") else fallback
 
 
-def look_for(tenant) -> Look:
-    """The tenant's cover settings, or the defaults when it has none."""
+def look_for(tenant, colors: dict | None = None) -> Look:
+    """The tenant's cover settings, or the defaults when it has none.
+    ``colors`` (``{horizon, wave, crest}``) overrides its colours for one
+    report: its cover and its chapter dividers."""
     from core.models import TenantSettings
 
     row = TenantSettings.objects.filter(tenant=tenant).first() if tenant else None
-    if row is None:
-        return Look()
+    look = Look() if row is None else _look(row)
+    return with_colors(look, colors)
+
+
+def with_colors(look: Look, colors: dict | None) -> Look:
+    """``look`` with the valid colours of ``colors`` in place of its own."""
+    if not colors:
+        return look
+    keep = {
+        k: _hex(colors.get(k) or "", getattr(look, k)) for k in ("horizon", "wave", "crest")
+    }
+    return replace(look, **keep)
+
+
+def _look(row) -> Look:
     return Look(
         style=row.report_cover_style if row.report_cover_style in STYLES else "waves",
         horizon=_hex(row.report_cover_horizon, DEFAULT_COLORS[0]),
@@ -265,7 +280,8 @@ def cover_html(
     cover: Cover, look: Look, pw: float, ph: float, version: str = "", marking=None
 ) -> str:
     """The cover page, ``pw`` by ``ph`` mm, with the report's marking
-    (:class:`api.reports.marking.Marking`) at its top right when it has one."""
+    (:class:`api.reports.marking.Marking` or its dict) at its top right when
+    it has one."""
     style = look.style if cover.background == "default" else cover.background
     if style not in STYLES:
         style = "waves"
@@ -296,12 +312,10 @@ def cover_html(
     made = f"Danbyte {escape(version)}" if version else "Danbyte"
     mark = ""
     if marking is not None:
-        from .marking import marking_badge
+        from .marking import Marking, marking_badge
 
-        mark = (
-            f"<div class='cover-mark' style='position:absolute;right:{SIDE_MM:.3f}mm;"
-            f"top:{SIDE_MM:.3f}mm'>{marking_badge(marking)}</div>"
-        )
+        marking = Marking.from_dict(marking)
+        mark = marking_badge(marking, "cover-marking") if marking else ""
     return (
         f"<section class='cover cover-{style}{' dark' if dark else ''}'>{layers}"
         f"<div class='top'>{top}</div>{mark}"
@@ -350,9 +364,11 @@ def cover_for_request(
     background: str = "default",
     when=None,
     marking=None,
+    colors: dict | None = None,
 ) -> str:
     """The cover for ``request``'s reader in ``tenant``: their name, their
-    date format, the tenant's look, and the report's marking."""
+    date format, the tenant's look - in ``colors`` when the report picks its
+    own - and the report's marking."""
     from danbyte import __version__
 
     user = getattr(request, "user", None)
@@ -364,4 +380,6 @@ def cover_for_request(
         date=date_for(user, tenant, when),
         background=background if background in BACKGROUND_CHOICES else "default",
     )
-    return cover_html(cover, look_for(tenant), pw, ph, version=__version__, marking=marking)
+    return cover_html(
+        cover, look_for(tenant, colors), pw, ph, version=__version__, marking=marking
+    )

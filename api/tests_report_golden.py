@@ -132,3 +132,27 @@ class GoldenTests(_Report):
             },
         )
         self.check("ip-one-cover", html)
+
+    def test_device_list_with_a_label_and_cover_colours(self):
+        """A sensitivity label on every page band and the cover, and the
+        report's own cover colours (the JPEG itself is normalised away; the
+        colours reaching it are checked in tests_sensitivity_labels)."""
+        from .models import SensitivityLabel
+
+        conf = SensitivityLabel.objects.create(
+            tenant=self.tenant, name="Confidential", slug="confidential",
+            color="#d97706", icon="shield",
+        )
+        html = self.page(
+            "devices",
+            {
+                "filters": {},
+                "options": {
+                    "cover": True,
+                    "sensitivity_label": str(conf.pk),
+                    "cover_colors": {"horizon": "#14532d", "wave": "#16a34a", "crest": "#ffffff"},
+                },
+            },
+        )
+        self.check("device-list-label", html)
+

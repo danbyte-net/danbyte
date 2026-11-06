@@ -95,6 +95,7 @@ from .reports.cover import BACKGROUND_CHOICES, cover_for_request, look_for
 from .reports.engine import ReportContext, document_html, page_size
 from .reports.engine import css_str as _css_str  # noqa: F401
 from .reports.marking import marking_for
+from .sensitivity import label_for_request
 
 log = logging.getLogger(__name__)
 
@@ -871,6 +872,21 @@ def plain(row: dict, col: Column) -> str:
 # ─── The request ────────────────────────────────────────────────────────────
 
 
+_HEX_COLOR = r"^#[0-9a-fA-F]{6}$"
+
+
+class CoverColorsSerializer(serializers.Serializer):
+    """One report's cover colours, in place of the tenant's."""
+
+    horizon = serializers.RegexField(_HEX_COLOR, error_messages={"invalid": "A #rrggbb colour."})
+    wave = serializers.RegexField(_HEX_COLOR, error_messages={"invalid": "A #rrggbb colour."})
+    crest = serializers.RegexField(_HEX_COLOR, error_messages={"invalid": "A #rrggbb colour."})
+
+    def to_internal_value(self, data):
+        out = super().to_internal_value(data)
+        return {k: v.lower() for k, v in out.items()}
+
+
 class ObjectReportOptionsSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=200, required=False, allow_blank=True)
     paper = serializers.ChoiceField(choices=PAPERS, required=False, default="a4")
@@ -897,6 +913,16 @@ class ObjectReportOptionsSerializer(serializers.Serializer):
     cover_project = serializers.CharField(max_length=200, required=False, allow_blank=True)
     cover_background = serializers.ChoiceField(
         choices=BACKGROUND_CHOICES, required=False, default="default"
+    )
+    cover_colors = CoverColorsSerializer(
+        required=False,
+        allow_null=True,
+        help_text="This report's cover colours; absent or null for the tenant's.",
+    )
+    sensitivity_label = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        help_text="The sensitivity label to mark the report with; null for none.",
     )
 
 
@@ -1725,6 +1751,9 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str,
     refusal. ``shape`` counts the objects, the list's columns (0 without a
     list) and the pages per object, for :func:`too_slow`."""
     options = {"last": DEFAULT_LAST, "paper": "a4", **(data.get("options") or {})}
+    # Refused before any work: another tenant's label, or one the reader
+    # may not view.
+    label_for_request(request, tenant, options.get("sensitivity_label"))
     columns = data.get("columns") or {}
     ctx = Context(request, rt, tenant)
     filters = data.get("filters") or {}
@@ -1878,6 +1907,7 @@ def _page_html(
             background=opts.get("cover_background") or "default",
             when=generated,
             marking=marking,
+            colors=opts.get("cover_colors"),
         )
     html = report_html(
         title=title,

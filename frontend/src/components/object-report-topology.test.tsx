@@ -10,7 +10,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type * as Api from "@/lib/api"
-import type { ObjectReportSchema, TopologyReportRequest } from "@/lib/api"
+import type {
+  ObjectReportSchema,
+  SensitivityLabelRef,
+  TopologyReportRequest,
+} from "@/lib/api"
 
 import {
   ObjectReportDialog,
@@ -86,6 +90,30 @@ const SCHEMA: ObjectReportSchema = {
   },
 }
 
+// The label picker is a cmdk combobox: it measures and scrolls; jsdom has
+// neither.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+if (!("ResizeObserver" in globalThis)) {
+  ;(globalThis as unknown as Record<string, unknown>).ResizeObserver =
+    ResizeObserverStub
+}
+Element.prototype.scrollIntoView = () => {}
+
+let labels: SensitivityLabelRef[] = []
+
+/** A GET: the reader, the labels picker, else the report's schema. */
+function get(path: string) {
+  if (path.startsWith("/api/me/"))
+    return { is_authenticated: true, perms: [], permissions: {} }
+  if (path.startsWith("/api/sensitivity-labels/"))
+    return { count: labels.length, next: null, previous: null, results: labels }
+  return SCHEMA
+}
+
 const drawn = (name: string): ReportDrawing => ({
   drawing: { svg: `<svg>${name}</svg>`, title: name, filters: "Site AMS" },
   devices: [`${name}-d1`],
@@ -97,6 +125,7 @@ let clicks: HTMLAnchorElement[] = []
 beforeEach(() => {
   localStorage.clear()
   clicks = []
+  labels = []
   apiMock.mockReset()
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
     this: HTMLAnchorElement
@@ -135,7 +164,7 @@ describe("the topology report dialog", () => {
   it("draws the map's view when the report is made and posts it", async () => {
     const draw = vi.fn(async () => drawn("DC1"))
     apiMock.mockImplementation(async (path, init) => {
-      if (!init) return SCHEMA
+      if (!init) return get(path)
       if (path.includes("estimate"))
         return {
           cells: 4,
@@ -198,8 +227,22 @@ describe("the topology report dialog", () => {
         return drawn(name)
       }),
     })
-    apiMock.mockImplementation(async (_path, init) =>
-      init ? { url: "/api/topology/report/abcdefghijklmnopqrstuvwx/" } : SCHEMA
+    labels = [
+      {
+        id: "lab-1",
+        numid: 1,
+        name: "Internal",
+        slug: "internal",
+        color: "#2563eb",
+        text_color: "#ffffff",
+        icon: "building-2",
+        is_default: true,
+      },
+    ]
+    apiMock.mockImplementation(async (path, init) =>
+      init
+        ? { url: "/api/topology/report/abcdefghijklmnopqrstuvwx/" }
+        : get(path)
     )
     show({
       ids: ["A", "B"],
@@ -219,6 +262,8 @@ describe("the topology report dialog", () => {
       "<svg>B</svg>",
     ])
     expect(body.options?.output).toBe("zip")
+    // The tenant's default label marks it, as in the object reports.
+    expect(body.options?.sensitivity_label).toBe("lab-1")
     expect(clicks[0].download).toMatch(/\.zip$/)
   })
 })

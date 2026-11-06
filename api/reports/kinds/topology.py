@@ -183,6 +183,17 @@ class TopologyReportOptionsSerializer(serializers.Serializer):
     cover_background = serializers.ChoiceField(
         choices=BACKGROUND_CHOICES, required=False, default="default"
     )
+    cover_colors = rep.CoverColorsSerializer(
+        required=False,
+        allow_null=True,
+        help_text="This report's cover and chapter banner colours; absent or null "
+        "for the tenant's.",
+    )
+    sensitivity_label = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        help_text="The sensitivity label to mark every page with; null for none.",
+    )
 
 
 class TopologyReportRequestSerializer(serializers.Serializer):
@@ -452,7 +463,8 @@ def build(request, data: dict, tenant, *, svgs: list[bytes] | None = None) -> Re
     report = Report(title)
     budget = rep.Budget(rep.MAX_TOTAL_ROWS)
     generated = timezone.now()
-    look = look_for(tenant)
+    # The report's own cover colours, when it picks some, on its dividers too.
+    look = look_for(tenant, options.get("cover_colors"))
     paper = options.get("paper") or "a4"
     pw, _ph = page_size(paper, options.get("orientation") or "portrait")
     dividers = options.get("dividers") or "auto"
@@ -578,6 +590,7 @@ def page_html(request, data: dict, tenant, doc: dict) -> str:
             background=options.get("cover_background") or "default",
             when=doc["generated"],
             marking=marking,
+            colors=options.get("cover_colors"),
         )
     head = ""
     if not cover:

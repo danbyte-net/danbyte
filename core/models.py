@@ -1315,6 +1315,12 @@ class TenantSettings(TimestampedModel):
         max_length=20, blank=True, default="", db_default="", editable=False,
     )
 
+    # The starter sensitivity labels (api/sensitivity.py) are seeded once:
+    # a label the tenant deletes stays deleted on the next bootstrap.
+    sensitivity_labels_seeded = models.BooleanField(
+        default=False, db_default=False, editable=False,
+    )
+
     class Meta:
         verbose_name = "tenant settings"
         verbose_name_plural = "tenant settings"

@@ -16,4 +16,5 @@ from .reports.cover import (  # noqa: F401
     cover_for_request,
     cover_html,
     look_for,
+    with_colors,
 )

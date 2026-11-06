@@ -180,6 +180,9 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "auth_api.rbac.RequestCacheMiddleware",
+    # Signed-in /api/ responses are `private, no-store` unless the view chose
+    # its own Cache-Control (#491). After auth, so it sees request.user.
+    "core.middleware.ApiNoStoreMiddleware",
     # Rolling idle-session timeout (admin-configurable; no-op when unset). After
     # auth so request.user is resolved.
     "core.middleware.SessionIdleTimeoutMiddleware",
@@ -575,6 +578,8 @@ SESSION_COOKIE_SAMESITE = "Lax"
 # Referrer + clickjacking defaults apply in every mode (defense-in-depth for a
 # direct hit on /api that doesn't pass through nginx). X_FRAME_OPTIONS defaults
 # to DENY via XFrameOptionsMiddleware (already in MIDDLEWARE); make it explicit.
+# The shipped nginx configs set these at the edge and drop Django's copies, so
+# each is sent once (#490); keep the values the same in both places.
 SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
@@ -606,9 +611,13 @@ if HTTPS_DEPLOYMENT:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
+    # The same HSTS value as the production nginx template, which owns the
+    # header behind it and drops this copy (#490); this one serves installs
+    # that terminate TLS somewhere else. No `preload`: asking browsers to
+    # hard-code a customer's domain is that customer's call, and hard to undo.
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    SECURE_HSTS_PRELOAD = False
 
 EMAIL_BACKEND = os.getenv(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"

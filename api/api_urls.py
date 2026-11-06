@@ -220,6 +220,7 @@ from .viewsets import (
     AntennaTemplateViewSet,
     AntennaViewSet,
     AreaTypeViewSet,
+    SensitivityLabelViewSet,
     ASNViewSet,
     AuxPortTemplateViewSet,
     AuxPortViewSet,
@@ -360,6 +361,7 @@ router.register(r"regions",       RegionViewSet,      basename="region")
 router.register(r"locations",     LocationViewSet,    basename="location")
 router.register(r"location-types", LocationTypeViewSet, basename="location-type")
 router.register(r"area-types",    AreaTypeViewSet,    basename="area-type")
+router.register(r"sensitivity-labels", SensitivityLabelViewSet, basename="sensitivity-label")
 router.register(r"rooms",         RoomViewSet,        basename="room")
 router.register(r"config-contexts", ConfigContextViewSet, basename="config-context")
 router.register(r"export-templates", ExportTemplateViewSet, basename="export-template")

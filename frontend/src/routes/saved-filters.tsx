@@ -118,6 +118,11 @@ const LISTS: Record<
     to: "/area-types",
     api: "/api/area-types/",
   },
+  sensitivitylabel: {
+    label: "Sensitivity labels",
+    to: "/sensitivity-labels",
+    api: "/api/sensitivity-labels/",
+  },
   room: { label: "Rooms", to: "/rooms", api: "/api/rooms/" },
   macaddress: { label: "MAC addresses", to: "/macs", api: "/api/macs/" },
   maintenanceevent: {

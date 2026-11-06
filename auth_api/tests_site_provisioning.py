@@ -37,7 +37,7 @@ class UserProvisioningTests(_AdminBase):
     def test_editor_site_role_assembles_grants(self):
         res = self.client.post(
             "/api/users/",
-            {"username": "site1", "password": "x",
+            {"username": "site1", "password": "Str0ngPazz99",
              "tenant_ids": [str(self.tenant.id)],
              "site_role": {"role": "editor", "site_ids": [str(self.s1.id)]}},
             format="json",
@@ -57,7 +57,7 @@ class UserProvisioningTests(_AdminBase):
     def test_silo_editor_has_no_readall(self):
         res = self.client.post(
             "/api/users/",
-            {"username": "silo", "password": "x",
+            {"username": "silo", "password": "Str0ngPazz99",
              "tenant_ids": [str(self.tenant.id)],
              "site_role": {"role": "editor", "site_ids": [str(self.s1.id)],
                            "silo": True}},
@@ -70,7 +70,7 @@ class UserProvisioningTests(_AdminBase):
     def test_viewer_is_read_only(self):
         self.client.post(
             "/api/users/",
-            {"username": "ro", "password": "x",
+            {"username": "ro", "password": "Str0ngPazz99",
              "tenant_ids": [str(self.tenant.id)],
              "site_role": {"role": "viewer", "site_ids": [str(self.s1.id)]}},
             format="json",
@@ -86,7 +86,7 @@ class UserProvisioningTests(_AdminBase):
         dep.save()
         self.client.post(
             "/api/users/",
-            {"username": "sep", "password": "x",
+            {"username": "sep", "password": "Str0ngPazz99",
              "tenant_ids": [str(self.tenant.id)],
              "site_role": {"role": "editor", "site_ids": [str(self.s1.id)]}},
             format="json",
@@ -101,7 +101,7 @@ class UserProvisioningTests(_AdminBase):
     def test_bad_role_rolls_back_user(self):
         res = self.client.post(
             "/api/users/",
-            {"username": "bad", "password": "x",
+            {"username": "bad", "password": "Str0ngPazz99",
              "tenant_ids": [str(self.tenant.id)],
              "site_role": {"role": "nonsense", "site_ids": [str(self.s1.id)]}},
             format="json",
@@ -112,7 +112,7 @@ class UserProvisioningTests(_AdminBase):
     def test_no_site_role_is_a_plain_user(self):
         res = self.client.post(
             "/api/users/",
-            {"username": "plain", "password": "x",
+            {"username": "plain", "password": "Str0ngPazz99",
              "tenant_ids": [str(self.tenant.id)]},
             format="json",
         )

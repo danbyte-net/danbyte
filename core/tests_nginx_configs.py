@@ -1,5 +1,6 @@
 """The shipped nginx configs load, and every block that reaches Danbyte
-says which scheme the request came in on (#239, #240)."""
+says which scheme the request came in on (#239, #240), and each security
+header leaves nginx once (#490)."""
 from __future__ import annotations
 
 import re
@@ -41,6 +42,42 @@ def _http2_for_this_nginx(site: str, modern: bool) -> str:
 def _locations(text: str):
     """``(path, body)`` of each flat location block."""
     return re.findall(r"location\s+(\S+)\s*\{([^{}]*)\}", text)
+
+
+#: Headers Django's middleware sends on its own (SecurityMiddleware and
+#: XFrameOptionsMiddleware). An nginx config that adds one must drop the
+#: upstream copy, or the browser gets two (#490).
+DJANGO_SECURITY_HEADERS = (
+    "Strict-Transport-Security",
+    "X-Frame-Options",
+    "X-Content-Type-Options",
+    "Referrer-Policy",
+    "Cross-Origin-Opener-Policy",
+)
+
+
+def _server_level(text: str) -> str:
+    text = re.sub(r"(?m)#.*$", "", text)
+    return re.sub(r"location\s+\S+\s*\{[^{}]*\}", "", text)
+
+
+def _edge_headers(text: str) -> dict[str, str]:
+    """Security headers the config adds itself, with their values."""
+    found = re.findall(r'add_header\s+([\w-]+)\s+"([^"]*)"', _server_level(text))
+    return {k: v for k, v in found if k in DJANGO_SECURITY_HEADERS}
+
+
+def _django_hsts() -> str:
+    """The HSTS value settings.py sends when DANBYTE_HTTPS is on."""
+    src = (ROOT / "danbyte/settings.py").read_text()
+    block = src.split("if HTTPS_DEPLOYMENT:", 1)[1]
+    seconds = re.search(r"SECURE_HSTS_SECONDS\s*=\s*(\d+)", block).group(1)
+    value = f"max-age={seconds}"
+    if re.search(r"SECURE_HSTS_INCLUDE_SUBDOMAINS\s*=\s*True", block):
+        value += "; includeSubDomains"
+    if re.search(r"SECURE_HSTS_PRELOAD\s*=\s*True", block):
+        value += "; preload"
+    return value
 
 
 class ConfigTextTests(SimpleTestCase):
@@ -99,6 +136,40 @@ class ConfigTextTests(SimpleTestCase):
                         with self.subTest(location=loc):
                             self.assertNotRegex(body, r"\bgzip\w*\s")
         self.assertIn("django.middleware.gzip.GZipMiddleware", settings.MIDDLEWARE)
+
+    def test_each_security_header_has_one_owner(self):
+        # #490: a header nginx adds is dropped from the upstream reply, at the
+        # server level and again in any location that names its own hides.
+        for path in [*TEMPLATES, DOCKER]:
+            text = path.read_text()
+            edge = _edge_headers(text)
+            server_hides = set(re.findall(r"proxy_hide_header\s+([\w-]+);", _server_level(text)))
+            with self.subTest(path=path.name):
+                self.assertLessEqual(set(edge), server_hides)
+            for loc, body in _locations(re.sub(r"(?m)#.*$", "", text)):
+                hides = set(re.findall(r"proxy_hide_header\s+([\w-]+);", body))
+                if "proxy_pass" in body and hides:
+                    with self.subTest(path=path.name, location=loc):
+                        self.assertLessEqual(set(edge), hides)
+
+    def test_edge_values_match_django(self):
+        # Same value at both layers, so the answer does not depend on which
+        # one a request went through.
+        prod = _edge_headers(TEMPLATES[1].read_text())
+        self.assertEqual(prod["Strict-Transport-Security"], _django_hsts())
+        self.assertNotIn("preload", _django_hsts())
+        for path in (TEMPLATES[1], DOCKER):
+            edge = _edge_headers(path.read_text())
+            with self.subTest(path=path.name):
+                self.assertEqual(edge["X-Frame-Options"], settings.X_FRAME_OPTIONS)
+                self.assertEqual(edge["Referrer-Policy"], settings.SECURE_REFERRER_POLICY)
+                self.assertEqual(edge["X-Content-Type-Options"], "nosniff")
+                self.assertTrue(settings.SECURE_CONTENT_TYPE_NOSNIFF)
+        self.assertEqual(prod["Cross-Origin-Opener-Policy"],
+                         settings.SECURE_CROSS_ORIGIN_OPENER_POLICY)
+        # The Docker image has a self-signed certificate only; HSTS there is
+        # the backend's, behind DANBYTE_HTTPS.
+        self.assertNotIn("Strict-Transport-Security", _edge_headers(DOCKER.read_text()))
 
     def test_every_renderer_fills_every_placeholder(self):
         # A placeholder an installer does not know reaches nginx as @@X@@.
@@ -242,6 +313,87 @@ class NginxServesAssetsTests(SimpleTestCase):
                 # Anything else gets no Cache-Control from nginx.
                 _, h, _ = self._get(https, "/static/nothing.css", gzip=True)
                 self.assertIsNone(h["Cache-Control"])
+            finally:
+                subprocess.run(["nginx", "-p", tmp, "-c", str(conf), "-s", "stop"],
+                               capture_output=True)
+
+
+class _DjangoLikeUpstream:
+    """A stand-in backend that sends every Django security header with a
+    value nginx does not use, so a copy that leaks through is visible."""
+
+    HEADERS = {
+        "Strict-Transport-Security": "max-age=1; preload",
+        "X-Frame-Options": "SAMEORIGIN",
+        "X-Content-Type-Options": "upstream",
+        "Referrer-Policy": "no-referrer",
+        "Cross-Origin-Opener-Policy": "unsafe-none",
+    }
+
+    def __enter__(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        headers = self.HEADERS
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                for k, v in headers.items():
+                    self.send_header(k, v)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@skipUnless(shutil.which("nginx") and shutil.which("openssl"), "nginx and openssl needed")
+class NginxSendsEachHeaderOnceTests(SimpleTestCase):
+    """The rendered production site, running in front of a backend that sends
+    its own security headers: one copy each, nginx's (#490)."""
+
+    def test_proxied_responses_carry_one_copy_of_each_header(self):
+        import http.client
+        import ssl
+
+        with tempfile.TemporaryDirectory() as tmp, _DjangoLikeUpstream() as up:
+            t = Path(tmp)
+            (t / "client/assets").mkdir(parents=True)
+            site = re.sub(r"127\.0\.0\.1:(8000|8001|3000)", f"127.0.0.1:{up.port}",
+                          TEMPLATES[1].read_text())
+            https = _free_port()
+            conf = _render(site, t, {80: _free_port(), 443: https})
+            r = subprocess.run(["nginx", "-p", tmp, "-c", str(conf)],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            edge = _edge_headers(TEMPLATES[1].read_text())
+            try:
+                # A missing /assets/ file falls back to the frontend through
+                # the location that names its own proxy_hide_header.
+                for path in ("/api/me/", "/admin/", "/media/x", "/", "/docs/",
+                             "/assets/missing-000.js"):
+                    ctx = ssl._create_unverified_context()  # this run's own cert
+                    c = http.client.HTTPSConnection("127.0.0.1", https, context=ctx,
+                                                    timeout=10)
+                    c.request("GET", path)
+                    resp = c.getresponse()
+                    resp.read()
+                    c.close()
+                    self.assertEqual(resp.status, 200, path)
+                    for name in DJANGO_SECURITY_HEADERS:
+                        with self.subTest(path=path, header=name):
+                            self.assertEqual(resp.msg.get_all(name), [edge[name]])
             finally:
                 subprocess.run(["nginx", "-p", tmp, "-c", str(conf), "-s", "stop"],
                                capture_output=True)

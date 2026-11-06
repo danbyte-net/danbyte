@@ -159,9 +159,69 @@ class ContentTests(_Topo):
             )
         self.assertIn("element(marking-top)", html)
         self.assertIn("element(marking-bottom)", html)
-        self.assertIn("class='marking marking-top'", html)
-        self.assertIn("class='cover-mark'", html)
+        self.assertIn("<div class='marking-top'>", html)
+        self.assertIn("class='marking cover-marking'", html)
         self.assertIn("background:#b91c1c", html)
+
+
+class LabelAndColourTests(_Topo):
+    def test_a_label_marks_every_page(self):
+        from .models import SensitivityLabel
+
+        conf = SensitivityLabel.objects.create(
+            tenant=self.tenant, name="Restricted", slug="restricted", color="#dc2626"
+        )
+        html = self.html(
+            {"views": [self.view_entry(self.dev_a)],
+             "options": {"cover": True, "sensitivity_label": str(conf.pk)}}
+        )
+        self.assertEqual(html.count("<span class='marking-name'>Restricted</span>"), 3)
+        self.assertIn("element(marking-top)", html)
+
+    def test_another_tenants_label_is_refused(self):
+        from .models import SensitivityLabel
+
+        org = Organization.objects.create(name="X", slug="x")
+        other = Tenant.objects.create(org=org, name="Globex", slug="globex")
+        theirs = SensitivityLabel.objects.create(tenant=other, name="Theirs", slug="theirs")
+        for query in ("", "?estimate=1"):
+            r, _ = self.docs(
+                {"views": [self.view_entry(self.dev_a)],
+                 "options": {"sensitivity_label": str(theirs.pk)}},
+                query,
+            )
+            self.assertEqual(r.status_code, 400, query)
+            self.assertIn("sensitivity_label", r.content.decode())
+
+    def test_cover_colours_reach_the_cover_and_the_dividers(self):
+        import tempfile
+
+        from django.test import override_settings
+
+        from . import report_background as rb
+
+        colours = {"horizon": "#14532D", "wave": "#16a34a", "crest": "#ffffff"}
+        with (
+            override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="topo-colours-")),
+            mock.patch.object(rb, "waves", wraps=rb.waves) as drawn,
+        ):
+            r, _ = self.docs(
+                {
+                    "views": [self.view_entry(self.dev_a, title="A"),
+                              self.view_entry(self.dev_b, title="B")],
+                    "options": {"cover": True, "cover_colors": colours},
+                }
+            )
+        self.assertEqual(r.status_code, 200, r.content[:300])
+        # The cover and the two divider banners, all in the report's colours.
+        self.assertGreaterEqual(drawn.call_count, 2)
+        for call in drawn.call_args_list:
+            self.assertEqual(call.args[2:], ("#14532d", "#16a34a", "#ffffff"))
+        r, _ = self.docs(
+            {"views": [self.view_entry(self.dev_a)],
+             "options": {"cover_colors": {"horizon": "red"}}}
+        )
+        self.assertEqual(r.status_code, 400)
 
 
 class ScopeTests(_Topo):

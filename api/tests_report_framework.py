@@ -69,9 +69,9 @@ class MarkingTests(SimpleTestCase):
         self.assertIn("position:running(marking-top)", html)
         # The running elements come first, so the first page has them.
         body = html.split("<body>", 1)[1]
-        self.assertTrue(body.startswith("<span class='marking marking-top'"))
+        self.assertTrue(body.startswith("<div class='marking-top'><span class='marking'"))
         self.assertIn("background:#b91c1c", body)
-        self.assertIn(">Confidential</span>", body)
+        self.assertIn("<span class='marking-name'>Confidential</span>", body)
 
     def test_no_page_of_its_own_before_a_cover(self):
         import weasyprint
@@ -92,9 +92,9 @@ class MarkingTests(SimpleTestCase):
     def test_the_cover_shows_it_and_its_text_is_escaped(self):
         m = Marking(name="<Secret>", color="#b91c1c")
         html = cover_html(Cover(title="T"), NONE, 210, 297, marking=m)
-        self.assertIn("class='cover-mark'", html)
+        self.assertIn("class='marking cover-marking'", html)
         self.assertIn("&lt;Secret&gt;", html)
-        self.assertNotIn("cover-mark", cover_html(Cover(title="T"), NONE, 210, 297))
+        self.assertNotIn("cover-marking", cover_html(Cover(title="T"), NONE, 210, 297))
 
     def test_the_icon_is_sanitised(self):
         m = Marking(

@@ -57,6 +57,28 @@ def _audit_superuser_flip(request, user, granted: bool) -> None:
     )
 
 
+_SIMILARITY_ATTRS = ("username", "first_name", "last_name", "email")
+
+
+def _check_password(password, instance, attrs) -> None:
+    """Run ``AUTH_PASSWORD_VALIDATORS`` on an admin-chosen password, as the
+    set-password link does (#489). The validators see the account as it will
+    be after this write, so a password like the new username is refused too."""
+    from django.contrib.auth import password_validation
+    from django.core.exceptions import ValidationError as DjangoValidationError
+
+    probe = User(
+        **{
+            k: attrs.get(k, getattr(instance, k, "") if instance is not None else "")
+            for k in _SIMILARITY_ATTRS
+        }
+    )
+    try:
+        password_validation.validate_password(password, probe)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+
+
 class UserSerializer(serializers.ModelSerializer):
     # Django's default username charset plus "#": Entra external accounts are
     # provisioned as "user_domain#EXT#@tenant.onmicrosoft.com", and the stock
@@ -161,6 +183,9 @@ class UserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"password": "Set a password or choose to email an invite."}
                 )
+        pwd = attrs.get("password")
+        if pwd:
+            _check_password(pwd, self.instance, attrs)
         # Only a superuser - or a holder of the ``grant_superuser`` capability
         # verb on an UNSCOPED grant - may set the superuser/staff flags.
         # Otherwise any user-admin (RBAC `change` on `user`) could PATCH their

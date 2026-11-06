@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { NamedIcon } from "@/components/dynamic-icon"
 import { TruncatedText } from "@/components/ui/truncated-text"
 
 const UUID_RE =
@@ -37,6 +38,8 @@ export interface ComboboxOption {
   /** Render as a ColorBadge pill even when `color` is empty - a catalog
    * row with no color set still reads as its neutral pill (statuses). */
   badge?: boolean
+  /** A Lucide icon name shown inside the pill (a sensitivity label's). */
+  icon?: string | null
   /** Not selectable (still listed, dimmed) - e.g. an occupied rack unit. */
   disabled?: boolean
   /** Muted right-aligned annotation - e.g. the device occupying a unit. */
@@ -131,6 +134,11 @@ export function Combobox({
             <ColorBadge
               name={selected.label}
               color={selected.color || undefined}
+              icon={
+                selected.icon ? (
+                  <NamedIcon name={selected.icon} className="h-3 w-3" />
+                ) : undefined
+              }
             />
           ) : selected?.chip ? (
             <span className="flex min-w-0 items-center gap-1.5">
@@ -204,7 +212,15 @@ export function Combobox({
                       )}
                     />
                     {o.color || o.badge ? (
-                      <ColorBadge name={o.label} color={o.color || undefined} />
+                      <ColorBadge
+                        name={o.label}
+                        color={o.color || undefined}
+                        icon={
+                          o.icon ? (
+                            <NamedIcon name={o.icon} className="h-3 w-3" />
+                          ) : undefined
+                        }
+                      />
                     ) : (
                       <span className="whitespace-normal">{o.label}</span>
                     )}

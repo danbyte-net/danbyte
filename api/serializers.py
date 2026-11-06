@@ -49,6 +49,7 @@ from .models import (
     FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanStack, FloorPlanTile,
     FloorPlanTray,
     AreaType, FloorPlanArea, FloorPlanLabel, FloorPlanWall, FloorTileType, FrontPort,
+    SensitivityLabel,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
@@ -10228,6 +10229,40 @@ class AreaTypeSerializer(NumIdModelSerializer):
         fields = ["id", "name", "slug", "color", "pattern", "icon", "description",
                   "area_count", "created_at", "updated_at"]
         read_only_fields = ["id", "area_count", "created_at", "updated_at"]
+
+
+class SensitivityLabelMiniSerializer(NumIdModelSerializer):
+    """A label for the report dialog's picker (``?picker=1``)."""
+
+    text_color = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = SensitivityLabel
+        fields = ["id", "name", "slug", "color", "text_color", "icon", "is_default"]
+
+
+class SensitivityLabelSerializer(ObjectPermsSerializerMixin, NumIdModelSerializer):
+    """A sensitivity label: the editable catalog PDF reports are marked
+    with (api/sensitivity.py). Setting ``is_default`` takes it from the
+    tenant's other labels (the viewset)."""
+
+    text_color = serializers.CharField(read_only=True)
+    slug = serializers.SlugField(required=False, allow_blank=True)
+
+    def validate_color(self, value):
+        return hex_color_or_blank(value)
+
+    def validate_icon(self, value):
+        value = (value or "").strip()
+        if value and not re.fullmatch(r"[a-z0-9-]{1,64}", value):
+            raise serializers.ValidationError("A Lucide icon name, like shield or lock.")
+        return value
+
+    class Meta:
+        model = SensitivityLabel
+        fields = ["id", "name", "slug", "color", "text_color", "icon", "description",
+                  "weight", "is_default", "permissions", "created_at", "updated_at"]
+        read_only_fields = ["id", "text_color", "permissions", "created_at", "updated_at"]
 
 
 def area_type_ref(t) -> dict | None:
