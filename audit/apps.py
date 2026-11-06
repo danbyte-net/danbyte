@@ -99,6 +99,7 @@ AUDITED_MODELS = [
     "api.FiberSettings",
     "api.IPStatus",
     "api.IPRole",
+    "api.SensitivityLabel",
     "api.ClusterType",
     "api.ClusterGroup",
     "api.Cluster",

@@ -127,6 +127,7 @@ nav = [
   ] },
   { "Customization" = [
     { "Statuses & roles"  = "features/catalogs-and-settings.md" },
+    { "Sensitivity labels" = "features/sensitivity-labels.md" },
     { "Tags & custom fields" = "features/tags-and-custom-fields.md" },
     { "Config contexts"   = "features/config-contexts.md" },
     { "Export templates"  = "features/export-templates.md" },

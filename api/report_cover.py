@@ -27,7 +27,7 @@ from __future__ import annotations
 import base64
 import io
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from html import escape
 from pathlib import Path
@@ -83,13 +83,28 @@ def _hex(value: str, fallback: str) -> str:
     return value.lower() if HEX.match(value or "") else fallback
 
 
-def look_for(tenant) -> Look:
-    """The tenant's cover settings, or the defaults when it has none."""
+def look_for(tenant, colors: dict | None = None) -> Look:
+    """The tenant's cover settings, or the defaults when it has none.
+    ``colors`` (``{horizon, wave, crest}``) overrides its colours for one
+    report."""
     from core.models import TenantSettings
 
     row = TenantSettings.objects.filter(tenant=tenant).first() if tenant else None
-    if row is None:
-        return Look()
+    look = Look() if row is None else _look(row)
+    return with_colors(look, colors)
+
+
+def with_colors(look: Look, colors: dict | None) -> Look:
+    """``look`` with the valid colours of ``colors`` in place of its own."""
+    if not colors:
+        return look
+    keep = {
+        k: _hex(colors.get(k) or "", getattr(look, k)) for k in ("horizon", "wave", "crest")
+    }
+    return replace(look, **keep)
+
+
+def _look(row) -> Look:
     return Look(
         style=row.report_cover_style if row.report_cover_style in STYLES else "waves",
         horizon=_hex(row.report_cover_horizon, DEFAULT_COLORS[0]),
@@ -218,6 +233,8 @@ class Cover:
     author: str = ""
     date: str = ""
     background: str = "default"
+    #: A sensitivity marking (``api/sensitivity.py``): a pill at the top right.
+    marking: dict | None = None
 
 
 def cover_css(pw: float, ph: float) -> str:
@@ -256,6 +273,11 @@ def cover_css(pw: float, ph: float) -> str:
         f"section.cover .foot{{position:absolute;left:{mm(SIDE_MM)};right:{mm(SIDE_MM)};"
         f"bottom:{mm(SIDE_MM)};font-size:10.5pt;font-weight:600;opacity:0.85}}"
         "section.cover .foot .made{float:right}"
+        f"section.cover .cover-marking{{position:absolute;right:{mm(SIDE_MM)};"
+        f"top:{mm(SIDE_MM - 1)};font-size:10pt;padding:1.2mm 3.6mm;border-radius:1.2mm;"
+        "letter-spacing:0.1em}"
+        "section.cover .cover-marking svg{width:11pt;height:11pt;vertical-align:-2pt;"
+        "margin-right:1.8mm}"
     )
 
 
@@ -289,9 +311,14 @@ def cover_html(cover: Cover, look: Look, pw: float, ph: float, version: str = ""
         f"<p class='author'>Prepared by <b>{escape(cover.author)}</b></p>" if cover.author else "",
     ]
     made = f"Danbyte {escape(version)}" if version else "Danbyte"
+    marking = ""
+    if cover.marking:
+        from .sensitivity import pill_html
+
+        marking = pill_html(cover.marking, "marking cover-marking")
     return (
         f"<section class='cover cover-{style}{' dark' if dark else ''}'>{layers}"
-        f"<div class='top'>{top}</div>"
+        f"<div class='top'>{top}</div>{marking}"
         f"<div class='mid'>{''.join(lines)}</div>"
         f"<div class='foot'><span class='made'>{made}</span>"
         f"<span class='date'>{escape(cover.date)}</span></div>"
@@ -336,9 +363,12 @@ def cover_for_request(
     subtitle: str = "",
     background: str = "default",
     when=None,
+    marking: dict | None = None,
+    colors: dict | None = None,
 ) -> str:
     """The cover for ``request``'s reader in ``tenant``: their name, their
-    date format, the tenant's look."""
+    date format, the tenant's look - in ``colors`` when the report picks its
+    own - and the report's sensitivity ``marking``."""
     from danbyte import __version__
 
     user = getattr(request, "user", None)
@@ -349,5 +379,6 @@ def cover_for_request(
         author=author_of(user),
         date=date_for(user, tenant, when),
         background=background if background in BACKGROUND_CHOICES else "default",
+        marking=marking,
     )
-    return cover_html(cover, look_for(tenant), pw, ph, version=__version__)
+    return cover_html(cover, look_for(tenant, colors), pw, ph, version=__version__)

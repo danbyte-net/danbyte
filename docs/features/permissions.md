@@ -303,7 +303,10 @@ editor's own local entries under
     [building outlines](site-map.md#building-outlines) of their sites
     (`sitemapoutline`), and site viewers and silo site editors view on
     [location types](regions-locations.md#location-types) (`locationtype`)
-    and [area types](floor-plans.md#area-types) (`areatype`).
+    and [area types](floor-plans.md#area-types) (`areatype`). Site viewers
+    and silo site editors also view the
+    [sensitivity labels](sensitivity-labels.md#permissions)
+    (`sensitivitylabel`) their PDF reports are marked with.
 
 ### Set it up when you create the user
 

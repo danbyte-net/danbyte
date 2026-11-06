@@ -280,6 +280,13 @@ CATALOG_SITE_PATHS: dict[str, str] = {
 }
 
 
+# Tenant-wide catalogs the site roles read although no site type points at
+# them, each with the reason.
+SITE_ROLE_EXTRA_CATALOGS: dict[str, str] = {
+    "sensitivitylabel": "a site role's reports are marked with the tenant's labels",
+}
+
+
 def site_role_types() -> list[str]:
     """The site-bound types a site role manages at its sites: SITE_PATHS less
     SITE_ROLE_EXCLUDED. Also the set ``rbac.editable_sites`` reads, so a
@@ -318,7 +325,7 @@ def site_role_catalog_types() -> list[str]:
 
     registry = _registry()
     skip = set(SITE_PATHS) | set(SITE_PATH_EXEMPT) | set(SITE_ROLE_REFERENCE_EXCLUDED)
-    out: set[str] = set()
+    out: set[str] = set(SITE_ROLE_EXTRA_CATALOGS)
     for slug in site_role_types():
         model = registry[slug]["model"]
         if issubclass(model, CustomFieldsMixin):

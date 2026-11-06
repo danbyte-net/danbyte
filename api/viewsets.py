@@ -103,6 +103,7 @@ from .models import (
     FiberSettings,
     rename_marker_refs,
     AreaType, FloorPlan, FloorPlanArea, FloorPlanLabel, FloorPlanRaisedFloorArea,
+    SensitivityLabel,
     FloorPlanStack,
     FloorPlanTile, FloorPlanTray, FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
@@ -208,6 +209,8 @@ from .serializers import (
     LocationTypeSerializer,
     AreaTypeMiniSerializer,
     AreaTypeSerializer,
+    SensitivityLabelMiniSerializer,
+    SensitivityLabelSerializer,
     RoomSerializer,
     RoomMiniSerializer,
     ConfigContextSerializer,
@@ -2814,6 +2817,10 @@ class TenantViewSet(viewsets.ModelViewSet):
         from monitoring.connect_protocol_seeds import seed_builtin_connect_protocols
 
         seed_builtin_connect_protocols(tenant)
+        # The starter sensitivity labels reports are marked with, once.
+        from .sensitivity import seed_sensitivity_labels
+
+        seed_sensitivity_labels(tenant)
 
     @action(detail=True, methods=["post"], url_path="switch")
     def switch(self, request, pk=None):
@@ -10508,6 +10515,72 @@ class AreaTypeViewSet(BulkEditMixin, TenantScopedViewSet):
     def perform_update(self, serializer):
         self._slug(serializer, self._tenant_or_403())
         serializer.save()
+
+
+class SensitivityLabelViewSet(BulkEditMixin, TenantScopedViewSet):
+    """Sensitivity labels - the editable catalog PDF reports are marked with
+    (Public, Internal, Confidential…), each with a colour and an optional
+    icon. A starter set is seeded once per tenant (api/sensitivity.py).
+    Marking one the default takes the flag from the tenant's other labels.
+    ``?picker=1`` lists the short form the report dialog reads."""
+
+    queryset = SensitivityLabel.objects.all().order_by("weight", NATURAL_NAME)
+    serializer_class = SensitivityLabelSerializer
+    pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("color", "icon", "weight", "description"), tags=False)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return SensitivityLabelMiniSerializer
+        return SensitivityLabelSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
+        return qs
+
+    def _slug(self, serializer, tenant):
+        data = serializer.validated_data
+        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
+        slug = data.get("slug") or slugify(name)
+        if not slug:
+            raise ValidationError({"name": "Give the label a name."})
+        data["slug"] = slug
+        clash = SensitivityLabel.objects.filter(tenant=tenant, slug=slug)
+        if serializer.instance is not None:
+            clash = clash.exclude(pk=serializer.instance.pk)
+        if clash.exists():
+            raise ValidationError({"name": "A sensitivity label with this name already exists."})
+
+    def _take_default(self, serializer, tenant):
+        """One default per tenant: the others give it up, each saved so the
+        change log shows it."""
+        if not serializer.validated_data.get("is_default"):
+            return
+        others = SensitivityLabel.objects.filter(tenant=tenant, is_default=True)
+        if serializer.instance is not None:
+            others = others.exclude(pk=serializer.instance.pk)
+        for other in others:
+            other.is_default = False
+            other.save(update_fields=["is_default", "updated_at"])
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        with transaction.atomic():
+            self._take_default(serializer, tenant)
+            serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        with transaction.atomic():
+            self._take_default(serializer, tenant)
+            serializer.save()
 
 
 class RoomViewSet(BulkEditMixin, ImageAttachmentMixin, TenantScopedViewSet):

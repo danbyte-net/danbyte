@@ -84,6 +84,7 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.location",
   "api.locationtype",
   "api.areatype",
+  "api.sensitivitylabel",
   "api.macaddress",
   "api.manufacturer",
   "api.module",

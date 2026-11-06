@@ -241,6 +241,7 @@ const ROWS: Row[] = [
   ["tags", "Tags", "Customize", "/api/tags/"],
   ["custom-fields", "Custom fields", "Customize", "/api/custom-fields/"],
   ["custom-field-groups", "Custom field groups", "Customize", "/api/custom-field-groups/"],
+  ["sensitivity-labels", "Sensitivity labels", "Customize", "/api/sensitivity-labels/", { ioType: "sensitivitylabel" }],
   ["saved-filters", "Saved views", "Customize", "/api/saved-filters/"],
   ["export-templates", "Export templates", "Customize", "/api/export-templates/"],
   ["label-templates", "Label templates", "Customize", "/api/label-templates/"],

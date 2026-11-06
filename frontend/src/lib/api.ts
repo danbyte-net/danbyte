@@ -13743,6 +13743,50 @@ export interface AreaType {
   updated_at: string
 }
 
+/** A sensitivity label - the editable catalog PDF reports are marked with
+ * (Public, Internal, Confidential…), coloured like a status, with an
+ * optional Lucide icon. `is_default`: new reports start with it. */
+export interface SensitivityLabel {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  /** #rrggbb or "" for none. */
+  color: string
+  text_color: string
+  /** Lucide icon name, or "". */
+  icon: string
+  description: string
+  weight: number
+  is_default: boolean
+  permissions?: ObjectPerms
+  created_at: string
+  updated_at: string
+}
+
+/** `?picker=1` on /api/sensitivity-labels/. */
+export type SensitivityLabelRef = Pick<
+  SensitivityLabel,
+  | "id"
+  | "numid"
+  | "name"
+  | "slug"
+  | "color"
+  | "text_color"
+  | "icon"
+  | "is_default"
+>
+
+export interface SensitivityLabelWritePayload {
+  name: string
+  slug?: string
+  color?: string
+  icon?: string
+  description?: string
+  weight?: number
+  is_default?: boolean
+}
+
 /** How an area names its type (and `?picker=1` on /api/area-types/). */
 export interface AreaTypeRef {
   id: string
@@ -17242,5 +17286,9 @@ export interface ObjectReportRequest {
     cover_subtitle?: string
     cover_project?: string
     cover_background?: ReportCoverBackground
+    /** This report's cover colours, in place of the tenant's. */
+    cover_colors?: { horizon: string; wave: string; crest: string } | null
+    /** The sensitivity label the report is marked with; null for none. */
+    sensitivity_label?: string | null
   }
 }

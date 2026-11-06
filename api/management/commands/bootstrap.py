@@ -56,6 +56,7 @@ class Command(BaseCommand):
         self._seed_statuses()
         self._seed_roles()
         self._seed_connect_protocols()
+        self._seed_sensitivity_labels()
         self._seed_backup_target()
         self._maybe_create_superuser()
 
@@ -113,6 +114,18 @@ class Command(BaseCommand):
                     f"Seeded Connect protocols for {tenant.name}: {created} new."
                 )
             )
+
+    def _seed_sensitivity_labels(self):
+        from api.sensitivity import seed_sensitivity_labels
+
+        for tenant in Tenant.objects.all():
+            created = seed_sensitivity_labels(tenant)
+            if created:
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"Seeded sensitivity labels for {tenant.name}: {created} new."
+                    )
+                )
 
     def _seed_backup_target(self):
         from backups.seeds import default_target
