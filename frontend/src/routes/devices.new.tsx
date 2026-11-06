@@ -25,6 +25,7 @@ export const Route = createFileRoute("/devices/new")({
     din_rail?: string
     din_offset?: number
     clone?: string
+    profile?: string
   } & PlanSearch => ({
     ...(typeof s.rack === "string" ? { rack: s.rack } : {}),
     ...(s.mount === "side_left" || s.mount === "side_right"
@@ -46,6 +47,8 @@ export const Route = createFileRoute("/devices/new")({
       : {}),
     ...(s.face === "front" || s.face === "rear" ? { face: s.face } : {}),
     ...(typeof s.clone === "string" ? { clone: s.clone } : {}),
+    // "Add device" on a device profile's page: the profile starts picked.
+    ...(typeof s.profile === "string" ? { profile: s.profile } : {}),
     ...planSearch(s),
   }),
 })
@@ -63,6 +66,7 @@ function NewDevicePage() {
     din_rail,
     din_offset,
     clone,
+    profile,
   } = Route.useSearch()
   const cloneQ = useCloneSeed<Partial<Device>>("devices", clone)
   const cloning = !!clone
@@ -88,7 +92,7 @@ function NewDevicePage() {
       ) : (
         <DeviceForm
           initial={
-            rack || device_type || site || cabinet
+            rack || device_type || site || cabinet || profile
               ? {
                   rackId: rack,
                   position,
@@ -99,10 +103,20 @@ function NewDevicePage() {
                   cabinetId: cabinet,
                   dinRailId: din_rail,
                   dinOffset: din_offset,
+                  profileIds: profile ? [profile] : undefined,
                 }
               : undefined
           }
           clone={cloning ? cloneQ.data?.initial : undefined}
+          onSavedMany={() =>
+            profile
+              ? nav({
+                  to: "/device-profiles/$id",
+                  params: { id: profile },
+                  search: { tab: "assigned" },
+                })
+              : nav({ to: "/devices" })
+          }
           onSaved={(d) => {
             nav({ to: "/devices/$id", params: { id: d.id } })
             // The moment ports are wanted is right after creating the box.

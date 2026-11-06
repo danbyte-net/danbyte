@@ -73,9 +73,32 @@ is skipped and named).
 | Tab | |
 |---|---|
 | **Overview** | A **Device profile** card (slug, parent, applies to, assigned count, runbook link, tags), the notes, then one card per section - **Application groups**, **Tags to add**, **Custom field values**, **Platform** - listing the *effective* items: the parents' applied. An item that comes from a parent carries a *from &lt;parent&gt;* chip. |
-| **Assigned objects** | Every device and VM with the profile: its kind, its state pill (**OK**, **Missing**, **Edited**, **Pending**), the missing and edited counts, and when it was assigned. The totals of missing and edited items sit above the table. Each row has **Re-apply** and **Unassign**; tick rows to do either to all of them. |
+| **Assigned objects** | Every device and VM with the profile: its kind, its state pill (**OK**, **Missing**, **Edited**, **Pending**), the missing and edited counts, and when it was assigned. The totals of missing and edited items sit above the table. Each row has **Re-apply** and **Unassign**; tick rows to do either to all of them. **Add device** and **Assign devices** sit above the table too - see [Adding devices from the profile](#adding-devices-from-the-profile). |
 | **Children** | The profiles whose parent this is. |
 | **Journal**, **Change log** | As on every object. |
+
+### Adding devices from the profile
+
+The page header and the **Assigned objects** tab carry two buttons:
+
+- **Assign devices** (**Assign VMs** on a profile only for VMs) opens the
+  shared device picker in bulk mode: tick devices in the list or in the
+  advanced search, and they collect as chips. A profile for both kinds has a
+  **Devices | Virtual machines** switch. Objects that already carry the
+  profile are left out of the pickers. **Assign** runs each object through
+  the same assignment as a single one, so each gets the profile's
+  application groups, tags, custom field values and platform. A toast says
+  how many were assigned and, grouped by reason, which were skipped -
+  *Already assigned*, a missing permission at the object's site, or a profile
+  that does not fit the object. One object failing never stops the rest.
+  Shown to whoever may add profile assignments.
+- **Add device** opens the normal [device form](../dcim/devices.md#add-a-device)
+  with this profile already in its **Profiles** field. A plain name creates
+  one device and gives it the profile with the save; a
+  [name range](../dcim/devices.md#adding-many-devices-at-once) such as
+  `DK-RDS-[1-10]` creates every device in one request and gives each the
+  profile. After a range the form comes back to this tab. Shown on a profile
+  for devices, to whoever may add devices and set their profiles.
 
 ### Editing a profile
 
@@ -169,7 +192,8 @@ naming it, and the preview lists it first.
 | `/api/device-profile-assignments/` | List, `POST` (assign → `{assignment, created}`), `PATCH` (`position` only), `DELETE` (unassign → `{removed, kept, moved}`). `?profile=`, `?device=`, `?virtual_machine=`. |
 | `/api/device-profile-assignments/set/` | `POST {device_id \| virtual_machine_id, profile_ids}`: the object's profiles become exactly the list, in its order. |
 | `/api/device-profile-assignments/<id>/reapply/` | `POST`: brings the object in line and restores what this assignment wrote and someone removed. |
-| `/api/device-profile-assignments/bulk/` | `POST {profile_id, action: assign\|unassign, device_ids \| virtual_machine_ids}`. Up to 25 objects answer inline with each outcome (`assigned`, `unassigned`, `unchanged`, `denied`, `refused`); more run as a background job (`202 {job_id, count}`, on **Jobs**), which re-checks every object's permissions. |
+| `/api/device-profile-assignments/bulk/` | `POST {profile_id, action: assign\|unassign, device_ids \| virtual_machine_ids}`. Up to 25 objects answer inline: `results` holds `{id, name, outcome, detail}` per object - `assigned`, `unassigned`, `unchanged` (*Already assigned.* / *Not assigned.*), `denied` (the missing permission), `refused` (why the profile does not fit), `failed` - and `counts` the totals. Each object is its own transaction. `name` is blank for an object the caller may not view. More run as a background job (`202 {job_id, count}`, on **Jobs**), which re-checks every object's permissions. The profile page sends its picks in batches of 25 so every object answers inline. |
+| `/api/devices/bulk-create/` | Devices from a name range, each with the profiles in `profile_ids` - see [Devices](../dcim/devices.md#adding-many-devices-at-once). |
 
 A profile carries `parent`, `path` (names from the root), `platform`,
 `application_groups` (in order), `add_tags`, `cf_values`, `assignment_count`

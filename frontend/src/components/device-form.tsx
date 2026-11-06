@@ -11,6 +11,7 @@ import {
   type Cabinet,
   DEFAULT_DEVICE_FIELD_VISIBILITY,
   type Device,
+  type DeviceBulkCreateResult,
   type DeviceFieldVisibility,
   type DeviceRoleOption,
   type DeviceTypeOption,
@@ -48,7 +49,9 @@ import {
   BindingDraftsProvider,
   useBindingDraftsRoot,
 } from "@/lib/binding-drafts"
-import { useSaveObject } from "@/lib/save-object"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import { expandNameRange } from "@/lib/name-range"
+import { NameRangeHint } from "@/components/name-range-hint"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { MM_INPUT, mmOrNull, mmText } from "@/lib/mm-field"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
@@ -118,6 +121,8 @@ export interface DeviceFormProps {
     cabinetId?: string
     dinRailId?: string
     dinOffset?: number
+    /** Pre-pick device profiles - "Add device" from a profile's page. */
+    profileIds?: string[]
   }
   /** Clone seed (create only): the source's carried-over fields from
    * GET /api/devices/<id>/clone/. Identity/placement (name, serial, rack) are
@@ -125,6 +130,8 @@ export interface DeviceFormProps {
    * Distinct from `device` so this still POSTs a new device. */
   clone?: Partial<Device>
   onSaved: (d: Device) => void
+  /** After a name range (`sw-[1-10]`) created several devices at once. */
+  onSavedMany?: (r: DeviceBulkCreateResult) => void
   onCancel: () => void
 }
 
@@ -133,6 +140,7 @@ export function DeviceForm({
   initial,
   clone,
   onSaved,
+  onSavedMany,
   onCancel,
 }: DeviceFormProps) {
   const { canDo } = useMe()
@@ -152,10 +160,15 @@ export function DeviceForm({
   )
   // Device profiles: likewise written once the device saved.
   const profilesDraft = useHostProfilesDraft(
-    device ? { kind: "device", id: device.id } : null
+    device ? { kind: "device", id: device.id } : null,
+    initial?.profileIds
   )
+  const isPlanning = !!usePlanTarget()
 
   const [name, setName] = useState(device?.name ?? "")
+  // A `[a-b]` range in a new device's name creates one device per name.
+  const rangeNames = isEdit ? [] : expandNameRange(name.trim())
+  const isRange = rangeNames.length > 1
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(
     seed?.device_type?.id ?? initial?.deviceTypeId ?? null
   )
@@ -574,7 +587,9 @@ export function DeviceForm({
   // (site, role, table…) and clear only what names this one.
   const againRef = useRef(false)
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<
+      { one: Device } | { many: DeviceBulkCreateResult }
+    > => {
       const payload: DeviceWritePayload = {
         name: name.trim(),
         device_type_id: deviceTypeId,
@@ -633,18 +648,56 @@ export function DeviceForm({
         // Only while PRTG is on: the field is not shown otherwise.
         ...(prtgOn ? { prtg_sync: prtgSync, prtg_host: prtgHost.trim() } : {}),
       }
+      if (isRange && !isPlanning) {
+        // One request, all or nothing: the server makes every name, and
+        // gives each the groups and profiles picked here.
+        const many = await api<DeviceBulkCreateResult>(
+          "/api/devices/bulk-create/",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              ...payload,
+              ...(groupsDraft.show && groupsDraft.ids.length
+                ? { application_group_ids: groupsDraft.ids }
+                : {}),
+              ...(profilesDraft.show && profilesDraft.ids.length
+                ? { profile_ids: profilesDraft.ids }
+                : {}),
+            }),
+          }
+        )
+        return { many }
+      }
       const saved = await saveObject<Device>({
         objectType: "api.device",
         endpoint: "/api/devices/",
         id: isEdit ? device!.id : undefined,
         payload,
+        // Planning a range stages one create per name.
+        names: isRange ? rangeNames : undefined,
       })
       await bindingDrafts.commit()
       await groupsDraft.commit({ kind: "device", id: saved.id })
       await profilesDraft.commit({ kind: "device", id: saved.id })
-      return saved
+      return { one: saved }
     },
-    onSuccess: (saved) => {
+    onSuccess: (r) => {
+      if ("many" in r) {
+        qc.invalidateQueries({ queryKey: ["devices"] })
+        qc.invalidateQueries({ queryKey: ["devices-picker"] })
+        qc.invalidateQueries({ queryKey: ["device-profile-assignments"] })
+        qc.invalidateQueries({ queryKey: ["device-profile"] })
+        invalidatePortCounts(qc)
+        toast.success(`Created ${r.many.count} devices`)
+        if (againRef.current) {
+          againRef.current = false
+          setName("")
+          return
+        }
+        onSavedMany?.(r.many)
+        return
+      }
+      const saved = r.one
       qc.invalidateQueries({ queryKey: ["devices"] })
       qc.invalidateQueries({ queryKey: ["devices-picker"] })
       qc.invalidateQueries({ queryKey: ["device", saved.id] })
@@ -691,6 +744,7 @@ export function DeviceForm({
               placeholder="sw-fra-01"
               error={fieldErrors.name}
             />
+            <NameRangeHint name={name} editing={isEdit} noun="devices" />
             <div className="grid gap-3 @md:grid-cols-2">
               <DeviceTypePicker
                 required
@@ -1308,7 +1362,13 @@ export function DeviceForm({
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}
-        submitLabel={isEdit ? "Save changes" : "Create device"}
+        submitLabel={
+          isEdit
+            ? "Save changes"
+            : isRange
+              ? `Create ${rangeNames.length} devices`
+              : "Create device"
+        }
         secondary={
           isEdit ? undefined : (
             <Button

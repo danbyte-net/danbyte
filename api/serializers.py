@@ -3537,6 +3537,16 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     def validate_prtg_host(self, value):
         return clean_prtg_host(value)
 
+    def validate_name(self, value):
+        # A new name never keeps range brackets: "sw-[1-4]" is four devices,
+        # made by POST bulk-create/ (api.name_range).
+        from .name_range import NAME_RANGE_RE
+
+        if self.instance is None and NAME_RANGE_RE.search(value or ""):
+            raise serializers.ValidationError(
+                "A name range creates several devices: post it to bulk-create.")
+        return value
+
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_prtg_plan(self, obj):
         # Set by the viewset when a save changed prtg_sync: what the PRTG

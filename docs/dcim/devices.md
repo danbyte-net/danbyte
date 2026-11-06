@@ -31,8 +31,51 @@ detail page.
    see all of them.
 6. Optionally pick **Application groups** and **Profiles** - the
    [device profiles](../features/device-profiles.md#on-devices-and-vms) it
-   gets, in order. Both are written with the first save.
+   gets, in order. Both are written with the first save. **Add device** on a
+   device profile's page opens this form with that profile already picked.
 7. Save.
+
+### Adding many devices at once
+
+A **`[a-b]` range in the name** creates one device per number in a single
+submit: `DK-RDS-[1-10]` makes DK-RDS-1 … DK-RDS-10, and a zero-padded start
+bound pads every name to its width, so `[0001-0100]` makes 0001 … 0100. A
+line under **Name** previews it - *Creates 10 devices: DK-RDS-1 … DK-RDS-10* -
+and the button reads **Create 10 devices**. The rules are the same as for
+[components](#adding-many-components-at-once): one range per name, counting
+up, at most **128** devices.
+
+Every other field - type, site, role, status, platform, rack, tags, custom
+fields, application groups and profiles - applies to all of them. Fields that
+belong to one device must stay blank: a rack **position**, a DIN rail offset,
+a side-mount offset, **serial number**, **asset tag**, a stack position, the
+primary, secondary and out-of-band IPs and *PRTG polls*. A rack without a
+position is fine; the devices land in it unplaced. Place them on the rack
+afterwards.
+
+It is all or nothing. If any name is taken, nothing is created and the
+error names the taken ones; if one device fails validation or a permission
+check, none are created and the error names which device failed and why.
+Each device created is in the change log like a single create, and gets its
+type's components, application groups and profiles as a single create does.
+Creating takes `add` on devices at the chosen site, plus the
+[profile rights](../features/device-profiles.md#permissions) when profiles
+are picked. On a planning task, a range plans one create per name.
+
+Over the API, post the device payload with the range in `name` to
+`POST /api/devices/bulk-create/`, with optional `application_group_ids` and
+`profile_ids`. It answers `201 {count, results: [{id, name}]}`, or `400`
+with the first failing device's field errors (prefixed with its name), a
+`detail` summary and `failed: [{name, errors}]`. A plain
+`POST /api/devices/` refuses a name with a range rather than storing its
+brackets.
+
+```bash
+curl -X POST https://danbyte.example/api/devices/bulk-create/ \
+  -H "Authorization: Token $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "DK-RDS-[1-10]", "device_type_id": "…", "site_id": "…",
+       "profile_ids": ["…"]}'
+```
 
 !!! note "Built-in fields vs. custom fields"
     Danbyte ships a curated set of common attributes as built-in device
