@@ -377,6 +377,10 @@ class SbomQueryCountTests(_Base):
 
     def test_flat(self):
         self.install(self.pg, self.n1, "16")
+        # One call first: the request path warms per-session and cached state
+        # (session expiry, lookups) that a later call does not repeat, so the
+        # comparison is call against call, not cold against warm.
+        self.sbom()
         before = self._count()
         cl = self.vm.cluster
         for i in range(6):
