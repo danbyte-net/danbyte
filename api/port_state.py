@@ -76,6 +76,39 @@ def far_end(term):
     }
 
 
+def hidden_peer() -> dict:
+    """What a far end the caller may not view reads as: nothing named."""
+    return {"device": "", "port": "", "port_label": "", "hidden": True}
+
+
+def visible_device_ids(user, tenant):
+    """The ids of the devices ``user`` may view in ``tenant``, or None when
+    every device is visible (a superuser, or an unconstrained and unscoped
+    grant). At most one query."""
+    from auth_api import rbac
+
+    from .models import Device
+
+    if tenant is None:
+        return set()
+    qs = Device.objects.filter(tenant=tenant)
+    restricted = rbac.restrict_queryset(qs, user, tenant, "device", "view")
+    if restricted is qs:
+        return None
+    return set(restricted.values_list("pk", flat=True))
+
+
+def scoped_far_end(term, visible):
+    """``far_end(term)`` when its device is in ``visible`` (None = every
+    device), else ``hidden_peer()``."""
+    comp = far_end_component(term)
+    if comp is None:
+        return None
+    if visible is not None and getattr(comp, "device_id", None) not in visible:
+        return hidden_peer()
+    return far_end(term)
+
+
 # Prefetch that lets ``far_end`` read the other end without a query per
 # row, for the kinds a faceplate marker can carry.
 FAR_END_PREFETCH = (

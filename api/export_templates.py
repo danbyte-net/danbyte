@@ -485,14 +485,16 @@ def safe_mime_type(declared: str | None) -> str:
     return base if base in INERT_MIME_TYPES else "text/plain"
 
 
-def link_peer_of(iface) -> dict | None:
+def link_peer_of(iface, visible=None) -> dict | None:
     """The far end of ``iface``'s cable, as a template may read it.
 
     ``{"device", "interface", "description", "custom_fields"}`` - the peer's
     name, its port, and its own fields (a ``frr_name`` custom field, say), or
     ``None`` when the port is uncabled or the cable ends off-device. Read-only
     by construction: it is a plain dict, so a template cannot reach the peer
-    row or anything hanging off it.
+    row or anything hanging off it. ``visible`` is the device ids the reader
+    may view (None = all): a peer outside it names nothing and carries
+    ``hidden`` (#473).
     """
     for term in iface.terminations.all():
         for other in term.cable.terminations.all():
@@ -501,6 +503,11 @@ def link_peer_of(iface) -> dict | None:
             peer = other.interface
             if peer is None:
                 return None
+            if visible is not None and peer.device_id not in visible:
+                return {
+                    "device": "", "interface": "", "description": "",
+                    "custom_fields": {}, "hidden": True,
+                }
             return {
                 "device": peer.device.name,
                 "interface": peer.name,
@@ -515,11 +522,17 @@ def link_peer_of(iface) -> dict | None:
 LINK_PEER_PREFETCH = "terminations__cable__terminations__interface__device"
 
 
-def device_render_interfaces(device) -> list:
-    """The device's interfaces with ``link_peer`` attached to each."""
+def device_render_interfaces(device, tenant=None, user=None) -> list:
+    """The device's interfaces with ``link_peer`` attached to each; for a
+    render run by ``user``, a peer they may not view is hidden."""
+    visible = None
+    if user is not None:
+        from .port_state import visible_device_ids
+
+        visible = visible_device_ids(user, tenant or device.tenant)
     rows = list(device.interfaces.prefetch_related(LINK_PEER_PREFETCH))
     for iface in rows:
-        iface.link_peer = link_peer_of(iface)
+        iface.link_peer = link_peer_of(iface, visible)
     return rows
 
 
@@ -567,7 +580,7 @@ def render_device_config(template, device, tenant, user=None) -> str:
     return tmpl.render(
         device=device,
         config_context=render_config_context(device)["rendered"],
-        interfaces=device_render_interfaces(device),
+        interfaces=device_render_interfaces(device, tenant, user),
         ip_addresses=_render_ips(device, tenant, user),
         backing_vm=_backing_vm(device, tenant, user),
         objects=[device],

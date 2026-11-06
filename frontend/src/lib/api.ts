@@ -3703,7 +3703,12 @@ export interface Interface {
   cable_count: number
   /** The far end of the cable - device and port names, and the far port's
    * printed label - or null. */
-  link_peer: { device: string; port: string; port_label: string } | null
+  link_peer: {
+    device: string
+    port: string
+    port_label: string
+    hidden?: boolean
+  } | null
   /** Leave this port's marker blank on faceplate renders. */
   hide_label: boolean
   /** This port's own label colour (#rrggbb), "" = the deployment's. */
