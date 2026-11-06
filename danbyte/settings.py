@@ -226,6 +226,15 @@ DATABASES = {
         # A dropped connection is noticed before a request uses it, and a
         # database that does not answer fails the request in 10 s, not never.
         "CONN_HEALTH_CHECKS": True,
+        # Persistent connections for the gunicorn app only (#481): a new
+        # connection per request was most of a small API call's cost.
+        # danbyte/wsgi.py marks the process before settings load; daphne,
+        # runserver, workers and commands keep 0 (a connection per request).
+        "CONN_MAX_AGE": (
+            int(os.getenv("DB_CONN_MAX_AGE", "60"))
+            if os.getenv("DANBYTE_WSGI_SERVER") == "1"
+            else 0
+        ),
         "OPTIONS": {
             "connect_timeout": 10,
             # JIT off for Danbyte's sessions (#443): its queries are short OLTP

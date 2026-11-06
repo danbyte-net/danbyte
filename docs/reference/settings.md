@@ -42,6 +42,35 @@ setting in force), or turn JIT off on the server instead:
 ALTER DATABASE danbyte SET jit = off;
 ```
 
+### Persistent connections
+
+The gunicorn web app keeps each worker's database connection open for
+`DB_CONN_MAX_AGE` seconds (default `60`) instead of opening and
+authenticating a new one per request; on a small API call that was most of
+the cost (p50 20 ms → 7 ms on a local database). `CONN_HEALTH_CHECKS` is on,
+so a connection the server dropped is replaced before a request uses it.
+`DB_CONN_MAX_AGE=0` restores a connection per request.
+
+Only the WSGI app does this: `danbyte/wsgi.py` marks the process before
+settings load. daphne (WebSockets), `runserver`, the RQ workers and
+management commands keep `0`.
+
+Size `max_connections` (Postgres default `100`) for every process that holds
+one at a time:
+
+```
+gunicorn workers (WEB_CONCURRENCY, default ≤ 8)
++ RQ workers (danbyte-workers and danbyte-fastlane, one per worker process)
++ daphne (one per open request it serves)
++ timers and management commands running at the same moment
++ headroom for psql, backups and upgrades (10 or so)
+```
+
+A connection that stays open is idle between requests, so persistent
+connections do not raise the peak: each gunicorn worker held one while it
+served a request before too. With a pooler (PgBouncer in transaction mode)
+in front, the pooler's own limits apply instead.
+
 ## CORS
 
 ```python

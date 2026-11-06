@@ -390,7 +390,9 @@ gunicorn starts twice the CPU count plus one sync workers, capped at **8**.
 Each holds a database connection, and RQ workers and daphne hold theirs, so
 past that a large host ran out of Postgres's default 100 connections. Set
 `WEB_CONCURRENCY` in `.env` to go higher, and raise `max_connections` in
-Postgres with it. `GUNICORN_TIMEOUT` (default 60 s) is how long one request
+Postgres with it ([sizing](../reference/settings.md#persistent-connections)).
+Each worker keeps its connection open between requests (`DB_CONN_MAX_AGE`,
+default 60 s). `GUNICORN_TIMEOUT` (default 60 s) is how long one request
 may run before its worker is replaced.
 
 A stalled or restarting Redis no longer takes the web tier down: the one
@@ -470,6 +472,7 @@ Any of these can change later without a reinstall:
 |---|---|---|
 | `DB_HOST` / `DB_PORT` | `127.0.0.1` / `5432` | PostgreSQL host / port |
 | `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `danbyte` | Database name / role / password |
+| `DB_CONN_MAX_AGE` | `60` | Seconds a gunicorn worker keeps its database connection ([sizing](../reference/settings.md#persistent-connections)); `0` opens one per request |
 | `DB_JIT` | `off` | `off` turns PostgreSQL JIT off for Danbyte's sessions; `on` keeps the server's setting ([why](../reference/settings.md#database-postgres-only)) |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated; set on a server |
 | `DJANGO_SECRET_KEY` | `dev-key-change-in-prod` | **Required when `DEBUG=False`** |
