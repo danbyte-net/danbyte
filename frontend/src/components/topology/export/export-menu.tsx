@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import {
+  BookText,
   ChevronDown,
   Download,
   FileCode,
@@ -33,6 +34,8 @@ import {
   openPrintTab,
   sendPdf,
 } from "@/lib/diagram/export-file"
+import { drawingDevices, pdfDrawing } from "@/lib/diagram/pdf-drawing"
+import type { PdfDrawing } from "@/lib/diagram/pdf-drawing"
 import {
   MIN_PRINT_PT,
   PAPERS,
@@ -126,6 +129,57 @@ function writePrefs(p: Prefs) {
 
 export { exportFileName }
 
+/** What a topology report's diagram page is made from: the Export's PDF
+ * drawing of the whole map, the devices it shows, and whether the title
+ * block is on. */
+export interface ReportDrawing {
+  drawing: PdfDrawing
+  devices: string[]
+  titleBlock: boolean
+}
+
+/** The map as its Export's files draw it: `buildDocument`'s document, with
+ * the legend when the title block is on. Shared by the Export menu and the
+ * topology report, so both draw the same map. */
+export function useExportDocument(
+  buildDocument: (req: ExportRequest) => DiagramDocument | null,
+  legend: readonly LegendItem[] | undefined
+) {
+  const checks = useStatusLabels()
+  return useCallback(
+    async (req: ExportRequest, extras: boolean) => {
+      const doc = buildDocument(req)
+      if (!doc || !extras || !legend?.length) return doc
+      const { printLegend } = await import("../diagram/to-document")
+      return {
+        ...doc,
+        meta: { ...doc.meta, legend: printLegend(legend, checks) },
+      }
+    },
+    [buildDocument, legend, checks]
+  )
+}
+
+/** The report's drawing of the whole map, as **Export ▸ PDF** draws it. */
+export async function reportDrawing(
+  build: (
+    req: ExportRequest,
+    extras: boolean
+  ) => Promise<DiagramDocument | null>,
+  name: string,
+  extras: boolean
+): Promise<ReportDrawing | null> {
+  const doc = await build({ area: "all" }, extras)
+  if (!doc) return null
+  const drawing = await pdfDrawing(doc, name, { legend: extras })
+  return { drawing, devices: drawingDevices(doc), titleBlock: extras }
+}
+
+/** The Export's Title and legend choice, as this browser keeps it. */
+export function exportExtras(): boolean {
+  return readPrefs().extras
+}
+
 /** Menu radio and checkbox rows adjust the export without closing it. */
 const keepOpen = (e: Event) => e.preventDefault()
 
@@ -145,6 +199,7 @@ export function ExportMenu({
   pdfKind,
   areas = true,
   disabled,
+  onReport,
 }: {
   /** The map as an export document. */
   document: (req: ExportRequest) => DiagramDocument | null
@@ -167,11 +222,14 @@ export function ExportMenu({
   /** Offer Whole map / Visible area: off for a diagram drawn whole. */
   areas?: boolean
   disabled?: boolean
+  /** Offer **PDF report…**: opens the report dialog with the way to draw
+   * the map as this menu's PDF does. */
+  onReport?: (draw: () => Promise<ReportDrawing | null>) => void
 }) {
   const base = fileStem ?? name
   const [prefs, setPrefs] = useState(readPrefs)
   const [busy, setBusy] = useState(false)
-  const checks = useStatusLabels()
+  const exportDocument = useExportDocument(buildDocument, legend)
   const set = (p: Partial<Prefs>) => {
     const next = { ...prefs, ...p }
     setPrefs(next)
@@ -179,15 +237,8 @@ export function ExportMenu({
   }
 
   /** The document, with the legend when the title block is on. */
-  const build = async (mode?: DrawioMode) => {
-    const doc = buildDocument({ area: prefs.area, mode })
-    if (!doc || !prefs.extras || !legend?.length) return doc
-    const { printLegend } = await import("../diagram/to-document")
-    return {
-      ...doc,
-      meta: { ...doc.meta, legend: printLegend(legend, checks) },
-    }
-  }
+  const build = (mode?: DrawioMode) =>
+    exportDocument({ area: prefs.area, mode }, prefs.extras)
 
   const run = async (format: ExportFormat) => {
     // Print's tab opens now, while the click still counts as the user's.
@@ -213,27 +264,26 @@ export function ExportMenu({
         missing = n
       }
       if (format === "pdf" || format === "print") {
-        const [{ toSvg }, { inlinePhotos, svgSize }] = await Promise.all([
-          import("@/lib/diagram/svg"),
-          import("@/lib/diagram/png"),
-        ])
-        // The SVG export's drawing and legend; the server draws the title
-        // block on the sheet itself.
-        const svg = toSvg(await inlinePhotos(doc, { onMissing }), {
+        const { svgSize } = await import("@/lib/diagram/png")
+        // The one PDF drawing (lib/diagram/pdf-drawing.ts), which the
+        // topology report's diagram page posts too.
+        const drawing = await pdfDrawing(doc, name, {
           legend: prefs.extras,
+          onMissing,
         })
+        const svg = drawing.svg
         const paper = { size: prefs.paper, orientation: prefs.orientation }
         const { url } = await api<{ url: string }>(pdfUrl, {
           method: "POST",
           body: JSON.stringify({
             ...(pdfKind ? { kind: pdfKind } : {}),
             svg,
-            title: doc.meta.title || name,
+            title: drawing.title,
             paper,
             meta: {
               view: name,
-              filters: doc.meta.filters ?? "",
-              generated_at: doc.meta.generated_at,
+              filters: drawing.filters,
+              generated_at: drawing.generated_at,
             },
             title_block: prefs.extras,
           }),
@@ -329,6 +379,15 @@ export function ExportMenu({
         <DropdownMenuItem onSelect={() => void run("print")}>
           <Printer /> Print
         </DropdownMenuItem>
+        {onReport && (
+          <DropdownMenuItem
+            onSelect={() =>
+              onReport(() => reportDrawing(exportDocument, name, prefs.extras))
+            }
+          >
+            <BookText /> PDF report…
+          </DropdownMenuItem>
+        )}
         {areas && (
           <>
             <DropdownMenuSeparator />
