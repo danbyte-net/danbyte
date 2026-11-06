@@ -34,7 +34,7 @@ import type {
   TopologyViewSaved,
 } from "@/lib/api"
 import { Route as LayoutRoute } from "./topology"
-import { Route } from "./topology.index"
+import { Route } from "./topology.map"
 
 // The Diagram's virtual chassis as the page drives them: how a saved view
 // stacks when it says nothing itself, and what removing a stack member or

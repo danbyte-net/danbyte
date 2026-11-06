@@ -346,7 +346,7 @@ describe("DeviceMiniTopology", () => {
     expect(await screen.findByText("runs")).toBeTruthy()
     expect(screen.getByText("LLDP links")).toBeTruthy()
     const open = screen.getByRole("link", { name: "Open in Topology" })
-    expect(open.getAttribute("href")).toBe("/topology?device=d1")
+    expect(open.getAttribute("href")).toBe("/topology/map?device=d1")
     expect(open.querySelector("svg.lucide-share-2")).not.toBeNull()
     expect(screen.queryByText("Full map")).toBeNull()
   })
