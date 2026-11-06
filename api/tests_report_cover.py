@@ -1,4 +1,4 @@
-"""The report cover page (``api/report_cover.py``,
+"""The report cover page (``api/reports/cover.py``,
 ``api/report_background.py``): on and off in the object report, its text,
 the logo and its fallback, the tenant's look reaching the render, the
 coloured wave background (the default colours give the blue still, cached,
@@ -26,7 +26,7 @@ from core.models import Tenant, TenantSettings
 
 from . import object_report as rep
 from . import report_background as rb
-from . import report_cover as rc
+from .reports import cover as rc
 from .tests_elevation_pdf import _pdf_objects
 from .tests_object_report import _Report
 

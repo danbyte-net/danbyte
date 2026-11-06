@@ -98,7 +98,7 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "cable_service_loop_mm",
             "cable_length_step_mm",
             "cable_standalone_height_mm",
-            # report cover page (api/report_cover.py)
+            # report cover page (api/reports/cover.py)
             "report_cover_style",
             "report_cover_horizon",
             "report_cover_wave",
@@ -122,7 +122,7 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _colour(value):
-        from api.report_cover import HEX
+        from api.reports.cover import HEX
 
         if not HEX.match(value or ""):
             raise serializers.ValidationError("A colour as #rrggbb.")
@@ -326,7 +326,7 @@ def tenant_report_cover(request):
     tenant, err = _tenant_or_403(request)
     if err:
         return err
-    from api.report_cover import MAX_IMAGE_BYTES, CoverImageRejected, clean_image
+    from api.reports.cover import MAX_IMAGE_BYTES, CoverImageRejected, clean_image
 
     obj = TenantSettings.for_tenant(tenant)
     if request.method == "GET":

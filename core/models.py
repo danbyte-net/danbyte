@@ -1280,7 +1280,7 @@ class TenantSettings(TimestampedModel):
     # never pops up again for this tenant.
     onboarding_dismissed = models.BooleanField(default=False)
 
-    # ─── report cover page (api/report_cover.py) ───────────────────────────
+    # ─── report cover page (api/reports/cover.py) ───────────────────────────
     # The look of every PDF report's cover in this tenant. The uploaded
     # image is kept in the row, not under /media/: media is served without
     # a session, and an upload may be an SVG (sanitised, but still never

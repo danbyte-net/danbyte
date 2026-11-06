@@ -73,12 +73,10 @@ from .drawing_pdf import (
     MAX_BODY_BYTES,
     MAX_PDF_BYTES,
     MEDIA_IMAGES_URL,
-    PAPERS_MM,
     RENDER_TIMEOUT,
     TOKEN,
     PdfUrlFetcher,
     RenderTimeout,
-    _font_faces,
     body_too_large,
     deliver,
     detail,
@@ -93,7 +91,10 @@ from .drawing_pdf import (
 )
 from .field_labels import humanize
 from .floor_plan_report import _pill, _plural
-from .report_cover import BACKGROUND_CHOICES, cover_css, cover_for_request, look_for
+from .reports.cover import BACKGROUND_CHOICES, cover_for_request, look_for
+from .reports.engine import ReportContext, document_html, page_size
+from .reports.engine import css_str as _css_str  # noqa: F401
+from .reports.marking import marking_for
 
 log = logging.getLogger(__name__)
 
@@ -120,9 +121,6 @@ MAX_LAST = 200
 MAX_CHECKS = 100
 PAPERS = ("a4", "letter", "a3")
 ORIENTATIONS = ("portrait", "landscape")
-MARGIN_MM = 12.0
-BOTTOM_MM = 14.0
-INK = "#18181b"
 # Never offered as a column: the row's plumbing.
 _SKIP_KINDS = ("color",)
 # Query parameters a body's ``filters`` may not set: paging, rendering and the
@@ -1510,18 +1508,6 @@ def _header_html(title: str, facts: list[tuple[str, str]]) -> str:
     return f"<header><h1>{escape(title)}</h1><div class='meta'>{kv}</div></header>"
 
 
-def _css_str(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
-
-
-def page_size(paper: str, orientation: str) -> tuple[float, float]:
-    """``(width, height)`` of the sheet in mm."""
-    pw, ph = PAPERS_MM[paper]
-    if orientation == "portrait":
-        pw, ph = ph, pw
-    return pw, ph
-
-
 def report_html(
     *,
     title: str,
@@ -1531,89 +1517,19 @@ def report_html(
     orientation: str,
     body: str,
     cover: str = "",
+    marking=None,
 ) -> str:
-    from danbyte import __version__
-
-    pw, ph = page_size(paper, orientation)
-    mm = lambda v: f"{v:.3f}mm"  # noqa: E731
-    running = f"{title} · {stamp(generated)} · Danbyte {__version__}"
-    font = "font-family:Inter,'DejaVu Sans',sans-serif;font-size:6.5pt;color:#71717a"
-    return (
-        "<!doctype html><html><head><meta charset='utf-8'>"
-        f"<title>{escape(title)}</title>"
-        f"<meta name='generator' content='Danbyte {escape(__version__)}'>"
-        "<style>"
-        f"{_font_faces()}"
-        f"@page{{size:{mm(pw)} {mm(ph)};margin:{mm(MARGIN_MM)} {mm(MARGIN_MM)} {mm(BOTTOM_MM)};"
-        f"@top-right{{content:'{_css_str(tenant)}';{font}}}"
-        f"@bottom-left{{content:'{_css_str(running)}';{font}}}"
-        f"@bottom-right{{content:'Page ' counter(page) ' / ' counter(pages);{font}}}}}"
-        "html,body{margin:0;padding:0}"
-        f"body{{font-family:Inter,'DejaVu Sans',sans-serif;color:{INK};font-size:7.5pt}}"
-        "header{margin-bottom:5mm}"
-        "h1{font-size:15pt;font-weight:700;margin:0 0 1.5mm}"
-        ".meta{color:#52525b;font-size:7.5pt}"
-        ".meta span{margin-right:1mm}"
-        ".meta b{font-weight:600;color:#3f3f46}"
-        "h2{font-size:11pt;font-weight:700;margin:0 0 3mm;break-after:avoid}"
-        "h2 .pill,h2 .tag{font-size:7pt;vertical-align:1.2pt;margin-left:1mm}"
-        "h3{font-size:8.5pt;font-weight:600;margin:4.5mm 0 1.5mm;break-after:avoid}"
-        "h3 span{font-weight:400;color:#71717a;margin-left:2mm}"
-        "section.list,section.summary{margin-bottom:6mm}"
-        "section.object{break-before:page}"
-        "section.object.first{break-before:auto}"
-        ".tags{margin:-1.5mm 0 2mm}"
-        ".tags .pill{margin-right:0.8mm}"
-        "table{width:100%;border-collapse:collapse;margin-bottom:1.5mm}"
-        "thead{display:table-header-group}"
-        "tr{break-inside:avoid}"
-        "th{text-align:left;font-weight:600;color:#52525b;padding:0.9mm 1.2mm;"
-        "vertical-align:bottom}"
-        "table.grid{table-layout:fixed}"
-        "th,td{box-sizing:border-box;overflow-wrap:anywhere}"
-        "table.grid th{border-bottom:0.3mm solid #a1a1aa}"
-        "td{padding:0.9mm 1.2mm;vertical-align:top}"
-        "table.grid td{border-bottom:0.15mm solid #e4e4e7}"
-        "tr.under>td{padding:0 0 1.5mm 5mm}"
-        "tr.band{break-after:avoid}"
-        "table.grid tr.band>td{background:#f4f4f5;border-bottom:0.15mm solid #d4d4d8;"
-        "padding:1mm 1.2mm;color:#71717a}"
-        ".band .bl{font-size:5.5pt;letter-spacing:0.3mm;margin-right:1.5mm}"
-        ".band .pill{margin:0}"
-        ".band .rd{font-family:'DejaVu Sans Mono',monospace;font-size:6pt;margin-left:1.5mm}"
-        ".band .cnt{margin-left:2mm;color:#a1a1aa}"
-        ".tree{color:#a1a1aa;font-weight:400;margin-right:0.8mm}"
-        "table.ips{margin:0;font-size:6.8pt}"
-        "table.ips th{border-bottom-width:0.15mm;padding:0.5mm 1.2mm}"
-        "table.ips td{padding:0.5mm 1.2mm}"
-        "table.kv{table-layout:fixed}"
-        "table.kv th{font-weight:500;color:#71717a;border-bottom:0.15mm solid #e4e4e7}"
-        "table.kv td{border-bottom:0.15mm solid #e4e4e7}"
-        "table.facts{width:auto;min-width:70mm}"
-        "table.facts th{font-weight:500;color:#71717a;border-bottom:0.15mm solid #e4e4e7;"
-        "padding-right:8mm}"
-        "table.facts td{border-bottom:0.15mm solid #e4e4e7}"
-        ".sumblock{display:inline-block;vertical-align:top;margin-right:8mm}"
-        ".n{text-align:right;white-space:nowrap}"
-        ".b{font-weight:600}"
-        ".muted{color:#71717a;margin:1mm 0}"
-        ".sec{margin-bottom:2mm}"
-        ".pill,.tag{display:inline-block;padding:0.15mm 1.4mm;font-size:6.5pt;font-weight:500;"
-        "white-space:nowrap;line-height:1.35;border-radius:0.6mm}"
-        "td .pill{margin:0 0.6mm 0.4mm 0}"
-        ".plain{background:#f4f4f5;color:#3f3f46}"
-        ".ubar{height:3mm;width:120mm;background:#f4f4f5;border:0.2mm solid #d4d4d8;"
-        "border-radius:0.6mm;overflow:hidden}"
-        ".ubar div{height:100%;background:#52525b}"
-        ".ulab{margin:1mm 0 2mm;color:#52525b}"
-        ".photos figure{display:inline-block;margin:0 6mm 0 0;vertical-align:top}"
-        ".photos img{max-width:110mm;max-height:45mm;border:0.2mm solid #d4d4d8}"
-        ".photos figcaption{color:#71717a;font-size:6.5pt;margin-top:0.8mm}"
-        f"{cover_css(pw, ph) if cover else ''}"
-        "</style></head><body>"
-        f"{cover}{body}"
-        "</body></html>"
+    """The report's page, laid out by the report framework
+    (:func:`api.reports.engine.document_html`)."""
+    ctx = ReportContext(
+        title=title,
+        tenant=tenant,
+        generated=generated,
+        paper=paper,
+        orientation=orientation,
+        marking=marking,
     )
+    return document_html(ctx, body, cover=cover)
 
 
 def render_report_pdf(_svg: bytes, *, html: str) -> bytes:
@@ -1944,6 +1860,7 @@ def _page_html(
     many_cols = len((data.get("columns") or {}).get("list") or rt.list_columns) > 8
     orientation = opts.get("orientation") or ("landscape" if many_cols else "portrait")
     generated = timezone.now()
+    marking = marking_for(request, tenant, opts)
     cover = ""
     if opts.get("cover"):
         pw, ph = page_size(paper, orientation)
@@ -1960,6 +1877,7 @@ def _page_html(
             subtitle=subtitle.strip(),
             background=opts.get("cover_background") or "default",
             when=generated,
+            marking=marking,
         )
     html = report_html(
         title=title,
@@ -1969,6 +1887,7 @@ def _page_html(
         orientation=orientation,
         body=body,
         cover=cover,
+        marking=marking,
     )
     return html, generated
 
