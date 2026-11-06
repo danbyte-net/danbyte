@@ -140,9 +140,12 @@ Two deployment-wide session controls live on `DeploymentSettings` and are set
 from **Settings → Security** (`users.manage`):
 
 - **Idle timeout** (`session_idle_timeout_minutes`, `0` = off). A rolling
-  inactivity timeout: `core.middleware.SessionIdleTimeoutMiddleware` resets each
-  authenticated session's expiry on every request, so a session untouched for
-  the configured span is signed out. The value is cached for ~60s (cleared on
+  inactivity timeout: `core.middleware.SessionIdleTimeoutMiddleware` moves each
+  authenticated session's expiry to "now + timeout", so a session untouched for
+  the configured span is signed out. The expiry is only rewritten once it has
+  drifted by a minute, so a page load's burst of API calls writes the session
+  row once rather than once per call; a session can end up to a minute early,
+  and a lowered timeout shortens a longer expiry on the next request. The value is cached for ~60s (cleared on
   save) to keep it off the hot path; API-token requests carry no session and are
   unaffected.
 - **End all sessions** (`POST /api/deployment/end-all-sessions/`). Deletes every

@@ -197,6 +197,62 @@ class SessionIdleTimeoutMiddlewareTests(APITestCase):
         self.assertLessEqual(self.client.session.get_expiry_age(), 30 * 60)
         clear_idle_timeout_cache()
 
+    def _login_with_timeout(self, minutes):
+        from core.middleware import clear_idle_timeout_cache
+
+        obj = DeploymentSettings.load()
+        obj.session_idle_timeout_minutes = minutes
+        obj.save(update_fields=["session_idle_timeout_minutes"])
+        clear_idle_timeout_cache()
+        self.addCleanup(clear_idle_timeout_cache)
+        admin = get_user_model().objects.create_superuser("a3", "a3@acme.com", "pw")
+        self.client.force_login(admin)
+
+    def test_expiry_is_written_once_per_minute_not_per_request(self):
+        """#486: a burst of requests writes the session row once."""
+        from django.contrib.sessions.models import Session
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self._login_with_timeout(30)
+        self.client.get("/api/deployment/email/")  # first request sets the date
+        expire = Session.objects.get().expire_date
+        with CaptureQueriesContext(connection) as ctx:
+            for _ in range(3):
+                self.client.get("/api/deployment/email/")
+        writes = [q["sql"] for q in ctx.captured_queries
+                  if 'UPDATE "django_session"' in q["sql"]]
+        self.assertEqual(writes, [])
+        self.assertEqual(Session.objects.get().expire_date, expire)
+
+    def test_expiry_is_refreshed_once_it_drifted_a_minute(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        from django.contrib.sessions.models import Session
+        from django.utils import timezone
+
+        self._login_with_timeout(30)
+        self.client.get("/api/deployment/email/")
+        first = Session.objects.get().expire_date
+        later = timezone.now() + timedelta(seconds=61)
+        with patch("django.utils.timezone.now", return_value=later):
+            self.client.get("/api/deployment/email/")
+        self.assertGreaterEqual(
+            (Session.objects.get().expire_date - first).total_seconds(), 60)
+
+    def test_a_lowered_timeout_shortens_a_longer_expiry(self):
+        from core.middleware import clear_idle_timeout_cache
+
+        self._login_with_timeout(120)
+        self.client.get("/api/deployment/email/")
+        obj = DeploymentSettings.load()
+        obj.session_idle_timeout_minutes = 10
+        obj.save(update_fields=["session_idle_timeout_minutes"])
+        clear_idle_timeout_cache()
+        self.client.get("/api/deployment/email/")
+        self.assertLessEqual(self.client.session.get_expiry_age(), 10 * 60)
+
     def test_singleton_enforced(self):
         a = DeploymentSettings.load()
         b = DeploymentSettings.load()
