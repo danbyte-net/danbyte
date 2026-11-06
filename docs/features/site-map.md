@@ -92,7 +92,9 @@ The page is a clone of the floor-plan editor's shell:
   **All · Down · Degraded · Up** tabs under the search box (each with its
   count, named as your status catalog names the states) filter the whole
   list. Group headers show down/degraded counts even when folded, and fold
-  state is remembered per browser.
+  state is remembered per browser. On a phone (below 768 px wide) the
+  sidebar starts closed and opens over the map with its own close button,
+  and the header wraps so every toolbar control stays on screen.
 - **Hiding part of the map** - the eye on a group header takes that group
   off the map: a device role, or a region's sites. Individual sites have
   their own eye, since sites are the map's top-level objects and there are
