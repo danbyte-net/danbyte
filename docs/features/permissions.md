@@ -394,6 +394,12 @@ When you create a user, choose how they get their password:
   their own password. You never see or handle their password.
 - **Set a password** - you type an initial password yourself.
 
+Every password you set - creating a user, editing one, the Django admin, or
+`DJANGO_SUPERUSER_PASSWORD` for `manage.py bootstrap` - must pass the same
+checks as a password set through a link: at least 8 characters, not too close
+to the username, name or email, not a common password, and not all digits.
+The API answers a weak one with a `400` and the reasons under `password`.
+
 Editing an existing user, the same option lets you **email a password-reset
 link**. It starts unticked, so saving an edit sends nothing unless you tick it.
 

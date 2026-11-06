@@ -261,8 +261,9 @@ This is deliberately independent of `DEBUG`: tying transport requirements to the
 debug flag means changing the `DEBUG` default silently locks every plain-http
 install out of login. `scripts/install.sh` configures nginx + TLS and writes
 `DANBYTE_HTTPS=True` into `.env` (and backfills it on upgrade), so
-installer-managed hosts stay hardened. nginx also sets HSTS at the edge for all
-upstreams regardless (see [Security headers](#security-headers)).
+installer-managed hosts stay hardened. Behind the shipped nginx, nginx sends
+HSTS for every upstream and drops Django's copy (see
+[Security headers](#security-headers)).
 
 ## Static
 
@@ -487,7 +488,34 @@ uniformly and survives an app restart:
 
 Django-side, `SECURE_REFERRER_POLICY`, `SECURE_CONTENT_TYPE_NOSNIFF`, and
 `X_FRAME_OPTIONS` are set unconditionally (not gated on `DEBUG`) as defence in
-depth for any path served without nginx in front.
+depth for any path served without nginx in front, and `DANBYTE_HTTPS=True` adds
+the same HSTS value for installs that terminate TLS somewhere else.
+
+**One owner per header.** Behind the shipped nginx configs, nginx owns HSTS,
+`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and
+`Cross-Origin-Opener-Policy`: each location drops Django's copy with
+`proxy_hide_header` and sends its own, so a browser gets one header with one
+value. Without nginx, Django's copy is the only one. The Docker image's nginx
+does the same for the headers it sets, and leaves HSTS to the backend
+(`DANBYTE_HTTPS`), since it only has a self-signed certificate.
+
+HSTS has no `preload` at either layer. Being on the browsers' preload list is
+a decision for whoever owns the domain, and it is hard to undo; add it in your
+own proxy if you want it.
+
+**API responses aren't cached.** Every `/api/` response to a signed-in caller
+(session or API token) carries `Cache-Control: private, no-store`, so a browser
+keeps no copy on disk after sign-out and a shared proxy keeps none at all
+(`core.middleware.ApiNoStoreMiddleware`). A view that sets its own
+`Cache-Control` keeps it - file downloads, 3D models and thumbnails choose
+their own. Anonymous API responses, `/media/`, `/static/` and the hashed
+`/assets/` are left to their own headers.
+
+!!! note "Your own nginx"
+    A hand-written site that adds these headers needs the same
+    `proxy_hide_header` lines in each proxied location (or once at the server
+    level, repeated in any location that has its own `proxy_hide_header`).
+    Otherwise every Django response carries two copies.
 
 ## Logging
 

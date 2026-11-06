@@ -95,6 +95,19 @@ class UserForm(forms.ModelForm):
             self.fields["password"].required = True
             self.fields["password"].help_text = "Required for new users."
 
+    def _post_clean(self):
+        super()._post_clean()
+        # Admin-chosen passwords meet AUTH_PASSWORD_VALIDATORS too (#489).
+        # After the model clean, so the similarity check sees the new name.
+        raw_pw = self.cleaned_data.get("password") or ""
+        if raw_pw:
+            from django.contrib.auth import password_validation
+
+            try:
+                password_validation.validate_password(raw_pw, self.instance)
+            except forms.ValidationError as exc:
+                self.add_error("password", exc)
+
     def save(self, commit=True):
         u = super().save(commit=False)
         raw_pw = self.cleaned_data.get("password") or ""

@@ -241,7 +241,9 @@ The other tabs cover building from source and a local dev checkout.
     Keep it private: `chmod 600 ~/danbyte/.env`.
 
     **6 · Migrate, build, and start.** `bootstrap` seeds the default
-    organization, tenant, and status catalog, and creates your admin user:
+    organization, tenant, and status catalog, and creates your admin user.
+    It stops with an error if `DJANGO_SUPERUSER_PASSWORD` fails the password
+    checks (too short, too common, all digits, or too close to the username):
 
     ```bash
     .venv/bin/python manage.py migrate
