@@ -5,13 +5,14 @@ active tenant's devices and virtual machines the caller may view. Each host
 is a component - ``device`` for a device, ``platform`` for a VM - with its
 platform as a nested ``operating-system`` component and every installed
 application as a nested ``application`` component. Each carries its name,
-version, supplier (the manufacturer) and licence. The ``dependencies``
+version, supplier (the manufacturer), licence, and package URL and CPE when
+they resolve (``api.package_ids``). The ``dependencies``
 section links each host to what runs on it.
 
 Filters, each repeatable or comma-separated, any-of within one filter and
 all-of across filters:
 
-``site``             site ids;
+``site``             site ids, names or slugs (case-insensitive);
 ``tag``              tag ids or slugs;
 ``role``             device role ids;
 ``device``           device ids;
@@ -48,6 +49,7 @@ from rest_framework.renderers import JSONRenderer
 from auth_api.rbac import restrict_queryset
 
 from .natural import natural
+from .package_ids import render_cpe, render_purl
 from .spdx import license_entry
 
 SPEC_VERSION = "1.6"
@@ -100,6 +102,36 @@ def _params(request):
     return request.data
 
 
+def _site_ids(request, tenant, params) -> list[uuid.UUID] | None:
+    """The ``site`` filter as ids. A value is an id, else a site name
+    (exact case first, then case-insensitive) or the slug of one, looked up
+    among the sites the caller may view: a site out of scope is as unknown
+    as a name nobody uses, and matches no host (#468)."""
+    from .models import Site
+
+    vals = _values(params, "site")
+    if vals is None:
+        return None
+    out: list[uuid.UUID] = []
+    names: list[str] = []
+    for v in vals:
+        try:
+            out.append(uuid.UUID(v))
+        except ValueError:
+            names.append(v)
+    if names:
+        visible = list(restrict_queryset(
+            Site.objects.filter(tenant=tenant), request.user, tenant, "site", "view",
+        ).values_list("pk", "name"))
+        for v in names:
+            low = v.lower()
+            hits = ([pk for pk, n in visible if n == v]
+                    or [pk for pk, n in visible if n.lower() == low]
+                    or [pk for pk, n in visible if slugify(n) == low])
+            out.extend(hits)
+    return list(dict.fromkeys(out))
+
+
 def _tag_q(values: list[str]) -> Q:
     ids = [int(v) for v in values if v.isdigit()]
     slugs = [v for v in values if not v.isdigit()]
@@ -112,7 +144,7 @@ def _hosts(request, tenant, params):
     so the document costs the same few queries however many hosts it has."""
     from .models import Device, InstalledSoftware, VirtualMachine
 
-    sites = _uuids(params, "site")
+    sites = _site_ids(request, tenant, params)
     roles = _uuids(params, "role")
     tags = _values(params, "tag")
     device_ids = _uuids(params, "device")
@@ -166,13 +198,17 @@ def _prop(name: str, value) -> dict:
 
 
 def _component(kind: str, ref: str, name: str, *, version="", supplier=None,
-               license="", properties=()) -> dict:
+               license="", purl="", cpe="", properties=()) -> dict:
     """One CycloneDX component; blank facts are left out."""
     c = {"type": kind, "bom-ref": ref, "name": name}
     if version:
         c["version"] = version
     if supplier is not None:
         c["supplier"] = {"name": supplier.name}
+    if cpe:
+        c["cpe"] = cpe
+    if purl:
+        c["purl"] = purl
     entry = license_entry(license)
     if entry is not None:
         c["licenses"] = [entry]
@@ -203,11 +239,16 @@ class _Builder:
         ref = f"danbyte:{kind}:{obj.pk}"
         children = []
         platform = obj.platform
+        os_version = obj.software_version
         if platform is not None:
             children.append(self._software(
                 "operating-system", f"{ref}:os", platform.name,
-                version=obj.software_version, supplier=platform.manufacturer,
+                version=os_version, supplier=platform.manufacturer,
                 license=platform.license,
+                purl=render_purl(platform.purl_template, version=os_version,
+                                 os_version=os_version),
+                cpe=render_cpe(platform.cpe_template, version=os_version,
+                               os_version=os_version),
                 properties=[_prop("platform", platform.slug)],
             ))
         for inst in obj.installed_software.all():
@@ -216,6 +257,7 @@ class _Builder:
                 "application", f"danbyte:installedsoftware:{inst.pk}", app.name,
                 version=inst.version, supplier=app.manufacturer,
                 license=inst.effective_license,
+                purl=inst.effective_purl, cpe=inst.effective_cpe,
                 properties=[_prop("application", app.slug), _prop("source", inst.source)],
             ))
         props = [_prop("kind", kind), _prop("id", obj.pk)]
@@ -313,7 +355,7 @@ class CycloneDXRenderer(JSONRenderer):
     parameters=[
         OpenApiParameter(k, OpenApiTypes.STR, OpenApiParameter.QUERY, description=d)
         for k, d in (
-            ("site", "Site ids, repeatable or comma-separated."),
+            ("site", "Site ids, names or slugs, repeatable or comma-separated."),
             ("tag", "Tag ids or slugs, repeatable or comma-separated."),
             ("role", "Device role ids, repeatable or comma-separated."),
             ("device", "Device ids. Given this or virtual_machine, only the "

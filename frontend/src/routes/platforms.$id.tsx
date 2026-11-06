@@ -87,6 +87,22 @@ function Body({ platform: p }: { platform: Platform }) {
       label: "License",
       value: p.license ? <span className="font-mono">{p.license}</span> : dash,
     },
+    {
+      label: "Package URL",
+      value: p.purl_template ? (
+        <span className="font-mono break-all">{p.purl_template}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "CPE",
+      value: p.cpe_template ? (
+        <span className="font-mono break-all">{p.cpe_template}</span>
+      ) : (
+        dash
+      ),
+    },
   ]
 
   return (

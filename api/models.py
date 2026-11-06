@@ -34,6 +34,7 @@ from .dcim_choices import (
 from .fields import HostAddressField, split_host_mask
 from .natural import natural
 from .software_versions import validate_version_pattern
+from .package_ids import validate_cpe, validate_purl
 from .spdx import validate_license_expression
 from .speed import normalize_speed
 from core.models import (
@@ -6345,6 +6346,14 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
         max_length=255, blank=True, default="", db_default="",
         validators=[validate_license_expression],
     )
+    #: Package URL and CPE 2.3 templates for the SBOM ({version},
+    #: {os_version}; ``api.package_ids``); blank = none.
+    purl_template = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_purl],
+    )
+    cpe_template = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_cpe],
+    )
     description = models.TextField(blank=True)
 
     class Meta:
@@ -6391,6 +6400,14 @@ class Application(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
     license = models.CharField(
         max_length=255, blank=True, default="", db_default="",
         validators=[validate_license_expression],
+    )
+    #: Package URL and CPE 2.3 templates for the SBOM ({version},
+    #: {os_version}; ``api.package_ids``); blank = none.
+    purl_template = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_purl],
+    )
+    cpe_template = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_cpe],
     )
     description = models.TextField(blank=True, default="", db_default="")
 
@@ -6476,6 +6493,14 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
         max_length=255, blank=True, default="", db_default="",
         validators=[validate_license_expression],
     )
+    #: This install's own package URL and CPE, over the application's
+    #: templates; blank = the application's.
+    purl = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_purl],
+    )
+    cpe = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_cpe],
+    )
     description = models.TextField(blank=True, default="", db_default="")
 
     class Meta:
@@ -6507,6 +6532,26 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
     def effective_license(self) -> str:
         """The install's own licence, else its application's."""
         return self.license or self.application.license
+
+    def _package_id(self, own: str, template: str, render) -> str:
+        parent = self.parent
+        os_version = getattr(parent, "software_version", "") or ""
+        return render(own or template, version=self.version, os_version=os_version)
+
+    @property
+    def effective_purl(self) -> str:
+        """The install's package URL, else its application's template
+        filled in; "" when none resolves (``api.package_ids``)."""
+        from .package_ids import render_purl
+
+        return self._package_id(self.purl, self.application.purl_template, render_purl)
+
+    @property
+    def effective_cpe(self) -> str:
+        """The install's CPE, else its application's template filled in."""
+        from .package_ids import render_cpe
+
+        return self._package_id(self.cpe, self.application.cpe_template, render_cpe)
 
     def save(self, *args, **kwargs):
         """Derive the cycle and point at the (application, cycle) mapping;

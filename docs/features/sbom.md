@@ -125,6 +125,56 @@ An unknown licence is left out of the SBOM, never guessed. The document
 counts the gaps so you can fill them before you hand it in (see
 [Metadata](#metadata)).
 
+## Package URLs and CPEs
+
+A scanner such as Dependency-Track or OSV matches vulnerabilities on a
+component's [package URL](https://github.com/package-url/purl-spec) (`purl`)
+or its [CPE 2.3](https://nvd.nist.gov/products/cpe) name. Without one, it
+finds nothing. Danbyte writes both when they resolve.
+
+| Where | |
+|---|---|
+| **Application** | *Package URL* and *CPE* templates on the application form and its Overview (`purl_template`, `cpe_template`). Every install of it fills them in. |
+| **Install** | *Package URL* and *CPE* in the Software tab's dialog (`purl`, `cpe`): a finished value for this install only. Blank uses the application's template. |
+| **Platform** | *Package URL* and *CPE* templates on the platform form (`purl_template`, `cpe_template`), for the OS component. |
+
+A template takes two placeholders:
+
+| Placeholder | Filled with |
+|---|---|
+| `{version}` | The install's version for an application; the host's *Software version* for a platform. |
+| `{os_version}` | The host's *Software version* (the running platform version). |
+
+FRRouting `10.3-3+deb13u1` on a Debian host at software version `13`, with
+the application template
+
+```text
+pkg:deb/debian/frr@{version}?arch=amd64&distro=debian-{os_version}
+```
+
+writes `pkg:deb/debian/frr@10.3-3%2Bdeb13u1?arch=amd64&distro=debian-13`,
+and with `cpe:2.3:a:frrouting:frrouting:{version}:*:*:*:*:*:*:*` it writes
+`cpe:2.3:a:frrouting:frrouting:10.3-3\+deb13u1:*:*:*:*:*:*:*`.
+
+- Values are escaped where they land: percent-encoded in a purl (`+` is
+  `%2B`, `:` is `%3A`, a space `%20`), backslash-quoted in a CPE (anything
+  but letters, digits, `.`, `-` and `_`). Write the rest of the template
+  already escaped.
+- A template whose placeholder has no value - an install without a
+  version, a host without a software version - writes nothing, rather than
+  a half-filled identifier. An install's own value is written as it is.
+- The check is loose: a purl starts `pkg:<type>/`, a CPE starts `cpe:2.3:`
+  and has 13 colon-separated parts (part `a`, `o` or `h`). Any other
+  `{placeholder}` is refused.
+- The Software tab's *Package URL* and *CPE* columns (hidden by default)
+  show what the SBOM writes, with an *override* chip where the install
+  sets its own. The API returns it as `effective_purl` / `effective_cpe`.
+- All six fields are in [import and export](import-export.md) under their
+  field names.
+
+The application's `purl_template` is the package identity the planned
+vulnerability matching reads, so a template set now is reused there.
+
 ## Export
 
 - **Devices** and **Virtual machines** lists: **Import / Export → SBOM
@@ -195,6 +245,8 @@ The file is named `sbom-<site name>-<date>.cdx.json` for one site and
   *Software version*, its supplier the platform's manufacturer.
 - Each **install** is a nested `application` component at its version, its
   supplier the application's manufacturer.
+- `purl` and `cpe` are written on the operating-system and application
+  components when they resolve ([Package URLs and CPEs](#package-urls-and-cpes)).
 - A licence that is one SPDX identifier is written as
   `{"license": {"id": …}}`; an expression or a `LicenseRef-…` as
   `{"expression": …}`.
@@ -224,7 +276,7 @@ filters combine:
 
 | Filter | |
 |---|---|
-| `site` | Site ids. |
+| `site` | Site ids, or site names or slugs (`DKW01`, `dkw01`, `dkw-01`). |
 | `tag` | Tag ids or slugs. |
 | `role` | Device role ids. |
 | `device` | Device ids. |
@@ -232,7 +284,15 @@ filters combine:
 
 Given `device` or `virtual_machine`, only the listed hosts of each kind are
 included; without either, every device and VM that matches the other
-filters. `POST /api/sbom/` takes the same filters as a JSON body
+filters.
+
+A `site` value that is not an id is looked up among the sites you may view:
+the name as typed first, then the name in any case, then the slug of the
+name (`DKW 01` is `dkw-01`). Two sites whose names differ only in case
+both match a case-insensitive spelling; type the name exactly, or use the
+id, to pick one. A name that matches no site you may view - an unknown
+name or a site outside your scope - matches no host, the same as an
+unknown id, and the subject is `selection`. `POST /api/sbom/` takes the same filters as a JSON body
 (`{"device": ["…", "…"]}`) for a selection longer than a URL holds; a
 read-only API token uses `GET`.
 

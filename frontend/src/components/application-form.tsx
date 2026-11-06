@@ -54,6 +54,8 @@ export function ApplicationForm({
     app?.manufacturer?.id ?? null
   )
   const [license, setLicense] = useState(app?.license ?? "")
+  const [purlTemplate, setPurlTemplate] = useState(app?.purl_template ?? "")
+  const [cpeTemplate, setCpeTemplate] = useState(app?.cpe_template ?? "")
   const [description, setDescription] = useState(app?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     app?.tags?.map((t) => t.id) ?? []
@@ -70,6 +72,8 @@ export function ApplicationForm({
     setParentId(app.parent?.id ?? null)
     setManufacturerId(app.manufacturer?.id ?? null)
     setLicense(app.license ?? "")
+    setPurlTemplate(app.purl_template ?? "")
+    setCpeTemplate(app.cpe_template ?? "")
     setDescription(app.description)
     setTagIds(app.tags?.map((t) => t.id) ?? [])
     setCustomFields(app.custom_fields ?? {})
@@ -94,6 +98,8 @@ export function ApplicationForm({
           parent_id: parentId,
           manufacturer_id: manufacturerId,
           license: license.trim(),
+          purl_template: purlTemplate.trim(),
+          cpe_template: cpeTemplate.trim(),
           description: description.trim(),
           tag_ids: tagIds,
           custom_fields: customFields,
@@ -186,6 +192,33 @@ export function ApplicationForm({
           mono
           placeholder="PostgreSQL"
           error={fieldErrors.license}
+        />
+        <FormText
+          label="Package URL"
+          info={
+            <>
+              A purl template for the SBOM, such as{" "}
+              <code>pkg:deb/debian/frr@{"{version}"}</code>.{" "}
+              <code>{"{version}"}</code> and <code>{"{os_version}"}</code> are
+              filled in per host.
+            </>
+          }
+          value={purlTemplate}
+          onChange={setPurlTemplate}
+          mono
+          placeholder="pkg:deb/debian/postgresql@{version}"
+          error={fieldErrors.purl_template}
+        />
+        <FormText
+          label="CPE"
+          info={
+            <>A CPE 2.3 template for the SBOM, with the same placeholders.</>
+          }
+          value={cpeTemplate}
+          onChange={setCpeTemplate}
+          mono
+          placeholder="cpe:2.3:a:postgresql:postgresql:{version}:*:*:*:*:*:*:*"
+          error={fieldErrors.cpe_template}
         />
         <FormTextarea
           label="Description"

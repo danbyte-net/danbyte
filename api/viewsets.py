@@ -1113,6 +1113,24 @@ class ImageAttachmentMixin:
         return Response(ser.data)
 
 
+def _tag_params_filter(qs, params):
+    """``?tag=<slug>`` and ``?tag_id=<id>``, each repeatable: the rows that
+    carry every tag named (AND, as the device list reads ``tag``). An id
+    that is not a number is a 400."""
+    from rest_framework.exceptions import ValidationError as _VE
+
+    slugs = [t for t in params.getlist("tag") if t]
+    ids = [t for t in params.getlist("tag_id") if t]
+    if any(not i.isdigit() for i in ids):
+        raise _VE({"tag_id": "A tag id is a number."})
+    model = qs.model
+    for slug in slugs:
+        qs = qs.filter(pk__in=model.objects.filter(tags__slug=slug).values("pk"))
+    for i in ids:
+        qs = qs.filter(pk__in=model.objects.filter(tags__id=int(i)).values("pk"))
+    return qs
+
+
 class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # Mirrors what this viewset's own bulk_update action already accepts, so
     # api.editable_fields can describe prefixes without a second list. The
@@ -1314,6 +1332,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 qs = qs.filter(Q(site_id=v) | Q(site__isnull=True))
             else:
                 qs = qs.filter(**{field: v})
+        qs = _tag_params_filter(qs, self.request.query_params)
         # `contained_in=<cidr>`: only prefixes inside that network - the
         # aggregate page's Prefixes tab (#133). Postgres `<<=` on the stored
         # text cast to inet, same cast the ordering below relies on.
@@ -1871,6 +1890,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 if (_classify_ip_scope(addr) or "").lower() == scope
             ]
             qs = qs.filter(pk__in=ids)
+        qs = _tag_params_filter(qs, p)
         return _apply_custom_field_scope(self.request, qs, "ipaddress")
 
     def paginate_queryset(self, queryset):

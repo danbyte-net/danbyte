@@ -108,6 +108,22 @@ function Body({ app }: { app: Application }) {
       ),
     },
     {
+      label: "Package URL",
+      value: app.purl_template ? (
+        <span className="font-mono break-all">{app.purl_template}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "CPE",
+      value: app.cpe_template ? (
+        <span className="font-mono break-all">{app.cpe_template}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
       label: "Installs",
       value:
         app.install_count > 0 ? (

@@ -2163,6 +2163,10 @@ export interface Platform extends LifecycleInfo, EffectiveOsDates {
   version_pattern?: string
   /** The OS's SPDX licence expression, for the SBOM; "" = unknown. */
   license?: string
+  /** Package URL template for the SBOM ({version}, {os_version}). */
+  purl_template?: string
+  /** CPE 2.3 template for the SBOM ({version}, {os_version}). */
+  cpe_template?: string
   description: string
   tags: Tag[]
   /** End-of-life data (#8); null while the feature is off. */
@@ -2264,6 +2268,10 @@ export interface Application extends ApplicationMini {
   eol: ApplicationEol | null
   /** SPDX licence expression the installs inherit; "" = unknown. */
   license?: string
+  /** Package URL template for the SBOM ({version}, {os_version}). */
+  purl_template?: string
+  /** CPE 2.3 template for the SBOM ({version}, {os_version}). */
+  cpe_template?: string
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -2303,6 +2311,13 @@ export interface InstalledSoftware extends EffectiveOsDates {
   license?: string
   /** The install's licence, else the application's; "" = unknown. */
   effective_license?: string
+  /** This install's own package URL / CPE; "" = the application's. */
+  purl?: string
+  cpe?: string
+  /** What the SBOM writes: the install's own, else the application's
+   * template filled in; "" = none. */
+  effective_purl?: string
+  effective_cpe?: string
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -2729,6 +2744,8 @@ export interface PlatformWritePayload {
   target_version?: string
   version_pattern?: string
   license?: string
+  purl_template?: string
+  cpe_template?: string
   description?: string
   release_date?: string | null
   end_of_sale?: string | null

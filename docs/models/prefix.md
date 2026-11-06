@@ -102,6 +102,13 @@ stack-walking sorted prefixes per `(vrf, family)` bucket. This means:
 The cost is that "find all children" is O(n) within a VRF - fine for IPAMs at
 the scale Danbyte targets.
 
+## API filters
+
+`GET /api/prefixes/` narrows by `search`, `vlan`, `vrf`, `site`,
+`location` and `contained_in`, and by tag: `?tag=<slug>` and
+`?tag_id=<id>`, each repeatable, every tag named required. See
+[Filtering by tag](../reference/api.md#filtering-by-tag).
+
 ## Related
 
 - [Prefix CRUD](../features/prefix-crud.md) - the create / edit flow

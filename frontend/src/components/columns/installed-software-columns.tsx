@@ -23,6 +23,8 @@ export type InstalledSoftwareColumnId =
   | "service"
   | "group"
   | "license"
+  | "purl"
+  | "cpe"
   | "eol"
   | "lifetime"
   | "source"
@@ -37,6 +39,8 @@ const CANONICAL_ORDER: InstalledSoftwareColumnId[] = [
   "service",
   "group",
   "license",
+  "purl",
+  "cpe",
   "eol",
   "lifetime",
   "source",
@@ -242,6 +246,46 @@ export function buildInstalledSoftwareColumns<
           }),
         },
       },
+    }),
+    // What the SBOM writes: the install's own, else the application's
+    // template filled in.
+    purl: () => ({
+      id: "purl",
+      accessorKey: "effective_purl",
+      header: ({ column }) => (
+        <SortHeader column={column} label="Package URL" />
+      ),
+      cell: ({ row }) =>
+        row.original.effective_purl ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono text-xs break-all">
+              {row.original.effective_purl}
+            </span>
+            {row.original.purl && <Badge variant="secondary">override</Badge>}
+          </span>
+        ) : (
+          dash
+        ),
+      meta: { label: "Package URL", defaultHidden: true },
+    }),
+    // What the SBOM writes: the install's own, else the application's
+    // template filled in.
+    cpe: () => ({
+      id: "cpe",
+      accessorKey: "effective_cpe",
+      header: ({ column }) => <SortHeader column={column} label="CPE" />,
+      cell: ({ row }) =>
+        row.original.effective_cpe ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono text-xs break-all">
+              {row.original.effective_cpe}
+            </span>
+            {row.original.cpe && <Badge variant="secondary">override</Badge>}
+          </span>
+        ) : (
+          dash
+        ),
+      meta: { label: "CPE", defaultHidden: true },
     }),
     eol: () => {
       // The status links to the application's End of life card.
