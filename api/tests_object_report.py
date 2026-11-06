@@ -21,6 +21,8 @@ from customization.models import CustomField
 
 from . import object_report as rep
 from .models import (
+    VLAN,
+    VRF,
     Cable,
     CableTermination,
     Device,
@@ -34,6 +36,7 @@ from .models import (
     Prefix,
     Site,
     Status,
+    Zone,
 )
 from .tests_elevation_pdf import _pdf_objects
 
@@ -920,3 +923,143 @@ class BackgroundTests(_Report):
         token.delete()
         queue.work()
         self.assertIn("API token", rep._job_get(r.json()["job"])["detail"])
+
+
+class PrefixVrfGroupTests(_Report):
+    """A prefix list report is grouped by VRF as the Prefixes list is: Global
+    first, a banner a VRF, no VRF column, children indented, VLAN badges."""
+
+    def setUp(self):
+        super().setUp()
+        self.zone = Zone.objects.create(tenant=self.tenant, name="DMZ", slug="dmz", color="#dc2626")
+        self.vlan = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=100, name="servers", color="#0891b2", zone=self.zone
+        )
+        self.zoned = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=200, name="edge", zone=self.zone
+        )
+        self.net.vlan = self.vlan
+        self.net.save()
+        # TENANT-B made first: the groups follow the names, not creation.
+        self.vrf_b = VRF.objects.create(tenant=self.tenant, name="TENANT-B", color="#16a34a")
+        self.vrf_a = VRF.objects.create(
+            tenant=self.tenant, name="TENANT-A", rd="64599:5000", color="#7c3aed"
+        )
+        self.a_net = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.50.0.0/16", vrf=self.vrf_a, status=self.active
+        )
+        self.a_child = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.50.1.0/24", vrf=self.vrf_a, vlan=self.zoned
+        )
+        self.a_grand = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.50.1.0/26", vrf=self.vrf_a
+        )
+        self.b_net = Prefix.objects.create(tenant=self.tenant, cidr="10.9.0.0/24", vrf=self.vrf_b)
+
+    def lean(self, **opts):
+        return {"filters": {}, "options": {"list_table": True, "per_object": False, **opts}}
+
+    def list_table(self, html):
+        return re.search(r"<section class='list'>(.*?)</section>", html, re.S).group(1)
+
+    def test_global_first_then_each_vrf_under_its_banner(self):
+        html = self.list_table(self.ok("prefixes", self.lean()))
+        self.assertEqual(html.count("<table"), 1)
+        bands = re.findall(r"<tr class='band'><td colspan='(\d+)'>(.*?)</td></tr>", html)
+        names = [re.search(r"<span class='pill[^>]*>(.*?)</span>", b).group(1) for _, b in bands]
+        self.assertEqual(names, ["Global", "TENANT-A", "TENANT-B"])
+        cols = html.split("</thead>")[0].count("<th ")
+        self.assertTrue(all(int(span) == cols for span, _ in bands))
+        text = re.sub(r"<[^>]+>", " ", bands[1][1]).split()
+        self.assertEqual(text, ["VRF", "TENANT-A", "RD", "64599:5000", "3", "rows"])
+        self.assertIn("background:#7c3aed", bands[1][1])
+        self.assertIn("2 rows", bands[0][1])
+        self.assertNotIn("RD", bands[2][1])
+        # Each prefix sits in its own VRF's group: the global /24 before the
+        # TENANT-A banner, TENANT-B's /24 after the TENANT-B one.
+        self.assertLess(html.index("10.9.0.16/28"), html.index("TENANT-A"))
+        self.assertGreater(html.rindex("10.9.0.0/24"), html.index("TENANT-B"))
+
+    def test_no_vrf_column_inside_groups(self):
+        html = self.list_table(self.ok("prefixes", self.lean()))
+        head = html.split("</thead>")[0]
+        self.assertNotIn(">VRF<", head)
+        self.assertIn(">VLAN<", head)
+
+    def test_children_are_indented_under_their_parent(self):
+        html = self.list_table(self.ok("prefixes", self.lean()))
+        order = [
+            m.group(2)
+            for m in re.finditer(r"<td class=b>(<span class='tree'>(↳+)</span>)?([^<]*)", html)
+        ]
+        cidrs = re.findall(r"<td class=b>(?:<span class='tree'>↳+</span>)?([^<]*)", html)
+        self.assertEqual(
+            cidrs,
+            [
+                "10.9.0.0/24",
+                "10.9.0.16/28",
+                "10.50.0.0/16",
+                "10.50.1.0/24",
+                "10.50.1.0/26",
+                "10.9.0.0/24",
+            ],
+        )
+        self.assertEqual(order, [None, "↳", None, "↳", "↳↳", None])
+
+    def test_the_vlan_is_its_badge(self):
+        html = self.list_table(self.ok("prefixes", self.lean()))
+        # Its own colour; an uncoloured VLAN takes its zone's.
+        self.assertIn("style='background:#0891b2;color:#ffffff'>100 · servers</span>", html)
+        self.assertRegex(html, r"background:#dc2626;[^']*'>200 · edge</span>")
+        # The VLAN's zone, as the list's Zone column: its badge.
+        body = self.lean()
+        body["columns"] = {"list": ["cidr", "vlan.zone"]}
+        html = self.list_table(self.ok("prefixes", body))
+        self.assertIn("style='background:#dc2626;color:#fff'>DMZ</span>", html)
+        self.assertEqual(
+            rep._vlan_badge({"vlan_id": 7, "name": "", "color": ""}),
+            "<span class='pill plain'>7</span>",
+        )
+
+    def test_an_explicit_grouping_wins(self):
+        html = self.ok("prefixes", self.lean(group_by="status"))
+        self.assertIn("Prefixes by status", html)
+        self.assertNotIn("class='band'", html)
+        self.assertIn(">VRF<", html)
+        for none in (None, ""):
+            html = self.list_table(self.ok("prefixes", self.lean(group_by=none)))
+            self.assertNotIn("class='band'", html)
+            self.assertNotIn("<h3>", html)
+            self.assertNotIn("class='tree'", html)
+            self.assertIn(">VRF<", html.split("</thead>")[0])
+        html = self.ok("prefixes", self.lean(group_by="vrf"))
+        self.assertEqual(html.count("class='band'"), 3)
+
+    def test_the_dialog_is_told_the_default(self):
+        r = self.client.get("/api/prefixes/report/").json()
+        self.assertEqual(r["default_group_by"], "vrf")
+        self.assertIn("vrf", [g["key"] for g in r["group_by"]])
+        self.assertIsNone(self.client.get("/api/devices/report/").json()["default_group_by"])
+
+    def test_show_ips_stay_under_their_prefix_inside_its_group(self):
+        IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.50.1.9", prefix=self.a_child, vrf=self.vrf_a
+        )
+        html = self.list_table(self.ok("prefixes", self.lean(show_ips=True)))
+        self.assertEqual(html.count("table class='grid ips'"), 2)
+        a_band = html.index("TENANT-A")
+        self.assertLess(html.index("gw.ams.example"), a_band)
+        ip = html.index("10.50.1.9")
+        self.assertLess(html.index("10.50.1.0/24"), ip)
+        self.assertLess(ip, html.index("10.50.1.0/26"))
+        self.assertLess(a_band, ip)
+        self.assertLess(ip, html.index("TENANT-B"))
+
+    def test_banners_count_as_cells_in_the_estimate(self):
+        r = self.client.post("/api/prefixes/report/?estimate=1", self.lean(), format="json")
+        flat = self.client.post(
+            "/api/prefixes/report/?estimate=1", self.lean(group_by=None), format="json"
+        )
+        rows, cols = 6, len(rep.PREFIX.list_columns)
+        self.assertEqual(flat.json()["cells"], rows * cols)
+        self.assertEqual(r.json()["cells"], rows * (cols - 1) + 3)

@@ -17148,6 +17148,8 @@ export interface ObjectReportSchema {
   columns: ObjectReportColumn[]
   default_columns: string[]
   group_by: ObjectReportColumn[]
+  /** The grouping a list starts with (prefixes: `vrf`), else null. */
+  default_group_by?: string | null
   sections: ObjectReportSection[]
   papers: string[]
   /** The list can show each prefix's IP addresses (`options.show_ips`). */

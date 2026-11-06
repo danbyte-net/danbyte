@@ -31,7 +31,8 @@ printing) by itself when it is ready. Keep the dialog open until then.
   offers, custom fields included. Tick a column to add it, drag its handle to
   order them.
 - **Group by** - split the table by status, role, site and similar: one
-  table per value.
+  table per value. A prefix report starts grouped by **VRF**, as the
+  Prefixes list is (below); **No grouping** prints one flat table.
 - **Summary** - counts by status, role (or VRF) and site, each value as its
   badge.
 - **Show IPs** (prefixes) - each prefix in the table is followed by a small
@@ -55,6 +56,26 @@ printing) by itself when it is ready. Keep the dialog open until then.
   at most 200).
 
 The dialog remembers your choices per type in this browser.
+
+### Prefixes by VRF
+
+Grouped by VRF, a prefix report reads like the Prefixes list:
+
+- One table, **Global** (no VRF) first, then each VRF by name. Each group
+  starts with a banner row across the table, as the list's group header:
+  *VRF* `TENANT-A` *RD 64599:5000 · 3 rows* - the VRF as its badge, its
+  route distinguisher when it has one, and how many prefixes it holds. The
+  VRF column is left out; the banner says it.
+- Within a VRF, each prefix sits under its nearest parent in the report,
+  one **↳** per level (/16, then ↳ /24, then ↳↳ /26), as the list nests
+  them.
+- With **Show IPs**, each prefix's addresses stay right under it, inside its
+  VRF's group.
+
+The VLAN column prints as the list's badge, *100 · servers*, in the VLAN's
+own colour or else its zone's. Statuses, tags and the VLAN's zone print as
+their badges too. Another **Group by** (status, site, VLAN, location)
+prints one table per value as for the other types.
 
 Under the options a line says what the report costs as you change it:
 *About 1,200 cells* renders at once, *About 14,200 cells · renders in the
@@ -115,7 +136,8 @@ columns.
 `GET /api/devices/report/`, `/api/prefixes/report/` and `/api/ips/report/`
 describe what a report can hold for the caller: `columns` and
 `default_columns` (the list's column catalog, custom fields as `cf.<key>`),
-`group_by`, `sections` (each `key`, `label`, `kind`, `available`, `note`,
+`group_by` and `default_group_by` (the grouping a list report gets when the
+request names none: `vrf` for prefixes, else null), `sections` (each `key`, `label`, `kind`, `available`, `note`,
 `columns`, `default_columns`, `default`, `last`), `show_ips` (prefixes, with
 view on IP addresses) and `limits` (`cells` is the table cells rendered at
 once, `background_cells` the most in one report).
@@ -153,6 +175,10 @@ once, `background_cells` the most in one report).
 - `options.list_table` and `options.per_object` (details for each object)
   default to a table for many objects and details for one.
 - `options.show_ips` (prefixes) - each list row followed by its IP addresses.
+- `options.group_by` - left out, a prefix report is grouped by VRF (banner
+  rows, nested prefixes); `null` or `""` prints the flat table; any other
+  key from `group_by` groups by it. A banner row is one table cell in the
+  estimate.
 
 The answer is the PDF as an attachment, or with `?print=1` `{url}`: a link
 to it for five minutes, for the same user and tenant

@@ -27,6 +27,7 @@ import {
   readReportPrefs,
   reportExport,
   reportRequest,
+  writeReportPrefs,
 } from "./object-report"
 import type { ReportTarget } from "./object-report"
 
@@ -215,6 +216,24 @@ describe("reportRequest", () => {
     expect(prefs.columns.overview).toEqual(["site", "cf.owner"])
     expect(prefs.groupBy).toBe("site")
     expect(prefs.last).toBe(200)
+  })
+
+  it("starts a prefix report grouped by VRF, keeping No grouping", () => {
+    const schema = {
+      ...SCHEMA,
+      group_by: [...SCHEMA.group_by, { key: "vrf", label: "VRF" }],
+      default_group_by: "vrf",
+    }
+    expect(initialPrefs(schema, null).groupBy).toBe("vrf")
+    // Remembered from before the default: still the default.
+    expect(initialPrefs(schema, { groupBy: null }).groupBy).toBe("vrf")
+    expect(initialPrefs(schema, { groupBy: "site" }).groupBy).toBe("site")
+    // "No grouping" picked and remembered stays picked, and is sent as null.
+    writeReportPrefs("prefix", { ...initialPrefs(schema, null), groupBy: null })
+    const kept = initialPrefs(schema, readReportPrefs("prefix"))
+    expect(kept.groupBy).toBeNull()
+    expect(reportRequest(many, kept, schema, "").options?.group_by).toBeNull()
+    expect(initialPrefs(SCHEMA, null).groupBy).toBeNull()
   })
 
   it("sends show_ips only where the schema offers it", () => {
