@@ -47,6 +47,8 @@ from .bulk_update import (  # noqa: F401
     _bulk_status_offered,
 )
 from .bulk_validation import clean_bulk_updates
+from . import listed
+from .list_table import TableListMixin
 from .filters import apply_tag_filter
 from .floor_plan_from_map import FromMapRequestSerializer
 from .natural import natural, natural_key
@@ -66,6 +68,7 @@ from . import (
     elevation_pdf,
     floor_plan_pdf,
     floor_plan_report,
+    list_specs,
     object_report,
     ip_usage,
     scene_geo,
@@ -3807,6 +3810,8 @@ def _device_rows(*, one: bool = False, counts: bool = False):
     interface in the database for each of them, and no ordering. ``counts``
     adds the stack and every tab count (api.detail_counts), so the device
     page's payload is one query plus its prefetches, not two dozen COUNTs."""
+    from profiles.models import DeviceProfileAssignment
+
     qs = (
         # select_related every FK the serializer dereferences per row - role,
         # rack, status, platform, location, cluster were method-field lookups
@@ -3829,8 +3834,16 @@ def _device_rows(*, one: bool = False, counts: bool = False):
         # shows the name.
         .prefetch_related(
             TAGS, "secondary_ip", "oob_ip", "cabinet", "din_rail", "room",
-            # Device profiles, in order, for the Profiles column and card.
-            "device_profile_assignments__profile",
+            # Device profiles, in order, for the Profiles column and card -
+            # a plain list on a list page (#483), a manager on one device
+            # (its write responses must read it fresh).
+            (
+                "device_profile_assignments__profile" if one
+                else listed.prefetch(
+                    "device_profile_assignments",
+                    DeviceProfileAssignment.objects.select_related("profile"),
+                )
+            ),
             *(
                 Prefetch(
                     f"{path}config_template",
@@ -3916,8 +3929,8 @@ def _device_rows(*, one: bool = False, counts: bool = False):
     ]),
 )
 class DeviceViewSet(
-    PrtgCleanupDeleteMixin, FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin,
-    TenantScopedViewSet,
+    TableListMixin, PrtgCleanupDeleteMixin, FieldWriteAllowList, CloneableMixin,
+    ImageAttachmentMixin, TenantScopedViewSet,
 ):
     queryset = _device_rows()
     detail_queryset = _device_rows(one=True, counts=True)
@@ -3949,6 +3962,8 @@ class DeviceViewSet(
     )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
+    # Server paging, sorting, facets and the slim row (#482, #487).
+    table_spec = list_specs.DEVICE_TABLE
     rbac_action_map = {**PrtgCleanupDeleteMixin.rbac_action_map, **object_report.RBAC_ACTIONS}
     # Field-level write allow-list, read by api.editable_fields - devices have
     # NO bulk-update endpoint, so this only powers planned changes and any
@@ -4608,7 +4623,14 @@ class DeviceViewSet(
             self.queryset = self.detail_queryset
         elif self._one():
             self.queryset = self.one_queryset
+        elif self.action in ("table_facets", "table_ids") or (
+            self.is_table_view() and not self.table_uses_full_queryset()
+        ):
+            # The slim row and the rail: only what the table reads (#487).
+            self.queryset = list_specs.device_table_rows()
         qs = super().get_queryset()
+        if self.is_table_view():
+            qs = self.table_include_needs(qs)
         if self.request:
             from .topology_views import _uuid_list_param, _uuid_param
 
@@ -4947,8 +4969,41 @@ class NameRangeCreateMixin:
 _MACSEC_DETAIL_KEYS = ("macsec_cipher", "macsec_keychain_id", "macsec_replay_window")
 
 
-class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
+def _interface_list_prefetch():
+    """The interface list's prefetches with its reverse relations as plain
+    lists (api.listed, #483): the same queries, without a related manager
+    and its queryset clone per row and relation."""
+    t = listed.attr("terminations")
+    return (
+        *(
+            Prefetch(rel, queryset=Interface.objects.select_related("device"))
+            for rel in ("parent", "lag", "bridge")
+        ),
+        TAGS,
+        listed.prefetch(
+            "terminations", CableTermination.objects.select_related("cable__status"),
+        ),
+        *(f"{t}__{path.removeprefix('terminations__')}" for path in FAR_END_PREFETCH),
+        listed.prefetch(
+            "reservations", PortReservation.objects.select_related("claimed_by"),
+        ),
+        listed.prefetch("children", Interface.objects.only("id", "parent_id")),
+        listed.prefetch("lag_members", Interface.objects.only("id", "lag_id")),
+        listed.prefetch("tagged_vlans", VLAN.objects.select_related("zone")),
+        listed.prefetch("mac_addresses"),
+        listed.prefetch(
+            "tunnel_terminations", TunnelTermination.objects.select_related("tunnel"),
+        ),
+    )
+
+
+class InterfaceViewSet(
+    TableListMixin, NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet,
+):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
+
+    # Server paging, sorting, facets and the slim row (#482, #487).
+    table_spec = list_specs.INTERFACE_TABLE
 
     bulk_str_fields = (
         "type", "mode", "speed", "duplex", "description",
@@ -5063,10 +5118,22 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         tenant = _get_active_tenant(self.request)
         if tenant is None:
             return self.queryset.none()
-        # Each row's addresses, cut to the caller's IP view scope.
-        qs = self.queryset.filter(device__tenant=tenant).prefetch_related(
-            assigned_ips_prefetch(self.request, tenant)
-        )
+        if self.action in ("table_facets", "table_ids") or (
+            self.is_table_view() and not self.table_uses_full_queryset()
+        ):
+            # The slim row and the rail: what the table reads, no far ends
+            # or addresses (#487).
+            qs = list_specs.interface_table_rows().filter(device__tenant=tenant)
+            qs = self.table_include_needs(qs)
+        else:
+            base = self.queryset
+            if self.action == "list":
+                # A page reads its reverse relations as plain lists (#483).
+                base = base.prefetch_related(None).prefetch_related(*_interface_list_prefetch())
+            # Each row's addresses, cut to the caller's IP view scope.
+            qs = base.filter(device__tenant=tenant).prefetch_related(
+                assigned_ips_prefetch(self.request, tenant)
+            )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -5402,7 +5469,9 @@ def validate_cable_rows(rows, make):
     return sers, errors
 
 
-class CableViewSet(TenantScopedViewSet):
+class CableViewSet(TableListMixin, TenantScopedViewSet):
+    # Server paging, sorting, facets and the slim row (#482, #487).
+    table_spec = list_specs.CABLE_TABLE
     queryset = (
         Cable.objects.select_related("status").prefetch_related(
             "terminations__interface__device",
@@ -6781,10 +6850,12 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
     parameters=[SOFTWARE_TARGET_PARAMETER, *SOFTWARE_VERSION_PARAMETERS]
 ))
 class VirtualMachineViewSet(
-    PrtgCleanupDeleteMixin, BulkEditMixin, CloneableMixin, TenantScopedViewSet,
+    TableListMixin, PrtgCleanupDeleteMixin, BulkEditMixin, CloneableMixin, TenantScopedViewSet,
 ):
     queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
+    # Server paging, sorting, facets and the slim row (#482, #487).
+    table_spec = list_specs.VM_TABLE
     # The list's bulk edit. Name, primary IP and sizing are per VM; the
     # hypervisor-owned fields stay with the sync.
     bulk_edit = BulkEditSpec(
@@ -6943,6 +7014,7 @@ class VirtualMachineViewSet(
         # which would cost a query per row on the list endpoint. `integrations`
         # imports `api`, never the reverse, so the import stays local.
         from integrations.models import VirtChange, VirtGuest
+        from profiles.models import DeviceProfileAssignment
 
         latest = VirtGuest.objects.filter(vm=OuterRef("pk")).order_by(
             "-last_seen_at"
@@ -6954,6 +7026,11 @@ class VirtualMachineViewSet(
         # (api.ip_usage); the VM page's read also its tab counts in the one
         # query (api.detail_counts).
         one = bool(getattr(self, "kwargs", {}).get(self.lookup_url_kwarg or self.lookup_field))
+        # The slim row and the rail read no disks, drift or install counts
+        # (#487); ``include`` of one of those takes the full row.
+        slim = self.action in ("table_facets", "table_ids") or (
+            self.is_table_view() and not self.table_uses_full_queryset()
+        )
         qs = (
             super()
             .get_queryset()
@@ -6963,9 +7040,19 @@ class VirtualMachineViewSet(
                             "group", "platform", "platform__eol_mapping",
                             # The nested cluster renders its status (#427).
                             "cluster__status", "represents_device")
-            # `disks` is serialised inline, so without this the list endpoint
-            # fires one query per VM.
-            .prefetch_related(TAGS, "disks", "device_profile_assignments__profile")
+            .prefetch_related(
+                TAGS,
+                # A plain list on a list page (#483); a manager on one VM,
+                # whose write responses read it fresh.
+                (
+                    listed.prefetch(
+                        "device_profile_assignments",
+                        DeviceProfileAssignment.objects.select_related("profile"),
+                    )
+                    if self.action == "list" or slim
+                    else "device_profile_assignments__profile"
+                ),
+            )
             .annotate(
                 power_state=Subquery(latest.values("power_state")[:1]),
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
@@ -6974,6 +7061,14 @@ class VirtualMachineViewSet(
                 synced_from_id=Subquery(latest.values("source_id")[:1]),
                 # Installed software's soonest end (#436), for Next end of life.
                 **software_end_annotations("virtual_machine"),
+            )
+        )
+        if not slim:
+            qs = qs.prefetch_related(
+                # `disks` is serialised inline, so without this the list
+                # endpoint fires one query per VM.
+                listed.prefetch("disks") if self.action == "list" else "disks",
+            ).annotate(
                 install_count_annotated=_count_of(InstalledSoftware, "virtual_machine"),
                 # Open review items for this VM - a hypervisor disagreement the
                 # operator hasn't resolved. Annotated so a list of VMs doesn't
@@ -6988,7 +7083,8 @@ class VirtualMachineViewSet(
                     0,
                 ),
             )
-        )
+        elif self.is_table_view():
+            qs = self.table_include_needs(qs)
         if one:
             # Every address the VM uses, for its IPs tab (api/ip_usage.py), by
             # index. A list counts its page in one query instead (#455).
