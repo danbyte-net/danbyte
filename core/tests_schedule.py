@@ -91,6 +91,13 @@ class ScheduleParityTests(SimpleTestCase):
 
         self.assertIn("oxidized-sync", {t["name"] for t in SCHEDULED_TASKS})
 
+    def test_the_jobs_page_lists_the_update_check_beat(self):
+        """The release list the update check reads is filled in the background
+        (#478); its row is the name ``update_check`` records runs under."""
+        from jobs.views import SCHEDULED_TASKS
+
+        self.assertIn("update-check", {t["name"] for t in SCHEDULED_TASKS})
+
     def test_containers_skip_only_the_upgrade_beat(self):
         """A container upgrades by replacing its image, so it must not run the
         upgrader - but it has to run everything else the timers do."""

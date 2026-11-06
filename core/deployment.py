@@ -1244,17 +1244,20 @@ def upgrade_notes_ack(request):
 @permission_classes([IsAuthenticated])
 def system_updates(request):
     """Current version + the release repo's versions (with changelog), and
-    whether a newer one exists. Read-only; ``users.manage`` only."""
+    whether a newer one exists. Read-only; ``users.manage`` only.
+
+    Answers from the cached release list only (#478, ``core.update_check``):
+    a cold cache answers ``checking`` and enqueues one background refresh, so
+    a page load never waits on the release repo."""
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
 
-    from .github import list_releases
+    from . import update_check
     from .version import DEFAULT_RELEASE_REPO, compare_versions, is_newer, system_version
 
     cur = system_version()
     dep = DeploymentSettings.load()
     repo = dep.release_repo_url or DEFAULT_RELEASE_REPO
-    token = (dep.secrets or {}).get("release_repo_token", "")
     # Airgapped: never reach the release repo. Report the current version only;
     # bundles are uploaded and applied manually.
     if dep.disable_update_check:
@@ -1263,30 +1266,32 @@ def system_updates(request):
             "update_available": False, "disabled": True,
             "badge_hidden": dep.hide_update_badge,
         })
-    try:
-        releases = list_releases(repo, token)
-    except Exception as e:  # noqa: BLE001 - surface a friendly reason
-        from core.errors import NETWORK_ERRORS, public_error
-
+    entry = update_check.cached(dep)
+    if entry is None:
+        update_check.request_refresh(dep)
         return Response({
             "current": cur, "repo_url": repo, "releases": [],
-            "update_available": False,
-            "error": public_error(e, "The release list could not be read.",
-                                  expected=NETWORK_ERRORS),
+            "update_available": False, "checking": True,
+            "badge_hidden": dep.hide_update_badge,
         })
+    releases = [dict(r) for r in entry.get("releases", [])]
     if dep.update_channel == "stable":
         releases = [r for r in releases if not r["prerelease"]]
     for r in releases:
         # Same release, pre-release suffix included: 0.17.0-dev1 is not 0.17.0.
         r["is_current"] = compare_versions(r["tag"], cur["version"]) == 0
     update_available = any(is_newer(r["tag"], cur["version"]) for r in releases)
-    return Response({
+    out = {
         "current": cur,
         "repo_url": repo,
         "releases": releases,
         "update_available": update_available,
         "badge_hidden": dep.hide_update_badge,
-    })
+        "checked_at": entry.get("checked_at"),
+    }
+    if entry.get("error"):
+        out["error"] = entry["error"]
+    return Response(out)
 
 
 @extend_schema(

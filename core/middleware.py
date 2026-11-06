@@ -38,10 +38,19 @@ def clear_idle_timeout_cache() -> None:
     cache.delete(_IDLE_CACHE_KEY)
 
 
+#: How far the idle-timeout expiry may drift before a request writes it again
+#: (#486). Writing it on every request was one UPDATE of the session row per
+#: API call - 20+ per page load - for a window that only needs minute accuracy.
+IDLE_REFRESH_SLACK = 60
+
+
 class SessionIdleTimeoutMiddleware:
     """Rolling idle timeout for browser sessions. When an admin has configured a
-    timeout, every authenticated request resets that session's expiry window, so
-    a session that goes untouched for the configured span is signed out. Token
+    timeout, an authenticated request moves that session's expiry to "now +
+    timeout", so a session that goes untouched for the configured span is
+    signed out. The expiry is stored as a date and only rewritten once it has
+    drifted by ``IDLE_REFRESH_SLACK`` seconds, so a burst of requests writes
+    the session row once; the session may end up to a minute early. Token
     (API) requests carry no session and are unaffected.
 
     Must sit after ``AuthenticationMiddleware`` so ``request.user`` is resolved.
@@ -55,10 +64,24 @@ class SessionIdleTimeoutMiddleware:
         if user is not None and user.is_authenticated:
             minutes = idle_timeout_minutes()
             if minutes > 0:
-                # Reset the window; set_expiry marks the session modified so the
-                # new expiry is persisted (rolling, not absolute).
-                request.session.set_expiry(minutes * 60)
+                _refresh_idle_expiry(request.session, minutes * 60)
         return self.get_response(request)
+
+
+def _refresh_idle_expiry(session, timeout: int) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    # A session from before #486 (or never touched by this middleware) has an
+    # age in seconds or no expiry at all; neither says how much is left.
+    if isinstance(session.get("_session_expiry"), str):
+        left = session.get_expiry_age()
+        # Inside the window, and not longer than it (the timeout was lowered).
+        if timeout - IDLE_REFRESH_SLACK <= left <= timeout:
+            return
+    # set_expiry marks the session modified, so the new expiry is persisted.
+    session.set_expiry(timezone.now() + timedelta(seconds=timeout))
 
 
 # Requests that must keep working while a restore or an upgrade holds the

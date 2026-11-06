@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the cached release list for the update check
+
+[Timer]
+OnCalendar=*-*-* 00/6:50:00
+OnBootSec=300
+Persistent=true
+AccuracySec=5m
+
+[Install]
+WantedBy=timers.target

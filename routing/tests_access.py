@@ -423,3 +423,50 @@ class RelatedTabAndIOTests(APITestCase):
         _, rows = export("staticroute")
         res = reimport("staticroute", rows)
         self.assertEqual((res["created"], res["updated"], res["errors"]), (0, 2, []))
+
+
+class StableListOrderTests(APITestCase):
+    """#488: lists that annotate a count (a GROUP BY, which drops
+    Meta.ordering) still page in a fixed order - no
+    ``UnorderedObjectListWarning``, and the same rows on every ask."""
+
+    URLS = (
+        "/api/ip-ranges/",
+        "/api/routing/bgp-instances/",
+        "/api/routing/ospf-instances/",
+        "/api/routing/isis-instances/",
+        "/api/routing/eigrp-instances/",
+    )
+
+    def setUp(self):
+        self.t = _tenant("t")
+        site = Site.objects.create(tenant=self.t, name="AMS")
+        for n in range(3):
+            dev = _device(self.t, site, f"r{n}")
+            BGPInstance.objects.create(tenant=self.t, device=dev,
+                                       asn=self.t.asns.create(asn=65000 + n))
+            OSPFInstance.objects.create(tenant=self.t, device=dev, process_id="1")
+            ISISInstance.objects.create(tenant=self.t, device=dev, process="1",
+                                        net="49.0001.0000.0000.0001.00")
+            EIGRPInstance.objects.create(tenant=self.t, device=dev, asn=100)
+        admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.t.id)
+        s.save()
+
+    def test_lists_are_ordered(self):
+        import warnings
+
+        from django.core.paginator import UnorderedObjectListWarning
+
+        for url in self.URLS:
+            with self.subTest(url), warnings.catch_warnings():
+                warnings.simplefilter("error", UnorderedObjectListWarning)
+                first = self.client.get(url, {"page_size": 2})
+                self.assertEqual(first.status_code, 200, first.content)
+                again = self.client.get(url, {"page_size": 2})
+                self.assertEqual(
+                    [r["id"] for r in first.json()["results"]],
+                    [r["id"] for r in again.json()["results"]],
+                )

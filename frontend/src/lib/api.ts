@@ -8749,6 +8749,10 @@ export interface SystemUpdates {
     is_current: boolean
   }[]
   error?: string
+  /** No release list cached yet; a background refresh is on its way. */
+  checking?: boolean
+  /** When the cached list was fetched (ISO). */
+  checked_at?: string | null
 }
 
 /** Releases available in the configured Outpost repo (for the version dropdown). */

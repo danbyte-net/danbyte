@@ -197,6 +197,62 @@ class SessionIdleTimeoutMiddlewareTests(APITestCase):
         self.assertLessEqual(self.client.session.get_expiry_age(), 30 * 60)
         clear_idle_timeout_cache()
 
+    def _login_with_timeout(self, minutes):
+        from core.middleware import clear_idle_timeout_cache
+
+        obj = DeploymentSettings.load()
+        obj.session_idle_timeout_minutes = minutes
+        obj.save(update_fields=["session_idle_timeout_minutes"])
+        clear_idle_timeout_cache()
+        self.addCleanup(clear_idle_timeout_cache)
+        admin = get_user_model().objects.create_superuser("a3", "a3@acme.com", "pw")
+        self.client.force_login(admin)
+
+    def test_expiry_is_written_once_per_minute_not_per_request(self):
+        """#486: a burst of requests writes the session row once."""
+        from django.contrib.sessions.models import Session
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self._login_with_timeout(30)
+        self.client.get("/api/deployment/email/")  # first request sets the date
+        expire = Session.objects.get().expire_date
+        with CaptureQueriesContext(connection) as ctx:
+            for _ in range(3):
+                self.client.get("/api/deployment/email/")
+        writes = [q["sql"] for q in ctx.captured_queries
+                  if 'UPDATE "django_session"' in q["sql"]]
+        self.assertEqual(writes, [])
+        self.assertEqual(Session.objects.get().expire_date, expire)
+
+    def test_expiry_is_refreshed_once_it_drifted_a_minute(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        from django.contrib.sessions.models import Session
+        from django.utils import timezone
+
+        self._login_with_timeout(30)
+        self.client.get("/api/deployment/email/")
+        first = Session.objects.get().expire_date
+        later = timezone.now() + timedelta(seconds=61)
+        with patch("django.utils.timezone.now", return_value=later):
+            self.client.get("/api/deployment/email/")
+        self.assertGreaterEqual(
+            (Session.objects.get().expire_date - first).total_seconds(), 60)
+
+    def test_a_lowered_timeout_shortens_a_longer_expiry(self):
+        from core.middleware import clear_idle_timeout_cache
+
+        self._login_with_timeout(120)
+        self.client.get("/api/deployment/email/")
+        obj = DeploymentSettings.load()
+        obj.session_idle_timeout_minutes = 10
+        obj.save(update_fields=["session_idle_timeout_minutes"])
+        clear_idle_timeout_cache()
+        self.client.get("/api/deployment/email/")
+        self.assertLessEqual(self.client.session.get_expiry_age(), 10 * 60)
+
     def test_singleton_enforced(self):
         a = DeploymentSettings.load()
         b = DeploymentSettings.load()
@@ -262,8 +318,16 @@ class DeviceFieldVisibilityApiTests(APITestCase):
         self.assertNotIn("bogus", DeploymentSettings.load().device_field_visibility)
 
 
+_LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                       "LOCATION": "update-check-tests"}}
+
+
+@override_settings(CACHES=_LOCMEM)
 class SystemUpdatesApiTests(APITestCase):
     def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
         self.admin = get_user_model().objects.create_superuser(
             "admin", "admin@acme.com", "pw"
         )
@@ -286,8 +350,11 @@ class SystemUpdatesApiTests(APITestCase):
         ]
         # Pin the running version too - the assertion below broke every time a
         # real release bumped danbyte.__version__ past the fixture tags.
-        with patch("core.github.list_releases", return_value=fake), \
-             patch("core.version.system_version",
+        from core.update_check import refresh
+
+        with patch("core.github.list_releases", return_value=fake):
+            refresh()
+        with patch("core.version.system_version",
                    return_value={"version": "0.1.0"}):
             r = self.client.get("/api/system/updates/")
         self.assertEqual(r.status_code, 200, r.content)
@@ -305,10 +372,97 @@ class SystemUpdatesApiTests(APITestCase):
         self.client.force_login(self.admin)
         fake = [{"tag": "v0.3.0-rc1", "name": "rc", "body": "", "published_at": None,
                  "prerelease": True, "has_binary": False}]
+        from core.update_check import refresh
+
         with patch("core.github.list_releases", return_value=fake):
-            r = self.client.get("/api/system/updates/").json()
+            refresh()
+        r = self.client.get("/api/system/updates/").json()
         self.assertEqual(r["releases"], [])          # stable channel filters it
         self.assertFalse(r["update_available"])
+
+    def test_cold_cache_answers_checking_and_enqueues_one_refresh(self):
+        """#478: a request never fetches the repo; a cold cache answers at
+        once and asks for one background refresh, however many requests see
+        it."""
+        from unittest.mock import patch
+
+        self.client.force_login(self.admin)
+        with patch("core.github.list_releases") as lr, \
+             patch("django_rq.get_queue") as q:
+            a = self.client.get("/api/system/updates/").json()
+            b = self.client.get("/api/system/updates/").json()
+        lr.assert_not_called()
+        self.assertTrue(a["checking"])
+        self.assertTrue(b["checking"])
+        self.assertEqual(a["releases"], [])
+        q.return_value.enqueue.assert_called_once_with("core.update_check.refresh_job")
+
+    def test_a_failed_refresh_keeps_the_last_list_and_reports_the_error(self):
+        from unittest.mock import patch
+
+        from core.update_check import refresh
+
+        self.client.force_login(self.admin)
+        good = [{"tag": "v0.2.0", "name": "0.2.0", "body": "", "published_at": None,
+                 "prerelease": False, "has_binary": False}]
+        with patch("core.github.list_releases", return_value=good):
+            refresh()
+        with patch("core.github.list_releases", side_effect=OSError("timed out")):
+            entry = refresh()
+        self.assertEqual(entry["error"], "timed out")
+        d = self.client.get("/api/system/updates/").json()
+        self.assertEqual([r["tag"] for r in d["releases"]], ["v0.2.0"])
+        self.assertEqual(d["error"], "timed out")
+        self.assertNotIn("checking", d)
+        self.assertTrue(d["checked_at"])
+
+    def test_refresh_is_a_noop_when_the_check_is_disabled(self):
+        from unittest.mock import patch
+
+        from core.update_check import refresh
+
+        s = DeploymentSettings.load()
+        s.disable_update_check = True
+        s.save()
+        with patch("core.github.list_releases") as lr:
+            self.assertIsNone(refresh())
+        lr.assert_not_called()
+
+    def test_a_new_token_reads_as_a_cold_cache(self):
+        """The key covers repo and token: a token that can see a private repo
+        gets its own list rather than the anonymous one."""
+        from unittest.mock import patch
+
+        from core.update_check import cached, refresh
+
+        with patch("core.github.list_releases", return_value=[]):
+            refresh()
+        s = DeploymentSettings.load()
+        self.assertIsNotNone(cached(s))
+        s.secrets = {**(s.secrets or {}), "release_repo_token": "ghp_new"}
+        self.assertIsNone(cached(s))
+
+    def test_update_check_command_fills_the_cache(self):
+        from io import StringIO
+        from unittest.mock import patch
+
+        from django.core.management import call_command
+
+        from core.update_check import cached
+
+        with patch("core.github.list_releases", return_value=[]) as lr:
+            call_command("update_check", stdout=StringIO())
+        self.assertEqual(lr.call_args.kwargs["timeout"], 15)
+        self.assertEqual(cached(DeploymentSettings.load())["releases"], [])
+
+    def test_request_timeout_stays_at_most_five_seconds(self):
+        """Any path that still reads the repo inside a request (the upgrade
+        target check) waits at most 5 s."""
+        import inspect
+
+        from core.github import list_releases
+
+        self.assertLessEqual(inspect.signature(list_releases).parameters["timeout"].default, 5)
 
     def test_release_repo_token_write_only(self):
         self.client.force_login(self.admin)

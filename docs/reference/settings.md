@@ -42,6 +42,101 @@ setting in force), or turn JIT off on the server instead:
 ALTER DATABASE danbyte SET jit = off;
 ```
 
+### Persistent connections
+
+The gunicorn web app keeps each worker's database connection open for
+`DB_CONN_MAX_AGE` seconds (default `60`) instead of opening and
+authenticating a new one per request; on a small API call that was most of
+the cost (p50 20 ms → 7 ms on a local database). `CONN_HEALTH_CHECKS` is on,
+so a connection the server dropped is replaced before a request uses it.
+`DB_CONN_MAX_AGE=0` restores a connection per request.
+
+Only the WSGI app does this: `danbyte/wsgi.py` marks the process before
+settings load. daphne (WebSockets), `runserver`, the RQ workers and
+management commands keep `0`.
+
+Size `max_connections` (Postgres default `100`) for every process that holds
+one at a time:
+
+```
+gunicorn workers (WEB_CONCURRENCY, default ≤ 8)
++ RQ workers (danbyte-workers and danbyte-fastlane, one per worker process)
++ daphne (one per open request it serves)
++ timers and management commands running at the same moment
++ headroom for psql, backups and upgrades (10 or so)
+```
+
+A connection that stays open is idle between requests, so persistent
+connections do not raise the peak: each gunicorn worker held one while it
+served a request before too. With a pooler (PgBouncer in transaction mode)
+in front, the pooler's own limits apply instead.
+
+### Tuning PostgreSQL
+
+The installer leaves the distribution's PostgreSQL defaults in place:
+`shared_buffers = 128MB` and `work_mem = 4MB`, sized for a small shared
+host. Danbyte runs on whatever the server is configured with, but a large
+tenant (thousands of devices, tens of thousands of interfaces and addresses)
+reads its lists and roll-ups faster with more memory. Nothing in Danbyte sets
+these; they belong to the host, so set them in `postgresql.conf` (or a file in
+`conf.d/`) and restart PostgreSQL.
+
+A starting point for a host that runs Danbyte and its database together:
+
+| Setting | Starting value | Why |
+|---|---|---|
+| `shared_buffers` | 25 % of RAM (e.g. `2GB` on 8 GB) | Keeps the hot tables and indexes in PostgreSQL's own cache |
+| `effective_cache_size` | 50-75 % of RAM | Tells the planner how much the OS caches too; indexes are chosen more readily |
+| `work_mem` | `16MB`-`32MB` | Per sort or hash per query; the natural-sort lists and facet counts sort in memory instead of on disk. Multiplied by concurrent queries, so stay modest |
+| `maintenance_work_mem` | `256MB` | Faster `VACUUM`, index builds and upgrade migrations |
+| `random_page_cost` | `1.1` on SSD/NVMe | The default `4` assumes spinning disks and steers the planner away from indexes |
+| `max_connections` | see [Persistent connections](#persistent-connections) | Every web worker, RQ worker and daphne holds one |
+
+Check what a running server uses with `SHOW shared_buffers;` (and so on) in
+`psql`. On a container install, pass the settings as `command:` arguments to
+the `postgres` service (`postgres -c shared_buffers=2GB -c work_mem=16MB`).
+
+#### Finding slow queries with `pg_stat_statements`
+
+`pg_stat_statements` records every statement's call count and time, which is
+the quickest way to see what a slow page costs the database. It ships with
+PostgreSQL (the `postgresql-contrib` package on older distributions) and needs
+a restart to load:
+
+```ini
+# postgresql.conf
+shared_preload_libraries = 'pg_stat_statements'
+```
+
+Then create the extension as a superuser in the **`postgres`** database, not
+in Danbyte's: it records statements from every database either way, and kept
+out of Danbyte's database it never ends up in a Danbyte backup. A restore runs
+as the `danbyte` role, which may not create the extension, so a backup that
+carries it would fail to restore.
+
+```bash
+sudo -u postgres psql -d postgres
+```
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- The ten Danbyte statements that took the most time in total.
+SELECT round(total_exec_time) AS ms, calls, round(mean_exec_time, 1) AS mean_ms,
+       left(query, 120) AS query
+FROM pg_stat_statements
+WHERE dbid = (SELECT oid FROM pg_database WHERE datname = 'danbyte')
+ORDER BY total_exec_time DESC
+LIMIT 10;
+
+-- Start a fresh measurement.
+SELECT pg_stat_statements_reset();
+```
+
+The extension is optional: no migration creates or needs it. Its cost is
+small (a few percent of CPU on a busy server); turn it off again by removing
+it from `shared_preload_libraries`.
+
 ## CORS
 
 ```python
@@ -57,6 +152,13 @@ requires authentication, so the next forgotten viewset isn't world-open.
 Intentionally-public endpoints (the share-link resolve) opt in with `AllowAny`
 explicitly. Authentication is session cookie (SPA) or a scoped API token; there
 is no JWT (it was dead surface with weak defaults).
+
+JSON responses go through `api.renderers.FastJSONRenderer`. It renders with
+`orjson` when that package is installed and with DRF's own `JSONRenderer`
+otherwise, and both write the same bytes (dates, decimals, UUIDs and IP
+objects through DRF's encoder; `?indent=` and anything `orjson` refuses fall
+back to the standard renderer). `orjson` is not a requirement yet, so a
+normal install renders exactly as before.
 
 ```python
 REST_FRAMEWORK = {

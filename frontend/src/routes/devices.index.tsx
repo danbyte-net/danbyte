@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
@@ -31,6 +31,10 @@ import { useMe, objCan } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 import { useSbomExport } from "@/components/sbom-export"
 import { reportExport, useObjectReport } from "@/components/object-report"
+
+/** Ids per port-utilization request: 100 UUIDs keep the URL under the
+ * request-line limit. Must match `PORT_UTIL_MAX_IDS` in api/viewsets.py. */
+const PORT_UTIL_MAX_IDS = 100
 
 export const Route = createFileRoute("/devices/")({
   // Typed deep-link params, e.g. the "Devices by status / type / site /
@@ -128,14 +132,25 @@ function DevicesPage() {
   const handleDelete = useCallback((d: Device) => setDeleting(d), [])
   const driftMap = useDriftMap()
   const plannedMap = usePlannedChangeMap()
-  // One roll-up request feeds the whole table's "Ports" bars.
+  // The "Ports" bars for the rows on screen only (#488): the whole roll-up
+  // was ~1.5 MB on a big tenant. A page past the id limit (a long or grouped
+  // page) asks for the lot, as before.
+  const [pageIds, setPageIds] = useState<string[]>([])
+  const onPageRowsChange = useCallback(
+    (rows: Device[]) => setPageIds(rows.map((r) => r.id).sort()),
+    []
+  )
   const portUtilQuery = useQuery({
-    queryKey: ["port-utilization-rollup"],
+    queryKey: ["port-utilization-rollup", pageIds],
     queryFn: () =>
       api<{ results: { id: string; pct: number }[] }>(
-        "/api/devices/port-utilization/"
+        pageIds.length <= PORT_UTIL_MAX_IDS
+          ? `/api/devices/port-utilization/?ids=${pageIds.join(",")}`
+          : "/api/devices/port-utilization/"
       ),
+    enabled: pageIds.length > 0,
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
   })
   const portUtil = useMemo(
     () =>
@@ -247,6 +262,7 @@ function DevicesPage() {
           canDeploy || canDelete || canProfiles ? setSelected : undefined
         }
         selectedRows={selected}
+        onPageRowsChange={onPageRowsChange}
       />
       {report.dialog}
       <DeviceDeleteDialog

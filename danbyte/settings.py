@@ -226,6 +226,15 @@ DATABASES = {
         # A dropped connection is noticed before a request uses it, and a
         # database that does not answer fails the request in 10 s, not never.
         "CONN_HEALTH_CHECKS": True,
+        # Persistent connections for the gunicorn app only (#481): a new
+        # connection per request was most of a small API call's cost.
+        # danbyte/wsgi.py marks the process before settings load; daphne,
+        # runserver, workers and commands keep 0 (a connection per request).
+        "CONN_MAX_AGE": (
+            int(os.getenv("DB_CONN_MAX_AGE", "60"))
+            if os.getenv("DANBYTE_WSGI_SERVER") == "1"
+            else 0
+        ),
         "OPTIONS": {
             "connect_timeout": 10,
             # JIT off for Danbyte's sessions (#443): its queries are short OLTP
@@ -434,6 +443,12 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": API_PAGE_SIZE,
     # JSON bodies must be objects: a string or list reached views reading
     # request.data.get(...) and crashed (#373). See api/parsers.py.
+    # JSON through orjson when it is installed, else DRF's renderer: the same
+    # bytes either way (api/renderers.py, #488). orjson is not a requirement.
+    "DEFAULT_RENDERER_CLASSES": [
+        "api.renderers.FastJSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
+    ],
     "DEFAULT_PARSER_CLASSES": [
         "api.parsers.ObjectJSONParser",
         "rest_framework.parsers.FormParser",

@@ -3798,6 +3798,11 @@ class PrtgCleanupDeleteMixin(SafeBulkDeleteMixin):
         return response
 
 
+#: Device ids one ``/api/devices/port-utilization/?ids=`` may name: 100 UUIDs
+#: keep the URL under the request-line limit. The Devices page uses the same.
+PORT_UTIL_MAX_IDS = 100
+
+
 def _device_rows(*, one: bool = False, counts: bool = False):
     """The device viewset's base queryset.
 
@@ -4112,13 +4117,35 @@ class DeviceViewSet(
         per-device queries - and it rides the list queryset, so ?site= /
         ?device_type= / ?role= narrow it like any device list. A device whose
         ports are all uncounted (virtual, rear) has no fill level to show.
+
+        ``?ids=<uuid>,<uuid>,…`` (at most ``PORT_UTIL_MAX_IDS``) narrows it to
+        those devices - the Devices list asks for the page on screen (#488).
+        The ids only narrow the tenant's own devices.
         """
+        import uuid as _uuid
+
         from core.effective_settings import port_count_virtual
 
         from .port_utilization import device_port_counts, used_pct
 
         count_virtual = port_count_virtual(_get_active_tenant(request))
         devices = self.get_queryset()
+        raw = request.query_params.get("ids")
+        if raw is not None:
+            parts = [p for p in raw.split(",") if p.strip()]
+            if len(parts) > PORT_UTIL_MAX_IDS:
+                return Response(
+                    {"ids": [f"At most {PORT_UTIL_MAX_IDS} ids per request."]}, status=400
+                )
+            try:
+                ids = [_uuid.UUID(p.strip()) for p in parts]
+            except ValueError:
+                return Response({"ids": ["Expected comma-separated device ids."]}, status=400)
+            # Resolve the visible ids once against the scoped list queryset,
+            # then count from a plain one: the list's annotations otherwise
+            # ride along as a subquery in each of the twelve aggregates.
+            allowed = list(devices.filter(id__in=ids).values_list("id", flat=True))
+            devices = Device.objects.filter(id__in=allowed)
         counts = {
             device_id: row
             for device_id, row in device_port_counts(
@@ -8254,6 +8281,9 @@ class IPRangeViewSet(TenantScopedViewSet):
             # Backs a DHCP exclusion? → serializer `dhcp` flag ("exclusion").
             # Reverse accessor - no integrations import.
             .annotate(dhcp_excl_n=Count("dhcp_exclusions", distinct=True))
+            # A GROUP BY query ignores Meta.ordering: page in a stable order
+            # (#488).
+            .order_by("start_address", "end_address", "pk")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()

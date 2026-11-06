@@ -143,7 +143,38 @@ def _refused_filters(handler, model, visibility, tenant) -> set[str]:
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def io_types_view(request):
+    """Types this user may export or import in the active tenant. The answer
+    is cached per user and tenant for ``IO_TYPES_TTL`` seconds (#488): the
+    table toolbars ask on every page and it took ~65 queries. It only decides
+    which controls show; every export and import re-checks access itself. A
+    token request is never cached (its scopes vary per token)."""
+    from django.core.cache import cache
+
     tenant = _get_active_tenant(request)
+    key = None
+    if IO_TYPES_TTL and getattr(request, "auth", None) is None:
+        key = f"io-types:{request.user.pk}:{getattr(tenant, 'pk', None)}"
+        try:
+            hit = cache.get(key)
+        except Exception:  # noqa: BLE001 - the cache is a shortcut here
+            hit = None
+        if hit is not None:
+            return Response({"object_types": hit})
+    out = _io_types_for(request, tenant)
+    if key is not None:
+        try:
+            cache.set(key, out, IO_TYPES_TTL)
+        except Exception:  # noqa: BLE001
+            pass
+    return Response({"object_types": out})
+
+
+#: Seconds a user's import/export type list is reused. Short, because a role
+#: or integration change should show up without a sign-out.
+IO_TYPES_TTL = 60
+
+
+def _io_types_for(request, tenant) -> list[dict]:
     out = []
     for t in io_types():
         slug = t["slug"]
@@ -162,7 +193,7 @@ def io_types_view(request):
             )
         if can_export or can_import:
             out.append({**t, "can_export": can_export, "can_import": can_import})
-    return Response({"object_types": out})
+    return out
 
 
 @extend_schema(
