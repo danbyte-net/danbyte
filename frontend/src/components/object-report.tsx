@@ -133,7 +133,12 @@ export function readReportPrefs(
 
 export function writeReportPrefs(kind: ObjectReportKind, prefs: ReportPrefs) {
   try {
-    window.localStorage.setItem(prefsKey(kind), JSON.stringify(prefs))
+    // "No grouping" is kept as "": a remembered null is from before a type
+    // had a default grouping, and starts from that default.
+    window.localStorage.setItem(
+      prefsKey(kind),
+      JSON.stringify({ ...prefs, groupBy: prefs.groupBy ?? "" })
+    )
   } catch {
     /* private window or full storage: the picks are not kept */
   }
@@ -179,8 +184,13 @@ export function initialPrefs(
       savedSections ??
       schema.sections.filter((s) => s.default).map((s) => s.key),
     columns,
+    // Prefixes start grouped by VRF, as their list is (default_group_by).
     groupBy:
-      saved?.groupBy && groupKeys.has(saved.groupBy) ? saved.groupBy : null,
+      saved?.groupBy && groupKeys.has(saved.groupBy)
+        ? saved.groupBy
+        : saved?.groupBy === ""
+          ? null
+          : (schema.default_group_by ?? null),
     includeSummary: saved?.includeSummary ?? true,
     perObject: saved?.perObject ?? false,
     showIps: saved?.showIps ?? false,

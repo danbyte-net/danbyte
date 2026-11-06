@@ -189,6 +189,8 @@ class ReportType:
     badges: tuple[str, ...]
     sections: tuple[Section, ...]
     file_stem: str = field(default="report")
+    #: The grouping a list report gets when the request names none.
+    default_group: str = ""
 
     def section(self, key: str) -> Section | None:
         return next((s for s in self.sections if s.key == key), None)
@@ -388,6 +390,8 @@ PREFIX = ReportType(
     plural="Prefixes",
     title_key="cidr",
     file_stem="prefixes",
+    # Like the Prefixes list: Global first, then each VRF under its banner.
+    default_group="vrf",
     list_columns=(
         "cidr",
         "status",
@@ -788,8 +792,18 @@ def _when(v, with_time: bool) -> str:
         return str(v)
 
 
+def _vlan_badge(v: dict) -> str:
+    """A VLAN as the list's badge: ``100 · servers`` in the VLAN's own colour,
+    else its zone's, else neutral."""
+    zone = v.get("zone") if isinstance(v.get("zone"), dict) else {}
+    name = f"{v['vlan_id']} · {v['name']}" if v.get("name") else str(v["vlan_id"])
+    return _pill({"name": name, "color": v.get("color") or zone.get("color") or ""})
+
+
 def _badge(v) -> str:
     """An object with a colour as its square badge; else its name."""
+    if isinstance(v, dict) and "vlan_id" in v and "color" in v:
+        return _vlan_badge(v)
     if isinstance(v, dict) and "color" in v:
         name = _name({k: x for k, x in v.items() if k != "color"}) or _name(v)
         return _pill(
@@ -1049,23 +1063,33 @@ def column_widths(cols: list[Column]) -> list[float]:
     return [100 * w / total for w in weights]
 
 
-def table_html(rows: list[dict], cols: list[Column], cls: str = "", after=None) -> str:
-    """A grid of ``rows``; ``after(row)``, when given, is HTML for a full-width
-    row printed under each one (empty for none)."""
-    head = "".join(
+def _head_html(cols: list[Column]) -> str:
+    return "".join(
         f"<th style='width:{w:.2f}%'>{escape(c.label)}</th>"
         for c, w in zip(cols, column_widths(cols), strict=True)
     )
-    body = "".join(
-        "<tr>"
-        + "".join(
-            f"<td{' class=b' if i == 0 else ''}>{cell(r, c)}</td>" for i, c in enumerate(cols)
-        )
-        + "</tr>"
-        + _after_row(after, r, len(cols))
-        for r in rows
+
+
+def _row_html(row: dict, cols: list[Column], after=None, depth: int = 0) -> str:
+    """One row, and ``after``'s full-width row under it. ``depth`` indents the
+    prefix cell with one ``↳`` a level, as the Prefixes list does."""
+    tds = []
+    for i, c in enumerate(cols):
+        html = cell(row, c)
+        if depth and c.key == "cidr":
+            html = f"<span class='tree'>{'↳' * depth}</span>{html}"
+        tds.append(f"<td{' class=b' if i == 0 else ''}>{html}</td>")
+    return f"<tr>{''.join(tds)}</tr>{_after_row(after, row, len(cols))}"
+
+
+def table_html(rows: list[dict], cols: list[Column], cls: str = "", after=None) -> str:
+    """A grid of ``rows``; ``after(row)``, when given, is HTML for a full-width
+    row printed under each one (empty for none)."""
+    body = "".join(_row_html(r, cols, after) for r in rows)
+    return (
+        f"<table class='grid {cls}'><thead><tr>{_head_html(cols)}</tr></thead>"
+        f"<tbody>{body}</tbody></table>"
     )
-    return f"<table class='grid {cls}'><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
 def _after_row(after, row: dict, span: int) -> str:
@@ -1345,6 +1369,93 @@ def _list_html(
     )
 
 
+#: The Prefixes list's order between sibling CIDRs (``localeCompare``):
+#: ``:`` before ``.`` before ``/``, all before digits and letters.
+_CIDR_PUNCT = {":": 0, ".": 1, "/": 2}
+
+
+def _cidr_key(cidr: str) -> list:
+    return [(_CIDR_PUNCT.get(ch, 3), ch.casefold()) for ch in cidr]
+
+
+def nest_prefixes(rows: list[dict]) -> list[tuple[dict, int]]:
+    """One VRF's prefixes in the Prefixes list's tree order - parents before
+    their children, siblings by CIDR - each with its depth below its nearest
+    listed parent (``annotateNesting``). A CIDR that does not parse ends the
+    list at depth 0."""
+    parsed, bad = [], []
+    for r in rows:
+        try:
+            parsed.append((ipaddress.ip_network(str(r.get("cidr") or ""), strict=False), r))
+        except ValueError:
+            bad.append(r)
+    parsed.sort(key=lambda x: (x[0].version, int(x[0].network_address), x[0].prefixlen))
+    children: dict[int | None, list[int]] = {}
+    stack: list[int] = []
+    for i, (net, _) in enumerate(parsed):
+        while stack:
+            top = parsed[stack[-1]][0]
+            if top.version == net.version and top.prefixlen < net.prefixlen and net.subnet_of(top):
+                break
+            stack.pop()
+        children.setdefault(stack[-1] if stack else None, []).append(i)
+        stack.append(i)
+    out: list[tuple[dict, int]] = []
+
+    def walk(parent: int | None, depth: int) -> None:
+        kids = sorted(children.get(parent, ()), key=lambda i: _cidr_key(parsed[i][1]["cidr"]))
+        for i in kids:
+            out.append((parsed[i][1], depth))
+            walk(i, depth + 1)
+
+    walk(None, 0)
+    return out + [(r, 0) for r in bad]
+
+
+def vrf_groups(rows: list[dict]) -> list[tuple[dict | None, list[tuple[dict, int]]]]:
+    """``rows`` by VRF as the Prefixes list groups them: Global first, then
+    each VRF by name in natural order, each nested."""
+    from .natural import natural_key
+
+    groups: dict[str, tuple[dict | None, list[dict]]] = {}
+    for r in rows:
+        vrf = r.get("vrf") if isinstance(r.get("vrf"), dict) else None
+        key = str(vrf.get("id")) if vrf else ""
+        groups.setdefault(key, (vrf, []))[1].append(r)
+    order = sorted(
+        groups.items(),
+        key=lambda kv: (kv[0] != "", natural_key((kv[1][0] or {}).get("name")), kv[0]),
+    )
+    return [(vrf, nest_prefixes(g)) for _, (vrf, g) in order]
+
+
+def _vrf_banner(vrf: dict | None, count: int, span: int) -> str:
+    """The list's group header: ``VRF <badge> RD <rd> <n> rows``."""
+    vrf = vrf or {}
+    badge = _pill({"name": vrf.get("name") or "Global", "color": vrf.get("color") or ""})
+    rd = f"<span class='rd'>RD {escape(str(vrf['rd']))}</span>" if vrf.get("rd") else ""
+    return (
+        f"<tr class='band'><td colspan='{span}'><span class='bl'>VRF</span>{badge}{rd}"
+        f"<span class='cnt'>{_plural(count, 'row')}</span></td></tr>"
+    )
+
+
+def _vrf_list_html(rt: ReportType, rows: list[dict], cols: list[Column], after=None) -> str:
+    """The prefix list as the Prefixes list shows it: one table, a banner
+    row a VRF (Global first), children indented under their parent; no VRF
+    column, the banner says it."""
+    body = "".join(
+        _vrf_banner(vrf, len(g), len(cols))
+        + "".join(_row_html(r, cols, after, depth) for r, depth in g)
+        for vrf, g in vrf_groups(rows)
+    )
+    return (
+        f"<section class='list'><h2>{escape(rt.plural)}</h2>"
+        f"<table class='grid'><thead><tr>{_head_html(cols)}</tr></thead>"
+        f"<tbody>{body}</tbody></table></section>"
+    )
+
+
 def _object_html(
     ctx: Context,
     row: dict,
@@ -1431,6 +1542,14 @@ def report_html(
         "td{padding:0.9mm 1.2mm;vertical-align:top;overflow-wrap:anywhere}"
         "table.grid td{border-bottom:0.15mm solid #e4e4e7}"
         "tr.under>td{padding:0 0 1.5mm 5mm}"
+        "tr.band{break-after:avoid}"
+        "table.grid tr.band>td{background:#f4f4f5;border-bottom:0.15mm solid #d4d4d8;"
+        "padding:1mm 1.2mm;color:#71717a}"
+        ".band .bl{font-size:5.5pt;letter-spacing:0.3mm;margin-right:1.5mm}"
+        ".band .pill{margin:0}"
+        ".band .rd{font-family:'DejaVu Sans Mono',monospace;font-size:6pt;margin-left:1.5mm}"
+        ".band .cnt{margin-left:2mm;color:#a1a1aa}"
+        ".tree{color:#a1a1aa;font-weight:400;margin-right:0.8mm}"
         "table.ips{margin:0;font-size:6.8pt}"
         "table.ips th{border-bottom-width:0.15mm;padding:0.5mm 1.2mm}"
         "table.ips td{padding:0.5mm 1.2mm}"
@@ -1526,6 +1645,7 @@ def describe(request, rt: ReportType) -> Response:
             "columns": [c.payload() for c in cat.values()],
             "default_columns": [k for k in rt.list_columns if k in cat],
             "group_by": [cat[k].payload() for k in rt.groups if k in cat],
+            "default_group_by": rt.default_group if rt.default_group in cat else None,
             "sections": sections,
             "papers": list(PAPERS),
             "show_ips": rt is PREFIX and _can_view_ips(ctx),
@@ -1687,13 +1807,22 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str,
     if list_table:
         cols = pick(cat, columns.get("list"), rt.list_columns)
         shape["list_columns"] = len(cols)
-        group_key = options.get("group_by") or ""
+        # No group_by: the type's own grouping; null or "": the flat table.
+        if "group_by" in options:
+            group_key = options["group_by"] or ""
+        else:
+            group_key = rt.default_group
         group = cat.get(group_key) if group_key in rt.groups else None
         after = None
         if rt is PREFIX and options.get("show_ips"):
             after = prefix_ips(ctx, budget)
             shape["show_ips"] = after is not None
-        body.append(_list_html(rt, rows, cols, group, after))
+        if rt is PREFIX and group is not None and group.key == "vrf":
+            cols = [c for c in cols if c.key != "vrf"]
+            shape["list_columns"] = len(cols)
+            body.append(_vrf_list_html(rt, rows, cols, after))
+        else:
+            body.append(_list_html(rt, rows, cols, group, after))
     if per_object:
         keys = data.get("sections")
         if keys is None:
