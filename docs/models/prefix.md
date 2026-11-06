@@ -110,6 +110,13 @@ of every prefix in the tenant. A new containment query must use the same
 bare `cidr::inet` cast - `network(cidr::inet)` or `cidr::cidr` does not
 match the index.
 
+Because the index casts every row, a `cidr` that is not an address can't
+be stored. CIDR validation has refused those since #47, but very old
+installs can still hold such rows. On upgrade to 0.19, migration
+`api.0265_drop_unparseable_prefixes` runs before the index is built. It
+deletes every prefix Postgres can't read as `inet` and logs each one
+(id, value, tenant) to the upgrade log as a `danbyte.migrations` warning.
+
 ## API filters
 
 `GET /api/prefixes/` narrows by `search`, `vlan`, `vrf`, `site`,
