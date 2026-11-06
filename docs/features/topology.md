@@ -349,6 +349,26 @@ between the two devices, in Simple and Detailed alike, and is part of the
 view like its arrangement: each change is one undo step, marks the view
 **Edited**, and is kept by **Save** (on No view, in this browser).
 
+**A device's or a band's line** - right-click a card (or open its panel) for
+**Line**, or right-click a row for **Line** under **Cards per row** and
+**Align**: **Default** or one of the four line types, for every cable at
+that device, or at the cards standing in that band. Each change is one undo
+step and saves with the view; **Arrange ▸ Bands by role** keeps a band's
+line. A cable takes the first of these that is set:
+
+1. the link's own line;
+2. its ends' device lines - one end set wins; both set and equal is that
+   line; both set and different, the cable's A end wins;
+3. its ends' band lines (the row each card's centre stands in), by the same
+   rule - so a device line on one end beats a band line on the other;
+4. the view's line.
+
+LLDP ghosts and BGP sessions keep their fixed look. A device's or band's
+Cyclical arcs the cables it has to and draws the rest Bendy, as the view's
+does; only a link's own Cyclical always arcs. On **Default**, a link's panel
+says where its line comes from: *Bendy (from leaf-3a)*, *Elbow (from band
+Leaf)*. The exports draw each cable as its line resolves.
+
 ### Link labels
 
 **Labels** in the Display popover picks what the links carry - **Subnets**,
@@ -1733,11 +1753,11 @@ is open it acts on what you right-clicked, not on what is selected.
 
 | Right-click | Items, in order |
 |---|---|
-| A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Card lines…*, *Role card lines* for admins, and on a member of a virtual chassis *Virtual chassis* ▸ its stack's items |
+| A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Line* ▸ *Default* and the four line types (the device's own line, one undo step), *Card lines…*, *Role card lines* for admins, and on a member of a virtual chassis *Virtual chassis* ▸ its stack's items |
 | A virtual chassis' stack | *Open virtual chassis*; *Top-down*, *Left-right*, *Unstacked*; *Hide stack*; on a hand-picked map where it was placed, *Remove from map* |
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
 | A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide*. A grouped map's line has no menu: hide one of its sites or locations instead |
-| A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), on a row *Cables to other bands* ▸ *Auto*, *Up and down*, *Left and right*, *Delete* |
+| A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), on a row *Cables to other bands* ▸ *Auto*, *Up and down*, *Left and right*, and on a Diagram row *Cards per row*, *Align* and *Line* ▸ *Default* and the four line types; *Delete* |
 | Empty canvas | Diagram: *Add devices…*, *Add virtual chassis…* (with view on virtual chassis), *Add band*, *Add zone*, *Add text*. Hierarchy: *Add devices…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
 
 ### Keyboard
@@ -2547,7 +2567,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto), `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400) and `align` (`left`, `center` or `right`: where its cards line up across its width; absent is Auto, centred - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto), `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400) and `align` (`left`, `center` or `right`: where its cards line up across its width; absent is Auto, centred - anything else is a 400) and `line` (`straight`, `elbow`, `bendy` or `cyclical`: the [line](#line-types) its cards' cables take; absent is Default - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
 | `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |
@@ -2555,7 +2575,7 @@ earlier versions load and save unchanged.
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
 | `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
-| `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |
+| `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical}`, each optional, at most 10,000. `line` is the [line](#line-types) the device's cables take; absent is Default. |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building, size: s\|m\|l, outline: bool}`; `x, y` is the note's centre, `id` is unique, `text` at most 200 characters, `size` absent = `m` |
 | `hidden` | what the eyes switched off: `{sites, locations, roles, kinds, devices, edges}`, each a list of names (or ids); `edges` holds single lines hidden from their right-click menu, by the map's edge id, and is written only when there is one. Any other group is a 400; the flat list older views saved still loads as `devices`. |
 

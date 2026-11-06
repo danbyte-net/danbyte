@@ -1,4 +1,4 @@
-import type { TopologyViewSaved } from "@/lib/api"
+import type { TopologyLineType, TopologyViewSaved } from "@/lib/api"
 import type { NodeStyle } from "@/components/topology/topology-canvas"
 
 /**
@@ -105,6 +105,9 @@ export interface Zone {
   /** A row: where its cards line up across its width, each line on its
    * own when it wraps. Absent: Auto - each line centred. */
   align?: BandAlign
+  /** A row: the line its cards' cables take where neither the link nor
+   * an end's device sets one (diagram/line-source.ts). Absent: Default. */
+  line?: TopologyLineType
   /** The Routing tab: the AS this box frames. An AS box carries the cards
    * inside it when it moves; Arrange ▸ By AS finds it again by it. */
   asn?: number

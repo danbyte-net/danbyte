@@ -4827,6 +4827,8 @@ export interface TopologyViewZone {
   /** A row of several layers: a sub-row each (`stack`) or mixed in one
    * (`row`, the default). */
   layout?: "stack" | "row"
+  /** A row: the line its cards' cables take (absent: Default). */
+  line?: TopologyLineType
   /** The Routing tab: the AS this box frames (an AS box). */
   asn?: number
 }
@@ -4898,7 +4900,12 @@ export interface TopologyViewState {
   /** Per-device overrides, keyed by device id. */
   nodes?: Record<
     string,
-    { face?: "card" | "photo"; anchor?: TopologyPhotoAnchor }
+    {
+      face?: "card" | "photo"
+      anchor?: TopologyPhotoAnchor
+      /** The line its cables take (absent: Default). */
+      line?: TopologyLineType
+    }
   >
   /** Diagram annotations (at most 500). */
   notes?: TopologyViewNote[]

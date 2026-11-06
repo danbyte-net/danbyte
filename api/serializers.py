@@ -5117,7 +5117,7 @@ class TopologyViewSerializer(NumIdModelSerializer):
     LINK_LABELS = ("subnet", "ip", "port")
     #: Per-link overrides, keyed by the sorted device pair.
     MAX_LINKS = 20_000
-    #: Per-card overrides, keyed by device id.
+    #: Per-card overrides (face, anchor, line), keyed by device id.
     MAX_NODE_OVERRIDES = 10_000
     MAX_NOTES = 500
     MAX_NOTE_TEXT = 200
@@ -5287,6 +5287,8 @@ class TopologyViewSerializer(NumIdModelSerializer):
                     f"{where}.align must be one of {', '.join(self.BAND_ALIGNS)}, "
                     "or absent for Auto"
                 )
+            # The line its cards' cables take: a line type, or absent.
+            self._choice(region.get("line"), self.LINE_TYPES, f"{where}.line")
             rule = region.get("rule")
             if rule is None:
                 continue
@@ -5380,6 +5382,9 @@ class TopologyViewSerializer(NumIdModelSerializer):
             )
             self._choice(
                 override.get("anchor"), self.PHOTO_ANCHORS, f"nodes.{key}.anchor"
+            )
+            self._choice(
+                override.get("line"), self.LINE_TYPES, f"nodes.{key}.line"
             )
 
     def _notes(self, notes):

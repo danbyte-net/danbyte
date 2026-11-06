@@ -59,6 +59,8 @@ interface NodePanelProps {
   monitor?: CheckStatus | null
   onClose: () => void
   onFocus: (deviceId: string) => void
+  /** The Diagram: the device's own Line row. */
+  line?: React.ReactNode
 }
 
 /** A card's panel: a device's, or a provider network's (#466). */
@@ -68,7 +70,13 @@ export function NodePanel(props: NodePanelProps) {
   return <DevicePanel {...props} />
 }
 
-function DevicePanel({ data: d, monitor, onClose, onFocus }: NodePanelProps) {
+function DevicePanel({
+  data: d,
+  monitor,
+  onClose,
+  onFocus,
+  line,
+}: NodePanelProps) {
   const check = useDeviceCheck(d.device_id, monitor)
   return (
     <PanelShell
@@ -119,6 +127,7 @@ function DevicePanel({ data: d, monitor, onClose, onFocus }: NodePanelProps) {
           {d.ports?.length ?? 0} / {d.interface_count ?? 0}
         </span>
       </PanelRow>
+      {line && <PanelSection label="Line">{line}</PanelSection>}
     </PanelShell>
   )
 }

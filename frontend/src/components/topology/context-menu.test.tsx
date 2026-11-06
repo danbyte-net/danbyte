@@ -262,6 +262,36 @@ describe("DeviceMenuItems", () => {
     expect(f.onFace).not.toHaveBeenCalled()
   })
 
+  it("sets the device's line from a Line sub-menu after the face items", async () => {
+    const onChange = vi.fn()
+    await openMenu(
+      <DeviceMenuItems
+        {...device({
+          diagram: { face: face(), line: { value: "bendy", onChange } },
+        })}
+      />
+    )
+    expect(rows().slice(5)).toEqual(["--", "Show photo", "Line"])
+    fireEvent.click(screen.getByRole("menuitem", { name: "Line" }))
+    const radios = await screen.findAllByRole("menuitemradio")
+    expect(radios.map((r) => r.textContent.trim())).toEqual([
+      "Default",
+      "Straight",
+      "Elbow",
+      "Bendy",
+      "Cyclical",
+    ])
+    expect(
+      screen
+        .getByRole("menuitemradio", { name: "Bendy" })
+        .getAttribute("aria-checked")
+    ).toBe("true")
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Bendy" }))
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Default" }))
+    expect(onChange).toHaveBeenLastCalledWith("default")
+  })
+
   it("leaves the Diagram items out without a device", async () => {
     await openMenu(
       <DeviceMenuItems
@@ -600,6 +630,32 @@ describe("RegionMenuItems", () => {
     expect(onChange).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Auto" }))
     expect(onChange).toHaveBeenLastCalledWith(undefined)
+  })
+
+  it("sets a row's line from a Line sub-menu, after Align", async () => {
+    const onChange = vi.fn()
+    await openMenu(
+      <RegionMenuItems
+        {...region("band", null)}
+        perRow={{ value: undefined, onChange: vi.fn() }}
+        align={{ value: undefined, onChange: vi.fn() }}
+        line={{ value: "default", onChange }}
+      />
+    )
+    expect(rows()).toEqual([
+      "Rename",
+      "More colors",
+      "Cards per row",
+      "Align",
+      "Line",
+      "--",
+      "Delete",
+    ])
+    fireEvent.click(screen.getByRole("menuitem", { name: "Line" }))
+    const def = await screen.findByRole("menuitemradio", { name: "Default" })
+    expect(def.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Elbow" }))
+    expect(onChange).toHaveBeenLastCalledWith("elbow")
   })
 
   it("draws Delete as the destructive item", async () => {

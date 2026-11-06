@@ -245,7 +245,12 @@ import type {
 } from "@/components/topology/diagram/chassis"
 import type { ChassisActions } from "@/components/topology/diagram/chassis-node"
 import type { ChassisNodeData } from "@/components/topology/diagram/build-diagram"
-import { isRow, isSide, titleStrip } from "@/components/topology/diagram/bands"
+import {
+  isRow,
+  isSide,
+  setBandLine,
+  titleStrip,
+} from "@/components/topology/diagram/bands"
 import type { BandBy } from "@/components/topology/diagram/bands"
 import { NOTES_MAX, newNote } from "@/components/topology/diagram/notes"
 import type { NoteIconName } from "@/components/topology/diagram/notes"
@@ -258,6 +263,7 @@ import type { CardLinesTarget } from "@/components/topology/diagram/card-lines-d
 import {
   LineTabs,
   LinkLineRow,
+  OwnLineTabs,
   linkOverride,
 } from "@/components/topology/diagram/line-tabs"
 import { DEFAULT_LABELS } from "@/components/topology/diagram/link-labels"
@@ -280,9 +286,14 @@ import type {
 import type {
   DiagramCardData,
   DiagramLinkRef,
+  LineType,
   Pt,
   Side,
 } from "@/components/topology/diagram/types"
+import {
+  nodeLines,
+  withNodeLine,
+} from "@/components/topology/diagram/line-source"
 import type {
   GroupEdgeInfo,
   TopoGroupData,
@@ -1507,6 +1518,11 @@ function TopologyPage() {
         link={selLink}
         override={doc.doc.links[selLink.pairKey]}
         viewLine={diagramLine}
+        nameOf={(kind, id) =>
+          kind === "band"
+            ? zones?.find((z) => z.id === id)?.label || undefined
+            : graph?.nodes.find((n) => n.data.device_id === id)?.data.name
+        }
         onChange={(v) => setLinkOverride(selLink.pairKey, v)}
       />
     ) : null
@@ -1949,8 +1965,18 @@ function TopologyPage() {
     const bgpEdges = (bgp.data?.edges ?? []).filter(between)
     return { ...q.data, edges: [...q.data.edges, ...ghostEdges, ...bgpEdges] }
   }, [q.data, ghosts.data, bgp.data, resolving])
-  // Each device's own Card | Photo and Ports | Edge, over the view's.
+  // Each device's own Card | Photo, Ports | Edge and line, over the view's.
   const nodeFaces = doc.doc.nodes
+  /** A device's own line (undefined: Default), one undo step. */
+  const setNodeLine = (id: string, line: LineType | undefined) =>
+    edit({ type: "setNode", id, value: withNodeLine(nodeFaces[id], line) })
+  // The device lines the build reads, one stable object per content.
+  const nodeLinesKey = JSON.stringify(nodeLines(nodeFaces))
+  const nodeLineMap = useMemo(
+    () => JSON.parse(nodeLinesKey) as Record<string, LineType>,
+    [nodeLinesKey]
+  )
+  const ownLine = (id: string) => nodeLineMap[id] as LineType | undefined
   /** A Diagram card's face for its menu. The items are named for what is
    * drawn; a pick keeps the device's own face and anchor only where they
    * differ from the view's. */
@@ -1960,7 +1986,11 @@ function TopologyPage() {
       const own = { ...nodeFaces[id], ...change }
       if (own.face === diagramFace) delete own.face
       if (own.anchor === diagramAnchor) delete own.anchor
-      edit({ type: "setNode", id, value: own.face || own.anchor ? own : null })
+      edit({
+        type: "setNode",
+        id,
+        value: own.face || own.anchor || own.line ? own : null,
+      })
     }
     const anchor = anchorOf(id, diagramAnchor, nodeFaces)
     const next = photo ? "card" : "photo"
@@ -3077,6 +3107,15 @@ function TopologyPage() {
         isDiagram && id
           ? {
               face: grouped ? undefined : cardFace(n, id),
+              ...(grouped
+                ? {}
+                : {
+                    line: {
+                      value: ownLine(id) ?? "default",
+                      onChange: (v) =>
+                        setNodeLine(id, v === "default" ? undefined : v),
+                    },
+                  }),
               onCardLines: canDo("device", "change")
                 ? () => setCardLinesFor({ id, name: n.name, role: n.role })
                 : undefined,
@@ -3939,6 +3978,7 @@ function TopologyPage() {
                 chassis={chassisOpts}
                 chassisActions={chassisActions}
                 linkOverrides={doc.doc.links}
+                nodeLines={nodeLineMap}
                 diagramLabels={isDiagram ? diagramLabels : undefined}
                 monitor={checks}
                 bundleLags={lagMode === "on"}
@@ -4152,6 +4192,14 @@ function TopologyPage() {
                 focusDevice(id)
                 setSelNode(null)
               }}
+              line={
+                isDiagram && !grouped && selNode.device_id ? (
+                  <OwnLineTabs
+                    value={ownLine(selNode.device_id)}
+                    onChange={(v) => setNodeLine(selNode.device_id!, v)}
+                  />
+                ) : undefined
+              }
             />
           )}
           {selEdge && (
@@ -4285,6 +4333,17 @@ function TopologyPage() {
                               onChange: (
                                 align: NonNullable<typeof region>["align"]
                               ) => bands.edit({ type: "align", id, align }),
+                            },
+                            line: {
+                              value: region.line ?? "default",
+                              onChange: (v: LineType | "default") =>
+                                setZones(
+                                  setBandLine(
+                                    zones ?? [],
+                                    id,
+                                    v === "default" ? undefined : v
+                                  )
+                                ),
                             },
                           }
                         : {}),

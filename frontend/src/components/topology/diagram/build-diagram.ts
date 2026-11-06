@@ -80,6 +80,8 @@ import {
 } from "./link-labels"
 import type { LabelToken, LinkLabelSet } from "./link-labels"
 import { ELBOW_RADIUS, leaves, portStub, routeThrough } from "./link-geometry"
+import { bandOfCards, lineResolver } from "./line-source"
+import type { LineResolver, ResolvedLine } from "./line-source"
 import {
   withCaptionRows,
   captionCap,
@@ -154,6 +156,12 @@ export interface DiagramOptions {
   /** The view's line type; `links` overrides it per device pair. */
   line: LineType
   links?: Record<string, TopologyLinkOverride>
+  /** Device id → its own line (`state.nodes[id].line`): a link with no
+   * line of its own takes its ends' (line-source.ts). */
+  nodeLines?: Readonly<Record<string, LineType>>
+  /** Band id → its line: a link takes it from the row an end's card
+   * stands in (by `positions` and `rows`), after the devices'. */
+  bandLines?: Readonly<Record<string, LineType>>
   colorMode: EdgeColorMode
   direction?: "LR" | "TB"
   roleOrder?: string[]
@@ -374,15 +382,22 @@ function cablesOf(
 const swapLag = (lag: EdgeLag | null | undefined): EdgeLag | null =>
   lag ? { a: lag.b, b: lag.a } : null
 
+/** A link's `lineFrom` when an end's device or band chose its line. */
+function lineFromOf(r: ResolvedLine): Pick<DiagramEdgeData, "lineFrom"> {
+  return r.from.kind === "device" || r.from.kind === "band"
+    ? { lineFrom: r.from }
+    : {}
+}
+
 /** The base edge for one classified payload edge; anchors come later. */
 function diagramEdge(
   c: EdgeClass,
   keyOf: (id: string) => string,
-  opts: DiagramOptions
+  opts: DiagramOptions,
+  lines: LineResolver
 ): Edge<DiagramEdgeData> {
   const ends = { id: c.id, source: c.source, target: c.target }
   const pk = pairKey(keyOf(c.source), keyOf(c.target))
-  const lineOf = () => opts.links?.[pk]?.line ?? opts.line
   const base = (sem: EdgeSem, line: LineType) => ({
     sem,
     pairKey: pk,
@@ -392,6 +407,12 @@ function diagramEdge(
     labels: {},
     ...(line === "cyclical" ? { arcAsk: arcAsk(opts, pk) } : {}),
   })
+  // Wiring takes its line by line-source.ts's order (once per edge);
+  // LLDP, BGP and the rest keep their fixed straight line.
+  const wired = (sem: EdgeSem) => {
+    const r = lines(c.source, c.target, keyOf(c.source), keyOf(c.target), pk)
+    return { ...base(sem, r.line), ...lineFromOf(r) }
+  }
   switch (c.sem) {
     case "bgp":
       // A session, not wiring: the centre-to-centre overlay line.
@@ -453,7 +474,7 @@ function diagramEdge(
           type: "link",
           label: r.circuit.cid,
           data: {
-            ...base("cable", lineOf()),
+            ...wired("cable"),
             raw: r,
             simple: true,
             labels: { mid: [r.circuit.cid] },
@@ -470,7 +491,7 @@ function diagramEdge(
         ...ends,
         type: "link",
         animated: r?.marked,
-        data: { ...base("cable", lineOf()), raw: r },
+        data: { ...wired("cable"), raw: r },
         ...flowEdgeStyle(
           edgeLook("cable", {
             stroke: edgeStroke(r, opts.colorMode),
@@ -488,7 +509,7 @@ function diagramEdge(
         type: "link",
         animated: marked,
         data: {
-          ...base("lagbundle", lineOf()),
+          ...wired("lagbundle"),
           cables: c.cables,
           lag: c.lag,
           labels: { mid: bundleLabel(distinctCables(c.cables), c.lag) },
@@ -507,7 +528,7 @@ function diagramEdge(
         ...ends,
         type: "link",
         data: {
-          ...base("bundle", lineOf()),
+          ...wired("bundle"),
           cables: c.cables,
           ...(lag ? { lag } : {}),
           labels: { mid: bundleLabel(distinctCables(c.cables), lag) },
@@ -652,7 +673,8 @@ function fanParts(
   keyOf: (id: string) => string,
   mode: DiagramMode,
   opts: DiagramOptions,
-  measure: Measure
+  measure: Measure,
+  lines: LineResolver
 ): {
   node: Node
   edges: Edge<DiagramEdgeData>[]
@@ -671,8 +693,11 @@ function fanParts(
     })
   )
   const far = [...new Set(f.legs.map((l) => l.node))]
-  const lineTo = (node: string): LineType =>
-    opts.links?.[pairKey(keyOf(f.trunk.node), keyOf(node))]?.line ?? opts.line
+  const lineTo = (node: string) => {
+    const [a, b] = [keyOf(f.trunk.node), keyOf(node)]
+    const r = lines(f.trunk.node, node, a, b, pairKey(a, b))
+    return { line: r.line, ...lineFromOf(r) }
+  }
   // A tunnel map's hub needs no name on its trunk: the map is the one
   // tunnel, and its outside address goes there.
   const chip = raw.tunnel ? [] : fanChip(raw)
@@ -702,11 +727,14 @@ function fanParts(
     legs.map((l) => l.pairs),
     tokens
   )
-  const common = (pk: string, line: LineType) => ({
+  const common = (
+    pk: string,
+    line: Pick<DiagramEdgeData, "line" | "lineFrom">
+  ) => ({
     sem: "cable" as const,
     raw,
     pairKey: pk,
-    line,
+    ...line,
     a: [],
     b: [],
     cableId: f.cable,
@@ -718,7 +746,9 @@ function fanParts(
     type: "link",
     animated: raw.marked,
     data: {
-      ...common(pairKey(keyOf(f.trunk.node), keyOf(far[0])), "straight"),
+      ...common(pairKey(keyOf(f.trunk.node), keyOf(far[0])), {
+        line: "straight",
+      }),
       fan: { role: "trunk", junction: f.id },
       labels: foldLabels(chip.length ? { mid: chip } : {}, sets.trunk, tokens),
     },
@@ -842,7 +872,8 @@ function meshParts(
   keyOf: (id: string) => string,
   mode: DiagramMode,
   opts: DiagramOptions,
-  measure: Measure
+  measure: Measure,
+  lines: LineResolver
 ): {
   nodes: Node[]
   edges: Edge<DiagramEdgeData>[]
@@ -929,6 +960,9 @@ function meshParts(
   ] as const)
     legsOf(terms).forEach((l, i) => {
       const key = pairKey(keyOf(l.node), keyOf(others[0]))
+      // The A side is the source end, as for any other link.
+      const [s, t] = end === "a" ? [l.node, others[0]] : [others[0], l.node]
+      const r = lines(s, t, keyOf(s), keyOf(t), key)
       const id = `${m.id}:${end}${i}`
       edges.push({
         id,
@@ -937,7 +971,8 @@ function meshParts(
         type: "link",
         animated: raw.marked,
         data: {
-          ...common(key, opts.links?.[key]?.line ?? opts.line),
+          ...common(key, r.line),
+          ...lineFromOf(r),
           fan: {
             role: "leg",
             junction,
@@ -2102,6 +2137,17 @@ export function buildDiagram(
     return node
   })
   const key = (id: string) => keyOf.get(id) ?? deviceKey(id)
+  // Each link's line (line-source.ts): its own, its ends' devices', the
+  // bands their cards stand in (by the saved arrangement), the view's.
+  const lines = lineResolver({
+    view: opts.line,
+    links: opts.links,
+    nodes: grouped ? undefined : opts.nodeLines,
+    bands: opts.bandLines,
+    bandOf: grouped
+      ? undefined
+      : bandOfCards(opts.rows, opts.bandLines, opts.positions),
+  })
 
   // Virtual chassis drawn as stacks (chassis.ts): each a frame whose
   // members stand round its centre - not on a grouped map or a trace.
@@ -2147,8 +2193,10 @@ export function buildDiagram(
     ...fans.flatMap((f) => f.edges),
     ...meshes.flatMap((m) => m.edges),
   ])
-  const parts = fans.map((f) => fanParts(f, key, mode, opts, measure))
-  const meshed = meshes.map((m) => meshParts(m, key, mode, opts, measure))
+  const parts = fans.map((f) => fanParts(f, key, mode, opts, measure, lines))
+  const meshed = meshes.map((m) =>
+    meshParts(m, key, mode, opts, measure, lines)
+  )
 
   const { edges: oriented, flipped } = orientHubToLeaf(
     classifyEdges(
@@ -2164,7 +2212,7 @@ export function buildDiagram(
               ? "lag"
               : "none",
       }
-    ).map((c) => diagramEdge(c, key, opts)),
+    ).map((c) => diagramEdge(c, key, opts, lines)),
     opts.run
   )
   // Twins - two devices of one role with a neighbour in common, like a

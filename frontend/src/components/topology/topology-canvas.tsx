@@ -71,6 +71,7 @@ import { patchNote, readNotes, removeNotes } from "./diagram/notes"
 import type { BandData } from "./diagram/band-node"
 import {
   bandExits,
+  bandLines,
   bandRows,
   drawnRegions,
   isRow,
@@ -146,7 +147,11 @@ function linkRef(e: Edge): DiagramLinkRef | undefined {
   if (!d?.pairKey || d.fan?.role === "trunk") return undefined
   if (d.sem !== "cable" && d.sem !== "bundle" && d.sem !== "lagbundle")
     return undefined
-  return { pairKey: d.pairKey, ...(d.arc ? { arc: d.arc.flip } : {}) }
+  return {
+    pairKey: d.pairKey,
+    ...(d.arc ? { arc: d.arc.flip } : {}),
+    ...(d.lineFrom ? { inherited: { line: d.line, ...d.lineFrom } } : {}),
+  }
 }
 
 /** A drawn line, as its right-click menu and Hide see it. */
@@ -866,6 +871,9 @@ export interface TopologyCanvasProps {
   diagramLine?: LineType
   /** Diagram: per device-pair line overrides from the saved view. */
   linkOverrides?: Record<string, TopologyLinkOverride>
+  /** Diagram: device id → its own line (`state.nodes[id].line`). Keep
+   * the object stable. The bands' lines come with `zones`. */
+  nodeLines?: Readonly<Record<string, LineType>>
   /** Diagram: which labels the links carry (subnets, addresses, port
    * names); all three when absent. Keep the array stable. */
   diagramLabels?: readonly LabelToken[]
@@ -1108,6 +1116,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     diagramMode = "detailed",
     diagramLine = "straight",
     linkOverrides,
+    nodeLines,
     diagramLabels,
     monitor,
     onDropDevices,
@@ -1189,6 +1198,16 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     []
   )
   const withExits = Object.keys(exits).length ? { exits } : {}
+  // Each row's line and each device's: a change rebuilds the links' lines
+  // (line-source.ts), never on a rename or tint.
+  const bandLinesKey = diagram ? JSON.stringify(bandLines(zones)) : "{}"
+  const lineOpts = useMemo(() => {
+    const bands = JSON.parse(bandLinesKey) as Record<string, LineType>
+    return {
+      ...(nodeLines && Object.keys(nodeLines).length ? { nodeLines } : {}),
+      ...(Object.keys(bands).length ? { bandLines: bands } : {}),
+    }
+  }, [bandLinesKey, nodeLines])
 
   // The Diagram is laid out in a worker (diagram-client.ts) wherever the
   // browser has one, so a big map never holds the page while it is built;
@@ -1238,6 +1257,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               mode: diagramMode,
               line: diagramLine,
               links: linkOverrides,
+              ...lineOpts,
               ...(diagramLabels ? { labels: diagramLabels } : {}),
               colorMode,
               direction,
@@ -1292,6 +1312,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       diagramMode,
       diagramLine,
       linkOverrides,
+      lineOpts,
       diagramLabels,
       checkLabels,
       bandRowList,
@@ -1312,6 +1333,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               mode: diagramMode,
               line: diagramLine,
               links: linkOverrides,
+              ...lineOpts,
               ...(diagramLabels ? { labels: diagramLabels } : {}),
               colorMode,
               direction,
@@ -1342,6 +1364,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       diagramMode,
       diagramLine,
       linkOverrides,
+      lineOpts,
       diagramLabels,
       colorMode,
       direction,
