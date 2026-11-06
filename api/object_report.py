@@ -59,7 +59,6 @@ from django.core.cache import cache
 from django.db.models import Q
 from django.http import HttpResponse, QueryDict
 from django.urls import reverse
-from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import serializers
@@ -74,6 +73,7 @@ from .drawing_pdf import (
     MAX_PDF_BYTES,
     MEDIA_IMAGES_URL,
     RENDER_TIMEOUT,
+    REPORT_ZONE,
     TOKEN,
     PdfUrlFetcher,
     RenderTimeout,
@@ -82,7 +82,10 @@ from .drawing_pdf import (
     detail,
     file_name,
     flag,
+    in_zone,
     kept_pdf,
+    reader_now,
+    reader_zone,
     release,
     render_guarded,
     run_with_deadline,
@@ -786,7 +789,7 @@ def _when(v, with_time: bool) -> str:
             t = dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
             if t.tzinfo is None:
                 t = t.replace(tzinfo=dt.UTC)
-            return t.astimezone(dt.UTC).strftime("%Y-%m-%d %H:%M")
+            return t.astimezone(REPORT_ZONE.get()).strftime("%Y-%m-%d %H:%M")
         return str(v)[:10]
     except ValueError:
         return str(v)
@@ -1747,6 +1750,12 @@ def too_slow(body: str, shape: dict, budget: float | None = None) -> Response | 
 
 
 def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str, dict] | Response:
+    """:func:`_build_report` with its table times in the reader's zone."""
+    with in_zone(reader_zone(request.user, tenant)):
+        return _build_report(request, rt, data, tenant)
+
+
+def _build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str, dict] | Response:
     """``(title, body html, shape)`` of the report ``data`` asks for, or the
     refusal. ``shape`` counts the objects, the list's columns (0 without a
     list) and the pages per object, for :func:`too_slow`."""
@@ -1795,7 +1804,7 @@ def build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str,
     if options.get("cover"):
         shape["cover"] = True
         shape["subtitle"] = _cover_subtitle(rt, rows, cat, options, many, list_table)
-    facts = [("Tenant", tenant.name), ("Generated", stamp(timezone.now()))]
+    facts = [("Tenant", tenant.name), ("Generated", stamp(reader_now(request.user, tenant)))]
     if many:
         facts += [
             (rt.plural, f"{len(rows):,}"),
@@ -1888,7 +1897,7 @@ def _page_html(
     paper = opts.get("paper") or "a4"
     many_cols = len((data.get("columns") or {}).get("list") or rt.list_columns) > 8
     orientation = opts.get("orientation") or ("landscape" if many_cols else "portrait")
-    generated = timezone.now()
+    generated = reader_now(request.user, tenant)
     marking = marking_for(request, tenant, opts)
     cover = ""
     if opts.get("cover"):

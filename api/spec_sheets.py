@@ -20,6 +20,7 @@ from django.template.loader import render_to_string
 from core.tags import tags_of
 
 from .din import mm
+from .drawing_pdf import reader_now, stamp
 from .natural import natural, natural_key
 
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -127,7 +128,9 @@ def _meta(obj, request, kind: str) -> dict:
     return {
         "deployment": ds.deployment_name or "Danbyte",
         "logo": _data_uri(ds.login_logo),
-        "generated": datetime.now(UTC),
+        "generated": stamp(reader_now(
+            getattr(request, "user", None), getattr(obj, "tenant", None)
+        )),
         "url": f"{base}{path}",
         "kind": kind,
     }

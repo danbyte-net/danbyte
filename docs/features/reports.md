@@ -122,6 +122,13 @@ a full-page background with white text on it:
 - the date at the bottom left in your date format, and Danbyte with its
   version at the bottom right.
 
+Every time in a report is in your timezone (your date and time
+preferences, else the tenant's): the cover's date, the running footer and
+the *Generated* line (`2026-11-07 00:01 EET`, the zone named), and the
+times in its tables. A report made just after your midnight carries that
+day on the cover and in the footer alike. The topology, floor plan, rack
+and cabinet PDFs and the spec sheets stamp the same way.
+
 The top and the bottom of the background are darkened a little so the text
 reads on any background.
 

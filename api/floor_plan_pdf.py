@@ -36,7 +36,6 @@ from html import escape
 
 from django.http import HttpResponse
 from django.urls import reverse
-from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from lxml import etree
@@ -60,6 +59,7 @@ from .drawing_pdf import (
     detail,
     file_name,
     kept_pdf,
+    reader_now,
     render_guarded,
     run_with_deadline,
     stamp,
@@ -582,7 +582,7 @@ def export_pdf(request, plan) -> HttpResponse | Response:
     bar = scale_bar(sheet["scale"] * px_per_mm)
     drawing = _ready_drawing(plan) if data["drawing"] else None
     credit = ""
-    generated = timezone.now()
+    generated = reader_now(request.user, plan.tenant)
     state = {"text_dropped": False}
 
     def sanitize(text: str) -> bytes:

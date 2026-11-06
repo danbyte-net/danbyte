@@ -79,6 +79,7 @@ from .drawing_pdf import (  # noqa: F401 - the sheet's names, as this module alw
     file_slug,
     kept_pdf,
     plan_sheet,
+    reader_now,
     render_guarded,
     render_pdf,
     run_with_deadline,
@@ -365,9 +366,9 @@ def topology_pdf_view(request):
     paper = data.get("paper") or {}
     meta = data.get("meta") or {}
     title = (data.get("title") or meta.get("view") or "").strip() or DIAGRAM_KINDS[kind][2]
-    # The server's clock, never the caller's: the date on paper is when
-    # the PDF was made.
-    generated = timezone.now()
+    # The server's clock, never the caller's, in the reader's zone: the
+    # date on paper is when the PDF was made.
+    generated = reader_now(request.user, tenant)
 
     def render(svg: bytes) -> bytes:
         return render_with_deadline(

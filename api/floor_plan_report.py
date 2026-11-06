@@ -36,7 +36,6 @@ from html import escape
 from django.db.models import Q
 from django.http import HttpResponse
 from django.urls import reverse
-from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from lxml import etree
@@ -61,6 +60,7 @@ from .drawing_pdf import (
     detail,
     file_name,
     kept_pdf,
+    reader_now,
     render_guarded,
     run_with_deadline,
     stamp,
@@ -1042,7 +1042,7 @@ def export_report(request, view, tenant, resolved) -> HttpResponse | Response:
     _name, subtitle = plan_title(view, view.tenant.name)
     if view.stack_id:
         subtitle = " · ".join(x for x in (view.stack.name, subtitle) if x)
-    generated = timezone.now()
+    generated = reader_now(request.user, tenant)
     sheets: list = []
     pages: dict = {}
 

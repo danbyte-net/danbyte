@@ -1908,7 +1908,9 @@ A file is named after the saved view (else the site, else `topology`) and
 the day: `arhus-dc-2026-09-26.drawio`. Every format, the PDF too, takes
 the same name; a letter such as ø or æ reads as `o` or `ae`
 (`kobenhavn-hq-…`), and anything else that is not a letter or digit as a
-hyphen. The PDF's day is the server's, in UTC.
+hyphen. The PDF's day and the time in its title block are the server's
+clock in your timezone (your date and time preferences), named after
+the time - `2026-11-07 00:01 EET` - as on every Danbyte PDF.
 
 **Hierarchy** exports its PNG, SVG, PDF and draw.io in the Diagram's
 Simple look, so the four files match: its card headers as compact

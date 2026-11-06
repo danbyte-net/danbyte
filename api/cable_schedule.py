@@ -34,7 +34,6 @@ from html import escape
 from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 from django.urls import reverse
-from django.utils import timezone
 from lxml import etree
 from rest_framework import serializers
 from rest_framework.response import Response
@@ -56,6 +55,7 @@ from .drawing_pdf import (
     detail,
     file_name,
     kept_pdf,
+    reader_now,
     render_guarded,
     run_with_deadline,
     stamp,
@@ -896,7 +896,7 @@ def export_pdf(request, view, plan, crop, tenant) -> HttpResponse | Response:
     schedule = build(plan, crop, request.user, tenant, group=data["group"], geometry=geometry)
     snaps.frame(view)
     title, subtitle = plan_title(view, view.tenant.name)
-    generated = timezone.now()
+    generated = reader_now(request.user, tenant)
     svg_text = data.get("svg") or ""
     detail_texts = data.get("closeup_svgs") or {}
     thumbnail = bool(svg_text.strip())

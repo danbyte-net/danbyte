@@ -40,7 +40,6 @@ from django.core.cache import cache
 from django.db.models import Q
 from django.http import HttpResponse
 from django.urls import reverse
-from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
@@ -66,7 +65,10 @@ from ...drawing_pdf import (
     file_name,
     file_slug,
     flag,
+    in_zone,
     kept_pdf,
+    reader_now,
+    reader_zone,
     release,
     render_guarded,
     run_with_deadline,
@@ -438,6 +440,12 @@ def _diagram_css(paper: str) -> str:
 
 
 def build(request, data: dict, tenant, *, svgs: list[bytes] | None = None) -> Report | Response:
+    """:func:`_build` with its table times in the reader's zone."""
+    with in_zone(reader_zone(request.user, tenant)):
+        return _build(request, data, tenant, svgs=svgs)
+
+
+def _build(request, data: dict, tenant, *, svgs: list[bytes] | None = None) -> Report | Response:
     """The report ``data`` asks for, or the refusal. With ``svgs`` (the
     sanitised drawings, one a view) the diagram pages are laid out; without,
     they are only counted (the estimate)."""
@@ -462,7 +470,7 @@ def build(request, data: dict, tenant, *, svgs: list[bytes] | None = None) -> Re
     )
     report = Report(title)
     budget = rep.Budget(rep.MAX_TOTAL_ROWS)
-    generated = timezone.now()
+    generated = reader_now(request.user, tenant)
     # The report's own cover colours, when it picks some, on its dividers too.
     look = look_for(tenant, options.get("cover_colors"))
     paper = options.get("paper") or "a4"

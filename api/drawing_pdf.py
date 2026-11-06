@@ -42,6 +42,8 @@ import re
 import secrets
 import unicodedata
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from html import escape
 from pathlib import Path
@@ -225,9 +227,46 @@ def _font_faces() -> str:
     return "".join(faces)
 
 
+#: The zone a report's table times print in while it is built
+#: (:func:`in_zone`); UTC outside one.
+REPORT_ZONE: ContextVar[dt.tzinfo] = ContextVar("report_zone", default=dt.UTC)
+
+
+def reader_zone(user, tenant) -> dt.tzinfo:
+    """The reader's timezone (their date and time preferences, else the
+    tenant's), the one the cover's date uses; UTC when it can't be read."""
+    from zoneinfo import ZoneInfo
+
+    from auth_api.user_prefs import datetime_prefs
+
+    try:
+        return ZoneInfo(datetime_prefs(user, tenant).get("timezone") or "UTC")
+    except Exception:  # noqa: BLE001 - a broken pref prints UTC
+        return dt.UTC
+
+
+def reader_now(user, tenant) -> dt.datetime:
+    """Now, in the reader's timezone: a PDF's "generated" time, so its
+    footer, title block and cover all print the same zone."""
+    return timezone.now().astimezone(reader_zone(user, tenant))
+
+
+@contextmanager
+def in_zone(zone: dt.tzinfo):
+    """Table times print in ``zone`` inside the block."""
+    token = REPORT_ZONE.set(zone)
+    try:
+        yield
+    finally:
+        REPORT_ZONE.reset(token)
+
+
 def stamp(when: dt.datetime) -> str:
-    """``2026-09-26 12:00 UTC``: when a sheet was made, as it prints."""
-    return when.astimezone(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+    """``2026-09-26 12:00 UTC``: when a sheet was made, as it prints - in
+    the zone ``when`` carries (:func:`reader_now`), named."""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.UTC)
+    return when.strftime("%Y-%m-%d %H:%M %Z")
 
 
 #: The sheet's look; its geometry is on each sheet (:func:`sheet_frame`), so
@@ -518,7 +557,7 @@ def file_slug(title: str, fallback: str) -> str:
 
 
 def file_name(title: str, when: dt.datetime, fallback: str) -> str:
-    return f"{file_slug(title, fallback)}-{when.astimezone(dt.UTC):%Y-%m-%d}.pdf"
+    return f"{file_slug(title, fallback)}-{when:%Y-%m-%d}.pdf"
 
 
 def file_mime(name: str) -> str:
