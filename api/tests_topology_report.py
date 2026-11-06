@@ -298,6 +298,43 @@ class RenderTests(_Topo):
             self.assertEqual(int(m.group(1)), at[anchor])
 
 
+class DiagramPageTests(_Topo):
+    def test_the_drawing_fills_its_page(self):
+        import weasyprint
+        from weasyprint.formatting_structure import boxes
+
+        _, seen = self.docs({"views": [self.view_entry(self.dev_a)], "sections": ["diagram"]})
+        doc = weasyprint.HTML(
+            string=seen["docs"][0][1],
+            base_url=tx.BASE_URL,
+            url_fetcher=tx.PdfUrlFetcher(SVG.encode()),
+        ).render()
+        page = next(p for p in doc.pages if "v1-diagram" in p.anchors)
+        self.assertGreater(page.width, page.height)  # landscape
+        found = []
+
+        def walk(box):
+            if isinstance(box, boxes.ReplacedBox):
+                found.append(box)
+            for child in getattr(box, "children", []) or []:
+                walk(child)
+            if getattr(box, "_box", None) is not None:  # an absolute box's placeholder
+                walk(box._box)
+
+        walk(page._page_box)
+        self.assertEqual(len(found), 1)
+        # Fitted to the page: a small drawing is enlarged (at most 1.5x).
+        self.assertEqual(round(found[0].width), 600)
+
+    def test_each_view_reads_its_own_drawing(self):
+        """The report's fetcher serves each view's drawing by its URL, the
+        first one too."""
+        fetcher = tx.PdfUrlFetcher(b"", {tx.DIAGRAM_URL: b"<svg>first</svg>"})
+        got = fetcher(tx.DIAGRAM_URL)
+        body = got["string"] if isinstance(got, dict) else got.read()
+        self.assertEqual(body, b"<svg>first</svg>")
+
+
 def _page_text(page) -> str:
     from weasyprint.formatting_structure import boxes
 

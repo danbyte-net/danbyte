@@ -32,9 +32,10 @@ TOC_CSS = (
     "section.toc a::after{content:leader('.') target-counter(attr(href), page);"
     "color:#71717a;font-weight:400}"
     "section.toc .no{display:inline-block;min-width:7mm;color:#71717a}"
+    # Only chapters and sections are bookmarks, not every heading.
+    "h1,h2,h3,h4,h5,h6{bookmark-level:none}"
     "h1.chapter{bookmark-level:1}"
     "h2.section{bookmark-level:2}"
-    "section.toc h1{bookmark-level:none}"
 )
 
 

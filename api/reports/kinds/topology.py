@@ -402,12 +402,14 @@ def diagram_page(
         title_block=title_block,
         src=src,
         page_label="",
-        attrs=(
-            f"id='{escape(anchor)}' style=\"bookmark-level:{level};"
-            f"bookmark-label:'{escape(bookmark).replace(chr(39), '')}'\""
-        ),
     )
-    return f"<section class='diagram-page diagram-{orientation}'>{sheet.html}</section>"
+    # The anchor and the bookmark go on the page, so the sheet stays the
+    # Export's exactly.
+    label = escape(bookmark).replace("'", "")
+    return (
+        f"<section class='diagram-page diagram-{orientation}' id='{escape(anchor)}' "
+        f"style=\"bookmark-level:{level};bookmark-label:'{label}'\">{sheet.html}</section>"
+    )
 
 
 def _diagram_css(paper: str) -> str:

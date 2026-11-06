@@ -345,10 +345,10 @@ class PdfUrlFetcher:
         self.drawings = drawings or {}
 
     def __call__(self, url: str):
-        if url == DIAGRAM_URL:
-            return _response(url, self.svg, "image/svg+xml")
         if url in self.drawings:
             return _response(url, self.drawings[url], "image/svg+xml")
+        if url == DIAGRAM_URL:
+            return _response(url, self.svg, "image/svg+xml")
         scheme = url.split(":", 1)[0].lower()
         if scheme == "data":
             with DataHandler().data_open(Request(url)) as res:
