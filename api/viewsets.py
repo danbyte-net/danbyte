@@ -3993,7 +3993,10 @@ class DeviceViewSet(
     pagination_class = StandardPagination
     # Server paging, sorting, facets and the slim row (#482, #487).
     table_spec = list_specs.DEVICE_TABLE
-    rbac_action_map = {**PrtgCleanupDeleteMixin.rbac_action_map, **object_report.RBAC_ACTIONS}
+    rbac_action_map = {
+        **PrtgCleanupDeleteMixin.rbac_action_map, **object_report.RBAC_ACTIONS,
+        "bulk_create": "add",
+    }
     # Field-level write allow-list, read by api.editable_fields - devices have
     # NO bulk-update endpoint, so this only powers planned changes and any
     # future single-field write path. Rack *placement* scalars (position, face,
@@ -4853,6 +4856,141 @@ class DeviceViewSet(
 
         for svc in new.services.filter(monitored=True):
             sync_service_checks(svc)
+
+    #: Fields that belong to one device. A name range leaves them blank:
+    #: ten devices can't share a rack unit, a serial or an IP.
+    RANGE_REFUSED_FIELDS = (
+        "position", "mount_offset_mm", "din_offset_mm", "serial_number", "asset_tag",
+        "vc_position", "primary_ip_id", "secondary_ip_id", "oob_ip_id", "prtg_host",
+    )
+
+    @extend_schema(summary="Create devices from a name range", request=DeviceSerializer,
+                   responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT})
+    @action(detail=False, methods=["post"], url_path="bulk-create")
+    def bulk_create(self, request):
+        """The create payload with a ``[a-b]`` range in ``name`` (``DK-RDS-[1-10]``,
+        ``[0001-0100]``): one device per name, every other field shared, plus
+        optional ``application_group_ids`` and ``profile_ids`` given to each.
+        All or nothing - a taken name or a failing device creates none and
+        names which. Per-device fields (rack position, serial, IPs…) must be
+        blank."""
+        from api import applications as app_sync
+        from api.application_groups_api import _require_in_scope
+        from profiles import engine as profile_engine
+        from profiles.models import DeviceProfile
+
+        from .models import ApplicationGroup, ApplicationGroupAssignment, InstalledSoftware
+        from .name_range import NAME_RANGE_RE, RANGE_CAP, expand_name_range, range_error
+        from .serializers import TenantScopedPrimaryKeyRelatedField
+
+        tenant = self._tenant_or_403()
+        raw = request.data
+        body = raw.dict() if hasattr(raw, "dict") else dict(raw)
+        name = str(body.get("name") or "").strip()
+        err = range_error(name)
+        if err:
+            raise ValidationError({"name": err})
+        names = expand_name_range(name)
+        if not NAME_RANGE_RE.search(name):
+            raise ValidationError({"name": f"Give a range like {name or 'sw'}-[1-10]."})
+        if len(names) > RANGE_CAP:  # pragma: no cover - range_error caps it
+            raise ValidationError({"name": f"At most {RANGE_CAP} devices at once."})
+        busy = [f for f in self.RANGE_REFUSED_FIELDS if body.get(f) not in (None, "")]
+        if busy:
+            raise ValidationError({
+                f: "Leave blank when creating several devices." for f in busy})
+
+        class Extras(serializers.Serializer):
+            profile_ids = TenantScopedPrimaryKeyRelatedField(
+                source="profiles", queryset=DeviceProfile.objects.all(), many=True,
+                required=False)
+            application_group_ids = TenantScopedPrimaryKeyRelatedField(
+                source="groups", queryset=ApplicationGroup.objects.all(), many=True,
+                required=False)
+
+        extras = Extras(data={k: body.pop(k) for k in ("profile_ids", "application_group_ids")
+                              if k in body}, context=self.get_serializer_context())
+        extras.is_valid(raise_exception=True)
+        profiles = extras.validated_data.get("profiles", [])
+        groups = extras.validated_data.get("groups", [])
+        if len({p.pk for p in profiles}) != len(profiles):
+            raise ValidationError({"profile_ids": "A profile is listed twice."})
+
+        taken = sorted(Device.objects.filter(tenant=tenant, name__in=names)
+                       .values_list("name", flat=True), key=natural_key)
+        if taken:
+            shown = ", ".join(taken[:5]) + (f" and {len(taken) - 5} more" if len(taken) > 5 else "")
+            raise ValidationError({
+                "name": f"Already exists: {shown}.",
+                "detail": f"Nothing created: {len(taken)} of {len(names)} names are taken.",
+            })
+
+        failed: list[dict] = []
+        created: list[Device] = []
+        with transaction.atomic():
+            for n in names:
+                ser = self.get_serializer(data={**body, "name": n})
+                if not ser.is_valid():
+                    failed.append({"name": n, "errors": ser.errors})
+                    continue
+                try:
+                    with transaction.atomic():
+                        self.perform_create(ser)
+                        device = ser.instance
+                        self._assert_write_in_site_scope(
+                            Response({"id": device.pk}), "add")
+                        if groups:
+                            before = set(InstalledSoftware.objects.filter(device=device)
+                                         .values_list("pk", flat=True))
+                            out = app_sync.set_host_groups(groups, device=device)
+                            _require_in_scope(
+                                request, ApplicationGroupAssignment,
+                                ApplicationGroupAssignment.objects.filter(
+                                    device=device, group_id__in=out["assigned"],
+                                ).values_list("pk", flat=True),
+                                "applicationgroupassignment", "add")
+                            made = set(InstalledSoftware.objects.filter(device=device)
+                                       .values_list("pk", flat=True))
+                            _require_in_scope(request, InstalledSoftware, made - before,
+                                              "installedsoftware", "add")
+                        if profiles:
+                            for p in profiles:
+                                profile_engine.check_applies(p, device)
+                                needs = [("device", "view"), *profile_engine
+                                         .required_permissions(p, device, "assign")]
+                                missing = profile_engine.missing_permissions(
+                                    request.user, tenant, needs, device)
+                                if missing:
+                                    raise PermissionDenied(profile_engine.missing_text(missing))
+                            profile_engine.set_host_profiles(profiles, device, user=request.user)
+                except profile_engine.ProfileError as exc:
+                    failed.append({"name": n, "errors": {"profile_ids": [str(exc)]}})
+                    continue
+                except ValidationError as exc:
+                    failed.append({"name": n, "errors": exc.detail})
+                    continue
+                created.append(device)
+            if failed:
+                transaction.set_rollback(True)
+        if failed:
+            first = failed[0]
+            errs = first["errors"] if isinstance(first["errors"], dict) else {
+                "non_field_errors": first["errors"]}
+            out = {}
+            for k, v in errs.items():
+                msg = v[0] if isinstance(v, list) and v else v
+                out[k] = f"{first['name']}: {msg}"
+            out["detail"] = (
+                f"Nothing created: {len(failed)} of {len(names)} devices failed "
+                f"({', '.join(f['name'] for f in failed[:5])}"
+                f"{' …' if len(failed) > 5 else ''})."
+            )
+            out["failed"] = failed
+            return Response(out, status=drf_status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "count": len(created),
+            "results": [{"id": str(d.pk), "name": d.name} for d in created],
+        }, status=drf_status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="sync-from-type")
     def sync_from_type(self, request, pk=None):

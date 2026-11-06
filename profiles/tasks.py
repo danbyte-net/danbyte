@@ -51,7 +51,7 @@ def run_bulk(tenant_id, user_id, profile_id, act, kind, ids, via="", request_id=
                 outcome = "gone"
             else:
                 try:
-                    outcome = bulk_one(user, tenant, profile, host, act)
+                    outcome, _detail = bulk_one(user, tenant, profile, host, act)
                 except Exception:  # noqa: BLE001 - one object must not stop the run
                     log.exception("device profile bulk %s on %s failed", act, i)
                     outcome = "failed"

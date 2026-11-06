@@ -14,7 +14,8 @@
   ``?device=``, ``?virtual_machine=``. ``POST set/`` sets an object's
   profiles exactly, in list order. ``POST <id>/reapply/`` restores what was
   removed by hand. ``POST bulk/`` assigns or unassigns one profile on up to
-  :data:`BULK_INLINE` objects at once, more as a background job.
+  :data:`BULK_INLINE` objects at once, each its own transaction and answered
+  with its outcome and why it was skipped; more as a background job.
 
 Profiles are a tenant catalog, like application groups. An assignment
 belongs to its device's or VM's site (``SITE_PATHS``). Assigning also takes
@@ -24,6 +25,7 @@ for its tags, custom fields and platform; unassigning takes ``delete``.
 """
 from __future__ import annotations
 
+import logging
 import re
 
 from django.db import transaction
@@ -67,6 +69,8 @@ BULK_INLINE = 25
 BULK_MAX = 5000
 
 PATH_SEP = " / "
+
+log = logging.getLogger(__name__)
 
 
 def _path(profile) -> str:
@@ -577,30 +581,33 @@ class _BulkSerializer(serializers.Serializer):
         return attrs
 
 
-def bulk_one(user, tenant, profile, host, act: str) -> str:
-    """One object of a bulk request: the outcome word."""
+def bulk_one(user, tenant, profile, host, act: str) -> tuple[str, str]:
+    """One object of a bulk request: the outcome word and, when it was
+    skipped, why. Each assign or unassign is its own transaction."""
     hk = engine.host_kwargs(host)
     try:
         if act == "assign":
             if DeviceProfileAssignment.objects.filter(profile=profile, **hk).exists():
-                return "unchanged"
+                return "unchanged", "Already assigned."
             needs = [(engine.host_slug(host), "view"),
                      *engine.required_permissions(profile, host, "assign")]
-            if engine.missing_permissions(user, tenant, needs, host):
-                return "denied"
+            missing = engine.missing_permissions(user, tenant, needs, host)
+            if missing:
+                return "denied", engine.missing_text(missing)
             engine.assign(profile, host, user=user)
-            return "assigned"
+            return "assigned", ""
         a = DeviceProfileAssignment.objects.filter(profile=profile, **hk).first()
         if a is None:
-            return "unchanged"
+            return "unchanged", "Not assigned."
         needs = [(engine.host_slug(host), "view"),
                  *engine.required_permissions(profile, host, "unassign")]
-        if engine.missing_permissions(user, tenant, needs, host):
-            return "denied"
+        missing = engine.missing_permissions(user, tenant, needs, host)
+        if missing:
+            return "denied", engine.missing_text(missing)
         engine.unassign(a)
-        return "unassigned"
-    except engine.ProfileError:
-        return "refused"
+        return "unassigned", ""
+    except engine.ProfileError as exc:
+        return "refused", str(exc)
 
 
 class DeviceProfileAssignmentViewSet(TenantScopedViewSet):
@@ -757,9 +764,18 @@ class DeviceProfileAssignmentViewSet(TenantScopedViewSet):
                             status=drf_status.HTTP_202_ACCEPTED)
         results, counts = [], {}
         for i in ids:
-            outcome = bulk_one(request.user, tenant, profile, hosts[i], act)
+            host = hosts[i]
+            try:
+                outcome, detail = bulk_one(request.user, tenant, profile, host, act)
+            except Exception:  # noqa: BLE001 - one object must not stop the rest
+                log.exception("device profile bulk %s on %s failed", act, i)
+                outcome, detail = "failed", "Could not be saved."
             counts[outcome] = counts.get(outcome, 0) + 1
-            results.append({"id": str(i), "name": hosts[i].name, "outcome": outcome})
+            # An object the caller may not view keeps its name hidden.
+            hidden = outcome == "denied" and not rbac.can_act_on(
+                request.user, tenant, engine.host_slug(host), "view", host)
+            results.append({"id": str(i), "name": "" if hidden else host.name,
+                            "outcome": outcome, "detail": detail})
         return Response({"results": results, "counts": counts})
 
 

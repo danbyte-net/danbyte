@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Pencil, RotateCw, Trash2 } from "lucide-react"
+import { Pencil, Plus, RotateCw, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -39,6 +39,7 @@ import {
   useInvalidateProfileWork,
   useReapplyProfile,
 } from "@/components/device-profile-assign"
+import { AssignObjectsDialog } from "@/components/device-profile-bulk"
 import {
   appliesToLabel,
   buildDeviceProfileAssignmentColumns,
@@ -74,6 +75,9 @@ function Body({ profile: p }: { profile: DeviceProfile }) {
   const [deleting, setDeleting] = useState<DeviceProfile | null>(null)
   const goBack = useCallback(() => nav({ to: "/device-profiles" }), [nav])
   const { canDo } = useMe()
+  const { canAssign, canAddDevice } = useProfileAddRights(p)
+  const [assigning, setAssigning] = useState(false)
+  const openAssign = useCallback(() => setAssigning(true), [])
 
   return (
     <DetailShell
@@ -83,6 +87,13 @@ function Body({ profile: p }: { profile: DeviceProfile }) {
       presence={{ type: "deviceprofile", id: p.id }}
       actions={
         <>
+          {canAddDevice && <AddDeviceButton profileId={p.id} />}
+          {canAssign && (
+            <Button variant="outline" size="sm" onClick={openAssign}>
+              <Plus className="h-3.5 w-3.5" />{" "}
+              {p.applies_to_devices ? "Assign devices" : "Assign VMs"}
+            </Button>
+          )}
           {canDo("deviceprofile", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/device-profiles/$id/edit" params={{ id: p.id }}>
@@ -127,7 +138,12 @@ function Body({ profile: p }: { profile: DeviceProfile }) {
         <ProfileOverview profile={p} />
       </DetailTab>
       <DetailTab value="assigned">
-        <AssignedObjects profileId={p.id} />
+        <AssignedObjects
+          profileId={p.id}
+          onAssign={canAssign ? openAssign : undefined}
+          addDevice={canAddDevice}
+          assignLabel={p.applies_to_devices ? "Assign devices" : "Assign VMs"}
+        />
       </DetailTab>
       <DetailTab value="children">
         <Children profileId={p.id} />
@@ -143,9 +159,82 @@ function Body({ profile: p }: { profile: DeviceProfile }) {
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={goBack}
       />
+      {canAssign && (
+        <AssignDialog
+          profile={p}
+          open={assigning}
+          onOpenChange={setAssigning}
+        />
+      )}
     </DetailShell>
   )
 }
+
+/** Who may assign the profile in bulk, and who may create a device that
+ * starts with it (device add plus the rights the device form's Profiles
+ * field needs). The server checks each object's site either way. */
+function useProfileAddRights(p: DeviceProfile) {
+  const { canDo } = useMe()
+  const canAssign =
+    canDo("deviceprofileassignment", "add") &&
+    (p.applies_to_devices || p.applies_to_vms)
+  const canAddDevice =
+    p.applies_to_devices &&
+    canDo("device", "add") &&
+    canDo("deviceprofileassignment", "view") &&
+    canDo("deviceprofileassignment", "add") &&
+    canDo("deviceprofileassignment", "delete")
+  return { canAssign, canAddDevice }
+}
+
+/** "Add device": the normal device form with this profile already picked. */
+function AddDeviceButton({ profileId }: { profileId: string }) {
+  return (
+    <Button variant="outline" size="sm" asChild>
+      <Link to="/devices/new" search={{ profile: profileId }}>
+        <Plus className="h-3.5 w-3.5" /> Add device
+      </Link>
+    </Button>
+  )
+}
+
+const assignmentsKey = (profileId: string) => [
+  "device-profile-assignments",
+  "profile",
+  profileId,
+]
+
+function useProfileAssignments(profileId: string) {
+  return useQuery({
+    queryKey: assignmentsKey(profileId),
+    queryFn: () =>
+      apiAll<DeviceProfileAssignment>(
+        `${ASSIGN_ENDPOINT}?profile=${profileId}`
+      ),
+  })
+}
+
+function AssignDialog({
+  profile,
+  open,
+  onOpenChange,
+}: {
+  profile: DeviceProfile
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const q = useProfileAssignments(profile.id)
+  return (
+    <AssignObjectsDialog
+      profile={profile}
+      assigned={q.data?.results ?? EMPTY}
+      open={open}
+      onOpenChange={onOpenChange}
+    />
+  )
+}
+
+const EMPTY: DeviceProfileAssignment[] = []
 
 const SECTIONS: { kind: DeviceProfileSectionKind; title: string }[] = [
   { kind: "application_group", title: "Application groups" },
@@ -295,7 +384,19 @@ export function ProfileOverview({ profile: p }: { profile: DeviceProfile }) {
 
 /** The devices and VMs the profile is on, with their state, Re-apply,
  * Unassign and the same two in bulk. */
-export function AssignedObjects({ profileId }: { profileId: string }) {
+export function AssignedObjects({
+  profileId,
+  onAssign,
+  addDevice,
+  assignLabel = "Assign devices",
+}: {
+  profileId: string
+  /** Opens the assign dialog; absent when the reader may not assign. */
+  onAssign?: () => void
+  /** Show "Add device" (the device form with this profile picked). */
+  addDevice?: boolean
+  assignLabel?: string
+}) {
   const { canDo } = useMe()
   const canUnassign = canDo("deviceprofileassignment", "delete")
   const canReapply = canDo("deviceprofileassignment", "change")
@@ -304,13 +405,7 @@ export function AssignedObjects({ profileId }: { profileId: string }) {
   const [selected, setSelected] = useState<DeviceProfileAssignment[]>([])
   const [unassigning, setUnassigning] =
     useState<DeviceProfileAssignment | null>(null)
-  const q = useQuery({
-    queryKey: ["device-profile-assignments", "profile", profileId],
-    queryFn: () =>
-      apiAll<DeviceProfileAssignment>(
-        `${ASSIGN_ENDPOINT}?profile=${profileId}`
-      ),
-  })
+  const q = useProfileAssignments(profileId)
   const rows = useMemo(() => q.data?.results ?? [], [q.data])
   const missing = rows.reduce((n, a) => n + a.missing_count, 0)
   const edited = rows.reduce((n, a) => n + a.edited_count, 0)
@@ -385,6 +480,16 @@ export function AssignedObjects({ profileId }: { profileId: string }) {
           <Badge variant="info" className="num">
             {edited} edited
           </Badge>
+        )}
+        {selected.length === 0 && (onAssign || addDevice) && (
+          <div className="ml-auto flex items-center gap-2">
+            {addDevice && <AddDeviceButton profileId={profileId} />}
+            {onAssign && (
+              <Button size="sm" variant="outline" onClick={onAssign}>
+                <Plus className="h-3.5 w-3.5" /> {assignLabel}
+              </Button>
+            )}
+          </div>
         )}
         {selected.length > 0 && (
           <div className="ml-auto flex items-center gap-2">

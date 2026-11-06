@@ -278,6 +278,35 @@ describe("the Assigned objects tab", () => {
   })
 })
 
+describe("the Assigned objects tab's add buttons", () => {
+  it("offers Add device with the profile picked, and Assign devices", async () => {
+    apiMock.mockImplementation(async (path: string) =>
+      path.startsWith("/api/prefs/columns/")
+        ? { source: "none", is_forced: false, data: null }
+        : page([])
+    )
+    const onAssign = vi.fn()
+    mount(<AssignedObjects profileId="p2" onAssign={onAssign} addDevice />)
+    const add = await screen.findByRole("link", { name: "Add device" })
+    expect(add.getAttribute("href")).toBe("/devices/new?profile=p2")
+    fireEvent.click(screen.getByRole("button", { name: "Assign devices" }))
+    expect(onAssign).toHaveBeenCalled()
+    expect(screen.getByText("Not assigned to any device or VM.")).toBeTruthy()
+  })
+
+  it("shows neither without the rights", async () => {
+    apiMock.mockImplementation(async (path: string) =>
+      path.startsWith("/api/prefs/columns/")
+        ? { source: "none", is_forced: false, data: null }
+        : page([])
+    )
+    mount(<AssignedObjects profileId="p2" />)
+    await screen.findByText("Not assigned to any device or VM.")
+    expect(screen.queryByRole("link", { name: "Add device" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Assign devices" })).toBeNull()
+  })
+})
+
 describe("the profile editor", () => {
   it("leaves the profile and its descendants out of the parents", () => {
     const all = [BASE, HR, NIGHT, OTHER]

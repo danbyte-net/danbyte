@@ -438,7 +438,11 @@ export function setHostProfiles(host: ProfileHost, profileIds: string[]) {
 
 /** The device and VM forms' "Profiles" field: the object's profiles (none
  * for a new one) as a draft, written by ``commit`` once the object saved. */
-export function useHostProfilesDraft(host: ProfileHost | null) {
+export function useHostProfilesDraft(
+  host: ProfileHost | null,
+  /** A new object's starting picks - "Add device" from a profile's page. */
+  seed?: string[]
+) {
   const { canDo } = useMe()
   const invalidate = useInvalidateProfileWork()
   const canSet =
@@ -457,7 +461,9 @@ export function useHostProfilesDraft(host: ProfileHost | null) {
     () => (current.data?.results ?? []).map((a) => a.profile.id),
     [current.data]
   )
-  const [draft, setDraft] = useState<string[] | null>(null)
+  const [draft, setDraft] = useState<string[] | null>(
+    !host && seed?.length ? seed : null
+  )
   const ids = draft ?? initial
   const changed =
     draft !== null &&

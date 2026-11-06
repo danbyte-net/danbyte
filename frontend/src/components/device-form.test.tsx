@@ -1102,3 +1102,83 @@ describe("DeviceForm PRTG", () => {
     expect(screen.queryByText("PRTG", { selector: "label" })).toBeNull()
   })
 })
+
+describe("DeviceForm name range", () => {
+  const typeName = (name: string) =>
+    fireEvent.change(within(field("Name")).getByRole("textbox"), {
+      target: { value: name },
+    })
+
+  it("previews what a range creates and relabels the submit", async () => {
+    renderForm()
+    typeName("DK-RDS-[1-10]")
+    expect(
+      screen.getByText("Creates 10 devices: DK-RDS-1 … DK-RDS-10")
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Create 10 devices" })
+    ).toBeTruthy()
+    typeName("[0001-0100]")
+    expect(screen.getByText("Creates 100 devices: 0001 … 0100")).toBeTruthy()
+    typeName("sw-01")
+    expect(screen.queryByText(/^Creates /)).toBeNull()
+    expect(screen.getByRole("button", { name: "Create device" })).toBeTruthy()
+  })
+
+  it("sends a range to bulk-create in one request, with the profile", async () => {
+    apiMock.mockImplementation((path, init) => {
+      if (path === "/api/devices/bulk-create/")
+        return Promise.resolve({
+          count: 3,
+          results: [
+            { id: "d1", name: "rds-1" },
+            { id: "d2", name: "rds-2" },
+            { id: "d3", name: "rds-3" },
+          ],
+        })
+      if (path === "/api/device-profiles/?picker=1")
+        return page([
+          { id: "p1", name: "RDS", slug: "rds", color: "", path: "RDS" },
+        ])
+      return init?.method ? Promise.resolve({}) : page([])
+    })
+    const onSavedMany = vi.fn()
+    const { onSaved } = renderForm({
+      initial: { profileIds: ["p1"] },
+      onSavedMany,
+    })
+    typeName("rds-[1-3]")
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Create 3 devices" })
+        .closest("form") as HTMLFormElement
+    )
+    await waitFor(() => expect(onSavedMany).toHaveBeenCalled())
+    const posts = apiMock.mock.calls.filter(([, i]) => i?.method === "POST")
+    expect(posts.map(([p]) => p)).toEqual(["/api/devices/bulk-create/"])
+    expect(JSON.parse(String(posts[0][1]?.body))).toMatchObject({
+      name: "rds-[1-3]",
+      profile_ids: ["p1"],
+    })
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it("writes a picked profile after a single create", async () => {
+    renderForm({ initial: { profileIds: ["p1"] } })
+    await save("rds-1")
+    await waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(
+          ([p]) => p === "/api/device-profile-assignments/set/"
+        )
+      ).toBe(true)
+    )
+    const set = apiMock.mock.calls.find(
+      ([p]) => p === "/api/device-profile-assignments/set/"
+    )!
+    expect(JSON.parse(String(set[1]?.body))).toEqual({
+      device_id: "d-new",
+      profile_ids: ["p1"],
+    })
+  })
+})

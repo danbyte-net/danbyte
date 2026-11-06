@@ -2479,14 +2479,29 @@ export interface DeviceProfilePreview {
 }
 
 export type DeviceProfileBulkOutcome =
-  "assigned" | "unassigned" | "unchanged" | "denied" | "refused"
+  "assigned" | "unassigned" | "unchanged" | "denied" | "refused" | "failed"
+
+/** One object of an inline bulk run; `detail` says why it was skipped. */
+export interface DeviceProfileBulkItem {
+  id: string
+  /** Blank when the caller may not view the object. */
+  name: string
+  outcome: DeviceProfileBulkOutcome
+  detail?: string
+}
 
 export type DeviceProfileBulkResult =
   | {
-      results: { id: string; name: string; outcome: DeviceProfileBulkOutcome }[]
+      results: DeviceProfileBulkItem[]
       counts: Partial<Record<DeviceProfileBulkOutcome, number>>
     }
   | { job_id: string; count: number }
+
+/** `POST /api/devices/bulk-create/`: the devices one name range made. */
+export interface DeviceBulkCreateResult {
+  count: number
+  results: { id: string; name: string }[]
+}
 
 // ─── Application flows (#163) ──────────────────────────────────────────
 
