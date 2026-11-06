@@ -178,6 +178,7 @@ from .serializers import (
     ModuleTypeMiniSerializer,
     TopologyDefaultViewSerializer,
     TopologyViewSerializer,
+    TopologyViewListSerializer,
     TopologyViewSummarySerializer,
     ModuleTypeSerializer,
     ConsolePortSerializer,
@@ -6333,13 +6334,13 @@ class ModuleBayTemplateViewSet(_ComponentTemplateViewSet):
     serializer_class = ModuleBayTemplateSerializer
 
 
-class TopologyViewViewSet(TenantScopedViewSet):
+class TopologyViewViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     queryset = TopologyView.objects.all().order_by(NATURAL_NAME)
     serializer_class = TopologyViewSerializer
     pagination_class = StandardPagination
     # Reading the tenant's default takes view on topology views, like the
     # views themselves; who may set it is decided in the action.
-    rbac_action_map = {"default": "view"}
+    rbac_action_map = {"default": "view", "bulk_delete": "delete"}
 
     def _picker(self) -> bool:
         """``?picker=1`` on the list: names only, never the (large) state."""
@@ -6348,13 +6349,55 @@ class TopologyViewViewSet(TenantScopedViewSet):
             and self.request.query_params.get("picker") == "1"
         )
 
+    def _summary(self) -> bool:
+        """``?summary=1`` on the list: the Topology page's list of views -
+        without the state, with who made and last changed each (from the
+        change log) and whether it is the tenant's default."""
+        return (
+            self.action == "list" and self.request is not None
+            and self.request.query_params.get("summary") == "1"
+        )
+
     def get_serializer_class(self):
+        if self._summary():
+            return TopologyViewListSerializer
         if self._picker():
             return TopologyViewSummarySerializer
         return TopologyViewSerializer
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        if self._summary():
+            from core.models import TenantSettings
+
+            tenant = self._tenant_or_403()
+            want = (
+                TenantSettings.objects.filter(tenant=tenant)
+                .values_list("default_topology_view", flat=True).first()
+            )
+            ctx["default_view"] = str(want) if want else None
+        return ctx
+
     def get_queryset(self):
         qs = super().get_queryset()
+        if self._summary():
+            from django.db.models import CharField, OuterRef, Subquery
+            from django.db.models.functions import Cast
+
+            from audit.models import ChangeLogEntry
+
+            log = ChangeLogEntry.objects.filter(
+                object_type="api.topologyview",
+                object_id=Cast(OuterRef("pk"), CharField()),
+            )
+            return qs.defer("state").annotate(
+                created_by_name=Subquery(
+                    log.filter(action="create").order_by("timestamp").values("user_name")[:1]
+                ),
+                updated_by_name=Subquery(
+                    log.exclude(action="delete").order_by("-timestamp").values("user_name")[:1]
+                ),
+            )
         return qs.defer("state") if self._picker() else qs
 
     def perform_create(self, serializer):
