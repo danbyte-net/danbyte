@@ -180,6 +180,9 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "auth_api.rbac.RequestCacheMiddleware",
+    # Signed-in /api/ responses are `private, no-store` unless the view chose
+    # its own Cache-Control (#491). After auth, so it sees request.user.
+    "core.middleware.ApiNoStoreMiddleware",
     # Rolling idle-session timeout (admin-configurable; no-op when unset). After
     # auth so request.user is resolved.
     "core.middleware.SessionIdleTimeoutMiddleware",

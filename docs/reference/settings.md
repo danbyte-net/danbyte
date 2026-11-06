@@ -503,6 +503,14 @@ HSTS has no `preload` at either layer. Being on the browsers' preload list is
 a decision for whoever owns the domain, and it is hard to undo; add it in your
 own proxy if you want it.
 
+**API responses aren't cached.** Every `/api/` response to a signed-in caller
+(session or API token) carries `Cache-Control: private, no-store`, so a browser
+keeps no copy on disk after sign-out and a shared proxy keeps none at all
+(`core.middleware.ApiNoStoreMiddleware`). A view that sets its own
+`Cache-Control` keeps it - file downloads, 3D models and thumbnails choose
+their own. Anonymous API responses, `/media/`, `/static/` and the hashed
+`/assets/` are left to their own headers.
+
 !!! note "Your own nginx"
     A hand-written site that adds these headers needs the same
     `proxy_hide_header` lines in each proxied location (or once at the server

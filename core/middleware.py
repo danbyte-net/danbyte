@@ -157,6 +157,31 @@ class RejectNulQueryMiddleware:
         return self.get_response(request)
 
 
+class ApiNoStoreMiddleware:
+    """``Cache-Control: private, no-store`` on API responses for a signed-in
+    caller (#491), so neither the browser's disk cache nor a shared proxy keeps
+    a copy of someone's data after they sign out. A view that sets its own
+    ``Cache-Control`` (a download, a thumbnail) keeps it.
+
+    Runs after the view, when DRF has copied a token user onto the request."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if (
+            request.path.startswith("/api/")
+            and not response.has_header("Cache-Control")
+            and (
+                getattr(getattr(request, "user", None), "is_authenticated", False)
+                or "HTTP_AUTHORIZATION" in request.META
+            )
+        ):
+            response["Cache-Control"] = "private, no-store"
+        return response
+
+
 # How long a large-page slot outlives a request that never released it (a
 # worker killed at its timeout skips the `finally`). Above gunicorn's timeout.
 LARGE_PAGE_SLOT_TTL = 120
