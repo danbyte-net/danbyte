@@ -6,6 +6,17 @@ class ApiConfig(AppConfig):
     name = "api"
 
     def ready(self):
+        # OpClass is the outermost part of an indexed expression, as
+        # django.contrib.postgres (not installed) registers it: otherwise the
+        # opclass lands inside the expression's parentheses - ``((cidr)::inet
+        # inet_ops)`` - and the prefix GiST index (#484) is a syntax error.
+        from django.contrib.postgres.indexes import OpClass
+        from django.db.models import OrderBy
+        from django.db.models.functions import Collate
+        from django.db.models.indexes import IndexExpression
+
+        IndexExpression.register_wrappers(OrderBy, OpClass, Collate)
+
         # Register built-in round-trip import/export handlers, then let any app
         # (in-tree or a 3rd-party package in INSTALLED_APPS) contribute its own
         # by shipping an ``io.py`` that calls ``api.io.register_io``.

@@ -102,6 +102,14 @@ stack-walking sorted prefixes per `(vrf, family)` bucket. This means:
 The cost is that "find all children" is O(n) within a VRF - fine for IPAMs at
 the scale Danbyte targets.
 
+Containment in SQL tests the stored text cast to `inet` (`cidr::inet <<= x`,
+`>>`, `>>=`), and the GiST index `prefix_cidr_inet_gist` is on exactly that
+expression (`USING gist ((cidr::inet) inet_ops)`), so the aggregate list's
+coverage, `contained_in`, the space map and search read the index instead
+of every prefix in the tenant. A new containment query must use the same
+bare `cidr::inet` cast - `network(cidr::inet)` or `cidr::cidr` does not
+match the index.
+
 ## API filters
 
 `GET /api/prefixes/` narrows by `search`, `vlan`, `vrf`, `site`,

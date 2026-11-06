@@ -8418,6 +8418,9 @@ class AggregateViewSet(TenantScopedViewSet):
         # the tenant per row (#181). Covered is the union (#381): the same
         # network in several VRFs counts once, and a prefix inside another
         # one adds nothing - only the outermost distinct networks are summed.
+        # Every test is on the bare ``cidr::inet``, the GiST index's expression
+        # (#484); ``>>`` reads only the container's network bits, so it needs
+        # no network() around the stored value.
         inside = (
             "FROM api_prefix {a} WHERE {a}.tenant_id = api_aggregate.tenant_id"
             " AND family({a}.cidr::inet) = 4"
@@ -8435,7 +8438,7 @@ class AggregateViewSet(TenantScopedViewSet):
                     + inside.format(a="p")
                     + ") d WHERE NOT EXISTS (SELECT 1 "
                     + inside.format(a="q")
-                    + " AND network(q.cidr::inet) >> d.net))",
+                    + " AND q.cidr::inet >> d.net))",
                     (), output_field=BigIntegerField(),
                 )
             )

@@ -122,6 +122,13 @@ no `sortingFn` of its own sorts its text with it. Its collator is pinned to
 `en` (root order, as `und` is on the server): the browser's own locale would
 reorder names per language - Danish sorts `Aalborg` after `Z`.
 
+The device and VM lists read their pages off `(tenant_id, name COLLATE
+natural_sort)` indexes (`device_tenant_natname_idx`, `vm_tenant_natname_idx`),
+so a page does not sort the whole tenant; the interface list, ordered by
+device name first, uses the device index too. An index only serves an
+`ORDER BY` with the same collation, so a large list ordered by `natural(...)`
+needs its own such index.
+
 !!! note "After upgrading"
     Rendered configs and the routing config context list interfaces in
     natural order, including those under FHRP, BGP, OSPF, IS-IS, EIGRP and

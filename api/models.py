@@ -5,8 +5,8 @@ import uuid
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.contrib.postgres.indexes import GinIndex
-from django.db.models.functions import Upper
+from django.contrib.postgres.indexes import GinIndex, GistIndex, OpClass
+from django.db.models.functions import Cast, Upper
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -2537,6 +2537,9 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
             models.Index(fields=["tenant", "device_type"]),
             # The dashboard's newest devices, read in index order.
             models.Index(fields=["tenant", "-created_at"], name="device_tenant_created_idx"),
+            # The list's natural name order within a tenant: a page reads its
+            # rows in index order instead of sorting the whole tenant (#480).
+            models.Index("tenant", natural("name"), name="device_tenant_natname_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -3080,6 +3083,14 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["tenant", "site"]),
             models.Index(fields=["tenant", "vrf"]),
+            # Containment (``cidr::inet <<= x``, ``>>=``): the aggregate
+            # list's coverage, contained_in, the space map and search (#484).
+            # The expression is the queries' ``cidr::inet`` cast exactly
+            # (OpClass is an index wrapper - see ApiConfig.ready).
+            GistIndex(
+                OpClass(Cast("cidr", models.GenericIPAddressField()), name="inet_ops"),
+                name="prefix_cidr_inet_gist",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -5408,6 +5419,8 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
                 name="uniq_vm_cluster_vmid",
             ),
         ]
+        # The list's natural name order within a tenant, as on devices (#480).
+        indexes = [models.Index("tenant", natural("name"), name="vm_tenant_natname_idx")]
 
     def __str__(self) -> str:
         return self.name
