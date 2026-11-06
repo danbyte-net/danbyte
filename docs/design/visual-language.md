@@ -268,6 +268,19 @@ can't drift page to page (source of truth:
 - Tables are paged by `DataTable` alone. When the API pages server-side, hand it
   `serverPagination={{ page, pageCount, totalRows, onPageChange }}` so that one
   pager drives the server - don't add a second Prev/Next row.
+- The big lists - Devices, Interfaces, Cables, Virtual machines - page, sort
+  and filter on the server through `useServerList` (`lib/server-list.ts`,
+  #482): it keeps the page, `ordering`, search and the rail in the URL, reads
+  the rail's counts from `<list>/facets/`, asks for the slim `view=table` row
+  (plus the catalog columns on show), and hands `DataTable` its
+  `serverPagination` (with *Select all N* across pages), `serverSorting`
+  (only what the server sorts keeps a sortable header) and an `exportAll`
+  that walks every matching row. The rail is `useServerTableFilters`: the
+  same URL params and saved-view snapshot as `useUrlTableFilters`, with
+  counts from the server. A facet the server does not count (one filled from
+  another request, like Monitoring) is left out of `facets`. A new big list
+  adds a `TableSpec` in `api/list_specs.py` and the `TableListMixin` on its
+  viewset.
 - A list page that fetches its rows in one capped request hands the shell the
   server's answer, `page={query.data}`. When `count` exceeds the rows that
   arrived, the count chip reads *N of M* in the `warning` badge, an amber notice
