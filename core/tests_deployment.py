@@ -225,6 +225,44 @@ class SessionIdleTimeoutMiddlewareTests(APITestCase):
         self.assertEqual(writes, [])
         self.assertEqual(Session.objects.get().expire_date, expire)
 
+    def test_sign_in_starts_the_window_so_the_first_request_writes_nothing(self):
+        """The first request after signing in costs what every later one does:
+        the expiry was set at sign-in and the timeout's cache warmed."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self._login_with_timeout(30)
+        self.assertLessEqual(self.client.session.get_expiry_age(), 30 * 60)
+        self.assertGreater(self.client.session.get_expiry_age(), 29 * 60)
+        counts = []
+        for _ in range(2):
+            with CaptureQueriesContext(connection) as ctx:
+                self.client.get("/api/deployment/email/")
+            counts.append(len(ctx.captured_queries))
+            self.assertNotIn(
+                'UPDATE "django_session"', " ".join(q["sql"] for q in ctx.captured_queries)
+            )
+        self.assertEqual(counts[0], counts[1])
+
+    def test_no_timeout_no_expiry_at_sign_in(self):
+        self._login_with_timeout(0)
+        self.assertIsNone(self.client.session.get("_session_expiry"))
+
+    def test_the_settings_row_is_made_in_one_write(self):
+        """A fresh install's first load writes the row once, with the notes
+        up to its version already done."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        DeploymentSettings.objects.all().delete()
+        with CaptureQueriesContext(connection) as ctx:
+            row = DeploymentSettings.load()
+        writes = [q["sql"] for q in ctx.captured_queries
+                  if q["sql"].startswith(('INSERT INTO "core_deploymentsettings"',
+                                          'UPDATE "core_deploymentsettings"'))]
+        self.assertEqual(len(writes), 1, writes)
+        self.assertTrue(row.upgrade_notes_done)
+
     def test_expiry_is_refreshed_once_it_drifted_a_minute(self):
         from datetime import timedelta
         from unittest.mock import patch

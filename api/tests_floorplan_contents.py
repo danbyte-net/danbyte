@@ -37,7 +37,7 @@ User = get_user_model()
 # tile photos (the visible devices and racks, and their images), and the
 # stored cable routes. The same
 # for 2 rows of each kind as for 12.
-CONTENTS_QUERIES = 20
+CONTENTS_QUERIES = 17
 
 KINDS = ("tiles", "trays", "walls", "raised_floors", "areas", "labels", "cable_paths")
 

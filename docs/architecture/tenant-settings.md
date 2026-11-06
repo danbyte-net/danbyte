@@ -157,7 +157,9 @@ from **Settings → Security** (`users.manage`):
   the configured span is signed out. The expiry is only rewritten once it has
   drifted by a minute, so a page load's burst of API calls writes the session
   row once rather than once per call; a session can end up to a minute early,
-  and a lowered timeout shortens a longer expiry on the next request. The value is cached for ~60s (cleared on
+  and a lowered timeout shortens a longer expiry on the next request. Signing
+  in sets the first expiry (`core.middleware.start_idle_window`, on
+  `user_logged_in`), so a session's first request writes nothing either. The value is cached for ~60s (cleared on
   save) to keep it off the hot path; API-token requests carry no session and are
   unaffected.
 - **End all sessions** (`POST /api/deployment/end-all-sessions/`). Deletes every

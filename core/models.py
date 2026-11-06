@@ -816,16 +816,19 @@ class DeploymentSettings(TimestampedModel):
 
     @classmethod
     def load(cls) -> "DeploymentSettings":
-        obj, created = cls.objects.get_or_create(pk=1)
-        if created:
+        obj = cls.objects.filter(pk=1).first()
+        if obj is None:
             # First run: nothing to do "after upgrading" to the version we
             # were installed at. An upgraded install keeps [] from the
-            # migration, so its notes stay pending.
+            # migration, so its notes stay pending. Created with it in one
+            # write, not created and then updated.
             from .upgrade_notes import ids_up_to
             from .version import system_version
 
-            obj.upgrade_notes_done = ids_up_to(system_version()["version"])
-            obj.save(update_fields=["upgrade_notes_done"])
+            obj, _ = cls.objects.get_or_create(
+                pk=1,
+                defaults={"upgrade_notes_done": ids_up_to(system_version()["version"])},
+            )
         return obj
 
 

@@ -68,6 +68,20 @@ class SessionIdleTimeoutMiddleware:
         return self.get_response(request)
 
 
+def start_idle_window(sender, request, user, **kwargs) -> None:
+    """``user_logged_in``: give a new session its idle expiry as it is made,
+    and warm the timeout's cache. Otherwise a session's first request would
+    write the session row (and, on a cold cache, read the deployment
+    settings) that every later request skips - so a page's first API call
+    cost more than the rest (#486)."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    minutes = idle_timeout_minutes()
+    if minutes > 0:
+        _refresh_idle_expiry(session, minutes * 60)
+
+
 def _refresh_idle_expiry(session, timeout: int) -> None:
     from datetime import timedelta
 
