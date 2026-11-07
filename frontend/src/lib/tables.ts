@@ -300,6 +300,8 @@ const ROWS: Row[] = [
   ["automation-targets", "Automation targets", "Integrations", "/api/automation-targets/", { ioType: "automationtarget" }],
   ["deploy-runs", "Deploy runs", "Integrations", "/api/deploy-runs/"],
   ["embedded-deploy-runs", "Deploy runs (embedded)", "Integrations", "/api/deploy-runs/", sub],
+  ["deploy-pipeline-runs", "Pipeline runs", "Integrations", "/api/deploy-pipeline-runs/"],
+  ["deploy-pipeline-runs-of-pipeline", "Pipeline runs (embedded)", "Integrations", "/api/deploy-pipeline-runs/", sub],
   ["network-plan-create", "Network plan: VNets to create", "Integrations", "/api/virtualization-sources/", sub],
   ["network-plan-nics", "Network plan: NICs", "Integrations", "/api/virtualization-sources/", sub],
   ["network-plan-unused", "Network plan: Unused VNets", "Integrations", "/api/virtualization-sources/", sub],

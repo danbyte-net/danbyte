@@ -504,7 +504,7 @@ function StepCard({
         type="button"
         variant="ghost"
         size="icon"
-        className="mt-6 text-muted-foreground"
+        className="mt-6 h-7 w-7 text-muted-foreground hover:text-destructive"
         aria-label={`Remove step ${index + 1}`}
         disabled={!canRemove}
         onClick={onRemove}
