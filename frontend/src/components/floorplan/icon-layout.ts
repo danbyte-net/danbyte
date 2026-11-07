@@ -578,9 +578,18 @@ function trailingNumber(name: string) {
 /** A cluster's name: "R-A01–R-A04" when the names share a stem and run in
  * sequence, else the count - "4 racks", or "4 objects" when mixed. */
 export function clusterName(tiles: readonly FloorPlanTile[]): string {
-  const names = tiles.map((t) => tileName(t))
+  return clusterNameOf(
+    tiles.map((t) => ({ name: tileName(t), kind: t.linked?.kind ?? "" }))
+  )
+}
+
+/** clusterName for any named things of a kind (the 3D room's names). */
+export function clusterNameOf(
+  items: readonly { name: string; kind: string }[]
+): string {
+  const names = items.map((t) => t.name)
   const parts = names.map(trailingNumber)
-  if (tiles.length > 1 && parts.every((p) => p)) {
+  if (items.length > 1 && parts.every((p) => p)) {
     const ps = parts.map((p) => p!)
     const stem = ps[0].stem
     if (ps.every((p) => p.stem === stem)) {
@@ -591,9 +600,9 @@ export function clusterName(tiles: readonly FloorPlanTile[]): string {
         return `${order[0].name}–${order.at(-1)!.name}`
     }
   }
-  const kinds = new Set(tiles.map((t) => t.linked?.kind ?? ""))
+  const kinds = new Set(items.map((t) => t.kind))
   const kind = kinds.size === 1 ? KIND_PLURAL[[...kinds][0]] : undefined
-  return `${tiles.length} ${kind ?? "objects"}`
+  return `${items.length} ${kind ?? "objects"}`
 }
 
 /** The generic icon of a mixed cluster. */

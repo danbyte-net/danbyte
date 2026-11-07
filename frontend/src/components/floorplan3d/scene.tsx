@@ -152,6 +152,7 @@ export default function FloorScene3D({
   areas = [],
   readableNames = false,
   readableIcons = true,
+  readableCallouts = true,
   muteBackground = true,
   building = null,
 }: {
@@ -217,6 +218,9 @@ export default function FloorScene3D({
   /** Display > Icons when zoomed out: the names' plates carry the
    * object's icon. */
   readableIcons?: boolean
+  /** Display > Callouts: a crowd of Readable names is called out or
+   * summarised (name-layout.ts). */
+  readableCallouts?: boolean
   /** Display > Muted background: the floor's picture muted as on the 2D
    * plan. */
   muteBackground?: boolean
@@ -886,6 +890,7 @@ export default function FloorScene3D({
           tints,
           pointed: pointTileIds,
           readableNames,
+          readableCallouts,
         })}
         invalidateRef={invalidateRef}
         onPointerMissed={() => {
@@ -1176,6 +1181,7 @@ export default function FloorScene3D({
             plan={plan}
             tiles={namedTiles}
             icons={readableIcons}
+            callouts={readableCallouts}
             pinned={() => [selection?.tileId, hoverStore.get()]}
           />
         )}

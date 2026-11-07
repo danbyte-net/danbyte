@@ -6,29 +6,30 @@ import * as THREE from "three"
 import { getLucideIcon } from "@/components/dynamic-icon"
 import { sceneTileIcon } from "@/components/object-icon"
 
-import { clipName, nameBox, thinNames } from "@/components/floorplan/readable"
-import type { NameCandidate } from "@/components/floorplan/readable"
+import { clipName } from "@/components/floorplan/readable"
 
 import { useTheme } from "@/components/theme-provider"
 
+import { layoutNames3D } from "./name-layout"
+import type { Name3D } from "./name-layout"
 import { roomLook } from "./room-look"
 import type { RoomLook } from "./room-look"
-import { textTexture } from "./text-sprite"
+import { ROOM_FONT, textTexture } from "./text-sprite"
 import { cellToWorld, floorDeviceBoxM } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
 // Readable (Display > Object size) in the room: every placed object's name
 // as a billboard of one size on screen, whatever its distance - the objects
 // themselves stay their real size. Names past nameReach, behind the camera
-// or off screen are left out, and where two would overlap on screen the
-// lower ranked hides (the selected and hovered one always shows, then the
-// racks, cabinets and devices, then the nearer). Sprites are made only for
-// names that show, and kept for when they show again.
+// or off screen are left out. Where plates would overlap on screen the
+// lower ranked gives way (the selected and hovered one always shows, then
+// the racks, cabinets and devices, then the nearer), and with Callouts on
+// the crowd it gave way in is called out or summarised (name-layout.ts).
+// Sprites are made only for names that show, and kept for when they show
+// again.
 
 /** A name's height on screen, plate and all (px). */
 export const NAME_PX_3D = 18
-/** The name text inside it (px): what thinning measures. */
-const NAME_FONT_3D = 12
 /** Farther than this a name is not drawn (m), on a plan smaller than it. */
 export const MAX_NAME_M = 400
 
@@ -40,6 +41,8 @@ export function nameReach(plan: ScenePayload["plan"]): number {
 }
 /** Made sprites kept beyond what shows, before the unseen are freed. */
 const SPRITE_CACHE = 600
+/** Leaders drawn at most (one per callout). */
+const MAX_LEADERS = 128
 
 /** A sprite's scale for `px` on screen with sizeAttenuation off: the size
  * it would have at 1 m from a perspective camera of `fovDeg`, on a view
@@ -74,14 +77,48 @@ function nameAnchor(plan: ScenePayload["plan"], t: SceneTile): THREE.Vector3 {
   return new THREE.Vector3(x, top + 0.25, z)
 }
 
+/** The plate's texture: its font and padding (texture px), and its icon
+ * square's side and the gap after it. */
+const PLATE_FONT = 24
+const PLATE_PAD = 6
+const ICON_PX = 26
+const ICON_GAP = 6
+
+let measurer: CanvasRenderingContext2D | null | undefined
+/** A name's width in the plate's font (texture px). */
+function textWidth(text: string): number {
+  if (measurer === undefined) {
+    try {
+      measurer = document.createElement("canvas").getContext("2d")
+    } catch {
+      measurer = null
+    }
+  }
+  if (!measurer) return text.length * PLATE_FONT * 0.6
+  measurer.font = `600 ${PLATE_FONT}px ${ROOM_FONT}`
+  return measurer.measureText(text).width
+}
+
+/** A plate's size on screen (px), as `make` draws it: what the layout
+ * keeps apart. */
+export function platePx(name: string, icon: string): { w: number; h: number } {
+  const lead = icon && getLucideIcon(icon) ? ICON_PX + ICON_GAP : 0
+  const w = Math.ceil(textWidth(name)) + PLATE_PAD * 2 + lead
+  const h = PLATE_FONT + PLATE_PAD * 2
+  return { w: (NAME_PX_3D * w) / h, h: NAME_PX_3D }
+}
+
 interface NameEntry {
   id: string
   name: string
+  kind: string
   /** The plate's icon (object-icon.ts) and its square's colour. */
   icon: string
   color: string
   at: THREE.Vector3
   rank: number
+  /** The plate on screen (px). */
+  w: number
 }
 
 interface MadeSprite {
@@ -99,11 +136,15 @@ export function ReadableNames3D({
   tiles,
   pinned,
   icons = true,
+  callouts = true,
 }: {
   plan: ScenePayload["plan"]
   /** Each plate carries its object's icon (Display > Icons when zoomed
    * out). */
   icons?: boolean
+  /** Display > Callouts (Auto): a crowd of plates is called out or
+   * summarised, not just thinned. */
+  callouts?: boolean
   /** The tiles shown in the room, zones left out. */
   tiles: readonly SceneTile[]
   /** The tile whose name always shows - the selected and the hovered. */
@@ -121,14 +162,20 @@ export function ReadableNames3D({
   const entries = useMemo<NameEntry[]>(
     () =>
       tiles
-        .map((t) => ({
-          id: t.id,
-          name: clipName(sceneTileName(t)),
-          icon: icons && !t.hidden ? sceneTileIcon(t) : "",
-          color: t.color || "#71717a",
-          at: nameAnchor(plan, t),
-          rank: t.kind === "other" ? 0 : 1,
-        }))
+        .map((t) => {
+          const name = clipName(sceneTileName(t))
+          const icon = icons && !t.hidden ? sceneTileIcon(t) : ""
+          return {
+            id: t.id,
+            name,
+            kind: t.kind,
+            icon,
+            color: t.color || "#71717a",
+            at: nameAnchor(plan, t),
+            rank: t.kind === "other" ? 0 : 1,
+            w: name ? platePx(name, icon).w : 0,
+          }
+        })
         .filter((e) => e.name),
     [tiles, plan, icons]
   )
@@ -137,7 +184,7 @@ export function ReadableNames3D({
   useEffect(() => {
     const live = new Map(entries.map((e) => [e.id, entryKey(e)]))
     for (const [id, m] of made.current)
-      if (live.get(id) !== m.key) {
+      if (!id.startsWith("crowd:") && live.get(id) !== m.key) {
         free(m)
         made.current.delete(id)
       }
@@ -150,6 +197,57 @@ export function ReadableNames3D({
     }
   }, [])
 
+  // The callouts' leaders: thin lines, a dot at the object's end.
+  const leaders = useMemo(() => {
+    const lineGeo = new THREE.BufferGeometry()
+    lineGeo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(MAX_LEADERS * 6), 3)
+    )
+    const dotGeo = new THREE.BufferGeometry()
+    dotGeo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(MAX_LEADERS * 3), 3)
+    )
+    const lines = new THREE.LineSegments(
+      lineGeo,
+      new THREE.LineBasicMaterial({
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.7,
+      })
+    )
+    const dots = new THREE.Points(
+      dotGeo,
+      new THREE.PointsMaterial({
+        size: 4,
+        sizeAttenuation: false,
+        depthTest: false,
+        depthWrite: false,
+      })
+    )
+    for (const o of [lines, dots]) {
+      o.renderOrder = 9
+      o.frustumCulled = false
+      o.raycast = () => {}
+    }
+    return { lines, dots }
+  }, [])
+  useEffect(() => {
+    leaders.lines.material.color.set(look.plateText)
+    leaders.dots.material.color.set(look.plateText)
+  }, [leaders, look])
+  useEffect(
+    () => () => {
+      leaders.lines.geometry.dispose()
+      leaders.lines.material.dispose()
+      leaders.dots.geometry.dispose()
+      leaders.dots.material.dispose()
+    },
+    [leaders]
+  )
+
   const v = useMemo(() => new THREE.Vector3(), [])
   const reach = nameReach(plan)
   useFrame(({ camera, size }) => {
@@ -160,27 +258,47 @@ export function ReadableNames3D({
       : 50
     const unit = screenScale(NAME_PX_3D, fov, size.height)
     const always = new Set(pinned().filter(Boolean) as string[])
-    const cands: NameCandidate[] = []
+    const names: Name3D[] = []
+    // Each name's depth on screen: a box moved off its object is drawn at
+    // its object's depth.
+    const depth = new Map<string, number>()
     for (const e of entries) {
       const d = camera.position.distanceTo(e.at)
       if (d > reach && !always.has(e.id)) continue
       v.copy(e.at).project(camera)
       if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue
-      const sx = ((v.x + 1) / 2) * size.width
-      const sy = ((1 - v.y) / 2) * size.height
-      cands.push({
+      depth.set(e.id, v.z)
+      names.push({
         id: e.id,
-        ...nameBox(e.name, sx, sy - NAME_PX_3D, NAME_FONT_3D),
+        name: e.name,
+        kind: e.kind,
+        icon: e.icon,
+        color: e.color,
+        x: ((v.x + 1) / 2) * size.width,
+        y: ((1 - v.y) / 2) * size.height,
+        w: e.w,
+        h: NAME_PX_3D,
         // Nearer first within a rank.
-        priority: always.has(e.id) ? Infinity : e.rank * 1e6 - d,
+        priority: e.rank * 1e6 - d,
+        pinned: always.has(e.id),
       })
     }
-    const shown = thinNames(cands)
-    for (const e of entries) {
+    const layout = layoutNames3D(names, {
+      view: { x: 0, y: 0, w: size.width, h: size.height },
+      callouts,
+      plateSize: platePx,
+    })
+    // A screen point (px) at a depth, in the room.
+    const toWorld = (x: number, y: number, z: number, out: THREE.Vector3) =>
+      out
+        .set((x / size.width) * 2 - 1, 1 - (y / size.height) * 2, z)
+        .unproject(camera)
+    const show = (e: Pick<NameEntry, "id" | "name" | "icon" | "color">) => {
       let m = made.current.get(e.id)
-      if (!shown.has(e.id)) {
-        if (m) m.sprite.visible = false
-        continue
+      if (m && m.key !== entryKey(e)) {
+        free(m)
+        made.current.delete(e.id)
+        m = undefined
       }
       if (!m) {
         m = make(e, look)
@@ -189,7 +307,57 @@ export function ReadableNames3D({
       }
       m.sprite.visible = true
       m.sprite.scale.set(unit * m.aspect, unit, 1)
+      return m.sprite
     }
+    const seen = new Set<string>()
+    for (const e of entries) {
+      const c = layout.callouts.get(e.id)
+      if (layout.plain.has(e.id)) show(e).position.copy(e.at)
+      else if (c)
+        toWorld(
+          c.box.x + c.box.w / 2,
+          c.box.y + c.box.h,
+          depth.get(e.id)!,
+          show(e).position
+        )
+      else continue
+      seen.add(e.id)
+    }
+    for (const s of layout.summaries) {
+      const z =
+        s.members.reduce((t, id) => t + (depth.get(id) ?? 0), 0) /
+        s.members.length
+      toWorld(s.box.x + s.box.w / 2, s.box.y + s.box.h, z, show(s).position)
+      seen.add(s.id)
+    }
+    for (const [id, m] of made.current)
+      if (!seen.has(id)) m.sprite.visible = false
+
+    // Leaders: from the box's edge to the object, at its depth.
+    const lp = leaders.lines.geometry.getAttribute(
+      "position"
+    ) as THREE.BufferAttribute
+    const dp = leaders.dots.geometry.getAttribute(
+      "position"
+    ) as THREE.BufferAttribute
+    let n = 0
+    for (const [id, c] of layout.callouts) {
+      if (n >= MAX_LEADERS) break
+      const z = depth.get(id)!
+      toWorld(c.leader[0][0], c.leader[0][1], z, v)
+      lp.setXYZ(n * 2, v.x, v.y, v.z)
+      toWorld(c.leader[1][0], c.leader[1][1], z, v)
+      lp.setXYZ(n * 2 + 1, v.x, v.y, v.z)
+      dp.setXYZ(n, v.x, v.y, v.z)
+      n++
+    }
+    lp.needsUpdate = true
+    dp.needsUpdate = true
+    leaders.lines.geometry.setDrawRange(0, n * 2)
+    leaders.dots.geometry.setDrawRange(0, n)
+    leaders.lines.visible = n > 0
+    leaders.dots.visible = n > 0
+
     // Free the unseen once too many are kept.
     if (made.current.size > SPRITE_CACHE)
       for (const [id, m] of made.current)
@@ -200,12 +368,13 @@ export function ReadableNames3D({
         }
   })
 
-  return <group ref={group} />
+  return (
+    <group ref={group}>
+      <primitive object={leaders.lines} />
+      <primitive object={leaders.dots} />
+    </group>
+  )
 }
-
-/** The plate's icon square: its side and the gap after it (texture px). */
-const ICON_PX = 26
-const ICON_GAP = 6
 
 /** An icon as an SVG data URL, white strokes - drawn onto a plate. */
 export function iconDataUrl(name: string, px: number): string | null {
@@ -226,11 +395,14 @@ export function iconDataUrl(name: string, px: number): string | null {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(withNs)}`
 }
 
-function make(e: NameEntry, look: RoomLook): MadeSprite {
+function make(
+  e: Pick<NameEntry, "name" | "icon" | "color">,
+  look: RoomLook
+): MadeSprite {
   const url = iconDataUrl(e.icon, ICON_PX)
   const { texture, w, h } = textTexture(e.name, {
-    fontPx: 24,
-    pad: 6,
+    fontPx: PLATE_FONT,
+    pad: PLATE_PAD,
     scale: 1,
     align: "center",
     color: look.plateText,
@@ -244,7 +416,7 @@ function make(e: NameEntry, look: RoomLook): MadeSprite {
   const canvas = texture.image as HTMLCanvasElement | undefined
   const ctx = url ? canvas?.getContext("2d") : null
   if (url && ctx) {
-    const x = 6
+    const x = PLATE_PAD
     const y = (h - ICON_PX) / 2
     ctx.fillStyle = e.color
     ctx.beginPath()
@@ -267,7 +439,6 @@ function make(e: NameEntry, look: RoomLook): MadeSprite {
   })
   const sprite = new THREE.Sprite(material)
   sprite.center.set(0.5, 0)
-  sprite.position.copy(e.at)
   sprite.renderOrder = 10
   // Names never take a click from what is under them.
   sprite.raycast = () => {}
