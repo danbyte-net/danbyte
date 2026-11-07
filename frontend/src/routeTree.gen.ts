@@ -69,6 +69,7 @@ import { Route as MonitoringEnginesRouteImport } from './routes/monitoring-engin
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as OspfAreasRouteImport } from './routes/ospf-areas'
 import { Route as PermissionsRouteImport } from './routes/permissions'
+import { Route as PolicyRulesRouteImport } from './routes/policy-rules'
 import { Route as PortUtilizationRouteImport } from './routes/port-utilization'
 import { Route as PowerFeedsRouteImport } from './routes/power-feeds'
 import { Route as PowerPanelsRouteImport } from './routes/power-panels'
@@ -79,11 +80,14 @@ import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as RackTypesRouteImport } from './routes/rack-types'
 import { Route as RegionsRouteImport } from './routes/regions'
 import { Route as RirsRouteImport } from './routes/rirs'
+import { Route as RoasRouteImport } from './routes/roas'
 import { Route as RouteTargetsRouteImport } from './routes/route-targets'
 import { Route as RoutingKeychainsRouteImport } from './routes/routing-keychains'
 import { Route as RoutingPoliciesRouteImport } from './routes/routing-policies'
+import { Route as RpkiCachesRouteImport } from './routes/rpki-caches'
 import { Route as SavedFiltersRouteImport } from './routes/saved-filters'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as SensitivityLabelsRouteImport } from './routes/sensitivity-labels'
 import { Route as SetPasswordRouteImport } from './routes/set-password'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SiteMapRouteImport } from './routes/site-map'
@@ -311,6 +315,9 @@ import { Route as PlatformGroupsNewRouteImport } from './routes/platform-groups.
 import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
 import { Route as PlatformsIdRouteImport } from './routes/platforms.$id'
 import { Route as PlatformsNewRouteImport } from './routes/platforms.new'
+import { Route as PolicyRulesIndexRouteImport } from './routes/policy-rules.index'
+import { Route as PolicyRulesIdRouteImport } from './routes/policy-rules.$id'
+import { Route as PolicyRulesNewRouteImport } from './routes/policy-rules.new'
 import { Route as PortReservationsIndexRouteImport } from './routes/port-reservations.index'
 import { Route as PowerFeedsIndexRouteImport } from './routes/power-feeds.index'
 import { Route as PowerFeedsIdRouteImport } from './routes/power-feeds.$id'
@@ -348,6 +355,9 @@ import { Route as RegionsNewRouteImport } from './routes/regions.new'
 import { Route as RirsIndexRouteImport } from './routes/rirs.index'
 import { Route as RirsIdRouteImport } from './routes/rirs.$id'
 import { Route as RirsNewRouteImport } from './routes/rirs.new'
+import { Route as RoasIndexRouteImport } from './routes/roas.index'
+import { Route as RoasIdRouteImport } from './routes/roas.$id'
+import { Route as RoasNewRouteImport } from './routes/roas.new'
 import { Route as RoomsIndexRouteImport } from './routes/rooms.index'
 import { Route as RoomsIdRouteImport } from './routes/rooms.$id'
 import { Route as RoomsNewRouteImport } from './routes/rooms.new'
@@ -360,8 +370,14 @@ import { Route as RoutingKeychainsNewRouteImport } from './routes/routing-keycha
 import { Route as RoutingPoliciesIndexRouteImport } from './routes/routing-policies.index'
 import { Route as RoutingPoliciesIdRouteImport } from './routes/routing-policies.$id'
 import { Route as RoutingPoliciesNewRouteImport } from './routes/routing-policies.new'
+import { Route as RpkiCachesIndexRouteImport } from './routes/rpki-caches.index'
+import { Route as RpkiCachesIdRouteImport } from './routes/rpki-caches.$id'
+import { Route as RpkiCachesNewRouteImport } from './routes/rpki-caches.new'
 import { Route as ScriptsIndexRouteImport } from './routes/scripts.index'
 import { Route as ScriptsIdRouteImport } from './routes/scripts.$id'
+import { Route as SensitivityLabelsIndexRouteImport } from './routes/sensitivity-labels.index'
+import { Route as SensitivityLabelsIdRouteImport } from './routes/sensitivity-labels.$id'
+import { Route as SensitivityLabelsNewRouteImport } from './routes/sensitivity-labels.new'
 import { Route as ServiceTemplatesIndexRouteImport } from './routes/service-templates.index'
 import { Route as ServiceTemplatesIdRouteImport } from './routes/service-templates.$id'
 import { Route as ServiceTemplatesNewRouteImport } from './routes/service-templates.new'
@@ -417,6 +433,7 @@ import { Route as TenantsIndexRouteImport } from './routes/tenants.index'
 import { Route as TenantsIdRouteImport } from './routes/tenants.$id'
 import { Route as TenantsNewRouteImport } from './routes/tenants.new'
 import { Route as TopologyIndexRouteImport } from './routes/topology.index'
+import { Route as TopologyMapRouteImport } from './routes/topology.map'
 import { Route as TunnelGroupsIndexRouteImport } from './routes/tunnel-groups.index'
 import { Route as TunnelGroupsIdRouteImport } from './routes/tunnel-groups.$id'
 import { Route as TunnelGroupsNewRouteImport } from './routes/tunnel-groups.new'
@@ -530,6 +547,7 @@ import { Route as PSlugSplatRouteImport } from './routes/p.$slug.$'
 import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_.edit'
 import { Route as PlatformGroupsIdEditRouteImport } from './routes/platform-groups.$id_.edit'
 import { Route as PlatformsIdEditRouteImport } from './routes/platforms.$id_.edit'
+import { Route as PolicyRulesIdEditRouteImport } from './routes/policy-rules.$id_.edit'
 import { Route as PowerFeedsIdEditRouteImport } from './routes/power-feeds.$id_.edit'
 import { Route as PowerPanelsIdEditRouteImport } from './routes/power-panels.$id_.edit'
 import { Route as PrefixListsIdEditRouteImport } from './routes/prefix-lists.$id_.edit'
@@ -541,11 +559,14 @@ import { Route as RackTypesIdEditRouteImport } from './routes/rack-types.$id_.ed
 import { Route as RacksIdEditRouteImport } from './routes/racks.$id_.edit'
 import { Route as RegionsIdEditRouteImport } from './routes/regions.$id_.edit'
 import { Route as RirsIdEditRouteImport } from './routes/rirs.$id_.edit'
+import { Route as RoasIdEditRouteImport } from './routes/roas.$id_.edit'
 import { Route as RoomsIdEditRouteImport } from './routes/rooms.$id_.edit'
 import { Route as RouteTargetsIdEditRouteImport } from './routes/route-targets.$id_.edit'
 import { Route as RoutingKeychainsIdEditRouteImport } from './routes/routing-keychains.$id_.edit'
 import { Route as RoutingPoliciesIdEditRouteImport } from './routes/routing-policies.$id_.edit'
+import { Route as RpkiCachesIdEditRouteImport } from './routes/rpki-caches.$id_.edit'
 import { Route as ScriptsRunsRunIdRouteImport } from './routes/scripts.runs.$runId'
+import { Route as SensitivityLabelsIdEditRouteImport } from './routes/sensitivity-labels.$id_.edit'
 import { Route as ServiceTemplatesIdEditRouteImport } from './routes/service-templates.$id_.edit'
 import { Route as SilencesIdEditRouteImport } from './routes/silences.$id_.edit'
 import { Route as SitesIdEditRouteImport } from './routes/sites.$id_.edit'
@@ -874,6 +895,11 @@ const PermissionsRoute = PermissionsRouteImport.update({
   path: '/permissions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PolicyRulesRoute = PolicyRulesRouteImport.update({
+  id: '/policy-rules',
+  path: '/policy-rules',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortUtilizationRoute = PortUtilizationRouteImport.update({
   id: '/port-utilization',
   path: '/port-utilization',
@@ -924,6 +950,11 @@ const RirsRoute = RirsRouteImport.update({
   path: '/rirs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RoasRoute = RoasRouteImport.update({
+  id: '/roas',
+  path: '/roas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RouteTargetsRoute = RouteTargetsRouteImport.update({
   id: '/route-targets',
   path: '/route-targets',
@@ -939,6 +970,11 @@ const RoutingPoliciesRoute = RoutingPoliciesRouteImport.update({
   path: '/routing-policies',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RpkiCachesRoute = RpkiCachesRouteImport.update({
+  id: '/rpki-caches',
+  path: '/rpki-caches',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SavedFiltersRoute = SavedFiltersRouteImport.update({
   id: '/saved-filters',
   path: '/saved-filters',
@@ -947,6 +983,11 @@ const SavedFiltersRoute = SavedFiltersRouteImport.update({
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SensitivityLabelsRoute = SensitivityLabelsRouteImport.update({
+  id: '/sensitivity-labels',
+  path: '/sensitivity-labels',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SetPasswordRoute = SetPasswordRouteImport.update({
@@ -2085,6 +2126,21 @@ const PlatformsNewRoute = PlatformsNewRouteImport.update({
   path: '/platforms/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PolicyRulesIndexRoute = PolicyRulesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PolicyRulesRoute,
+} as any)
+const PolicyRulesIdRoute = PolicyRulesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PolicyRulesRoute,
+} as any)
+const PolicyRulesNewRoute = PolicyRulesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => PolicyRulesRoute,
+} as any)
 const PortReservationsIndexRoute = PortReservationsIndexRouteImport.update({
   id: '/port-reservations/',
   path: '/port-reservations/',
@@ -2270,6 +2326,21 @@ const RirsNewRoute = RirsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => RirsRoute,
 } as any)
+const RoasIndexRoute = RoasIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RoasRoute,
+} as any)
+const RoasIdRoute = RoasIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RoasRoute,
+} as any)
+const RoasNewRoute = RoasNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RoasRoute,
+} as any)
 const RoomsIndexRoute = RoomsIndexRouteImport.update({
   id: '/rooms/',
   path: '/rooms/',
@@ -2330,6 +2401,21 @@ const RoutingPoliciesNewRoute = RoutingPoliciesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => RoutingPoliciesRoute,
 } as any)
+const RpkiCachesIndexRoute = RpkiCachesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RpkiCachesRoute,
+} as any)
+const RpkiCachesIdRoute = RpkiCachesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RpkiCachesRoute,
+} as any)
+const RpkiCachesNewRoute = RpkiCachesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RpkiCachesRoute,
+} as any)
 const ScriptsIndexRoute = ScriptsIndexRouteImport.update({
   id: '/scripts/',
   path: '/scripts/',
@@ -2339,6 +2425,21 @@ const ScriptsIdRoute = ScriptsIdRouteImport.update({
   id: '/scripts/$id',
   path: '/scripts/$id',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SensitivityLabelsIndexRoute = SensitivityLabelsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SensitivityLabelsRoute,
+} as any)
+const SensitivityLabelsIdRoute = SensitivityLabelsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => SensitivityLabelsRoute,
+} as any)
+const SensitivityLabelsNewRoute = SensitivityLabelsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => SensitivityLabelsRoute,
 } as any)
 const ServiceTemplatesIndexRoute = ServiceTemplatesIndexRouteImport.update({
   id: '/service-templates/',
@@ -2614,6 +2715,11 @@ const TenantsNewRoute = TenantsNewRouteImport.update({
 const TopologyIndexRoute = TopologyIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => TopologyRoute,
+} as any)
+const TopologyMapRoute = TopologyMapRouteImport.update({
+  id: '/map',
+  path: '/map',
   getParentRoute: () => TopologyRoute,
 } as any)
 const TunnelGroupsIndexRoute = TunnelGroupsIndexRouteImport.update({
@@ -3182,6 +3288,11 @@ const PlatformsIdEditRoute = PlatformsIdEditRouteImport.update({
   path: '/platforms/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PolicyRulesIdEditRoute = PolicyRulesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => PolicyRulesRoute,
+} as any)
 const PowerFeedsIdEditRoute = PowerFeedsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -3237,6 +3348,11 @@ const RirsIdEditRoute = RirsIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => RirsRoute,
 } as any)
+const RoasIdEditRoute = RoasIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RoasRoute,
+} as any)
 const RoomsIdEditRoute = RoomsIdEditRouteImport.update({
   id: '/rooms/$id_/edit',
   path: '/rooms/$id/edit',
@@ -3257,10 +3373,20 @@ const RoutingPoliciesIdEditRoute = RoutingPoliciesIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => RoutingPoliciesRoute,
 } as any)
+const RpkiCachesIdEditRoute = RpkiCachesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RpkiCachesRoute,
+} as any)
 const ScriptsRunsRunIdRoute = ScriptsRunsRunIdRouteImport.update({
   id: '/scripts/runs/$runId',
   path: '/scripts/runs/$runId',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SensitivityLabelsIdEditRoute = SensitivityLabelsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => SensitivityLabelsRoute,
 } as any)
 const ServiceTemplatesIdEditRoute = ServiceTemplatesIdEditRouteImport.update({
   id: '/service-templates/$id_/edit',
@@ -3463,6 +3589,7 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof NotificationsRoute
   '/ospf-areas': typeof OspfAreasRouteWithChildren
   '/permissions': typeof PermissionsRouteWithChildren
+  '/policy-rules': typeof PolicyRulesRouteWithChildren
   '/port-utilization': typeof PortUtilizationRoute
   '/power-feeds': typeof PowerFeedsRouteWithChildren
   '/power-panels': typeof PowerPanelsRouteWithChildren
@@ -3473,11 +3600,14 @@ export interface FileRoutesByFullPath {
   '/rack-types': typeof RackTypesRouteWithChildren
   '/regions': typeof RegionsRouteWithChildren
   '/rirs': typeof RirsRouteWithChildren
+  '/roas': typeof RoasRouteWithChildren
   '/route-targets': typeof RouteTargetsRouteWithChildren
   '/routing-keychains': typeof RoutingKeychainsRouteWithChildren
   '/routing-policies': typeof RoutingPoliciesRouteWithChildren
+  '/rpki-caches': typeof RpkiCachesRouteWithChildren
   '/saved-filters': typeof SavedFiltersRoute
   '/search': typeof SearchRoute
+  '/sensitivity-labels': typeof SensitivityLabelsRouteWithChildren
   '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRouteWithChildren
   '/site-map': typeof SiteMapRoute
@@ -3629,6 +3759,8 @@ export interface FileRoutesByFullPath {
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
+  '/policy-rules/$id': typeof PolicyRulesIdRoute
+  '/policy-rules/new': typeof PolicyRulesNewRoute
   '/power-feeds/$id': typeof PowerFeedsIdRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
   '/power-panels/$id': typeof PowerPanelsIdRoute
@@ -3653,6 +3785,8 @@ export interface FileRoutesByFullPath {
   '/regions/new': typeof RegionsNewRoute
   '/rirs/$id': typeof RirsIdRoute
   '/rirs/new': typeof RirsNewRoute
+  '/roas/$id': typeof RoasIdRoute
+  '/roas/new': typeof RoasNewRoute
   '/rooms/$id': typeof RoomsIdRoute
   '/rooms/new': typeof RoomsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
@@ -3661,7 +3795,11 @@ export interface FileRoutesByFullPath {
   '/routing-keychains/new': typeof RoutingKeychainsNewRoute
   '/routing-policies/$id': typeof RoutingPoliciesIdRoute
   '/routing-policies/new': typeof RoutingPoliciesNewRoute
+  '/rpki-caches/$id': typeof RpkiCachesIdRoute
+  '/rpki-caches/new': typeof RpkiCachesNewRoute
   '/scripts/$id': typeof ScriptsIdRoute
+  '/sensitivity-labels/$id': typeof SensitivityLabelsIdRoute
+  '/sensitivity-labels/new': typeof SensitivityLabelsNewRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
@@ -3707,6 +3845,7 @@ export interface FileRoutesByFullPath {
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
   '/tenants/new': typeof TenantsNewRoute
+  '/topology/map': typeof TopologyMapRoute
   '/tunnel-groups/$id': typeof TunnelGroupsIdRoute
   '/tunnel-groups/new': typeof TunnelGroupsNewRoute
   '/tunnels/$id': typeof TunnelsIdRoute
@@ -3812,6 +3951,7 @@ export interface FileRoutesByFullPath {
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
   '/platforms/': typeof PlatformsIndexRoute
+  '/policy-rules/': typeof PolicyRulesIndexRoute
   '/port-reservations/': typeof PortReservationsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
   '/power-panels/': typeof PowerPanelsIndexRoute
@@ -3825,11 +3965,14 @@ export interface FileRoutesByFullPath {
   '/racks/': typeof RacksIndexRoute
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
+  '/roas/': typeof RoasIndexRoute
   '/rooms/': typeof RoomsIndexRoute
   '/route-targets/': typeof RouteTargetsIndexRoute
   '/routing-keychains/': typeof RoutingKeychainsIndexRoute
   '/routing-policies/': typeof RoutingPoliciesIndexRoute
+  '/rpki-caches/': typeof RpkiCachesIndexRoute
   '/scripts/': typeof ScriptsIndexRoute
+  '/sensitivity-labels/': typeof SensitivityLabelsIndexRoute
   '/service-templates/': typeof ServiceTemplatesIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -3924,6 +4067,7 @@ export interface FileRoutesByFullPath {
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id/edit': typeof PlatformsIdEditRoute
+  '/policy-rules/$id/edit': typeof PolicyRulesIdEditRoute
   '/power-feeds/$id/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id/edit': typeof PowerPanelsIdEditRoute
   '/prefix-lists/$id/edit': typeof PrefixListsIdEditRoute
@@ -3935,11 +4079,14 @@ export interface FileRoutesByFullPath {
   '/racks/$id/edit': typeof RacksIdEditRoute
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
+  '/roas/$id/edit': typeof RoasIdEditRoute
   '/rooms/$id/edit': typeof RoomsIdEditRoute
   '/route-targets/$id/edit': typeof RouteTargetsIdEditRoute
   '/routing-keychains/$id/edit': typeof RoutingKeychainsIdEditRoute
   '/routing-policies/$id/edit': typeof RoutingPoliciesIdEditRoute
+  '/rpki-caches/$id/edit': typeof RpkiCachesIdEditRoute
   '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
+  '/sensitivity-labels/$id/edit': typeof SensitivityLabelsIdEditRoute
   '/service-templates/$id/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id/edit': typeof SilencesIdEditRoute
   '/sites/$id/edit': typeof SitesIdEditRoute
@@ -4121,6 +4268,8 @@ export interface FileRoutesByTo {
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
+  '/policy-rules/$id': typeof PolicyRulesIdRoute
+  '/policy-rules/new': typeof PolicyRulesNewRoute
   '/power-feeds/$id': typeof PowerFeedsIdRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
   '/power-panels/$id': typeof PowerPanelsIdRoute
@@ -4145,6 +4294,8 @@ export interface FileRoutesByTo {
   '/regions/new': typeof RegionsNewRoute
   '/rirs/$id': typeof RirsIdRoute
   '/rirs/new': typeof RirsNewRoute
+  '/roas/$id': typeof RoasIdRoute
+  '/roas/new': typeof RoasNewRoute
   '/rooms/$id': typeof RoomsIdRoute
   '/rooms/new': typeof RoomsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
@@ -4153,7 +4304,11 @@ export interface FileRoutesByTo {
   '/routing-keychains/new': typeof RoutingKeychainsNewRoute
   '/routing-policies/$id': typeof RoutingPoliciesIdRoute
   '/routing-policies/new': typeof RoutingPoliciesNewRoute
+  '/rpki-caches/$id': typeof RpkiCachesIdRoute
+  '/rpki-caches/new': typeof RpkiCachesNewRoute
   '/scripts/$id': typeof ScriptsIdRoute
+  '/sensitivity-labels/$id': typeof SensitivityLabelsIdRoute
+  '/sensitivity-labels/new': typeof SensitivityLabelsNewRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
@@ -4199,6 +4354,7 @@ export interface FileRoutesByTo {
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
   '/tenants/new': typeof TenantsNewRoute
+  '/topology/map': typeof TopologyMapRoute
   '/tunnel-groups/$id': typeof TunnelGroupsIdRoute
   '/tunnel-groups/new': typeof TunnelGroupsNewRoute
   '/tunnels/$id': typeof TunnelsIdRoute
@@ -4304,6 +4460,7 @@ export interface FileRoutesByTo {
   '/planning': typeof PlanningIndexRoute
   '/platform-groups': typeof PlatformGroupsIndexRoute
   '/platforms': typeof PlatformsIndexRoute
+  '/policy-rules': typeof PolicyRulesIndexRoute
   '/port-reservations': typeof PortReservationsIndexRoute
   '/power-feeds': typeof PowerFeedsIndexRoute
   '/power-panels': typeof PowerPanelsIndexRoute
@@ -4317,11 +4474,14 @@ export interface FileRoutesByTo {
   '/racks': typeof RacksIndexRoute
   '/regions': typeof RegionsIndexRoute
   '/rirs': typeof RirsIndexRoute
+  '/roas': typeof RoasIndexRoute
   '/rooms': typeof RoomsIndexRoute
   '/route-targets': typeof RouteTargetsIndexRoute
   '/routing-keychains': typeof RoutingKeychainsIndexRoute
   '/routing-policies': typeof RoutingPoliciesIndexRoute
+  '/rpki-caches': typeof RpkiCachesIndexRoute
   '/scripts': typeof ScriptsIndexRoute
+  '/sensitivity-labels': typeof SensitivityLabelsIndexRoute
   '/service-templates': typeof ServiceTemplatesIndexRoute
   '/services': typeof ServicesIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -4416,6 +4576,7 @@ export interface FileRoutesByTo {
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id/edit': typeof PlatformsIdEditRoute
+  '/policy-rules/$id/edit': typeof PolicyRulesIdEditRoute
   '/power-feeds/$id/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id/edit': typeof PowerPanelsIdEditRoute
   '/prefix-lists/$id/edit': typeof PrefixListsIdEditRoute
@@ -4427,11 +4588,14 @@ export interface FileRoutesByTo {
   '/racks/$id/edit': typeof RacksIdEditRoute
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
+  '/roas/$id/edit': typeof RoasIdEditRoute
   '/rooms/$id/edit': typeof RoomsIdEditRoute
   '/route-targets/$id/edit': typeof RouteTargetsIdEditRoute
   '/routing-keychains/$id/edit': typeof RoutingKeychainsIdEditRoute
   '/routing-policies/$id/edit': typeof RoutingPoliciesIdEditRoute
+  '/rpki-caches/$id/edit': typeof RpkiCachesIdEditRoute
   '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
+  '/sensitivity-labels/$id/edit': typeof SensitivityLabelsIdEditRoute
   '/service-templates/$id/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id/edit': typeof SilencesIdEditRoute
   '/sites/$id/edit': typeof SitesIdEditRoute
@@ -4522,6 +4686,7 @@ export interface FileRoutesById {
   '/notifications': typeof NotificationsRoute
   '/ospf-areas': typeof OspfAreasRouteWithChildren
   '/permissions': typeof PermissionsRouteWithChildren
+  '/policy-rules': typeof PolicyRulesRouteWithChildren
   '/port-utilization': typeof PortUtilizationRoute
   '/power-feeds': typeof PowerFeedsRouteWithChildren
   '/power-panels': typeof PowerPanelsRouteWithChildren
@@ -4532,11 +4697,14 @@ export interface FileRoutesById {
   '/rack-types': typeof RackTypesRouteWithChildren
   '/regions': typeof RegionsRouteWithChildren
   '/rirs': typeof RirsRouteWithChildren
+  '/roas': typeof RoasRouteWithChildren
   '/route-targets': typeof RouteTargetsRouteWithChildren
   '/routing-keychains': typeof RoutingKeychainsRouteWithChildren
   '/routing-policies': typeof RoutingPoliciesRouteWithChildren
+  '/rpki-caches': typeof RpkiCachesRouteWithChildren
   '/saved-filters': typeof SavedFiltersRoute
   '/search': typeof SearchRoute
+  '/sensitivity-labels': typeof SensitivityLabelsRouteWithChildren
   '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRouteWithChildren
   '/site-map': typeof SiteMapRoute
@@ -4688,6 +4856,8 @@ export interface FileRoutesById {
   '/platform-groups/new': typeof PlatformGroupsNewRoute
   '/platforms/$id': typeof PlatformsIdRoute
   '/platforms/new': typeof PlatformsNewRoute
+  '/policy-rules/$id': typeof PolicyRulesIdRoute
+  '/policy-rules/new': typeof PolicyRulesNewRoute
   '/power-feeds/$id': typeof PowerFeedsIdRoute
   '/power-feeds/new': typeof PowerFeedsNewRoute
   '/power-panels/$id': typeof PowerPanelsIdRoute
@@ -4712,6 +4882,8 @@ export interface FileRoutesById {
   '/regions/new': typeof RegionsNewRoute
   '/rirs/$id': typeof RirsIdRoute
   '/rirs/new': typeof RirsNewRoute
+  '/roas/$id': typeof RoasIdRoute
+  '/roas/new': typeof RoasNewRoute
   '/rooms/$id': typeof RoomsIdRoute
   '/rooms/new': typeof RoomsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
@@ -4720,7 +4892,11 @@ export interface FileRoutesById {
   '/routing-keychains/new': typeof RoutingKeychainsNewRoute
   '/routing-policies/$id': typeof RoutingPoliciesIdRoute
   '/routing-policies/new': typeof RoutingPoliciesNewRoute
+  '/rpki-caches/$id': typeof RpkiCachesIdRoute
+  '/rpki-caches/new': typeof RpkiCachesNewRoute
   '/scripts/$id': typeof ScriptsIdRoute
+  '/sensitivity-labels/$id': typeof SensitivityLabelsIdRoute
+  '/sensitivity-labels/new': typeof SensitivityLabelsNewRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
@@ -4766,6 +4942,7 @@ export interface FileRoutesById {
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
   '/tenants/new': typeof TenantsNewRoute
+  '/topology/map': typeof TopologyMapRoute
   '/tunnel-groups/$id': typeof TunnelGroupsIdRoute
   '/tunnel-groups/new': typeof TunnelGroupsNewRoute
   '/tunnels/$id': typeof TunnelsIdRoute
@@ -4871,6 +5048,7 @@ export interface FileRoutesById {
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
   '/platforms/': typeof PlatformsIndexRoute
+  '/policy-rules/': typeof PolicyRulesIndexRoute
   '/port-reservations/': typeof PortReservationsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
   '/power-panels/': typeof PowerPanelsIndexRoute
@@ -4884,11 +5062,14 @@ export interface FileRoutesById {
   '/racks/': typeof RacksIndexRoute
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
+  '/roas/': typeof RoasIndexRoute
   '/rooms/': typeof RoomsIndexRoute
   '/route-targets/': typeof RouteTargetsIndexRoute
   '/routing-keychains/': typeof RoutingKeychainsIndexRoute
   '/routing-policies/': typeof RoutingPoliciesIndexRoute
+  '/rpki-caches/': typeof RpkiCachesIndexRoute
   '/scripts/': typeof ScriptsIndexRoute
+  '/sensitivity-labels/': typeof SensitivityLabelsIndexRoute
   '/service-templates/': typeof ServiceTemplatesIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -4983,6 +5164,7 @@ export interface FileRoutesById {
   '/permissions/$id_/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id_/edit': typeof PlatformGroupsIdEditRoute
   '/platforms/$id_/edit': typeof PlatformsIdEditRoute
+  '/policy-rules/$id_/edit': typeof PolicyRulesIdEditRoute
   '/power-feeds/$id_/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id_/edit': typeof PowerPanelsIdEditRoute
   '/prefix-lists/$id_/edit': typeof PrefixListsIdEditRoute
@@ -4994,11 +5176,14 @@ export interface FileRoutesById {
   '/racks/$id_/edit': typeof RacksIdEditRoute
   '/regions/$id_/edit': typeof RegionsIdEditRoute
   '/rirs/$id_/edit': typeof RirsIdEditRoute
+  '/roas/$id_/edit': typeof RoasIdEditRoute
   '/rooms/$id_/edit': typeof RoomsIdEditRoute
   '/route-targets/$id_/edit': typeof RouteTargetsIdEditRoute
   '/routing-keychains/$id_/edit': typeof RoutingKeychainsIdEditRoute
   '/routing-policies/$id_/edit': typeof RoutingPoliciesIdEditRoute
+  '/rpki-caches/$id_/edit': typeof RpkiCachesIdEditRoute
   '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
+  '/sensitivity-labels/$id_/edit': typeof SensitivityLabelsIdEditRoute
   '/service-templates/$id_/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id_/edit': typeof SilencesIdEditRoute
   '/sites/$id_/edit': typeof SitesIdEditRoute
@@ -5090,6 +5275,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/ospf-areas'
     | '/permissions'
+    | '/policy-rules'
     | '/port-utilization'
     | '/power-feeds'
     | '/power-panels'
@@ -5100,11 +5286,14 @@ export interface FileRouteTypes {
     | '/rack-types'
     | '/regions'
     | '/rirs'
+    | '/roas'
     | '/route-targets'
     | '/routing-keychains'
     | '/routing-policies'
+    | '/rpki-caches'
     | '/saved-filters'
     | '/search'
+    | '/sensitivity-labels'
     | '/set-password'
     | '/settings'
     | '/site-map'
@@ -5256,6 +5445,8 @@ export interface FileRouteTypes {
     | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
+    | '/policy-rules/$id'
+    | '/policy-rules/new'
     | '/power-feeds/$id'
     | '/power-feeds/new'
     | '/power-panels/$id'
@@ -5280,6 +5471,8 @@ export interface FileRouteTypes {
     | '/regions/new'
     | '/rirs/$id'
     | '/rirs/new'
+    | '/roas/$id'
+    | '/roas/new'
     | '/rooms/$id'
     | '/rooms/new'
     | '/route-targets/$id'
@@ -5288,7 +5481,11 @@ export interface FileRouteTypes {
     | '/routing-keychains/new'
     | '/routing-policies/$id'
     | '/routing-policies/new'
+    | '/rpki-caches/$id'
+    | '/rpki-caches/new'
     | '/scripts/$id'
+    | '/sensitivity-labels/$id'
+    | '/sensitivity-labels/new'
     | '/service-templates/$id'
     | '/service-templates/new'
     | '/services/$id'
@@ -5334,6 +5531,7 @@ export interface FileRouteTypes {
     | '/tags/new'
     | '/tenants/$id'
     | '/tenants/new'
+    | '/topology/map'
     | '/tunnel-groups/$id'
     | '/tunnel-groups/new'
     | '/tunnels/$id'
@@ -5439,6 +5637,7 @@ export interface FileRouteTypes {
     | '/planning/'
     | '/platform-groups/'
     | '/platforms/'
+    | '/policy-rules/'
     | '/port-reservations/'
     | '/power-feeds/'
     | '/power-panels/'
@@ -5452,11 +5651,14 @@ export interface FileRouteTypes {
     | '/racks/'
     | '/regions/'
     | '/rirs/'
+    | '/roas/'
     | '/rooms/'
     | '/route-targets/'
     | '/routing-keychains/'
     | '/routing-policies/'
+    | '/rpki-caches/'
     | '/scripts/'
+    | '/sensitivity-labels/'
     | '/service-templates/'
     | '/services/'
     | '/settings/'
@@ -5551,6 +5753,7 @@ export interface FileRouteTypes {
     | '/permissions/$id/edit'
     | '/platform-groups/$id/edit'
     | '/platforms/$id/edit'
+    | '/policy-rules/$id/edit'
     | '/power-feeds/$id/edit'
     | '/power-panels/$id/edit'
     | '/prefix-lists/$id/edit'
@@ -5562,11 +5765,14 @@ export interface FileRouteTypes {
     | '/racks/$id/edit'
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
+    | '/roas/$id/edit'
     | '/rooms/$id/edit'
     | '/route-targets/$id/edit'
     | '/routing-keychains/$id/edit'
     | '/routing-policies/$id/edit'
+    | '/rpki-caches/$id/edit'
     | '/scripts/runs/$runId'
+    | '/sensitivity-labels/$id/edit'
     | '/service-templates/$id/edit'
     | '/silences/$id/edit'
     | '/sites/$id/edit'
@@ -5748,6 +5954,8 @@ export interface FileRouteTypes {
     | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
+    | '/policy-rules/$id'
+    | '/policy-rules/new'
     | '/power-feeds/$id'
     | '/power-feeds/new'
     | '/power-panels/$id'
@@ -5772,6 +5980,8 @@ export interface FileRouteTypes {
     | '/regions/new'
     | '/rirs/$id'
     | '/rirs/new'
+    | '/roas/$id'
+    | '/roas/new'
     | '/rooms/$id'
     | '/rooms/new'
     | '/route-targets/$id'
@@ -5780,7 +5990,11 @@ export interface FileRouteTypes {
     | '/routing-keychains/new'
     | '/routing-policies/$id'
     | '/routing-policies/new'
+    | '/rpki-caches/$id'
+    | '/rpki-caches/new'
     | '/scripts/$id'
+    | '/sensitivity-labels/$id'
+    | '/sensitivity-labels/new'
     | '/service-templates/$id'
     | '/service-templates/new'
     | '/services/$id'
@@ -5826,6 +6040,7 @@ export interface FileRouteTypes {
     | '/tags/new'
     | '/tenants/$id'
     | '/tenants/new'
+    | '/topology/map'
     | '/tunnel-groups/$id'
     | '/tunnel-groups/new'
     | '/tunnels/$id'
@@ -5931,6 +6146,7 @@ export interface FileRouteTypes {
     | '/planning'
     | '/platform-groups'
     | '/platforms'
+    | '/policy-rules'
     | '/port-reservations'
     | '/power-feeds'
     | '/power-panels'
@@ -5944,11 +6160,14 @@ export interface FileRouteTypes {
     | '/racks'
     | '/regions'
     | '/rirs'
+    | '/roas'
     | '/rooms'
     | '/route-targets'
     | '/routing-keychains'
     | '/routing-policies'
+    | '/rpki-caches'
     | '/scripts'
+    | '/sensitivity-labels'
     | '/service-templates'
     | '/services'
     | '/settings'
@@ -6043,6 +6262,7 @@ export interface FileRouteTypes {
     | '/permissions/$id/edit'
     | '/platform-groups/$id/edit'
     | '/platforms/$id/edit'
+    | '/policy-rules/$id/edit'
     | '/power-feeds/$id/edit'
     | '/power-panels/$id/edit'
     | '/prefix-lists/$id/edit'
@@ -6054,11 +6274,14 @@ export interface FileRouteTypes {
     | '/racks/$id/edit'
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
+    | '/roas/$id/edit'
     | '/rooms/$id/edit'
     | '/route-targets/$id/edit'
     | '/routing-keychains/$id/edit'
     | '/routing-policies/$id/edit'
+    | '/rpki-caches/$id/edit'
     | '/scripts/runs/$runId'
+    | '/sensitivity-labels/$id/edit'
     | '/service-templates/$id/edit'
     | '/silences/$id/edit'
     | '/sites/$id/edit'
@@ -6148,6 +6371,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/ospf-areas'
     | '/permissions'
+    | '/policy-rules'
     | '/port-utilization'
     | '/power-feeds'
     | '/power-panels'
@@ -6158,11 +6382,14 @@ export interface FileRouteTypes {
     | '/rack-types'
     | '/regions'
     | '/rirs'
+    | '/roas'
     | '/route-targets'
     | '/routing-keychains'
     | '/routing-policies'
+    | '/rpki-caches'
     | '/saved-filters'
     | '/search'
+    | '/sensitivity-labels'
     | '/set-password'
     | '/settings'
     | '/site-map'
@@ -6314,6 +6541,8 @@ export interface FileRouteTypes {
     | '/platform-groups/new'
     | '/platforms/$id'
     | '/platforms/new'
+    | '/policy-rules/$id'
+    | '/policy-rules/new'
     | '/power-feeds/$id'
     | '/power-feeds/new'
     | '/power-panels/$id'
@@ -6338,6 +6567,8 @@ export interface FileRouteTypes {
     | '/regions/new'
     | '/rirs/$id'
     | '/rirs/new'
+    | '/roas/$id'
+    | '/roas/new'
     | '/rooms/$id'
     | '/rooms/new'
     | '/route-targets/$id'
@@ -6346,7 +6577,11 @@ export interface FileRouteTypes {
     | '/routing-keychains/new'
     | '/routing-policies/$id'
     | '/routing-policies/new'
+    | '/rpki-caches/$id'
+    | '/rpki-caches/new'
     | '/scripts/$id'
+    | '/sensitivity-labels/$id'
+    | '/sensitivity-labels/new'
     | '/service-templates/$id'
     | '/service-templates/new'
     | '/services/$id'
@@ -6392,6 +6627,7 @@ export interface FileRouteTypes {
     | '/tags/new'
     | '/tenants/$id'
     | '/tenants/new'
+    | '/topology/map'
     | '/tunnel-groups/$id'
     | '/tunnel-groups/new'
     | '/tunnels/$id'
@@ -6497,6 +6733,7 @@ export interface FileRouteTypes {
     | '/planning/'
     | '/platform-groups/'
     | '/platforms/'
+    | '/policy-rules/'
     | '/port-reservations/'
     | '/power-feeds/'
     | '/power-panels/'
@@ -6510,11 +6747,14 @@ export interface FileRouteTypes {
     | '/racks/'
     | '/regions/'
     | '/rirs/'
+    | '/roas/'
     | '/rooms/'
     | '/route-targets/'
     | '/routing-keychains/'
     | '/routing-policies/'
+    | '/rpki-caches/'
     | '/scripts/'
+    | '/sensitivity-labels/'
     | '/service-templates/'
     | '/services/'
     | '/settings/'
@@ -6609,6 +6849,7 @@ export interface FileRouteTypes {
     | '/permissions/$id_/edit'
     | '/platform-groups/$id_/edit'
     | '/platforms/$id_/edit'
+    | '/policy-rules/$id_/edit'
     | '/power-feeds/$id_/edit'
     | '/power-panels/$id_/edit'
     | '/prefix-lists/$id_/edit'
@@ -6620,11 +6861,14 @@ export interface FileRouteTypes {
     | '/racks/$id_/edit'
     | '/regions/$id_/edit'
     | '/rirs/$id_/edit'
+    | '/roas/$id_/edit'
     | '/rooms/$id_/edit'
     | '/route-targets/$id_/edit'
     | '/routing-keychains/$id_/edit'
     | '/routing-policies/$id_/edit'
+    | '/rpki-caches/$id_/edit'
     | '/scripts/runs/$runId'
+    | '/sensitivity-labels/$id_/edit'
     | '/service-templates/$id_/edit'
     | '/silences/$id_/edit'
     | '/sites/$id_/edit'
@@ -6715,6 +6959,7 @@ export interface RootRouteChildren {
   NotificationsRoute: typeof NotificationsRoute
   OspfAreasRoute: typeof OspfAreasRouteWithChildren
   PermissionsRoute: typeof PermissionsRouteWithChildren
+  PolicyRulesRoute: typeof PolicyRulesRouteWithChildren
   PortUtilizationRoute: typeof PortUtilizationRoute
   PowerFeedsRoute: typeof PowerFeedsRouteWithChildren
   PowerPanelsRoute: typeof PowerPanelsRouteWithChildren
@@ -6725,11 +6970,14 @@ export interface RootRouteChildren {
   RackTypesRoute: typeof RackTypesRouteWithChildren
   RegionsRoute: typeof RegionsRouteWithChildren
   RirsRoute: typeof RirsRouteWithChildren
+  RoasRoute: typeof RoasRouteWithChildren
   RouteTargetsRoute: typeof RouteTargetsRouteWithChildren
   RoutingKeychainsRoute: typeof RoutingKeychainsRouteWithChildren
   RoutingPoliciesRoute: typeof RoutingPoliciesRouteWithChildren
+  RpkiCachesRoute: typeof RpkiCachesRouteWithChildren
   SavedFiltersRoute: typeof SavedFiltersRoute
   SearchRoute: typeof SearchRoute
+  SensitivityLabelsRoute: typeof SensitivityLabelsRouteWithChildren
   SetPasswordRoute: typeof SetPasswordRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   SiteMapRoute: typeof SiteMapRoute
@@ -7326,6 +7574,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PermissionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/policy-rules': {
+      id: '/policy-rules'
+      path: '/policy-rules'
+      fullPath: '/policy-rules'
+      preLoaderRoute: typeof PolicyRulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/port-utilization': {
       id: '/port-utilization'
       path: '/port-utilization'
@@ -7396,6 +7651,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RirsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/roas': {
+      id: '/roas'
+      path: '/roas'
+      fullPath: '/roas'
+      preLoaderRoute: typeof RoasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/route-targets': {
       id: '/route-targets'
       path: '/route-targets'
@@ -7417,6 +7679,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoutingPoliciesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/rpki-caches': {
+      id: '/rpki-caches'
+      path: '/rpki-caches'
+      fullPath: '/rpki-caches'
+      preLoaderRoute: typeof RpkiCachesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/saved-filters': {
       id: '/saved-filters'
       path: '/saved-filters'
@@ -7429,6 +7698,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sensitivity-labels': {
+      id: '/sensitivity-labels'
+      path: '/sensitivity-labels'
+      fullPath: '/sensitivity-labels'
+      preLoaderRoute: typeof SensitivityLabelsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/set-password': {
@@ -9020,6 +9296,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlatformsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/policy-rules/': {
+      id: '/policy-rules/'
+      path: '/'
+      fullPath: '/policy-rules/'
+      preLoaderRoute: typeof PolicyRulesIndexRouteImport
+      parentRoute: typeof PolicyRulesRoute
+    }
+    '/policy-rules/$id': {
+      id: '/policy-rules/$id'
+      path: '/$id'
+      fullPath: '/policy-rules/$id'
+      preLoaderRoute: typeof PolicyRulesIdRouteImport
+      parentRoute: typeof PolicyRulesRoute
+    }
+    '/policy-rules/new': {
+      id: '/policy-rules/new'
+      path: '/new'
+      fullPath: '/policy-rules/new'
+      preLoaderRoute: typeof PolicyRulesNewRouteImport
+      parentRoute: typeof PolicyRulesRoute
+    }
     '/port-reservations/': {
       id: '/port-reservations/'
       path: '/port-reservations'
@@ -9279,6 +9576,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RirsNewRouteImport
       parentRoute: typeof RirsRoute
     }
+    '/roas/': {
+      id: '/roas/'
+      path: '/'
+      fullPath: '/roas/'
+      preLoaderRoute: typeof RoasIndexRouteImport
+      parentRoute: typeof RoasRoute
+    }
+    '/roas/$id': {
+      id: '/roas/$id'
+      path: '/$id'
+      fullPath: '/roas/$id'
+      preLoaderRoute: typeof RoasIdRouteImport
+      parentRoute: typeof RoasRoute
+    }
+    '/roas/new': {
+      id: '/roas/new'
+      path: '/new'
+      fullPath: '/roas/new'
+      preLoaderRoute: typeof RoasNewRouteImport
+      parentRoute: typeof RoasRoute
+    }
     '/rooms/': {
       id: '/rooms/'
       path: '/rooms'
@@ -9363,6 +9681,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoutingPoliciesNewRouteImport
       parentRoute: typeof RoutingPoliciesRoute
     }
+    '/rpki-caches/': {
+      id: '/rpki-caches/'
+      path: '/'
+      fullPath: '/rpki-caches/'
+      preLoaderRoute: typeof RpkiCachesIndexRouteImport
+      parentRoute: typeof RpkiCachesRoute
+    }
+    '/rpki-caches/$id': {
+      id: '/rpki-caches/$id'
+      path: '/$id'
+      fullPath: '/rpki-caches/$id'
+      preLoaderRoute: typeof RpkiCachesIdRouteImport
+      parentRoute: typeof RpkiCachesRoute
+    }
+    '/rpki-caches/new': {
+      id: '/rpki-caches/new'
+      path: '/new'
+      fullPath: '/rpki-caches/new'
+      preLoaderRoute: typeof RpkiCachesNewRouteImport
+      parentRoute: typeof RpkiCachesRoute
+    }
     '/scripts/': {
       id: '/scripts/'
       path: '/scripts'
@@ -9376,6 +9715,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/scripts/$id'
       preLoaderRoute: typeof ScriptsIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/sensitivity-labels/': {
+      id: '/sensitivity-labels/'
+      path: '/'
+      fullPath: '/sensitivity-labels/'
+      preLoaderRoute: typeof SensitivityLabelsIndexRouteImport
+      parentRoute: typeof SensitivityLabelsRoute
+    }
+    '/sensitivity-labels/$id': {
+      id: '/sensitivity-labels/$id'
+      path: '/$id'
+      fullPath: '/sensitivity-labels/$id'
+      preLoaderRoute: typeof SensitivityLabelsIdRouteImport
+      parentRoute: typeof SensitivityLabelsRoute
+    }
+    '/sensitivity-labels/new': {
+      id: '/sensitivity-labels/new'
+      path: '/new'
+      fullPath: '/sensitivity-labels/new'
+      preLoaderRoute: typeof SensitivityLabelsNewRouteImport
+      parentRoute: typeof SensitivityLabelsRoute
     }
     '/service-templates/': {
       id: '/service-templates/'
@@ -9760,6 +10120,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/topology/'
       preLoaderRoute: typeof TopologyIndexRouteImport
+      parentRoute: typeof TopologyRoute
+    }
+    '/topology/map': {
+      id: '/topology/map'
+      path: '/map'
+      fullPath: '/topology/map'
+      preLoaderRoute: typeof TopologyMapRouteImport
       parentRoute: typeof TopologyRoute
     }
     '/tunnel-groups/': {
@@ -10553,6 +10920,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlatformsIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/policy-rules/$id_/edit': {
+      id: '/policy-rules/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/policy-rules/$id/edit'
+      preLoaderRoute: typeof PolicyRulesIdEditRouteImport
+      parentRoute: typeof PolicyRulesRoute
+    }
     '/power-feeds/$id_/edit': {
       id: '/power-feeds/$id_/edit'
       path: '/$id/edit'
@@ -10630,6 +11004,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RirsIdEditRouteImport
       parentRoute: typeof RirsRoute
     }
+    '/roas/$id_/edit': {
+      id: '/roas/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/roas/$id/edit'
+      preLoaderRoute: typeof RoasIdEditRouteImport
+      parentRoute: typeof RoasRoute
+    }
     '/rooms/$id_/edit': {
       id: '/rooms/$id_/edit'
       path: '/rooms/$id/edit'
@@ -10658,12 +11039,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoutingPoliciesIdEditRouteImport
       parentRoute: typeof RoutingPoliciesRoute
     }
+    '/rpki-caches/$id_/edit': {
+      id: '/rpki-caches/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/rpki-caches/$id/edit'
+      preLoaderRoute: typeof RpkiCachesIdEditRouteImport
+      parentRoute: typeof RpkiCachesRoute
+    }
     '/scripts/runs/$runId': {
       id: '/scripts/runs/$runId'
       path: '/scripts/runs/$runId'
       fullPath: '/scripts/runs/$runId'
       preLoaderRoute: typeof ScriptsRunsRunIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/sensitivity-labels/$id_/edit': {
+      id: '/sensitivity-labels/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/sensitivity-labels/$id/edit'
+      preLoaderRoute: typeof SensitivityLabelsIdEditRouteImport
+      parentRoute: typeof SensitivityLabelsRoute
     }
     '/service-templates/$id_/edit': {
       id: '/service-templates/$id_/edit'
@@ -11612,6 +12007,24 @@ const PermissionsRouteWithChildren = PermissionsRoute._addFileChildren(
   PermissionsRouteChildren,
 )
 
+interface PolicyRulesRouteChildren {
+  PolicyRulesIdRoute: typeof PolicyRulesIdRoute
+  PolicyRulesNewRoute: typeof PolicyRulesNewRoute
+  PolicyRulesIndexRoute: typeof PolicyRulesIndexRoute
+  PolicyRulesIdEditRoute: typeof PolicyRulesIdEditRoute
+}
+
+const PolicyRulesRouteChildren: PolicyRulesRouteChildren = {
+  PolicyRulesIdRoute: PolicyRulesIdRoute,
+  PolicyRulesNewRoute: PolicyRulesNewRoute,
+  PolicyRulesIndexRoute: PolicyRulesIndexRoute,
+  PolicyRulesIdEditRoute: PolicyRulesIdEditRoute,
+}
+
+const PolicyRulesRouteWithChildren = PolicyRulesRoute._addFileChildren(
+  PolicyRulesRouteChildren,
+)
+
 interface PowerFeedsRouteChildren {
   PowerFeedsIdRoute: typeof PowerFeedsIdRoute
   PowerFeedsNewRoute: typeof PowerFeedsNewRoute
@@ -11772,6 +12185,22 @@ const RirsRouteChildren: RirsRouteChildren = {
 
 const RirsRouteWithChildren = RirsRoute._addFileChildren(RirsRouteChildren)
 
+interface RoasRouteChildren {
+  RoasIdRoute: typeof RoasIdRoute
+  RoasNewRoute: typeof RoasNewRoute
+  RoasIndexRoute: typeof RoasIndexRoute
+  RoasIdEditRoute: typeof RoasIdEditRoute
+}
+
+const RoasRouteChildren: RoasRouteChildren = {
+  RoasIdRoute: RoasIdRoute,
+  RoasNewRoute: RoasNewRoute,
+  RoasIndexRoute: RoasIndexRoute,
+  RoasIdEditRoute: RoasIdEditRoute,
+}
+
+const RoasRouteWithChildren = RoasRoute._addFileChildren(RoasRouteChildren)
+
 interface RouteTargetsRouteChildren {
   RouteTargetsIdRoute: typeof RouteTargetsIdRoute
   RouteTargetsNewRoute: typeof RouteTargetsNewRoute
@@ -11824,6 +12253,41 @@ const RoutingPoliciesRouteChildren: RoutingPoliciesRouteChildren = {
 const RoutingPoliciesRouteWithChildren = RoutingPoliciesRoute._addFileChildren(
   RoutingPoliciesRouteChildren,
 )
+
+interface RpkiCachesRouteChildren {
+  RpkiCachesIdRoute: typeof RpkiCachesIdRoute
+  RpkiCachesNewRoute: typeof RpkiCachesNewRoute
+  RpkiCachesIndexRoute: typeof RpkiCachesIndexRoute
+  RpkiCachesIdEditRoute: typeof RpkiCachesIdEditRoute
+}
+
+const RpkiCachesRouteChildren: RpkiCachesRouteChildren = {
+  RpkiCachesIdRoute: RpkiCachesIdRoute,
+  RpkiCachesNewRoute: RpkiCachesNewRoute,
+  RpkiCachesIndexRoute: RpkiCachesIndexRoute,
+  RpkiCachesIdEditRoute: RpkiCachesIdEditRoute,
+}
+
+const RpkiCachesRouteWithChildren = RpkiCachesRoute._addFileChildren(
+  RpkiCachesRouteChildren,
+)
+
+interface SensitivityLabelsRouteChildren {
+  SensitivityLabelsIdRoute: typeof SensitivityLabelsIdRoute
+  SensitivityLabelsNewRoute: typeof SensitivityLabelsNewRoute
+  SensitivityLabelsIndexRoute: typeof SensitivityLabelsIndexRoute
+  SensitivityLabelsIdEditRoute: typeof SensitivityLabelsIdEditRoute
+}
+
+const SensitivityLabelsRouteChildren: SensitivityLabelsRouteChildren = {
+  SensitivityLabelsIdRoute: SensitivityLabelsIdRoute,
+  SensitivityLabelsNewRoute: SensitivityLabelsNewRoute,
+  SensitivityLabelsIndexRoute: SensitivityLabelsIndexRoute,
+  SensitivityLabelsIdEditRoute: SensitivityLabelsIdEditRoute,
+}
+
+const SensitivityLabelsRouteWithChildren =
+  SensitivityLabelsRoute._addFileChildren(SensitivityLabelsRouteChildren)
 
 interface SettingsRouteChildren {
   SettingsAdminRoute: typeof SettingsAdminRoute
@@ -11998,10 +12462,12 @@ const TenantsRouteWithChildren =
   TenantsRoute._addFileChildren(TenantsRouteChildren)
 
 interface TopologyRouteChildren {
+  TopologyMapRoute: typeof TopologyMapRoute
   TopologyIndexRoute: typeof TopologyIndexRoute
 }
 
 const TopologyRouteChildren: TopologyRouteChildren = {
+  TopologyMapRoute: TopologyMapRoute,
   TopologyIndexRoute: TopologyIndexRoute,
 }
 
@@ -12258,6 +12724,7 @@ const rootRouteChildren: RootRouteChildren = {
   NotificationsRoute: NotificationsRoute,
   OspfAreasRoute: OspfAreasRouteWithChildren,
   PermissionsRoute: PermissionsRouteWithChildren,
+  PolicyRulesRoute: PolicyRulesRouteWithChildren,
   PortUtilizationRoute: PortUtilizationRoute,
   PowerFeedsRoute: PowerFeedsRouteWithChildren,
   PowerPanelsRoute: PowerPanelsRouteWithChildren,
@@ -12268,11 +12735,14 @@ const rootRouteChildren: RootRouteChildren = {
   RackTypesRoute: RackTypesRouteWithChildren,
   RegionsRoute: RegionsRouteWithChildren,
   RirsRoute: RirsRouteWithChildren,
+  RoasRoute: RoasRouteWithChildren,
   RouteTargetsRoute: RouteTargetsRouteWithChildren,
   RoutingKeychainsRoute: RoutingKeychainsRouteWithChildren,
   RoutingPoliciesRoute: RoutingPoliciesRouteWithChildren,
+  RpkiCachesRoute: RpkiCachesRouteWithChildren,
   SavedFiltersRoute: SavedFiltersRoute,
   SearchRoute: SearchRoute,
+  SensitivityLabelsRoute: SensitivityLabelsRouteWithChildren,
   SetPasswordRoute: SetPasswordRoute,
   SettingsRoute: SettingsRouteWithChildren,
   SiteMapRoute: SiteMapRoute,
