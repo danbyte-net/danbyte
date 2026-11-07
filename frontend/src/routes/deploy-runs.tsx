@@ -21,7 +21,7 @@ export const Route = createFileRoute("/deploy-runs")({
   component: DeployRunsPage,
 })
 
-const STATUSES = ["queued", "launched", "failed"] as const
+const STATUSES = ["queued", "launched", "succeeded", "failed"] as const
 
 function DeployRunsPage() {
   const [status, setStatus] = useState<string>("all")

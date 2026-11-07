@@ -4588,7 +4588,7 @@ class DeviceViewSet(
             return Response({"detail": "Unknown or disabled target."},
                             status=drf_status.HTTP_400_BAD_REQUEST)
         device = self.get_object()
-        run = enqueue_deploy(target, [device.id], event="manual")
+        run = enqueue_deploy(target, [device.id], event="manual", user=request.user)
         from integrations.api import DeployRunSerializer
         return Response(DeployRunSerializer(run).data, status=202)
 
@@ -7229,6 +7229,7 @@ class VirtualMachineViewSet(
             )
         run = enqueue_deploy(
             target, [vm.id], event="provision", object_type="virtualmachine",
+            user=request.user,
         )
         from integrations.provision import audit_provision
 

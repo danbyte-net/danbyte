@@ -16,6 +16,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { ScriptPicker } from "@/components/script-picker"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface AutomationTargetFormProps {
@@ -38,6 +39,7 @@ export function AutomationTargetForm({
   const [kind, setKind] = useState<AutomationKind>(target?.kind ?? "awx")
   const [enabled, setEnabled] = useState(target?.enabled ?? true)
   const [baseUrl, setBaseUrl] = useState(target?.base_url ?? "")
+  const [script, setScript] = useState<string | null>(target?.script ?? null)
   const [jobTemplateId, setJobTemplateId] = useState(
     target?.job_template_id ?? ""
   )
@@ -59,6 +61,7 @@ export function AutomationTargetForm({
     setKind(target.kind)
     setEnabled(target.enabled)
     setBaseUrl(target.base_url)
+    setScript(target.script)
     setJobTemplateId(target.job_template_id)
     setToken("")
     setSslVerify(target.ssl_verify)
@@ -87,7 +90,8 @@ export function AutomationTargetForm({
         name: name.trim(),
         kind,
         enabled,
-        base_url: baseUrl.trim(),
+        base_url: kind === "script" ? "" : baseUrl.trim(),
+        script: kind === "script" ? script : null,
         job_template_id: kind === "awx" ? jobTemplateId.trim() : "",
         ssl_verify: sslVerify,
         auto_on_change: autoOnChange,
@@ -139,24 +143,36 @@ export function AutomationTargetForm({
             options={[
               { value: "awx", label: "Ansible AWX / AAP" },
               { value: "webhook", label: "Generic webhook" },
+              { value: "script", label: "Danbyte script" },
             ]}
           />
         </div>
 
-        <FormText
-          label={kind === "awx" ? "AWX controller URL" : "Webhook URL"}
-          required
-          type="url"
-          mono
-          placeholder={
-            kind === "awx"
-              ? "https://awx.example.com"
-              : "https://ci.example.com/hook"
-          }
-          value={baseUrl}
-          onChange={setBaseUrl}
-          error={fieldErrors.base_url}
-        />
+        {kind === "script" ? (
+          <ScriptPicker
+            value={script}
+            onChange={setScript}
+            required
+            needsDeviceIds
+            hint="Runs with the deployed ids in its device_ids parameter"
+            error={fieldErrors.script}
+          />
+        ) : (
+          <FormText
+            label={kind === "awx" ? "AWX controller URL" : "Webhook URL"}
+            required
+            type="url"
+            mono
+            placeholder={
+              kind === "awx"
+                ? "https://awx.example.com"
+                : "https://ci.example.com/hook"
+            }
+            value={baseUrl}
+            onChange={setBaseUrl}
+            error={fieldErrors.base_url}
+          />
+        )}
 
         {kind === "awx" && (
           <FormText
@@ -173,27 +189,29 @@ export function AutomationTargetForm({
         <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
       </FormSection>
 
-      <FormSection title="Credentials" card>
-        <FormText
-          label={kind === "awx" ? "Bearer token" : "Signing secret"}
-          type="password"
-          autoComplete="new-password"
-          placeholder={target?.token_set ? "Saved - leave blank to keep" : ""}
-          hint={
-            kind === "awx"
-              ? "AWX/AAP OAuth token (sent as Authorization: Bearer)"
-              : "HMAC-SHA512 signs the payload in X-Danbyte-Signature"
-          }
-          value={token}
-          onChange={setToken}
-          error={fieldErrors.token}
-        />
-        <FormCheckbox
-          label="Verify TLS certificate"
-          checked={sslVerify}
-          onChange={setSslVerify}
-        />
-      </FormSection>
+      {kind !== "script" && (
+        <FormSection title="Credentials" card>
+          <FormText
+            label={kind === "awx" ? "Bearer token" : "Signing secret"}
+            type="password"
+            autoComplete="new-password"
+            placeholder={target?.token_set ? "Saved - leave blank to keep" : ""}
+            hint={
+              kind === "awx"
+                ? "AWX/AAP OAuth token (sent as Authorization: Bearer)"
+                : "HMAC-SHA512 signs the payload in X-Danbyte-Signature"
+            }
+            value={token}
+            onChange={setToken}
+            error={fieldErrors.token}
+          />
+          <FormCheckbox
+            label="Verify TLS certificate"
+            checked={sslVerify}
+            onChange={setSslVerify}
+          />
+        </FormSection>
+      )}
 
       <FormSection title="Behaviour" card>
         <FormCheckbox
@@ -204,7 +222,11 @@ export function AutomationTargetForm({
         />
         <FormTextarea
           label="Extra vars (JSON)"
-          hint="Merged into the AWX launch / webhook payload"
+          hint={
+            kind === "script"
+              ? "Merged into the script's parameters"
+              : "Merged into the AWX launch / webhook payload"
+          }
           rows={4}
           value={extraVars}
           onChange={(v) => {

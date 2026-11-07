@@ -6,8 +6,9 @@ class IntegrationsConfig(AppConfig):
     name = "integrations"
 
     def ready(self):
-        from . import dispatch, drift_history, webhooks
+        from . import dispatch, drift_history, script_targets, webhooks
 
         webhooks.connect()
         dispatch.connect()
+        script_targets.connect()
         drift_history.connect()

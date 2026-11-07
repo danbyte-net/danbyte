@@ -110,7 +110,11 @@ function Body({ target: t }: { target: AutomationTarget }) {
               )}
             </>
           }
-          subtitle={<span className="font-mono text-[12px]">{t.base_url}</span>}
+          subtitle={
+            <span className="font-mono text-[12px]">
+              {t.kind === "script" ? t.script_name : t.base_url}
+            </span>
+          }
         />
       }
       tabs={[
@@ -178,45 +182,69 @@ function TargetOverview({
       ),
     },
     { label: "Enabled", value: yesNo(t.enabled) },
-    {
-      label: "Endpoint",
-      value: (
-        <a
-          href={t.base_url}
-          target="_blank"
-          rel="noreferrer"
-          className="link inline-flex items-center gap-1 font-mono text-[12px]"
-        >
-          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-          <span className="break-all">{t.base_url}</span>
-        </a>
-      ),
-      copy: t.base_url || undefined,
-    },
-    ...(t.kind === "awx"
+    ...(t.kind === "script"
       ? [
           {
-            label: "Job template",
-            value: t.job_template_id ? (
-              <span className="font-mono text-[13px]">{t.job_template_id}</span>
+            label: "Script",
+            value: t.script ? (
+              <Link
+                to="/scripts/$id"
+                params={{ id: t.script }}
+                className="link"
+              >
+                {t.script_name}
+              </Link>
             ) : (
               dash
             ),
-            copy: t.job_template_id || undefined,
           } satisfies KvRow,
         ]
       : []),
-    { label: "Verify TLS", value: yesNo(t.ssl_verify) },
-    {
-      label: "Credential",
-      value: t.token_set ? (
-        <Badge variant="secondary" className="text-[10px]">
-          stored
-        </Badge>
-      ) : (
-        <span className="text-muted-foreground">not set</span>
-      ),
-    },
+    ...(t.kind === "script"
+      ? []
+      : ([
+          {
+            label: "Endpoint",
+            value: (
+              <a
+                href={t.base_url}
+                target="_blank"
+                rel="noreferrer"
+                className="link inline-flex items-center gap-1 font-mono text-[12px]"
+              >
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                <span className="break-all">{t.base_url}</span>
+              </a>
+            ),
+            copy: t.base_url || undefined,
+          },
+          ...(t.kind === "awx"
+            ? [
+                {
+                  label: "Job template",
+                  value: t.job_template_id ? (
+                    <span className="font-mono text-[13px]">
+                      {t.job_template_id}
+                    </span>
+                  ) : (
+                    dash
+                  ),
+                  copy: t.job_template_id || undefined,
+                } satisfies KvRow,
+              ]
+            : []),
+          { label: "Verify TLS", value: yesNo(t.ssl_verify) },
+          {
+            label: "Credential",
+            value: t.token_set ? (
+              <Badge variant="secondary" className="text-[10px]">
+                stored
+              </Badge>
+            ) : (
+              <span className="text-muted-foreground">not set</span>
+            ),
+          },
+        ] satisfies KvRow[])),
     { label: "Runs", value: <span className="num">{runCount ?? "-"}</span> },
   ]
 

@@ -12447,7 +12447,7 @@ export interface SecretStoreProvider {
 }
 
 // ─── Automation targets + deploy (Phase 2) ─────────────────────────────
-export type AutomationKind = "awx" | "webhook"
+export type AutomationKind = "awx" | "webhook" | "script"
 
 export interface AutomationTarget {
   id: string
@@ -12456,6 +12456,9 @@ export interface AutomationTarget {
   kind_display: string
   enabled: boolean
   base_url: string
+  /** The script a `script` target runs. */
+  script: string | null
+  script_name: string | null
   job_template_id: string
   token_set: boolean
   ssl_verify: boolean
@@ -12471,6 +12474,7 @@ export interface AutomationTargetWritePayload {
   kind: AutomationKind
   enabled?: boolean
   base_url: string
+  script?: string | null
   job_template_id?: string
   token?: string
   ssl_verify?: boolean
@@ -12487,7 +12491,7 @@ export interface DeployRun {
   device_ids: string[]
   /** What the ids are: "device", or "virtualmachine" for a provision. */
   object_type?: string
-  status: "queued" | "launched" | "failed"
+  status: DeployRunStatus
   detail: string
   created_at: string
   finished_at: string | null
@@ -12495,7 +12499,12 @@ export interface DeployRun {
   retry_of: string | null
   can_retry: boolean
   duration_ms: number | null
+  /** The script run a `script` target started; its end sets the status. */
+  script_run: string | null
+  script_run_status: ScriptRunStatus | null
 }
+
+export type DeployRunStatus = "queued" | "launched" | "succeeded" | "failed"
 
 export type DriftStatus = "in_sync" | "drift" | "unknown" | "error"
 

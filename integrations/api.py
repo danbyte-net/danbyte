@@ -8,10 +8,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.bulk_edit import BulkEditMixin, BulkEditSpec
-from api.serializers import TenantScopedModelSerializer
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
+from scripting.models import Script
 
 from .models import DeviceConfigSnapshot, DeviceConfigState, Webhook
+from .script_targets import declares_device_ids, may_start
 from .webhooks import deliver_webhook
 
 
@@ -124,8 +126,14 @@ class AutomationTargetSerializer(serializers.ModelSerializer):
     token_set = serializers.SerializerMethodField()
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     # A plain CharField (not the model's ChoiceField) so plugin-registered
-    # automation kinds validate; the built-ins awx/webhook are registered too.
+    # automation kinds validate; the built-ins awx/webhook/script are too.
     kind = serializers.CharField()
+    # Only the active tenant's scripts resolve; a foreign id is a 400 here.
+    script = TenantScopedPrimaryKeyRelatedField(
+        queryset=Script.objects.all(), required=False, allow_null=True,
+    )
+    script_name = serializers.CharField(source="script.name", read_only=True, default=None)
+    base_url = serializers.URLField(max_length=512, required=False, allow_blank=True)
 
     def get_token_set(self, obj) -> bool:
         return bool(obj.token)
@@ -140,6 +148,49 @@ class AutomationTargetSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate(self, attrs):
+        inst = self.instance
+        kind = attrs.get("kind", getattr(inst, "kind", None))
+        script = attrs["script"] if "script" in attrs else getattr(inst, "script", None)
+        if kind == "script":
+            if script is None:
+                raise serializers.ValidationError({"script": ["Pick the script to run."]})
+            tenant = self._tenant()
+            if tenant is None or script.tenant_id != tenant.pk:
+                raise serializers.ValidationError({"script": ["Unknown script."]})
+            if not declares_device_ids(script):
+                raise serializers.ValidationError({"script": [
+                    "This script has no device_ids parameter. Add one to its parameters "
+                    "to use it as a deploy target."
+                ]})
+            # Choosing the script (or switching to the script kind) is what
+            # needs the rights; an unrelated edit of the target does not.
+            choosing = (
+                inst is None or inst.kind != "script" or script.pk != inst.script_id
+            )
+            if choosing:
+                request = self.context.get("request")
+                why = may_start(getattr(request, "user", None), script)
+                if why:
+                    raise serializers.ValidationError({"script": [why]})
+        else:
+            base_url = attrs.get("base_url", getattr(inst, "base_url", ""))
+            if not base_url:
+                raise serializers.ValidationError({"base_url": ["This field is required."]})
+            if "script" in attrs or (inst is not None and inst.script_id):
+                attrs["script"] = None  # only a script target names a script
+        return attrs
+
+    def _tenant(self):
+        if self.instance is not None:
+            return self.instance.tenant
+        request = self.context.get("request")
+        if request is None:
+            return None
+        from api.views import _get_active_tenant
+
+        return _get_active_tenant(request)
+
     def update(self, instance, validated):
         if validated.get("token", None) == "":
             validated.pop("token", None)  # blank = keep existing
@@ -148,10 +199,11 @@ class AutomationTargetSerializer(serializers.ModelSerializer):
     class Meta:
         model = AutomationTarget
         fields = ["id", "name", "kind", "kind_display", "enabled", "base_url",
+                  "script", "script_name",
                   "job_template_id", "token", "token_set", "ssl_verify",
                   "extra_vars", "auto_on_change", "object_types",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "kind_display", "token_set",
+        read_only_fields = ["id", "kind_display", "token_set", "script_name",
                             "created_at", "updated_at"]
 
 
@@ -167,14 +219,24 @@ class AutomationTargetViewSet(BulkEditMixin, TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(base_url__icontains=s)
-        return qs
+        return qs.select_related("script")
 
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
-        """Reachability check - AWX /api/v2/ping/, or a HEAD to the webhook URL."""
+        """Reachability check - AWX /api/v2/ping/, or a HEAD to the webhook URL.
+        A script target is checked without running it."""
         from core.ssrf import safe_get, safe_request
 
         t = self.get_object()
+        if t.kind == "script":
+            s = t.script
+            why = (
+                "No script is set." if s is None
+                else f"The script {s.name} is disabled." if not s.enabled
+                else "The script has no device_ids parameter." if not declares_device_ids(s)
+                else may_start(request.user, s)
+            )
+            return Response({"ok": False, "error": why} if why else {"ok": True})
         try:
             if t.kind == "awx":
                 r = safe_get(
@@ -226,13 +288,16 @@ class AutomationTargetViewSet(BulkEditMixin, TenantScopedViewSet):
             )
         from .dispatch import enqueue_deploy
 
-        run = enqueue_deploy(target, valid, event="bulk")
+        run = enqueue_deploy(target, valid, event="bulk", user=request.user)
         return Response(DeployRunSerializer(run).data, status=202)
 
 
 class DeployRunSerializer(serializers.ModelSerializer):
     can_retry = serializers.SerializerMethodField()
     duration_ms = serializers.SerializerMethodField()
+    script_run_status = serializers.CharField(
+        source="script_run.status", read_only=True, default=None
+    )
 
     def get_can_retry(self, obj) -> bool:
         # A failed run can be re-fired only while its target still exists + is on.
@@ -250,12 +315,12 @@ class DeployRunSerializer(serializers.ModelSerializer):
         model = DeployRun
         fields = ["id", "target_name", "event", "device_ids", "object_type", "status",
                   "detail", "created_at", "finished_at", "attempt", "retry_of",
-                  "can_retry", "duration_ms"]
+                  "can_retry", "duration_ms", "script_run", "script_run_status"]
         read_only_fields = fields
 
 
 class DeployRunViewSet(TenantScopedViewSet):
-    queryset = DeployRun.objects.select_related("target").order_by("-created_at")
+    queryset = DeployRun.objects.select_related("target", "script_run").order_by("-created_at")
     serializer_class = DeployRunSerializer
     # POST is enabled only for the `retry` detail action - the collection stays
     # read-only (create() below 405s so the generic ModelViewSet write that
@@ -339,7 +404,7 @@ class DeployRunViewSet(TenantScopedViewSet):
 
         new = enqueue_deploy(
             target, valid, event=run.event,
-            attempt=run.attempt + 1, retry_of=run.retry_of or run,
+            attempt=run.attempt + 1, retry_of=run.retry_of or run, user=request.user,
         )
         return Response(DeployRunSerializer(new).data, status=202)
 
@@ -371,7 +436,7 @@ class DeployRunViewSet(TenantScopedViewSet):
             )
         new = enqueue_deploy(
             target, [v.id for v in vms], event=run.event,
-            attempt=run.attempt + 1, retry_of=run.retry_of or run,
+            attempt=run.attempt + 1, retry_of=run.retry_of or run, user=request.user,
             object_type="virtualmachine",
         )
         for vm in vms:

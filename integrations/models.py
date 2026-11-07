@@ -86,14 +86,16 @@ class Webhook(TimestampedModel):
 
 class AutomationTarget(TimestampedModel):
     """A runner Danbyte can dispatch a deploy to - an Ansible AWX/AAP job
-    template, or a generic signed webhook (Jenkins/GitLab/Rundeck). Danbyte fires
-    the trigger; the runner holds device creds and does the push."""
+    template, a generic signed webhook (Jenkins/GitLab/Rundeck), or a Danbyte
+    script. Danbyte fires the trigger; the runner holds device creds and does
+    the push."""
 
     import uuid as _uuid
 
     KIND_CHOICES = [
         ("awx", "Ansible AWX / AAP"),
         ("webhook", "Generic webhook"),
+        ("script", "Danbyte script"),
     ]
 
     id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
@@ -104,9 +106,15 @@ class AutomationTarget(TimestampedModel):
     kind = models.CharField(max_length=16, choices=KIND_CHOICES, default="awx")
     enabled = models.BooleanField(default=True)
     base_url = models.URLField(
-        max_length=512,
+        max_length=512, blank=True, default="",
         help_text="AWX/AAP controller URL (e.g. https://awx.example.com) or, for "
-                  "a generic webhook, the full POST URL.",
+                  "a generic webhook, the full POST URL. Unused for a script.",
+    )
+    #: The script a ``script`` target runs (same tenant). It must declare a
+    #: ``device_ids`` parameter; see integrations.script_targets.
+    script = models.ForeignKey(
+        "scripting.Script", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="automation_targets",
     )
     job_template_id = models.CharField(
         max_length=64, blank=True, default="",
@@ -150,8 +158,11 @@ class DeployRun(TimestampedModel):
     STATUS_CHOICES = [
         ("queued", "Queued"),
         ("launched", "Launched"),
+        ("succeeded", "Succeeded"),
         ("failed", "Failed"),
     ]
+    #: A run in one of these has its outcome and is never changed again.
+    FINAL_STATUSES = ("succeeded", "failed")
 
     id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -174,9 +185,16 @@ class DeployRun(TimestampedModel):
         max_length=16, choices=STATUS_CHOICES, default="queued"
     )
     detail = models.TextField(blank=True, default="")
-    # When the dispatch reached a terminal state (launched/failed). ``created_at``
-    # is the enqueue time, so ``finished_at - created_at`` is the dispatch latency.
+    # When the dispatch reached launched/failed, and again when a script run
+    # or a runner callback gave the final outcome. ``created_at`` is the
+    # enqueue time, so ``finished_at - created_at`` is the latency.
     finished_at = models.DateTimeField(null=True, blank=True)
+    #: The script run a ``script`` target started. Its end sets the final
+    #: status (succeeded/failed) of this run.
+    script_run = models.ForeignKey(
+        "scripting.ScriptRun", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="deploy_runs",
+    )
     # Retry bookkeeping: ``attempt`` is 1 for the first run, +1 per retry;
     # ``retry_of`` points at the original run so a chain stays linkable.
     attempt = models.PositiveSmallIntegerField(default=1)

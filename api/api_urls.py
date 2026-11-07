@@ -126,6 +126,7 @@ from integrations.netbox_api import (
     netbox_imports,
     netbox_test,
 )
+from integrations.script_targets import DeployResultView
 from integrations.virt_api import (
     VirtChangeViewSet,
     VirtNetworkViewSet,
@@ -863,5 +864,8 @@ urlpatterns = [
          name="column-pref"),
     path("prefs/columns/<slug:table_id>/default/",
          column_prefs.column_pref_default, name="column-pref-default"),
+    # Signed by the target's secret, not a session: see integrations.script_targets.
+    path("deploy-runs/<uuid:run_id>/result/", DeployResultView.as_view(),
+         name="deploy-run-result"),
     *router.urls,
 ]
