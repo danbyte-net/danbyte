@@ -28,6 +28,8 @@ function EditPage() {
         { label: "Edit" },
       ]}
       title="Edit pipeline"
+      presenceType="deploypipeline"
+      presenceId={id}
       wide
     >
       {q.isLoading && <Loading />}

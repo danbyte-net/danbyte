@@ -23,7 +23,8 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { FormCheckbox, FormCombobox } from "@/components/forms"
+import { Badge } from "@/components/ui/badge"
+import { Field, FormCheckbox, FormCombobox } from "@/components/forms"
 import { Loading } from "@/components/loading"
 
 export interface DeployChoice {
@@ -196,54 +197,79 @@ export function DeployDialog({
             </Link>
           </p>
         ) : (
-          <div className="grid gap-3">
-            <div className="text-xs font-medium">Run with</div>
-            <RadioGroup
-              value={via ?? ""}
-              onValueChange={(v) => setVia(v)}
-              className="grid gap-2"
-              aria-label="Run with"
-            >
-              {pipelineRows.map((p) => (
-                <ChoiceCard
-                  key={p.id}
-                  value={p.id}
-                  selected={via === p.id}
-                  title={p.name}
-                  kind={`pipeline · ${p.steps_count} step${p.steps_count === 1 ? "" : "s"}`}
-                  note={
-                    [
-                      p.description,
-                      p.id === preferred?.id ? "Default for this role." : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ") || undefined
-                  }
-                />
-              ))}
-              {targetOptions.length > 0 && (
-                <ChoiceCard
-                  value={SINGLE}
-                  selected={via === SINGLE}
-                  title="Single target"
-                  kind="target"
-                  note="Only this target, like a deploy without a pipeline."
-                />
-              )}
-            </RadioGroup>
+          <div className="grid gap-4">
+            <Field label="Run with" group>
+              <RadioGroup
+                value={via ?? ""}
+                onValueChange={(v) => setVia(v)}
+                className="grid gap-2"
+                aria-label="Run with"
+              >
+                {pipelineRows.map((p) => (
+                  <ChoiceCard
+                    key={p.id}
+                    value={p.id}
+                    selected={via === p.id}
+                    title={p.name}
+                    badges={
+                      <>
+                        <Badge variant="outline" className="num text-[10px]">
+                          {p.steps_count} step{p.steps_count === 1 ? "" : "s"}
+                        </Badge>
+                        {p.id === preferred?.id && (
+                          <Badge variant="info" className="text-[10px]">
+                            Role default
+                          </Badge>
+                        )}
+                      </>
+                    }
+                    note={p.description || undefined}
+                  />
+                ))}
+                {targetOptions.length > 0 && (
+                  <ChoiceCard
+                    value={SINGLE}
+                    selected={via === SINGLE}
+                    title="Single target"
+                    badges={
+                      <Badge variant="outline" className="text-[10px]">
+                        Target
+                      </Badge>
+                    }
+                  />
+                )}
+              </RadioGroup>
+            </Field>
 
             {picked && (
-              <ol className="list-decimal rounded-md bg-muted/50 py-2 pr-3 pl-8 text-xs leading-relaxed">
-                {picked.steps.map((s) => (
-                  <li key={s.id ?? s.order}>
-                    {s.target_name}{" "}
-                    <span className="text-muted-foreground">
-                      {s.target_kind_display}
-                      {s.wait_for_result ? " · waits for its result" : ""}
-                    </span>
-                  </li>
-                ))}
-              </ol>
+              <Field label="Steps" group>
+                <ol className="divide-y divide-border rounded-md border border-border text-xs">
+                  {picked.steps.map((s, i) => (
+                    <li
+                      key={s.id ?? s.order}
+                      className="flex items-center gap-2 px-3 py-1.5"
+                    >
+                      <Badge
+                        variant="secondary"
+                        className="num min-w-5 justify-center px-1 text-[10px]"
+                      >
+                        {i + 1}
+                      </Badge>
+                      <span className="min-w-0 flex-1 truncate">
+                        {s.target_name}
+                      </span>
+                      {s.wait_for_result && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          Waits for result
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-[10px]">
+                        {s.target_kind_display}
+                      </Badge>
+                    </li>
+                  ))}
+                </ol>
+              </Field>
             )}
 
             {via === SINGLE && (
@@ -262,7 +288,7 @@ export function DeployDialog({
               label="Dry run"
               checked={dryRun}
               onChange={setDryRun}
-              hint='Every step gets "dry_run": true and only reports what it would do.'
+              info='Every step gets "dry_run": true and only reports what it would do.'
             />
           </div>
         )}
@@ -283,13 +309,13 @@ function ChoiceCard({
   value,
   selected,
   title,
-  kind,
+  badges,
   note,
 }: {
   value: string
   selected: boolean
   title: string
-  kind: string
+  badges?: React.ReactNode
   note?: string
 }) {
   return (
@@ -300,14 +326,16 @@ function ChoiceCard({
       )}
     >
       <RadioGroupItem value={value} className="mt-0.5" />
-      <span className="grid min-w-0 gap-0.5">
-        <span className="text-[13px] font-semibold">
-          {title}{" "}
-          <span className="text-xs font-normal text-muted-foreground">
-            {kind}
-          </span>
+      <span className="grid min-w-0 flex-1 gap-1">
+        <span className="flex flex-wrap items-center gap-2 text-[13px] font-semibold">
+          {title}
+          {badges}
         </span>
-        {note && <span className="text-xs text-muted-foreground">{note}</span>}
+        {note && (
+          <span className="line-clamp-2 text-xs text-muted-foreground">
+            {note}
+          </span>
+        )}
       </span>
     </Label>
   )

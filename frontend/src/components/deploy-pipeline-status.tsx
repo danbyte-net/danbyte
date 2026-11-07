@@ -48,6 +48,22 @@ export function pipelineStatusLabel(
   return LABEL[s]
 }
 
+export const PIPELINE_OBJECT_TYPES = [
+  { value: "device", label: "Device" },
+  { value: "virtualmachine", label: "Virtual machine" },
+]
+
+export function objectTypeLabel(slug: string): string {
+  return PIPELINE_OBJECT_TYPES.find((o) => o.value === slug)?.label ?? slug
+}
+
+/** What a pipeline applies to, e.g. "Device"; none set means devices. */
+export function pipelineAppliesLabel(p: { object_types: string[] }): string {
+  return (p.object_types.length ? p.object_types : ["device"])
+    .map(objectTypeLabel)
+    .join(", ")
+}
+
 export function isPipelineRunActive(s: DeployPipelineRunStatus): boolean {
   return s === "queued" || s === "running"
 }

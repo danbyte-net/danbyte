@@ -29,6 +29,9 @@ export interface FieldProps {
    * instead of a `<label>` pointing at a control, and nothing inside takes
    * the field's id. */
   group?: boolean
+  /** Keep the label for screen readers only - for a field in a page header
+   * or toolbar, where a caption above the control would break the row. */
+  labelHidden?: boolean
   className?: string
   children: React.ReactNode
 }
@@ -40,6 +43,7 @@ export function Field({
   error,
   required,
   group = false,
+  labelHidden = false,
   className,
   children,
 }: FieldProps) {
@@ -94,7 +98,12 @@ export function Field({
           "Next" / "hop" tower beside a hint is unreadable. When the two do not
           fit on one line in a narrow column, the hint - not the label - drops
           onto the next line (flex-wrap), still above the control. */}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+      <div
+        className={cn(
+          "flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5",
+          labelHidden && "sr-only"
+        )}
+      >
         {/* The (i) and planned-change marks sit beside the <label>, not in
             it: inside, their buttons would be read out as part of the
             field's name. */}

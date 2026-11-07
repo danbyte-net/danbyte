@@ -36,7 +36,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
-import { Section } from "@/components/ui/section"
+import { SettingsCard } from "@/components/settings/settings-card"
 import { RowActions } from "@/components/row-actions"
 
 interface StatusRow {
@@ -199,10 +199,14 @@ export function PrtgRetireRules({
   )
 
   return (
-    <Section
+    <SettingsCard
       title="When objects retire"
-      count={rows.length}
-      actions={
+      badge={
+        <Badge variant="secondary" className="num">
+          {rows.length}
+        </Badge>
+      }
+      footer={
         canManage && (
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
             <Plus className="h-3.5 w-3.5" />
@@ -262,7 +266,7 @@ export function PrtgRetireRules({
         pending={remove.isPending}
         onConfirm={() => deleting && remove.mutate(deleting.id)}
       />
-    </Section>
+    </SettingsCard>
   )
 }
 

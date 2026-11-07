@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Copy, Download, GripVertical, Plus, Trash2 } from "lucide-react"
+import { GripVertical, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, ApiError } from "@/lib/api"
@@ -28,8 +28,6 @@ import type {
   DeployPipelineWritePayload,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import { copyWithToast } from "@/lib/clipboard"
-import { downloadBlob } from "@/lib/table-export"
 import { pipelineToYaml } from "@/lib/pipeline-code"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -38,6 +36,8 @@ import {
   CheckList,
   Field,
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormFooter,
   FormSection,
   FormSelect,
@@ -46,15 +46,9 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { AutomationTargetPicker } from "@/components/automation-target-picker"
-
-export const PIPELINE_OBJECT_TYPES = [
-  { value: "device", label: "Device" },
-  { value: "virtualmachine", label: "Virtual machine" },
-]
-
-export function objectTypeLabel(slug: string): string {
-  return PIPELINE_OBJECT_TYPES.find((o) => o.value === slug)?.label ?? slug
-}
+import { FileViewer } from "@/components/file-viewer"
+import { IconTip } from "@/components/icon-tip"
+import { PIPELINE_OBJECT_TYPES } from "@/components/deploy-pipeline-status"
 
 interface DraftStep {
   key: string
@@ -69,17 +63,16 @@ type StepErrors = Record<string, string>[]
 let seq = 0
 const newKey = () => `s${++seq}`
 
+const blankStep = (): DraftStep => ({
+  key: newKey(),
+  target: null,
+  stop_on_failure: true,
+  wait_for_result: false,
+  timeout_minutes: "30",
+})
+
 function draftFrom(p?: DeployPipeline): DraftStep[] {
-  if (!p || p.steps.length === 0)
-    return [
-      {
-        key: newKey(),
-        target: null,
-        stop_on_failure: true,
-        wait_for_result: false,
-        timeout_minutes: "30",
-      },
-    ]
+  if (!p || p.steps.length === 0) return [blankStep()]
   return p.steps.map((s) => ({
     key: newKey(),
     target: s.target,
@@ -90,8 +83,8 @@ function draftFrom(p?: DeployPipeline): DraftStep[] {
 }
 
 /** What the step's target kind means for the step, in a few words. */
-function kindNote(t: AutomationTarget | undefined): string {
-  if (!t) return ""
+function kindNote(t: AutomationTarget | undefined): string | undefined {
+  if (!t) return undefined
   if (t.kind === "script")
     return `Runs ${t.script_name ?? "a script"}; the next step starts when it ends.`
   if (t.kind === "webhook")
@@ -105,8 +98,9 @@ export interface DeployPipelineEditorProps {
   onCancel: () => void
 }
 
-/** Create or edit a pipeline: details, steps as draggable cards, and a flow
- * preview with the same pipeline as code beside them. */
+/** Create or edit a pipeline, laid out like the other edit forms: the
+ * pipeline and its YAML in one column, the steps in the other, the footer's
+ * Save pinned to the bottom. */
 export function DeployPipelineEditor({
   pipeline,
   onSaved,
@@ -253,10 +247,9 @@ export function DeployPipelineEditor({
         e.preventDefault()
         save.mutate()
       }}
-      className="@container grid gap-4"
     >
-      <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
-        <div className="grid min-w-0 content-start gap-4">
+      <FormColumns>
+        <FormColumn>
           <FormSection title="Pipeline" card>
             <div className="grid gap-3 @md:grid-cols-2">
               <FormText
@@ -284,19 +277,22 @@ export function DeployPipelineEditor({
             />
             <div className="flex flex-wrap gap-x-6 gap-y-2">
               <FormCheckbox
-                label="Run on change"
-                checked={autoOnChange}
-                onChange={setAutoOnChange}
-                hint="When a matching object is saved, as its author"
-              />
-              <FormCheckbox
                 label="Enabled"
                 checked={enabled}
                 onChange={setEnabled}
               />
+              <FormCheckbox
+                label="Run on change"
+                checked={autoOnChange}
+                onChange={setAutoOnChange}
+                info="Runs when a matching object is saved, as the change's author."
+              />
             </div>
+          </FormSection>
+
+          <FormSection title="Default for roles" card>
             <Field
-              label="Default for roles"
+              label="Roles"
               info="The Deploy dialog preselects this pipeline for a device or VM with one of these roles."
               error={fieldErrors.roles}
               group
@@ -314,8 +310,20 @@ export function DeployPipelineEditor({
             </Field>
           </FormSection>
 
+          <FormSection title="As code" card>
+            <FileViewer
+              text={yaml}
+              filename={`${code.name.replace(/[^\w.() -]+/g, "_")}.yaml`}
+              language="text"
+              height="fit"
+              storageKey="pipeline-code"
+              label="Pipeline as code"
+            />
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
           <FormSection title="Steps" card>
-            <p className="text-xs text-muted-foreground">Drag to reorder.</p>
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -325,9 +333,9 @@ export function DeployPipelineEditor({
                 items={steps.map((s) => s.key)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="grid gap-2">
+                <ol className="grid gap-2">
                   {steps.map((s, i) => (
-                    <StepCard
+                    <StepRow
                       key={s.key}
                       step={s}
                       index={i}
@@ -341,54 +349,25 @@ export function DeployPipelineEditor({
                       }}
                     />
                   ))}
-                </div>
+                </ol>
               </SortableContext>
             </DndContext>
             {stepsError && (
               <p className="text-xs text-destructive">{stepsError}</p>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full border-dashed"
-              onClick={() =>
-                setSteps((prev) => [
-                  ...prev,
-                  {
-                    key: newKey(),
-                    target: null,
-                    stop_on_failure: true,
-                    wait_for_result: false,
-                    timeout_minutes: "30",
-                  },
-                ])
-              }
-            >
-              <Plus className="size-3.5" /> Add step
-            </Button>
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setSteps((prev) => [...prev, blankStep()])}
+              >
+                <Plus className="size-3.5" /> Add step
+              </Button>
+            </div>
           </FormSection>
-        </div>
-
-        <aside className="grid min-w-0 content-start gap-4">
-          <FormSection title="Flow" card>
-            <PipelineFlow
-              trigger={
-                autoOnChange
-                  ? `Deploy on a ${objectTypeLabel(objectType).toLowerCase()}, or a change`
-                  : `Deploy on a ${objectTypeLabel(objectType).toLowerCase()}`
-              }
-              steps={steps.map((s) => {
-                const t = s.target ? byId.get(s.target) : undefined
-                return {
-                  name: t?.name ?? "Pick a target",
-                  kind: t?.kind_display,
-                }
-              })}
-            />
-          </FormSection>
-          <PipelineCodeCard yaml={yaml} filename={`${code.name}.yaml`} />
-        </aside>
-      </div>
+        </FormColumn>
+      </FormColumns>
 
       <FormFooter
         onCancel={onCancel}
@@ -399,7 +378,7 @@ export function DeployPipelineEditor({
   )
 }
 
-function StepCard({
+function StepRow({
   step,
   index,
   target,
@@ -426,161 +405,91 @@ function StepCard({
   } = useSortable({ id: step.key })
   const waitable = target?.kind === "webhook"
   return (
-    <div
+    <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "flex items-start gap-3 rounded-lg border border-border bg-card p-3",
-        isDragging && "relative z-10 shadow-md"
+        "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 gap-y-2 rounded-md border border-border bg-card p-3",
+        isDragging && "relative z-10 shadow-sm"
       )}
     >
-      <button
-        type="button"
-        className="mt-7 cursor-grab touch-none text-muted-foreground/60 hover:text-foreground"
-        aria-label={`Drag step ${index + 1}`}
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="size-4" />
-      </button>
-      <Badge variant="info" className="num mt-7 min-w-6 justify-center">
-        {index + 1}
-      </Badge>
-      <div className="grid min-w-0 flex-1 gap-2">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-56 flex-1">
-            <AutomationTargetPicker
-              label="Target"
-              required
-              value={step.target}
-              onChange={(v) => onChange({ target: v })}
-              error={errors.target}
-            />
-          </div>
-          {target && (
-            <Badge variant="outline" className="mb-2 text-[10px]">
-              {target.kind_display}
-            </Badge>
-          )}
-        </div>
-        {target && (
-          <p className="text-xs text-muted-foreground">{kindNote(target)}</p>
-        )}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <FormCheckbox
-            label="Stop the pipeline if this step fails"
-            checked={step.stop_on_failure}
-            onChange={(v) => onChange({ stop_on_failure: v })}
-          />
-          <FormCheckbox
-            label="Wait for a reported result"
-            checked={target?.kind === "script" ? true : step.wait_for_result}
-            disabled={!waitable}
-            info={
-              target?.kind === "script"
-                ? "A script step always waits for its run to end."
-                : "The runner posts its result to /api/deploy-runs/<id>/result/."
-            }
-            onChange={(v) => onChange({ wait_for_result: v })}
-          />
-        </div>
-        {errors.wait_for_result && (
-          <p className="text-xs text-destructive">{errors.wait_for_result}</p>
-        )}
-        {waitable && step.wait_for_result && (
-          <div className="w-40">
-            <FormText
-              label="Timeout, minutes"
-              type="number"
-              min={1}
-              value={step.timeout_minutes}
-              onChange={(v) => onChange({ timeout_minutes: v })}
-              error={errors.timeout_minutes}
-            />
-          </div>
-        )}
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="mt-6 h-7 w-7 text-muted-foreground hover:text-destructive"
-        aria-label={`Remove step ${index + 1}`}
-        disabled={!canRemove}
-        onClick={onRemove}
-      >
-        <Trash2 className="size-4" />
-      </Button>
-    </div>
-  )
-}
-
-/** The trigger, then each step, joined by a line. */
-export function PipelineFlow({
-  trigger,
-  steps,
-}: {
-  trigger: string
-  steps: { name: string; kind?: string }[]
-}) {
-  return (
-    <ol className="flex flex-col">
-      <li className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
-        {trigger}
-      </li>
-      {steps.map((s, i) => (
-        <li key={i} className="flex flex-col">
-          <span aria-hidden className="ml-5 h-4 w-0.5 bg-border" />
-          <span className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
-            <span className="num font-medium">{i + 1}</span>
-            <span className="min-w-0 flex-1 truncate">{s.name}</span>
-            {s.kind && (
-              <span className="shrink-0 text-muted-foreground">{s.kind}</span>
-            )}
-          </span>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-/** The pipeline as YAML, to copy or download. */
-export function PipelineCodeCard({
-  yaml,
-  filename,
-}: {
-  yaml: string
-  filename: string
-}) {
-  return (
-    <FormSection title="As code" card>
-      <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 font-mono text-[12px] leading-relaxed">
-        {yaml}
-      </pre>
-      <div className="flex flex-wrap gap-2">
-        <Button
+      <div className="flex items-center gap-1.5 self-start pt-6">
+        <button
           type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => void copyWithToast(yaml, "Copied")}
+          className="cursor-grab touch-none text-muted-foreground hover:text-foreground"
+          aria-label={`Drag step ${index + 1}`}
+          {...attributes}
+          {...listeners}
         >
-          <Copy className="size-3.5" /> Copy
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            downloadBlob(
-              filename.replace(/[^\w.() -]+/g, "_"),
-              "application/yaml",
-              yaml
-            )
+          <GripVertical className="size-4" />
+        </button>
+        <Badge variant="secondary" className="num min-w-6 justify-center">
+          {index + 1}
+        </Badge>
+      </div>
+      <AutomationTargetPicker
+        label="Target"
+        required
+        value={step.target}
+        onChange={(v) => onChange({ target: v })}
+        error={errors.target}
+        info={kindNote(target)}
+      />
+      <div className="self-start pt-6">
+        <IconTip label={`Remove step ${index + 1}`}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            disabled={!canRemove}
+            onClick={onRemove}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </IconTip>
+      </div>
+      <div className="col-start-2 col-end-4 flex flex-wrap items-center gap-x-6 gap-y-2">
+        <FormCheckbox
+          label="Stop on failure"
+          checked={step.stop_on_failure}
+          onChange={(v) => onChange({ stop_on_failure: v })}
+          info="Off: the next step still starts. The run still ends failed."
+        />
+        <FormCheckbox
+          label="Wait for result"
+          checked={target?.kind === "script" ? true : step.wait_for_result}
+          disabled={!waitable}
+          info={
+            target?.kind === "script"
+              ? "A script step always waits for its run to end."
+              : "The runner posts its result to /api/deploy-runs/<id>/result/."
           }
-        >
-          <Download className="size-3.5" /> Download
-        </Button>
+          onChange={(v) => onChange({ wait_for_result: v })}
+        />
+        {target && (
+          <Badge variant="outline" className="ml-auto text-[10px]">
+            {target.kind_display}
+          </Badge>
+        )}
       </div>
-    </FormSection>
+      {errors.wait_for_result && (
+        <p className="col-start-2 col-end-4 text-xs text-destructive">
+          {errors.wait_for_result}
+        </p>
+      )}
+      {waitable && step.wait_for_result && (
+        <div className="col-start-2 w-40">
+          <FormText
+            label="Timeout, minutes"
+            type="number"
+            min={1}
+            value={step.timeout_minutes}
+            onChange={(v) => onChange({ timeout_minutes: v })}
+            error={errors.timeout_minutes}
+          />
+        </div>
+      )}
+    </li>
   )
 }

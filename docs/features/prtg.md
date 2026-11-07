@@ -626,11 +626,17 @@ object's page.
 
 ## The PRTG page
 
-**Overview** puts the connection's sensors beside the connection card on a
-wide screen (above it on a narrow one): one row per state with sensors in
-it, worst first, each the state's pill and its count. A row opens the tab
-that lists it - **Alarms** for down and degraded, **Sensors** for the rest -
-and hovering a down or degraded row lists its sensors.
+**Overview** is a set of cards, two columns on a wide screen. **Sensors**
+has one row per state with sensors in it, worst first, each the state's pill
+and its count, and when PRTG was last read. A row opens the tab that lists
+it - **Alarms** for down and degraded, **Sensors** for the rest - and
+hovering a down or degraded row lists its sensors. **Connection** (with
+**Test connection**, **Edit** and **Remove**), **Server** (with **Read
+now**), **Two-way** and **Registration** (with **Plan now**) describe the
+connection, each card carrying the actions that belong to it in its footer;
+**Push notification** follows when push is on. **Group layout** (saved with
+its own **Save group layout**) and **When objects retire** span the width
+below.
 **Alarms** lists every down or degraded sensor, worst and newest first: the
 sensor (linked to its device's or VM's Sensors tab with the panel open), the
 device or VM, kind, state, PRTG's message, since when (the last down, else
@@ -646,7 +652,7 @@ resumed, or resumes the paused ones. **Review queue** holds link proposals, adop
 **Links** lists the pairings; **Adoption** edits the adoption rules;
 **Policies** and **Profiles** edit what PRTG should have (see
 [Registering devices and VMs](#registering-devices-and-vms)). The
-connection card's **Two-way** panel says which of acknowledgements,
+Overview's **Two-way** card says which of acknowledgements,
 maintenance pauses, inventory and adoption are on.
 
 ## API
