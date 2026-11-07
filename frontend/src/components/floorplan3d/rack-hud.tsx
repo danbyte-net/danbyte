@@ -70,7 +70,7 @@ export function RackHud({
   const devices = rackLive?.device_count ?? rack.devices.length
   const panel = detail?.panel_ports
   return (
-    <div className="absolute top-3 left-3 w-64 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
+    <div className="absolute top-3 left-3 w-max max-w-[calc(100%-1.5rem)] min-w-64 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
       <div className="flex items-start justify-between gap-2">
         <span className="font-mono text-[13px] font-semibold">
           {tile.label || rack.name}
