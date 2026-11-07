@@ -87,6 +87,8 @@ export const viewerTheme = EditorView.theme({
     color: "var(--muted-foreground)",
     fontStyle: "italic",
   },
+  // A gap's label is not code: no syntax colours in it.
+  ".cm-fv-gap span": { color: "inherit", fontWeight: "inherit" },
   ".cm-fv-empty": {
     backgroundColor: "color-mix(in oklch, var(--muted) 70%, transparent)",
   },

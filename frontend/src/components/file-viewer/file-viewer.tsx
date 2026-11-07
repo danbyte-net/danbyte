@@ -42,11 +42,15 @@ import {
   sideBySide,
 } from "./diff"
 import type { DiffRow } from "./diff"
+import { pickHighlight, syntaxFor } from "./highlight"
+import type { Highlight } from "./highlight"
 import { jsonSectionsOf, sectionsOf } from "./sections"
 import type { Section } from "./sections"
 import { clearHeight, readHeight, writeHeight } from "./storage"
 
-export type FileLanguage = "config" | "json" | "text"
+/** `config` (the default) and `auto` pick the colouring from the file name
+ * or the text; `config` falls back to network config, `auto` to plain. */
+export type FileLanguage = "config" | "auto" | Highlight
 type View = "file" | "diff"
 type Layout = "unified" | "split"
 
@@ -71,7 +75,7 @@ export interface FileViewerProps {
   defaultView?: "file" | "diff"
   /** Above the outline in the side column, e.g. a bundle's file list. */
   aside?: ReactNode
-  /** What the text is: drives the outline, folding and comment muting. */
+  /** What the text is: drives the colouring, outline and folding. */
   language?: FileLanguage
   /** `fill` takes the window's height; `fit` grows with the text up to a
    * cap. Either is resizable from its bottom edge. */
@@ -162,9 +166,14 @@ function CheckLabel({
   )
 }
 
-function sectionsFor(text: string, language: FileLanguage): Section[] {
-  if (language === "config") return sectionsOf(text)
-  if (language === "json") return jsonSectionsOf(text)
+/** Languages with `[Section]`, `interface …` and `### FILE:` structure. */
+function isConfig(lang: Highlight): boolean {
+  return lang === "netconf" || lang === "ini"
+}
+
+function sectionsFor(text: string, lang: Highlight): Section[] {
+  if (isConfig(lang)) return sectionsOf(text)
+  if (lang === "json") return jsonSectionsOf(text)
   return []
 }
 
@@ -218,13 +227,24 @@ export function FileViewer({
     if (storageKey) setDragged(readHeight(user, storageKey))
   }, [user, storageKey])
 
-  const sections = useMemo(() => sectionsFor(text, language), [text, language])
+  const hl = useMemo(
+    () =>
+      pickHighlight({
+        language: language === "config" ? "auto" : language,
+        name: filename ?? path,
+        text,
+        fallback: language === "config" ? "netconf" : "text",
+      }),
+    [language, filename, path, text]
+  )
+  const syntax = useMemo(() => syntaxFor(hl), [hl])
+  const sections = useMemo(() => sectionsFor(text, hl), [text, hl])
   const outline = useMemo(
     () =>
-      language === "config"
+      isConfig(hl)
         ? sections.filter((s) => s.title !== "" && s.level <= 2)
         : [],
-    [sections, language]
+    [sections, hl]
   )
   const topLevel = outline.reduce((m, s) => Math.min(m, s.level), 9)
   const lineCount = useMemo(() => linesOf(text).length, [text])
@@ -233,13 +253,13 @@ export function FileViewer({
   const fileExt = useMemo(() => {
     const lines = text.split("\n")
     const doc = Text.of(lines)
-    const ext = [lineNumbers()]
+    const ext = [lineNumbers(), syntax]
     if (sections.some((s) => s.end > s.line))
       ext.push(...sectionFolding(sections))
-    if (language === "config")
+    if (isConfig(hl))
       ext.push(lineClasses(doc, configLineClasses(lines, sections)))
     return ext
-  }, [text, sections, language])
+  }, [text, sections, hl, syntax])
 
   const rows = useMemo<DiffRow[]>(() => {
     if (!hasDiff || !diff || view !== "diff") return []
@@ -256,6 +276,7 @@ export function FileViewer({
     return {
       doc: lines.join("\n"),
       ext: [
+        syntax,
         numberGutter(rows.map((r) => (r.kind === "gap" ? null : r.old))),
         numberGutter(rows.map((r) => (r.kind === "gap" ? null : r.new))),
         markGutter(
@@ -277,7 +298,7 @@ export function FileViewer({
         ),
       ],
     }
-  }, [view, layout, rows])
+  }, [view, layout, rows, syntax])
 
   const split = useMemo(() => {
     if (view !== "diff" || layout !== "split") return null
@@ -291,6 +312,7 @@ export function FileViewer({
       return {
         doc: lines.join("\n"),
         ext: [
+          syntax,
           numberGutter(
             pairs.map((p) =>
               p.kind === "gap"
@@ -325,7 +347,7 @@ export function FileViewer({
       }
     }
     return { left: side("left"), right: side("right") }
-  }, [view, layout, rows])
+  }, [view, layout, rows, syntax])
 
   const docKey =
     view === "file" ? text : (unified?.doc ?? split?.right.doc ?? "")

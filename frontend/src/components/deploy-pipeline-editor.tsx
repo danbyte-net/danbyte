@@ -314,7 +314,7 @@ export function DeployPipelineEditor({
             <FileViewer
               text={yaml}
               filename={`${code.name.replace(/[^\w.() -]+/g, "_")}.yaml`}
-              language="text"
+              language="yaml"
               height="fit"
               storageKey="pipeline-code"
               label="Pipeline as code"

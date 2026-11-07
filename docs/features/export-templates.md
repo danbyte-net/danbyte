@@ -303,6 +303,7 @@ The Config tab shows a render in a file viewer rather than a plain text box:
 | Part | What it does |
 |---|---|
 | **Files** | A bundle or directory template lists its files on the left: path, line count, and *Changed*, *Matches* or *Never pushed*. Above it, *N of M files changed since last push*. **Re-render** runs it again; **Download .tar** still fetches the whole set. |
+| **Colours** | Picked from the file's name, else from its first lines: JSON (keys, string values, numbers, `true`/`false`/`null`), XML (tags, attributes, values, comments, CDATA), YAML, INI and systemd units (`[Section]`, `Key=`), and network config such as FRR and `/etc/network/interfaces` (comments starting `!` or `#`, `interface`/`router`/`vrf`/`address-family`/`iface`/`auto`, IPv4 and IPv6 addresses and prefixes, numbers). Logs dim timestamps and mark errors and failures red, warnings amber and ok/succeeded green. A diff keeps its added/removed line colours with the code coloured inside. |
 | **Outline** | The file's sections - `interface …`, `router …`, `iface …`, `[Section]` headers (systemd-networkd, INI) and `### FILE:` markers. A click jumps to the line; the same lines carry fold markers in the gutter. |
 | **Search** | ++slash++ focuses it (when you are not typing elsewhere); matches are highlighted, ++enter++ / ++shift+enter++ or the arrows step through them. |
 | **Wrap**, **Copy**, **Download** | Copy and Download take the file on screen (or its diff), never the line numbers. |
@@ -311,7 +312,8 @@ The Config tab shows a render in a file viewer rather than a plain text box:
 
 The same viewer shows the config context, the Ansible host vars, the config
 drift diff, a template's body and its **Run preview**, a script run's log and
-its text outputs.
+its text outputs, a pipeline run's step logs and its "What the next step
+receives" JSON, and a pipeline's *As code* YAML.
 
 ## Bundles: every file a device needs
 

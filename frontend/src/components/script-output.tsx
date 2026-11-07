@@ -112,7 +112,7 @@ export function ScriptOutputCard({
             <FileViewer
               text={kind === "json" ? pretty(content.data) : content.data}
               filename={output.name}
-              language={kind === "json" ? "json" : "text"}
+              language={kind === "json" ? "json" : "auto"}
               storageKey="script-output"
               label={output.name}
             />

@@ -410,7 +410,7 @@ function StepLog({ step: s }: { step: DeployPipelineRunStep }) {
         key={s.step}
         text={(s.log ?? "").replace(/\n$/, "")}
         filename={`step-${s.step}.log`}
-        language="text"
+        language="log"
         height="fit"
         storageKey="pipeline-step-log"
         follow={s.status === "running"}
