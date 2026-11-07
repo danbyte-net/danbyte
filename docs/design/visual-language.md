@@ -118,7 +118,10 @@ its `<label>` an id and hands it to the control through context: `Input`,
 `Switch`, `DatePicker`, `TimePicker`, `IdMultiSelect` and `TagMultiSelect`
 take the id, `aria-labelledby`, `aria-describedby` for the hint and error,
 and `aria-invalid` on an error. A child of `<Field>` built from these needs no
-wiring. A second control in the same field (a unit box beside a number) goes
+wiring. A field that sits in a page header beside the other filters (a
+list's device filter) passes `labelHidden` (`Field`, and `ObjectPicker` with
+its presets): the label stays, for screen readers only, and the control lines
+up with the buttons. A second control in the same field (a unit box beside a number) goes
 in `NoFieldControl` with its own `aria-label`; popover, dialog, sheet and menu
 content already cut the link. An unlabelled control outside a `Field` (a
 filter rail) takes an `aria-label`. A field whose body is a run of controls
@@ -466,7 +469,10 @@ Every object detail page follows one tab convention (source of truth:
 - All the remaining attributes live in an **Overview** tab - the first tab,
   and the default - rendered as `KvCard` tables (`<KvCard title rows>`) in a
   `grid gap-6 lg:grid-cols-2`, grouped into a few sensibly-titled cards. This
-  is the "read it as tables in the page body" layout.
+  is the "read it as tables in the page body" layout. A settings-style page
+  that groups its facts in `SettingsCard`s (the PRTG Overview) puts the same
+  rows in the card with `<KvTable inset rows>` and `layout="flush"`, and the
+  card's actions in its footer.
 - After Overview come the related-object tabs (with a count where the API
   provides one), then always **Journal** and **Change log** as the last two, in
   that order.

@@ -6,6 +6,7 @@ import { copyWithToast } from "@/lib/clipboard"
 import { dash } from "@/components/cells/dash"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { PendingFieldMark } from "@/lib/pending-fields"
+import { cn } from "@/lib/utils"
 
 export { dash } from "@/components/cells/dash"
 
@@ -33,31 +34,53 @@ export function KvCard({ title, rows }: { title: string; rows: KvRow[] }) {
         {title}
       </h2>
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <Table>
-          <TableBody>
-            {rows.map((r, i) => (
-              <TableRow
-                key={r.label}
-                className={i % 2 === 1 ? "bg-muted/30" : undefined}
-              >
-                <TableCell className="w-40 py-2 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    {r.label}
-                    <PendingFieldMark label={r.label} />
-                  </span>
-                </TableCell>
-                <TableCell className="py-2 text-[13px] text-foreground">
-                  {r.value}
-                </TableCell>
-                <TableCell className="w-9 py-2 pr-2 text-right">
-                  {r.copy ? <CopyButton value={r.copy} /> : null}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <KvTable rows={rows} />
       </div>
     </section>
+  )
+}
+
+/** KvCard's rows without its title and frame, for a card that draws its
+ * own - a `SettingsCard` with `layout="flush"`. `inset` lines the labels up
+ * with that card's 16px header padding. */
+export function KvTable({
+  rows,
+  inset = false,
+}: {
+  rows: KvRow[]
+  inset?: boolean
+}) {
+  return (
+    <Table>
+      <TableBody>
+        {rows.map((r, i) => (
+          <TableRow
+            key={r.label}
+            className={i % 2 === 1 ? "bg-muted/30" : undefined}
+          >
+            <TableCell
+              className={cn(
+                "w-40 py-2 text-xs text-muted-foreground",
+                inset && "pl-4"
+              )}
+            >
+              <span className="inline-flex items-center gap-1">
+                {r.label}
+                <PendingFieldMark label={r.label} />
+              </span>
+            </TableCell>
+            <TableCell className="py-2 text-[13px] text-foreground">
+              {r.value}
+            </TableCell>
+            <TableCell
+              className={cn("w-9 py-2 pr-2 text-right", inset && "pr-4")}
+            >
+              {r.copy ? <CopyButton value={r.copy} /> : null}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }
 

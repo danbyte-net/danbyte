@@ -41,13 +41,11 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { buildDeployPipelineRunColumns } from "@/components/columns/deploy-pipeline-run-columns"
 import {
   isPipelineRunActive,
+  pipelineAppliesLabel,
   PipelineStatusBadge,
 } from "@/components/deploy-pipeline-status"
-import {
-  objectTypeLabel,
-  PipelineCodeCard,
-  PipelineFlow,
-} from "@/components/deploy-pipeline-editor"
+import { FileViewer } from "@/components/file-viewer"
+import { Section } from "@/components/ui/section"
 
 const OBJECT_TYPE = "integrations.deploypipeline"
 type Tab = "overview" | "runs" | "journal" | "history"
@@ -126,19 +124,12 @@ function Body({ pipeline: p }: { pipeline: DeployPipeline }) {
         <DetailHero
           title={p.name}
           badges={
-            <>
-              <Badge
-                variant={p.enabled ? "success" : "secondary"}
-                className="text-[10px]"
-              >
-                {p.enabled ? "enabled" : "disabled"}
-              </Badge>
-              {p.auto_on_change && (
-                <Badge variant="secondary" className="text-[10px]">
-                  on change
-                </Badge>
-              )}
-            </>
+            <Badge
+              variant={p.enabled ? "success" : "secondary"}
+              className="text-[10px]"
+            >
+              {p.enabled ? "Enabled" : "Disabled"}
+            </Badge>
           }
           subtitle={p.description || undefined}
         />
@@ -180,12 +171,7 @@ function Overview({ pipeline: p }: { pipeline: DeployPipeline }) {
       api<DeployPipelineCode>(`/api/deploy-pipelines/${p.id}/export/`),
   })
   const rows: KvRow[] = [
-    {
-      label: "Applies to",
-      value: (p.object_types.length ? p.object_types : ["device"])
-        .map(objectTypeLabel)
-        .join(", "),
-    },
+    { label: "Applies to", value: pipelineAppliesLabel(p) },
     {
       label: "Run on change",
       value: (
@@ -193,7 +179,7 @@ function Overview({ pipeline: p }: { pipeline: DeployPipeline }) {
           variant={p.auto_on_change ? "success" : "secondary"}
           className="text-[10px]"
         >
-          {p.auto_on_change ? "yes" : "no"}
+          {p.auto_on_change ? "Yes" : "No"}
         </Badge>
       ),
     },
@@ -243,50 +229,47 @@ function Overview({ pipeline: p }: { pipeline: DeployPipeline }) {
         </Badge>
         {s.target_enabled === false && (
           <Badge variant="warning" className="text-[10px]">
-            target disabled
+            Target disabled
           </Badge>
         )}
         {s.wait_for_result && (
-          <span className="text-xs text-muted-foreground">
-            waits {s.timeout_minutes} min for its result
-          </span>
+          <Badge variant="secondary" className="num text-[10px]">
+            Waits {s.timeout_minutes} min
+          </Badge>
         )}
         {!s.stop_on_failure && (
-          <span className="text-xs text-muted-foreground">
-            goes on if it fails
-          </span>
+          <Badge variant="secondary" className="text-[10px]">
+            Continues on failure
+          </Badge>
         )}
       </span>
     ),
   }))
+  const record: KvRow[] = [
+    { label: "Created", value: <TimeCell iso={p.created_at} /> },
+    { label: "Updated", value: <TimeCell iso={p.updated_at} /> },
+  ]
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
-      <div className="grid min-w-0 content-start gap-6">
-        <KvCard title="Pipeline" rows={rows} />
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid min-w-0 content-start gap-6">
+          <KvCard title="Pipeline" rows={rows} />
+          <KvCard title="Record" rows={record} />
+        </div>
         <KvCard title="Steps" rows={stepRows} />
       </div>
-      <div className="grid min-w-0 content-start gap-4">
-        <section className="grid gap-2">
-          <h2 className="text-[11px] font-semibold tracking-wide uppercase">
-            Flow
-          </h2>
-          <div className="rounded-lg border border-border bg-card p-3">
-            <PipelineFlow
-              trigger={p.auto_on_change ? "Deploy, or a change" : "Deploy"}
-              steps={p.steps.map((s) => ({
-                name: s.target_name ?? "",
-                kind: s.target_kind_display,
-              }))}
-            />
-          </div>
-        </section>
-        {code.data && (
-          <PipelineCodeCard
-            yaml={pipelineToYaml(code.data)}
-            filename={`${p.name}.yaml`}
+      {code.data && (
+        <Section title="As code">
+          <FileViewer
+            text={pipelineToYaml(code.data)}
+            filename={`${p.name.replace(/[^\w.() -]+/g, "_")}.yaml`}
+            language="text"
+            height="fit"
+            storageKey="pipeline-code"
+            label="Pipeline as code"
           />
-        )}
-      </div>
+        </Section>
+      )}
     </div>
   )
 }

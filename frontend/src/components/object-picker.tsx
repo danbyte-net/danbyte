@@ -87,6 +87,8 @@ export interface ObjectPickerProps {
   value: string | null
   onChange: (v: string | null) => void
   label: string
+  /** Screen-reader-only label, for a picker in a header or toolbar. */
+  labelHidden?: boolean
   required?: boolean
   hint?: string
   /** Explanation via the (i) info-icon popover beside the label. */
@@ -139,6 +141,7 @@ export function ObjectPicker<
   value,
   onChange,
   label,
+  labelHidden,
   required,
   hint,
   info,
@@ -221,6 +224,7 @@ export function ObjectPicker<
   return (
     <Field
       label={label}
+      labelHidden={labelHidden}
       hint={hint}
       info={info}
       error={error}

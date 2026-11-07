@@ -29,7 +29,9 @@ import {
 } from "@/components/ui/dialog"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
-import { KvCard, dash } from "@/components/kv-card"
+import { KvTable, dash } from "@/components/kv-card"
+import { SettingsCard, SettingsGrid } from "@/components/settings/settings-card"
+import { copyWithToast } from "@/lib/clipboard"
 import type { KvRow } from "@/components/kv-card"
 import { TimeCell } from "@/components/cells/time-ago"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -263,10 +265,10 @@ function PrtgPage() {
             ]}
           />
           {tab === "overview" && (
-            <>
-              {/* Side by side on a wide screen: what PRTG says on the
-                  left, the connection that says it on the right. */}
-              <div className="grid items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)]">
+            <div>
+              {/* Every block is a card, as on the settings pages: the
+                  short ones pack into two columns, the wide ones follow. */}
+              <SettingsGrid>
                 {summary && (
                   <PrtgSensorBreakdown
                     connection={conn}
@@ -275,7 +277,7 @@ function PrtgPage() {
                     onOpen={setTab}
                   />
                 )}
-                <ConnectionCard
+                <ConnectionCards
                   conn={conn}
                   result={results[conn.id]}
                   canManage={canManage}
@@ -289,19 +291,21 @@ function PrtgPage() {
                   onEdit={() => setEditing(conn)}
                   onDelete={() => setDeleting(conn)}
                 />
+                {conn.push_enabled && canManage && (
+                  <PushSetup conn={conn} onRotated={refresh} />
+                )}
+              </SettingsGrid>
+              <div className="mt-4 space-y-4">
+                {conn.write_mode !== "none" && (
+                  <PrtgGroupLayoutCard
+                    key={`${conn.id}-${conn.updated_at}`}
+                    connection={conn}
+                    canManage={canManage}
+                  />
+                )}
+                <PrtgRetireRules connection={conn} canManage={canManage} />
               </div>
-              {conn.write_mode !== "none" && (
-                <PrtgGroupLayoutCard
-                  key={`${conn.id}-${conn.updated_at}`}
-                  connection={conn}
-                  canManage={canManage}
-                />
-              )}
-              {conn.push_enabled && canManage && (
-                <PushSetup conn={conn} onRotated={refresh} />
-              )}
-              <PrtgRetireRules connection={conn} canManage={canManage} />
-            </>
+            </div>
           )}
           {tab === "review" && (
             <PrtgChanges
@@ -363,7 +367,9 @@ function PrtgPage() {
   )
 }
 
-function ConnectionCard({
+/** The connection as four cards - Connection, Server, Two-way and
+ * Registration - each with the actions that belong to it in its footer. */
+function ConnectionCards({
   conn,
   result,
   canManage,
@@ -642,15 +648,18 @@ function ConnectionCard({
         ]
       : []),
   ]
+  const footer = (buttons: React.ReactNode) =>
+    canManage ? (
+      <div className="flex w-full flex-wrap items-center gap-2">{buttons}</div>
+    ) : undefined
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <h2 className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold">
-          {conn.name}
-          {!conn.enabled && <Badge variant="secondary">Disabled</Badge>}
-        </h2>
-        {canManage && (
-          <div className="flex shrink-0 items-center gap-2">
+    <>
+      <SettingsCard
+        title="Connection"
+        badge={!conn.enabled && <Badge variant="secondary">Disabled</Badge>}
+        layout="flush"
+        footer={footer(
+          <>
             <Button
               size="sm"
               variant="outline"
@@ -659,42 +668,60 @@ function ConnectionCard({
             >
               {testing ? "Testing…" : "Test connection"}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={reading || !conn.api_key_set}
-              onClick={onRead}
-            >
-              {reading ? "Reading…" : "Read now"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={planning || !conn.api_key_set}
-              onClick={onPlan}
-            >
-              {planning ? "Planning…" : "Plan now"}
-            </Button>
             <Button size="sm" variant="outline" onClick={onEdit}>
               Edit
             </Button>
             {canDelete && (
-              <Button size="sm" variant="ghost" onClick={onDelete}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto text-destructive hover:text-destructive"
+                onClick={onDelete}
+              >
                 Remove
               </Button>
             )}
-          </div>
+          </>
         )}
-      </div>
-      <div className="grid gap-4 p-4 lg:grid-cols-2">
-        <KvCard title="Connection" rows={connection} />
-        <KvCard title="Server" rows={server} />
-        <KvCard title="Two-way" rows={twoWay} />
-        <div id="registration">
-          <KvCard title="Registration" rows={registration} />
-        </div>
-      </div>
-    </section>
+      >
+        <KvTable inset rows={connection} />
+      </SettingsCard>
+      <SettingsCard
+        title="Server"
+        layout="flush"
+        footer={footer(
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={reading || !conn.api_key_set}
+            onClick={onRead}
+          >
+            {reading ? "Reading…" : "Read now"}
+          </Button>
+        )}
+      >
+        <KvTable inset rows={server} />
+      </SettingsCard>
+      <SettingsCard title="Two-way" layout="flush">
+        <KvTable inset rows={twoWay} />
+      </SettingsCard>
+      <SettingsCard
+        title="Registration"
+        layout="flush"
+        footer={footer(
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={planning || !conn.api_key_set}
+            onClick={onPlan}
+          >
+            {planning ? "Planning…" : "Plan now"}
+          </Button>
+        )}
+      >
+        <KvTable inset rows={registration} />
+      </SettingsCard>
+    </>
   )
 }
 
@@ -747,40 +774,38 @@ function PushSetup({
     },
   ]
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <h2 className="min-w-0 flex-1 text-sm font-semibold">
-          Push notification
-        </h2>
-        {url && (
+    <SettingsCard
+      title="Push notification"
+      description="Execute HTTP Action"
+      layout="flush"
+      footer={
+        <div className="flex w-full flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              void navigator.clipboard.writeText(url)
-              toast.success("URL copied")
-            }}
+            disabled={rotate.isPending}
+            onClick={() => rotate.mutate()}
           >
-            Copy URL
+            {rotate.isPending
+              ? "Making…"
+              : conn.hook_token_set
+                ? "New token"
+                : "Make token"}
           </Button>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={rotate.isPending}
-          onClick={() => rotate.mutate()}
-        >
-          {rotate.isPending
-            ? "Making…"
-            : conn.hook_token_set
-              ? "New token"
-              : "Make token"}
-        </Button>
-      </div>
-      <div className="p-4">
-        <KvCard title="Execute HTTP Action" rows={rows} />
-      </div>
-    </section>
+          {url && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void copyWithToast(url, "URL copied")}
+            >
+              Copy URL
+            </Button>
+          )}
+        </div>
+      }
+    >
+      <KvTable inset rows={rows} />
+    </SettingsCard>
   )
 }
 

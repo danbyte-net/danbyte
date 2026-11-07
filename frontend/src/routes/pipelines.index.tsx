@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Upload } from "lucide-react"
+import { Plus, Upload } from "lucide-react"
 import { useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -9,8 +9,8 @@ import type { DeployPipeline, DeployPipelineRun } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { parsePipelineYaml, PipelineCodeError } from "@/lib/pipeline-code"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -31,14 +31,14 @@ import { FormTextarea } from "@/components/forms"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
-import { TimeCell } from "@/components/cells/time-ago"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import { DevicePicker } from "@/components/device-picker"
+import { buildDeployPipelineColumns } from "@/components/columns/deploy-pipeline-columns"
 import { buildDeployPipelineRunColumns } from "@/components/columns/deploy-pipeline-run-columns"
 import {
   isPipelineRunActive,
   PipelineStatusBadge,
 } from "@/components/deploy-pipeline-status"
-import { objectTypeLabel } from "@/components/deploy-pipeline-editor"
 
 export const Route = createFileRoute("/pipelines/")({
   component: PipelinesPage,
@@ -46,102 +46,22 @@ export const Route = createFileRoute("/pipelines/")({
 
 const STATUSES = ["queued", "running", "succeeded", "failed", "cancelled"]
 
+type View = "pipelines" | "runs"
+const VIEWS: readonly View[] = ["pipelines", "runs"]
+
+/** The pipelines and every run, one table each behind a tab. */
 function PipelinesPage() {
   const { canDo } = useMe()
   const canAdd = canDo("deploypipeline", "add")
   const [importing, setImporting] = useState(false)
+  const [view, setView] = useUrlTab<View>("pipelines", "view", VIEWS)
+  const [status, setStatus] = useState("all")
+  const [device, setDevice] = useState<string | null>(null)
 
   const pipelines = useQuery({
     queryKey: ["deploy-pipelines"],
     queryFn: () => apiAll<DeployPipeline>("/api/deploy-pipelines/"),
   })
-  const rows = pipelines.data?.results ?? []
-
-  return (
-    <ListPageShell
-      title="Pipelines"
-      count={pipelines.data ? rows.length : undefined}
-      actions={
-        canAdd && (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setImporting(true)}
-            >
-              <Upload className="size-3.5" /> Import YAML
-            </Button>
-            <Button size="sm" asChild>
-              <Link to="/pipelines/new">New pipeline</Link>
-            </Button>
-          </>
-        )
-      }
-      query={pipelines}
-    >
-      <div className="space-y-6">
-        {rows.length === 0 ? (
-          <EmptyState title="No pipelines yet.">
-            A pipeline runs several automation targets in order for the same
-            devices.
-          </EmptyState>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {rows.map((p) => (
-              <PipelineCard key={p.id} pipeline={p} />
-            ))}
-          </div>
-        )}
-        <PipelineRunsSection />
-      </div>
-      <ImportDialog open={importing} onOpenChange={setImporting} />
-    </ListPageShell>
-  )
-}
-
-function PipelineCard({ pipeline: p }: { pipeline: DeployPipeline }) {
-  const facts = [
-    `${p.steps_count} step${p.steps_count === 1 ? "" : "s"}`,
-    (p.object_types.length ? p.object_types : ["device"])
-      .map(objectTypeLabel)
-      .join(", "),
-    p.roles.length
-      ? `${p.roles.length} role${p.roles.length === 1 ? "" : "s"}`
-      : null,
-    p.auto_on_change ? "on change" : "manual only",
-  ].filter(Boolean)
-  return (
-    <Link
-      to="/pipelines/$id"
-      params={{ id: p.id }}
-      className="grid gap-1.5 rounded-lg border border-border bg-card p-4 hover:bg-muted/40"
-    >
-      <span className="flex items-center gap-2 text-sm font-semibold">
-        {p.name}
-        {!p.enabled && (
-          <Badge variant="secondary" className="text-[10px]">
-            Disabled
-          </Badge>
-        )}
-      </span>
-      <span className="text-xs text-muted-foreground">{facts.join(" · ")}</span>
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        {p.last_run ? (
-          <>
-            <PipelineStatusBadge status={p.last_run.status} />
-            <TimeCell iso={p.last_run.created_at} />
-          </>
-        ) : (
-          "Never run"
-        )}
-      </span>
-    </Link>
-  )
-}
-
-function PipelineRunsSection() {
-  const [status, setStatus] = useState("all")
-  const [device, setDevice] = useState<string | null>(null)
   const runs = useQuery({
     queryKey: ["deploy-pipeline-runs", status, device],
     queryFn: () => {
@@ -157,44 +77,104 @@ function PipelineRunsSection() {
         ? 3000
         : 15_000,
   })
-  const columns = useMemo(() => buildDeployPipelineRunColumns(), [])
-  const data = runs.data?.results ?? []
+  const rows = pipelines.data?.results ?? []
+  const runRows = runs.data?.results ?? []
+  const pipelineColumns = useMemo(() => buildDeployPipelineColumns(), [])
+  const runColumns = useMemo(() => buildDeployPipelineRunColumns(), [])
+
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <h2 className="mr-auto text-sm font-semibold">Runs</h2>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger aria-label="Status" className="h-8 w-36 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                <PipelineStatusBadge
-                  status={s as DeployPipelineRun["status"]}
+    <ListPageShell
+      title="Pipelines"
+      count={pipelines.data ? rows.length : undefined}
+      actions={
+        <>
+          {view === "runs" && (
+            <>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger
+                  aria-label="Status"
+                  className="h-8 w-36 shrink-0 text-xs"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      <PipelineStatusBadge
+                        status={s as DeployPipelineRun["status"]}
+                      />
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="w-64 shrink-0">
+                <DevicePicker
+                  label="Device"
+                  labelHidden
+                  value={device}
+                  onChange={setDevice}
+                  noneLabel="Any device"
+                  placeholder="Any device"
                 />
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="w-64">
-          <DevicePicker
-            label="Device"
-            value={device}
-            onChange={setDevice}
-            noneLabel="Any device"
+              </div>
+            </>
+          )}
+          {canAdd && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImporting(true)}
+              >
+                <Upload className="size-3.5" /> Import YAML
+              </Button>
+              <Button size="sm" asChild>
+                <Link to="/pipelines/new">
+                  <Plus className="size-3.5" /> New pipeline
+                </Link>
+              </Button>
+            </>
+          )}
+        </>
+      }
+      query={pipelines}
+    >
+      <div className="grid gap-4">
+        <SegmentedTabs
+          value={view}
+          onValueChange={setView}
+          items={[
+            { value: "pipelines", label: "Pipelines", count: rows.length },
+            { value: "runs", label: "Runs", count: runs.data?.count },
+          ]}
+        />
+        {view === "pipelines" &&
+          (rows.length === 0 ? (
+            <EmptyState title="No pipelines yet.">
+              Add one, or import one as YAML.
+            </EmptyState>
+          ) : (
+            <DataTable
+              data={rows}
+              total={pipelines.data?.count}
+              columns={pipelineColumns}
+              flexColumn="name"
+              tableId="deploy-pipelines"
+            />
+          ))}
+        {view === "runs" && (
+          <DataTable
+            data={runRows}
+            total={runs.data?.count}
+            columns={runColumns}
+            flexColumn="run"
+            tableId="deploy-pipeline-runs"
           />
-        </div>
+        )}
       </div>
-      <DataTable
-        data={data}
-        total={runs.data?.count}
-        columns={columns}
-        flexColumn="run"
-        tableId="deploy-pipeline-runs"
-      />
-    </section>
+      <ImportDialog open={importing} onOpenChange={setImporting} />
+    </ListPageShell>
   )
 }
 
@@ -236,8 +216,8 @@ function ImportDialog({
         <DialogHeader>
           <DialogTitle>Import pipeline</DialogTitle>
           <DialogDescription>
-            Targets and roles are matched by name. A pipeline of the same name
-            is updated.
+            Targets and roles match by name; a pipeline of the same name is
+            updated.
           </DialogDescription>
         </DialogHeader>
         <FormTextarea

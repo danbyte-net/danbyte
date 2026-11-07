@@ -38,32 +38,37 @@ Each step has:
 | Field | Default | Means |
 |---|---|---|
 | Target | - | An automation target of the same tenant. |
-| Stop the pipeline if this step fails | on | Off: the next step still starts. The run still ends `failed`. |
-| Wait for a reported result | off | Webhook targets only. The step waits for the runner's [signed result](iac-runner.md#reporting-the-outcome-from-a-webhook-runner) instead of counting as done once launched. |
+| Stop on failure | on | Off: the next step still starts. The run still ends `failed`. |
+| Wait for result | off | Webhook targets only. The step waits for the runner's [signed result](iac-runner.md#reporting-the-outcome-from-a-webhook-runner) instead of counting as done once launched. |
 | Timeout, minutes | 30 | How long a waiting step waits for its result before it fails. |
 
 When a step counts as done:
 
 - a **script** step when its script run ends (`succeeded` on exit 0);
-- a **webhook** or **AWX** step once it is launched, or, with **Wait for a
-  reported result**, when the runner posts its result;
+- a **webhook** or **AWX** step once it is launched, or, with **Wait for
+  result**, when the runner posts its result;
 - any step that fails to launch fails at once.
 
 Targets are kept from deletion while a pipeline step uses them. Edit the
 pipeline first.
 
-The editor has the steps as cards: drag one by its handle to reorder. Beside
-them, **Flow** shows the order and **As code** the same pipeline as YAML, to
-copy or download.
+The editor is laid out like the other edit forms. One column has the
+**Pipeline** card (name, what it applies to, description, **Enabled** and
+**Run on change**), **Default for roles**, and **As code**: the pipeline as
+YAML while you edit it, to copy or download. The other column has the
+**Steps** card: one row per step, dragged by its handle to reorder. The (i)
+beside a step's **Target** says what its kind of target means for the step.
+**Save pipeline** stays at the foot of the window.
 
 ## Deploying
 
 The device's **Deploy** (Config tab), the devices list bulk bar and an
 intended VM's **Provision** open the same dialog. **Run with** lists the
 enabled pipelines for that object type and **Single target** for a deploy
-without a pipeline. The pipeline whose roles include the device's role is
-preselected, and its steps are listed. **Dry run** sends `"dry_run": true` to
-every step.
+without a pipeline. Each pipeline shows its step count; the one whose roles
+include the device's role is marked **Role default** and preselected, and
+the picked pipeline's steps are listed under **Steps**. **Dry run** sends
+`"dry_run": true` to every step.
 
 Over the API:
 
@@ -119,18 +124,30 @@ after a cancel `cancelled`. Each started step is a
 `pipeline_run` and `pipeline_step` set; it is retried by re-running the
 pipeline, not on its own.
 
-The **Pipelines** page lists the pipelines as cards and every run below,
-filterable by status and device. A failed run shows the failing step and
-the first line of its error.
+The **Pipelines** page has two tabs. **Pipelines** is a table of the
+pipelines: what each applies to, its step count, the roles it is the default
+for, its trigger (*Deploy*, or *Deploy or change* with **Run on change**) and
+its last run. **Runs** lists every run, filtered by status and device from
+the page header (`?view=runs`). A failed run shows the failing step and the
+first line of its error.
+
+A pipeline's own page opens on **Overview**: the **Pipeline**, **Record** and
+**Steps** cards, and **As code** with the YAML to copy or download. Then come
+**Runs**, **Journal** and **Change log**.
 
 ### The run page
 
-`/pipelines/runs/<id>` shows the steps as a row of nodes with their kind,
-status and time. Click one to see its log below: the script run's log for a
-script step, or the lines a webhook runner posted through the
+`/pipelines/runs/<id>` opens on **Overview**. The **Run** card names the
+pipeline, the devices or VMs, the trigger, the run it repeats and, for a
+failed run, the error; **Timing** has when it was created, started and
+finished and how long it took. Under them, the steps are a row of nodes with
+their kind, status and time. Click one to see its log below in the file
+viewer: the script run's log for a script step, or the lines a webhook runner
+posted through the
 [result callback](iac-runner.md#reporting-the-outcome-from-a-webhook-runner).
-A script step's files download from there. **What the next step receives**
-shows the payload the next step gets (for a finished run, the last step's).
+A script step's files download from the log's heading. **What the next step
+receives** shows the payload the next step gets (for a finished run, the last
+step's).
 
 - **Cancel run** stops a queued or running run: no further step starts, a
   running script run is cancelled, and a step waiting for its result is

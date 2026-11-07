@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button"
 import { FormCheckbox, FormSelect, useFieldErrors } from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
-import { Section } from "@/components/ui/section"
+import { SettingsCard } from "@/components/settings/settings-card"
 import { PrtgGroupPicker } from "./group-picker"
 
 export const GROUP_LAYOUTS: { value: PrtgGroupLayout; label: string }[] = [
@@ -394,32 +394,26 @@ export function PrtgGroupLayoutCard({
     },
   })
   return (
-    <Section
+    <SettingsCard
       title="Group layout"
-      actions={
+      onSave={canManage ? () => save.mutate() : undefined}
+      dirty={dirty}
+      saving={save.isPending}
+      footer={
         canManage &&
         dirty && (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setValue(stored)}
-              disabled={save.isPending}
-            >
-              Reset
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => save.mutate()}
-              disabled={save.isPending}
-            >
-              {save.isPending ? "Saving…" : "Save"}
-            </Button>
-          </>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setValue(stored)}
+            disabled={save.isPending}
+          >
+            Reset
+          </Button>
         )
       }
     >
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <GroupLayoutFields
           connection={connection}
           value={value}
@@ -429,6 +423,6 @@ export function PrtgGroupLayoutCard({
         />
         <GroupLayoutPreview connectionId={connection.id} value={value} />
       </div>
-    </Section>
+    </SettingsCard>
   )
 }

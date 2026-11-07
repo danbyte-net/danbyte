@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { ApiError, api } from "@/lib/api"
 import type { PrtgConnection, PrtgSensorSummary } from "@/lib/api"
 import { TimeCell } from "@/components/cells/time-ago"
+import { Badge } from "@/components/ui/badge"
+import { SettingsCard } from "@/components/settings/settings-card"
 import {
   SourceItemsList,
   StateTip,
@@ -89,36 +91,35 @@ export function PrtgSensorBreakdown({
         since: s.last_down_at,
       }))
   return (
-    <section
-      className="flex flex-col rounded-lg border border-border bg-card"
-      data-testid="prtg-sensor-breakdown"
-    >
-      <div className="flex h-10 items-center gap-2 border-b border-border px-3">
-        <h2 className="text-[11px] font-semibold tracking-wide uppercase">
-          Sensors
-        </h2>
-        <span className="num text-xs text-muted-foreground">
+    <SettingsCard
+      title="Sensors"
+      badge={
+        <Badge variant="secondary" className="num">
           {summary.total}
-        </span>
-        {readAt && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground">
-            read <TimeCell iso={readAt} />
+        </Badge>
+      }
+      description={
+        readAt ? (
+          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+            Read <TimeCell iso={readAt} />
           </span>
-        )}
-      </div>
+        ) : undefined
+      }
+      layout="flush"
+    >
       {rows.length === 0 ? (
-        <p className="px-3 py-2 text-[13px] text-muted-foreground">
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">
           No sensors.
         </p>
       ) : (
-        <div className="flex flex-col divide-y divide-border/60">
+        <div className="flex flex-col divide-y divide-border">
           {rows.map((k) => {
             const tab = k === "down" || k === "degraded" ? "alarms" : "sensors"
             const row = (
               <button
                 type="button"
                 onClick={() => onOpen(tab)}
-                className="flex h-8 w-full items-center gap-3 px-3 text-left text-[13px] hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+                className="flex h-9 w-full items-center gap-3 px-4 text-left text-[13px] hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
                 data-state={k}
                 aria-label={`${summary[k]} ${mixedStateLabel(k, labels)}`}
               >
@@ -145,6 +146,6 @@ export function PrtgSensorBreakdown({
           })}
         </div>
       )}
-    </section>
+    </SettingsCard>
   )
 }

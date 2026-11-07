@@ -15,7 +15,11 @@ import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Section } from "@/components/ui/section"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
+import { KvCard, dash } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
+import { FileViewer } from "@/components/file-viewer"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -26,7 +30,6 @@ import {
 import { formatDeployDuration } from "@/components/columns/deploy-run-columns"
 import {
   runLabel,
-  runObjectsLabel,
   runTriggerLabel,
 } from "@/components/columns/deploy-pipeline-run-columns"
 
@@ -39,6 +42,9 @@ const KIND: Partial<Record<string, string>> = {
   webhook: "Webhook",
   awx: "AWX",
 }
+
+/** Objects named on the Run card before the rest collapse into "+N". */
+const OBJECTS_SHOWN = 12
 
 function PipelineRunPage() {
   const { runId } = Route.useParams()
@@ -105,7 +111,6 @@ function Body({ run }: { run: DeployPipelineRunDetail }) {
     onError: (e) => apiErrorToast(e),
   })
 
-  const started = run.started_at ?? run.created_at
   return (
     <DetailShell
       backTo="/pipelines"
@@ -153,7 +158,7 @@ function Body({ run }: { run: DeployPipelineRunDetail }) {
       }
       hero={
         <DetailHero
-          title={`${run.pipeline_name} · ${runObjectsLabel(run)}`}
+          title={`${run.pipeline_name} ${runLabel(run)}`}
           badges={
             <>
               <PipelineStatusBadge status={run.status} />
@@ -164,60 +169,19 @@ function Body({ run }: { run: DeployPipelineRunDetail }) {
               )}
             </>
           }
-          subtitle={
-            <span className="flex flex-wrap gap-x-4 gap-y-1">
-              <span>{runTriggerLabel(run)}</span>
-              <span>
-                {run.object_ids.length}{" "}
-                {run.object_type === "virtualmachine" ? "VM" : "device"}
-                {run.object_ids.length === 1 ? "" : "s"}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                Started <TimeCell iso={started} />
-              </span>
-              {run.duration_ms != null && (
-                <span>Duration {formatDeployDuration(run.duration_ms)}</span>
-              )}
-              {run.rerun_of && (
-                <Link
-                  to="/pipelines/runs/$runId"
-                  params={{ runId: run.rerun_of }}
-                  className="link"
-                >
-                  Re-run of #{run.rerun_of_numid}
-                </Link>
-              )}
-            </span>
-          }
         />
       }
-      tabs={[{ value: "steps", label: "Steps", count: run.steps.length }]}
-      tab="steps"
+      tabs={[{ value: "overview", label: "Overview" }]}
+      tab="overview"
       onTabChange={() => {}}
     >
-      <DetailTab value="steps">
+      <DetailTab value="overview">
         <div className="grid gap-6">
-          {run.detail && run.status !== "succeeded" && (
-            <p
-              className={cn(
-                "text-[13px]",
-                run.status === "failed"
-                  ? "text-destructive"
-                  : "text-muted-foreground"
-              )}
-            >
-              {run.detail}
-            </p>
-          )}
-          <section className="grid gap-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-[11px] font-semibold tracking-wide uppercase">
-                Steps
-              </h2>
-              <span className="text-xs text-muted-foreground">
-                Each step starts when the one before has a final status.
-              </span>
-            </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <KvCard title="Run" rows={runRows(run)} />
+            <KvCard title="Timing" rows={timingRows(run)} />
+          </div>
+          <Section title="Steps" count={run.steps.length}>
             <div className="flex flex-wrap items-center gap-y-2">
               {run.steps.map((s, i) => (
                 <Fragment key={s.step}>
@@ -227,34 +191,137 @@ function Body({ run }: { run: DeployPipelineRunDetail }) {
                     onPick={() => setPicked(s.step)}
                   />
                   {i < run.steps.length - 1 && (
-                    <span
-                      aria-hidden
-                      className="h-0.5 w-6 shrink-0 bg-border"
-                    />
+                    <span aria-hidden className="h-px w-6 shrink-0 bg-border" />
                   )}
                 </Fragment>
               ))}
             </div>
-          </section>
+          </Section>
           <StepLog step={step} />
           {run.next_payload && (
-            <section className="grid gap-2">
-              <h2 className="text-[11px] font-semibold tracking-wide uppercase">
-                What the next step receives
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                The ids, the event and every earlier step&apos;s status and
-                outputs, besides the target&apos;s own extra vars.
-              </p>
-              <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 font-mono text-[12px] leading-relaxed">
-                {JSON.stringify(run.next_payload, null, 2)}
-              </pre>
-            </section>
+            <Section title="What the next step receives">
+              <FileViewer
+                text={JSON.stringify(run.next_payload, null, 2)}
+                filename={`run-${runLabel(run).replace("#", "")}-payload.json`}
+                language="json"
+                height="fit"
+                storageKey="pipeline-next-payload"
+                label="What the next step receives"
+              />
+            </Section>
           )}
         </div>
       </DetailTab>
     </DetailShell>
   )
+}
+
+function runRows(run: DeployPipelineRunDetail): KvRow[] {
+  const vm = run.object_type === "virtualmachine"
+  const shown = run.objects.slice(0, OBJECTS_SHOWN)
+  const more = run.object_ids.length - shown.length
+  const rows: KvRow[] = [
+    {
+      label: "Pipeline",
+      value: run.pipeline ? (
+        <Link
+          to="/pipelines/$id"
+          params={{ id: run.pipeline }}
+          className="link"
+        >
+          {run.pipeline_name}
+        </Link>
+      ) : (
+        run.pipeline_name
+      ),
+    },
+    {
+      label: vm ? "Virtual machines" : "Devices",
+      value: shown.length ? (
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {shown.map((o) =>
+            vm ? (
+              <Link
+                key={o.id}
+                to="/virtual-machines/$id"
+                params={{ id: o.id }}
+                className="link"
+              >
+                {o.name}
+              </Link>
+            ) : (
+              <Link
+                key={o.id}
+                to="/devices/$id"
+                params={{ id: o.id }}
+                className="link"
+              >
+                {o.name}
+              </Link>
+            )
+          )}
+          {more > 0 && (
+            <Badge variant="secondary" className="num text-[10px]">
+              +{more}
+            </Badge>
+          )}
+        </span>
+      ) : (
+        <span className="num">{run.object_ids.length}</span>
+      ),
+    },
+    { label: "Trigger", value: runTriggerLabel(run) },
+  ]
+  if (run.rerun_of)
+    rows.push({
+      label: "Re-run of",
+      value: (
+        <Link
+          to="/pipelines/runs/$runId"
+          params={{ runId: run.rerun_of }}
+          className="link num"
+        >
+          #{run.rerun_of_numid}
+        </Link>
+      ),
+    })
+  if (run.detail && run.status !== "succeeded")
+    rows.push({
+      label: run.status === "failed" ? "Error" : "Detail",
+      value: (
+        <span
+          className={cn(
+            run.status === "failed" ? "text-destructive" : "text-foreground"
+          )}
+        >
+          {run.detail}
+        </span>
+      ),
+    })
+  return rows
+}
+
+function timingRows(run: DeployPipelineRunDetail): KvRow[] {
+  return [
+    { label: "Created", value: <TimeCell iso={run.created_at} /> },
+    {
+      label: "Started",
+      value: run.started_at ? <TimeCell iso={run.started_at} /> : dash,
+    },
+    {
+      label: "Finished",
+      value: run.finished_at ? <TimeCell iso={run.finished_at} /> : dash,
+    },
+    {
+      label: "Duration",
+      value:
+        run.duration_ms != null ? (
+          <span className="num">{formatDeployDuration(run.duration_ms)}</span>
+        ) : (
+          dash
+        ),
+    },
+  ]
 }
 
 function StepNode({
@@ -295,23 +362,24 @@ function StepNode({
   )
 }
 
+/** The picked step's log, in the shared viewer, under a heading that names
+ * the step and carries its files and link. */
 function StepLog({ step: s }: { step: DeployPipelineRunStep }) {
-  const lines = (s.log ?? "").replace(/\n$/, "").split("\n")
-  const hasLog = !!s.log
   const waiting =
     s.status === "running" && s.wait_for_result && s.kind !== "script"
   return (
-    <section className="overflow-hidden rounded-lg border border-border">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
-        <div className="grid gap-0.5">
-          <h2 className="text-[13px] font-semibold">
-            {s.step} · {s.target_name}
-          </h2>
-          <span className="text-xs text-muted-foreground">
-            {s.detail ? s.detail.split("\n")[0] : stepNote(s)}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <Section
+      title={`Step ${s.step} · ${s.target_name ?? ""}`}
+      badge={
+        waiting ? (
+          <Badge variant="warning" className="text-[10px]">
+            Waiting for result
+          </Badge>
+        ) : undefined
+      }
+      description={s.detail ? s.detail.split("\n")[0] : stepNote(s)}
+      actions={
+        <>
           {(s.outputs ?? []).map((o) => (
             <Button key={o.url} variant="outline" size="sm" asChild>
               <a href={o.url} download={o.name}>
@@ -335,39 +403,30 @@ function StepLog({ step: s }: { step: DeployPipelineRunStep }) {
               </Button>
             )
           )}
-        </div>
-      </div>
-      <div className="max-h-[32rem] overflow-auto bg-zinc-950 py-3 font-mono text-[12px] leading-relaxed text-zinc-200">
-        {hasLog ? (
-          <ol>
-            {lines.map((l, i) => (
-              <li key={i} className="flex gap-4 px-4 whitespace-pre">
-                <span className="num w-8 shrink-0 text-right text-zinc-500 select-none">
-                  {i + 1}
-                </span>
-                <span>{l}</span>
-              </li>
-            ))}
-            {waiting && (
-              <li className="flex gap-4 px-4 text-amber-300">
-                <span className="w-8 shrink-0" />
-                <span>waiting for result…</span>
-              </li>
-            )}
-          </ol>
-        ) : (
-          <p className="px-4 text-zinc-400">
-            {s.log_source === "hidden"
-              ? "You may not see this script's runs."
-              : waiting
-                ? "Waiting for the runner to report…"
-                : s.deploy_run
-                  ? "No log lines."
-                  : "This step has not started."}
-          </p>
-        )}
-      </div>
-    </section>
+        </>
+      }
+    >
+      <FileViewer
+        key={s.step}
+        text={(s.log ?? "").replace(/\n$/, "")}
+        filename={`step-${s.step}.log`}
+        language="text"
+        height="fit"
+        storageKey="pipeline-step-log"
+        follow={s.status === "running"}
+        defaultWrap
+        label={`Step ${s.step} log`}
+        emptyText={
+          s.log_source === "hidden"
+            ? "You may not see this script's runs."
+            : waiting
+              ? "Waiting for the runner to report…"
+              : s.deploy_run
+                ? "No log lines."
+                : "This step has not started."
+        }
+      />
+    </Section>
   )
 }
 
