@@ -81,7 +81,7 @@ interfaces a VLAN. Then:
 | **Sensors** | Only when [PRTG monitoring](prtg.md#sensors) is on, with the sensor count: the same status strip, sensor cards and sensor panel as a device's, and before PRTG has sensors for the VM the same state cards (excluded, not in PRTG, planned with **Add to PRTG now**, needs attention, being added, no sensors yet). |
 | **SNMP** | Facts, the interface table, LLDP neighbours and the ARP table, when the VM answers SNMP. Each SNMP interface is read against the VM's own NICs by name; when the guest names a NIC differently from the hypervisor (`ether1` for `nic0`), set **SNMP name** on the interface and the row maps. |
 | **Certificates** | TLS certificates seen on its endpoints. |
-| **Config** | The rendered config context for this VM, and the [Oxidized backup](oxidized.md) of a virtual router when that is on. |
+| **Config** | The rendered config context for this VM, with its sources in merge order, and the [Oxidized backup](oxidized.md) of a virtual router when that is on. The VM form's **Config context → Local context data** (`local_context_data` in the API) is merged last, over every matching context - see [Local context data](config-contexts.md#local-context-data). |
 | **Journal**, **Change log** | Notes you write, and the automatic change record. |
 
 ## Power state

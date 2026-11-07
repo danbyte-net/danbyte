@@ -41,6 +41,7 @@ export function contextCriteria(c: ConfigContext): string {
   if (c.sites.length) parts.push(`${c.sites.length} site(s)`)
   if (c.device_roles.length) parts.push(`${c.device_roles.length} role(s)`)
   if (c.platforms.length) parts.push(`${c.platforms.length} platform(s)`)
+  if (c.tags.length) parts.push(`${c.tags.length} tag(s)`)
   return parts.join(" · ") || "All devices/VMs"
 }
 

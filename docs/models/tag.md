@@ -69,6 +69,13 @@ Custom `core.TaggedItem(GenericUUIDTaggedItemBase)` - needed because all our
 content models have UUID PKs and taggit's default `IntegerField` `object_id`
 would overflow.
 
+## Config-context matching
+
+`api.ConfigContext.tags` is a plain many-to-many to `core.Tag` (not a
+TaggedItem): the tags a [config context](../features/config-contexts.md)
+matches on, the context's tenant's own only. A merge moves those matches onto
+the tag merged into; a delete removes them.
+
 ## Scoping history
 
 Tags started as one global taggit table. Tenant scoping landed with the

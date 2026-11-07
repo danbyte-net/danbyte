@@ -32,6 +32,7 @@ from .dcim_choices import (
     VIRTUAL_INTERFACE_TYPES,
 )
 from .fields import HostAddressField, split_host_mask
+from .config_context import validate_context_object
 from .natural import natural
 from .software_versions import validate_version_pattern
 from .package_ids import validate_cpe, validate_purl
@@ -2444,6 +2445,14 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         related_name="+",
         help_text="Config template for this device. Falls back to the "
                   "role's, then the platform's, when unset.",
+    )
+    # Per-device config-context data, merged over every matching
+    # ConfigContext (api.config_context) so it wins on conflicting keys.
+    local_context_data = models.JSONField(
+        null=True, blank=True, default=None,
+        validators=[validate_context_object],
+        help_text="Config-context data for this device only, merged last over "
+                  "every matching config context.",
     )
     # ── Physical attributes ──────────────────────────────────────────────
     # Kept as a class attribute for backwards references; the list itself
@@ -5462,6 +5471,13 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
     #: The long tail (machine, bios, agent, onboot). Passed through, never
     #: diffed.
     hypervisor_options = models.JSONField(default=dict, blank=True, db_default={})
+    # Per-VM config-context data, merged last (see Device.local_context_data).
+    local_context_data = models.JSONField(
+        null=True, blank=True, default=None,
+        validators=[validate_context_object],
+        help_text="Config-context data for this virtual machine only, merged "
+                  "last over every matching config context.",
+    )
 
     class Meta:
         ordering = ["name"]
@@ -9355,7 +9371,8 @@ class Room(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 class ConfigContext(NumIdMixin, TimestampedModel):
     """A named blob of JSON data that is merged onto devices/VMs whose
     attributes match this context's criteria. Higher ``weight`` wins on
-    conflicting keys. Empty criteria for a dimension = matches everything."""
+    conflicting keys. Empty criteria for a dimension = matches everything.
+    A device/VM's own ``local_context_data`` is merged after every context."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -9381,6 +9398,11 @@ class ConfigContext(NumIdMixin, TimestampedModel):
     )
     platforms = models.ManyToManyField(
         "Platform", blank=True, related_name="config_contexts"
+    )
+    # The context's tenant's own tags only (never deployment-global ones);
+    # a device/VM matches when it carries any of them.
+    tags = models.ManyToManyField(
+        "core.Tag", blank=True, related_name="config_contexts"
     )
 
     class Meta:

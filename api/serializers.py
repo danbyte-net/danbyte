@@ -3252,6 +3252,16 @@ def clean_prtg_host(value: str) -> str:
     return value.lower()
 
 
+def _local_context_data(value):
+    """A device's/VM's own context data: a JSON object, or null for none (an
+    empty object is stored as null)."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("Local context data must be a JSON object.")
+    return value or None
+
+
 class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "device"
     # Render settings and write-back plumbing: real fields, but not columns
@@ -3260,7 +3270,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         "vc_renamed_interfaces", "image_ports", "port_labels", "topology_card",
         "topology_photo_size",
         "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front", "model_3d_effective",
-        "model_ports",
+        "model_ports", "local_context_data",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
         # Its own column, Next end of life (device-columns.tsx).
@@ -3839,6 +3849,9 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
 
         return validate_model_ports_doc(value)
 
+    def validate_local_context_data(self, value):
+        return _local_context_data(value)
+
     def _validate_cabinet(self, attrs) -> None:
         """A device in a DIN-rail cabinet (#277): never in a rack as well, at
         the cabinet's site, and on one of its rails at an offset where its
@@ -4041,7 +4054,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "virtual_chassis", "virtual_chassis_id",
                   "vc_position", "vc_priority", "vc_renamed_interfaces",
                   "image_ports",
-                  "config_template", "config_template_id",
+                  "config_template", "config_template_id", "local_context_data",
                   "status", "status_id",  "serial_number", "asset_tag",
                   "software_version", "software_version_seen_at",
                   "software_version_source",
@@ -6952,7 +6965,7 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
     cf_model = "virtualmachine"
     # Its own column, Next end of life (vm-columns.tsx).
     list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host",
-                            "device_profiles")
+                            "device_profiles", "local_context_data")
     cluster = ClusterMiniSerializer(read_only=True)
     #: What the PRTG plan made of a save that changed prtg_sync; else null.
     prtg_plan = serializers.SerializerMethodField()
@@ -6963,6 +6976,9 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
 
     def validate_prtg_host(self, value):
         return clean_prtg_host(value)
+
+    def validate_local_context_data(self, value):
+        return _local_context_data(value)
 
     disks = ListedManySerializer(child=VirtualDiskSerializer(), read_only=True)
     # Detail-only tab counters (like the device page). Zero on list responses so
@@ -7205,7 +7221,7 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
                   "vcpus", "memory_mb", "disk_gb", "disks",
                   "intended", "represents_device", "represents_device_id",
                   "vmid", "cpu_type", "sockets", "image", "storage",
-                  "hypervisor_options", "missing_since",
+                  "hypervisor_options", "missing_since", "local_context_data",
                   "software_version", "software_version_seen_at",
                   "software_version_source",
                   "interface_count", "disk_count", "service_count",
@@ -10517,6 +10533,12 @@ class ConfigContextSerializer(NumIdModelSerializer):
         source="platforms", queryset=Platform.objects.all(),
         many=True, write_only=True, required=False,
     )
+    # Match on any of these tags (the device's/VM's own tags).
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.filter(tenant__isnull=False),
+        many=True, write_only=True, required=False,
+    )
 
     @extend_schema_field(serializers.ListField())
     def get_device_roles(self, obj):
@@ -10531,11 +10553,29 @@ class ConfigContextSerializer(NumIdModelSerializer):
             raise serializers.ValidationError("Data must be a JSON object.")
         return value
 
+    def validate_tag_ids(self, value):
+        """The context's own tenant's tags only: never a deployment-global tag
+        (it is not the tenant's to match on) nor another tenant's."""
+        from api.views import _get_active_tenant
+
+        if self.instance is not None:
+            tenant_id = self.instance.tenant_id
+        else:
+            request = self.context.get("request")
+            tenant = _get_active_tenant(request) if request else None
+            tenant_id = tenant.pk if tenant else None
+        bad = [t.name for t in value if t.tenant_id is None or t.tenant_id != tenant_id]
+        if bad:
+            raise serializers.ValidationError(
+                f"Not a tag of this tenant: {', '.join(sorted(bad))}.")
+        return value
+
     class Meta:
         model = ConfigContext
         fields = ["id", "name", "weight", "is_active", "description", "data",
                   "regions", "region_ids", "sites", "site_ids",
                   "device_roles", "device_role_ids", "platforms", "platform_ids",
+                  "tags", "tag_ids",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 

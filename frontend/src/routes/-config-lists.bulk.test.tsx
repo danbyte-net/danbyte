@@ -71,6 +71,7 @@ const ROW = {
     sites: [],
     device_roles: [],
     platforms: [],
+    tags: [],
   }),
   bundle: (id: string, name: string) => ({
     ...BASE,

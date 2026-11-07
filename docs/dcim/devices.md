@@ -409,6 +409,20 @@ the size in use as `effective_width_mm`, `effective_height_mm` and
 keeps the size. DIN-rail placement in a [cabinet](cabinets.md) still goes
 by the type's size.
 
+## Local context data {#local-context-data}
+
+**Config context → Local context data** on the device form holds JSON for this
+device only, such as a default route or NAT settings two devices of a shared
+role need. It is merged over every matching
+[config context](../features/config-contexts.md#local-context-data), whatever
+their weight, so its keys win; templates read it through `config_context` like
+any other value. Leave it blank for none.
+
+The API field is `local_context_data`: a JSON object, or `null` (an empty
+object is stored as `null`; anything but an object is a 400). It is a JSON
+column in device export and import, its changes are in the device's change
+log, and a clone does not copy it.
+
 ## Built-in fields
 
 A handful of commonly-used attributes are promoted to **built-in device
@@ -483,7 +497,7 @@ the fields and their values are unchanged.
 | **Flows**      | [Application flows](../features/application-flows.md) with an end at one of the device's addresses, or at a prefix or range that holds one. |
 | **Sensors**    | Only when [PRTG monitoring](../features/prtg.md#sensors) is on, with the sensor count: a status strip, a card per PRTG sensor, and a panel with each sensor's channels as gauges and state bars. Before PRTG has sensors for the device it shows where it stands - excluded, not in PRTG, planned (with **Add to PRTG now**), needs attention, being added, or in PRTG without sensors - see [Registering devices and VMs](../features/prtg.md#registering-devices-and-vms). The **Monitoring** tab gets one **PRTG** row linking here; its chevron opens whether the device is in PRTG, whether Danbyte made it, what registers it and what is planned, with **Register in PRTG** and **Add to PRTG now** - see [Planned changes](../features/prtg.md#planned-changes). |
 | **Contacts**   | People responsible for the device.                                                              |
-| **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. |
+| **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. The config context lists its sources in merge order, the device's [local context data](#local-context-data) last. |
 | **Journal**    | Free-form notes and a running log you write.                                                    |
 | **Change log** | An automatic record of changes - who changed what, when.                                               |
 

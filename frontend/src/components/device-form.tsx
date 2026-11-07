@@ -54,6 +54,7 @@ import { expandNameRange } from "@/lib/name-range"
 import { NameRangeHint } from "@/components/name-range-hint"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { MM_INPUT, mmOrNull, mmText } from "@/lib/mm-field"
+import { jsonObjectText, parseJsonObject } from "@/lib/json-object"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceTypePicker } from "@/components/device-type-picker"
@@ -86,6 +87,10 @@ import {
 } from "@/components/topology/diagram/card-lines-dialog"
 import { inheritedCardLines } from "@/components/topology/diagram/card-lines"
 import { useMe } from "@/lib/use-me"
+
+// Thrown when the local-context-data text is not a JSON object: the field
+// shows the error, so no toast.
+const LOCAL_DATA_INVALID = "Invalid local context data."
 
 const PORT_LABEL_OPTIONS = [
   { value: "on", label: "Shown" },
@@ -182,6 +187,10 @@ export function DeviceForm({
   const [configTemplateId, setConfigTemplateId] = useState<string | null>(
     device?.config_template?.own?.id ?? null
   )
+  const [localData, setLocalData] = useState(
+    jsonObjectText(device?.local_context_data)
+  )
+  const [localDataError, setLocalDataError] = useState<string | null>(null)
   const [statusId, setStatusId] = useState<string | null>(
     seed?.status?.id ?? null
   )
@@ -305,6 +314,8 @@ export function DeviceForm({
     setRoleId(device.role?.id ?? null)
     setPlatformId(device.platform?.id ?? null)
     setConfigTemplateId(device.config_template?.own?.id ?? null)
+    setLocalData(jsonObjectText(device.local_context_data))
+    setLocalDataError(null)
     setStatusId(device.status?.id ?? null)
     setSerial(device.serial_number)
     setAssetTag(device.asset_tag)
@@ -590,6 +601,12 @@ export function DeviceForm({
     mutationFn: async (): Promise<
       { one: Device } | { many: DeviceBulkCreateResult }
     > => {
+      const localContextData = parseJsonObject(localData)
+      if (localContextData === undefined) {
+        setLocalDataError("Must be a valid JSON object.")
+        throw new Error(LOCAL_DATA_INVALID)
+      }
+      setLocalDataError(null)
       const payload: DeviceWritePayload = {
         name: name.trim(),
         device_type_id: deviceTypeId,
@@ -637,6 +654,7 @@ export function DeviceForm({
         room_id: roomId,
         cluster_id: clusterId,
         config_template_id: configTemplateId,
+        local_context_data: localContextData,
         virtual_chassis_id: vcId,
         vc_position:
           vcId && vcPosition.trim() !== "" ? Number(vcPosition) : null,
@@ -718,6 +736,7 @@ export function DeviceForm({
       onSaved(saved)
     },
     onError: (err) => {
+      if (err.message === LOCAL_DATA_INVALID) return
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
     },
@@ -880,6 +899,20 @@ export function DeviceForm({
                 error={fieldErrors.comments}
               />
             )}
+          </FormSection>
+          <FormSection title="Config context" card>
+            <FormTextarea
+              label="Local context data"
+              info="Merged over every matching config context, so these keys win."
+              rows={6}
+              placeholder='{"default_route": "192.0.2.1"}'
+              value={localData}
+              onChange={(v) => {
+                setLocalData(v)
+                setLocalDataError(null)
+              }}
+              error={localDataError ?? fieldErrors.local_context_data}
+            />
           </FormSection>
           <FormSection title="Topology card" card>
             <Field

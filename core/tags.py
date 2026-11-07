@@ -161,5 +161,11 @@ def merge_tags(source, target) -> dict:
             return out
 
         log_tag_merge(objects(moved_keys), objects(dropped_keys), source.name, target.name)
+        # Config contexts matching on the source tag match on the target now,
+        # so a merge never widens a context to every device.
+        from api.models import ConfigContext
+
+        for ctx in ConfigContext.objects.filter(tags=source):
+            ctx.tags.add(target)
         source.delete()
     return {"moved": len(move_ids), "already_tagged": len(drop_ids)}
