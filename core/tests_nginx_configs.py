@@ -152,6 +152,18 @@ class ConfigTextTests(SimpleTestCase):
                     with self.subTest(path=path.name, location=loc):
                         self.assertLessEqual(set(edge), hides)
 
+    def test_the_app_may_frame_itself(self):
+        # The topology report draws saved views in a same-origin frame of the
+        # map page; DENY or frame-ancestors 'none' leaves it drawing forever.
+        for path in (TEMPLATES[1], DOCKER):
+            edge = _edge_headers(path.read_text())
+            with self.subTest(path=path.name):
+                self.assertEqual(edge["X-Frame-Options"], "SAMEORIGIN")
+                csp = edge.get("Content-Security-Policy", "")
+                self.assertNotIn("frame-ancestors 'none'", csp)
+                if "frame-ancestors" in csp:
+                    self.assertIn("frame-ancestors 'self'", csp)
+
     def test_edge_values_match_django(self):
         # Same value at both layers, so the answer does not depend on which
         # one a request went through.

@@ -576,13 +576,14 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 
 # Referrer + clickjacking defaults apply in every mode (defense-in-depth for a
-# direct hit on /api that doesn't pass through nginx). X_FRAME_OPTIONS defaults
-# to DENY via XFrameOptionsMiddleware (already in MIDDLEWARE); make it explicit.
+# direct hit on /api that doesn't pass through nginx). Framing is same-origin
+# only, not DENY: the topology report draws each saved view in a hidden
+# same-origin frame of the map page.
 # The shipped nginx configs set these at the edge and drop Django's copies, so
 # each is sent once (#490); keep the values the same in both places.
 SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = "DENY"
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # ─── Transport hardening ────────────────────────────────────────────────────
 # Is this deployment served over TLS? That is a DIFFERENT question from DEBUG,

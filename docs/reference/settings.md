@@ -468,8 +468,12 @@ uniformly and survives an app restart:
 
 - `server_tokens off` - no nginx version banner.
 - **HSTS** - `max-age=31536000; includeSubDomains`.
-- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` (also enforced by
-  Django's `SECURE_CONTENT_TYPE_NOSNIFF` / `X_FRAME_OPTIONS`).
+- `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` (also
+  enforced by Django's `SECURE_CONTENT_TYPE_NOSNIFF` / `X_FRAME_OPTIONS`), and
+  `frame-ancestors 'self'` in the CSP. Other sites can't frame Danbyte; the
+  topology report draws each saved view in a hidden frame of the map page,
+  which needs the same origin to be allowed. A site you manage yourself
+  with `DENY` or `frame-ancestors 'none'` leaves that report at *Drawing…*.
 - `Referrer-Policy: same-origin`, a restrictive `Permissions-Policy`, and
   `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy: same-origin`.
 - An **enforced Content-Security-Policy** with `report-uri /api/csp-report/`.
