@@ -1,6 +1,7 @@
 import { createElement, useEffect, useMemo, useRef } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { useFrame } from "@react-three/fiber"
+import type { ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three"
 
 import { getLucideIcon } from "@/components/dynamic-icon"
@@ -11,10 +12,11 @@ import { clipName } from "@/components/floorplan/readable"
 import { useTheme } from "@/components/theme-provider"
 
 import { layoutNames3D } from "./name-layout"
-import type { Name3D } from "./name-layout"
+import type { Name3D, Summary3D } from "./name-layout"
 import { roomLook } from "./room-look"
 import type { RoomLook } from "./room-look"
 import { ROOM_FONT, textTexture } from "./text-sprite"
+import type { SummaryStore } from "./summary-picker"
 import { cellToWorld, floorDeviceBoxM } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
@@ -137,7 +139,11 @@ export function ReadableNames3D({
   pinned,
   icons = true,
   callouts = true,
+  summaries,
 }: {
+  /** Where a summary plate's hover and click go (summary-picker.tsx);
+   * without it the plates take no pointer. */
+  summaries?: SummaryStore
   plan: ScenePayload["plan"]
   /** Each plate carries its object's icon (Display > Icons when zoomed
    * out). */
@@ -288,6 +294,10 @@ export function ReadableNames3D({
       callouts,
       plateSize: platePx,
     })
+    // The hovered plate gone (the camera moved on): its card goes too.
+    const hovered = summaries?.get().hover
+    if (hovered && !layout.summaries.some((s) => s.id === hovered.id))
+      summaries.hover(null)
     // A screen point (px) at a depth, in the room.
     const toWorld = (x: number, y: number, z: number, out: THREE.Vector3) =>
       out
@@ -324,10 +334,13 @@ export function ReadableNames3D({
       seen.add(e.id)
     }
     for (const s of layout.summaries) {
+      const sprite = show(s)
+      sprite.userData.summary = s
+      if (summaries) sprite.raycast = plateRaycast
       const z =
         s.members.reduce((t, id) => t + (depth.get(id) ?? 0), 0) /
         s.members.length
-      toWorld(s.box.x + s.box.w / 2, s.box.y + s.box.h, z, show(s).position)
+      toWorld(s.box.x + s.box.w / 2, s.box.y + s.box.h, z, sprite.position)
       seen.add(s.id)
     }
     for (const [id, m] of made.current)
@@ -368,8 +381,54 @@ export function ReadableNames3D({
         }
   })
 
+  // A summary plate under the pointer: its members on hover, its panel on
+  // a click. It takes the event ahead of whatever stands behind it.
+  const hit = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
+    const s = e.object.userData.summary as Summary3D | undefined
+    if (!s || !e.object.visible) return null
+    e.stopPropagation()
+    return {
+      id: s.id,
+      name: s.name,
+      members: s.members,
+      x: e.nativeEvent.clientX,
+      y: e.nativeEvent.clientY,
+    }
+  }
+  const off = () => {
+    summaries?.hover(null)
+    document.body.style.cursor = ""
+  }
+  // The cursor is the page's: never leave it a pointer after unmount.
+  const offRef = useRef(off)
+  offRef.current = off
+  useEffect(() => () => offRef.current(), [])
+
   return (
-    <group ref={group}>
+    <group
+      ref={group}
+      onPointerMove={
+        summaries
+          ? (e) => {
+              const h = hit(e)
+              if (!h) return
+              summaries.hover(h)
+              document.body.style.cursor = "pointer"
+            }
+          : undefined
+      }
+      onPointerOut={summaries ? off : undefined}
+      onClick={
+        summaries
+          ? (e) => {
+              const h = hit(e)
+              if (!h) return
+              off()
+              summaries.open(h)
+            }
+          : undefined
+      }
+    >
       <primitive object={leaders.lines} />
       <primitive object={leaders.dots} />
     </group>
@@ -443,6 +502,19 @@ function make(
   // Names never take a click from what is under them.
   sprite.raycast = () => {}
   return { key: entryKey(e), sprite, aspect: w / h }
+}
+
+/** A summary plate's pick: the sprite's own, at no distance, so the plate
+ * - drawn over everything - takes the pointer ahead of what is behind. */
+function plateRaycast(
+  this: THREE.Sprite,
+  raycaster: THREE.Raycaster,
+  intersects: THREE.Intersection[]
+) {
+  if (!this.visible) return
+  const hits: THREE.Intersection[] = []
+  THREE.Sprite.prototype.raycast.call(this, raycaster, hits)
+  for (const h of hits) intersects.push({ ...h, distance: 0 })
 }
 
 function free(m: MadeSprite) {
