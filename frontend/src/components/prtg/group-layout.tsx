@@ -62,7 +62,7 @@ export function GroupLayoutFields({
   const sites =
     value.group_layout === "sites" || value.group_layout === "sites_roles"
   return (
-    <div className="grid gap-3">
+    <div className="grid content-start gap-3">
       <FormSelect
         label="Layout"
         info="Where new devices go when no policy names a group. Danbyte creates the groups in PRTG, reuses one with the same name, and keeps its own groups named after the site, location or role."
@@ -413,7 +413,7 @@ export function PrtgGroupLayoutCard({
         )
       }
     >
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <GroupLayoutFields
           connection={connection}
           value={value}
