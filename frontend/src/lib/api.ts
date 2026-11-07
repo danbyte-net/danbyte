@@ -1403,7 +1403,9 @@ export interface SiteMapPayload {
   plan_footprints?: SiteMapPlanFootprint[]
 }
 
-/** A floor plan's box on the Site map (its geo anchor). */
+/** A floor plan's box on the Site map (its geo anchor). An aligned floor
+ * plan (a building) is one footprint: `id` its ground level, `name` the
+ * floor plan's, `levels` every level's name in order. */
 export interface SiteMapPlanFootprint {
   id: string
   name: string
@@ -1412,6 +1414,8 @@ export interface SiteMapPlanFootprint {
   site_id: string | null
   /** [south, west, north, east] in degrees. */
   bbox: [number, number, number, number]
+  /** The floors it stands for, lowest first (one for a single floor). */
+  levels?: string[]
 }
 
 /** GeoJSON Polygon/MultiPolygon geometry - an OSM-sourced region boundary. */

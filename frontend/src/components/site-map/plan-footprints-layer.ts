@@ -4,7 +4,9 @@ import type { SiteMapPlanFootprint } from "@/lib/api"
 
 // The boxes of the floor plans made from the Site map: a faint dashed
 // rectangle each, under the outlines, named on hover; a click opens the
-// plan. SVG can't resolve CSS variables, so the colour is a literal zinc,
+// plan. The levels of an aligned floor plan (a building) come as one box,
+// named after the building and listing its levels; it opens the ground
+// level. SVG can't resolve CSS variables, so the colour is a literal zinc,
 // like the outlines' neutral.
 
 export const FOOTPRINT_COLOR = "#71717a"
@@ -22,6 +24,15 @@ function escapeHtml(s: string): string {
 /** "Campus · Ground" - the floor plan and the floor, when they differ. */
 export function footprintName(f: SiteMapPlanFootprint): string {
   return f.stack && f.stack !== f.name ? `${f.stack} · ${f.name}` : f.name
+}
+
+/** The hover text: the name, then a building's levels in order. */
+export function footprintTooltip(f: SiteMapPlanFootprint): string {
+  const name = escapeHtml(footprintName(f))
+  const levels = f.levels ?? []
+  return levels.length > 1
+    ? `${name}<br>${levels.map(escapeHtml).join(" · ")}`
+    : name
 }
 
 export function buildPlanFootprintsLayer(
@@ -62,7 +73,7 @@ export function buildPlanFootprintsLayer(
       ...pane,
     })
     if (opts.interactive ?? true) {
-      rect.bindTooltip(escapeHtml(footprintName(f)), {
+      rect.bindTooltip(footprintTooltip(f), {
         sticky: true,
         direction: "top",
       })

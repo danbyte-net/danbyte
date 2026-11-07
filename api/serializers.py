@@ -11312,14 +11312,27 @@ class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSeriali
             )
         if inst is not None and "location" in attrs and location is not None \
                 and location.pk != inst.location_id:
+            # A floor with no location of its own (a site-wide floor) takes
+            # the floor plan's location on save; one whose location is set
+            # must already lie in it.
             probe = FloorPlanStack(site=site, location=location)
-            if any(not in_scope(p.location, probe)
+            if any(p.location_id is not None and not in_scope(p.location, probe)
                    for p in inst.floors.select_related("location")):
                 raise serializers.ValidationError({
                     "location_id": "Every floor's location must be this location "
                                    "or inside it."
                 })
         return attrs
+
+    def update(self, instance, validated_data):
+        with transaction.atomic():
+            stack = super().update(instance, validated_data)
+            if "location" in validated_data and stack.location_id is not None:
+                # One by one, so each floor's change is in the change log.
+                for floor in stack.floors.filter(location__isnull=True):
+                    floor.location = stack.location
+                    floor.save(update_fields=["location", "updated_at"])
+        return stack
 
     class Meta:
         model = FloorPlanStack

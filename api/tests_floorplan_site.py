@@ -220,11 +220,14 @@ class CreateAndListTests(_Base):
 
     def test_a_stack_bound_to_a_location_keeps_its_floors_inside_it(self):
         plan = self._site_wide()
-        # The site-wide floor would fall outside Building A.
+        # A floor located outside Building A blocks the move.
+        FloorPlan.objects.filter(pk=plan.pk).update(location=self.bldg_b)
         r = self.client.patch(f"/api/floor-plan-stacks/{plan.stack_id}/",
                               {"location_id": str(self.bldg_a.id)}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertIn("location_id", r.data)
+        plan.refresh_from_db()
+        self.assertEqual(plan.location_id, self.bldg_b.pk)
         # A located stack may go site-wide; its floors keep their locations.
         bound = FloorPlan.objects.create(tenant=self.tenant, location=self.level, name="L")
         r = self.client.patch(f"/api/floor-plan-stacks/{bound.stack_id}/",
@@ -233,6 +236,24 @@ class CreateAndListTests(_Base):
         bound.refresh_from_db()
         self.assertEqual(bound.location_id, self.level.pk)
         self.assertIsNone(bound.stack.location_id)
+
+    def test_floors_with_no_location_take_the_stack_location(self):
+        # A plan made from the Site map: a site-wide stack whose floors have
+        # no location. Picking a location gives it to them.
+        plan = self._site_wide()
+        second = FloorPlan.objects.create(tenant=self.tenant, stack=plan.stack,
+                                          name="1", floor_order=10)
+        inside = FloorPlan.objects.create(tenant=self.tenant, stack=plan.stack,
+                                          location=self.level, name="2", floor_order=20)
+        r = self.client.patch(f"/api/floor-plan-stacks/{plan.stack_id}/",
+                              {"location_id": str(self.bldg_a.id)}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        for floor in (plan, second, inside):
+            floor.refresh_from_db()
+        self.assertEqual(plan.location_id, self.bldg_a.pk)
+        self.assertEqual(second.location_id, self.bldg_a.pk)
+        self.assertEqual(inside.location_id, self.level.pk)
+        self.assertEqual(plan.stack.location_id, self.bldg_a.pk)
 
     def test_moving_a_site_wide_floor_into_a_located_floor_plan(self):
         plan = self._site_wide()

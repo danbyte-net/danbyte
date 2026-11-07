@@ -8,6 +8,7 @@ import {
   buildPlanFootprintsLayer,
   FOOTPRINT_COLOR,
   footprintName,
+  footprintTooltip,
 } from "./plan-footprints-layer"
 
 // The Site map's "Floor plans" layer: each plan made from the map draws its
@@ -55,6 +56,23 @@ describe("plan footprints", () => {
     expect(r.getTooltip()?.getContent()).toBe("Campus · Ground")
     r.fire("click")
     expect(onOpen).toHaveBeenCalledWith("fp1")
+  })
+
+  it("lists a building's levels under its name", () => {
+    const building = {
+      ...FP,
+      name: "Building A",
+      stack: "Building A",
+      levels: ["B1", "Ground", "<1>"],
+    }
+    expect(footprintTooltip(building)).toBe(
+      "Building A<br>B1 · Ground · &lt;1&gt;"
+    )
+    expect(footprintTooltip({ ...FP, levels: ["Ground"] })).toBe(
+      "Campus · Ground"
+    )
+    const [r] = rects(buildPlanFootprintsLayer([building], { onOpen: vi.fn() }))
+    expect(r.getTooltip()?.getContent()).toBe(footprintTooltip(building))
   })
 
   it("is inert while a tool draws", () => {

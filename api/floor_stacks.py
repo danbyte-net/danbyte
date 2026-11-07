@@ -169,6 +169,21 @@ def stack_elevations(floors) -> dict:
     return {f.pk: int(e or 0) for f, e in zip(floors, elev, strict=True)}
 
 
+def ground_floor(floors):
+    """The ground level of ``floors`` (one stack's, in order, lowest first):
+    the one at elevation 0 (set, or worked out as ``stack_elevations``
+    does), else the lowest whose ``floor_order`` is 0 or more (not a
+    basement), else the top one. None with no floors."""
+    floors = list(floors)
+    if not floors:
+        return None
+    elev = stack_elevations(floors)
+    at_zero = next((f for f in floors if elev.get(f.pk) == 0), None)
+    if at_zero is not None:
+        return at_zero
+    return next((f for f in floors if (f.floor_order or 0) >= 0), floors[-1])
+
+
 def floor_elevation(plan) -> int | None:
     """``plan``'s elevation: its own when set; on a floor of an aligned
     stack, computed from the floors of the stack; else None."""
