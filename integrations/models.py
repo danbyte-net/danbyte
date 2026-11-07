@@ -662,6 +662,25 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     #: double its inventory.
     sync_templates = models.BooleanField(default=False, db_default=False)
 
+    # ── Proxmox SDN ──────────────────────────────────────────────────────
+    #: A VNet with exactly two NICs on this source's VMs becomes a cable
+    #: between the interfaces of the devices those VMs are. Off by default:
+    #: it writes into the cabling, which is the operator's. A cable that is
+    #: already there is never changed; a disagreement is reported.
+    cables_from_vnets = models.BooleanField(default=False, db_default=False)
+    #: The zone a network plan proposes new VNets in.
+    vnet_zone = models.CharField(max_length=8, blank=True, default="", db_default="")
+    #: How a network plan names a VNet for a cable with none, e.g. ``c{n:04}``
+    #: (``n`` is the cable number). Used in the plan only, never written.
+    vnet_name_pattern = models.CharField(
+        max_length=32, blank=True, default="", db_default=""
+    )
+    #: Tags a network plan allocates to new VNets, e.g. ``1000-1999``. Blank
+    #: proposes no tag (a simple zone).
+    vnet_tag_range = models.CharField(
+        max_length=32, blank=True, default="", db_default=""
+    )
+
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
     # Everything the last run logged (bounded) - shown on the source page with
@@ -1049,6 +1068,10 @@ class VirtGuest(TimestampedModel):
     #: First pass that did not see this guest. Cleared the moment it comes
     #: back, so a hypervisor blip does not eat into the prune delay.
     missing_since = models.DateTimeField(null=True, blank=True)
+    #: The NICs the hypervisor reported on the last pass, as
+    #: ``[{key, name, mac, bridge, tag}]``. What a network plan compares
+    #: against: the VM interface keeps Danbyte's intent, this keeps the wire.
+    nics = models.JSONField(default=list, blank=True, db_default=[])
 
     class Meta:
         ordering = ["vmid", "ext_id"]
@@ -1158,6 +1181,12 @@ class VirtNetwork(TimestampedModel):
                   "to follow the virtual switch, then the sync source.",
     )
     created_vlan = models.BooleanField(default=False)
+    #: Proxmox SDN: the zone this VNet is in. Blank for a bridge or port group.
+    sdn_zone = models.CharField(max_length=8, blank=True, default="", db_default="")
+    #: The VNet's alias, as Proxmox reports it.
+    sdn_alias = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: The VNet's tag: a VLAN id in a vlan zone, a VNI in a vxlan/evpn zone.
+    sdn_tag = models.PositiveIntegerField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -1206,6 +1235,37 @@ class VirtNetworkLink(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.vm_interface_id} on {self.network_id}"
+
+
+class VirtCableLink(TimestampedModel):
+    """A cable the sync knows from a Proxmox SDN VNet.
+
+    ``created_cable`` marks cables the sync made itself, from a VNet with
+    exactly two NICs; an operator's cable that already matched is recorded
+    with it off. Sync bookkeeping, refreshed each pass, never operator data.
+    The sync never deletes or changes a cable through this row.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.ForeignKey(
+        VirtualizationSource, on_delete=models.CASCADE, related_name="cable_links"
+    )
+    cable = models.ForeignKey(
+        "api.Cable", on_delete=models.CASCADE, related_name="virt_cable_links"
+    )
+    vnet = models.CharField(max_length=8)
+    created_cable = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "cable"], name="uniq_virtcablelink_source_cable"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vnet} -> {self.cable_id}"
 
 
 class VirtNatLink(TimestampedModel):

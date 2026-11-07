@@ -287,6 +287,14 @@ function CableOverview({ cable: c }: { cable: Cable }) {
     { label: "Label", value: c.label || dash },
     { label: "Status", value: <StatusBadge status={c.status} /> },
     { label: "Type", value: c.type_display || dash },
+    ...(c.pve_vnet
+      ? [
+          {
+            label: "Proxmox VNet",
+            value: <span className="font-mono">{c.pve_vnet}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
   ]
 
   const physical: KvRow[] = [

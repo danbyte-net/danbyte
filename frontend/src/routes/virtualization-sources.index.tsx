@@ -423,6 +423,14 @@ export function SourceDialog({
   const [matchVlans, setMatchVlans] = useState(
     source?.match_existing_vlans ?? false
   )
+  const [cablesFromVnets, setCablesFromVnets] = useState(
+    source?.cables_from_vnets ?? false
+  )
+  const [vnetZone, setVnetZone] = useState(source?.vnet_zone ?? "")
+  const [vnetPattern, setVnetPattern] = useState(
+    source?.vnet_name_pattern ?? ""
+  )
+  const [vnetTags, setVnetTags] = useState(source?.vnet_tag_range ?? "")
   const [syncHosts, setSyncHosts] = useState(source?.sync_hosts ?? false)
   const [syncHostHw, setSyncHostHw] = useState(
     source?.sync_host_hardware ?? false
@@ -471,6 +479,14 @@ export function SourceDialog({
         sync_disks: syncDisks,
         sync_networks: syncNetworks,
         match_existing_vlans: matchVlans,
+        ...(kind === "proxmox"
+          ? {
+              cables_from_vnets: cablesFromVnets,
+              vnet_zone: vnetZone.trim(),
+              vnet_name_pattern: vnetPattern.trim(),
+              vnet_tag_range: vnetTags.trim(),
+            }
+          : {}),
         sync_hosts: syncHosts,
         sync_host_hardware: syncHostHw,
         sync_platforms: syncPlatforms,
@@ -631,6 +647,42 @@ export function SourceDialog({
                 checked={matchVlans}
                 onChange={setMatchVlans}
               />
+            )}
+            {syncNetworks && kind === "proxmox" && (
+              <FormCheckbox
+                label="Cables from VNets"
+                hint="A VNet with exactly two NICs on these VMs becomes a cable between the devices the VMs are. Existing cables are never changed."
+                checked={cablesFromVnets}
+                onChange={setCablesFromVnets}
+              />
+            )}
+            {kind === "proxmox" && (
+              <>
+                <FormText
+                  label="VNet zone"
+                  value={vnetZone}
+                  onChange={setVnetZone}
+                  mono
+                  placeholder="lab"
+                  info="The SDN zone the network plan proposes new VNets in."
+                />
+                <FormText
+                  label="VNet name pattern"
+                  value={vnetPattern}
+                  onChange={setVnetPattern}
+                  mono
+                  placeholder="c{n:04}"
+                  info="Names a VNet for a cable with none in the network plan; n is the cable number. The cable is not changed."
+                />
+                <FormText
+                  label="VNet tag range"
+                  value={vnetTags}
+                  onChange={setVnetTags}
+                  mono
+                  placeholder="1000-1999"
+                  info="Tags the network plan gives new VNets, lowest free first. Leave blank for a simple zone."
+                />
+              </>
             )}
             {spec.hosts && (
               <FormCheckbox

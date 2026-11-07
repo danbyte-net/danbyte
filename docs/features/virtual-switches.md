@@ -15,11 +15,14 @@ run from a VM all the way to a cabled port.
 | --- | --- |
 | **Name** | As the hypervisor knows it (`vSwitch0`, `vmbr0`, …). |
 | **Cluster** | The [cluster](clusters.md) it belongs to. |
-| **Kind** | Standard switch · Distributed switch · Linux bridge · Open vSwitch · Bond. Read from the hypervisor where it says (vCenter reports the port-group type), otherwise inferred from the connector. |
+| **Kind** | Standard switch · Distributed switch · Linux bridge · Open vSwitch · Bond · SDN zone. Read from the hypervisor where it says (vCenter reports the port-group type, Proxmox its [SDN zones](virt-proxmox.md#sdn-zones-and-vnets)), otherwise inferred from the connector. |
 | **Uplinks** | The physical port names the hypervisor reports. |
 
 Its detail page has a **Networks** tab - the port groups / bridges on the
-switch, the VLAN each maps to, and the VMs attached to them.
+switch, the VLAN each maps to, and the VMs attached to them. On an SDN zone
+these are its VNets; the network API (`/api/virt-networks/`) also returns
+each VNet's `sdn_zone`, `sdn_alias` and `sdn_tag` (blank or null on any other
+network).
 
 The **Virtual switches** list shows each switch's **VRF** next to its cluster.
 Tick rows - with the `change` grant on virtual switches - for the bulk bar:

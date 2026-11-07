@@ -169,6 +169,27 @@ Full taxonomy: [Interface & cable types](type-taxonomy.md).
 | **Length** | a number plus a unit (m / cm / ft / in). |
 | **Color** | the literal color of the physical cable - shown on the [topology map](../features/topology.md) and the cable page's path strip. |
 
+### Proxmox VNet
+
+A cable between two devices that are Proxmox VMs (a virtual router with **Is
+router** set on its VM) can name the **SDN VNet** that carries it - field
+**Proxmox VNet**, `pve_vnet` in the API. It is a VNet id: 1 to 8 characters, a
+lowercase letter followed by lowercase letters or digits (`c0042`). Leave it
+blank for any other cable. The cable list filters on `?pve_vnet=<id>`.
+
+The VNet is not unique: two cables naming the same one are allowed and are
+reported as duplicates in the source's [network
+plan](../features/virt-proxmox.md#network-plan), which is what reads this
+field. Danbyte never creates the VNet itself.
+
+Upgrading copies an interface custom field named `pve_vnet` onto the cable:
+when every end that has a value agrees, or only one end has one. A
+disagreement or a value that is not a VNet id is logged as a warning and the
+cable stays blank; the custom field itself is left in place.
+
+A Proxmox source can also make cables from VNets; see [cables from
+VNets](../features/virt-proxmox.md#cables-from-vnets).
+
 A cable's detail page draws its **end-to-end path** under the A/B boxes -
 every device and panel the run passes through as linked chips, with the
 pass-through ports shown `front ⇄ rear` and each cable segment labelled

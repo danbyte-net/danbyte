@@ -409,7 +409,8 @@ CABLE_TABLE = TableSpec(
         "fiber_count", "strands", "is_fiber", "a_terminations", "b_terminations",
         "tags", "custom_fields", "created_at", "updated_at",
     ),
-    cheap={"length": None, "length_unit": None, "length_source": None, "color": None},
+    cheap={"length": None, "length_unit": None, "length_source": None, "color": None,
+           "pve_vnet": None},
 )
 
 
