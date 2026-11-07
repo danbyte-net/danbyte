@@ -103,6 +103,8 @@ def fake_get(source, path):
         return NODE_NET_PVE1
     if path == "nodes/pve2/network":
         return []
+    if path.startswith("cluster/sdn/"):
+        return []  # no SDN configured
     raise AssertionError(f"unexpected path {path}")
 
 

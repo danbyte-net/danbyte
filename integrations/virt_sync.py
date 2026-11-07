@@ -410,8 +410,9 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     return 1
 
 
-def _sync_networks_proxmox(source, cluster, guest, cfg, now) -> int:
-    """Proxmox NIC bridges/tags → VirtualSwitch + VirtNetwork(→VLAN)."""
+def _sync_networks_proxmox(source, cluster, guest, cfg, now, sdn=None) -> int:
+    """Proxmox NIC bridges/tags → VirtualSwitch + VirtNetwork(→VLAN). A NIC
+    whose bridge is an SDN VNet links to that VNet's network instead."""
     if guest.vm is None or not cfg:
         return 0
     n = 0
@@ -420,11 +421,47 @@ def _sync_networks_proxmox(source, cluster, guest, cfg, now) -> int:
             continue
         parsed = _parse_net(str(value))
         iface_name = parsed["name"] or str(key)
+        if sdn is not None and parsed["bridge"] in sdn.vnets:
+            n += _link_vnet(sdn, cluster(), guest, iface_name, parsed["bridge"], now)
+            continue
         n += _link_network(
             source, cluster, guest, iface_name,
             parsed["bridge"], parsed["tag"], "", now,
         )
     return n
+
+
+def _link_vnet(sdn, cluster, guest, iface_name, vnet_id, now) -> int:
+    """Link a VM interface to the SDN VNet its NIC sits on."""
+    from api.models import VMInterface
+
+    from .models import VirtNetworkLink
+
+    vn = sdn.network(cluster, vnet_id)
+    iface = VMInterface.objects.filter(vm=guest.vm, name=iface_name).first()
+    if iface is not None:
+        VirtNetworkLink.objects.update_or_create(
+            network=vn, vm_interface=iface, defaults={"last_seen_at": now},
+        )
+    return 1
+
+
+def _sdn_post_pass(source, sdn, cluster_name, *, cluster_for, warnings, counts):
+    """After the guests: every VNet gets its row (an unused one too, for the
+    network plan), then the opt-in cables from VNets."""
+    from .models import VirtGuest
+    from .virt_sdn import cables_from_vnets
+
+    counts["sdn_zones"] = len(sdn.zones)
+    counts["sdn_vnets"] = len(sdn.vnets)
+    # Only once a guest has landed: a review-mode source with nothing
+    # accepted stays inert, as for bridges.
+    if sdn.vnets and VirtGuest.objects.filter(source=source, vm__isnull=False).exists():
+        cluster = cluster_for(cluster_name)
+        for vnet_id in sorted(sdn.vnets):
+            sdn.network(cluster, vnet_id)
+    if source.cables_from_vnets:
+        cables_from_vnets(source, sdn.vnets, sdn.now, warnings, counts)
 
 
 def _sync_proxmox_uplinks(source, cluster_name, nodes) -> int:
@@ -626,6 +663,19 @@ def sync_proxmox(source) -> dict:
         opts.get("tag-style") if isinstance(opts, dict) else ""
     )
 
+    # SDN zones and VNets (read-only). A token without SDN.Audit, or a
+    # release without SDN, skips this with a warning; the pass carries on.
+    sdn = None
+    extra_warnings = []
+    if source.sync_networks:
+        from .virt_sdn import SdnState, fetch_sdn
+
+        zones, vnets, sdn_warning = fetch_sdn(source, proxmox_get)
+        if sdn_warning:
+            extra_warnings.append(sdn_warning)
+        else:
+            sdn = SdnState(source, zones, vnets, now)
+
     # Hosts first: the VM pass links each guest to the Device of the same name,
     # and the uplink pass needs those Devices to hang bridge ports off.
     if source.sync_hosts:
@@ -633,9 +683,12 @@ def sync_proxmox(source) -> dict:
     result = _run_pass(source, cluster_name, resources, details, now, counts,
                        _sync_interfaces, _sync_ips,
                        sync_disks_fn=_sync_disks,
-                       sync_nets_fn=_sync_networks_proxmox,
+                       sync_nets_fn=partial(_sync_networks_proxmox, sdn=sdn),
                        sync_meta_fn=partial(_sync_meta_proxmox,
                                             tag_colors=tag_colors),
+                       extra_warnings=extra_warnings,
+                       post_fn=(partial(_sdn_post_pass, source, sdn, cluster_name)
+                                if sdn is not None else None),
                        label="proxmox")
     # Switches exist now - link their bridge uplinks to the node's real NICs.
     if source.sync_networks:
@@ -646,7 +699,7 @@ def sync_proxmox(source) -> dict:
 def _run_pass(source, cluster_name, resources, details, now, counts,
               sync_ifaces, sync_ips, *, sync_disks_fn=None,
               sync_nets_fn=None, sync_meta_fn=None, extra_warnings=None,
-              label) -> dict:
+              post_fn=None, label) -> dict:
     """Reconcile one fetched inventory against Danbyte - hypervisor-agnostic.
 
     ``resources`` is a list of normalised guest dicts (``vmid`` or ``ext_id``,
@@ -801,6 +854,9 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                     )
                 if sync_meta_fn:
                     sync_meta_fn(guest, d.get("meta"))
+
+        if post_fn is not None:
+            post_fn(cluster_for=cluster_for, warnings=warnings, counts=counts)
 
         # Guests gone from the hypervisor.
         grace = timedelta(days=source.auto_prune_after_days)
@@ -1873,6 +1929,14 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
     # "Not stated" is already the rule everything downstream follows, so this
     # one line turns off the blank-fill AND the drift row - rather than
     # leaving MTU showing as a disagreement nobody may accept.
+    # What the hypervisor said, kept on the tracking row for the network
+    # plan and cables from VNets: the wire, where the VM interface is intent.
+    from .virt_sdn import guest_nics
+
+    nics = guest_nics(cfg)
+    if guest.nics != nics:
+        guest.nics = nics
+        guest.save(update_fields=["nics"])
     keep_mtu = guest.source.sync_vm_interface_mtu
     # The build fields (slot, model, bridge) are kept for an intended VM,
     # whose page and rebuild read them; other VMs behave as before.

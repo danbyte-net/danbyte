@@ -4446,6 +4446,8 @@ export interface Cable {
   strands: Record<string, { label?: string; status?: string }>
   /** True when `type` is an optical-fibre medium (smf/mmf). */
   is_fiber: boolean
+  /** The Proxmox SDN VNet id this cable is ("" = none). */
+  pve_vnet?: string
   a_terminations: Termination[]
   b_terminations: Termination[]
   tags: Tag[]
@@ -4474,6 +4476,7 @@ export interface CableWritePayload {
   a: TerminationInput[]
   b: TerminationInput[]
   label?: string
+  pve_vnet?: string
   type?: string
   status_id?: string | null
   length?: string | null
@@ -6673,6 +6676,10 @@ export interface VirtNetwork {
   id: string
   name: string
   ext_key: string
+  /** Proxmox SDN: the VNet's zone ("" for a bridge or port group). */
+  sdn_zone?: string
+  sdn_alias?: string
+  sdn_tag?: number | null
   vlan: {
     id: string
     vlan_id: number
@@ -15115,6 +15122,15 @@ export interface VirtualizationSource {
   sync_vm_groups: boolean
   /** Import vApp templates as if they were VMs. Off by default. */
   sync_templates: boolean
+  /** Proxmox: a VNet with exactly two NICs on this source's VMs becomes a
+   * cable between their devices' interfaces. Off by default. */
+  cables_from_vnets: boolean
+  /** Proxmox: the zone the network plan proposes new VNets in. */
+  vnet_zone: string
+  /** Proxmox: names a VNet for a cable with none, e.g. `c{n:04}`. Plan only. */
+  vnet_name_pattern: string
+  /** Proxmox: tags the plan allocates to new VNets, e.g. `1000-1999`. */
+  vnet_tag_range: string
   /** Remove a VM that has vanished from the hypervisor. */
   auto_prune: boolean
   /** Days it must stay missing first. 0 = on the next sync. */
@@ -17412,4 +17428,57 @@ export interface ObjectReportRequest {
     /** The sensitivity label the report is marked with; null for none. */
     sensitivity_label?: string | null
   }
+}
+
+/** GET /api/virtualization-sources/<id>/network-plan/ - read-only. */
+export interface NetworkPlanRef {
+  id: string
+  name: string
+}
+export interface NetworkPlanCable {
+  id: string
+  numid: number | null
+  label: string
+}
+export interface NetworkPlanNic {
+  vm: NetworkPlanRef
+  device: NetworkPlanRef
+  interface: NetworkPlanRef
+  cable: NetworkPlanCable
+  nic: string | null
+  mac: string
+  current: string | null
+  wanted: string
+}
+export interface NetworkPlan {
+  source: NetworkPlanRef
+  device: NetworkPlanRef | null
+  zone: string
+  generated_at: string
+  counts: Record<string, number>
+  vnets_to_create: {
+    name: string
+    zone: string
+    tag: number | null
+    suggested: boolean
+    cables: NetworkPlanCable[]
+  }[]
+  nics_wrong_vnet: NetworkPlanNic[]
+  nics_without_vnet: NetworkPlanNic[]
+  unused_vnets: {
+    name: string
+    zone: string
+    tag: number | null
+    alias: string
+  }[]
+  duplicates: { vnet: string; cables: NetworkPlanCable[] }[]
+  conflicts: {
+    kind: string
+    detail: string
+    cable?: NetworkPlanCable
+    vm?: NetworkPlanRef
+    interface?: NetworkPlanRef
+  }[]
+  cables_skipped: { cable: NetworkPlanCable; reason: string }[]
+  notes: string[]
 }

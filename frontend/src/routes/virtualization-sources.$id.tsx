@@ -33,6 +33,7 @@ import { SyncStatusBadge } from "@/components/integrations/sync-status-badge"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { VirtChangesPanel } from "@/components/integrations/virt-changes-dialog"
+import { NetworkPlanPanel } from "@/components/integrations/network-plan-panel"
 import { SourceDialog } from "./virtualization-sources.index"
 
 export const Route = createFileRoute("/virtualization-sources/$id")({
@@ -90,7 +91,14 @@ function ApiVersion({ source }: { source: VirtualizationSource }) {
 function SourceDetailPage() {
   const { id } = Route.useParams()
   const [tab, setTab] = useUrlTab<
-    "overview" | "review" | "vms" | "hosts" | "placement" | "skipped" | "log"
+    | "overview"
+    | "review"
+    | "vms"
+    | "hosts"
+    | "plan"
+    | "placement"
+    | "skipped"
+    | "log"
   >("overview")
 
   const query = useQuery({
@@ -177,9 +185,7 @@ function SourceDetailPage() {
       const name = [r.product, r.version].filter(Boolean).join(" ")
       // Cloud Director exposes no hypervisor hosts to an org account, so a
       // "0/0 nodes online" line would report a problem that is not one.
-      const parts = r.nodes
-        ? [`${r.online_nodes}/${r.nodes} nodes online`]
-        : []
+      const parts = r.nodes ? [`${r.online_nodes}/${r.nodes} nodes online`] : []
       if (r.vms !== undefined) parts.push(`${r.vms} VMs`)
       const summary = parts.length ? `, ${parts.join(", ")}` : ""
       toast.success(`Connected - ${name}${summary}`, {
@@ -236,13 +242,29 @@ function SourceDetailPage() {
   const imports: KvRow[] = [
     ...(cloudDirector
       ? []
-      : [
-          { label: "Disks", value: source.sync_disks ? "Yes" : "No" },
-        ]),
+      : [{ label: "Disks", value: source.sync_disks ? "Yes" : "No" }]),
     {
       label: "Switches & networks",
       value: source.sync_networks ? "Yes" : "No",
     },
+    ...(source.kind === "proxmox"
+      ? [
+          {
+            label: "Cables from VNets",
+            value: source.cables_from_vnets ? "Yes" : "No",
+          },
+          { label: "VNet zone", value: source.vnet_zone || dash },
+          {
+            label: "VNet names",
+            value: source.vnet_name_pattern ? (
+              <span className="font-mono">{source.vnet_name_pattern}</span>
+            ) : (
+              dash
+            ),
+          },
+          { label: "VNet tags", value: source.vnet_tag_range || dash },
+        ]
+      : []),
     ...(cloudDirector
       ? []
       : [
@@ -360,6 +382,9 @@ function SourceDetailPage() {
         },
         { value: "vms", label: "Virtual machines", count: vmCount },
         { value: "hosts", label: "Hosts", count: hostCount },
+        ...(source.kind === "proxmox"
+          ? [{ value: "plan", label: "Network plan" }]
+          : []),
         {
           value: "placement",
           label: "Placement",
@@ -395,6 +420,12 @@ function SourceDetailPage() {
       <DetailTab value="hosts">
         <SourceHosts sourceId={id} />
       </DetailTab>
+
+      {source.kind === "proxmox" && (
+        <DetailTab value="plan">
+          <NetworkPlanPanel source={source} />
+        </DetailTab>
+      )}
 
       <DetailTab value="placement">
         <PlacementRules source={source} />

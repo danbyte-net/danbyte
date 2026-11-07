@@ -6500,7 +6500,7 @@ class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusS
         model = Cable
         fields = ["id", "numid", "label", "type", "type_display", "status", "status_id",
                   "length", "length_unit", "length_source", "color", "description",
-                  "fiber_count", "strands", "is_fiber",
+                  "fiber_count", "strands", "is_fiber", "pve_vnet",
                   "a_terminations", "b_terminations", "a", "b",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "is_fiber", "length_source",

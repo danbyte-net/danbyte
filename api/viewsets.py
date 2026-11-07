@@ -5726,6 +5726,9 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
             feed_id = self.request.query_params.get("power_feed")
             if feed_id:
                 qs = qs.filter(terminations__power_feed_id=feed_id)
+            vnet = self.request.query_params.get("pve_vnet")
+            if vnet is not None and vnet != "":
+                qs = qs.filter(pve_vnet=vnet.strip())
         return qs.distinct()
 
     def _assert_write_in_site_scope(self, response, action):

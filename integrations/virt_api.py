@@ -66,7 +66,8 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
     class Meta:
         model = VirtNetwork
         fields = ["id", "name", "ext_key", "vlan", "vswitch", "vswitch_name",
-                  "vrf", "vrf_id", "vms", "last_seen_at"]
+                  "vrf", "vrf_id", "vms", "sdn_zone", "sdn_alias", "sdn_tag",
+                  "last_seen_at"]
         # Everything else mirrors the hypervisor; the VRF is Danbyte's call.
         read_only_fields = [f for f in fields if f != "vrf_id"]
 

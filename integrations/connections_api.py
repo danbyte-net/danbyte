@@ -327,6 +327,48 @@ class VirtualizationSourceSerializer(
             )
         return value
 
+    def validate_vnet_zone(self, value):
+        from api.pve_vnet import is_pve_vnet
+
+        value = (value or "").strip()
+        if value and not is_pve_vnet(value):
+            raise serializers.ValidationError(
+                "A zone id is 1-8 characters: a lowercase letter, then lowercase "
+                "letters or digits."
+            )
+        return value
+
+    def validate_vnet_name_pattern(self, value):
+        import re
+
+        from api.pve_vnet import is_pve_vnet
+
+        value = (value or "").strip()
+        if not value:
+            return value
+        if not re.fullmatch(r"[a-z0-9]*\{n(?::0?\d{1,2}d?)?\}[a-z0-9]*", value):
+            raise serializers.ValidationError(
+                "Use letters and digits around one {n} (the cable number), "
+                "e.g. c{n:04}."
+            )
+        sample = value.format(n=1)
+        if not is_pve_vnet(sample):
+            raise serializers.ValidationError(
+                f"This gives {sample!r} for cable 1, which is not a VNet id "
+                "(1-8 characters, starting with a lowercase letter)."
+            )
+        return value
+
+    def validate_vnet_tag_range(self, value):
+        from .network_plan import parse_tag_range
+
+        value = (value or "").strip()
+        if value and parse_tag_range(value) is None:
+            raise serializers.ValidationError(
+                "Give a range like 1000-1999 (low first), or leave it blank."
+            )
+        return value
+
     def validate_sync_allowed_networks(self, value):
         import ipaddress
 
@@ -356,6 +398,8 @@ class VirtualizationSourceSerializer(
                   "sync_vm_interface_mtu", "skip_offline_vms",
                   "api_version", "api_version_used", "api_version_tested",
                   "sync_nat", "sync_vm_groups", "sync_templates",
+                  "cables_from_vnets", "vnet_zone", "vnet_name_pattern",
+                  "vnet_tag_range",
                   "auto_prune", "auto_prune_after_days",
                   "sync_allowed_networks",
                   *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
@@ -368,6 +412,16 @@ class VirtualizationSourceSerializer(
                             "last_sync_log",
                             "last_sync_error", "created_at", "updated_at",
                             *AddressPlacementSerializerMixin.PLACEMENT_READ_ONLY]
+
+
+def _is_uuid(value) -> bool:
+    import uuid
+
+    try:
+        uuid.UUID(str(value))
+    except ValueError:
+        return False
+    return True
 
 
 class VirtualizationSourceViewSet(BulkEditMixin, IntegrationToggleMixin, TenantScopedViewSet):
@@ -551,6 +605,45 @@ class VirtualizationSourceViewSet(BulkEditMixin, IntegrationToggleMixin, TenantS
             "folder": names("containerName"),
             "host": [],
         }
+
+    @action(detail=True, methods=["get"], url_path="network-plan")
+    def network_plan(self, request, pk=None):
+        """What Proxmox SDN should look like, from the cables between this
+        source's VMs - read-only (see :mod:`integrations.network_plan`).
+
+        ``?device=<id>`` scopes it to that device's VM and its cable peers;
+        ``?format=json`` answers with a download.
+        """
+        from rest_framework.exceptions import ValidationError
+
+        from api.models import Device
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        from .network_plan import build_plan
+
+        source = self.get_object()
+        if source.kind != "proxmox":
+            raise ValidationError({"detail": "A network plan is for Proxmox sources."})
+        tenant = _get_active_tenant(request)
+        device = None
+        device_id = request.query_params.get("device")
+        if device_id:
+            device = rbac.restrict_queryset(
+                Device.objects.filter(tenant=tenant), request.user, tenant,
+                "device", "view",
+            ).filter(pk=device_id).first() if _is_uuid(device_id) else None
+            if device is None:
+                raise ValidationError({"device": "Unknown device."})
+        plan = build_plan(source, user=request.user, tenant=tenant, device=device)
+        resp = Response(plan)
+        if request.query_params.get("format") == "json":
+            stem = f"network-plan-{source.name}"
+            if device is not None:
+                stem += f"-{device.name}"
+            safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in stem)
+            resp["Content-Disposition"] = f'attachment; filename="{safe}.json"'
+        return resp
 
     @action(detail=True, methods=["post"])
     def sync(self, request, pk=None):

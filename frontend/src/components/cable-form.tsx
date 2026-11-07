@@ -126,6 +126,7 @@ export function CableForm({
     cable ? toInputs(cable.b_terminations) : (initialB ?? [])
   )
   const [label, setLabel] = useState(cable?.label ?? "")
+  const [pveVnet, setPveVnet] = useState(cable?.pve_vnet ?? "")
   const [type, setType] = useState(cable?.type ?? "")
   const [statusId, setStatusId] = useState<string | null>(
     cable?.status?.id ?? null
@@ -155,6 +156,7 @@ export function CableForm({
     setA(toInputs(cable.a_terminations))
     setB(toInputs(cable.b_terminations))
     setLabel(cable.label)
+    setPveVnet(cable.pve_vnet ?? "")
     setType(cable.type)
     setStatusId(cable.status?.id ?? null)
     setLength(cable.length ?? "")
@@ -209,6 +211,7 @@ export function CableForm({
         a,
         b,
         label: label.trim(),
+        pve_vnet: pveVnet.trim(),
         ...shared(),
       }
       return saveObject<Cable>({
@@ -230,6 +233,7 @@ export function CableForm({
       // its next free port so a run of ports is one keystroke per cable.
       setAdded((prev) => [...prev, saved])
       setLabel("")
+      setPveVnet("")
       reset()
       const nextA = await advanceEnd(saved.a_terminations)
       const nextB = await advanceEnd(
@@ -382,6 +386,18 @@ export function CableForm({
             value={label}
             onChange={setLabel}
             error={fieldErrors.label}
+          />
+        )}
+        {/* One VNet is one cable, so it has no place on many either. */}
+        {!bulk && (
+          <FormText
+            label="Proxmox VNet"
+            value={pveVnet}
+            onChange={setPveVnet}
+            mono
+            placeholder="c0042"
+            info="The SDN VNet this cable is, for a cable between VM-backed devices: up to 8 lowercase letters and digits, starting with a letter. A Proxmox source's network plan reads it."
+            error={fieldErrors.pve_vnet}
           />
         )}
 

@@ -38,6 +38,7 @@ from .software_versions import validate_version_pattern
 from .package_ids import validate_cpe, validate_purl
 from .spdx import validate_license_expression
 from .speed import normalize_speed
+from .pve_vnet import validate_pve_vnet
 from core.models import (
     CustomFieldsMixin,
     Organization,
@@ -4782,6 +4783,14 @@ class Cable(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # {"7": {"label": "Cust-A pri", "status": "in-use"}}. Colours are DERIVED
     # from position + the tenant's palette, never stored. No entry = un-annotated.
     strands = models.JSONField(default=dict, blank=True)
+    #: The Proxmox SDN VNet this cable is, for a cable between two VM-backed
+    #: devices: at most 8 characters, a lowercase letter then letters and
+    #: digits. Read by a source's network plan; Danbyte never creates it.
+    pve_vnet = models.CharField(
+        max_length=8, blank=True, default="", db_default="",
+        validators=[validate_pve_vnet],
+        help_text="Proxmox SDN VNet id, e.g. c0042.",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -5661,6 +5670,7 @@ class VirtualSwitch(TimestampedModel):
         ("linux-bridge", "Linux bridge"),
         ("ovs", "Open vSwitch"),
         ("bond", "Bond"),
+        ("sdn-zone", "SDN zone"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
