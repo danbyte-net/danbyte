@@ -144,6 +144,29 @@ class LinkPeerScopeTests(_TwoSites):
         out = render_device_config(t, self.rtr_a1, self.tenant, admin)
         self.assertIn("e1=SecretRouterB;", out)
 
+    def test_export_template_reads_the_far_ports_mac_and_mtu(self):
+        from api.export_templates import render_device_config
+
+        far = Interface.objects.get(device=self.secret, name__isnull=False,
+                                    terminations__isnull=False)
+        far.mac_address = "52:54:00:12:34:56"
+        far.mtu = 9000
+        far.save()
+        t = ExportTemplate.objects.create(
+            tenant=self.tenant, name="macs", object_type="device",
+            template_code=(
+                "{% for i in interfaces %}{% if i.link_peer %}{{ i.name }}="
+                "{{ i.link_peer.mac_address }}/{{ i.link_peer.mtu }};{% endif %}{% endfor %}"
+            ),
+        )
+        admin = User.objects.create_superuser("root2", "r2@example.com", "x")
+        out = render_device_config(t, self.rtr_a1, self.tenant, admin)
+        self.assertIn(f"e1={far.mac_address.upper()}/9000;".lower(), out.lower())
+        for label in self._viewers():
+            with self.subTest(label):
+                out = render_device_config(t, self.rtr_a1, self.tenant, self.user)
+                self.assertNotIn("52:54:00", out.lower())
+
     def _report_html(self):
         seen = {}
 

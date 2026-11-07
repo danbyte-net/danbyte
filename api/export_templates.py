@@ -488,8 +488,9 @@ def safe_mime_type(declared: str | None) -> str:
 def link_peer_of(iface, visible=None) -> dict | None:
     """The far end of ``iface``'s cable, as a template may read it.
 
-    ``{"device", "interface", "description", "custom_fields"}`` - the peer's
-    name, its port, and its own fields (a ``frr_name`` custom field, say), or
+    ``{"device", "interface", "description", "mac_address", "mtu",
+    "custom_fields"}`` - the peer's name, its port, the port's MAC and MTU,
+    and its own fields (a ``frr_name`` custom field, say), or
     ``None`` when the port is uncabled or the cable ends off-device. Read-only
     by construction: it is a plain dict, so a template cannot reach the peer
     row or anything hanging off it. ``visible`` is the device ids the reader
@@ -506,12 +507,14 @@ def link_peer_of(iface, visible=None) -> dict | None:
             if visible is not None and peer.device_id not in visible:
                 return {
                     "device": "", "interface": "", "description": "",
-                    "custom_fields": {}, "hidden": True,
+                    "mac_address": "", "mtu": None, "custom_fields": {}, "hidden": True,
                 }
             return {
                 "device": peer.device.name,
                 "interface": peer.name,
                 "description": peer.description or "",
+                "mac_address": peer.mac_address or "",
+                "mtu": peer.mtu,
                 "custom_fields": dict(peer.custom_fields or {}),
             }
     return None

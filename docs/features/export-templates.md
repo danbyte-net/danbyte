@@ -64,7 +64,7 @@ with a richer context:
 |---|---|
 | `device` | The device itself - `device.name`, `device.site`, `device.platform`, `device.custom_fields`, … |
 | `config_context` | The merged [config context](config-contexts.md) for the device. |
-| `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, custom_fields}`, or `None` on an uncabled port. A far end on a device the reader may not view names nothing: every field is empty and `hidden` is true. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
+| `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, mac_address, mtu, custom_fields}` (the far port's own MAC and MTU), or `None` on an uncabled port. A far end on a device the reader may not view names nothing: every field is empty and `hidden` is true. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
 | `ip_addresses` | Every address assigned to the device; `assigned_interface_id` says where. |
 | `routing` | What the device routes with - VRFs, static routes, policy rules, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
 | `tunnels` | Every tunnel end on the device, with its far end(s) resolved. See [Tunnels](#tunnels). |
