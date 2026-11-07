@@ -477,11 +477,12 @@ opens its panel: the location's type and code, how many **sub-locations,
 rooms, racks and devices** are in it and under it (those you may view), and
 its **floor plans** - the floor plans of the location and of the locations
 inside it, then the site's [site-wide plans](floor-plans.md#site-wide-floor-plans).
-**Open floor plan** opens the first floor of the location's own floor plan
-(else of the site-wide one), **Open location** its page. An outline's
+**Open floor plan** opens the ground level of the location's own floor plan
+(else of the site-wide one): the floor at elevation 0, else the lowest one
+that is not a basement. **Open location** opens its page. An outline's
 **Opens** (in its inspector, from any floor plan, snapshot or live view you
 may view) replaces that: **Open floor plan** then opens the plan it names -
-unless you may not view it, when the location's first floor stays.
+unless you may not view it, when the location's ground level stays.
 
 Outlines are listed in the **Objects** sidebar and found by **Find on map**,
 by label, location name or code. **Display → Layers → Outlines** hides them
@@ -531,7 +532,9 @@ fetches tiles for this either.
 A floor plan [made from the map](#new-floor-plan-from-this-view) keeps the
 box it spans. The map draws each one you may view as a faint dashed
 rectangle, named on hover (the floor plan and the floor); a click opens the
-plan. **Display → Layers → Floor plans** turns them on and off. A plan
+plan. The levels of an [aligned floor plan](floor-plans.md#building-levels)
+share one box and are drawn once: named after the floor plan, listing its
+levels on hover, and opening its ground level. **Display → Layers → Floor plans** turns them on and off. A plan
 whose box was [expanded](floor-plans.md#expand) shows its new box. Plans of
 sites hidden in the sidebar are hidden with them.
 
@@ -641,14 +644,18 @@ carries `display_label` and `display_color`, as the map draws them, and
 `opens` (`id`, `name`, `stack_name`, `kind`) - `null` with `opens_hidden`
 when you may not view it.
 `GET /api/site-map-outlines/<id>/drilldown/` returns the panel's counts,
-floor plans and `open_floor_id` (the outline's Opens target when it has one
-you may view).
+floor plans (each with `first_floor_id`, its ground level) and
+`open_floor_id` (the outline's Opens target when it has one you may view,
+else the first plan's ground level).
 
 `POST /api/floor-plans/from-map/` makes a floor plan from a box of the map;
 see [its API](floor-plans.md#plans-made-from-the-site-map).
 `plan_footprints` in `GET /api/site-map/` lists the floor plans with a geo
-anchor that you may view: `{id, name, stack, site_id, bbox}`, `bbox` being
-`[south, west, north, east]`.
+anchor that you may view: `{id, name, stack, site_id, bbox, levels}`,
+`bbox` being `[south, west, north, east]`. An aligned floor plan is one
+entry: `id` is its ground level, `name` the floor plan's and `levels` its
+floors' names, lowest first; any other floor is an entry of its own, with
+`levels` holding its name.
 
 `GET /api/site-map/cables/` returns every cable with two placeable ends. An
 end carries the point it draws at, its `device_id` and its `site_id` - a

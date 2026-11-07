@@ -261,11 +261,15 @@ class SiteMapOutlineViewSet(TenantScopedViewSet):
             visible(FloorPlanStack.objects.filter(tenant=tenant).filter(stacks_q), "floorplan")
             .select_related("location")
         )
+        from .floor_stacks import ground_floor
+
         floors: dict = {}
         for f in visible(
             FloorPlan.objects.filter(tenant=tenant, stack__in=stacks), "floorplan"
-        ).order_by("floor_order", "name", "pk").values("pk", "stack_id"):
-            floors.setdefault(f["stack_id"], []).append(f["pk"])
+        ).order_by("floor_order", "name", "pk").only(
+            "pk", "stack_id", "floor_order", "elevation_mm", "ceiling_mm", "slab_mm"
+        ):
+            floors.setdefault(f.stack_id, []).append(f)
 
         def rank(s):
             # The location's own floor plans first (its own before those of
@@ -276,15 +280,18 @@ class SiteMapOutlineViewSet(TenantScopedViewSet):
 
         plans = []
         for s in sorted(stacks, key=rank):
-            ids_ = floors.get(s.pk, [])
+            rows = floors.get(s.pk, [])
+            # The ground level, not the lowest floor: a basement hides the
+            # map by default.
+            ground = ground_floor(rows)
             plans.append({
                 "id": str(s.pk),
                 "name": s.name,
                 "location": {"id": str(s.location_id), "name": s.location.name}
                 if s.location_id else None,
                 "site_wide": s.location_id is None,
-                "floor_count": len(ids_),
-                "first_floor_id": str(ids_[0]) if ids_ else None,
+                "floor_count": len(rows),
+                "first_floor_id": str(ground.pk) if ground else None,
             })
         open_floor = next((p["first_floor_id"] for p in plans if p["first_floor_id"]), None)
         # The outline's own Opens target, when the reader may view it, wins.

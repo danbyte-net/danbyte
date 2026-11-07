@@ -130,6 +130,7 @@ def footprint(plan) -> dict:
         "stack": plan.stack.name if plan.stack_id else "",
         "site_id": str(plan.site_id) if plan.site_id else None,
         "bbox": [s, w, n, e],
+        "levels": [plan.name],
     }
 
 

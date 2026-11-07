@@ -1045,6 +1045,11 @@ aligned has no building: each of its floors has a map of its own.
 stands on it, through the levels' alignment - for drawing the next floor
 over the last.
 
+**On the Site map.** An aligned floor plan made from the map is one
+[footprint](site-map.md#floor-plan-footprints), named after the floor plan
+and listing its levels; a click opens the ground level. An outline's
+**Open floor plan** opens the ground level too.
+
 **Align floors…** (the floor plan's menu, when it has two levels or more)
 lines up floors drawn before they were aligned: pick the **Level** to move
 and the level it lies **Over**, then nudge it with the arrows (or the arrow
@@ -1126,7 +1131,7 @@ Floor plans are `/api/floor-plan-stacks/`; their floors stay
 | Call | Purpose |
 |---|---|
 | `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=` (its site-wide floor plans and those of its locations), `?site_wide=1`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `site`, `location` (null when site-wide), `aligned`, `floors` (id, name, `floor_order`, location id or null, `elevation_mm`, `elevation` - set, else computed on an aligned floor plan, else null - `ceiling_mm`, `slab_mm`, grid size, `cell_mm` and `align_dx`/`align_dy`/`align_rot`; the floors you may view, in order), `floor_count` and `last_edited`. |
-| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `site_id`, `location_id` (null: the whole site), `aligned`, `tag_ids`. `site_id` is required on create unless `location_id` gives it, and a location must be at that site; the site cannot change afterwards. A delete takes every floor with it and needs delete on each. |
+| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `site_id`, `location_id` (null: the whole site), `aligned`, `tag_ids`. `site_id` is required on create unless `location_id` gives it, and a location must be at that site; the site cannot change afterwards. Giving a floor plan a location gives it to every floor that has none (a plan made from the Site map, say); a floor whose location is set and outside the new one is refused. A delete takes every floor with it and needs delete on each. |
 | `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?, "below"?, "same_footprint"?, "copy_walls"?, "copy_background"?}`. `position` is its place in the order (0 = lowest; default on top, or with `below` at the bottom, a basement with a negative order; floors put in by position keep the ground at 0); `copy_from`, a floor of this floor plan, lends its grid size, scale and layout (grid or free) - not what is drawn on it. `same_footprint` (needs `copy_from`) makes the floor plan aligned and the floor a level sharing the footprint, with `copy_walls` (the outer walls, openings cleared; needs wall add) and `copy_background`. Answers the new floor (201). |
 | `POST /api/floor-plan-stacks/<id>/reorder/` | `{"order": [every floor id, lowest first]}`. |
 | `POST /api/floor-plan-stacks/<id>/merge/` | `{"stacks": [ids]}` - floor plans at the same site. A name clash is a 400 with the clashes listed under `clashes`. |

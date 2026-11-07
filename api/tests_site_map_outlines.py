@@ -339,6 +339,27 @@ class DrilldownTests(_Base):
         self.assertTrue(body["floor_plans"][1]["site_wide"])
         self.assertEqual(body["open_floor_id"], str(self.ground.id))
 
+    def test_opens_the_ground_level_not_a_basement(self):
+        basement = FloorPlan.objects.create(
+            tenant=self.tenant, site=self.site, location=self.bldg, name="B1",
+            stack=self.own, floor_order=-10,
+        )
+        body = self.client.get(f"/api/site-map-outlines/{self.outline.id}/drilldown/").json()
+        self.assertEqual(body["floor_plans"][0]["first_floor_id"], str(self.ground.id))
+        self.assertEqual(body["open_floor_id"], str(self.ground.id))
+        # A floor set at elevation 0 is the ground, whatever its order.
+        FloorPlan.objects.filter(pk=self.ground.pk).update(elevation_mm=3000)
+        FloorPlan.objects.filter(pk=basement.pk).update(elevation_mm=0)
+        body = self.client.get(f"/api/site-map-outlines/{self.outline.id}/drilldown/").json()
+        self.assertEqual(body["open_floor_id"], str(basement.id))
+        # The outline's Opens still wins.
+        FloorPlan.objects.filter(pk=basement.pk).update(elevation_mm=None)
+        FloorPlan.objects.filter(pk=self.ground.pk).update(elevation_mm=None)
+        self.outline.opens = basement
+        self.outline.save()
+        body = self.client.get(f"/api/site-map-outlines/{self.outline.id}/drilldown/").json()
+        self.assertEqual(body["open_floor_id"], str(basement.id))
+
     def test_without_own_plan_opens_the_site_wide_one(self):
         o = SiteMapOutline.objects.create(
             tenant=self.tenant, site=self.site, location=self.floor, points=SQUARE

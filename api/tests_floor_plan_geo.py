@@ -516,7 +516,7 @@ class FootprintAndGpsTests(_Base):
         d = self.client.get("/api/site-map/").json()
         self.assertEqual(d["plan_footprints"], [{
             "id": str(self.plan.id), "name": "Campus", "stack": self.plan.stack.name,
-            "site_id": str(self.site.id), "bbox": BBOX,
+            "site_id": str(self.site.id), "bbox": BBOX, "levels": ["Campus"],
         }])
         elsewhere = self._user("elsewhere", [
             (["floorplan"], ["view"], [self.site_b]),
@@ -530,6 +530,33 @@ class FootprintAndGpsTests(_Base):
         ])
         self._login(local)
         self.assertEqual(len(self.client.get("/api/site-map/").json()["plan_footprints"]), 1)
+
+    def test_an_aligned_building_is_one_footprint(self):
+        stack = self.plan.stack
+        stack.aligned = True
+        stack.name = "Building A"
+        stack.save()
+        FloorPlan.objects.filter(pk=self.plan.pk).update(name="Ground", floor_order=0)
+        for name, order in (("B1", -10), ("1", 10), ("2", 20)):
+            FloorPlan.objects.create(
+                tenant=self.tenant, site=self.site, stack=stack, name=name,
+                floor_order=order, geo_bbox=BBOX,
+            )
+        # A loose floor with the same box keeps its own footprint.
+        loose = FloorPlan.objects.create(tenant=self.tenant, site=self.site, name="Yard",
+                                         geo_bbox=BBOX)
+        rows = self.client.get("/api/site-map/").json()["plan_footprints"]
+        self.assertEqual(len(rows), 2)
+        building = next(r for r in rows if r["name"] == "Building A")
+        self.assertEqual(building["id"], str(self.plan.id))
+        self.assertEqual(building["levels"], ["B1", "Ground", "1", "2"])
+        self.assertEqual(building["bbox"], BBOX)
+        self.assertEqual(next(r for r in rows if r["id"] == str(loose.id))["levels"],
+                         ["Yard"])
+        # Unaligned, every level is drawn again.
+        stack.aligned = False
+        stack.save()
+        self.assertEqual(len(self.client.get("/api/site-map/").json()["plan_footprints"]), 5)
 
     def test_place_at_gps_position(self):
         inside = Device.objects.create(

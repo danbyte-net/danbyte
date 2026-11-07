@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -187,6 +188,9 @@ function PlanFromMapForm({
     <>
       <DialogHeader>
         <DialogTitle>New floor plan from this view</DialogTitle>
+        <DialogDescription className="sr-only">
+          Make a floor plan of the map area in view.
+        </DialogDescription>
       </DialogHeader>
       <div className="grid gap-3">
         <Field label="Name" required error={nameError}>

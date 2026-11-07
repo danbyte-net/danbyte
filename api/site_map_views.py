@@ -152,11 +152,16 @@ def site_map(request):
     # floorplan_link tiles).
     # Plans made from the Site map keep the box they span: the map draws
     # it as the plan's footprint (api/floor_plan_geo.py).
+    # The levels of an aligned floor plan (a building) share one box: they
+    # make one footprint, named after the floor plan, that opens its ground
+    # level. Other floors keep a footprint each.
     from .floor_plan_geo import footprint, has_anchor
+    from .floor_stacks import ground_floor
 
     plans_by_site: dict = {}
     plan_counts: dict = {}
     plan_footprints: list = []
+    buildings: dict = {}
     for fp in (
         rbac.restrict_queryset(
             FloorPlan.objects.filter(tenant=tenant),
@@ -166,7 +171,13 @@ def site_map(request):
         .order_by("name")
     ):
         if has_anchor(fp):
-            plan_footprints.append(footprint(fp))
+            if fp.stack_id and fp.stack.aligned:
+                if fp.stack_id not in buildings:
+                    buildings[fp.stack_id] = []
+                    plan_footprints.append(fp.stack_id)
+                buildings[fp.stack_id].append(fp)
+            else:
+                plan_footprints.append(footprint(fp))
         site_id = fp.site_id or (fp.location.site_id if fp.location_id else None)
         plans_by_site.setdefault(site_id, [])
         plan_counts[site_id] = plan_counts.get(site_id, 0) + 1
@@ -174,6 +185,17 @@ def site_map(request):
             plans_by_site[site_id].append(
                 {"id": str(fp.id), "name": fp.name}
             )
+
+    for i, entry in enumerate(plan_footprints):
+        if not isinstance(entry, dict):
+            levels = sorted(buildings[entry],
+                            key=lambda f: (f.floor_order, f.name, str(f.pk)))
+            ground = ground_floor(levels)
+            plan_footprints[i] = {
+                **footprint(ground),
+                "name": ground.stack.name,
+                "levels": [f.name for f in levels],
+            }
 
     sites = [
         {

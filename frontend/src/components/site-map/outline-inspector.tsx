@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -260,6 +261,9 @@ export function OutlineCreateDialog({
       <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>New outline</DialogTitle>
+          <DialogDescription className="sr-only">
+            Name the building outline drawn on the map.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <FormCombobox
