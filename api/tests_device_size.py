@@ -166,5 +166,8 @@ class MigrationTests(TestCase):
         self.assertNotIn("width_mm", _columns())
         MigrationExecutor(connection).migrate([AFTER])
         self.assertTrue({"width_mm", "height_mm", "depth_mm"} <= _columns())
+        # Back to the latest state: the model has columns added after AFTER.
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
         dev.refresh_from_db()
         self.assertIsNone(dev.width_mm)

@@ -507,7 +507,7 @@ cd /root
 curl -fLO https://github.com/danbyte-net/danbyte/releases/download/v<version>/danbyte-<version>-linux-x86_64.tar.gz
 curl -fLO https://github.com/danbyte-net/danbyte/releases/download/v<version>/danbyte-<version>-linux-x86_64.tar.gz.sha256
 sha256sum -c danbyte-<version>-linux-x86_64.tar.gz.sha256
-tar xzf danbyte-<version>-linux-x86_64.tar.gz && cd danbyte-<version>-linux-x86_64
+sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz && cd danbyte-<version>-linux-x86_64
 sudo ./install.sh --host-only
 ```
 

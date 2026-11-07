@@ -80,7 +80,7 @@ def host_sync_command() -> str:
         f"curl -fLO {DEFAULT_RELEASE_REPO}/releases/download/v{v}/{name}.tar.gz\n"
         f"curl -fLO {DEFAULT_RELEASE_REPO}/releases/download/v{v}/{name}.tar.gz.sha256\n"
         f"sha256sum -c {name}.tar.gz.sha256\n"
-        f"tar xzf {name}.tar.gz && cd {name}\n"
+        f"sudo tar xzf {name}.tar.gz && cd {name}\n"
         "sudo ./install.sh --host-only"
     )
 
