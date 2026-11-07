@@ -15,6 +15,7 @@ import uuid
 from contextvars import ContextVar
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from api.models import NumIdMixin, SecretBackedPSK
@@ -1084,6 +1085,55 @@ class Redistribution(models.Model):
         return self.source
 
 
+def _max_prefix_threshold_field():
+    """``maximum-prefix N <threshold>`` - percent of N that logs a warning."""
+    return models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(100)],
+    )
+
+
+def _max_prefix_restart_field():
+    """``maximum-prefix N restart <minutes>`` - re-open a dropped session."""
+    return models.PositiveIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+
+
+#: The settings that qualify ``maximum_prefix``; they mean nothing without it.
+MAX_PREFIX_DETAIL = (
+    "maximum_prefix_threshold", "maximum_prefix_restart", "maximum_prefix_warning_only",
+)
+
+
+def check_max_prefix_exclusive(obj) -> None:
+    """``restart`` and ``warning-only`` are alternatives on one line."""
+    if obj.maximum_prefix_restart is not None and obj.maximum_prefix_warning_only:
+        raise ValidationError({
+            "maximum_prefix_restart": "Restart and warning only can't both be set.",
+        })
+
+
+def settle_max_prefix(knobs: dict, depth: dict) -> dict:
+    """Resolved ``maximum_prefix`` details made printable: none of them
+    without a maximum, and where inheritance brought both ``restart`` and
+    ``warning-only`` the more specific one wins (``depth`` is how far up the
+    chain each value came from; lower is more specific)."""
+    if not knobs.get("maximum_prefix"):
+        for k in MAX_PREFIX_DETAIL:
+            knobs[k] = None
+        return knobs
+    if knobs.get("maximum_prefix_restart") is not None and knobs.get(
+        "maximum_prefix_warning_only"
+    ):
+        if depth.get("maximum_prefix_restart", 99) < depth.get(
+            "maximum_prefix_warning_only", 99
+        ):
+            knobs["maximum_prefix_warning_only"] = False
+        else:
+            knobs["maximum_prefix_restart"] = None
+    return knobs
+
+
 class _PeerKnobs(models.Model):
     """The per-neighbour settings a session and a peer group share. Nullable
     on purpose: on a session, null means "as the group says"; on a group,
@@ -1123,6 +1173,10 @@ class _PeerKnobs(models.Model):
     ttl_security_hops = models.PositiveSmallIntegerField(null=True, blank=True)
     #: ``neighbor X maximum-prefix N`` - the session drops past it.
     maximum_prefix = models.PositiveIntegerField(null=True, blank=True)
+    maximum_prefix_threshold = _max_prefix_threshold_field()
+    maximum_prefix_restart = _max_prefix_restart_field()
+    #: ``maximum-prefix N warning-only`` - log, keep the session up.
+    maximum_prefix_warning_only = models.BooleanField(null=True, blank=True)
     #: ``neighbor X allowas-in N`` - times the local AS may appear in a path.
     allowas_in = models.PositiveSmallIntegerField(null=True, blank=True)
     as_override = models.BooleanField(null=True, blank=True)
@@ -1140,13 +1194,14 @@ class _PeerKnobs(models.Model):
 
     def clean(self):
         self.address_families = validate_address_families(self.address_families)
+        check_max_prefix_exclusive(self)
 
 
 PEER_KNOBS = (
     "address_families", "import_policy", "export_policy", "bfd", "bfd_profile",
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
     "keepalive", "hold_time", "keychain", "default_originate",
-    "default_originate_policy", "maximum_prefix",
+    "default_originate_policy", "maximum_prefix", *MAX_PREFIX_DETAIL,
     "allowas_in", "as_override", "remove_private_as", "soft_reconfiguration",
     "capability_extended_nexthop", "ttl_security_hops",
 )
@@ -1332,16 +1387,19 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
         """The settings the box ends up with: session → peer group → instance."""
         group = self.peer_group if self.peer_group_id else None
         out = {}
+        depth = {}
         for f in PEER_KNOBS:
             own = getattr(self, f)
             unset = own in (None, "", []) or own == {}
             gv = getattr(group, f) if group is not None else None
             val = gv if unset else own
+            depth[f] = 1 if unset else 0
             if f == "bfd" and val is None:
                 val = self.instance.bfd
             if f == "bfd_profile" and val is None:
                 val = self.instance.bfd_profile
             out[f] = val
+        settle_max_prefix(out, depth)
         extra = dict(group.extra or {}) if group is not None else {}
         extra.update(self.extra or {})
         out["extra"] = extra
@@ -1382,6 +1440,7 @@ AF_KNOBS = (
     "default_originate", "default_originate_policy", "next_hop_self",
     "route_reflector_client", "soft_reconfiguration", "as_override",
     "remove_private_as", "send_community", "allowas_in", "maximum_prefix",
+    *MAX_PREFIX_DETAIL,
 )
 #: The AF knobs a neighbour-level field also carries (every one but the
 #: prefix lists, which exist per family only).
@@ -1443,6 +1502,9 @@ class BGPNeighborAF(models.Model):
     )
     allowas_in = models.PositiveSmallIntegerField(null=True, blank=True)
     maximum_prefix = models.PositiveIntegerField(null=True, blank=True)
+    maximum_prefix_threshold = _max_prefix_threshold_field()
+    maximum_prefix_restart = _max_prefix_restart_field()
+    maximum_prefix_warning_only = models.BooleanField(null=True, blank=True)
     extra = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -1481,6 +1543,27 @@ class BGPNeighborAF(models.Model):
             raise ValidationError(
                 {"session": "A family belongs to a session or to a peer group."}
             )
+        check_max_prefix_exclusive(self)
+        on = [k for k in MAX_PREFIX_DETAIL
+              if getattr(self, k) is not None and getattr(self, k) is not False]
+        if on and not self.maximum_prefix_in_effect():
+            raise ValidationError({k: "No maximum prefix applies to this family." for k in on})
+
+    def maximum_prefix_in_effect(self):
+        """The maximum this family gets from what is saved now: the row,
+        its neighbour, then the peer group's row and the peer group."""
+        if self.maximum_prefix:
+            return self.maximum_prefix
+        if self.peer_group_id:
+            return self.peer_group.maximum_prefix
+        session = self.session
+        if session.maximum_prefix:
+            return session.maximum_prefix
+        group = session.peer_group if session.peer_group_id else None
+        if group is None:
+            return None
+        grow = group.afs.filter(afi_safi=self.afi_safi).first()
+        return (grow.maximum_prefix if grow is not None else None) or group.maximum_prefix
 
 
 def _af_rows(parent) -> list:
@@ -1563,11 +1646,15 @@ def group_af_effective(row) -> dict:
     group's own fields - what a session that only names the group gets."""
     group = row.peer_group
     knobs = {}
+    depth = {}
     for k in AF_KNOBS:
         v = getattr(row, k)
+        depth[k] = 0
         if v in (None, "") and k in AF_NEIGHBOR_KNOBS:
             v = getattr(group, k)
+            depth[k] = 1
         knobs[k] = None if v == "" else v
+    settle_max_prefix(knobs, depth)
     return {"afi_safi": row.afi_safi, "activate": row.activate, **knobs,
             "extra": dict(row.extra or {})}
 
@@ -1586,6 +1673,7 @@ def group_effective_afs(group) -> list[dict]:
         for k in AF_KNOBS:
             v = getattr(group, k) if k in AF_NEIGHBOR_KNOBS else None
             knobs[k] = None if v == "" else v
+        settle_max_prefix(knobs, {})
         out.append({"afi_safi": afi, "activate": True, **knobs, "extra": {}})
     return out
 
@@ -1607,10 +1695,12 @@ def effective_afs(session) -> list[dict]:
         row_for_activate = srow if use_own else grow
         activate = row_for_activate.activate if row_for_activate is not None else True
         knobs = {}
+        depth = {}
         for k in AF_KNOBS:
             val = None
-            for src, field_level in ((srow, False), (session, True),
-                                     (grow, False), (group, True)):
+            for level, (src, field_level) in enumerate(
+                ((srow, False), (session, True), (grow, False), (group, True))
+            ):
                 if src is None:
                     continue
                 if field_level and k not in AF_NEIGHBOR_KNOBS:
@@ -1618,8 +1708,10 @@ def effective_afs(session) -> list[dict]:
                 v = getattr(src, k)
                 if v not in (None, ""):
                     val = v
+                    depth[k] = level
                     break
             knobs[k] = val
+        settle_max_prefix(knobs, depth)
         extra = {}
         for src in (grow, srow):
             if src is not None and src.extra:

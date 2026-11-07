@@ -6,6 +6,8 @@ also have plain serializers of their own for scripts and CSV.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
@@ -80,6 +82,7 @@ from .models import (
     RPKICache,
     StaticRoute,
     VTEPMembership,
+    check_max_prefix_exclusive,
     effective_afs,
     group_af_effective,
     link_remote_address,
@@ -1089,6 +1092,24 @@ class _PeerKnobFields(serializers.Serializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.messages) from exc
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        _check_max_prefix(attrs, self.instance)
+        return attrs
+
+
+def _check_max_prefix(attrs, instance) -> None:
+    """``restart`` and ``warning-only`` refused together, on the merged
+    row a partial update would leave."""
+    probe = SimpleNamespace(**{
+        k: attrs[k] if k in attrs else getattr(instance, k, None)
+        for k in ("maximum_prefix_restart", "maximum_prefix_warning_only")
+    })
+    try:
+        check_max_prefix_exclusive(probe)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError(exc.message_dict) from exc
+
 
 _KNOB_FIELDS = [
     "address_families", "import_policy", "import_policy_id",
@@ -1096,7 +1117,8 @@ _KNOB_FIELDS = [
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
     "keepalive", "hold_time", "keychain", "keychain_id", "extra",
     "default_originate", "default_originate_policy", "default_originate_policy_id",
-    "maximum_prefix", "allowas_in", "as_override",
+    "maximum_prefix", "maximum_prefix_threshold", "maximum_prefix_restart",
+    "maximum_prefix_warning_only", "allowas_in", "as_override",
     "remove_private_as", "soft_reconfiguration",
     "capability_extended_nexthop", "ttl_security_hops",
 ]
@@ -1201,6 +1223,13 @@ class BGPNeighborAFSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(
                 {"afi_safi": f"This neighbour already has {afi}."}
             )
+        names = {f.name for f in BGPNeighborAF._meta.concrete_fields}
+        probe = BGPNeighborAF(**{k: v for k, v in attrs.items() if k in names})
+        if self.instance is not None:
+            for f in BGPNeighborAF._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
         return attrs
 
     class Meta:
@@ -1214,7 +1243,8 @@ class BGPNeighborAFSerializer(NumIdModelSerializer):
                   "default_originate_policy_id", "next_hop_self",
                   "route_reflector_client", "soft_reconfiguration", "as_override",
                   "remove_private_as", "send_community", "allowas_in", "maximum_prefix",
-                  "extra", "effective"]
+                  "maximum_prefix_threshold", "maximum_prefix_restart",
+                  "maximum_prefix_warning_only", "extra", "effective"]
         read_only_fields = ["id"]
         validators = []
 

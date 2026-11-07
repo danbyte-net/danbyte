@@ -21,6 +21,7 @@ import { OpenLink } from "@/components/open-link"
 import { PanelRow, PanelSection, PanelShell } from "@/components/map-panel"
 import { Badge } from "@/components/ui/badge"
 import { CircuitPanel, ProviderNetworkPanel } from "../detail-panels"
+import { maxPrefixText } from "@/components/routing/bgp-bits"
 import { CHECK_LABELS, afShort, isisLevel } from "./routing-model"
 
 // The Routing tab's panels, in the shared map PanelShell: a router's
@@ -260,7 +261,7 @@ function SessionSection({ s, owner }: { s: RoutingSessionRow; owner: string }) {
     (af) =>
       af.import_policy?.id !== s.import_policy?.id ||
       af.export_policy?.id !== s.export_policy?.id ||
-      (af.maximum_prefix ?? null) !== (s.maximum_prefix ?? null)
+      maxPrefixText(af) !== maxPrefixText(s)
   )
   const timers =
     s.keepalive !== null || s.hold_time !== null
@@ -300,13 +301,13 @@ function SessionSection({ s, owner }: { s: RoutingSessionRow; owner: string }) {
           <PolicyLink to={af.import_policy} /> in ·{" "}
           <PolicyLink to={af.export_policy} /> out
           {af.maximum_prefix !== null && (
-            <span className="num"> · max {af.maximum_prefix}</span>
+            <span className="num"> · max {maxPrefixText(af)}</span>
           )}
         </PanelRow>
       ))}
       {s.maximum_prefix !== null && (
         <PanelRow label="Max prefixes">
-          <span className="num">{s.maximum_prefix}</span>
+          <span className="num">{maxPrefixText(s)}</span>
         </PanelRow>
       )}
       <PanelRow label="BFD">

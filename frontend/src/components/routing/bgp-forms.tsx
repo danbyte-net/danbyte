@@ -142,7 +142,7 @@ interface KnobState {
   holdTime: string
   keychainId: string | null
   defaultOriginate: string | null
-  maximumPrefix: string
+  maxPrefix: MaxPrefixState
   allowasIn: string
   asOverride: string | null
   removePrivateAs: string | null
@@ -167,7 +167,7 @@ function knobsFrom(k?: Partial<BGPPeerGroup> | Partial<BGPSession>): KnobState {
     holdTime: numText(k?.hold_time),
     keychainId: k?.keychain?.id ?? null,
     defaultOriginate: triFrom(k?.default_originate),
-    maximumPrefix: numText(k?.maximum_prefix),
+    maxPrefix: maxPrefixFrom(k),
     allowasIn: numText(k?.allowas_in),
     asOverride: triFrom(k?.as_override),
     removePrivateAs: triFrom(k?.remove_private_as),
@@ -193,7 +193,7 @@ function knobsPayload(k: KnobState) {
     hold_time: numOrNull(k.holdTime),
     keychain_id: k.keychainId,
     default_originate: triTo(k.defaultOriginate),
-    maximum_prefix: numOrNull(k.maximumPrefix),
+    ...maxPrefixPayload(k.maxPrefix),
     allowas_in: numOrNull(k.allowasIn),
     as_override: triTo(k.asOverride),
     remove_private_as: triTo(k.removePrivateAs),
@@ -203,6 +203,97 @@ function knobsPayload(k: KnobState) {
     capability_extended_nexthop: triTo(k.extendedNexthop),
     ttl_security_hops: numOrNull(k.ttlSecurityHops),
   }
+}
+
+export type MaxPrefixState = {
+  max: string
+  threshold: string
+  restart: string
+  warningOnly: string | null
+}
+
+export function maxPrefixFrom(k?: {
+  maximum_prefix?: number | null
+  maximum_prefix_threshold?: number | null
+  maximum_prefix_restart?: number | null
+  maximum_prefix_warning_only?: boolean | null
+}): MaxPrefixState {
+  return {
+    max: numText(k?.maximum_prefix),
+    threshold: numText(k?.maximum_prefix_threshold),
+    restart: numText(k?.maximum_prefix_restart),
+    warningOnly: triFrom(k?.maximum_prefix_warning_only),
+  }
+}
+
+export function maxPrefixPayload(m: MaxPrefixState) {
+  return {
+    maximum_prefix: numOrNull(m.max),
+    maximum_prefix_threshold: numOrNull(m.threshold),
+    maximum_prefix_restart: numOrNull(m.restart),
+    maximum_prefix_warning_only: triTo(m.warningOnly),
+  }
+}
+
+/** `maximum-prefix N [threshold] [restart M | warning-only]`, on a
+ * neighbour and on one of its address families. */
+export function MaxPrefixFields({
+  value,
+  onChange,
+  noneLabel,
+  errors,
+}: {
+  value: MaxPrefixState
+  onChange: (v: MaxPrefixState) => void
+  noneLabel: string
+  errors: Record<string, string | undefined>
+}) {
+  const { max, threshold, restart, warningOnly } = value
+  const set = (p: Partial<MaxPrefixState>) => onChange({ ...value, ...p })
+  return (
+    <div className="grid gap-3 @md:grid-cols-2 @2xl:grid-cols-4">
+      <FormText
+        label="Maximum prefix"
+        type="number"
+        min={0}
+        value={max}
+        onChange={(v) => set({ max: v })}
+        info="The session is torn down past this many received prefixes."
+        error={errors.maximum_prefix}
+      />
+      <FormText
+        label="Warning threshold"
+        type="number"
+        hint="%"
+        min={1}
+        max={100}
+        value={threshold}
+        onChange={(v) => set({ threshold: v })}
+        info="Percent of the maximum that logs a warning."
+        error={errors.maximum_prefix_threshold}
+      />
+      <FormText
+        label="Restart after"
+        type="number"
+        hint="min"
+        min={1}
+        max={65535}
+        value={restart}
+        onChange={(v) => set({ restart: v })}
+        info="Minutes before a torn-down session is re-opened. Not with warning only."
+        error={errors.maximum_prefix_restart}
+      />
+      <FormSelect
+        label="Warning only"
+        value={warningOnly}
+        onChange={(v) => set({ warningOnly: v })}
+        options={TRI}
+        noneLabel={noneLabel}
+        info="Log past the maximum and keep the session up."
+        error={errors.maximum_prefix_warning_only}
+      />
+    </div>
+  )
 }
 
 function KnobFields({
@@ -333,14 +424,6 @@ function KnobFields({
           />
         )}
         <FormText
-          label="Maximum prefix"
-          type="number"
-          value={k.maximumPrefix}
-          onChange={(v) => set({ maximumPrefix: v })}
-          info="The session is torn down past this many received prefixes."
-          error={errors.maximum_prefix}
-        />
-        <FormText
           label="Allowas-in"
           type="number"
           value={k.allowasIn}
@@ -349,6 +432,12 @@ function KnobFields({
           error={errors.allowas_in}
         />
       </div>
+      <MaxPrefixFields
+        value={k.maxPrefix}
+        onChange={(v) => set({ maxPrefix: v })}
+        noneLabel={none}
+        errors={errors}
+      />
       <div className="grid gap-3 @md:grid-cols-3">
         <FormSelect
           label="AS override"

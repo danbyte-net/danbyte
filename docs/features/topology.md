@@ -721,7 +721,8 @@ line's panel names its kind, the two ASes, the families, the VRF and the
 route reflector (with its cluster ID), then one section per session:
 the session (a link), its status, **Peer group**, **Policy in** and
 **Policy out** (each a link to the [routing policy](routing.md)), a
-family's own policies and maximum where they differ, **Max prefixes**,
+family's own policies and maximum where they differ, **Max prefixes**
+(with its threshold and restart or warning only, `1000 · 75% · restart 5 min`),
 **BFD** (its profile, linked), **Keepalive / hold** and the instance's
 **RPKI** caches - each as the session ends up with it (session, then peer
 group, then instance). A catalog row you may not view is left out. A
@@ -2438,8 +2439,11 @@ no location: a `location` filter or a hand-picked set leaves VMs out.
          "import_policy": {"id": "…", "name": "IN"}, "export_policy": null,
          "address_families": [{"afi_safi": "vpnv4-unicast", "activate": true,
            "import_policy": …, "export_policy": …, "maximum_prefix": null,
-           "route_reflector_client": true}],
-         "maximum_prefix": null, "bfd": true, "bfd_profile": {"id": "…", "name": "fast"},
+           "maximum_prefix_threshold": null, "maximum_prefix_restart": null,
+           "maximum_prefix_warning_only": false, "route_reflector_client": true}],
+         "maximum_prefix": null, "maximum_prefix_threshold": null,
+         "maximum_prefix_restart": null, "maximum_prefix_warning_only": false,
+         "bfd": true, "bfd_profile": {"id": "…", "name": "fast"},
          "keepalive": 10, "hold_time": 30, "route_reflector_client": true,
          "cluster_id": "1.1.1.1", "rpki_caches": [{"id": "…", "name": "rpki1"}]}]}},
     {"id": "ce:<circuit id>", "type": "circuit", "source": "dev:<id>",

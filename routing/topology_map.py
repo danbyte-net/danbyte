@@ -403,6 +403,9 @@ def _session_row(s, eff, allowed):
             "import_policy": _ref(af["import_policy"], allowed["policy"]),
             "export_policy": _ref(af["export_policy"], allowed["policy"]),
             "maximum_prefix": af["maximum_prefix"],
+            "maximum_prefix_threshold": af["maximum_prefix_threshold"],
+            "maximum_prefix_restart": af["maximum_prefix_restart"],
+            "maximum_prefix_warning_only": bool(af["maximum_prefix_warning_only"]),
             "route_reflector_client": af["route_reflector_client"],
         })
     port = s.port
@@ -425,6 +428,9 @@ def _session_row(s, eff, allowed):
         "export_policy": _ref(eff["export_policy"], allowed["policy"]),
         "address_families": afs,
         "maximum_prefix": eff["maximum_prefix"],
+        "maximum_prefix_threshold": eff["maximum_prefix_threshold"],
+        "maximum_prefix_restart": eff["maximum_prefix_restart"],
+        "maximum_prefix_warning_only": bool(eff["maximum_prefix_warning_only"]),
         "bfd": bool(eff["bfd"]),
         "bfd_profile": _ref(eff["bfd_profile"], allowed["bfd"]),
         "keepalive": eff["keepalive"],

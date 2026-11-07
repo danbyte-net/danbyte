@@ -16,6 +16,7 @@ from api.models import FHRPGroupAssignment
 from api.natural import natural, natural_key
 
 from .models import (
+    MAX_PREFIX_DETAIL,
     VTEP,
     ASPathList,
     BFDProfile,
@@ -35,6 +36,7 @@ from .models import (
     effective_afs,
     group_effective_afs,
     resolve_membership_vlan,
+    settle_max_prefix,
 )
 
 
@@ -317,8 +319,21 @@ def af_render(eff: dict, policies: set[str], prefix_lists: set[str] | None) -> d
         "send_community": eff["send_community"] or None,
         "allowas_in": eff["allowas_in"],
         "maximum_prefix": eff["maximum_prefix"],
+        "maximum_prefix_threshold": eff["maximum_prefix_threshold"],
+        "maximum_prefix_restart": eff["maximum_prefix_restart"],
+        "maximum_prefix_warning_only": bool(eff["maximum_prefix_warning_only"]),
         "extra": eff["extra"],
     }
+
+
+def _group_max_prefix(g) -> dict:
+    """A peer group's own ``maximum-prefix`` line, details dropped when no
+    maximum is set."""
+    knobs = settle_max_prefix(
+        {k: getattr(g, k) for k in ("maximum_prefix", *MAX_PREFIX_DETAIL)}, {}
+    )
+    knobs["maximum_prefix_warning_only"] = bool(knobs["maximum_prefix_warning_only"])
+    return knobs
 
 
 def _af_keys(rows: list[dict]) -> dict:
@@ -376,6 +391,9 @@ def session_dict(s, policies: set[str], prefix_lists: set[str] | None = None) ->
         "default_originate": bool(eff["default_originate"]),
         "default_originate_policy": _name(eff["default_originate_policy"]),
         "maximum_prefix": eff["maximum_prefix"],
+        "maximum_prefix_threshold": eff["maximum_prefix_threshold"],
+        "maximum_prefix_restart": eff["maximum_prefix_restart"],
+        "maximum_prefix_warning_only": bool(eff["maximum_prefix_warning_only"]),
         "allowas_in": eff["allowas_in"],
         "as_override": bool(eff["as_override"]),
         "remove_private_as": bool(eff["remove_private_as"]),
@@ -465,7 +483,7 @@ def bgp_dict(inst: BGPInstance, policies: set[str],
                 "default_originate": bool(g.default_originate),
                 "default_originate_policy": _name(g.default_originate_policy)
                 if g.default_originate_policy_id else None,
-                "maximum_prefix": g.maximum_prefix,
+                **_group_max_prefix(g),
                 "allowas_in": g.allowas_in,
                 "as_override": bool(g.as_override),
                 "remove_private_as": bool(g.remove_private_as),

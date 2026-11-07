@@ -5172,9 +5172,15 @@ export interface RoutingSessionRow {
     import_policy: RoutingRef | null
     export_policy: RoutingRef | null
     maximum_prefix: number | null
+    maximum_prefix_threshold: number | null
+    maximum_prefix_restart: number | null
+    maximum_prefix_warning_only: boolean | null
     route_reflector_client: boolean | null
   }[]
   maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
   bfd: boolean
   bfd_profile: RoutingRef | null
   keepalive: number | null
@@ -7344,6 +7350,9 @@ export interface BGPPeerKnobs {
   /** `default-originate route-map <policy>`. */
   default_originate_policy: { id: string; name: string } | null
   maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
   allowas_in: number | null
   as_override: boolean | null
   remove_private_as: boolean | null
@@ -7463,6 +7472,9 @@ export interface BGPNeighborAFEffective {
   send_community: SendCommunity | null
   allowas_in: number | null
   maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
   extra: Record<string, unknown>
 }
 
@@ -7488,6 +7500,9 @@ export interface BGPNeighborAF {
   send_community: "" | SendCommunity
   allowas_in: number | null
   maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
   extra: Record<string, unknown>
   /** What the box ends up with in this family (detail reads only). */
   effective: BGPNeighborAFEffective | null
@@ -7515,6 +7530,9 @@ export interface BGPSessionEffective {
   keychain: { id: string; name: string; algorithm: string } | null
   default_originate: boolean | null
   maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
   allowas_in: number | null
   as_override: boolean | null
   remove_private_as: boolean | null

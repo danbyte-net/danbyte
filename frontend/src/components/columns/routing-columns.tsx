@@ -937,6 +937,13 @@ export function buildNeighborAFColumns<T extends BGPNeighborAF = BGPNeighborAF>(
             r.maximum_prefix != null
               ? `maximum-prefix ${r.maximum_prefix}`
               : null,
+            r.maximum_prefix_threshold != null
+              ? `threshold ${r.maximum_prefix_threshold}%`
+              : null,
+            r.maximum_prefix_restart != null
+              ? `restart ${r.maximum_prefix_restart}`
+              : null,
+            triWord("warning-only", r.maximum_prefix_warning_only),
           ].filter(Boolean)
           return parts.length ? (
             <span className="text-xs">{parts.join(", ")}</span>

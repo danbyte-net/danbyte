@@ -573,7 +573,8 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
   neighbor {{ who }} default-originate
 {% endif %}
 {% if s.maximum_prefix %}
-  neighbor {{ who }} maximum-prefix {{ s.maximum_prefix }}
+  neighbor {{ who }} maximum-prefix {{ s.maximum_prefix }}{% if s.maximum_prefix_threshold %} {{ s.maximum_prefix_threshold }}{% endif %}{% if s.maximum_prefix_restart %} restart {{ s.maximum_prefix_restart }}{% elif s.maximum_prefix_warning_only %} warning-only{% endif %}
+
 {% endif %}
 {% if s.allowas_in %}
   neighbor {{ who }} allowas-in {{ s.allowas_in }}
