@@ -606,7 +606,11 @@ function Body({ device: d }: { device: Device }) {
           <ConfigContextPanel endpoint="devices" id={d.id} />
           <DeviceInventoryPanel deviceId={d.id} />
           <DeviceConfigRender deviceId={d.id} bound={d.config_template} />
-          <DeviceDeployPanel deviceId={d.id} />
+          <DeviceDeployPanel
+            deviceId={d.id}
+            deviceName={d.name}
+            roleId={d.role?.id}
+          />
           <DeviceDriftPanel deviceId={d.id} />
         </div>
       </DetailTab>

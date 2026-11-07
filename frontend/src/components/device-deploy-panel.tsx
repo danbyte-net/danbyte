@@ -1,23 +1,21 @@
 import { useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Rocket } from "lucide-react"
 import { Link } from "@tanstack/react-router"
-import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import type { AutomationTarget, DeployRun } from "@/lib/api"
+import type { DeployRun } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { Spinner } from "@/components/ui/spinner"
 import { Badge } from "@/components/ui/badge"
 import { Section } from "@/components/ui/section"
 import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
-import { FormCombobox } from "@/components/forms"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DeployRunStatus } from "@/components/deploy-run-status"
 import { DeployRetryButton } from "@/components/deploy-retry-button"
-import { apiErrorToast } from "@/lib/api-toast"
+import { DeployDialog } from "@/components/deploy-dialog"
+import type { DeployResult } from "@/components/deploy-dialog"
 
 const RUN_COLUMNS: SimpleColumn<DeployRun>[] = [
   {
@@ -59,21 +57,21 @@ const RUN_COLUMNS: SimpleColumn<DeployRun>[] = [
   },
 ]
 
-// Manual deploy: pick an enabled automation target and POST /devices/<id>/deploy/.
-// Danbyte hands off to the runner (AWX job / signed webhook); it never SSHes the
-// device itself. The runner holds device credentials.
-export function DeviceDeployPanel({ deviceId }: { deviceId: string }) {
-  const [targetId, setTargetId] = useState<string | null>(null)
+// Manual deploy: the Deploy dialog runs a pipeline (the device role's default
+// preselected) or a single automation target, POSTing /devices/<id>/deploy/.
+// Danbyte hands off to the runner (AWX job / signed webhook / script); it never
+// SSHes the device itself. The runner holds device credentials.
+export function DeviceDeployPanel({
+  deviceId,
+  deviceName,
+  roleId,
+}: {
+  deviceId: string
+  deviceName?: string
+  roleId?: string | null
+}) {
+  const [open, setOpen] = useState(false)
   const qc = useQueryClient()
-
-  const targets = useQuery({
-    queryKey: ["automation-targets", "enabled"],
-    queryFn: () => apiAll<AutomationTarget>("/api/automation-targets/"),
-    staleTime: 60_000,
-  })
-  const options = (targets.data?.results ?? [])
-    .filter((t) => t.enabled)
-    .map((t) => ({ value: t.id, label: `${t.name} · ${t.kind_display}` }))
 
   const runs = useQuery({
     queryKey: ["deploy-runs", "device", deviceId],
@@ -82,85 +80,62 @@ export function DeviceDeployPanel({ deviceId }: { deviceId: string }) {
   })
   const recent = (runs.data?.results ?? []).slice(0, 5)
 
-  const deploy = useMutation({
-    mutationFn: () =>
-      api<DeployRun>(`/api/devices/${deviceId}/deploy/`, {
-        method: "POST",
-        body: JSON.stringify({ target_id: targetId }),
-      }),
-    onSuccess: (run) => {
-      if (run.status === "failed")
-        toast.error(`Deploy failed: ${run.detail || "see run"}`)
-      else toast.success(`Deploy ${run.status}`)
-      qc.invalidateQueries({ queryKey: ["deploy-runs", "device", deviceId] })
-    },
-    onError: (err) => apiErrorToast(err),
-  })
-
   return (
     <Section
       title="Deploy"
-      description="hand off to an automation target (AWX job / webhook)"
+      description="hand off to a pipeline or an automation target"
     >
       <div className="space-y-3 rounded-lg border border-border p-4">
-        {options.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No enabled automation targets - add one under{" "}
-            <Link
-              to="/automation-targets/new"
-              className="font-medium underline"
-            >
-              Integrations → Automation targets
-            </Link>
-            .
-          </p>
-        ) : (
-          <>
-            <div className="flex items-end gap-2">
-              <div className="w-72">
-                <FormCombobox
-                  label="Target"
-                  value={targetId}
-                  onChange={setTargetId}
-                  options={options}
-                  placeholder="Pick a target"
-                  searchPlaceholder="Search targets…"
-                  emptyText="No targets."
-                />
-              </div>
-              <Button
-                onClick={() => deploy.mutate()}
-                disabled={!targetId || deploy.isPending}
-              >
-                {deploy.isPending ? (
-                  <Spinner className="size-4" />
-                ) : (
-                  <Rocket className="size-4" />
-                )}
-                Deploy
-              </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => setOpen(true)}>
+            <Rocket className="size-4" />
+            Deploy
+          </Button>
+          <Link to="/pipelines" className="link text-xs">
+            Pipelines
+          </Link>
+        </div>
+
+        {recent.length > 0 && (
+          <div>
+            <div className="mb-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              Recent deploys
             </div>
-
-            {recent.length > 0 && (
-              <div>
-                <div className="mb-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                  Recent deploys
-                </div>
-                <SimpleTable
-                  columns={RUN_COLUMNS}
-                  data={recent}
-                  getRowKey={(r) => r.id}
-                />
-              </div>
-            )}
-
-            <p className="text-[11px] text-muted-foreground">
-              Danbyte launches the runner, which holds the device credentials -
-              it never connects to the device directly.
-            </p>
-          </>
+            <SimpleTable
+              columns={RUN_COLUMNS}
+              data={recent}
+              getRowKey={(r) => r.id}
+            />
+          </div>
         )}
+
+        <p className="text-[11px] text-muted-foreground">
+          Danbyte launches the runner, which holds the device credentials - it
+          never connects to the device directly.
+        </p>
       </div>
+      <DeployDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Deploy ${deviceName ?? "this device"}`}
+        objectType="device"
+        roleIds={[roleId]}
+        submit={(c) =>
+          api<DeployResult>(`/api/devices/${deviceId}/deploy/`, {
+            method: "POST",
+            body: JSON.stringify(
+              c.kind === "pipeline"
+                ? { pipeline_id: c.id, dry_run: c.dryRun }
+                : { target_id: c.id, dry_run: c.dryRun }
+            ),
+          })
+        }
+        onDone={() =>
+          qc.invalidateQueries({
+            queryKey: ["deploy-runs", "device", deviceId],
+          })
+        }
+      />
     </Section>
   )
 }

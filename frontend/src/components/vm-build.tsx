@@ -7,7 +7,6 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type {
   AutomationTarget,
-  DeployRun,
   VirtualDisk,
   VirtualDiskWritePayload,
   VirtualMachine,
@@ -16,11 +15,12 @@ import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { useSaveObject } from "@/lib/save-object"
+import { DeployDialog } from "@/components/deploy-dialog"
+import type { DeployResult } from "@/components/deploy-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -35,7 +35,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
-  FormCombobox,
   FormFooter,
   FormSelect,
   FormText,
@@ -505,75 +504,34 @@ export function coversVms(t: AutomationTarget): boolean {
   )
 }
 
-/** Send an intended VM to an automation runner to be built. The caller
- * shows it only with the provision grant; the server enforces it. */
+/** Send an intended VM to an automation runner, or through a pipeline, to
+ * be built. The caller shows it only with the provision grant; the server
+ * enforces it. */
 export function VmProvisionButton({ vm }: { vm: VirtualMachine }) {
   const [open, setOpen] = useState(false)
-  const [targetId, setTargetId] = useState<string | null>(null)
-  const targets = useQuery({
-    queryKey: ["automation-targets", "enabled"],
-    queryFn: () => apiAll<AutomationTarget>("/api/automation-targets/"),
-    staleTime: 60_000,
-    enabled: open,
-  })
-  const options = (targets.data?.results ?? [])
-    .filter(coversVms)
-    .map((t) => ({ value: t.id, label: `${t.name} · ${t.kind_display}` }))
-  const m = useMutation({
-    mutationFn: () =>
-      api<DeployRun>(`/api/virtual-machines/${vm.id}/provision/`, {
-        method: "POST",
-        body: JSON.stringify({ target_id: targetId }),
-      }),
-    onSuccess: (run) => {
-      if (run.status === "failed")
-        toast.error(`Provision failed: ${run.detail || "see run"}`)
-      else toast.success(`Provision ${run.status}`)
-      setOpen(false)
-    },
-    onError: (err) => apiErrorToast(err),
-  })
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
         <Rocket className="h-3.5 w-3.5" /> Provision
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent size="md">
-          <DialogHeader>
-            <DialogTitle>Provision {vm.name}</DialogTitle>
-          </DialogHeader>
-          {targets.data && options.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No enabled automation target takes virtual machines.{" "}
-              <Link to="/automation-targets" className="link">
-                Automation targets
-              </Link>
-            </p>
-          ) : (
-            <FormCombobox
-              label="Target"
-              value={targetId}
-              onChange={setTargetId}
-              options={options}
-              placeholder="Pick a target…"
-              searchPlaceholder="Search targets…"
-              emptyText="No targets."
-            />
-          )}
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => m.mutate()}
-              disabled={!targetId || m.isPending}
-            >
-              {m.isPending ? "Provisioning…" : "Provision"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeployDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Provision ${vm.name}`}
+        objectType="virtualmachine"
+        roleIds={[vm.role?.id]}
+        verb="Provision"
+        submit={(c) =>
+          api<DeployResult>(`/api/virtual-machines/${vm.id}/provision/`, {
+            method: "POST",
+            body: JSON.stringify(
+              c.kind === "pipeline"
+                ? { pipeline_id: c.id, dry_run: c.dryRun }
+                : { target_id: c.id, dry_run: c.dryRun }
+            ),
+          })
+        }
+      />
     </>
   )
 }
