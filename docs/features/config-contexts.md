@@ -123,6 +123,8 @@ Every device and virtual machine detail page has a **Config** tab. It shows the
 final merged JSON for that object and lists, as chips in merge order, where it
 came from: each matching context (a link to it), then **Local context data**
 when the object has its own - so you can always see where a value came from.
+The JSON sits in the shared [file viewer](export-templates.md#the-file-viewer):
+line numbers, search, folding on each object and array, copy and download.
 
 `GET /api/devices/{id}/config-context/` (and `/api/virtual-machines/{id}/config-context/`)
 returns:

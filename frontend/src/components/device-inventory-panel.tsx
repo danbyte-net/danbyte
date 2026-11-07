@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import { docsUrl } from "@/lib/docs"
+import { FileViewer } from "@/components/file-viewer"
+import { Loading } from "@/components/loading"
 import { CopyButton } from "@/components/kv-card"
 import { Section } from "@/components/ui/section"
 
@@ -36,9 +38,7 @@ export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
       actions={hostvarsJson ? <CopyButton value={hostvarsJson} /> : undefined}
     >
       <div className="space-y-3 rounded-lg border border-border p-4">
-        {q.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
+        {q.isLoading && <Loading />}
         {q.isError && (
           <p className="text-sm text-muted-foreground">
             Couldn't load the inventory for this device.
@@ -84,12 +84,13 @@ export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
               <div className="mb-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
                 Host vars
               </div>
-              <pre
-                tabIndex={0}
-                className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-              >
-                {hostvarsJson}
-              </pre>
+              <FileViewer
+                text={hostvarsJson}
+                filename="hostvars.json"
+                language="json"
+                storageKey="hostvars"
+                label="Host vars"
+              />
             </div>
 
             <p className="text-[11px] text-muted-foreground">

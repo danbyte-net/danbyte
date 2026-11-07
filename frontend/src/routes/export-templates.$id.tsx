@@ -19,6 +19,8 @@ import { ExportTemplateDeleteDialog } from "@/components/export-template-delete-
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { FileViewer } from "@/components/file-viewer"
+import { Loading } from "@/components/loading"
 
 const OBJECT_TYPE = "api.exporttemplate"
 
@@ -39,8 +41,7 @@ function ExportTemplateDetail() {
     queryKey: ["export-template", id],
     queryFn: () => api<ExportTemplate>(`/api/export-templates/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -272,12 +273,12 @@ function TemplateOverview({ template: t }: { template: ExportTemplate }) {
           // Same treatment as a config context's data blob: scrolls in its own
           // box, because a Jinja template can be long *and* wide and neither
           // may push the page into a horizontal scroll.
-          <pre
-            tabIndex={0}
-            className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-          >
-            {t.template_code}
-          </pre>
+          <FileViewer
+            text={t.template_code}
+            filename={`${t.name}.j2`}
+            storageKey="template-code"
+            label="Template"
+          />
         ) : (
           <p className="text-sm text-muted-foreground">
             This template has no body - rendering it produces an empty file.

@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { Download, Play } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { Download, RefreshCw } from "lucide-react"
 
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
@@ -13,12 +13,13 @@ import type {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Spinner } from "@/components/ui/spinner"
 import { Section } from "@/components/ui/section"
 import { FormCombobox } from "@/components/forms"
-import { SegmentedTabs } from "@/components/segmented-tabs"
+import { Loading } from "@/components/loading"
 import { TimeCell } from "@/components/cells/time-ago"
-import { DiffLine } from "@/components/device-drift-panel"
+import { FileViewer } from "@/components/file-viewer"
+import { linesOf } from "@/components/file-viewer/diff"
+import { cn } from "@/lib/utils"
 
 // The picker holds two catalogs - single templates and bundles - so its value
 // carries the kind, and the render call is built from that.
@@ -45,28 +46,53 @@ type Rendered =
       bundleId: string
       files: DeviceRenderFile[]
     }
-  | { kind: "error"; message: string }
+
+async function renderChoice(deviceId: string, pick: Choice): Promise<Rendered> {
+  if (pick.kind === "bundle") {
+    const r = await api<DeviceBundleRenderResult>(
+      `/api/devices/${deviceId}/render/?bundle=${pick.id}`
+    )
+    return {
+      kind: "bundle",
+      name: r.bundle,
+      source: "bundle",
+      bundleId: pick.id,
+      files: Object.values(r.files),
+    }
+  }
+  const r = await api<DeviceRenderResult>(
+    `/api/devices/${deviceId}/render/?template=${pick.id}`
+  )
+  // A directory template answers like a bundle: one entry per file.
+  if ("files" in r)
+    return {
+      kind: "bundle",
+      name: r.template,
+      source: "directory",
+      bundleId: pick.id,
+      files: Object.values(r.files),
+    }
+  return { kind: "template", file: r }
+}
 
 // Renders a device-typed export template - or a whole bundle - against this
 // device → intended config. The same endpoint Ansible/AWX pulls via
-// /api/devices/<id>/render/.
+// /api/devices/<id>/render/. What is bound to the device renders on open.
 export function DeviceConfigRender({
   deviceId,
+  roleId,
   bound,
 }: {
   deviceId: string
+  /** The device's role: a bundle bound to it renders on open. */
+  roleId?: string | null
   /** The device's config-template binding (own override + resolved). */
   bound?: {
     own: { id: string; name: string } | null
     resolved: { id: string; name: string } | null
   } | null
 }) {
-  // Preselect the resolved binding (device override → role → platform);
-  // picking another template in the select remains a manual override.
-  const [value, setValue] = useState<string | null>(
-    bound?.resolved ? encode({ kind: "template", id: bound.resolved.id }) : null
-  )
-  const [result, setResult] = useState<Rendered | null>(null)
+  const [picked, setPicked] = useState<string | null>(null)
 
   const templates = useQuery({
     queryKey: ["export-templates", "device"],
@@ -95,78 +121,85 @@ export function DeviceConfigRender({
     group: "Bundles",
   }))
 
-  const pick = decode(value)
-  const render = useMutation({
-    mutationFn: async (): Promise<Rendered> => {
-      if (!pick) throw new Error("Pick a template or bundle.")
-      if (pick.kind === "bundle") {
-        const r = await api<DeviceBundleRenderResult>(
-          `/api/devices/${deviceId}/render/?bundle=${pick.id}`
-        )
-        return {
-          kind: "bundle",
-          name: r.bundle,
-          source: "bundle",
-          bundleId: pick.id,
-          files: Object.values(r.files),
-        }
-      }
-      const r = await api<DeviceRenderResult>(
-        `/api/devices/${deviceId}/render/?template=${pick.id}`
+  // What is bound: the one bundle on the device's role wins (it is the whole
+  // file set), else the resolved config template (device → role → platform).
+  const roleBundles = roleId
+    ? (bundles.data?.results ?? []).filter((b) =>
+        b.roles.some((r) => r.id === roleId)
       )
-      // A directory template answers like a bundle: one entry per file.
-      if ("files" in r)
-        return {
-          kind: "bundle",
-          name: r.template,
-          source: "directory",
-          bundleId: pick.id,
-          files: Object.values(r.files),
-        }
-      return { kind: "template", file: r }
-    },
-    onSuccess: setResult,
-    onError: (err) => setResult({ kind: "error", message: err.message }),
+    : []
+  const roleBundle = roleBundles.length === 1 ? roleBundles[0] : null
+  const boundChoice: Choice | null = roleBundle
+    ? { kind: "bundle", id: roleBundle.id }
+    : bound?.resolved
+      ? { kind: "template", id: bound.resolved.id }
+      : null
+  // Wait for the bundle list before falling back to the template, so a
+  // bundle-bound device does not render its template first.
+  const boundReady = !roleId || !bundles.isLoading
+  const value =
+    picked ?? (boundReady && boundChoice ? encode(boundChoice) : null)
+  const pick = decode(value)
+  const isBound = !!boundChoice && value === encode(boundChoice)
+
+  const render = useQuery({
+    queryKey: ["device-render", deviceId, value],
+    queryFn: () => renderChoice(deviceId, pick!),
+    enabled: !!pick,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    retry: false,
   })
+  const result = render.data
+
+  const boundNote = isBound
+    ? roleBundle
+      ? `Bound via role ${roleBundles[0].roles.find((r) => r.id === roleId)?.name ?? ""}`
+      : `Bound via ${bound?.own ? "device" : "role/platform"}`
+    : null
 
   const nothingToPick = options.length === 0 && bundleOptions.length === 0
 
   return (
-    <Section
-      title="Render config"
-      description="from an export template or bundle (object type: device)"
-    >
-      <div className="space-y-3 rounded-lg border border-border p-4">
-        {nothingToPick ? (
+    <Section title="Render config">
+      {nothingToPick && !templates.isLoading && !bundles.isLoading ? (
+        <div className="rounded-lg border border-border p-4">
           <p className="text-sm text-muted-foreground">
             No device export templates yet - create one under{" "}
             <span className="font-medium">Customize → Export templates</span>{" "}
             with object type <span className="font-mono">device</span>.
           </p>
-        ) : (
-          <>
-            <div className="flex items-end gap-2">
-              <div className="w-64">
-                <FormCombobox
-                  label="Template"
-                  value={value}
-                  onChange={setValue}
-                  options={[...options, ...bundleOptions]}
-                  placeholder="Pick a template"
-                  searchPlaceholder="Search templates…"
-                  emptyText="No templates."
-                />
-              </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-end gap-x-3 gap-y-2 rounded-lg border border-border px-3 py-2">
+            <div className="w-64">
+              <FormCombobox
+                label="Template"
+                value={value}
+                onChange={setPicked}
+                options={[...options, ...bundleOptions]}
+                placeholder="Pick a template"
+                searchPlaceholder="Search templates…"
+                emptyText="No templates."
+              />
+            </div>
+            {boundNote && (
+              <span className="pb-2 text-xs whitespace-nowrap text-muted-foreground">
+                {boundNote}
+              </span>
+            )}
+            <span className="ml-auto flex items-center gap-2 pb-0.5">
+              {result?.kind === "bundle" && (
+                <BundleSummary files={result.files} />
+              )}
               <Button
-                onClick={() => render.mutate()}
-                disabled={!pick || render.isPending}
+                variant="outline"
+                onClick={() => render.refetch()}
+                disabled={!pick || render.isFetching}
               >
-                {render.isPending ? (
-                  <Spinner className="size-4" />
-                ) : (
-                  <Play className="size-4" />
-                )}
-                Render
+                <RefreshCw className="size-4" />
+                {render.isFetching ? "Rendering…" : "Re-render"}
               </Button>
               {pick &&
                 (pick.kind === "bundle" || directoryIds.has(pick.id)) && (
@@ -182,121 +215,191 @@ export function DeviceConfigRender({
                     </a>
                   </Button>
                 )}
+            </span>
+          </div>
+          {!pick ? null : render.isLoading ? (
+            <div className="rounded-lg border border-border">
+              <Loading className="min-h-40" />
             </div>
-            {bound?.resolved && (
-              <p className="text-xs text-muted-foreground">
-                Bound via {bound.own ? "device" : "role/platform"}:{" "}
-                <span className="font-medium">{bound.resolved.name}</span>
-              </p>
-            )}
-            {result?.kind === "error" && (
-              <pre
-                tabIndex={0}
-                className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-              >
-                ⚠ {result.message}
-              </pre>
-            )}
-            {result?.kind === "template" && <RenderedFile file={result.file} />}
-            {result?.kind === "bundle" && (
-              <BundleFiles
-                key={result.bundleId}
-                files={result.files}
-                empty={
-                  result.source === "directory"
-                    ? "No files for this device."
-                    : "This bundle has no templates."
-                }
-              />
-            )}
-          </>
-        )}
-      </div>
+          ) : render.isError ? (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 font-mono text-[12px] whitespace-pre-wrap">
+              {render.error.message}
+            </div>
+          ) : result?.kind === "template" ? (
+            <RenderedFile file={result.file} height="fill" hotkey />
+          ) : result?.kind === "bundle" ? (
+            <BundleFiles
+              key={`${result.source}:${result.bundleId}`}
+              files={result.files}
+              height="fill"
+              hotkey
+              empty={
+                result.source === "directory"
+                  ? "No files for this device."
+                  : "This bundle has no templates."
+              }
+            />
+          ) : null}
+        </div>
+      )}
     </Section>
   )
 }
 
-/** One segmented tab per file, labelled by its path on the device. */
+/** "1 of 5 files changed since last push", or that all match. */
+function BundleSummary({ files }: { files: DeviceRenderFile[] }) {
+  if (files.length === 0) return null
+  const changed = files.filter((f) => f.drift === true).length
+  const pushed = files.filter((f) => f.drift !== null && f.pushed).length
+  const total = files.length
+  if (changed > 0)
+    return (
+      <Badge variant="warning">
+        {changed} of {total} file{total === 1 ? "" : "s"} changed since last
+        push
+      </Badge>
+    )
+  if (pushed === 0) return <Badge variant="secondary">Never pushed</Badge>
+  if (pushed === total)
+    return <Badge variant="success">All files match last push</Badge>
+  return (
+    <Badge variant="secondary">
+      {total - pushed} of {total} files never pushed
+    </Badge>
+  )
+}
+
+/** A bundle's (or directory template's) files: a list on the left with each
+ * file's line count and push state, the picked file in the viewer. */
 export function BundleFiles({
   files,
   empty,
+  height = "fit",
+  hotkey = false,
 }: {
   files: DeviceRenderFile[]
   empty: string
+  height?: "fill" | "fit"
+  hotkey?: boolean
 }) {
   const [path, setPath] = useState<string>(files.length ? files[0].path : "")
   if (files.length === 0)
-    return <p className="text-sm text-muted-foreground">{empty}</p>
+    return (
+      <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+        {empty}
+      </p>
+    )
   const active = files.find((f) => f.path === path) ?? files[0]
+  const list = (
+    <section className="rounded-lg border border-border p-2">
+      <h3 className="mx-2 mt-1 mb-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        Files
+      </h3>
+      <ul className="flex flex-col gap-0.5">
+        {files.map((f) => {
+          const on = f.path === active.path
+          return (
+            <li key={f.path}>
+              <button
+                type="button"
+                onClick={() => setPath(f.path)}
+                aria-current={on ? "true" : undefined}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+                  on ? "bg-muted text-foreground" : "hover:bg-muted/60"
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
+                  {f.path}
+                </span>
+                <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                  {linesOf(f.output).length}
+                </span>
+                <PushBadge file={f} short />
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
   return (
-    <div className="space-y-3">
-      <SegmentedTabs
-        items={files.map((f) => ({
-          value: f.path,
-          label: <span className="font-mono">{f.path}</span>,
-        }))}
-        value={active.path}
-        onValueChange={setPath}
-      />
-      <RenderedFile key={active.path} file={active} />
-    </div>
+    <RenderedFile
+      key={active.path}
+      file={active}
+      aside={list}
+      height={height}
+      hotkey={hotkey}
+    />
   )
 }
 
-type View = "rendered" | "diff"
-
-/** The render output with its push state above it: the content hash, whether
- * the box already has this exact file, and - when it does not - the diff
- * against what was last pushed. */
-function RenderedFile({ file }: { file: DeviceRenderFile }) {
-  const [view, setView] = useState<View>("rendered")
+/** One rendered file in the viewer, with its hash and push state in the
+ * header and - when it differs from the last push - the diff. */
+function RenderedFile({
+  file,
+  aside,
+  height = "fit",
+  hotkey = false,
+}: {
+  file: DeviceRenderFile
+  aside?: React.ReactNode
+  height?: "fill" | "fit"
+  hotkey?: boolean
+}) {
   const hasDiff = file.drift === true && file.diff.length > 0
-  const showDiff = hasDiff && view === "diff"
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {file.sha256.slice(0, 12)}
-        </span>
-        <PushBadge file={file} />
-        {hasDiff && (
-          <SegmentedTabs<View>
-            className="ml-auto"
-            items={[
-              { value: "rendered", label: "Rendered" },
-              { value: "diff", label: "Diff vs last push" },
-            ]}
-            value={view}
-            onValueChange={setView}
-          />
-        )}
-      </div>
-      <pre
-        tabIndex={0}
-        className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-      >
-        {showDiff
-          ? file.diff
-              .split("\n")
-              .map((line, i) => <DiffLine key={i} line={line} />)
-          : file.output || "(empty)"}
-      </pre>
-    </div>
+    <FileViewer
+      text={file.output}
+      path={file.path}
+      meta={
+        <>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {file.sha256.slice(0, 12)}
+          </span>
+          <PushBadge file={file} />
+        </>
+      }
+      diff={hasDiff ? file.diff : null}
+      aside={aside}
+      height={height}
+      storageKey={height === "fill" ? "config" : undefined}
+      hotkey={hotkey}
+    />
   )
 }
 
-function PushBadge({ file }: { file: DeviceRenderFile }) {
+function PushBadge({
+  file,
+  short = false,
+}: {
+  file: DeviceRenderFile
+  /** Just the state, for the file list. */
+  short?: boolean
+}) {
   if (file.drift === null || !file.pushed)
     return <Badge variant="secondary">Never pushed</Badge>
   if (file.drift)
     return (
       <Badge variant="warning">
-        Changed since last push · <TimeCell iso={file.pushed.at} />
+        {short ? (
+          "Changed"
+        ) : (
+          <>
+            Changed since last push · <TimeCell iso={file.pushed.at} />
+          </>
+        )}
       </Badge>
     )
   return (
     <Badge variant="success">
-      Matches last push · <TimeCell iso={file.pushed.at} />
+      {short ? (
+        "Matches"
+      ) : (
+        <>
+          Matches last push · <TimeCell iso={file.pushed.at} />
+        </>
+      )}
     </Badge>
   )
 }

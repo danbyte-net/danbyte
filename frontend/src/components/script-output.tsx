@@ -7,6 +7,8 @@ import type { ScriptOutput } from "@/lib/api"
 import { parseCsv } from "@/lib/csv-parse"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
+import { FileViewer } from "@/components/file-viewer"
+import { Loading } from "@/components/loading"
 import {
   Table,
   TableBody,
@@ -101,18 +103,19 @@ export function ScriptOutputCard({
       {open && (
         <div className="border-t border-border p-3">
           {content.isPending ? (
-            <p className="text-xs text-muted-foreground">Loading…</p>
+            <Loading />
           ) : content.error ? (
             <QueryError error={content.error} />
           ) : kind === "csv" ? (
             <CsvTable text={content.data} />
           ) : (
-            <pre
-              tabIndex={0}
-              className="max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs"
-            >
-              {kind === "json" ? pretty(content.data) : content.data}
-            </pre>
+            <FileViewer
+              text={kind === "json" ? pretty(content.data) : content.data}
+              filename={output.name}
+              language={kind === "json" ? "json" : "text"}
+              storageKey="script-output"
+              label={output.name}
+            />
           )}
         </div>
       )}

@@ -12,6 +12,8 @@ import { Section } from "@/components/ui/section"
 import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
+import { FileViewer } from "@/components/file-viewer"
+import { Loading } from "@/components/loading"
 
 const STATUS: Record<
   DriftStatus,
@@ -91,9 +93,7 @@ export function DeviceDriftPanel({ deviceId }: { deviceId: string }) {
       }
     >
       <div className="space-y-3 rounded-lg border border-border p-4">
-        {q.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
+        {q.isLoading && <Loading />}
         {!q.isLoading && q.data === null && (
           <p className="text-sm text-muted-foreground">
             No config state reported yet. Have your runner POST the device's
@@ -118,14 +118,16 @@ export function DeviceDriftPanel({ deviceId }: { deviceId: string }) {
               )}
             </div>
             {q.data.status === "drift" ? (
-              <pre
-                tabIndex={0}
-                className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-              >
-                {q.data.diff.split("\n").map((line, i) => (
-                  <DiffLine key={i} line={line} />
-                ))}
-              </pre>
+              <FileViewer
+                text={q.data.actual_config}
+                filename="actual-config.txt"
+                diff={q.data.diff}
+                fileLabel="Actual"
+                diffLabel="Diff vs intended"
+                defaultView="diff"
+                storageKey="config-drift"
+                label="Actual config"
+              />
             ) : q.data.status === "in_sync" ? (
               <p className="text-sm text-emerald-700 dark:text-emerald-300">
                 Actual config matches the intended config.

@@ -27,6 +27,7 @@ import {
 } from "@/components/forms"
 import { CodeEditor } from "@/components/code-editor"
 import { BundleFiles } from "@/components/device-config-render"
+import { FileViewer } from "@/components/file-viewer"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { useSaveObject } from "@/lib/save-object"
@@ -346,14 +347,19 @@ export function ExportTemplateForm({
               Pick a sample object to render this template against.
             </p>
           )}
-          {preview !== null && (
-            <pre
-              tabIndex={0}
-              className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-            >
-              {preview || "(empty)"}
-            </pre>
-          )}
+          {preview !== null &&
+            (preview.startsWith("⚠ ") ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 font-mono text-[12px] whitespace-pre-wrap">
+                {preview}
+              </div>
+            ) : (
+              <FileViewer
+                text={preview}
+                filename={`${template.name}.${template.file_extension || "txt"}`}
+                storageKey="template-preview"
+                label="Preview"
+              />
+            ))}
           {previewFiles !== null && (
             <BundleFiles
               files={previewFiles}

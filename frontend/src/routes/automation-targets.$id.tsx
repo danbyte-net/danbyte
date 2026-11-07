@@ -21,6 +21,8 @@ import { buildDeployRunColumns } from "@/components/columns/deploy-run-columns"
 import { AutomationTargetDeleteDialog } from "@/components/automation-target-delete-dialog"
 import { AutomationTargetTestButton } from "@/components/automation-target-test-button"
 import { useMe } from "@/lib/use-me"
+import { FileViewer } from "@/components/file-viewer"
+import { Loading } from "@/components/loading"
 
 const OBJECT_TYPE = "integrations.automationtarget"
 
@@ -37,8 +39,7 @@ function AutomationTargetDetail() {
     queryKey: ["automation-target", id],
     queryFn: () => api<AutomationTarget>(`/api/automation-targets/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -283,12 +284,13 @@ function TargetOverview({
           <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
             Extra vars
           </h2>
-          <pre
-            tabIndex={0}
-            className="max-h-96 overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-          >
-            {JSON.stringify(t.extra_vars, null, 2)}
-          </pre>
+          <FileViewer
+            text={JSON.stringify(t.extra_vars, null, 2)}
+            filename="extra-vars.json"
+            language="json"
+            storageKey="extra-vars"
+            label="Extra vars"
+          />
         </section>
       )}
     </div>
@@ -311,8 +313,7 @@ function TargetRuns({ targetId }: { targetId: string }) {
   const query = useTargetRuns(targetId)
   const columns = useMemo(() => buildDeployRunColumns({ omit: ["target"] }), [])
   if (query.isError) return <QueryError error={query.error} />
-  if (query.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (query.isLoading) return <Loading />
   const rows = query.data?.results ?? []
   if (rows.length === 0)
     return (
