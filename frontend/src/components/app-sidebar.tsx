@@ -1389,6 +1389,12 @@ export const sections: NavSection[] = [
             objectType: "automationtarget",
           },
           {
+            title: "Pipelines",
+            url: "/pipelines",
+            icon: GitBranch,
+            objectType: "deploypipeline",
+          },
+          {
             title: "Deploy runs",
             url: "/deploy-runs",
             icon: Rocket,

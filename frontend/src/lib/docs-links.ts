@@ -142,6 +142,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/config-drift": "features/iac-runner/",
   "/automation-targets": "features/iac-runner/",
   "/deploy-runs": "features/iac-runner/",
+  "/pipelines": "features/deploy-pipelines/",
   "/webhooks": "features/webhooks/",
   "/windows-servers": "features/windows-sync/",
   "/dhcp-scopes": "features/windows-sync/",

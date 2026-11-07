@@ -11,6 +11,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from api.models import NumIdMixin
 from api.vrf_placement import PINNED, VRF_MODE_CHOICES
 from core.models import TimestampedModel
 from monitoring.secrets import EncryptedJSONField
@@ -203,11 +204,166 @@ class DeployRun(TimestampedModel):
         related_name="retries",
     )
 
+    #: The pipeline run this dispatch is one step of, and which step
+    #: (1-based). Null for a plain single-target deploy.
+    pipeline_run = models.ForeignKey(
+        "DeployPipelineRun", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="step_runs",
+    )
+    pipeline_step = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: The runner was asked to only report what it would do.
+    dry_run = models.BooleanField(default=False, db_default=False)
+    #: A webhook step that waits for its signed result: the run stays
+    #: ``launched`` until the callback, or fails at ``result_deadline``.
+    wait_for_result = models.BooleanField(default=False, db_default=False)
+    result_deadline = models.DateTimeField(null=True, blank=True)
+    #: Lines a runner reported through the result callback. Append-only,
+    #: capped (see ``script_targets.LOG_LIMIT``).
+    log = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pipeline_run", "pipeline_step"],
+                condition=models.Q(pipeline_run__isnull=False),
+                name="uniq_deployrun_pipeline_step",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.target_name} · {self.status}"
+
+
+class DeployPipeline(TimestampedModel):
+    """An ordered list of automation targets run one after the other for
+    the same objects. Each step starts when the one before has a final
+    status; see ``integrations.pipelines``."""
+
+    import uuid as _uuid
+
+    id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="deploy_pipelines"
+    )
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="")
+    object_types = models.JSONField(
+        default=list, blank=True,
+        help_text="Object-type slugs this pipeline deploys (default: device).",
+    )
+    auto_on_change = models.BooleanField(default=False)
+    enabled = models.BooleanField(default=True)
+    #: Device roles this pipeline is the default for: the Deploy dialog
+    #: preselects it for a device or VM with one of them.
+    roles = models.ManyToManyField(
+        "api.DeviceRole", blank=True, related_name="deploy_pipelines",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_deploypipeline_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class DeployPipelineStep(TimestampedModel):
+    """One step of a pipeline: an automation target (same tenant)."""
+
+    import uuid as _uuid
+
+    DEFAULT_TIMEOUT_MINUTES = 30
+
+    id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
+    pipeline = models.ForeignKey(
+        DeployPipeline, on_delete=models.CASCADE, related_name="steps"
+    )
+    order = models.PositiveSmallIntegerField(default=1)
+    target = models.ForeignKey(
+        AutomationTarget, on_delete=models.PROTECT, related_name="pipeline_steps"
+    )
+    stop_on_failure = models.BooleanField(default=True)
+    #: Wait for the runner's signed result (webhook targets) instead of
+    #: counting the step done once launched.
+    wait_for_result = models.BooleanField(default=False)
+    timeout_minutes = models.PositiveIntegerField(default=DEFAULT_TIMEOUT_MINUTES)
+
+    class Meta:
+        ordering = ["pipeline", "order"]
+
+    def __str__(self) -> str:
+        return f"{self.order} · {self.target}"
+
+    @property
+    def tenant_id(self):
+        """The pipeline's tenant: the audit trail stamps ``tenant_id`` on
+        each entry, so a step's history stays in its own tenant."""
+        return self.pipeline.tenant_id if self.pipeline_id else None
+
+
+class DeployPipelineRun(NumIdMixin, TimestampedModel):
+    """One run of a pipeline for a set of objects. Each started step is a
+    :class:`DeployRun` with ``pipeline_run`` and ``pipeline_step`` set."""
+
+    import uuid as _uuid
+
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("succeeded", "Succeeded"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
+    ]
+    FINAL_STATUSES = ("succeeded", "failed", "cancelled")
+    TRIGGER_CHOICES = [
+        ("deploy", "Deploy"),
+        ("on_change", "On change"),
+        ("rerun", "Re-run"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="deploy_pipeline_runs"
+    )
+    pipeline = models.ForeignKey(
+        DeployPipeline, on_delete=models.SET_NULL, null=True, related_name="runs"
+    )
+    pipeline_name = models.CharField(max_length=128)
+    object_type = models.CharField(max_length=64, default="device")
+    object_ids = models.JSONField(default=list)
+    trigger = models.CharField(max_length=16, choices=TRIGGER_CHOICES, default="deploy")
+    rerun_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="reruns"
+    )
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    dry_run = models.BooleanField(default=False)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued")
+    detail = models.TextField(blank=True, default="")
+    #: The steps as they were when the run started, so editing the pipeline
+    #: never changes a run in flight: ``[{target, target_name, kind,
+    #: stop_on_failure, wait_for_result, timeout_minutes}]``.
+    steps = models.JSONField(default=list)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.target_name} · {self.status}"
+        return f"{self.pipeline_name} · {self.status}"
+
+    @property
+    def event(self) -> str:
+        """The deploy event each step is dispatched with."""
+        return "auto" if self.trigger == "on_change" else "manual"
 
 
 class ConfigPush(TimestampedModel):

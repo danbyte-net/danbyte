@@ -8,7 +8,9 @@ Type=oneshot
 WorkingDirectory=%h/danbyte
 Environment=PYTHONUNBUFFERED=1
 ExecStart=%h/danbyte/.venv/bin/python manage.py run_scripts
+ExecStart=%h/danbyte/.venv/bin/python manage.py sweep_deploy_pipelines
 
 # Triggered every minute by danbyte-scripts.timer; the script itself runs as a
-# child process of the RQ workers.
+# child process of the RQ workers. The second command fails deploy pipeline
+# steps that waited past their timeout for a reported result.
 # Logs: journalctl --user -fu danbyte-scripts

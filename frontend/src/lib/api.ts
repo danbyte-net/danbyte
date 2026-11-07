@@ -12509,9 +12509,145 @@ export interface DeployRun {
   /** The script run a `script` target started; its end sets the status. */
   script_run: string | null
   script_run_status: ScriptRunStatus | null
+  /** The runner was asked to only report what it would do. */
+  dry_run?: boolean
+  /** Set when this dispatch is one step (1-based) of a pipeline run. */
+  pipeline_run?: string | null
+  pipeline_step?: number | null
 }
 
 export type DeployRunStatus = "queued" | "launched" | "succeeded" | "failed"
+
+export interface DeployPipelineStep {
+  id?: string
+  order?: number
+  target: string
+  target_name?: string
+  target_kind?: AutomationKind
+  target_kind_display?: string
+  target_enabled?: boolean
+  stop_on_failure: boolean
+  wait_for_result: boolean
+  timeout_minutes: number
+}
+
+export type DeployPipelineRunStatus =
+  "queued" | "running" | "succeeded" | "failed" | "cancelled"
+
+/** How one step of a pipeline run stands; pending/skipped/cancelled steps
+ * never started. */
+export type DeployPipelineStepStatus =
+  | "pending"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "cancelled"
+
+export interface DeployPipeline {
+  id: string
+  name: string
+  description: string
+  object_types: string[]
+  auto_on_change: boolean
+  enabled: boolean
+  roles: string[]
+  role_details: { id: string; name: string; color: string }[]
+  steps: DeployPipelineStep[]
+  steps_count: number
+  last_run: {
+    id: string
+    numid: number | null
+    status: DeployPipelineRunStatus
+    created_at: string
+    finished_at: string | null
+  } | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DeployPipelineWritePayload {
+  name: string
+  description?: string
+  object_types?: string[]
+  auto_on_change?: boolean
+  enabled?: boolean
+  roles?: string[]
+  steps: Omit<DeployPipelineStep, "id" | "order">[]
+}
+
+/** The as-code form: targets and roles by name. */
+export interface DeployPipelineCode {
+  name: string
+  description?: string
+  object_types?: string[]
+  auto_on_change?: boolean
+  enabled?: boolean
+  roles?: string[]
+  steps: {
+    target: string
+    stop_on_failure?: boolean
+    wait_for_result?: boolean
+    timeout_minutes?: number
+  }[]
+}
+
+export interface DeployPipelineRunStep {
+  step: number
+  target: string | null
+  target_name: string | null
+  kind: AutomationKind | null
+  stop_on_failure: boolean
+  wait_for_result: boolean
+  timeout_minutes: number | null
+  status: DeployPipelineStepStatus
+  deploy_run: string | null
+  detail: string
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  script_run: string | null
+  script_run_status: ScriptRunStatus | null
+  result_deadline: string | null
+  /** Detail only: the script run log, or the lines the runner posted. */
+  log?: string
+  /** "script", "runner", "hidden" (no right to the script's runs) or null. */
+  log_source?: "script" | "runner" | "hidden" | null
+  outputs?: { name: string; size: number; url: string }[]
+}
+
+export interface DeployPipelineRun {
+  id: string
+  numid: number | null
+  pipeline: string | null
+  pipeline_name: string
+  object_type: string
+  object_ids: string[]
+  objects: { id: string; name: string }[]
+  trigger: "deploy" | "on_change" | "rerun"
+  trigger_display: string
+  rerun_of: string | null
+  rerun_of_numid: number | null
+  triggered_by_name: string | null
+  dry_run: boolean
+  status: DeployPipelineRunStatus
+  detail: string
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  steps: DeployPipelineRunStep[]
+  failing_step: {
+    step: number | null
+    target_name: string | null
+    error: string
+  } | null
+}
+
+export interface DeployPipelineRunDetail extends DeployPipelineRun {
+  next_payload: Record<string, unknown> | null
+}
 
 export type DriftStatus = "in_sync" | "drift" | "unknown" | "error"
 

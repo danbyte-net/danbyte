@@ -126,6 +126,7 @@ from integrations.netbox_api import (
     netbox_imports,
     netbox_test,
 )
+from integrations.pipelines_api import DeployPipelineRunViewSet, DeployPipelineViewSet
 from integrations.script_targets import DeployResultView
 from integrations.virt_api import (
     VirtChangeViewSet,
@@ -571,6 +572,9 @@ router.register(r"virt-networks", VirtNetworkViewSet, basename="virt-network")
 router.register(r"virt-placement-rules", VirtPlacementRuleViewSet,
                 basename="virt-placement-rule")
 router.register(r"deploy-runs",   DeployRunViewSet,   basename="deploy-run")
+router.register(r"deploy-pipelines", DeployPipelineViewSet, basename="deploy-pipeline")
+router.register(r"deploy-pipeline-runs", DeployPipelineRunViewSet,
+                basename="deploy-pipeline-run")
 router.register(r"config-states", DeviceConfigStateViewSet, basename="config-state")
 router.register(r"config-snapshots", DeviceConfigSnapshotViewSet, basename="config-snapshot")
 router.register(r"journal",       JournalEntryViewSet, basename="journal")

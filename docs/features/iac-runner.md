@@ -336,6 +336,16 @@ Danbyte never schedules it - *you* do. Pick what fits:
   device's **Deploy** button (or `POST /api/devices/<id>/deploy/`) then tells
   *that* system to launch the run. Danbyte hands off the work; it still never
   touches the device itself.
+- **A deploy pipeline** - several targets run in order for the same devices,
+  each step starting when the one before has a final status. See
+  [Deploy pipelines](deploy-pipelines.md).
+
+The Deploy dialog offers both: a pipeline (the one the device's role makes
+the default is preselected) or a single target, and a **Dry run** box that
+sends `"dry_run": true` in the payload (and in a script's parameters) so the
+runner only reports what it would do. Over the API, the deploy, bulk deploy
+and provision bodies take `"dry_run": true` too, and `pipeline_id` in place
+of `target_id`.
 
 ### Deploy runs, retries, and remediate
 
@@ -417,7 +427,7 @@ POST /api/deploy-runs/<run_id>/result/
 Content-Type: application/json
 X-Danbyte-Signature: sha512=<hex HMAC-SHA512 of the raw body, keyed with the target's signing secret>
 
-{"status": "succeeded", "detail": "pushed 12 devices"}
+{"status": "succeeded", "detail": "pushed 12 devices", "log": ["rendered 5 files", "frr restarted"]}
 ```
 
 The signature is the same scheme Danbyte signs its own webhook deliveries
@@ -425,12 +435,26 @@ with, so the runner reuses the secret it already verifies with; no session
 or API token is involved. `status` is `succeeded` or `failed`; `detail` is
 optional text, kept up to 2000 characters.
 
+**Log lines.** `log` is optional: a list of strings (or one string, split on
+newlines). The lines are appended to the run's log, which the
+[pipeline run page](deploy-pipelines.md#the-run-page) shows. The log is
+append-only and capped at 256 KiB per run; once full, one marker line ends
+it and later lines are dropped. Each line is cut at 2000 characters.
+
+**Progress.** While the job works, the runner can post
+`{"status": "running", "log": ["..."]}` as often as it likes. That appends
+the lines and leaves the run `launched`; it is signed and refused exactly
+like a final post. Only the final `succeeded` / `failed` post ends the run.
+
 - Only a **webhook** target with a signing secret can report. A missing or
   wrong signature, an unknown run, or a target without a secret all answer
   `403`.
-- Only a run in `launched` can be finalised. A queued or already final run
-  answers `409`, so a replayed callback cannot change a result.
+- Only a run in `launched` can be finalised or take lines. A queued or
+  already final run answers `409`, so a replayed callback cannot change a
+  result or add to a finished log.
 - Without a callback (or for AWX) the run stays `launched`.
+- In a pipeline, a step set to **Wait for a reported result** waits for this
+  post before the next step starts, and fails after its timeout.
 
 ```python
 import hashlib, hmac, json, requests

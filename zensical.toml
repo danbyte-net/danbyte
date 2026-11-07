@@ -138,6 +138,7 @@ nav = [
     { "Agent access (MCP)" = "features/agent-access.md" },
     { "Ask Danbyte (chat)" = "features/assistant.md" },
     { "Config drift (Ansible/Terraform)" = "features/iac-runner.md" },
+    { "Deploy pipelines"  = "features/deploy-pipelines.md" },
     { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
     { "Webhooks"          = "features/webhooks.md" },
     { "Import from NetBox" = "features/netbox-import.md" },

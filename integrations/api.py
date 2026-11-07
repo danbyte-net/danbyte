@@ -288,7 +288,8 @@ class AutomationTargetViewSet(BulkEditMixin, TenantScopedViewSet):
             )
         from .dispatch import enqueue_deploy
 
-        run = enqueue_deploy(target, valid, event="bulk", user=request.user)
+        run = enqueue_deploy(target, valid, event="bulk", user=request.user,
+                             dry_run=bool((request.data or {}).get("dry_run")))
         return Response(DeployRunSerializer(run).data, status=202)
 
 
@@ -303,7 +304,7 @@ class DeployRunSerializer(serializers.ModelSerializer):
         # A failed run can be re-fired only while its target still exists + is on.
         return bool(
             obj.status == "failed" and obj.target_id and obj.target
-            and obj.target.enabled
+            and obj.target.enabled and obj.pipeline_run_id is None
         )
 
     def get_duration_ms(self, obj):
@@ -315,7 +316,8 @@ class DeployRunSerializer(serializers.ModelSerializer):
         model = DeployRun
         fields = ["id", "target_name", "event", "device_ids", "object_type", "status",
                   "detail", "created_at", "finished_at", "attempt", "retry_of",
-                  "can_retry", "duration_ms", "script_run", "script_run_status"]
+                  "can_retry", "duration_ms", "script_run", "script_run_status",
+                  "dry_run", "pipeline_run", "pipeline_step"]
         read_only_fields = fields
 
 
@@ -379,6 +381,11 @@ class DeployRunViewSet(TenantScopedViewSet):
             return Response(
                 {"detail": "Only failed runs can be retried."}, status=400
             )
+        if run.pipeline_run_id is not None:
+            return Response(
+                {"detail": "This run is a pipeline step. Re-run the pipeline instead."},
+                status=400,
+            )
         target = run.target
         if target is None or not target.enabled:
             return Response(
@@ -405,6 +412,7 @@ class DeployRunViewSet(TenantScopedViewSet):
         new = enqueue_deploy(
             target, valid, event=run.event,
             attempt=run.attempt + 1, retry_of=run.retry_of or run, user=request.user,
+            dry_run=run.dry_run,
         )
         return Response(DeployRunSerializer(new).data, status=202)
 
@@ -437,7 +445,7 @@ class DeployRunViewSet(TenantScopedViewSet):
         new = enqueue_deploy(
             target, [v.id for v in vms], event=run.event,
             attempt=run.attempt + 1, retry_of=run.retry_of or run, user=request.user,
-            object_type="virtualmachine",
+            object_type="virtualmachine", dry_run=run.dry_run,
         )
         for vm in vms:
             audit_provision(request, vm, target, new, retry_of=run)

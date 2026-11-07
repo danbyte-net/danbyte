@@ -610,7 +610,11 @@ function Body({ device: d }: { device: Device }) {
           <DeviceConfigBackups deviceId={d.id} />
           <ConfigContextPanel endpoint="devices" id={d.id} />
           <DeviceInventoryPanel deviceId={d.id} />
-          <DeviceDeployPanel deviceId={d.id} />
+          <DeviceDeployPanel
+            deviceId={d.id}
+            deviceName={d.name}
+            roleId={d.role?.id}
+          />
           <DeviceDriftPanel deviceId={d.id} />
         </div>
       </DetailTab>
