@@ -188,3 +188,43 @@ writable: send the whole `steps` list to reorder, add or remove steps.
 `?device=`, `?object_type=`); the detail adds each step's log and outputs
 and `next_payload`; `POST …/<id>/cancel/` and `POST …/<id>/rerun/` act on
 one.
+
+## Try it: demo pipeline
+
+`manage.py seed_pipeline_demo --tenant <slug>` makes an opt-in demo in that
+tenant (`acme`, the demo tenant of `seed_demo`, when `--tenant` is left
+out; `--owner <username>` makes someone the scripts' owner). It is never
+part of bootstrap or a migration:
+
+| Made | What it is |
+|---|---|
+| Script **Proxmox VNets (demo)** | For each device, reads its interfaces and cables and logs one line per cabled interface, e.g. `gi1 -> sw1 ge1  c0001  missing`, plus `, NIC on vmbr0` when the synced VM NIC is on another bridge. A cable's VNet is its own **VNet**, else a name from the pattern. Writes `vnet-plan.json` with `vnets_to_create` and `nics_wrong_vnet`. Exits 1 when a cable has no VNet and there is no pattern. |
+| Script **Config check (demo)** | Logs the earlier steps and the counts in their `vnet-plan.json`, then checks each device has a primary IP, platform and role and renders its bound config template, if it has one. Fails with one line per device that is not ready. |
+| Targets **Proxmox VNets (demo)**, **Config check (demo)** | Script targets for the two scripts. |
+| Pipeline **Router (demo)** | Devices; the two steps in that order, each stopping the pipeline when it fails. Enabled, not run on change, the default for no role. |
+| Target **Demo runner (disabled)** | A webhook target left disabled, with a placeholder URL, and not a step. |
+
+Both scripts are sandboxed and read only, and run as whoever presses
+**Deploy**, so that person needs `script: run` and must see the devices and
+cables. A sandboxed script cannot reach Proxmox: the plan compares with what
+Danbyte last synced from a Proxmox source (its SDN VNets and the VMs' NIC
+bridges) and, without a sync, marks every VNet `missing`, that is, one to
+create. **Dry run** only adds a `dry run` line to each log.
+
+To try it, open a device with a primary IP, platform and role and at least
+one cable, and **Deploy** with **Router (demo)**. To see a failing step,
+deploy a device with a cable that has no VNet. To name such cables, set
+`{"vnet_pattern": "c{n:04}"}` in the **Proxmox VNets (demo)** target's
+extra vars, or a VNet name pattern on the Proxmox source.
+
+To add your own runner, edit **Demo runner (disabled)**: set its URL to
+your runner's endpoint and a signing secret, enable it, then add it to the
+pipeline as a step with **Wait for a reported result** on. The runner
+downloads `vnet-plan.json` from the `steps` it receives and
+[reports back](iac-runner.md#reporting-the-outcome-from-a-webhook-runner).
+
+Run again, the command updates the same rows: the scripts' code and
+parameters and the pipeline's first two steps go back to the demo, while
+what you switch (enabled, extra vars, default roles, run on change, the
+webhook's URL and secret, steps you added after the two) is kept. To remove
+the demo, delete the pipeline, then its targets, then the scripts.
