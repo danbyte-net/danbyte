@@ -95,6 +95,14 @@
   --sidebar-band: oklch(0.92 0.003 286.375);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.705 0.015 286.067);
+  /* File viewer syntax colours: keys and tags, string values and
+     addresses, numbers and literals, and a log's ok / warning words
+     (errors use --destructive). Few hues, near text weight. */
+  --syntax-key: oklch(0.5 0.134 242.749);
+  --syntax-string: oklch(0.5 0.11 155);
+  --syntax-number: oklch(0.5 0.15 305);
+  --syntax-ok: oklch(0.52 0.13 155);
+  --syntax-warn: oklch(0.56 0.14 65);
 }
 
 .dark {
@@ -135,6 +143,11 @@
   --sidebar-band: oklch(0.274 0.006 286.033);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.552 0.016 285.938);
+  --syntax-key: oklch(0.76 0.12 235);
+  --syntax-string: oklch(0.78 0.12 155);
+  --syntax-number: oklch(0.77 0.12 305);
+  --syntax-ok: oklch(0.78 0.14 155);
+  --syntax-warn: oklch(0.82 0.14 80);
 }
 
 @layer base {

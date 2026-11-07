@@ -263,7 +263,7 @@ function Overview({ pipeline: p }: { pipeline: DeployPipeline }) {
           <FileViewer
             text={pipelineToYaml(code.data)}
             filename={`${p.name.replace(/[^\w.() -]+/g, "_")}.yaml`}
-            language="text"
+            language="yaml"
             height="fit"
             storageKey="pipeline-code"
             label="Pipeline as code"

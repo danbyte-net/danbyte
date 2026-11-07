@@ -137,7 +137,7 @@ function ScriptRunPage() {
           <FileViewer
             text={run.log}
             filename={`run-${run.id}.log`}
-            language="text"
+            language="log"
             storageKey="script-log"
             follow={follow}
             defaultWrap
