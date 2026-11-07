@@ -18,6 +18,7 @@ import { TagList } from "@/components/cells/tag-list"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { FileViewer } from "@/components/file-viewer"
 import { ConfigContextDeleteDialog } from "@/components/config-context-delete-dialog"
 import { useMe } from "@/lib/use-me"
 
@@ -266,12 +267,13 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
         ) : (
           // Scrolls in its own box: a context blob can be long *and* wide, and
           // neither may push the page into a horizontal scroll.
-          <pre
-            tabIndex={0}
-            className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-          >
-            {JSON.stringify(c.data, null, 2)}
-          </pre>
+          <FileViewer
+            text={JSON.stringify(c.data, null, 2)}
+            filename={`${c.name}.json`}
+            language="json"
+            storageKey="config-context"
+            label="Context data"
+          />
         )}
       </section>
     </div>

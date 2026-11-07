@@ -233,7 +233,7 @@ edits it; **Render** produces the file without leaving the page.
 - **Overview** - what the template is for (name, object type, description, and
   how many lines it has), what it produces (file extension, MIME type, inline or
   attachment), when it was created and last changed, and then the **template
-  body itself**, rendered in a scrollable monospace box.
+  body itself**, in the [file viewer](#the-file-viewer).
 - **Journal** - your notes on this template.
 - **Change log** - the automatic record of changes to the row.
 
@@ -286,13 +286,32 @@ template by hand every time, bind one where it belongs:
 Resolution is **device → role → platform** - the first binding found wins.
 The binding is used in two places:
 
-- The device's **Config tab** preselects the resolved template in its
-  **Render config** box and shows how it was bound (*device* or *role/platform*).
+- The device's **Config tab** renders what is bound as soon as it opens - the
+  one bundle on the device's role, else the resolved template - and says how
+  it was bound (*role …*, *device* or *role/platform*). The picker still
+  renders any other template or bundle.
 - `GET /api/devices/<id>/render/` renders the bound template when no
   `?template=` parameter is given - so a drift runner doesn't need to know
   template ids per device.
 
 See [Config drift](iac-runner.md) for the full intended-vs-actual loop.
+
+### The file viewer
+
+The Config tab shows a render in a file viewer rather than a plain text box:
+
+| Part | What it does |
+|---|---|
+| **Files** | A bundle or directory template lists its files on the left: path, line count, and *Changed*, *Matches* or *Never pushed*. Above it, *N of M files changed since last push*. **Re-render** runs it again; **Download .tar** still fetches the whole set. |
+| **Outline** | The file's sections - `interface …`, `router …`, `iface …`, `[Section]` headers (systemd-networkd, INI) and `### FILE:` markers. A click jumps to the line; the same lines carry fold markers in the gutter. |
+| **Search** | ++slash++ focuses it (when you are not typing elsewhere); matches are highlighted, ++enter++ / ++shift+enter++ or the arrows step through them. |
+| **Wrap**, **Copy**, **Download** | Copy and Download take the file on screen (or its diff), never the line numbers. |
+| **Diff vs last push** | Unified by default or **Side by side**, with old and new line numbers. **Only changes** shows each change with 3 lines of context; clear it to read the whole file with the changes in place. |
+| **Height** | The viewer fills the window and scrolls on its own. Drag the bar under it to resize (double-click resets); the height is kept per user in this browser. **Full screen** takes the whole window; ++esc++ leaves. |
+
+The same viewer shows the config context, the Ansible host vars, the config
+drift diff, a template's body and its **Run preview**, a script run's log and
+its text outputs.
 
 ## Bundles: every file a device needs
 

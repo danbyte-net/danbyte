@@ -5,6 +5,7 @@ import { api } from "@/lib/api"
 import type { ConfigContextSource, RenderedConfigContext } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/empty-state"
+import { FileViewer } from "@/components/file-viewer"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { Section } from "@/components/ui/section"
@@ -81,18 +82,23 @@ export function ConfigContextPanel({
           None match this object.
         </EmptyState>
       ) : (
-        <div className="rounded-lg border border-border p-4">
-          {q.isLoading && <Loading />}
-          {q.isError && <QueryError error={q.error} />}
-          {data && (
-            <pre
-              tabIndex={0}
-              className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
-            >
-              {JSON.stringify(data.rendered, null, 2)}
-            </pre>
+        <>
+          {(q.isLoading || q.isError) && (
+            <div className="rounded-lg border border-border p-4">
+              {q.isLoading && <Loading />}
+              {q.isError && <QueryError error={q.error} />}
+            </div>
           )}
-        </div>
+          {data && (
+            <FileViewer
+              text={JSON.stringify(data.rendered, null, 2)}
+              filename="config-context.json"
+              language="json"
+              storageKey="config-context"
+              label="Config context"
+            />
+          )}
+        </>
       )}
     </Section>
   )
