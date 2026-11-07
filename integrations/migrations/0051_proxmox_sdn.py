@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('api', '0267_cable_pve_vnet'),
-        ('integrations', '0049_dhcp_client_id_length'),
+        ('integrations', '0050_script_targets'),
     ]
 
     operations = [
