@@ -1906,6 +1906,8 @@ export interface Device {
     own: { id: string; name: string } | null
     resolved: { id: string; name: string } | null
   } | null
+  /** This device's own config-context data, merged last; null = none. */
+  local_context_data?: Record<string, unknown> | null
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   secondary_ip?: { id: string; ip_address: string; dns_name: string } | null
   oob_ip?: { id: string; ip_address: string; dns_name: string } | null
@@ -2021,6 +2023,7 @@ export interface DeviceWritePayload {
   vc_position?: number | null
   vc_priority?: number | null
   config_template_id?: string | null
+  local_context_data?: Record<string, unknown> | null
   topology_card?: string[] | null
   topology_photo_size?: "" | TopologyPhotoSize
   icon?: string
@@ -6550,6 +6553,8 @@ export interface VirtualMachine {
   id: string
   numid: number | null
   name: string
+  /** This VM's own config-context data, merged last; null = none. */
+  local_context_data?: Record<string, unknown> | null
   /** PRTG registration: follow policies, always, or never. */
   prtg_sync?: PrtgSync
   /** What PRTG polls instead of the primary address ("" = the primary). */
@@ -6743,6 +6748,7 @@ export interface VirtualMachineWritePayload {
   hypervisor_options?: Record<string, unknown>
   /** The software version running (#395). */
   software_version?: string
+  local_context_data?: Record<string, unknown> | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -12113,6 +12119,8 @@ export interface ConfigContext {
   sites: { id: string; name: string }[]
   device_roles: NamedRef[]
   platforms: NamedRef[]
+  /** Match devices/VMs carrying any of these (the tenant's own) tags. */
+  tags: Tag[]
   created_at: string
   updated_at: string
 }
@@ -12127,12 +12135,22 @@ export interface ConfigContextWritePayload {
   site_ids?: string[]
   device_role_ids?: string[]
   platform_ids?: string[]
+  tag_ids?: number[]
 }
+
+/** Where a rendered value came from: a matching context, or the object's own
+ * local context data (always last). */
+export type ConfigContextSource =
+  | { kind: "context"; id: string; name: string; weight: number }
+  | { kind: "local"; name: string }
 
 /** Rendered config context for a device/VM (GET .../config-context/). */
 export interface RenderedConfigContext {
   rendered: Record<string, unknown>
+  /** Names of the matching contexts, in merge order. */
   applied: string[]
+  /** Every source in merge order, local data last. */
+  sources?: ConfigContextSource[]
 }
 
 // ─── Export templates ──────────────────────────────────────────────────

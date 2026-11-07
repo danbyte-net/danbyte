@@ -10770,7 +10770,7 @@ class ConfigContextViewSet(BulkEditMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related(
-            "regions", "sites", "device_roles", "platforms"
+            "regions", "sites", "device_roles", "platforms", "tags"
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()

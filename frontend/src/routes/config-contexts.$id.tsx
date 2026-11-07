@@ -12,7 +12,9 @@ import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
+import { TagList } from "@/components/cells/tag-list"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -34,8 +36,7 @@ function ConfigContextDetail() {
     queryKey: ["config-context", id],
     queryFn: () => api<ConfigContext>(`/api/config-contexts/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -52,7 +53,8 @@ function scopeCount(c: ConfigContext): number {
     c.regions.length +
     c.sites.length +
     c.device_roles.length +
-    c.platforms.length
+    c.platforms.length +
+    c.tags.length
   )
 }
 
@@ -230,6 +232,14 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
         {p.name}
       </Link>
     )),
+    {
+      label: "Tags",
+      value: c.tags.length ? (
+        <TagList tags={c.tags} listTo="/devices" />
+      ) : (
+        <span className="text-muted-foreground">Any</span>
+      ),
+    },
   ]
 
   const record: KvRow[] = [

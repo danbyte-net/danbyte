@@ -41,6 +41,7 @@ import {
   useHostGroupsDraft,
 } from "@/components/application-group-assign"
 import { useSaveObject } from "@/lib/save-object"
+import { jsonObjectText, parseJsonObject } from "@/lib/json-object"
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import {
   PrtgSyncSelect,
@@ -59,6 +60,10 @@ function numOrNull(s: string): number | null {
   const n = Number(t)
   return Number.isFinite(n) ? n : null
 }
+
+// Thrown when the local-context-data text is not a JSON object: the field
+// shows the error, so no toast.
+const LOCAL_DATA_INVALID = "Invalid local context data."
 
 export interface VmFormProps {
   vm?: VirtualMachine
@@ -118,6 +123,10 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const [image, setImage] = useState(vm?.image ?? "")
   const [storage, setStorage] = useState(vm?.storage ?? "")
   const [description, setDescription] = useState(vm?.description ?? "")
+  const [localData, setLocalData] = useState(
+    jsonObjectText(vm?.local_context_data)
+  )
+  const [localDataError, setLocalDataError] = useState<string | null>(null)
   const [tagIds, setTagIds] = useState<number[]>(
     vm?.tags.map((t) => t.id) ?? []
   )
@@ -151,6 +160,8 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
     setImage(vm.image ?? "")
     setStorage(vm.storage ?? "")
     setDescription(vm.description)
+    setLocalData(jsonObjectText(vm.local_context_data))
+    setLocalDataError(null)
     setTagIds(vm.tags.map((t) => t.id))
     setCustomFields(vm.custom_fields ?? {})
     setPrtgSync(vm.prtg_sync ?? "inherit")
@@ -191,6 +202,12 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
 
   const mutation = useMutation({
     mutationFn: async () => {
+      const localContextData = parseJsonObject(localData)
+      if (localContextData === undefined) {
+        setLocalDataError("Must be a valid JSON object.")
+        throw new Error(LOCAL_DATA_INVALID)
+      }
+      setLocalDataError(null)
       const payload: VirtualMachineWritePayload = {
         name: name.trim(),
         cluster_id: clusterId ?? "",
@@ -217,6 +234,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
           ? { represents_device_id: representsId }
           : {}),
         description: description.trim(),
+        local_context_data: localContextData,
         tag_ids: tagIds,
         custom_fields: customFields,
         // Only while PRTG is on: the field is not shown otherwise.
@@ -243,6 +261,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
       onSaved(saved)
     },
     onError: (err) => {
+      if (err.message === LOCAL_DATA_INVALID) return
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
     },
@@ -428,6 +447,21 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
               value={description}
               onChange={setDescription}
               error={fieldErrors.description}
+            />
+          </FormSection>
+
+          <FormSection title="Config context" card>
+            <FormTextarea
+              label="Local context data"
+              info="Merged over every matching config context, so these keys win."
+              rows={6}
+              placeholder='{"default_route": "192.0.2.1"}'
+              value={localData}
+              onChange={(v) => {
+                setLocalData(v)
+                setLocalDataError(null)
+              }}
+              error={localDataError ?? fieldErrors.local_context_data}
             />
           </FormSection>
         </FormColumn>
