@@ -95,9 +95,28 @@ The shared knobs (`_PeerKnobs`): `address_families` JSON list, `import_policy`,
 `export_policy`, `bfd`, `ebgp_multihop`, `next_hop_self`,
 `route_reflector_client`, `send_community`, `keepalive`, `hold_time`,
 `keychain`, `default_originate` + `default_originate_policy`,
-`capability_extended_nexthop` (RFC 5549), `ttl_security_hops` (GTSM), `extra`. `BGPSession.effective()` resolves session → group →
+`capability_extended_nexthop` (RFC 5549), `ttl_security_hops` (GTSM),
+`maximum_prefix` with its details (below), `allowas_in`, `as_override`,
+`remove_private_as`, `soft_reconfiguration`, `extra`. `BGPSession.effective()` resolves session → group →
 instance (`bfd`), merges `extra`, and derives `update_source` from the local
 address's interface.
+
+`maximum_prefix` carries three details, on the shared knobs and on
+`BGPNeighborAF` alike, for `maximum-prefix N [threshold] [restart M |
+warning-only]`: `maximum_prefix_threshold` (percent, 1-100),
+`maximum_prefix_restart` (minutes, 1-65535) and
+`maximum_prefix_warning_only` (nullable boolean, so a session can switch a
+group's value off as well as on). Each is nullable and inherits exactly as
+`maximum_prefix` does. `restart` and `warning_only` on the same row are a
+field error. The resolved values drop all three when no maximum is in
+effect, and where inheritance brings both `restart` and `warning_only` the
+more specific of the two wins. A family row that sets a detail with no
+maximum anywhere in its chain (the row, its neighbour, the peer group's
+row, the peer group) is refused; a neighbour-level detail is not, because
+it may serve family rows that set the maximum. Migration `routing/0021`
+copied integer, in-range `extra.maximum_prefix_threshold` and
+`extra.maximum_prefix_restart` values into the empty fields and left
+`extra` as it was.
 
 `BGPNeighborAF` - one address family of a neighbour, a session **or** a peer
 group (`bgpneighboraf_one_parent`), unique per parent and `afi_safi`:
@@ -105,7 +124,7 @@ group (`bgpneighboraf_one_parent`), unique per parent and `afi_safi`:
 `export_policy`, `prefix_list_in`, `prefix_list_out`, `default_originate` +
 `default_originate_policy`, `next_hop_self`, `route_reflector_client`,
 `soft_reconfiguration`, `as_override`, `remove_private_as`, `send_community`,
-`allowas_in`, `maximum_prefix`, `extra`. Every knob is nullable: null
+`allowas_in`, `maximum_prefix` + its three details, `extra`. Every knob is nullable: null
 inherits. `routing.models.effective_afs(session)` resolves each family and
 knob, most specific first: the session's row, the session's own field, the
 peer group's row, the peer group's field. The family set is the session's

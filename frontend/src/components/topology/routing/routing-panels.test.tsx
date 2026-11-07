@@ -66,10 +66,16 @@ const session: RoutingSessionRow = {
       import_policy: { id: "pin", name: "IN" },
       export_policy: { id: "pout", name: "OUT" },
       maximum_prefix: 1000,
+      maximum_prefix_threshold: 75,
+      maximum_prefix_restart: 5,
+      maximum_prefix_warning_only: false,
       route_reflector_client: null,
     },
   ],
   maximum_prefix: 1000,
+  maximum_prefix_threshold: 75,
+  maximum_prefix_restart: 5,
+  maximum_prefix_warning_only: false,
   bfd: true,
   bfd_profile: { id: "bfd", name: "fast" },
   keepalive: 10,
@@ -121,11 +127,37 @@ describe("RoutingEdgePanel", () => {
     expect(link("fast")).toBe("/bfd-profiles/bfd")
     expect(link("rpki1")).toBe("/rpki-caches/c1")
     expect(within(section).getByText("10 / 30 s")).toBeTruthy()
-    expect(within(section).getByText("1000")).toBeTruthy()
+    expect(within(section).getByText("1000 · 75% · restart 5 min")).toBeTruthy()
     expect(
       within(aside).getByRole("link", { name: /Open session/ })
     ).toBeTruthy()
     expect(aside.querySelector(".rounded-full")).toBeNull()
+  })
+
+  it("shows a family whose max-prefix details differ", async () => {
+    const af = {
+      ...session.address_families[0],
+      maximum_prefix_restart: null,
+      maximum_prefix_warning_only: true,
+    }
+    const aside = await show(
+      <RoutingEdgePanel
+        edge={{
+          ...ebgp,
+          data: {
+            ...ebgp.data,
+            sessions: [{ ...session, address_families: [af] }],
+          },
+        }}
+        name={(id) => names[id] ?? "?"}
+        onClose={() => {}}
+      />
+    )
+    expect(
+      within(aside).getByText("· max 1000 · 75% · warning only", {
+        exact: false,
+      })
+    ).toBeTruthy()
   })
 })
 

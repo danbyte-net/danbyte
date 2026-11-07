@@ -401,8 +401,12 @@ the platform default. The settings are the address families, import and
 export policy, BFD and its profile, eBGP multihop, next-hop self, route
 reflector client, send community, keepalive and hold time, the keychain,
 and the day-one neighbour knobs: **default originate**, **maximum
-prefix**, **allowas-in**, **AS override**, **remove private AS** and
-**soft reconfiguration**. The session's page shows both: **Effective settings** - what the
+prefix** (with **Warning threshold** in percent, **Restart after** in
+minutes and **Warning only**), **allowas-in**, **AS override**, **remove
+private AS** and **soft reconfiguration**. Restart after and warning only
+are alternatives: one row cannot set both, and when inheritance brings
+both the more specific wins. The three details print nothing without a
+maximum in effect. The session's page shows both: **Effective settings** - what the
 box ends up with - and **Own values**. The API returns the same as
 `effective`, and the render context carries only effective values, so a
 template never repeats the resolution.
@@ -425,7 +429,9 @@ session's and a peer group's **Address families** tab lists one row per
 family, each with **Activate**, an import and export policy, a **prefix
 list in** and **out**, default originate (and its policy), next-hop self,
 route reflector client, soft reconfiguration, AS override, remove private
-AS, send community, allowas-in and maximum prefix. **Add family** adds a
+AS, send community, allowas-in and maximum prefix with its warning
+threshold, restart and warning only. A family that sets one of those
+details needs a maximum somewhere in its chain. **Add family** adds a
 row; a blank value inherits, and the In / Out columns show an inherited
 policy muted.
 
@@ -687,14 +693,18 @@ routing:
                                peer_device, address_families, import_policy, export_policy, bfd,
                                ebgp_multihop, update_source, next_hop_self, route_reflector_client,
                                send_community, keepalive, hold_time, keychain, default_originate,
-                               maximum_prefix, allowas_in, as_override, remove_private_as,
+                               maximum_prefix, maximum_prefix_threshold,
+                               maximum_prefix_restart, maximum_prefix_warning_only,
+                               allowas_in, as_override, remove_private_as,
                                soft_reconfiguration, extra,
                                afs: [{afi_safi, activate, import_policy, export_policy,
                                       prefix_list_in, prefix_list_out, default_originate,
                                       default_originate_policy, next_hop_self,
                                       route_reflector_client, soft_reconfiguration,
                                       as_override, remove_private_as, send_community,
-                                      allowas_in, maximum_prefix, extra}],
+                                      allowas_in, maximum_prefix, maximum_prefix_threshold,
+                                      maximum_prefix_restart,
+                                      maximum_prefix_warning_only, extra}],
                                af_by_name: {AFI_SAFI: <the active afs row>}}],
                    peer_groups: [{name, ..., afs, af_by_name}]}]  # only the groups this instance's sessions use
   ospf:          [{vrf, process_id, version, router_id, reference_bandwidth, passive_by_default,

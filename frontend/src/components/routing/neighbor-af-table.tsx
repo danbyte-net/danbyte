@@ -22,7 +22,12 @@ import {
 } from "@/components/forms"
 import { buildNeighborAFColumns } from "@/components/columns/routing-columns"
 
-import { AFI_SAFI } from "./bgp-forms"
+import {
+  AFI_SAFI,
+  MaxPrefixFields,
+  maxPrefixFrom,
+  maxPrefixPayload,
+} from "./bgp-forms"
 import { RoutingDeleteDialog } from "./catalog-page"
 import {
   ROUTING_OBJECT_TYPES,
@@ -90,7 +95,7 @@ function NeighborAFForm({
     item?.send_community || null
   )
   const [allowas, setAllowas] = useState(numText(item?.allowas_in))
-  const [maxPrefix, setMaxPrefix] = useState(numText(item?.maximum_prefix))
+  const [maxPrefix, setMaxPrefix] = useState(maxPrefixFrom(item ?? undefined))
 
   const policies = usePickList<{ id: string; name: string }>(
     "routing-policies",
@@ -138,7 +143,7 @@ function NeighborAFForm({
           remove_private_as: triTo(rpa),
           send_community: sendCommunity ?? "",
           allowas_in: numOrNull(allowas),
-          maximum_prefix: numOrNull(maxPrefix),
+          ...maxPrefixPayload(maxPrefix),
         })
       }}
       className="@container grid gap-4"
@@ -273,14 +278,15 @@ function NeighborAFForm({
             onChange={setAllowas}
             error={fieldErrors.allowas_in}
           />
-          <FormText
-            label="Maximum prefix"
-            type="number"
-            value={maxPrefix}
-            onChange={setMaxPrefix}
-            error={fieldErrors.maximum_prefix}
-          />
         </div>
+      </FormSection>
+      <FormSection title="Maximum prefix">
+        <MaxPrefixFields
+          value={maxPrefix}
+          onChange={setMaxPrefix}
+          noneLabel={inherit}
+          errors={fieldErrors}
+        />
       </FormSection>
       <FormFooter
         onCancel={onCancel}
