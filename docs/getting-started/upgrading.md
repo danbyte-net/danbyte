@@ -497,11 +497,17 @@ The steps on the host - nginx, logrotate, the site-certificate unit - are
 what an upgrade from the app cannot do, because it never has root.
 Re-running `install.sh` from the bundle does them. On a host upgraded from
 the app, the bundle of the release that runs does them all at once - the
-command these steps lead with:
+command these steps lead with. An upgrade from the app, uploaded bundle
+included, deletes its bundle once it succeeds, so nothing is left on the
+host to run it from: the command downloads the bundle again as root and
+checks it. Offline, copy the tarball and its `.sha256` over instead:
 
 ```bash
-sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz    # the release that runs
-cd danbyte-<version>-linux-x86_64
+cd /root
+curl -fLO https://github.com/danbyte-net/danbyte/releases/download/v<version>/danbyte-<version>-linux-x86_64.tar.gz
+curl -fLO https://github.com/danbyte-net/danbyte/releases/download/v<version>/danbyte-<version>-linux-x86_64.tar.gz.sha256
+sha256sum -c danbyte-<version>-linux-x86_64.tar.gz.sha256
+tar xzf danbyte-<version>-linux-x86_64.tar.gz && cd danbyte-<version>-linux-x86_64
 sudo ./install.sh --host-only
 ```
 
