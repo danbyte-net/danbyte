@@ -62,6 +62,8 @@ AUDITED_MODELS = [
     "api.DocumentCategory",
     "integrations.Webhook",
     "integrations.AutomationTarget",
+    "integrations.DeployPipeline",
+    "integrations.DeployPipelineStep",
     "api.Interface",
     "api.RearPort",
     "api.FrontPort",

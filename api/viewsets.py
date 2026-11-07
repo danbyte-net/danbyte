@@ -4572,15 +4572,40 @@ class DeviceViewSet(
 
     @action(detail=True, methods=["post"])
     def deploy(self, request, pk=None):
-        """Dispatch a deploy for this device to an AutomationTarget.
-        Body: {"target_id": "<id>"}.
+        """Dispatch a deploy for this device to an AutomationTarget, or run a
+        deploy pipeline for it. Body: {"target_id": "<id>"} or
+        {"pipeline_id": "<id>"}, plus an optional "dry_run": true.
         """
         from integrations.dispatch import enqueue_deploy
         from integrations.models import AutomationTarget
         from .views import _get_active_tenant
 
         tenant = _get_active_tenant(request)
-        tid = (request.data or {}).get("target_id")
+        body = request.data or {}
+        dry_run = bool(body.get("dry_run"))
+        if body.get("pipeline_id"):
+            from integrations.pipelines_api import (
+                DeployPipelineRunSerializer,
+                resolve_pipeline,
+                start_for,
+            )
+
+            device = self.get_object()
+            if tenant is None:
+                return Response({"detail": "No active tenant selected."},
+                                status=drf_status.HTTP_400_BAD_REQUEST)
+            pipeline, err = resolve_pipeline(request, tenant, body["pipeline_id"], "device")
+            if err:
+                return err
+            prun, err = start_for(request, pipeline, [device.id], dry_run=dry_run)
+            if err:
+                return err
+            return Response(
+                {"kind": "pipeline",
+                 **DeployPipelineRunSerializer(prun, context={"request": request}).data},
+                status=202,
+            )
+        tid = body.get("target_id")
         target = AutomationTarget.objects.filter(
             id=tid, tenant=tenant, enabled=True
         ).first() if (tid and tenant) else None
@@ -4588,9 +4613,10 @@ class DeviceViewSet(
             return Response({"detail": "Unknown or disabled target."},
                             status=drf_status.HTTP_400_BAD_REQUEST)
         device = self.get_object()
-        run = enqueue_deploy(target, [device.id], event="manual", user=request.user)
+        run = enqueue_deploy(target, [device.id], event="manual", user=request.user,
+                             dry_run=dry_run)
         from integrations.api import DeployRunSerializer
-        return Response(DeployRunSerializer(run).data, status=202)
+        return Response({"kind": "target", **DeployRunSerializer(run).data}, status=202)
 
     @action(detail=True, methods=["get", "post"], url_path="config-state")
     def config_state(self, request, pk=None):
@@ -7215,7 +7241,11 @@ class VirtualMachineViewSet(
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         tenant = self._tenant_or_403()
-        tid = (request.data or {}).get("target_id")
+        body = request.data or {}
+        dry_run = bool(body.get("dry_run"))
+        if body.get("pipeline_id"):
+            return self._provision_pipeline(request, vm, tenant, body["pipeline_id"], dry_run)
+        tid = body.get("target_id")
         try:
             target = AutomationTarget.objects.filter(
                 id=tid, tenant=tenant, enabled=True
@@ -7232,14 +7262,38 @@ class VirtualMachineViewSet(
             )
         run = enqueue_deploy(
             target, [vm.id], event="provision", object_type="virtualmachine",
-            user=request.user,
+            user=request.user, dry_run=dry_run,
         )
         from integrations.provision import audit_provision
 
         audit_provision(request, vm, target, run)
         from integrations.api import DeployRunSerializer
 
-        return Response(DeployRunSerializer(run).data, status=202)
+        return Response({"kind": "target", **DeployRunSerializer(run).data}, status=202)
+
+    def _provision_pipeline(self, request, vm, tenant, pipeline_id, dry_run):
+        """Provision through a pipeline: the same provision grant on the VM,
+        and every step's target must take virtual machines."""
+        from integrations.pipelines_api import (
+            DeployPipelineRunSerializer,
+            resolve_pipeline,
+            start_for,
+        )
+        from integrations.provision import audit_provision
+
+        pipeline, err = resolve_pipeline(request, tenant, pipeline_id, "virtualmachine")
+        if err:
+            return err
+        prun, err = start_for(request, pipeline, [vm.id], object_type="virtualmachine",
+                              dry_run=dry_run)
+        if err:
+            return err
+        audit_provision(request, vm, pipeline, prun)
+        return Response(
+            {"kind": "pipeline",
+             **DeployPipelineRunSerializer(prun, context={"request": request}).data},
+            status=202,
+        )
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \

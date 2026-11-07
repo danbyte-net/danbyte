@@ -59,7 +59,10 @@ device's **Deploy** button then starts it with the deployed ids. For that
 it must declare a parameter named `device_ids`; a target refuses a script
 without one. A deploy also sets `event` (`manual`, `bulk`, `auto`, `drift`,
 `provision`) and `object_type` (`device`, or `virtualmachine` for a
-provision), plus the target's extra vars.
+provision), plus the target's extra vars. A dry-run deploy adds
+`dry_run: true`. As a step of a [deploy pipeline](deploy-pipelines.md) it
+also gets `pipeline_run_id`, `step`, `dry_run` and `steps`, the earlier
+steps with their status and output download links.
 
 From a deploy, `device_ids` is always a list of id strings. Pressing
 **Run** by hand passes whatever the Run dialog sends, so a script used both

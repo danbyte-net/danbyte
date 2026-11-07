@@ -367,6 +367,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.Webhook", "Webhooks", "Integrations"),
     ("integrations.AutomationTarget", "Automation targets", "Integrations"),
     ("integrations.DeployRun", "Config deploy runs", "Integrations"),
+    ("integrations.DeployPipeline", "Deploy pipelines", "Integrations"),
+    ("integrations.DeployPipelineRun", "Deploy pipeline runs", "Integrations"),
     ("integrations.DeviceConfigSnapshot", "Device config snapshots", "Integrations"),
     ("integrations.DeviceConfigState", "Device config state", "Integrations"),
     ("integrations.WindowsServerConnection", "Windows server connections", "Integrations"),

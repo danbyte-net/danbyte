@@ -127,10 +127,14 @@ def _dispatch_user(user_id):
 
 
 def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
-                    object_type="device", user_id=None):
+                    object_type="device", user_id=None, pipeline=None, dry_run=False):
     """Fire the target. Returns a small result dict and updates the DeployRun.
     ``user_id`` is who started the deploy (Deploy pressed, or the change's
-    author); a script target runs as them when the script runs as its caller."""
+    author); a script target runs as them when the script runs as its caller.
+    ``pipeline`` is the step context of a pipeline run (``pipeline_run_id``,
+    ``step``, ``dry_run``, ``steps``), added to the payload after the target's
+    extra vars so a target cannot override it. ``dry_run`` asks a single
+    target deploy to only report what it would do."""
     from .models import AutomationTarget, DeployRun
     from .script_targets import DispatchContext, current_dispatch
 
@@ -167,6 +171,10 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
         # /api/deploy-runs/<run_id>/result/.
         payload["run_id"] = str(run.id)
     payload.update(target.extra_vars or {})
+    if pipeline:
+        payload.update(pipeline)
+    elif dry_run:
+        payload["dry_run"] = True
 
     # Select the provider by kind; an unknown kind degrades to the generic
     # webhook rather than crashing (plugins register their own via
@@ -178,6 +186,7 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
     token = current_dispatch.set(DispatchContext(
         run=run, user=_dispatch_user(user_id), device_ids=list(base["device_ids"]),
         object_type=base.get("object_type") or "device",
+        pipeline=pipeline or ({"dry_run": True} if dry_run else None),
     ))
     try:
         status, detail = provider(target, payload, event)
@@ -190,7 +199,7 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
 
 
 def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=None,
-                   object_type="device", user=None):
+                   object_type="device", user=None, dry_run=False):
     """Create a DeployRun and enqueue the dispatch on the low queue. Returns the
     run (so the API can report it). ``attempt``/``retry_of`` link a re-dispatch
     back to the run it retries. ``object_type`` names what the ids are
@@ -203,7 +212,7 @@ def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=No
     run = DeployRun.objects.create(
         tenant=target.tenant, target=target, target_name=target.name,
         event=event, device_ids=[str(d) for d in device_ids], status="queued",
-        attempt=attempt, retry_of=retry_of, object_type=object_type,
+        attempt=attempt, retry_of=retry_of, object_type=object_type, dry_run=bool(dry_run),
     )
     try:
         import django_rq
@@ -211,13 +220,14 @@ def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=No
         django_rq.get_queue("low").enqueue(
             dispatch_deploy, str(target.id), [str(d) for d in device_ids],
             event=event, run_id=str(run.id), object_type=object_type, user_id=user_id,
+            dry_run=bool(dry_run),
         )
     except Exception:  # noqa: BLE001
         # Redis down etc. - run dispatch inline so the deploy still happens.
         try:
             dispatch_deploy(str(target.id), [str(d) for d in device_ids],
                             event=event, run_id=str(run.id), object_type=object_type,
-                            user_id=user_id)
+                            user_id=user_id, dry_run=bool(dry_run))
         except Exception:  # noqa: BLE001
             logger.exception("inline deploy dispatch failed")
     return run
@@ -263,7 +273,10 @@ def auto_fire(instance, slug: str | None = None) -> None:
             )
             if target_covers(t, slug)
         ]
-        if not targets:
+        from .pipelines import auto_pipelines
+
+        pipelines = auto_pipelines(tenant_id, slug)
+        if not targets and not pipelines:
             return
         object_id = getattr(instance, "pk", None)
         if object_id is None:
@@ -275,17 +288,26 @@ def auto_fire(instance, slug: str | None = None) -> None:
         author = current_user()
         # After commit (#357): a rolled-back change must not be pushed to a
         # device, and the job must read the change as saved.
-        transaction.on_commit(lambda: _auto_enqueue(targets, object_id, author))
+        transaction.on_commit(
+            lambda: _auto_enqueue(targets, object_id, author, pipelines, slug)
+        )
     except Exception:  # noqa: BLE001 - never break the originating save
         logger.exception("auto-deploy dispatch failed")
 
 
-def _auto_enqueue(targets, object_id, author=None) -> None:
+def _auto_enqueue(targets, object_id, author=None, pipelines=(), slug="device") -> None:
     for t in targets:
         try:
             enqueue_deploy(t, [object_id], event="auto", user=author)
         except Exception:  # noqa: BLE001
             logger.exception("auto-deploy dispatch failed (%s)", t.name)
+    from .pipelines import start
+
+    for p in pipelines:
+        try:
+            start(p, [object_id], object_type=slug, trigger="on_change", user=author)
+        except Exception:  # noqa: BLE001
+            logger.exception("auto-deploy pipeline failed (%s)", p.name)
 
 
 def _on_auto_save(sender, instance, created, **kwargs):
@@ -301,9 +323,17 @@ def connect() -> None:
 
     from auth_api.object_types import _registry
 
-    from .models import AutomationTarget, DeployRun, Webhook
+    from .models import (
+        AutomationTarget,
+        DeployPipeline,
+        DeployPipelineRun,
+        DeployPipelineStep,
+        DeployRun,
+        Webhook,
+    )
 
-    skip = {AutomationTarget, DeployRun, Webhook}
+    skip = {AutomationTarget, DeployRun, Webhook, DeployPipeline, DeployPipelineRun,
+            DeployPipelineStep}
     for slug, entry in _registry().items():
         model = entry["model"]
         if model in skip:

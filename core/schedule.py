@@ -192,9 +192,9 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
     ),
     ScheduledTask(
         unit="danbyte-scripts",
-        commands=("run_scripts",),
+        commands=("run_scripts", "sweep_deploy_pipelines"),
         every=MINUTE,
-        label="Run scheduled scripts that are due",
+        label="Run scheduled scripts that are due; time out waiting pipeline steps",
     ),
     ScheduledTask(
         unit="danbyte-search-reindex",

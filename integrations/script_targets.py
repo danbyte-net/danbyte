@@ -49,6 +49,9 @@ class DispatchContext:
     #: vars are merged into the payload.
     device_ids: list | None = None
     object_type: str | None = None
+    #: A pipeline step's context (pipeline_run_id, step, dry_run, steps),
+    #: or ``{"dry_run": True}`` for a dry-run single deploy.
+    pipeline: dict | None = None
 
 
 #: Set by ``dispatch_deploy`` around the provider call. Providers keep the
@@ -129,6 +132,8 @@ def script_provider(target, payload, event):
         ),
         "event": event,
         "object_type": ctx.object_type or payload.get("object_type") or "device",
+        # A pipeline's keys last, so the target's extra vars cannot override them.
+        **(ctx.pipeline or {}),
     }
     sr = create_run(script, user=actor, params=params)
     if ctx.run is not None:
@@ -170,11 +175,16 @@ def on_script_run_finished(sender, run, **kwargs) -> None:
     """``scripting.runner.run_finished`` receiver: close every deploy run
     this script run was started for."""
     from .models import DeployRun
+    from .pipelines import on_step_final
 
     status = "succeeded" if run.status == "success" and (run.exit_code in (0, None)) else "failed"
     detail = _log_tail(run)
-    for pk in DeployRun.objects.filter(script_run=run).values_list("pk", flat=True):
-        finalise(pk, status, detail)
+    closed = [
+        pk for pk in DeployRun.objects.filter(script_run=run).values_list("pk", flat=True)
+        if finalise(pk, status, detail)
+    ]
+    # A pipeline step: the run moves on to its next step.
+    on_step_final(closed)
 
 
 def connect() -> None:
@@ -188,6 +198,41 @@ def connect() -> None:
 SIGNATURE_HEADER = "HTTP_X_DANBYTE_SIGNATURE"
 CALLBACK_KINDS = ("webhook",)
 MAX_BODY = 64 * 1024
+#: Runner lines kept per deploy run; later lines are dropped.
+LOG_LIMIT = 256 * 1024
+LINE_LIMIT = 2000
+LOG_TRUNCATED = "… log limit reached; later lines were dropped."
+#: A non-final post: lines while the runner works, status unchanged.
+PROGRESS_STATUS = "running"
+
+
+def _clean_lines(raw) -> list[str] | None:
+    """The ``log`` lines of a callback body, or None when malformed."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raw = raw.splitlines()
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        return None
+    out = []
+    for line in raw:
+        for part in line.splitlines() or [""]:
+            out.append(part[:LINE_LIMIT])
+    return out
+
+
+def append_log(current: str, lines: list[str]) -> str:
+    """``current`` plus ``lines``, up to :data:`LOG_LIMIT`. Append-only: what
+    is there is never rewritten, and once full one marker line ends it."""
+    if not lines or current.endswith(LOG_TRUNCATED + "\n"):
+        return current
+    text = "".join(f"{line}\n" for line in lines)
+    if len(current) + len(text) <= LOG_LIMIT:
+        return current + text
+    room = LOG_LIMIT - len(current)
+    kept = text[:max(room, 0)]
+    kept = kept[: kept.rfind("\n") + 1] if "\n" in kept else ""
+    return current + kept + LOG_TRUNCATED + "\n"
 
 
 def sign(secret: str, body: bytes) -> str:
@@ -206,12 +251,17 @@ class DeployResultView(APIView):
     the deploy went. Unauthenticated by session or token on purpose: the
     ``X-Danbyte-Signature`` header (HMAC-SHA512 of the raw body with the
     target's secret, the same scheme Danbyte signs its own deliveries with)
-    is the credential. Body ``{"status": "succeeded"|"failed", "detail": ""}``.
+    is the credential. Body ``{"status": "succeeded"|"failed", "detail": "",
+    "log": ["line", ...]}``; ``log`` is optional.
 
-    Only a run in ``launched`` can be finalised; once final it never
-    changes, so a replayed callback cannot rewrite it. Every refusal before
-    the signature check answers the same 403, so the route tells an outsider
-    nothing about which run ids exist.
+    ``{"status": "running", "log": [...]}`` is a progress post: the lines are
+    appended and the run stays ``launched``. Lines are append-only and capped
+    at :data:`LOG_LIMIT` per run.
+
+    Only a run in ``launched`` can be finalised or take lines; once final it
+    never changes, so a replayed callback cannot rewrite it. Every refusal
+    before the signature check answers the same 403, so the route tells an
+    outsider nothing about which run ids exist.
     """
 
     authentication_classes = []
@@ -240,18 +290,37 @@ class DeployResultView(APIView):
         if not isinstance(data, dict):
             return Response({"detail": "Body must be a JSON object."}, status=400)
         status = data.get("status")
-        if status not in DeployRun.FINAL_STATUSES:
-            return Response({"status": ["One of succeeded, failed."]}, status=400)
+        if status not in (*DeployRun.FINAL_STATUSES, PROGRESS_STATUS):
+            return Response({"status": ["One of succeeded, failed, running."]}, status=400)
         detail = data.get("detail", "")
         if not isinstance(detail, str):
             return Response({"detail": ["A string."]}, status=400)
-        changed = DeployRun.objects.filter(pk=run.pk, status="launched").update(
-            status=status, detail=detail[:DETAIL_LIMIT], finished_at=timezone.now(),
-        )
-        if not changed:
-            current = DeployRun.objects.filter(pk=run.pk).values_list("status", flat=True).first()
-            return Response(
-                {"detail": f"This run is {current}; only a launched run can be finalised."},
-                status=409,
-            )
+        lines = _clean_lines(data.get("log"))
+        if lines is None:
+            return Response({"log": ["A list of strings."]}, status=400)
+        from django.db import transaction
+
+        with transaction.atomic():
+            row = DeployRun.objects.select_for_update().filter(
+                pk=run.pk, status="launched"
+            ).first()
+            if row is None:
+                current = (
+                    DeployRun.objects.filter(pk=run.pk).values_list("status", flat=True).first()
+                )
+                return Response(
+                    {"detail": f"This run is {current}; only a launched run can be reported."},
+                    status=409,
+                )
+            fields = {"log": append_log(row.log or "", lines)}
+            if status != PROGRESS_STATUS:
+                fields.update(
+                    status=status, detail=detail[:DETAIL_LIMIT], finished_at=timezone.now()
+                )
+            DeployRun.objects.filter(pk=row.pk).update(**fields)
+        if status == PROGRESS_STATUS:
+            return Response({"id": str(run.pk), "status": "launched"})
+        from .pipelines import on_step_final
+
+        on_step_final([run.pk])
         return Response({"id": str(run.pk), "status": status})
