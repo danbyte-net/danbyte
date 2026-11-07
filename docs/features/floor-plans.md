@@ -1321,8 +1321,15 @@ what is in view. The **PDF** runs the same pass at the paper's scale.
 In the **3D** view, Readable draws every object's name as a label that
 faces the camera at one size on screen, whatever the distance. Names past
 400 m (or twice the plan's longer side on a bigger plan), behind the
-camera or off screen are left out. Overlapping names thin
-out the same way as in 2D, with the nearer one winning among equals. The
+camera or off screen are left out. Where plates would overlap - a row of
+racks from afar - the nearer one wins among equals, as in 2D, and with
+[Callouts](#callouts) on the crowd that lost a name is not left short:
+every plate in it moves out to a callout with a leader back to its object,
+or, when the crowd is larger than 8 or its callouts find no room within
+reach, one plate names the whole crowd as a cluster tile does
+(`R-A01–R-A08`, `15 racks`); the selected or hovered one keeps its own.
+No plate ever draws over another. The layout follows the camera, so it
+changes as you orbit and zoom. With Callouts off the names only thin. The
 objects themselves stay their real size in 3D.
 
 The **Export PDF** follows the setting at the sheet's scale: on paper
@@ -1473,7 +1480,8 @@ a box with the name, set off in free space near the tile, with a
 - Lower-ranked texts - tray, room and area names, raised-floor captions -
   keep off the boxes and their leaders.
 
-Callouts are on the canvas only; the PDF keeps plain names. **Off** draws
+Callouts are on the canvas and in the [3D view](#one-label-pass) under
+Readable; the PDF keeps plain names. **Off** draws
 names as before. The choice is saved on the plan with the other Display
 choices; a viewer can switch it for the session.
 

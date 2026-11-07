@@ -93,6 +93,7 @@ export function PlanScene3D({
           areas={areas?.filter((s) => s.kind === "area")}
           readableNames={prefs.objectSize === "readable"}
           readableIcons={prefs.iconTiles}
+          readableCallouts={prefs.callouts === "auto"}
           muteBackground={prefs.muteBackground}
           drawingFloor={
             cadFloorUrl && cad.drawing

@@ -6,6 +6,9 @@ import { useTheme } from "@/components/theme-provider"
 import { roomLook } from "./room-look"
 import { useMaxAnisotropy } from "./texture-quality"
 
+/** The room's plates' face: the system stack. */
+export const ROOM_FONT = "ui-monospace, ui-sans-serif, system-ui, sans-serif"
+
 /** Render text to a canvas texture (system font - no network fetch, so it's
  * airgap/CSP-safe, unlike drei's troika `<Text>`). Returns the texture plus
  * its pixel width/height so callers can size a plane to the text aspect. */
@@ -19,7 +22,7 @@ export function textTexture(
     fontPx = 44,
     /** The face; the room's plates use the system stack, port labels use
      * the app's own so they match the 2D faceplate. */
-    fontFamily = "ui-monospace, ui-sans-serif, system-ui, sans-serif",
+    fontFamily = ROOM_FONT,
     align = "left" as CanvasTextAlign,
     pad = 12,
     anisotropy = 4,
