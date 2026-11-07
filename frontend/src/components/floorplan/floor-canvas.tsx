@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { tileIcon } from "@/components/object-icon"
 import { PointerMenu } from "@/components/pointer-menu"
 import {
   Tooltip,
@@ -98,6 +99,9 @@ import {
 } from "./cable-draw"
 import type { CalloutMode, ObjectSize, ShapeOf } from "./readable"
 import { tileFill } from "./tile-paint"
+import { clusterMembersOf } from "./cluster-members"
+import type { ClusterMember } from "./cluster-members"
+import { ClusterHoverCard } from "./cluster-members-view"
 import type { ColorBy, RackFigures } from "./tile-paint"
 import {
   AreaShapeView,
@@ -512,6 +516,17 @@ const sameView = (
 
 /** An element's size on screen (px), kept up to date by a ResizeObserver;
  * 0 by 0 until measured. */
+/** A tile as its cluster lists it. */
+function tileMember(t: FloorPlanTile): ClusterMember {
+  return {
+    id: t.id,
+    name: tileName(t) || t.linked?.name || "",
+    kind: t.linked?.kind ?? "other",
+    icon: tileIcon(t),
+    color: tileFill(t),
+  }
+}
+
 function useElementSize(ref: React.RefObject<Element | null>) {
   const [size, setSize] = useState({ w: 0, h: 0 })
   useEffect(() => {
@@ -2846,35 +2861,15 @@ export function FloorCanvas({
           const c = iconLayout.clusters.find((x) => x.id === clusterHint.id)
           const face = c && clusterFaces.get(c.id)
           if (!c || !face) return null
-          const names = c.members.map((id) => {
-            const tl = tileById.get(id)
-            return tl ? tileName(tl) || tl.linked?.name || "Tile" : ""
-          })
           return (
-            <Tooltip open>
-              <TooltipTrigger asChild>
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute"
-                  style={{ left: clusterHint.x, top: clusterHint.y - 10 }}
-                />
-              </TooltipTrigger>
-              <TooltipContent
-                side="top"
-                variant="panel"
-                data-part="cluster-members"
-              >
-                <div className="flex flex-col">
-                  <div className="font-medium">{face.name}</div>
-                  <ul className="mt-0.5 text-xs text-muted-foreground">
-                    {names.slice(0, 12).map((n, i) => (
-                      <li key={i}>{n}</li>
-                    ))}
-                    {names.length > 12 && <li>+{names.length - 12} more</li>}
-                  </ul>
-                </div>
-              </TooltipContent>
-            </Tooltip>
+            <ClusterHoverCard
+              at={clusterHint}
+              heading={face.name}
+              members={clusterMembersOf(c.members, (id) => {
+                const tl = tileById.get(id)
+                return tl ? tileMember(tl) : null
+              })}
+            />
           )
         })()}
       {opensHint && !editable && (

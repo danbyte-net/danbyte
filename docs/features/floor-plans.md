@@ -1328,6 +1328,10 @@ every plate in it moves out to a callout with a leader back to its object,
 or, when the crowd is larger than 8 or its callouts find no room within
 reach, one plate names the whole crowd as a cluster tile does
 (`R-A01–R-A08`, `15 racks`); the selected or hovered one keeps its own.
+Hover a summary plate to list its members by kind, as a 2D cluster
+does; click it for a panel that lists them all (with a search past 12),
+where picking one selects it and flies to its front and **Zoom to these**
+frames the whole crowd.
 No plate ever draws over another. The layout follows the camera, so it
 changes as you orbit and zoom. With Callouts off the names only thin. The
 objects themselves stay their real size in 3D.

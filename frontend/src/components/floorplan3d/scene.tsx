@@ -80,7 +80,8 @@ import type { AreaShape } from "@/components/floorplan/shapes"
 import { AreaFloorMesh } from "./area-floor-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { NoWebGL, Stage, roomLights } from "./stage"
-import { ReadableNames3D } from "./readable-names"
+import { ReadableNames3D, sceneTileName } from "./readable-names"
+import { SummaryMembers3D, createSummaryStore } from "./summary-picker"
 import { TileGhostMesh } from "./tile-ghost-mesh"
 import { FloorDevicesLayer, isPlacedDevice } from "./floor-device-mesh"
 import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
@@ -280,6 +281,8 @@ export default function FloorScene3D({
   // The cabinet under the pointer, for its card - kept out of this
   // component's state so a hover never re-renders the room.
   const [hoverStore] = useState(createHoverStore)
+  // Readable's summary plates: the one hovered and the one opened.
+  const [summaryStore] = useState(createSummaryStore)
   // The same for a device inside an open cabinet, keyed tile/device.
   const [deviceHover] = useState(createHoverStore)
   const hoverCabinetDevice = useCallback(
@@ -825,6 +828,67 @@ export default function FloorScene3D({
     (t) => !hiddenTileIds?.has(t.id) && (!isolation || isolation.ids.has(t.id))
   )
 
+  // A summary's member picked: select it and fly to its front, as F does;
+  // anything that is not a rack, cabinet or device is framed.
+  const goToTile = (tileId: string) => {
+    const t = data.tiles.find((x) => x.id === tileId)
+    if (!t) return
+    const height = t.rack
+      ? rackFootprintM(t.rack).height
+      : t.cabinet
+        ? cabinetBoxM(t.cabinet).height
+        : t.device
+          ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
+          : null
+    if (height == null) {
+      frameTiles([tileId])
+      return
+    }
+    setFocusOn(false)
+    handleSelect(
+      t.rack
+        ? { kind: "rack", tileId }
+        : t.cabinet
+          ? { kind: "cabinet", tileId }
+          : { kind: "device", tileId, deviceId: t.device!.id }
+    )
+    setViewSide("front")
+    const vp = rackViewpoint(plan, t, height, "front")
+    flyToRef.current = {
+      target: new THREE.Vector3(...vp.target),
+      position: new THREE.Vector3(...vp.position),
+    }
+    invalidateRef.current?.()
+  }
+  // Zoom to these: the tiles' boxes, framed together.
+  const frameTiles = (ids: readonly string[]) => {
+    const want = new Set(ids)
+    const ts = data.tiles.filter((t) => want.has(t.id))
+    if (!ts.length) return
+    const c = cellM(plan)
+    const top = (t: SceneTile) =>
+      t.rack
+        ? rackFootprintM(t.rack).height
+        : t.cabinet
+          ? cabinetBoxM(t.cabinet).height
+          : t.device
+            ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
+            : 1
+    navRef.current?.frame(
+      [
+        Math.min(...ts.map((t) => t.x)) * c,
+        0,
+        Math.min(...ts.map((t) => t.y)) * c,
+      ],
+      [
+        Math.max(...ts.map((t) => t.x + t.w)) * c,
+        Math.max(...ts.map(top)),
+        Math.max(...ts.map((t) => t.y + t.h)) * c,
+      ]
+    )
+    invalidateRef.current?.()
+  }
+
   // HUD front↔rear flip - same viewpoint math as the double-click fly-to.
   const flipView = () => {
     if (!selTile?.rack) return
@@ -1183,6 +1247,7 @@ export default function FloorScene3D({
             icons={readableIcons}
             callouts={readableCallouts}
             pinned={() => [selection?.tileId, hoverStore.get()]}
+            summaries={summaryStore}
           />
         )}
         {showCables && (
@@ -1211,6 +1276,16 @@ export default function FloorScene3D({
           />
         )}
       </Stage>
+      {readableNames && (
+        <SummaryMembers3D
+          store={summaryStore}
+          tiles={namedTiles}
+          nameOf={sceneTileName}
+          selected={selection?.tileId}
+          onPick={goToTile}
+          onZoom={frameTiles}
+        />
+      )}
       {selTile && selection?.kind === "rack" && (
         <RackHud
           tile={selTile}
