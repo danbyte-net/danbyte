@@ -91,6 +91,7 @@ const ROW = {
     as_attachment: true,
     target_path: "",
     bundle_path: "",
+    is_directory: false,
   }),
   label: (id: string, name: string) => ({
     ...BASE,

@@ -12,6 +12,7 @@ inventory, so a template and a playbook read the same shape.
 """
 from __future__ import annotations
 
+import contextvars
 import ipaddress
 import re
 from collections.abc import Callable
@@ -352,14 +353,136 @@ def _template_environment_class():
     return _Environment
 
 
+# ─── Several files from one template ─────────────────────────────────────────
+# A device template whose target path ends in ``/`` is a directory: its
+# output is the files its ``{% file "name" %}…{% endfile %}`` blocks write,
+# each landing at ``<target path><name>`` (one systemd ``.link`` per NIC,
+# one WireGuard config per tunnel). The blocks go to a sink set for the
+# length of one render; a render without one (a single-file template, a
+# list export) refuses a file block.
+
+#: Longest name one file block may carry, and most files one render may write.
+MAX_FILE_NAME = 128
+MAX_FILES = 256
+#: The path a file is keyed by is stored in a 255-character column.
+MAX_FILE_PATH = 255
+
+_FILE_SINK: contextvars.ContextVar = contextvars.ContextVar("danbyte_file_sink", default=None)
+
+
+def _file_block_error(message: str):
+    from jinja2 import TemplateRuntimeError
+
+    return TemplateRuntimeError(message)
+
+
+def is_directory_target(template) -> bool:
+    """Whether ``template`` renders a directory of files (its target path
+    ends in ``/``) rather than one file."""
+    return (getattr(template, "target_path", "") or "").endswith("/")
+
+
+def check_file_name(name) -> str:
+    """The plain file name a ``{% file %}`` block names, or a
+    ``TemplateRuntimeError`` saying why not. A push tool writes these paths
+    to disk, so nothing that leaves the directory gets through: no ``/`` or
+    backslash, no ``.`` or ``..``, no control characters (NUL above all), no
+    leading or trailing space."""
+    if isinstance(name, bool) or not isinstance(name, (str, int)):
+        raise _file_block_error("A file block's name must be text.")
+    name = str(name)
+    shown = repr(name[:60])
+    if not name:
+        raise _file_block_error("A file block's name is empty.")
+    if name in (".", ".."):
+        raise _file_block_error(f"{shown} is not a file name.")
+    if "/" in name or "\\" in name:
+        raise _file_block_error(
+            f"File name {shown} has a path separator; a file block names a file in "
+            "the template's directory, not a path."
+        )
+    if any(ord(c) < 32 or ord(c) == 127 for c in name):
+        raise _file_block_error(f"File name {shown} has a control character.")
+    if name != name.strip():
+        raise _file_block_error(f"File name {shown} starts or ends with a space.")
+    if len(name) > MAX_FILE_NAME:
+        raise _file_block_error(
+            f"File name {shown} is longer than {MAX_FILE_NAME} characters."
+        )
+    return name
+
+
+class _FileSink:
+    """The files one directory render writes, in the order it writes them."""
+
+    def __init__(self, directory: str):
+        self.directory = directory
+        self.files: dict[str, str] = {}
+        self.open = False
+
+    def add(self, name, caller) -> None:
+        if self.open:
+            raise _file_block_error("A file block cannot sit inside another.")
+        name = check_file_name(name)
+        if name in self.files:
+            raise _file_block_error(f"Two file blocks are both named {name!r}.")
+        if len(self.files) >= MAX_FILES:
+            raise _file_block_error(f"More than {MAX_FILES} file blocks in one render.")
+        if len(self.directory) + len(name) > MAX_FILE_PATH:
+            raise _file_block_error(
+                f"{self.directory}{name} is longer than {MAX_FILE_PATH} characters."
+            )
+        self.open = True
+        try:
+            self.files[name] = str(caller())
+        finally:
+            self.open = False
+
+
+@cache
+def _file_extension_class():
+    from jinja2 import nodes
+    from jinja2.ext import Extension
+
+    class FileBlockExtension(Extension):
+        """``{% file "11-gi1.link" %}…{% endfile %}``: the body is one file
+        of a directory template, named by the expression."""
+
+        tags = {"file"}
+
+        def parse(self, parser):
+            lineno = next(parser.stream).lineno
+            name = parser.parse_expression()
+            body = parser.parse_statements(("name:endfile",), drop_needle=True)
+            self.environment.file_blocks = True
+            return nodes.CallBlock(
+                self.call_method("_file", [name]), [], [], body
+            ).set_lineno(lineno)
+
+        def _file(self, name, caller):
+            sink = _FILE_SINK.get()
+            if sink is None:
+                raise _file_block_error(
+                    "A file block needs a device template whose target path ends "
+                    "in / (a directory)."
+                )
+            sink.add(name, caller)
+            return ""
+
+    return FileBlockExtension
+
+
 def _env(tenant=None, user=None):
     """The sandbox for rendering. ``tenant`` fences every row a template
     reaches to that tenant; ``user`` further cuts each relation to the rows
-    that user may view. Compiling a template (no render) needs neither."""
+    that user may view. Compiling a template (no render) needs neither.
+    After compiling, ``env.file_blocks`` says whether the source used a
+    ``{% file %}`` block."""
     env = _template_environment_class()(
         trim_blocks=True, lstrip_blocks=True, autoescape=False,
-        tenant=tenant, user=user,
+        tenant=tenant, user=user, extensions=[_file_extension_class()],
     )
+    env.file_blocks = False
     env.filters.update(FILTERS)
     env.tests.update(TESTS)
     return env
@@ -566,6 +689,41 @@ def _backing_vm(device, tenant, user):
 
 
 def render_device_config(template, device, tenant, user=None) -> str:
+    """One device's render of a single-file template, as text. A directory
+    template (target path ending in ``/``) writes several files: render it
+    with :func:`render_device_files` instead."""
+    if is_directory_target(template):
+        raise ValueError(
+            f"{template.name} renders a directory of files (its target path ends "
+            "in /); render it per file."
+        )
+    return _render_device(template, device, tenant, user)
+
+
+def render_device_files(template, device, tenant, user=None) -> list[tuple[str, str]]:
+    """The files a directory template writes for one device, as ``(name,
+    text)`` in the order its blocks ran. Text outside every file block is an
+    error unless it is only whitespace: it would otherwise vanish without a
+    word, and is most often a forgotten ``{% file %}``. No file blocks at all
+    is an empty list - a device with nothing to write."""
+    if not is_directory_target(template):
+        raise ValueError(f"{template.name} renders one file, not a directory.")
+    sink = _FileSink(template.target_path)
+    token = _FILE_SINK.set(sink)
+    try:
+        rest = _render_device(template, device, tenant, user)
+    finally:
+        _FILE_SINK.reset(token)
+    stray = (rest or "").strip()
+    if stray:
+        raise _file_block_error(
+            f"Text outside a file block: {stray[:40]!r}. In a directory template "
+            "everything goes inside {% file %} … {% endfile %}."
+        )
+    return list(sink.files.items())
+
+
+def _render_device(template, device, tenant, user=None) -> str:
     """Render an export template for a single device - the per-device
     intended-config generator. Context: ``device``, its merged ``config_context``,
     ``interfaces`` (each with ``link_peer``, the cable's far end),

@@ -304,13 +304,70 @@ so "push from Danbyte" is one call that returns every file with its path.
 
 Each template says where its file lands with a **Target path**
 (`/etc/frr/frr.conf`); a template without one is keyed by its name and
-extension. Two templates in one bundle cannot land at the same path.
+extension. Two templates in one bundle cannot land at the same path. A
+target path ending in `/` makes the template a directory of files - see
+[Several files from one template](#several-files-from-one-template).
 
 ```
 GET /api/devices/<id>/render/?bundle=leaf-files       → {bundle, files: {path: {…}}}
 GET /api/devices/<id>/render/?bundle=role             → the bundle bound to the device's role
 GET /api/devices/<id>/render/?bundle=role&archive=tar → a tarball, paths kept relative
 ```
+
+### Several files from one template
+
+Some files come one per thing on the device: a systemd `.link` unit per NIC
+(`10-mgmt0.link`, `11-gi1.link`, …), a WireGuard config per tunnel, a file
+per VRF. A device template whose **Target path ends in `/`** is a
+**directory**: each `{% file %}` block writes one file into it.
+
+```jinja
+{% for i in interfaces %}
+{% file "%02d-%s.link" % (10 + loop.index0, i.name) %}
+[Match]
+OriginalName={{ i.name }}
+{% endfile %}
+{% endfor %}
+```
+
+With the target path `/etc/systemd/network/`, a device with three NICs
+renders three files, `/etc/systemd/network/10-mgmt0.link` and so on. Each
+one appears in a bundle render, the bulk render and the tarball under its
+own path, with its own `sha256`, push record, `drift` and `diff` - exactly
+like a single-file template's file. Rendered on its own,
+`GET /api/devices/<id>/render/?template=<id>` answers
+`{template, template_id, path, files: {path: {…}}}` instead of one file, and
+`&archive=tar` works there too. The export template's own **preview** answers
+`{output: "", files}` and its **render** download is a tarball; both need
+`?object=<device id>`, since the files are per device.
+
+The rules, each a `400` with the reason:
+
+- **The name is a plain file name.** No `/` or `\`, not `.` or `..`, no NUL
+  or other control character, no leading or trailing space, at most 128
+  characters, and the directory plus the name fits 255. A push tool writes
+  these paths to disk, so nothing may step out of the directory - and the
+  check runs on the rendered name, so a NIC called `../x` is refused too.
+  The directory itself may not contain a `..` segment.
+- **Names are unique in one render.** Two blocks with one name is an error,
+  as are two templates of one bundle writing the same path. Two directory
+  templates may share a directory (`.link` and `.network` files side by
+  side); only a clash of whole paths is refused.
+- **Everything goes inside a block.** Whitespace between blocks is ignored;
+  any other text outside a block is refused rather than dropped, since it is
+  most often a forgotten `{% file %}`.
+- **No blocks, no files.** A device the template writes nothing for renders
+  no files: the bundle simply has none from that template, and the Render box
+  shows *No files for this device*.
+- **Blocks need a directory.** A file block in a template whose target path
+  does not end in `/` is refused on save and at render, and blocks cannot
+  nest. Only a device template can have a directory target.
+- At most 256 files per template render. `config-pushed` takes 50 files per
+  call; a tool with more sends several calls.
+
+[Config drift](iac-runner.md)'s `config-state` compares one running config
+per device, so it refuses a directory template; compare its files through
+`config-pushed` and the render's per-file `drift` instead.
 
 The bundle list takes the same bulk bar as the templates: **Export**, **Edit**
 (the **Description**) and a previewed **Delete**, through

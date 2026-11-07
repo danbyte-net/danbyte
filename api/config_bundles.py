@@ -6,7 +6,9 @@ a systemd ``.link`` unit, ``nft.conf``, a WireGuard config. A
 :class:`~api.models.ConfigBundle` names the templates that produce them,
 and this module renders them together, keyed by the path each file lands
 at, with a hash per file - so a push tool can fetch everything in one call
-and skip what has not changed.
+and skip what has not changed. A template whose target path ends in ``/``
+writes a directory: one file per ``{% file %}`` block, each keyed, hashed
+and compared on its own (one systemd ``.link`` per NIC).
 
 The push tool tells Danbyte what it put on the box
 (:class:`~integrations.models.ConfigPush`); a later render is compared
@@ -22,7 +24,7 @@ import tarfile
 import time
 import uuid
 
-from .export_templates import render_device_config
+from .export_templates import render_device_config, render_device_files
 from .models import ConfigBundle, ExportTemplate
 
 #: A pushed file the API will keep the text of, for diffs. Larger pushes
@@ -75,13 +77,9 @@ def resolve_bundle(tenant, device, param: str):
     return found
 
 
-def render_file(template: ExportTemplate, device, user=None) -> dict:
-    """One template on one device: ``{path, template, template_id, output,
-    sha256}``. Template errors propagate, as they do for a single render.
-    ``user`` is who it renders for (see :func:`render_device_config`)."""
-    output = render_device_config(template, device, template.tenant, user)
+def _row(template: ExportTemplate, path: str, output: str) -> dict:
     return {
-        "path": template.bundle_path,
+        "path": path,
         "template": template.name,
         "template_id": str(template.id),
         "output": output,
@@ -89,24 +87,61 @@ def render_file(template: ExportTemplate, device, user=None) -> dict:
     }
 
 
+def render_file(template: ExportTemplate, device, user=None) -> dict:
+    """One single-file template on one device: ``{path, template,
+    template_id, output, sha256}``. Template errors propagate, as they do
+    for a single render. ``user`` is who it renders for (see
+    :func:`render_device_config`)."""
+    output = render_device_config(template, device, template.tenant, user)
+    return _row(template, template.bundle_path, output)
+
+
+def render_template_files(template: ExportTemplate, device, user=None) -> dict:
+    """Every file one template writes for one device, keyed by path: one
+    row for a single-file template, one per ``{% file %}`` block (at the
+    directory plus the block's name) for a directory template - possibly
+    none."""
+    if not template.is_directory:
+        row = render_file(template, device, user)
+        return {row["path"]: row}
+    files = render_device_files(template, device, template.tenant, user)
+    return {
+        f"{template.target_path}{name}": _row(template, f"{template.target_path}{name}", text)
+        for name, text in sorted(files)
+    }
+
+
 def render_bundle(bundle: ConfigBundle, device, user=None) -> dict:
-    """Every file in the bundle, keyed by path, in path order."""
-    files = {}
+    """Every file in the bundle, keyed by path, in path order. Two templates
+    writing the same path is an error, not a silent overwrite."""
+    files: dict[str, dict] = {}
     for tmpl in sorted(bundle.templates.all(), key=lambda t: (t.bundle_path, t.name)):
         if tmpl.object_type != "device":
             continue
-        row = render_file(tmpl, device, user)
-        files[row["path"]] = row
-    return files
+        for path, row in render_template_files(tmpl, device, user).items():
+            if path in files:
+                raise ValueError(
+                    f"{files[path]['template']} and {tmpl.name} both write {path}."
+                )
+            files[path] = row
+    return dict(sorted(files.items()))
 
 
 def tar_of(files: dict, device_name: str) -> bytes:
     """A tarball of the rendered files, paths kept relative - a tool untars
-    it where it likes, and an absolute path in an archive is a foot-gun."""
+    it where it likes, and an absolute path in an archive is a foot-gun. No
+    entry steps out of the top folder: a path with a ``..`` segment is
+    refused, and the folder name is kept to one plain segment."""
+    top = (device_name or "").replace("/", "_").replace("\\", "_").strip() or "device"
+    if top in (".", ".."):
+        top = "device"
+    device_name = top
     buf = io.BytesIO()
     now = int(time.time())
     with tarfile.open(fileobj=buf, mode="w") as tar:
         for path, row in files.items():
+            if ".." in path.split("/"):
+                raise ValueError(f"{path} steps out of its directory; not archived.")
             data = (row["output"] or "").encode()
             info = tarfile.TarInfo(name=f"{device_name}/{path.lstrip('/')}")
             info.size = len(data)

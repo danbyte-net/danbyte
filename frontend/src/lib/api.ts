@@ -12152,6 +12152,8 @@ export interface ExportTemplate {
   target_path: string
   /** Read-only: `target_path`, or `<name>.<file_extension>` when blank. */
   bundle_path: string
+  /** Read-only: `target_path` ends in `/` - one file per `{% file %}` block. */
+  is_directory: boolean
   created_at: string
   updated_at: string
 }
@@ -12175,6 +12177,7 @@ export interface ConfigBundleTemplate {
   object_type: string
   target_path: string
   bundle_path: string
+  is_directory: boolean
 }
 
 /** The set of files a device role needs, rendered together. */
@@ -12220,8 +12223,18 @@ export interface DeviceRenderFile {
   diff: string
 }
 
-/** GET /api/devices/<id>/render/?template=<id> */
-export type DeviceRenderResult = DeviceRenderFile
+/** GET /api/devices/<id>/render/?template=<id> - one file, or for a
+ * directory template (target path ending in `/`) one per file block. */
+export type DeviceRenderResult = DeviceRenderFile | DeviceDirectoryRenderResult
+
+/** A directory template's render: the files its `{% file %}` blocks wrote. */
+export interface DeviceDirectoryRenderResult {
+  template: string
+  template_id: string
+  /** The directory, ending in `/`. */
+  path: string
+  files: Record<string, DeviceRenderFile>
+}
 
 /** GET /api/devices/<id>/render/?bundle=<id|name|role> */
 export interface DeviceBundleRenderResult {
