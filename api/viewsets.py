@@ -4377,7 +4377,9 @@ class DeviceViewSet(
         path, sha256, pushed, drift, diff}``. ``?bundle=<id|name|role>``
         renders every file of a bundle as ``{bundle, files: {path: {...}}}``;
         add ``&archive=tar`` for a tarball. ``pushed``/``drift``/``diff`` say
-        how the render compares with what a push tool last recorded.
+        how the render compares with what a push tool last recorded. A
+        directory template (target path ending in ``/``) answers like a
+        bundle: ``{template, template_id, path, files: {path: {...}}}``.
         """
         from django.http import HttpResponse
         from jinja2 import TemplateError
@@ -4385,7 +4387,7 @@ class DeviceViewSet(
         from .config_bundles import (
             attach_push_state,
             render_bundle,
-            render_file,
+            render_template_files,
             tar_of,
         )
 
@@ -4395,18 +4397,25 @@ class DeviceViewSet(
             return Response({"detail": error}, status=drf_status.HTTP_400_BAD_REQUEST)
         try:
             if bundle is not None:
-                files = attach_push_state(device, render_bundle(bundle, device, request.user))
+                files = render_bundle(bundle, device, request.user)
             else:
-                row = render_file(tmpl, device, request.user)
-                files = attach_push_state(device, {row["path"]: row})
+                files = render_template_files(tmpl, device, request.user)
+            attach_push_state(device, files)
+            if request.query_params.get("archive") == "tar":
+                archive = tar_of(files, device.name)
         except (TemplateError, ValueError) as exc:
             return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
         if request.query_params.get("archive") == "tar":
-            resp = HttpResponse(tar_of(files, device.name), content_type="application/x-tar")
+            resp = HttpResponse(archive, content_type="application/x-tar")
             resp["Content-Disposition"] = f'attachment; filename="{device.name}.tar"'
             return resp
         if bundle is not None:
             return Response({"bundle": bundle.name, "files": files})
+        if tmpl.is_directory:
+            return Response({
+                "template": tmpl.name, "template_id": str(tmpl.id),
+                "path": tmpl.target_path, "files": files,
+            })
         return Response(next(iter(files.values())))
 
     @action(detail=False, methods=["get"], url_path="render")
@@ -4427,7 +4436,7 @@ class DeviceViewSet(
             MAX_BULK_DEVICES,
             attach_push_state,
             render_bundle,
-            render_file,
+            render_template_files,
         )
 
         qs = self.get_queryset().select_related("role", "platform", "site")
@@ -4454,8 +4463,7 @@ class DeviceViewSet(
                 if bundle is not None:
                     files = render_bundle(bundle, device, request.user)
                 else:
-                    row = render_file(tmpl, device, request.user)
-                    files = {row["path"]: row}
+                    files = render_template_files(tmpl, device, request.user)
             except (TemplateError, ValueError) as exc:
                 skipped[str(device.id)] = str(exc)
                 continue
@@ -4619,6 +4627,15 @@ class DeviceViewSet(
         if tid:
             from .models import ExportTemplate
             tmpl = ExportTemplate.objects.filter(id=tid, tenant=tenant).first()
+        if tmpl is not None and tmpl.is_directory:
+            # One running config per device; a directory of files has no
+            # single text to compare. Its files compare per path through
+            # config-pushed and the render's drift.
+            return Response(
+                {"template": f"{tmpl.name} renders a directory of files; report "
+                             "them per file through config-pushed."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
         # If no intended config was posted, render it from the named template.
         if not intended and tmpl is not None:
             from jinja2 import TemplateError
@@ -10829,6 +10846,20 @@ class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
         tenant = _get_active_tenant(request)
         object_id = request.query_params.get("object")
         try:
+            if tmpl.is_directory:
+                # A directory template writes files per device: a dict of
+                # ``{path: row}`` rather than one text.
+                from .config_bundles import render_template_files
+
+                if not object_id:
+                    raise ValueError(
+                        f"{tmpl.name} renders a directory of files per device; "
+                        "name the device with ?object=."
+                    )
+                obj = object_for(tmpl, tenant, request.user, object_id)
+                if obj is None:
+                    raise NotFound("Unknown object for this template.")
+                return render_template_files(tmpl, obj, request.user), tmpl
             if object_id:
                 obj = object_for(tmpl, tenant, request.user, object_id)
                 if obj is None:
@@ -10851,6 +10882,9 @@ class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
         out, info = self._render(request, preview=True)
         if out is None:
             return Response({"detail": str(info)}, status=drf_status.HTTP_400_BAD_REQUEST)
+        if isinstance(out, dict):
+            # A directory template: each file on its own, keyed by path.
+            return Response({"output": "", "files": out})
         return Response({"output": out})
 
     @extend_schema(parameters=[OpenApiParameter(
@@ -10868,6 +10902,18 @@ class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
         from .export_templates import safe_mime_type
 
         tmpl = info
+        if isinstance(out, dict):
+            # A directory template downloads as a tarball of its files.
+            from .config_bundles import tar_of
+
+            try:
+                archive = tar_of(out, tmpl.name)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
+            resp = HttpResponse(archive, content_type="application/x-tar")
+            resp["Content-Disposition"] = f'attachment; filename="{tmpl.name}.tar"'
+            resp["X-Content-Type-Options"] = "nosniff"
+            return resp
         # Always a download of an inert type, never a page on this origin:
         # the body is whatever the template's author wrote (#195). The SPA
         # fetches the text and saves it under the declared type itself.

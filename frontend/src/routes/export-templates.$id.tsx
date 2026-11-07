@@ -232,6 +232,11 @@ function TemplateOverview({ template: t }: { template: ExportTemplate }) {
                     from name and extension
                   </span>
                 )}
+                {t.is_directory && (
+                  <span className="ml-2 font-sans text-xs text-muted-foreground">
+                    directory, one file per file block
+                  </span>
+                )}
               </span>
             ),
             copy: t.bundle_path,

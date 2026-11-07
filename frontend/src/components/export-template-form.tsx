@@ -7,6 +7,7 @@ import {
   api,
   ApiError,
   type DeviceOption,
+  type DeviceRenderFile,
   type ExportTemplate,
   type ExportTemplateWritePayload,
   type RBACObjectTypes,
@@ -25,6 +26,7 @@ import {
   type SelectOption,
 } from "@/components/forms"
 import { CodeEditor } from "@/components/code-editor"
+import { BundleFiles } from "@/components/device-config-render"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { useSaveObject } from "@/lib/save-object"
@@ -63,6 +65,10 @@ export function ExportTemplateForm({
   )
   const [targetPath, setTargetPath] = useState(template?.target_path ?? "")
   const [preview, setPreview] = useState<string | null>(null)
+  // A directory template's preview: one entry per file block.
+  const [previewFiles, setPreviewFiles] = useState<DeviceRenderFile[] | null>(
+    null
+  )
   const [sampleId, setSampleId] = useState<string | null>(null)
   // Client-side required-field errors, merged with the DRF field errors.
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
@@ -79,6 +85,7 @@ export function ExportTemplateForm({
     setTargetPath(template.target_path)
     setSampleId(null)
     setPreview(null)
+    setPreviewFiles(null)
     setClientErrors({})
     reset()
   }, [template, reset])
@@ -175,14 +182,23 @@ export function ExportTemplateForm({
   const runPreview = useMutation({
     mutationFn: () =>
       isPerObject
-        ? api<{ output: string }>(
+        ? api<{ output?: string; files?: Record<string, DeviceRenderFile> }>(
             `/api/${perObjectEndpoint}/${sampleId}/render/?template=${template!.id}`
           )
-        : api<{ output: string }>(
+        : api<{ output?: string; files?: Record<string, DeviceRenderFile> }>(
             `/api/export-templates/${template!.id}/preview/`
           ),
-    onSuccess: (r) => setPreview(r.output),
+    onSuccess: (r) => {
+      if (r.files) {
+        setPreview(null)
+        setPreviewFiles(Object.values(r.files))
+      } else {
+        setPreviewFiles(null)
+        setPreview(r.output ?? "")
+      }
+    },
     onError: (err) => {
+      setPreviewFiles(null)
       const detail =
         err instanceof ApiError &&
         err.body &&
@@ -278,7 +294,9 @@ export function ExportTemplateForm({
             label="Target path"
             mono
             placeholder="/etc/frr/frr.conf"
-            info="Where a bundle's render puts this file. Blank uses the template's name and extension."
+            info={
+              "Where a bundle's render puts this file. Blank uses the template's name and extension. Ending in / makes it a directory: each {% file \"name\" %} … {% endfile %} block writes one file there."
+            }
             value={targetPath}
             onChange={setTargetPath}
             error={fieldErrors.target_path}
@@ -335,6 +353,12 @@ export function ExportTemplateForm({
             >
               {preview || "(empty)"}
             </pre>
+          )}
+          {previewFiles !== null && (
+            <BundleFiles
+              files={previewFiles}
+              empty="No files for this sample."
+            />
           )}
         </FormSection>
       )}

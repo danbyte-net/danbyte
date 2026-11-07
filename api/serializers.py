@@ -10543,6 +10543,7 @@ class ConfigContextSerializer(NumIdModelSerializer):
 # ─── Export templates ────────────────────────────────────────────────────────
 class ExportTemplateSerializer(NumIdModelSerializer):
     object_type_label = serializers.SerializerMethodField()
+    is_directory = serializers.BooleanField(read_only=True)
 
     def get_object_type_label(self, obj) -> str:
         from auth_api.object_types import _registry
@@ -10583,20 +10584,59 @@ class ExportTemplateSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(f"Template syntax error: {exc}")
         return value
 
+    def validate(self, attrs):
+        """A target path ending in ``/`` is a directory: the template writes
+        one file per ``{% file %}`` block. Only a device template has one, a
+        directory never steps out with ``..``, and a file block needs one."""
+        from jinja2 import TemplateError
+
+        from .export_templates import _env
+
+        attrs = super().validate(attrs)
+        inst = self.instance
+        target = attrs.get("target_path", inst.target_path if inst else "") or ""
+        object_type = attrs.get("object_type", inst.object_type if inst else "")
+        code = attrs.get("template_code", inst.template_code if inst else "") or ""
+        if target.endswith("/"):
+            if object_type != "device":
+                raise serializers.ValidationError(
+                    {"target_path": "Only a device template renders a directory of files."}
+                )
+            if ".." in target.split("/") or any(
+                ord(c) < 32 or ord(c) == 127 for c in target
+            ):
+                raise serializers.ValidationError(
+                    {"target_path": "A directory cannot contain .. or control characters."}
+                )
+        else:
+            env = _env()
+            try:
+                env.from_string(code)
+            except TemplateError:
+                return attrs  # validate_template_code has said so
+            if env.file_blocks:
+                raise serializers.ValidationError(
+                    {"target_path": "A template with file blocks needs a target path "
+                                    "ending in / (the directory they land in)."}
+                )
+        return attrs
+
     class Meta:
         model = ExportTemplate
         fields = ["id", "name", "object_type", "object_type_label", "description",
                   "template_code", "mime_type", "file_extension", "as_attachment",
-                  "target_path", "bundle_path",
+                  "target_path", "bundle_path", "is_directory",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "object_type_label", "bundle_path",
+        read_only_fields = ["id", "object_type_label", "bundle_path", "is_directory",
                             "created_at", "updated_at"]
 
 
 class ExportTemplateMiniSerializer(NumIdModelSerializer):
+    is_directory = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = ExportTemplate
-        fields = ["id", "name", "object_type", "target_path", "bundle_path"]
+        fields = ["id", "name", "object_type", "target_path", "bundle_path", "is_directory"]
 
 
 class ConfigBundleSerializer(NumIdModelSerializer):
@@ -10632,6 +10672,10 @@ class ConfigBundleSerializer(NumIdModelSerializer):
         attrs = super().validate(attrs)
         paths: dict[str, str] = {}
         for t in attrs.get("templates", []):
+            # Directory templates may share a directory (.link and .network
+            # files side by side); a name clash there shows at render time.
+            if t.is_directory:
+                continue
             if t.bundle_path in paths:
                 raise serializers.ValidationError(
                     {"template_ids": f"{paths[t.bundle_path]} and {t.name} both land "

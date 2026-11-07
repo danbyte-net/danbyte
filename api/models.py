@@ -9419,7 +9419,8 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     as_attachment = models.BooleanField(default=True)
     #: Where the rendered file lands on the device (``/etc/frr/frr.conf``).
     #: What a bundle keys its files by; blank falls back to the template's
-    #: name and extension.
+    #: name and extension. Ending in ``/`` makes it a directory: the template
+    #: writes one file per ``{% file "name" %}`` block, each at ``<dir><name>``.
     target_path = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
@@ -9434,6 +9435,11 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     def bundle_path(self) -> str:
         """The path this file is keyed by in a bundle render."""
         return self.target_path or f"{self.name}.{self.file_extension or 'txt'}"
+
+    @property
+    def is_directory(self) -> bool:
+        """A target path ending in ``/``: this template renders several files."""
+        return (self.target_path or "").endswith("/")
 
     def __str__(self) -> str:
         return self.name

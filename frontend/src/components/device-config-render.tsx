@@ -40,6 +40,8 @@ type Rendered =
   | {
       kind: "bundle"
       name: string
+      /** What renders the files: a bundle, or a directory template. */
+      source: "bundle" | "directory"
       bundleId: string
       files: DeviceRenderFile[]
     }
@@ -81,6 +83,12 @@ export function DeviceConfigRender({
     value: encode({ kind: "template", id: t.id }),
     label: t.name,
   }))
+  // Directory templates write several files, so they download as a tarball.
+  const directoryIds = new Set(
+    (templates.data?.results ?? [])
+      .filter((t) => t.is_directory)
+      .map((t) => t.id)
+  )
   const bundleOptions = (bundles.data?.results ?? []).map((b) => ({
     value: encode({ kind: "bundle", id: b.id }),
     label: b.name,
@@ -98,14 +106,24 @@ export function DeviceConfigRender({
         return {
           kind: "bundle",
           name: r.bundle,
+          source: "bundle",
           bundleId: pick.id,
           files: Object.values(r.files),
         }
       }
-      const file = await api<DeviceRenderResult>(
+      const r = await api<DeviceRenderResult>(
         `/api/devices/${deviceId}/render/?template=${pick.id}`
       )
-      return { kind: "template", file }
+      // A directory template answers like a bundle: one entry per file.
+      if ("files" in r)
+        return {
+          kind: "bundle",
+          name: r.template,
+          source: "directory",
+          bundleId: pick.id,
+          files: Object.values(r.files),
+        }
+      return { kind: "template", file: r }
     },
     onSuccess: setResult,
     onError: (err) => setResult({ kind: "error", message: err.message }),
@@ -150,19 +168,20 @@ export function DeviceConfigRender({
                 )}
                 Render
               </Button>
-              {pick?.kind === "bundle" && (
-                <Button variant="outline" asChild>
-                  {/* A file download, not SPA navigation: a plain anchor with
+              {pick &&
+                (pick.kind === "bundle" || directoryIds.has(pick.id)) && (
+                  <Button variant="outline" asChild>
+                    {/* A file download, not SPA navigation: a plain anchor with
                       `download` hands the tarball straight to the browser. */}
-                  <a
-                    href={`/api/devices/${deviceId}/render/?bundle=${pick.id}&archive=tar`}
-                    download
-                  >
-                    <Download className="size-4" />
-                    Download .tar
-                  </a>
-                </Button>
-              )}
+                    <a
+                      href={`/api/devices/${deviceId}/render/?${pick.kind}=${pick.id}&archive=tar`}
+                      download
+                    >
+                      <Download className="size-4" />
+                      Download .tar
+                    </a>
+                  </Button>
+                )}
             </div>
             {bound?.resolved && (
               <p className="text-xs text-muted-foreground">
@@ -180,7 +199,15 @@ export function DeviceConfigRender({
             )}
             {result?.kind === "template" && <RenderedFile file={result.file} />}
             {result?.kind === "bundle" && (
-              <BundleFiles key={result.bundleId} files={result.files} />
+              <BundleFiles
+                key={result.bundleId}
+                files={result.files}
+                empty={
+                  result.source === "directory"
+                    ? "No files for this device."
+                    : "This bundle has no templates."
+                }
+              />
             )}
           </>
         )}
@@ -190,14 +217,16 @@ export function DeviceConfigRender({
 }
 
 /** One segmented tab per file, labelled by its path on the device. */
-function BundleFiles({ files }: { files: DeviceRenderFile[] }) {
+export function BundleFiles({
+  files,
+  empty,
+}: {
+  files: DeviceRenderFile[]
+  empty: string
+}) {
   const [path, setPath] = useState<string>(files.length ? files[0].path : "")
   if (files.length === 0)
-    return (
-      <p className="text-sm text-muted-foreground">
-        This bundle has no templates.
-      </p>
-    )
+    return <p className="text-sm text-muted-foreground">{empty}</p>
   const active = files.find((f) => f.path === path) ?? files[0]
   return (
     <div className="space-y-3">
