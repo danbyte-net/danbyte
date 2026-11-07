@@ -76,9 +76,11 @@ def _webhook_provider(target, payload, event):
 
 def _register_builtin_providers():
     from .providers import register_automation_provider
+    from .script_targets import script_provider
 
     register_automation_provider("awx", _awx_provider)
     register_automation_provider("webhook", _webhook_provider)
+    register_automation_provider("script", script_provider)
 
 
 _register_builtin_providers()
@@ -114,12 +116,23 @@ def _vm_payload(tenant, vm_ids):
     }
 
 
-def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
-                    object_type="device"):
-    """Fire the target. Returns a small result dict and updates the DeployRun."""
-    import requests
+def _dispatch_user(user_id):
+    """The user who started the deploy, re-read now: one deactivated since
+    the enqueue starts nothing."""
+    if not user_id:
+        return None
+    from django.contrib.auth import get_user_model
 
+    return get_user_model().objects.filter(pk=user_id, is_active=True).first()
+
+
+def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
+                    object_type="device", user_id=None):
+    """Fire the target. Returns a small result dict and updates the DeployRun.
+    ``user_id`` is who started the deploy (Deploy pressed, or the change's
+    author); a script target runs as them when the script runs as its caller."""
     from .models import AutomationTarget, DeployRun
+    from .script_targets import DispatchContext, current_dispatch
 
     target = AutomationTarget.objects.select_related("tenant").filter(
         id=target_id
@@ -130,10 +143,11 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
         if run is not None:
             from django.utils import timezone
 
-            run.status = status
-            run.detail = detail[:2000]
-            run.finished_at = timezone.now()
-            run.save(update_fields=["status", "detail", "finished_at"])
+            # Conditional: a script started by this dispatch may already have
+            # finished (inline, or on another worker) and set the final status.
+            DeployRun.objects.filter(pk=run.pk, status="queued").update(
+                status=status, detail=detail[:2000], finished_at=timezone.now(),
+            )
         return {"ok": status == "launched", "status": status, "detail": detail}
 
     if target is None or not target.enabled:
@@ -148,6 +162,10 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
     else:
         base = _device_payload(target.tenant, device_ids)
     payload = {**base, "event": event}
+    if run is not None:
+        # So a webhook runner can report the outcome to
+        # /api/deploy-runs/<run_id>/result/.
+        payload["run_id"] = str(run.id)
     payload.update(target.extra_vars or {})
 
     # Select the provider by kind; an unknown kind degrades to the generic
@@ -157,21 +175,30 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
 
     provider = automation_provider(target.kind) or automation_provider("webhook")
 
+    token = current_dispatch.set(DispatchContext(
+        run=run, user=_dispatch_user(user_id), device_ids=list(base["device_ids"]),
+        object_type=base.get("object_type") or "device",
+    ))
     try:
         status, detail = provider(target, payload, event)
         return finish(status, detail)
     except Exception as exc:  # noqa: BLE001
         logger.warning("deploy dispatch error (%s): %s", target.name, exc)
         return finish("failed", str(exc))
+    finally:
+        current_dispatch.reset(token)
 
 
 def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=None,
-                   object_type="device"):
+                   object_type="device", user=None):
     """Create a DeployRun and enqueue the dispatch on the low queue. Returns the
     run (so the API can report it). ``attempt``/``retry_of`` link a re-dispatch
     back to the run it retries. ``object_type`` names what the ids are
-    (``virtualmachine`` for a provision). Never raises."""
+    (``virtualmachine`` for a provision). ``user`` started the deploy. Never
+    raises."""
     from .models import DeployRun
+
+    user_id = str(user.pk) if getattr(user, "is_authenticated", False) else None
 
     run = DeployRun.objects.create(
         tenant=target.tenant, target=target, target_name=target.name,
@@ -183,13 +210,14 @@ def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=No
 
         django_rq.get_queue("low").enqueue(
             dispatch_deploy, str(target.id), [str(d) for d in device_ids],
-            event=event, run_id=str(run.id), object_type=object_type,
+            event=event, run_id=str(run.id), object_type=object_type, user_id=user_id,
         )
     except Exception:  # noqa: BLE001
         # Redis down etc. - run dispatch inline so the deploy still happens.
         try:
             dispatch_deploy(str(target.id), [str(d) for d in device_ids],
-                            event=event, run_id=str(run.id), object_type=object_type)
+                            event=event, run_id=str(run.id), object_type=object_type,
+                            user_id=user_id)
         except Exception:  # noqa: BLE001
             logger.exception("inline deploy dispatch failed")
     return run
@@ -240,17 +268,22 @@ def auto_fire(instance, slug: str | None = None) -> None:
         object_id = getattr(instance, "pk", None)
         if object_id is None:
             return
+        from audit.context import current_user
+
+        # The change's author: a script target that runs as its caller runs
+        # as them. Read now - the commit hook may run outside the request.
+        author = current_user()
         # After commit (#357): a rolled-back change must not be pushed to a
         # device, and the job must read the change as saved.
-        transaction.on_commit(lambda: _auto_enqueue(targets, object_id))
+        transaction.on_commit(lambda: _auto_enqueue(targets, object_id, author))
     except Exception:  # noqa: BLE001 - never break the originating save
         logger.exception("auto-deploy dispatch failed")
 
 
-def _auto_enqueue(targets, object_id) -> None:
+def _auto_enqueue(targets, object_id, author=None) -> None:
     for t in targets:
         try:
-            enqueue_deploy(t, [object_id], event="auto")
+            enqueue_deploy(t, [object_id], event="auto", user=author)
         except Exception:  # noqa: BLE001
             logger.exception("auto-deploy dispatch failed (%s)", t.name)
 
@@ -267,6 +300,7 @@ def connect() -> None:
     from django.db.models.signals import post_save
 
     from auth_api.object_types import _registry
+
     from .models import AutomationTarget, DeployRun, Webhook
 
     skip = {AutomationTarget, DeployRun, Webhook}

@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  FileCode,
   Plug,
   Server,
   Webhook,
@@ -21,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { FormText, useFieldErrors } from "@/components/forms"
+import { ScriptPicker } from "@/components/script-picker"
 import { docsUrl } from "@/lib/docs"
 import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -53,6 +55,13 @@ const KINDS: {
       "Anything that can receive a signed HTTP POST - your own runner, CI, a script. Danbyte posts the deploy event.",
     icon: Webhook,
   },
+  {
+    value: "script",
+    label: "Danbyte script",
+    blurb:
+      "One of your Danbyte scripts, with a device_ids parameter. Danbyte runs it with the deployed devices.",
+    icon: FileCode,
+  },
 ]
 
 const STEP_LABELS = ["What runs it", "Connect", "Review"]
@@ -68,6 +77,8 @@ export function AutomationTargetWizard() {
   const [baseUrl, setBaseUrl] = useState("")
   const [jobTemplateId, setJobTemplateId] = useState("")
   const [token, setToken] = useState("")
+  const [script, setScript] = useState<string | null>(null)
+  const [scriptName, setScriptName] = useState("")
   const [created, setCreated] = useState<AutomationTarget | null>(null)
 
   const create = useMutation({
@@ -76,11 +87,12 @@ export function AutomationTargetWizard() {
         name: name.trim(),
         kind,
         enabled: true,
-        base_url: baseUrl.trim(),
+        base_url: kind === "script" ? "" : baseUrl.trim(),
         job_template_id: kind === "awx" ? jobTemplateId.trim() : "",
         object_types: ["device"],
       }
-      if (token.trim()) payload.token = token
+      if (kind === "script") payload.script = script
+      else if (token.trim()) payload.token = token
       return api<AutomationTarget>("/api/automation-targets/", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -208,8 +220,9 @@ export function AutomationTargetWizard() {
       ? true
       : step === 1
         ? name.trim() &&
-          baseUrl.trim() &&
-          (kind !== "awx" || jobTemplateId.trim())
+          (kind === "script"
+            ? !!script
+            : baseUrl.trim() && (kind !== "awx" || jobTemplateId.trim()))
         : true
 
   return (
@@ -308,31 +321,50 @@ export function AutomationTargetWizard() {
             label="Name"
             required
             autoFocus
-            placeholder={kind === "awx" ? "prod-awx" : "local-runner"}
+            placeholder={
+              kind === "awx"
+                ? "prod-awx"
+                : kind === "script"
+                  ? "push-config"
+                  : "local-runner"
+            }
             hint="How it appears in the deploy picker."
             value={name}
             onChange={setName}
             error={fieldErrors.name}
           />
-          <FormText
-            label={kind === "awx" ? "AWX controller URL" : "Webhook URL"}
-            required
-            type="url"
-            mono
-            placeholder={
-              kind === "awx"
-                ? "https://awx.example.com"
-                : "https://ci.example.com/hook"
-            }
-            hint={
-              kind === "awx"
-                ? "The base URL of your AWX/AAP controller."
-                : "Where Danbyte POSTs the deploy event."
-            }
-            value={baseUrl}
-            onChange={setBaseUrl}
-            error={fieldErrors.base_url}
-          />
+          {kind === "script" && (
+            <ScriptPicker
+              value={script}
+              onChange={setScript}
+              onPickLabel={(_, label) => setScriptName(label)}
+              required
+              needsDeviceIds
+              hint="Runs with the deployed ids in its device_ids parameter."
+              error={fieldErrors.script}
+            />
+          )}
+          {kind !== "script" && (
+            <FormText
+              label={kind === "awx" ? "AWX controller URL" : "Webhook URL"}
+              required
+              type="url"
+              mono
+              placeholder={
+                kind === "awx"
+                  ? "https://awx.example.com"
+                  : "https://ci.example.com/hook"
+              }
+              hint={
+                kind === "awx"
+                  ? "The base URL of your AWX/AAP controller."
+                  : "Where Danbyte POSTs the deploy event."
+              }
+              value={baseUrl}
+              onChange={setBaseUrl}
+              error={fieldErrors.base_url}
+            />
+          )}
           {kind === "awx" && (
             <FormText
               label="Job template ID"
@@ -345,19 +377,21 @@ export function AutomationTargetWizard() {
               error={fieldErrors.job_template_id}
             />
           )}
-          <FormText
-            label={kind === "awx" ? "Bearer token" : "Signing secret"}
-            type="password"
-            autoComplete="new-password"
-            hint={
-              kind === "awx"
-                ? "AWX/AAP OAuth token - sent as Authorization: Bearer."
-                : "Optional. If set, Danbyte signs the payload (HMAC-SHA512) in X-Danbyte-Signature so your runner can verify it."
-            }
-            value={token}
-            onChange={setToken}
-            error={fieldErrors.token}
-          />
+          {kind !== "script" && (
+            <FormText
+              label={kind === "awx" ? "Bearer token" : "Signing secret"}
+              type="password"
+              autoComplete="new-password"
+              hint={
+                kind === "awx"
+                  ? "AWX/AAP OAuth token - sent as Authorization: Bearer."
+                  : "Optional. If set, Danbyte signs the payload (HMAC-SHA512) in X-Danbyte-Signature so your runner can verify it."
+              }
+              value={token}
+              onChange={setToken}
+              error={fieldErrors.token}
+            />
+          )}
         </div>
       )}
 
@@ -372,17 +406,21 @@ export function AutomationTargetWizard() {
             {[
               ["Name", name.trim()],
               ["Kind", KINDS.find((k) => k.value === kind)?.label ?? kind],
-              [
-                kind === "awx" ? "Controller URL" : "Webhook URL",
-                baseUrl.trim(),
-              ],
-              ...(kind === "awx"
-                ? [["Job template ID", jobTemplateId.trim()] as const]
-                : []),
-              [
-                kind === "awx" ? "Token" : "Signing secret",
-                token.trim() ? "Set" : "Not set",
-              ],
+              ...(kind === "script"
+                ? [["Script", scriptName] as const]
+                : [
+                    [
+                      kind === "awx" ? "Controller URL" : "Webhook URL",
+                      baseUrl.trim(),
+                    ] as const,
+                    ...(kind === "awx"
+                      ? [["Job template ID", jobTemplateId.trim()] as const]
+                      : []),
+                    [
+                      kind === "awx" ? "Token" : "Signing secret",
+                      token.trim() ? "Set" : "Not set",
+                    ] as const,
+                  ]),
             ].map(([k, v]) => (
               <div key={k} className="grid grid-cols-3 gap-4 px-4 py-2.5">
                 <dt className="text-muted-foreground">{k}</dt>

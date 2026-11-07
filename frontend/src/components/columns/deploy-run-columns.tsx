@@ -1,4 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table"
+import { Link } from "@tanstack/react-router"
 import { SortHeader } from "@/components/data-table"
 
 import type { DeployRun } from "@/lib/api"
@@ -13,13 +14,7 @@ import { DeployRetryButton } from "@/components/deploy-retry-button"
 // "target" column it would otherwise repeat on every row.
 
 export type DeployRunColumnId =
-  | "target"
-  | "status"
-  | "event"
-  | "devices"
-  | "detail"
-  | "created"
-  | "retry"
+  "target" | "status" | "event" | "devices" | "detail" | "created" | "retry"
 
 const CANONICAL_ORDER: DeployRunColumnId[] = [
   "target",
@@ -98,8 +93,19 @@ export function buildDeployRunColumns(
       accessorKey: "detail",
       header: "Detail",
       cell: ({ row }) => (
-        <span className="line-clamp-1 block font-mono text-[11px] text-muted-foreground">
-          {row.original.detail || "-"}
+        <span className="flex min-w-0 items-center gap-2">
+          {row.original.script_run && (
+            <Link
+              to="/scripts/runs/$runId"
+              params={{ runId: row.original.script_run }}
+              className="shrink-0 text-xs font-medium text-primary hover:underline"
+            >
+              Script run
+            </Link>
+          )}
+          <span className="line-clamp-1 block min-w-0 font-mono text-[11px] text-muted-foreground">
+            {row.original.detail || "-"}
+          </span>
         </span>
       ),
     }),

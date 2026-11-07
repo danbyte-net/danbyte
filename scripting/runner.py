@@ -39,6 +39,7 @@ import time
 from django.conf import settings
 from django.db.models import TextField, Value
 from django.db.models.functions import Concat
+from django.dispatch import Signal
 from django.utils import timezone
 
 from . import sandbox, tokens
@@ -75,6 +76,21 @@ except BaseException:
 
 class RunnerError(RuntimeError):
     pass
+
+
+#: Sent once a run has its outcome (success, failed, timeout or canceled),
+#: with ``run`` the finished :class:`ScriptRun`. A deploy run started by a
+#: script target takes its final status from here.
+run_finished = Signal()
+
+
+def _notify_finished(run: ScriptRun) -> None:
+    """Tell listeners the run ended. A listener's failure never reaches the
+    worker or the cancel request."""
+    try:
+        run_finished.send_robust(sender=ScriptRun, run=run)
+    except Exception:  # noqa: BLE001
+        logger.exception("run_finished listeners failed for run %s", run.pk)
 
 
 def sdk_path() -> str:
@@ -446,6 +462,8 @@ def run_script(run_id: str) -> ScriptRun | None:
         tokens.revoke(token)
         shutil.rmtree(work, ignore_errors=True)
     run.refresh_from_db()
+    if not run.active:
+        _notify_finished(run)
     return run
 
 
@@ -484,8 +502,11 @@ def cancel(run: ScriptRun) -> bool:
             stopped = True
         except Exception:  # noqa: BLE001 - fall through to the row update
             logger.warning("could not stop RQ job for run %s", run.id, exc_info=True)
-    ScriptRun.objects.filter(pk=run.pk, status__in=("queued", "running")).update(
+    changed = ScriptRun.objects.filter(pk=run.pk, status__in=("queued", "running")).update(
         status="canceled", error="canceled", finished_at=timezone.now(),
         updated_at=timezone.now(),
     )
+    if changed:
+        run.refresh_from_db()
+        _notify_finished(run)
     return stopped

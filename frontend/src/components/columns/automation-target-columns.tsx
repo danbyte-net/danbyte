@@ -70,7 +70,9 @@ export function buildAutomationTargetColumns<
       header: "Endpoint",
       cell: ({ row }) => (
         <span className="line-clamp-1 block font-mono text-[11px] text-muted-foreground">
-          {row.original.base_url}
+          {row.original.kind === "script"
+            ? `script ${row.original.script_name ?? "-"}`
+            : row.original.base_url}
           {row.original.kind === "awx" && row.original.job_template_id
             ? ` · JT ${row.original.job_template_id}`
             : ""}

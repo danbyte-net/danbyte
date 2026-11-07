@@ -30,8 +30,9 @@ these five spots in the Danbyte UI - the **How automation works** panel on the
 
 !!! tip "Guided setup"
     First time? **Integrations → Automation targets → Guided setup** walks you
-    through connecting a target (AWX/AAP or a webhook) in three steps and tells
-    you what to do next. It creates the exact same target as the manual form.
+    through connecting a target (AWX/AAP, a webhook, or a Danbyte script) in
+    three steps and tells you what to do next. It creates the exact same target
+    as the manual form.
 
 !!! info "The Deploy runs page is just history"
     **Deploy runs** is a read-only log of "Danbyte handed off to a runner at
@@ -45,7 +46,7 @@ Edit button is still there, next to **Test**):
 
 | Tab | What's on it |
 |---|---|
-| **Overview** | Kind, enabled, endpoint, AWX job-template id, TLS verification, whether a credential is stored, auto-deploy-on-change, the object types it can deploy, the number of runs, and any extra vars. |
+| **Overview** | Kind, enabled, endpoint (or the script, for a script target), AWX job-template id, TLS verification, whether a credential is stored, auto-deploy-on-change, the object types it can deploy, the number of runs, and any extra vars. |
 | **Runs** | Every dispatch Danbyte handed to *this* target, newest first - the same rows as **Deploy runs**, pre-filtered (`GET /api/deploy-runs/?target=<id>`), with the same **Retry** on a failed run. |
 | **Journal** | Your notes on this target. |
 | **Change log** | Every create/edit/delete of the target itself - see [Change log](change-log.md). |
@@ -330,10 +331,11 @@ Danbyte never schedules it - *you* do. Pick what fits:
 - **Cron / systemd timer** on the runner host - `ansible-playbook drift_check.yml`
   every few minutes for continuous, hands-off drift detection.
 - **On demand** - run it by hand, or from CI right after a change.
-- **Danbyte "Deploy"** - register an **automation target** (an AWX job template or
-  a webhook). A device's **Deploy** button (or `POST /api/devices/<id>/deploy/`)
-  then tells *that* system to launch the run. Danbyte hands off the work; it still
-  never touches the device itself.
+- **Danbyte "Deploy"** - register an **automation target** (an AWX job template,
+  a webhook, or a [Danbyte script](#danbyte-scripts-as-deploy-targets)). A
+  device's **Deploy** button (or `POST /api/devices/<id>/deploy/`) then tells
+  *that* system to launch the run. Danbyte hands off the work; it still never
+  touches the device itself.
 
 ### Deploy runs, retries, and remediate
 
@@ -351,6 +353,94 @@ the device's Config tab). Each run carries its `event`, `attempt`, dispatch
   run. The companion runner ships a `remediate.yml` (`sync.yml` →
   `drift_check.yml`); trigger it with a `remediate` event from the Deploy button
   or run `ansible-playbook -i inventory.py remediate.yml` by hand.
+
+A run moves through these statuses:
+
+| Status | Means |
+|---|---|
+| `queued` | Recorded, waiting for a worker to dispatch it. |
+| `launched` | Handed to the runner. For AWX and a webhook without a callback this is where it stays. |
+| `succeeded` | The script run it started exited cleanly, or the runner reported success. |
+| `failed` | The dispatch failed, the script run failed, timed out or was stopped, or the runner reported a failure. |
+
+`succeeded` and `failed` are final: nothing changes a run once it has one.
+
+### Danbyte scripts as deploy targets
+
+An automation target of kind **Danbyte script** runs one of your
+[scripts](scripts.md) instead of calling out to a runner. Pick the script
+on the target form (or in Guided setup); there is no URL, token or TLS
+setting. A deploy then queues a script run with these parameters:
+
+```json
+{"device_ids": ["<id>", "…"], "event": "manual", "object_type": "device"}
+```
+
+plus the target's **extra vars**. `device_ids`, `event` and `object_type`
+always come from the deploy; an extra var of the same name does not
+override them. A provision sends the VM ids, with `object_type`
+`virtualmachine`.
+
+- **The script must declare a `device_ids` parameter.** Saving a target with
+  a script that lacks one is refused on the `script` field, and a script
+  whose parameter was removed afterwards fails at dispatch.
+- **Who it runs as** follows the script's own **Run as**. `The person who
+  runs it` is whoever pressed **Deploy** (or bulk deploy, retry, provision);
+  for **Auto-deploy on change** it is the author of the change. A scheduled
+  drift deploy has no person, so only a script that runs as its owner can
+  serve it; anything else fails with the reason.
+- **Rights.** Whoever starts it needs `script: run` on the script and must
+  see it, exactly as when pressing **Run** on the script itself. A
+  **trusted** script also needs `script: trust`. This is checked when the
+  target is saved and again at every dispatch, so a target never lets anyone
+  start code they could not start themselves. Setting a script on a target
+  needs the same rights; editing an unrelated field does not.
+- **Test** on a script target checks the script is set, enabled, declares
+  `device_ids` and that you may start it; it does not run it.
+- The script must be in the target's tenant; another tenant's script id is
+  refused on create, edit and import.
+
+The deploy run links to its script run: **Deploy runs** shows a
+**Script run** link on the row, which opens the run page with the live log.
+The API exposes `script_run` (the id) and `script_run_status`. When the
+script run ends, the deploy run becomes `succeeded` (exit code 0) or
+`failed`, with the last part of the log in `detail`.
+
+### Reporting the outcome from a webhook runner
+
+A webhook runner can report how the deploy went. Danbyte includes the run's
+id as `run_id` in every webhook payload; when the job is done, POST the
+outcome back:
+
+```http
+POST /api/deploy-runs/<run_id>/result/
+Content-Type: application/json
+X-Danbyte-Signature: sha512=<hex HMAC-SHA512 of the raw body, keyed with the target's signing secret>
+
+{"status": "succeeded", "detail": "pushed 12 devices"}
+```
+
+The signature is the same scheme Danbyte signs its own webhook deliveries
+with, so the runner reuses the secret it already verifies with; no session
+or API token is involved. `status` is `succeeded` or `failed`; `detail` is
+optional text, kept up to 2000 characters.
+
+- Only a **webhook** target with a signing secret can report. A missing or
+  wrong signature, an unknown run, or a target without a secret all answer
+  `403`.
+- Only a run in `launched` can be finalised. A queued or already final run
+  answers `409`, so a replayed callback cannot change a result.
+- Without a callback (or for AWX) the run stays `launched`.
+
+```python
+import hashlib, hmac, json, requests
+
+body = json.dumps({"status": "succeeded", "detail": "ok"}).encode()
+sig = "sha512=" + hmac.new(SECRET.encode(), body, hashlib.sha512).hexdigest()
+requests.post(f"{DANBYTE}/api/deploy-runs/{run_id}/result/", data=body,
+              headers={"Content-Type": "application/json",
+                       "X-Danbyte-Signature": sig})
+```
 
 ### Provisioning an intended VM
 
