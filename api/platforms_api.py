@@ -16,9 +16,7 @@ Platforms are a tenant-wide catalog: no ``owning_site``, so they are not in
 from __future__ import annotations
 
 from django.db.models import Count
-from django.utils.text import slugify
 from rest_framework import status as drf_status
-from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from core.tags import TAGS
@@ -26,6 +24,7 @@ from core.tags import TAGS
 from . import software_versions
 from .bulk_delete import plural_label
 from .bulk_edit import BulkEditMixin, BulkEditSpec
+from .catalog_slug import check_name_and_slug
 from .cf_search import cf_text_q
 from .models import Device, Platform, VirtualMachine
 from .serializers import PlatformSerializer
@@ -79,15 +78,7 @@ class PlatformViewSet(BulkEditMixin, DeviceRoleViewSet):
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = Platform.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, Platform)
 
     def perform_create(self, serializer):
         super().perform_create(serializer)

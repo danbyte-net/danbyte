@@ -91,7 +91,7 @@ class CabinetRoleTests(CabinetTestCase):
         self.client.post("/api/cabinet-roles/", {"name": "Metering"}, format="json")
         r = self.client.post("/api/cabinet-roles/", {"name": "Metering"}, format="json")
         self.assertEqual(r.status_code, 400)
-        self.assertIn("slug", r.json())
+        self.assertIn("name", r.json())
 
 
 class CabinetTypeTests(CabinetTestCase):

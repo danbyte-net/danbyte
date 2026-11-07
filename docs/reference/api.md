@@ -178,6 +178,20 @@ curl -s -H "Authorization: Token $TOKEN" \
   "https://danbyte.example/api/ips/?tag=anycast-gw&page_size=1000"
 ```
 
+## Catalog names and slugs
+
+The tenant catalogs - platforms, platform groups, manufacturers, device
+roles, RIRs, VLAN groups, service templates, location and area types,
+sensitivity labels, custom-field groups and the other name-and-slug
+catalogs - take one rule on `POST` and `PATCH`:
+
+- A name another row has, case aside, is refused on create and on a
+  rename, with the error on `name`. An edit that keeps the name is never
+  refused for it, so rows that already share a name stay editable.
+- Leave out `slug` and a create takes it from the name; an edit keeps the
+  row's slug unless it renames the row, which takes the new name's.
+- A `slug` you send that another row has is refused on `slug`.
+
 ## Asking the API what it accepts
 
 These endpoints describe the API's own vocabulary so a client never has to

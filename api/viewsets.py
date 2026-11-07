@@ -38,6 +38,7 @@ from core.models import Organization, Tag, Tenant, TenantGroup
 from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
 from routing.models import RoutingKeychain
+from .catalog_slug import check_name_and_slug
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_edit import BulkEditMixin, BulkEditSpec
 # Re-exported: these lived here before api.bulk_update.
@@ -2653,17 +2654,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         return qs.order_by("weight", NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (
-            serializer.instance.name if serializer.instance else ""
-        )
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = CustomFieldGroup.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, CustomFieldGroup)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -2932,16 +2923,10 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
 
     def _prepare(self, serializer):
         tenant = self._tenant_or_403()
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        model = self.queryset.model
-        clash = model.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "A row with this name already exists."})
+        check_name_and_slug(
+            serializer, tenant, self.queryset.model,
+            message="A row with this name already exists.",
+        )
         return tenant
 
     def perform_create(self, serializer):
@@ -3047,15 +3032,7 @@ class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         )
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = Manufacturer.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "A manufacturer with this name already exists."})
+        check_name_and_slug(serializer, tenant, Manufacturer, message="A manufacturer with this name already exists.")
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -6867,17 +6844,7 @@ class _SlugCatalogViewSet(TenantScopedViewSet):
         ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (
-            serializer.instance.name if serializer.instance else ""
-        )
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = self.model.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, self.model)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -8345,15 +8312,7 @@ class DeviceRoleViewSet(TenantScopedViewSet):
         return qs
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = DeviceRole.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, DeviceRole)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -8400,15 +8359,7 @@ class PlatformGroupViewSet(TenantScopedViewSet):
         ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = PlatformGroup.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, PlatformGroup)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -8563,15 +8514,7 @@ class ServiceTemplateViewSet(TenantScopedViewSet):
         return qs.select_related("application").prefetch_related(TAGS)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = ServiceTemplate.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, ServiceTemplate)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -8693,15 +8636,7 @@ class RIRViewSet(TenantScopedViewSet):
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = RIR.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, RIR)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -8842,15 +8777,7 @@ class VLANGroupViewSet(TenantScopedViewSet):
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = VLANGroup.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, VLANGroup)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -9048,15 +8975,7 @@ class _ContactCatalogViewSet(TenantScopedViewSet):
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = self.model.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, self.model)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -10627,17 +10546,10 @@ class LocationTypeViewSet(BulkEditMixin, TenantScopedViewSet):
         return qs
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        if not slug:
-            raise ValidationError({"name": "Give the type a name."})
-        data["slug"] = slug
-        clash = LocationType.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"name": "A location type with this name already exists."})
+        check_name_and_slug(
+            serializer, tenant, LocationType,
+            message="A location type with this name already exists.", empty="Give the type a name.",
+        )
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -10676,17 +10588,10 @@ class AreaTypeViewSet(BulkEditMixin, TenantScopedViewSet):
         return qs
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        if not slug:
-            raise ValidationError({"name": "Give the type a name."})
-        data["slug"] = slug
-        clash = AreaType.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"name": "An area type with this name already exists."})
+        check_name_and_slug(
+            serializer, tenant, AreaType,
+            message="An area type with this name already exists.", empty="Give the type a name.",
+        )
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -10725,17 +10630,10 @@ class SensitivityLabelViewSet(BulkEditMixin, TenantScopedViewSet):
         return qs
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        if not slug:
-            raise ValidationError({"name": "Give the label a name."})
-        data["slug"] = slug
-        clash = SensitivityLabel.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"name": "A sensitivity label with this name already exists."})
+        check_name_and_slug(
+            serializer, tenant, SensitivityLabel,
+            message="A sensitivity label with this name already exists.", empty="Give the label a name.",
+        )
 
     def _take_default(self, serializer, tenant):
         """One default per tenant: the others give it up, each saved so the
@@ -11489,15 +11387,7 @@ class FloorTileTypeViewSet(TenantScopedViewSet):
         return qs
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = FloorTileType.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, FloorTileType)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
