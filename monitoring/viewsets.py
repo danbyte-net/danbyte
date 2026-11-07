@@ -1251,6 +1251,13 @@ class IssuerViewSet(BulkEditMixin, TenantScopedViewSet):
             raise ValidationError({"detail": str(exc)}) from exc
         return Response({"account_uri": uri, **self.get_serializer(issuer).data})
 
+    def perform_destroy(self, instance):
+        # Single and bulk delete both come here (bulk_destroy).
+        from .acme_engine import forget_account
+
+        super().perform_destroy(instance)
+        forget_account(instance)
+
 
 class AcmeOrderViewSet(TenantScopedReadViewSet):
     """ACME issuance orders - read-only here; created and driven by the ACME
