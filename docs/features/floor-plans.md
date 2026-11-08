@@ -40,7 +40,9 @@ Two ticks on a tile type change how its tiles behave:
   (*Cold aisle*, *Hot aisle*…) can be hidden with the **Zone labels** toggle
   under **Display** when they clutter a busy plan.
 - **Camera field of view** - tiles of this type get a **FOV cone**
-  (direction / angle / reach in cells) drawn on the canvas. The same tick
+  (direction / angle / reach in cells) drawn on the canvas. The reach slider
+  goes to 50 cells; type a larger number in the box beside it for a longer
+  reach. The same tick
   exists on **device roles** (e.g. a CCTV role), so camera devices get cones
   whichever way you type the tile. Toggle all cones under **Display**.
   Per tile: a dice-style **anchor picker** sets where the cone emits from

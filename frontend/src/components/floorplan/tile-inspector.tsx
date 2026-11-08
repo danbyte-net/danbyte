@@ -64,6 +64,9 @@ const LINK_KIND_OPTIONS = [
  *
  * The value sits beside the label rather than in a box: you're dragging against
  * the cone drawn on the plan, so the number is feedback, not an input. */
+/** fov_distance is a PositiveSmallIntegerField. */
+const FOV_DISTANCE_LIMIT = 32767
+
 function FovSlider({
   label,
   value,
@@ -72,6 +75,7 @@ function FovSlider({
   step = 1,
   unit,
   onChange,
+  limit,
 }: {
   label: string
   value: number
@@ -80,21 +84,43 @@ function FovSlider({
   step?: number
   unit: string
   onChange: (value: number) => void
+  /** When set, a number box beside the value takes anything up to this;
+   *  the slider stretches to whatever was typed. */
+  limit?: number
 }) {
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-muted-foreground">{label}</span>
-        <span className="num text-[12px] font-medium">
-          {value}
-          {unit}
-        </span>
+        {limit ? (
+          <span className="flex items-center gap-1 text-[12px]">
+            <Input
+              type="number"
+              inputMode="numeric"
+              className="num h-6 w-16 px-1.5 text-right text-[12px]"
+              value={value}
+              min={min}
+              max={limit}
+              aria-label={label}
+              onChange={(e) => {
+                const v = Math.round(Number(e.target.value))
+                if (Number.isFinite(v) && v >= min) onChange(Math.min(v, limit))
+              }}
+            />
+            <span className="text-muted-foreground">{unit.trim()}</span>
+          </span>
+        ) : (
+          <span className="num text-[12px] font-medium">
+            {value}
+            {unit}
+          </span>
+        )}
       </div>
       <Slider
         className="mt-1.5"
         value={[value]}
         min={min}
-        max={max}
+        max={Math.max(max, value)}
         step={step}
         onValueChange={([v]) => onChange(v)}
         aria-label={label}
@@ -344,6 +370,7 @@ export function TileInspector({
               value={tile.fov_distance ?? 3}
               min={1}
               max={50}
+              limit={FOV_DISTANCE_LIMIT}
               unit=" cells"
               onChange={(v) => onChange({ fov_distance: v })}
             />
