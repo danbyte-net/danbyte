@@ -5,7 +5,8 @@ import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, RackType } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { RackType } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -44,7 +45,7 @@ function RackTypesPage() {
   const query = useQuery({
     queryKey: ["rack-types", q],
     queryFn: () =>
-      api<Paginated<RackType>>(
+      apiAll<RackType>(
         `/api/rack-types/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

@@ -3,7 +3,8 @@ import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type Platform } from "@/lib/api"
+import { type Platform } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildPlatformColumns } from "@/components/columns/platform-columns"
@@ -11,6 +12,7 @@ import { useEolSettings } from "@/components/cells/eol-cell"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { PlatformDeleteDialog } from "@/components/platform-delete-dialog"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -21,15 +23,17 @@ export const Route = createFileRoute("/platforms/")({
 function PlatformsPage() {
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Platform | null>(null)
+  const [selected, setSelected] = useState<Platform[]>([])
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("platform", "add")
   const canEdit = canDo("platform", "change")
   const canDelete = canDo("platform", "delete")
+  const selectable = canEdit || canDelete
 
   const query = useQuery({
     queryKey: ["platforms", q],
     queryFn: () =>
-      api<Paginated<Platform>>(
+      apiAll<Platform>(
         `/api/platforms/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
@@ -40,7 +44,7 @@ function PlatformsPage() {
   const columns = useMemo(
     () =>
       buildPlatformColumns<Platform>({
-        selection: true,
+        selection: selectable,
         humanIds,
         eol: eolOn,
         actions: {
@@ -51,7 +55,7 @@ function PlatformsPage() {
           canDelete: () => canDelete,
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds, eolOn]
+    [handleDelete, canEdit, canDelete, selectable, humanIds, eolOn]
   )
   const {
     rail,
@@ -93,6 +97,17 @@ function PlatformsPage() {
         columns={wiredColumns}
         flexColumn="description"
         tableId="platforms"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/platforms/"
+        noun={["platform", "platforms"]}
+        invalidate={[["platforms"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
       <PlatformDeleteDialog
         platform={deleting}

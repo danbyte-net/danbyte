@@ -24,6 +24,14 @@ import type { LineType } from "./types"
 // old ceiling, which it now sits at with no room to spare. On LR the
 // Bendy ceilings fell (test-view Detailed 23 to 21, Simple 31 to 27). No
 // Bendy line runs through a card it does not connect any more.
+//
+// A Bendy line is the same with labels or without: its labels follow the
+// curve instead of the curve running straight past them. Out of a photo
+// port it now turns soon after the lead, as it did with labels off, and
+// lines leaving neighbouring ports cross sooner: test-view LR Simple went
+// from 27 crossings to 37 and LR Detailed from 21 to 23. The rest fell
+// (test-view TB Detailed 40 to 32, TB Simple 23 to 21; dc1-view LR
+// Detailed 17 to 14, TB Detailed 16 to 15), and their ceilings with them.
 
 type Key =
   `${"ports" | "edge"}:${"LR" | "TB"}:${"detailed" | "simple"}:${LineType}`
@@ -33,16 +41,16 @@ const CEILING: Record<string, Partial<Record<Key, number>>> = {
   "test-view": {
     "ports:LR:detailed:elbow": 23,
     "ports:LR:detailed:straight": 26,
-    "ports:LR:detailed:bendy": 21,
+    "ports:LR:detailed:bendy": 23,
     "ports:LR:simple:elbow": 25,
     "ports:LR:simple:straight": 28,
-    "ports:LR:simple:bendy": 27,
+    "ports:LR:simple:bendy": 37,
     "ports:TB:detailed:elbow": 21,
     "ports:TB:detailed:straight": 25,
-    "ports:TB:detailed:bendy": 40,
+    "ports:TB:detailed:bendy": 32,
     "ports:TB:simple:elbow": 18,
     "ports:TB:simple:straight": 20,
-    "ports:TB:simple:bendy": 23,
+    "ports:TB:simple:bendy": 21,
     "edge:LR:detailed:elbow": 0,
     "edge:LR:simple:elbow": 5,
     "edge:TB:detailed:elbow": 1,
@@ -51,13 +59,13 @@ const CEILING: Record<string, Partial<Record<Key, number>>> = {
   "dc1-view": {
     "ports:LR:detailed:elbow": 18,
     "ports:LR:detailed:straight": 17,
-    "ports:LR:detailed:bendy": 17,
+    "ports:LR:detailed:bendy": 14,
     "ports:LR:simple:elbow": 16,
     "ports:LR:simple:straight": 15,
     "ports:LR:simple:bendy": 19,
     "ports:TB:detailed:elbow": 14,
     "ports:TB:detailed:straight": 14,
-    "ports:TB:detailed:bendy": 16,
+    "ports:TB:detailed:bendy": 15,
     "ports:TB:simple:elbow": 12,
     "ports:TB:simple:straight": 9,
     "ports:TB:simple:bendy": 19,

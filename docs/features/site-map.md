@@ -33,7 +33,9 @@ for a popup with counts and a jump-off to the site or device page.
     - *tunnels*, resolved termination → interface → device → site - two
       sites make an edge, a hub termination makes a star to its spokes;
     - *cross-site cables* (dark fiber), aggregated per site pair - a bundle
-      is one arc with a count.
+      is one arc with a count;
+    - *circuits to a provider network* - each to that network's own marker
+      (see [Provider networks](#provider-networks)).
   Hover thickens an arc and names it with its speed; click opens its popover
   and the inspector, both showing its [link facts](#link-facts) - speed,
   provider, encapsulation, the ports at each end - with jump-offs to both
@@ -43,15 +45,20 @@ for a popup with counts and a jump-off to the site or device page.
 
 The page is a clone of the floor-plan editor's shell:
 
-- **Header** - View / Layout / Cables tabs, a *Find on map…* search (sites, devices,
-  markers - jump + select), **Fit to view**, the **Satellite** toggle, the
+- **Header** - View / Layout / Cables tabs, the **Outline** tool in Layout
+  mode ([building outlines](#building-outlines)), **New floor plan** in
+  Layout mode ([a floor plan from the map](#new-floor-plan-from-this-view)),
+  a *Find on map…* search
+  (sites, devices, markers, and outlines by their label or location name -
+  jump + select), **Fit to view**, the **Satellite** toggle, the
   **Objects** sidebar toggle, and a **Display** menu in three parts:
     - **Layers** - Sites, Devices, Links, Cables, Cable routes, Region
-      boundaries, Camera FOV cones, and Stack nearby markers. Links are
-      circuits and tunnels; **Cables** toggles the plain cable lines
+      boundaries, Outlines, Camera FOV cones, and Stack nearby markers. Links
+      are circuits and tunnels; **Cables** toggles the plain cable lines
       separately, so a map can show just the carrier picture.
-    - **Labels** - **Names** (the site and device name chips) and **Speed**
-      (each line's speed on the line, see [Link speed](#link-speed-on-the-map)).
+    - **Labels** - **Names** (the site and device name chips, and the
+      outlines' labels) and **Speed** (each line's speed on the line, see
+      [Link speed](#link-speed-on-the-map)).
     - **Color by** - **Type**, **Status**, **Speed** or **Utilization**,
       for the lines.
 - **Left palette rail** (Edit mode) - tabbed **Sites / Markers**, exactly
@@ -76,15 +83,18 @@ The page is a clone of the floor-plan editor's shell:
   [floor plans](floor-plans.md) and the [topology map](topology.md) open:
   one *Search…* box over foldable groups - sites by region (a flat list
   until regions are in use), devices by role (each role headed by its color
-  badge), markers, links grouped by kind, and a **Regions** list (regions
-  with a stored boundary; click one to fit the map to it). Click a row to
+  badge), markers, building **Outlines** (click one to fit the map to it),
+  links grouped by kind, and a **Regions** list (regions with a stored
+  boundary; click one to fit the map to it). Click a row to
   fly to it; Enter in the search box jumps to the first hit. Every
   site/device row carries its monitoring status pill, a **Problems** section
   at the top collects everything down or degraded (worst first), and the
   **All · Down · Degraded · Up** tabs under the search box (each with its
   count, named as your status catalog names the states) filter the whole
   list. Group headers show down/degraded counts even when folded, and fold
-  state is remembered per browser.
+  state is remembered per browser. On a phone (below 768 px wide) the
+  sidebar starts closed and opens over the map with its own close button,
+  and the header wraps so every toolbar control stays on screen.
 - **Hiding part of the map** - the eye on a group header takes that group
   off the map: a device role, or a region's sites. Individual sites have
   their own eye, since sites are the map's top-level objects and there are
@@ -199,8 +209,9 @@ Every site can carry a **marker color** and a **Lucide icon**, set on the site
 form (*Marker color* / *Marker icon*, next to the coordinates). The map pin
 takes the color and shows the icon inside it; with nothing set, the pin is the
 theme color with a standard building glyph. The same pair exists on locations - there they color the location's badge
-on list and detail pages (locations have no coordinates, so nothing changes on
-the map), and give the upcoming topology views a grouping color to work with.
+on list and detail pages, and a location's
+[outline](#building-outlines) when its type has no color. A location with
+neither takes its [type's](regions-locations.md#location-types).
 
 To color many at once, tick them in the **Sites**, **Regions** or
 **Locations** list and choose **Edit** in the bar that appears: sites and
@@ -241,13 +252,40 @@ sites that are both placed on the map:
 
 | Line | What has to be true |
 |---|---|
-| **Circuit** | Both the A and Z [termination](circuits.md#terminate-a-circuit) land on a site (not a provider network), and the two sites differ. Cabling a side to a port is not required for the line - it ties the circuit to the port. A side on a [VM interface](circuits.md#terminate-on-a-virtual-machine) names that VM at its end. |
+| **Circuit** | Both the A and Z [termination](circuits.md#terminate-a-circuit) land on a site, and the two sites differ. Cabling a side to a port is not required for the line - it ties the circuit to the port. A side on a [VM interface](circuits.md#terminate-on-a-virtual-machine) names that VM at its end. |
+| **Circuit to a provider network** | One end lands on a placed site, the other on a [provider network](circuits.md#provider-networks): the line runs from the site to the network's marker (see [Provider networks](#provider-networks)). Cabling is not required here either. |
 | **Tunnel** | Each [tunnel](vpn.md) termination resolves to a site: a device interface through its device, a VM interface through its VM (its own site, else its cluster's, else its host's). Two sites draw one line; a `hub` termination draws one line per spoke. A peer mesh of more than two sites is not drawn. |
 | **Cable** | Its two ends sit on devices at different sites. Cables between sites are aggregated per site pair, so a bundle is one line. |
 
 A site is **placed** once it has a latitude and longitude - an unplaced site
 drops every line that would touch it. If a link you expect is missing, check
 that end's site first.
+
+### Provider networks
+
+A provider network - the MPLS cloud or carrier fabric your circuits' far
+ends land on - has no place of its own, so the map gives it one: a marker (a
+neutral rounded square with a cloud, its name and how many circuits reach
+it) at the centre of the placed sites it serves. When that point lands on or
+next to one of them - a network serving one site, or sites in a ring round
+it - it moves north, by a quarter of the spread of its sites and at least
+0.05°; two networks serving the same sites step apart eastwards. Each
+circuit from a site to the network is its own line, styled like the other
+circuit lines (its circuit type's colour, then its status's), so several
+sites on one MPLS service draw as hub and spoke.
+
+Click the marker for its panel: the provider, the service ID, and every
+circuit with its site, type, commit rate and status - a circuit jumps to its
+line. **Display → Layers → Provider networks** (on by default, remembered per
+browser) turns the markers and their lines off together; in the Objects
+sidebar each network has its own eye, and the *n hidden* chip counts the ones
+you hid. A network goes when every site it serves is hidden, and a line with
+its site. The dashboard and site-page mini maps leave these lines out.
+
+You see a network and its lines only with view on circuits and on provider
+networks, and only for the circuits whose site end is at a site you may view:
+a reader scoped to some sites never sees a marker built from circuits at the
+others, and its place is worked out from their sites alone.
 
 ## Link speed on the map
 
@@ -396,9 +434,109 @@ channel, routed through the route graph between their endpoint sites. A cable
 bundle whose members all follow real routes drops its abstract arc. Cable
 detail pages gain **Show on site map** (`/site-map?trace=<cableId>`) once the
 cable is routed. Routes are a registered RBAC type (`cableroute`) - users
-without the grant see no plant geography.
+without the grant see no plant geography. A route lists only the cables you
+may view (`hidden_cable_count` counts the others); assigning or removing a
+cable needs **change** on that cable, and saving a route's cables keeps the
+ones you cannot see.
 
 For splice closures and PON splitters, see [fibre](../dcim/fiber.md).
+
+## Building outlines
+
+A campus is more than pins: draw each building's footprint on the map and
+link it to the [location](regions-locations.md#add-a-location) it is. An
+outline is a filled polygon with a label; clicking it opens what is inside.
+
+**Draw one** - switch to **Layout** and click **Outline** in the header.
+Click the building's corners, then double-click or press ++enter++ to
+finish (++esc++ cancels). A small dialog asks for the **site** (the nearest
+site you may edit is picked), the **location** and an optional **label**,
+and creates it. The **+** beside the Location picker makes a new location at
+that site there and then - typed *Building* when your
+[location types](regions-locations.md#location-types) have one.
+
+**Reshape and edit** - in Layout mode, click an outline to select it: drag a
+point to move it, click a side's **＋** to add a point, right-click a point
+to remove it (three always stay) - the same moves as a
+[cable route](#cables-mode-routes-for-the-outside-plant). The inspector on
+the right links the **location** (the locations of the outline's site, as
+their color badges), sets a **label**, a **color** of its own, and
+**Locked** - a locked outline shows no handles, so it can't be moved by
+accident. ++delete++ removes the selected outline. An outline that would
+cross itself is refused.
+
+**What it shows:**
+
+| | Comes from |
+|---|---|
+| **Color** | The outline's own color, else its location's [type](regions-locations.md#location-types) color, else the location's color, else neutral grey. |
+| **Label** | The outline's own label, else the location's **code** (`A1`), else its name. Shown with **Display → Labels → Names**; with Names off, on hover and selection only. |
+
+**Drill down** - in View mode, hovering an outline lights it up; clicking it
+opens its panel: the location's type and code, how many **sub-locations,
+rooms, racks and devices** are in it and under it (those you may view), and
+its **floor plans** - the floor plans of the location and of the locations
+inside it, then the site's [site-wide plans](floor-plans.md#site-wide-floor-plans).
+**Open floor plan** opens the ground level of the location's own floor plan
+(else of the site-wide one): the floor at elevation 0, else the lowest one
+that is not a basement. **Open location** opens its page. An outline's
+**Opens** (in its inspector, from any floor plan, snapshot or live view you
+may view) replaces that: **Open floor plan** then opens the plan it names -
+unless you may not view it, when the location's ground level stays.
+
+Outlines are listed in the **Objects** sidebar and found by **Find on map**,
+by label, location name or code. **Display → Layers → Outlines** hides them
+all; hiding a site in the sidebar hides its outlines too.
+
+**Permissions** - outlines are their own type, **Site-map outlines**
+(`sitemapoutline`), scoped to their site like devices and audited in the
+change log. [Site roles](permissions.md#site-roles-local-it-in-one-click)
+include them. An outline linked to a location you may not view is not shown
+to you at all - not its shape, not its label; linking one needs view on the
+location, and the location must be at the outline's site.
+
+## New floor plan from this view
+
+A campus plan can start from the map: in **Layout** mode, **New floor
+plan** in the header (needs permission to add floor plans) lets you frame
+the area - drag a rectangle over it, or press ++enter++ for the whole view
+(++esc++ cancels). A dialog asks for:
+
+| | |
+|---|---|
+| **Name** | The floor plan's name; it must be unique among the site's site-wide floor plans. |
+| **Site** | The site whose outlines and pins are in the framed area, else pick one. |
+| **Cell size** | 1 m by default. Raised when the area would need more than 2,048 cells across; the line under the fields shows the grid and its size in metres. |
+| **Background** | **Map** or **Satellite**, from the tile servers set under [Map tiles](#map-tiles-read-this-before-heavy-use). |
+
+**Create** draws the framed area from the tiles into one image, in your
+browser, at the map's zoom (lowered when the image would be over 8,192
+pixels a side), with the tile attribution in its bottom-right corner. It
+makes a [site-wide floor plan](floor-plans.md#site-wide-floor-plans) of
+that size at true scale with the image as its background, copies the
+site's [building outlines](#building-outlines) inside the area onto it as
+areas linked to the same locations, and opens it. See
+[Plans made from the Site map](floor-plans.md#plans-made-from-the-site-map)
+for the scale, the attribution and the areas.
+
+**When the tiles can't be read** - on an isolated network, or from a tile
+server that does not allow pages to read its tiles - the dialog says so and
+offers **Create without background**: the same plan with the outlines and
+no image. Reading tiles needs the tile server to send
+`Access-Control-Allow-Origin` (OpenStreetMap's and Esri's do); for a
+self-hosted tile server, add the header there. Danbyte's server never
+fetches tiles for this either.
+
+## Floor plan footprints
+
+A floor plan [made from the map](#new-floor-plan-from-this-view) keeps the
+box it spans. The map draws each one you may view as a faint dashed
+rectangle, named on hover (the floor plan and the floor); a click opens the
+plan. The levels of an [aligned floor plan](floor-plans.md#building-levels)
+share one box and are drawn once: named after the floor plan, listing its
+levels on hover, and opening its ground level. **Display → Layers → Floor plans** turns them on and off. A plan
+whose box was [expanded](floor-plans.md#expand) shows its new box. Plans of
+sites hidden in the sidebar are hidden with them.
 
 ## Placing a site from its address
 
@@ -485,7 +623,9 @@ attribution string; nearly every provider requires one.
     can't reach a tile server (a fully isolated network) does the map fall
     back to a plain background - markers, placement, and popups still work.
     For real tiles there, self-host a tile server on the isolated network and
-    point the Map tiles setting at it.
+    point the Map tiles setting at it. A
+    [floor plan made from the map](#new-floor-plan-from-this-view) is drawn
+    from the same tiles in the browser too.
 
 ## API
 
@@ -494,6 +634,28 @@ sites (all of them - unplaced ones carry `null` coordinates so the edit panel
 can offer them) and every device with coordinates. Site coordinates are plain
 fields on the Site resource (`latitude` / `longitude`, decimal degrees), so
 they're scriptable like everything else.
+
+Building outlines are `/api/site-map-outlines/` (`?site=`, `?location=`):
+`points` is a list of 3 to 500 `[lat, lng]` pairs (not closed - the last
+point joins the first; a repeated closing point is dropped), with
+`site_id`, `location_id`, `label`, `color`, `z`, `locked` and `opens_id` (a
+floor plan of the tenant you may view; `null` clears it). Each row also
+carries `display_label` and `display_color`, as the map draws them, and
+`opens` (`id`, `name`, `stack_name`, `kind`) - `null` with `opens_hidden`
+when you may not view it.
+`GET /api/site-map-outlines/<id>/drilldown/` returns the panel's counts,
+floor plans (each with `first_floor_id`, its ground level) and
+`open_floor_id` (the outline's Opens target when it has one you may view,
+else the first plan's ground level).
+
+`POST /api/floor-plans/from-map/` makes a floor plan from a box of the map;
+see [its API](floor-plans.md#plans-made-from-the-site-map).
+`plan_footprints` in `GET /api/site-map/` lists the floor plans with a geo
+anchor that you may view: `{id, name, stack, site_id, bbox, levels}`,
+`bbox` being `[south, west, north, east]`. An aligned floor plan is one
+entry: `id` is its ground level, `name` the floor plan's and `levels` its
+floors' names, lowest first; any other floor is an entry of its own, with
+`levels` holding its name.
 
 `GET /api/site-map/cables/` returns every cable with two placeable ends. An
 end carries the point it draws at, its `device_id` and its `site_id` - a
@@ -505,6 +667,39 @@ tunnels and each site pair's cables, as
 [What draws a line between two sites](#what-draws-a-line-between-two-sites)
 describes. Each kind needs its own view permission, and both sites must be
 ones you can view.
+
+It also returns `provider_networks`: each
+[provider network](#provider-networks) a placed site's circuit reaches,
+`{id, name, service_id, provider: {id, name}, latitude, longitude,
+site_ids, circuits: [{id, cid, site: {id, name}, type, status, color,
+commit_rate_kbps}]}`, `latitude`/`longitude` being where the map places it.
+The line of each such circuit is in `connections` as a `circuit` whose
+`site_z` is the network's marker - `{id: "pn:<network id>", name, latitude,
+longitude}` - and which carries `provider_network: {id, name}`; with
+`?include=capacity` its network end has `site_id: null`. A circuit needs
+`circuit.view`, its network `providernetwork.view` and its site `site.view`.
+The query count does not grow with the number of circuits.
+
+### Permissions
+
+Everything on the map is what you may view, each kind by its own grant and
+site scope:
+
+- **Sites** count only the devices and floor plans you may view, and list
+  only those floor plans.
+- **Markers** are the ones the marker list shows you (`sitemarker`, by its
+  device's site). A marker whose device you may not view keeps its place,
+  label and type but reads `device: null` and `device_hidden: true` on the
+  map, and `{"id": null, "name": "Hidden", "hidden": true}` in
+  `/api/site-markers/`.
+- **Cables** are the ones `/api/cables/` lists you: the cable grant's
+  constraints and sites apply, not just having the grant. A cable line
+  needs both ends on devices you may view; a cable bundle between two sites,
+  its link facts and its speed are made only of cables you may view, and so
+  is a circuit's walk to the ports it is cabled to. A route lists only
+  the cables you may view.
+- **Circuits** and **tunnels** follow their own view grants. An end on a
+  device or VM you may not view reads `restricted` with no device or port.
 
 ### Link speed: `?include=capacity` {#link-speed}
 

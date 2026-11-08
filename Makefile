@@ -19,7 +19,7 @@ SHARED_SERVICES := danbyte-workers danbyte-fastlane danbyte-docs
 SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 # Timer-driven oneshots (monitoring beat). Each has a .service + a .timer; the
 # timer is what gets enabled. Not part of `up`/`down` (they're not long-running).
-TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn danbyte-snmp-poll danbyte-eol-refresh danbyte-oxidized-sync
+TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-extmon-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn danbyte-snmp-poll danbyte-eol-refresh danbyte-oxidized-sync danbyte-update-check
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
 .PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync root-tree-only \
@@ -30,10 +30,10 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         backend-up backend-down backend-restart backend-logs \
         workers-up workers-down workers-restart workers-logs \
         fastlane-up fastlane-down fastlane-restart fastlane-logs \
-        migrate makemigrations superuser bootstrap seed-demo seed-fabric shell test check \
+        migrate makemigrations superuser bootstrap seed-demo seed-fabric seed-floorplan-demo seed-building-demo shell test check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
-        linger service-user cad-tools
+        linger service-user cad-tools sbom
 
 help:
 	@echo "Danbyte dev shortcuts"
@@ -59,6 +59,7 @@ help:
 	@echo "  Django"
 	@echo "    make migrate / makemigrations / superuser / shell / test / check"
 	@echo "    make cad-tools  Build LibreDWG's dwg2dxf into vendor/cad (DWG floor plans)"
+	@echo "    make sbom       Write Danbyte's own CycloneDX SBOM to sbom.cdx.json"
 	@echo ""
 	@echo "  Reverse proxy (everything on https/443)"
 	@echo "    make proxy-install     One-time: nginx + self-signed cert + config"
@@ -206,11 +207,12 @@ css-watch:        ; npm run watch:css
 # ---- frontend (Vite + React + TanStack Start SSR) ---------------------------
 # Lives in frontend/. In dev, `frontend-dev` runs the Vite dev server (:3000)
 # which proxies /api to Django. In production, `frontend-build` emits the SSR
-# bundle to frontend/dist and danbyte-frontend-prod serves it (vite preview);
-# nginx routes /api, /ws, /static, /admin to Django and / to the frontend.
+# bundle to frontend/dist (with .gz copies of the assets) and danbyte-frontend-prod
+# serves its HTML (vite preview); nginx serves /assets/ from disk, routes
+# /api, /ws, /static, /admin to Django and / to the frontend.
 frontend-install: ; cd frontend && npm install
 frontend-dev:     ; cd frontend && npm run dev
-frontend-build:   ; cd frontend && npx vite build
+frontend-build:   ; cd frontend && npm run build
 
 # ---- nginx reverse proxy (single-port 443) ----------------------------------
 # Puts SPA (/), API (/api), admin (/admin) and docs (/docs) behind one HTTPS
@@ -263,6 +265,7 @@ sed -e "s|@@SERVER_NAME@@|$(PROXY_HOST)|g" \
     -e "s|@@STATIC_ROOT@@|$(STATIC_ROOT)|g" \
     -e "s|@@MEDIA_ROOT@@|$(MEDIA_ROOT)|g" \
     -e "s|@@MAINTENANCE_ROOT@@|$(PROJECT_DIR)/deploy|g" \
+    -e "s|@@FRONTEND_ROOT@@|$(PROJECT_DIR)/frontend/dist/client|g" \
     -e "s|@@H2_LISTEN@@|$$h2l|g" \
     -e "s|@@H2_DIRECTIVE@@|$$h2d|g" \
     $(NGINX_TMPL) | sudo tee $(NGINX_SITE) >/dev/null
@@ -413,6 +416,16 @@ seed-demo:
 seed-fabric:
 	@$(PY) manage.py seed_fabric
 
+# Opt-in demo floor plan in one tenant: make seed-floorplan-demo TENANT=<slug>.
+seed-floorplan-demo:
+	@test -n "$(TENANT)" || { echo "Usage: make seed-floorplan-demo TENANT=<slug>"; exit 2; }
+	@$(PY) manage.py seed_floorplan_demo --tenant "$(TENANT)"
+
+# Opt-in demo building (aligned floor levels): make seed-building-demo TENANT=<slug>.
+seed-building-demo:
+	@test -n "$(TENANT)" || { echo "Usage: make seed-building-demo TENANT=<slug>"; exit 2; }
+	@$(PY) manage.py seed_building_demo --tenant "$(TENANT)"
+
 shell:
 	@$(PY) manage.py shell
 
@@ -432,6 +445,12 @@ check:
 # Needs a C toolchain, pkg-config, curl, xz and file; restart the workers after.
 cad-tools:
 	@sh deploy/cad/build-dwg2dxf.sh vendor/cad
+
+# Danbyte's own SBOM (CycloneDX 1.6): the venv's packages for requirements.txt
+# plus the SPA's runtime npm packages, to sbom.cdx.json where
+# /api/system/sbom/ serves it. Release bundles and images ship one already.
+sbom:
+	@$(PY) scripts/release/sbom.py --output sbom.cdx.json
 
 # Gather Django static (admin + DRF assets) into STATIC_ROOT so nginx serves
 # them from disk in production (gunicorn doesn't serve static with DEBUG off).

@@ -12,10 +12,13 @@ import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
+import { TagList } from "@/components/cells/tag-list"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { FileViewer } from "@/components/file-viewer"
 import { ConfigContextDeleteDialog } from "@/components/config-context-delete-dialog"
 import { useMe } from "@/lib/use-me"
 
@@ -34,8 +37,7 @@ function ConfigContextDetail() {
     queryKey: ["config-context", id],
     queryFn: () => api<ConfigContext>(`/api/config-contexts/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -52,7 +54,8 @@ function scopeCount(c: ConfigContext): number {
     c.regions.length +
     c.sites.length +
     c.device_roles.length +
-    c.platforms.length
+    c.platforms.length +
+    c.tags.length
   )
 }
 
@@ -230,6 +233,14 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
         {p.name}
       </Link>
     )),
+    {
+      label: "Tags",
+      value: c.tags.length ? (
+        <TagList tags={c.tags} listTo="/devices" />
+      ) : (
+        <span className="text-muted-foreground">Any</span>
+      ),
+    },
   ]
 
   const record: KvRow[] = [
@@ -256,9 +267,13 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
         ) : (
           // Scrolls in its own box: a context blob can be long *and* wide, and
           // neither may push the page into a horizontal scroll.
-          <pre className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
-            {JSON.stringify(c.data, null, 2)}
-          </pre>
+          <FileViewer
+            text={JSON.stringify(c.data, null, 2)}
+            filename={`${c.name}.json`}
+            language="json"
+            storageKey="config-context"
+            label="Context data"
+          />
         )}
       </section>
     </div>

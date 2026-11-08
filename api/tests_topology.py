@@ -483,14 +483,17 @@ class DiagramViewStateTests(_Base):
                  "color": "#0EA5E9"},
                 {"id": "b1", "label": "Spine", "x": 0, "y": 300, "w": 900,
                  "h": 180, "color": None, "kind": "band", "orient": "h",
-                 "rule": {"by": "role", "ids": [self.A]}},
+                 "rule": {"by": "role", "ids": [self.A]}, "line": "bendy"},
                 {"id": "b2", "label": "OOB", "x": 950, "y": 0, "w": 200,
                  "h": 900, "color": "", "kind": "band", "orient": "v"},
             ]},
             "links": {
                 f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1},
             },
-            "nodes": {self.A: {"face": "card"}, self.B: {"anchor": "ports"}},
+            "nodes": {
+                self.A: {"face": "card", "line": "elbow"},
+                self.B: {"anchor": "ports"},
+            },
             "notes": [
                 {"id": "n1", "kind": "text", "x": 5, "y": -5.5, "text": "WAN",
                  "size": "l", "outline": True},
@@ -512,9 +515,11 @@ class DiagramViewStateTests(_Base):
         zones = state["zones_by_style"]["diagram"]
         self.assertEqual(zones[0]["color"], "#0ea5e9")
         self.assertEqual(zones[1]["rule"], {"by": "role", "ids": [self.A]})
+        self.assertEqual(zones[1]["line"], "bendy")
+        self.assertNotIn("line", zones[2])
         self.assertEqual(state["positions_by_style"]["diagram"], {f"dev:{self.A}": [10, 20]})
         self.assertEqual(state["links"], {f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1}})
-        self.assertEqual(state["nodes"][self.A], {"face": "card"})
+        self.assertEqual(state["nodes"][self.A], {"face": "card", "line": "elbow"})
         self.assertEqual(state["nodes"][self.B], {"anchor": "ports"})
         self.assertEqual(diagram["photo_anchor"], "edge")
         self.assertEqual([n["id"] for n in state["notes"]], ["n1", "n2"])
@@ -535,6 +540,20 @@ class DiagramViewStateTests(_Base):
             {"id": "old", "label": "Spine + Border", "x": 0, "y": 700,
              "w": 900, "h": 200, "color": None, "kind": "band",
              "orient": "h", "rule": {"by": "role", "ids": [a, b]}},
+            # Cards per row: a count, or absent for Auto.
+            {"id": "leaf", "label": "Leaf", "x": 0, "y": 950, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "per_row": 200},
+            {"id": "one", "label": "One", "x": 0, "y": 1200, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "per_row": 1, "align": "right"},
+            # Card alignment: left, center or right, or absent for Auto.
+            {"id": "mid", "label": "Mid", "x": 0, "y": 1450, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "align": "center"},
+            {"id": "lft", "label": "Left", "x": 0, "y": 1700, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "align": "left"},
         ]}}
         resp = self._save(state)
         self.assertEqual(resp.status_code, 201, resp.content)
@@ -547,6 +566,12 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(zones[1]["layout"], "row")
         self.assertEqual(len(zones[1]["rule"]["ids"]), 100)
         self.assertNotIn("layout", zones[2])
+        self.assertNotIn("per_row", zones[2])
+        self.assertEqual([z["per_row"] for z in zones[3:5]], [200, 1])
+        self.assertNotIn("align", zones[3])
+        self.assertEqual(
+            [z["align"] for z in zones[4:]], ["right", "center", "left"]
+        )
 
     def test_diagram_colour_is_a_hex_or_neutral(self):
         zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
@@ -582,6 +607,19 @@ class DiagramViewStateTests(_Base):
             {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "role", "ids": [a] * 101}}]}},
             {"zones_by_style": {"diagram": [{**zone, "layout": "grid"}]}},
             {"zones_by_style": {"diagram": [{**zone, "layout": ["stack"]}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": 0}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": 201}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": 4.5}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": "8"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "per_row": True}]}},
+            {"zones_by_style": {"diagram": [{**zone, "align": "middle"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "align": "Left"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "align": ["left"]}]}},
+            {"zones_by_style": {"diagram": [{**zone, "align": 1}]}},
+            {"zones_by_style": {"diagram": [{**zone, "line": "curved"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "line": "Bendy"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "line": ["elbow"]}]}},
+            {"zones_by_style": {"diagram": [{**zone, "line": 1}]}},
             {"filters": {"diagram": "detailed"}},
             {"filters": {"diagram": {"mode": "photo"}}},
             {"filters": {"diagram": {"face": "rear"}}},
@@ -607,6 +645,10 @@ class DiagramViewStateTests(_Base):
             {"nodes": {a: "photo"}},
             {"nodes": {a: {"face": "rear"}}},
             {"nodes": {a: {"anchor": "edges"}}},
+            {"nodes": {a: {"line": "curved"}}},
+            {"nodes": {a: {"line": "default"}}},
+            {"nodes": {a: {"line": ["bendy"]}}},
+            {"nodes": {a: {"line": True}}},
             {"notes": {}},
             {"notes": ["x"]},
             {"notes": [{"x": 0, "y": 0}]},

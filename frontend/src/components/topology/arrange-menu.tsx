@@ -2,6 +2,7 @@ import { useRef, useState } from "react"
 import {
   ArrowDown,
   ArrowRight,
+  Boxes,
   Eraser,
   Layers,
   LayoutGrid,
@@ -38,9 +39,12 @@ export function ArrangeMenu({
   bands,
   direction,
   levels,
+  onByAs,
 }: {
   onReset: () => void
   resetDisabled?: boolean
+  /** Routing: one box per AS, its routers inside it. */
+  onByAs?: () => void
   /** Diagram: arrange or clear the layer bands. */
   bands?: {
     onByRole: () => void
@@ -95,6 +99,14 @@ export function ArrangeMenu({
         <DropdownMenuItem disabled={resetDisabled} onSelect={onReset}>
           <RefreshCw /> Reset layout
         </DropdownMenuItem>
+        {onByAs && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onByAs}>
+              <Boxes /> By AS
+            </DropdownMenuItem>
+          </>
+        )}
         {bands && (
           <>
             <DropdownMenuSeparator />

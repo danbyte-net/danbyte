@@ -20,15 +20,28 @@ export interface LocationCellProps {
   linked?: boolean
   /** Optional class on the wrapper (e.g. text sizing). */
   className?: string
+  /** Shown, muted, for no location (default a dash) - e.g. "Whole site". */
+  emptyLabel?: string
 }
 
 export function LocationCell({
   location,
   linked = true,
   className,
+  emptyLabel,
 }: LocationCellProps) {
   if (!location) {
-    return <span className="text-muted-foreground">-</span>
+    return (
+      <span
+        className={
+          className
+            ? `${className} text-muted-foreground`
+            : "text-muted-foreground"
+        }
+      >
+        {emptyLabel ?? "-"}
+      </span>
+    )
   }
   if (!linked) {
     return <span className={className}>{location.name}</span>
@@ -51,6 +64,8 @@ export interface LocationColumnOpts<T> {
   linked?: boolean
   /** Class on the cell (e.g. `text-xs` where the table runs small). */
   className?: string
+  /** What a row with no location reads (default a dash). */
+  emptyLabel?: string
 }
 
 export function locationColumn<T>(
@@ -60,13 +75,14 @@ export function locationColumn<T>(
   const header = opts.header ?? "Location"
   return {
     id,
-    accessorFn: (r) => opts.get(r)?.name ?? "",
+    accessorFn: (r) => opts.get(r)?.name ?? opts.emptyLabel ?? "",
     header: ({ column }) => <SortHeader column={column} label={header} />,
     cell: ({ row }) => (
       <LocationCell
         location={opts.get(row.original)}
         linked={opts.linked}
         className={opts.className}
+        emptyLabel={opts.emptyLabel}
       />
     ),
     meta: {
@@ -75,7 +91,7 @@ export function locationColumn<T>(
         label: header,
         get: (r: T) => opts.get(r)?.id ?? "__none__",
         formatValue: (_v, sample) => ({
-          label: opts.get(sample)?.name ?? "No location",
+          label: opts.get(sample)?.name ?? opts.emptyLabel ?? "No location",
         }),
       },
     },

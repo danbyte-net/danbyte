@@ -11,6 +11,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from api.models import NumIdMixin
 from api.vrf_placement import PINNED, VRF_MODE_CHOICES
 from core.models import TimestampedModel
 from monitoring.secrets import EncryptedJSONField
@@ -86,14 +87,16 @@ class Webhook(TimestampedModel):
 
 class AutomationTarget(TimestampedModel):
     """A runner Danbyte can dispatch a deploy to - an Ansible AWX/AAP job
-    template, or a generic signed webhook (Jenkins/GitLab/Rundeck). Danbyte fires
-    the trigger; the runner holds device creds and does the push."""
+    template, a generic signed webhook (Jenkins/GitLab/Rundeck), or a Danbyte
+    script. Danbyte fires the trigger; the runner holds device creds and does
+    the push."""
 
     import uuid as _uuid
 
     KIND_CHOICES = [
         ("awx", "Ansible AWX / AAP"),
         ("webhook", "Generic webhook"),
+        ("script", "Danbyte script"),
     ]
 
     id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
@@ -104,9 +107,15 @@ class AutomationTarget(TimestampedModel):
     kind = models.CharField(max_length=16, choices=KIND_CHOICES, default="awx")
     enabled = models.BooleanField(default=True)
     base_url = models.URLField(
-        max_length=512,
+        max_length=512, blank=True, default="",
         help_text="AWX/AAP controller URL (e.g. https://awx.example.com) or, for "
-                  "a generic webhook, the full POST URL.",
+                  "a generic webhook, the full POST URL. Unused for a script.",
+    )
+    #: The script a ``script`` target runs (same tenant). It must declare a
+    #: ``device_ids`` parameter; see integrations.script_targets.
+    script = models.ForeignKey(
+        "scripting.Script", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="automation_targets",
     )
     job_template_id = models.CharField(
         max_length=64, blank=True, default="",
@@ -150,8 +159,11 @@ class DeployRun(TimestampedModel):
     STATUS_CHOICES = [
         ("queued", "Queued"),
         ("launched", "Launched"),
+        ("succeeded", "Succeeded"),
         ("failed", "Failed"),
     ]
+    #: A run in one of these has its outcome and is never changed again.
+    FINAL_STATUSES = ("succeeded", "failed")
 
     id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -163,14 +175,27 @@ class DeployRun(TimestampedModel):
     )
     target_name = models.CharField(max_length=128)
     event = models.CharField(max_length=32, default="manual")
+    #: The ids dispatched. Named for devices because that is the stored
+    #: column and the payload key runners read; ``object_type`` says what
+    #: they are (``virtualmachine`` for a provision run).
     device_ids = models.JSONField(default=list)
+    object_type = models.CharField(
+        max_length=64, default="device", db_default="device",
+    )
     status = models.CharField(
         max_length=16, choices=STATUS_CHOICES, default="queued"
     )
     detail = models.TextField(blank=True, default="")
-    # When the dispatch reached a terminal state (launched/failed). ``created_at``
-    # is the enqueue time, so ``finished_at - created_at`` is the dispatch latency.
+    # When the dispatch reached launched/failed, and again when a script run
+    # or a runner callback gave the final outcome. ``created_at`` is the
+    # enqueue time, so ``finished_at - created_at`` is the latency.
     finished_at = models.DateTimeField(null=True, blank=True)
+    #: The script run a ``script`` target started. Its end sets the final
+    #: status (succeeded/failed) of this run.
+    script_run = models.ForeignKey(
+        "scripting.ScriptRun", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="deploy_runs",
+    )
     # Retry bookkeeping: ``attempt`` is 1 for the first run, +1 per retry;
     # ``retry_of`` points at the original run so a chain stays linkable.
     attempt = models.PositiveSmallIntegerField(default=1)
@@ -179,11 +204,166 @@ class DeployRun(TimestampedModel):
         related_name="retries",
     )
 
+    #: The pipeline run this dispatch is one step of, and which step
+    #: (1-based). Null for a plain single-target deploy.
+    pipeline_run = models.ForeignKey(
+        "DeployPipelineRun", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="step_runs",
+    )
+    pipeline_step = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: The runner was asked to only report what it would do.
+    dry_run = models.BooleanField(default=False, db_default=False)
+    #: A webhook step that waits for its signed result: the run stays
+    #: ``launched`` until the callback, or fails at ``result_deadline``.
+    wait_for_result = models.BooleanField(default=False, db_default=False)
+    result_deadline = models.DateTimeField(null=True, blank=True)
+    #: Lines a runner reported through the result callback. Append-only,
+    #: capped (see ``script_targets.LOG_LIMIT``).
+    log = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pipeline_run", "pipeline_step"],
+                condition=models.Q(pipeline_run__isnull=False),
+                name="uniq_deployrun_pipeline_step",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.target_name} · {self.status}"
+
+
+class DeployPipeline(TimestampedModel):
+    """An ordered list of automation targets run one after the other for
+    the same objects. Each step starts when the one before has a final
+    status; see ``integrations.pipelines``."""
+
+    import uuid as _uuid
+
+    id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="deploy_pipelines"
+    )
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="")
+    object_types = models.JSONField(
+        default=list, blank=True,
+        help_text="Object-type slugs this pipeline deploys (default: device).",
+    )
+    auto_on_change = models.BooleanField(default=False)
+    enabled = models.BooleanField(default=True)
+    #: Device roles this pipeline is the default for: the Deploy dialog
+    #: preselects it for a device or VM with one of them.
+    roles = models.ManyToManyField(
+        "api.DeviceRole", blank=True, related_name="deploy_pipelines",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_deploypipeline_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class DeployPipelineStep(TimestampedModel):
+    """One step of a pipeline: an automation target (same tenant)."""
+
+    import uuid as _uuid
+
+    DEFAULT_TIMEOUT_MINUTES = 30
+
+    id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
+    pipeline = models.ForeignKey(
+        DeployPipeline, on_delete=models.CASCADE, related_name="steps"
+    )
+    order = models.PositiveSmallIntegerField(default=1)
+    target = models.ForeignKey(
+        AutomationTarget, on_delete=models.PROTECT, related_name="pipeline_steps"
+    )
+    stop_on_failure = models.BooleanField(default=True)
+    #: Wait for the runner's signed result (webhook targets) instead of
+    #: counting the step done once launched.
+    wait_for_result = models.BooleanField(default=False)
+    timeout_minutes = models.PositiveIntegerField(default=DEFAULT_TIMEOUT_MINUTES)
+
+    class Meta:
+        ordering = ["pipeline", "order"]
+
+    def __str__(self) -> str:
+        return f"{self.order} · {self.target}"
+
+    @property
+    def tenant_id(self):
+        """The pipeline's tenant: the audit trail stamps ``tenant_id`` on
+        each entry, so a step's history stays in its own tenant."""
+        return self.pipeline.tenant_id if self.pipeline_id else None
+
+
+class DeployPipelineRun(NumIdMixin, TimestampedModel):
+    """One run of a pipeline for a set of objects. Each started step is a
+    :class:`DeployRun` with ``pipeline_run`` and ``pipeline_step`` set."""
+
+    import uuid as _uuid
+
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("succeeded", "Succeeded"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
+    ]
+    FINAL_STATUSES = ("succeeded", "failed", "cancelled")
+    TRIGGER_CHOICES = [
+        ("deploy", "Deploy"),
+        ("on_change", "On change"),
+        ("rerun", "Re-run"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=_uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="deploy_pipeline_runs"
+    )
+    pipeline = models.ForeignKey(
+        DeployPipeline, on_delete=models.SET_NULL, null=True, related_name="runs"
+    )
+    pipeline_name = models.CharField(max_length=128)
+    object_type = models.CharField(max_length=64, default="device")
+    object_ids = models.JSONField(default=list)
+    trigger = models.CharField(max_length=16, choices=TRIGGER_CHOICES, default="deploy")
+    rerun_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="reruns"
+    )
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    dry_run = models.BooleanField(default=False)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued")
+    detail = models.TextField(blank=True, default="")
+    #: The steps as they were when the run started, so editing the pipeline
+    #: never changes a run in flight: ``[{target, target_name, kind,
+    #: stop_on_failure, wait_for_result, timeout_minutes}]``.
+    steps = models.JSONField(default=list)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.target_name} · {self.status}"
+        return f"{self.pipeline_name} · {self.status}"
+
+    @property
+    def event(self) -> str:
+        """The deploy event each step is dispatched with."""
+        return "auto" if self.trigger == "on_change" else "manual"
 
 
 class ConfigPush(TimestampedModel):
@@ -412,6 +592,9 @@ class IntegrationSettings(TimestampedModel):
     #: Read device configuration backups from an Oxidized server (#35). Off
     #: until an admin turns it on; the configs themselves stay in Oxidized.
     oxidized_enabled = models.BooleanField(default=False, db_default=False)
+    #: Read monitoring status from an existing PRTG. Off until an admin turns
+    #: it on, and re-checked at job time like Zabbix.
+    prtg_enabled = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         verbose_name_plural = "integration settings"
@@ -635,6 +818,25 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     #: double its inventory.
     sync_templates = models.BooleanField(default=False, db_default=False)
 
+    # ── Proxmox SDN ──────────────────────────────────────────────────────
+    #: A VNet with exactly two NICs on this source's VMs becomes a cable
+    #: between the interfaces of the devices those VMs are. Off by default:
+    #: it writes into the cabling, which is the operator's. A cable that is
+    #: already there is never changed; a disagreement is reported.
+    cables_from_vnets = models.BooleanField(default=False, db_default=False)
+    #: The zone a network plan proposes new VNets in.
+    vnet_zone = models.CharField(max_length=8, blank=True, default="", db_default="")
+    #: How a network plan names a VNet for a cable with none, e.g. ``c{n:04}``
+    #: (``n`` is the cable number). Used in the plan only, never written.
+    vnet_name_pattern = models.CharField(
+        max_length=32, blank=True, default="", db_default=""
+    )
+    #: Tags a network plan allocates to new VNets, e.g. ``1000-1999``. Blank
+    #: proposes no tag (a simple zone).
+    vnet_tag_range = models.CharField(
+        max_length=32, blank=True, default="", db_default=""
+    )
+
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
     # Everything the last run logged (bounded) - shown on the source page with
@@ -718,6 +920,12 @@ class VirtPlacementRule(TimestampedModel):
 
 
 # ─── Windows DHCP sync state ──────────────────────────────────────────────────
+
+
+#: A Windows ClientId is the DHCP client identifier (option 61) printed as
+#: dash-separated hex. The option carries up to 255 octets - a MAC, an RFC 4361
+#: IAID+DUID, an Infiniband GUID - so "xx-" per octet needs 765 characters.
+DHCP_CLIENT_ID_MAX_LENGTH = 255 * 3
 
 
 class DhcpScope(TimestampedModel):
@@ -830,7 +1038,7 @@ class DhcpReservation(TimestampedModel):
         DhcpScope, on_delete=models.CASCADE, related_name="reservations"
     )
     ip = models.GenericIPAddressField()
-    mac = models.CharField(max_length=64, blank=True, default="")
+    mac = models.CharField(max_length=DHCP_CLIENT_ID_MAX_LENGTH, blank=True, default="")
     name = models.CharField(max_length=255, blank=True, default="")
     description = models.TextField(blank=True, default="")
     ip_address = models.ForeignKey(
@@ -865,7 +1073,7 @@ class DhcpLease(TimestampedModel):
         DhcpScope, on_delete=models.CASCADE, related_name="leases"
     )
     ip = models.GenericIPAddressField()
-    mac = models.CharField(max_length=64, blank=True, default="")
+    mac = models.CharField(max_length=DHCP_CLIENT_ID_MAX_LENGTH, blank=True, default="")
     hostname = models.CharField(max_length=255, blank=True, default="")
     address_state = models.CharField(max_length=32, blank=True, default="")
     expires_at = models.DateTimeField(null=True, blank=True)
@@ -1016,6 +1224,10 @@ class VirtGuest(TimestampedModel):
     #: First pass that did not see this guest. Cleared the moment it comes
     #: back, so a hypervisor blip does not eat into the prune delay.
     missing_since = models.DateTimeField(null=True, blank=True)
+    #: The NICs the hypervisor reported on the last pass, as
+    #: ``[{key, name, mac, bridge, tag}]``. What a network plan compares
+    #: against: the VM interface keeps Danbyte's intent, this keeps the wire.
+    nics = models.JSONField(default=list, blank=True, db_default=[])
 
     class Meta:
         ordering = ["vmid", "ext_id"]
@@ -1125,6 +1337,12 @@ class VirtNetwork(TimestampedModel):
                   "to follow the virtual switch, then the sync source.",
     )
     created_vlan = models.BooleanField(default=False)
+    #: Proxmox SDN: the zone this VNet is in. Blank for a bridge or port group.
+    sdn_zone = models.CharField(max_length=8, blank=True, default="", db_default="")
+    #: The VNet's alias, as Proxmox reports it.
+    sdn_alias = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: The VNet's tag: a VLAN id in a vlan zone, a VNI in a vxlan/evpn zone.
+    sdn_tag = models.PositiveIntegerField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -1173,6 +1391,37 @@ class VirtNetworkLink(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.vm_interface_id} on {self.network_id}"
+
+
+class VirtCableLink(TimestampedModel):
+    """A cable the sync knows from a Proxmox SDN VNet.
+
+    ``created_cable`` marks cables the sync made itself, from a VNet with
+    exactly two NICs; an operator's cable that already matched is recorded
+    with it off. Sync bookkeeping, refreshed each pass, never operator data.
+    The sync never deletes or changes a cable through this row.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.ForeignKey(
+        VirtualizationSource, on_delete=models.CASCADE, related_name="cable_links"
+    )
+    cable = models.ForeignKey(
+        "api.Cable", on_delete=models.CASCADE, related_name="virt_cable_links"
+    )
+    vnet = models.CharField(max_length=8)
+    created_cable = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "cable"], name="uniq_virtcablelink_source_cable"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vnet} -> {self.cable_id}"
 
 
 class VirtNatLink(TimestampedModel):

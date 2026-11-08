@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CheckStatus,
   MonitoringEngine,
@@ -154,7 +155,7 @@ function ConnectionForm({
   // name meant a second Zabbix could answer for the first.
   const engines = useQuery({
     queryKey: ["zabbix-engine-picker"],
-    queryFn: () => api<Paginated<MonitoringEngine>>("/api/monitoring/engines/"),
+    queryFn: () => apiAll<MonitoringEngine>("/api/monitoring/engines/"),
     staleTime: 60_000,
   })
   // Small catalogs, read whole; the device-type catalog is not, and gets the

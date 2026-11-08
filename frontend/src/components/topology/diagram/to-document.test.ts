@@ -519,6 +519,68 @@ describe("link labels in the exports", () => {
   })
 })
 
+describe("a device's or band's line in the exports", () => {
+  const WIRING = new Set(["cable", "bundle", "lagbundle"])
+  /** The export's lines of the wiring edges at `node`, and of the rest. */
+  function split(b: ReturnType<typeof build>, node: string) {
+    const ids = (pick: (e: (typeof b.edges)[number]) => boolean) =>
+      b.edges
+        .filter(
+          (e) =>
+            e.type === "link" &&
+            WIRING.has((e.data as { sem: string }).sem) &&
+            pick(e)
+        )
+        .map((e) => e.id)
+    const at = ids((e) => e.source === node || e.target === node)
+    const rest = ids((e) => e.source !== node && e.target !== node)
+    const doc = exportOf(b)
+    const of = (edges: string[]) =>
+      doc.links.filter((l) =>
+        edges.some((id) => l.id === id || l.id.startsWith(`${id}~`))
+      )
+    return { at: of(at), rest: of(rest), doc }
+  }
+
+  it("draws a device's line on its cables, the view's elsewhere", () => {
+    const b = build({ nodeLines: { [DEV.leaf1]: "elbow" } })
+    const { at, rest, doc } = split(b, devId("leaf1"))
+    expect(at.length).toBeGreaterThan(0)
+    for (const l of at) expect(l.kind).toBe("elbow")
+    expect(rest.length).toBeGreaterThan(0)
+    for (const l of rest) expect(l.kind).toBe("straight")
+    // And the SVG writer takes the document as it is.
+    const svg = parse(toSvg(doc, { measure: approxMeasure }), "image/svg+xml")
+    expect(svg.documentElement.tagName).toBe("svg")
+  })
+
+  it("draws a band's line on its cards' cables, by the saved arrangement", () => {
+    const first = build()
+    const positions = Object.fromEntries(
+      first.nodes.map((n) => [n.id, [n.position.x, n.position.y]])
+    ) as Record<string, [number, number]>
+    const [x, y] = positions[devId("leaf1")]
+    const b = build({
+      positions,
+      rows: [{ id: "leafs", x: x - 10, y: y - 10, w: 20, h: 20 }],
+      bandLines: { leafs: "elbow" },
+    })
+    const edge = b.edges.find(
+      (e) =>
+        e.type === "link" &&
+        (e.source === devId("leaf1") || e.target === devId("leaf1")) &&
+        WIRING.has((e.data as { sem: string }).sem)
+    )!
+    expect((edge.data as { lineFrom?: unknown }).lineFrom).toEqual({
+      kind: "band",
+      id: "leafs",
+    })
+    const { at } = split(b, devId("leaf1"))
+    expect(at.length).toBeGreaterThan(0)
+    for (const l of at) expect(l.kind).toBe("elbow")
+  })
+})
+
 describe("printLegend", () => {
   it("draws the legend in print colours", () => {
     const rows = printLegend(

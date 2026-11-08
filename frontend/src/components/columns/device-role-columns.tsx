@@ -6,6 +6,7 @@ import { SortHeader, selectionColumn } from "@/components/data-table"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { NamedIcon } from "@/components/dynamic-icon"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
@@ -79,6 +80,7 @@ export function buildDeviceRoleColumns<T extends DeviceRole = DeviceRole>(
             <ColorBadge
               name={row.original.name}
               color={row.original.color || undefined}
+              icon={<NamedIcon name={row.original.icon} />}
             />
           </Link>
           <PlannedChangeMarker

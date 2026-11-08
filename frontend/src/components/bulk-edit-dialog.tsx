@@ -25,6 +25,7 @@ import {
 import { Field, FieldEditor, useFieldEditorOptions } from "@/components/forms"
 import type { BulkFieldSpec, EditableFieldSpec } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { BulkCustomFields } from "@/components/bulk-custom-fields"
 import { Loading } from "@/components/loading"
 import { PendingLabel } from "@/components/pending-label"
 import { QueryError } from "@/components/query-error"
@@ -33,7 +34,8 @@ import { QueryError } from "@/components/query-error"
 // go to the list's `bulk-update/`, more rows than one call takes go in
 // batches (#286). The component tables hand it their own field list; the
 // lists whose viewset declares a BulkEditSpec (#314) let the server name the
-// fields through `bulk-edit-fields/` (ServerBulkEditDialog).
+// fields through `bulk-edit-fields/` (ServerBulkEditDialog), custom fields
+// included when the spec offers them.
 
 /** The fields a bulk edit sends: what was set, with a choice that stands for
  * several fields (`expand`) replaced by those fields. */
@@ -62,6 +64,8 @@ export interface BulkEditDialogProps {
   ids: string[]
   fields: BulkFieldSpec[]
   tags: boolean
+  /** Custom-field model slug: offer the model's custom fields too. */
+  customFields?: string | null
   /** Query keys to invalidate after a write. */
   invalidate: unknown[][]
   /** Anything else a write makes stale (port counts). */
@@ -105,22 +109,29 @@ export function BulkEditDialog({
 /** The dialog for a list whose server declares its bulk-edit fields: reads
  * `<endpoint>bulk-edit-fields/` and renders them. */
 export function ServerBulkEditDialog(
-  props: Omit<BulkEditDialogProps, "fields" | "tags">
+  props: Omit<BulkEditDialogProps, "fields" | "tags" | "customFields">
 ) {
   const [busy, setBusy] = useState(false)
   const q = useQuery({
     queryKey: ["bulk-edit-fields", props.endpoint],
     queryFn: () =>
-      api<{ fields: EditableFieldSpec[]; tags: boolean }>(
-        `${props.endpoint}bulk-edit-fields/`
-      ),
+      api<{
+        fields: EditableFieldSpec[]
+        tags: boolean
+        custom_fields?: string | null
+      }>(`${props.endpoint}bulk-edit-fields/`),
     staleTime: 60 * 60_000,
   })
   const fields = (q.data?.fields ?? [])
     .map(toFieldSpec)
     .filter((f): f is BulkFieldSpec => !!f)
   return (
-    <Shell ids={props.ids} noun={props.noun} busy={busy} onClose={props.onClose}>
+    <Shell
+      ids={props.ids}
+      noun={props.noun}
+      busy={busy}
+      onClose={props.onClose}
+    >
       {q.isError ? (
         <QueryError error={q.error} />
       ) : !q.data ? (
@@ -130,6 +141,7 @@ export function ServerBulkEditDialog(
           {...props}
           fields={fields}
           tags={q.data.tags}
+          customFields={q.data.custom_fields}
           onBusy={setBusy}
         />
       )}
@@ -169,6 +181,7 @@ function EditForm({
   ids,
   fields,
   tags,
+  customFields,
   invalidate,
   afterWrite,
   onClose,
@@ -180,6 +193,8 @@ function EditForm({
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
+  // The armed custom fields only; the rest are kept.
+  const [cfValues, setCfValues] = useState<Record<string, unknown>>({})
   const [progress, setProgress] = useState<BatchProgress | null>(null)
   const options = useFieldEditorOptions(fields, { tags })
 
@@ -188,6 +203,7 @@ function EditForm({
       const out = bulkFields(values, fields)
       if (addTags.length) out.add_tag_ids = addTags
       if (removeTags.length) out.remove_tag_ids = removeTags
+      if (Object.keys(cfValues).length) out.custom_fields = cfValues
       const answers = await runBatches(
         ids,
         IDS_PER_CALL,
@@ -229,7 +245,8 @@ function EditForm({
   const dirty =
     Object.keys(values).length > 0 ||
     addTags.length > 0 ||
-    removeTags.length > 0
+    removeTags.length > 0 ||
+    Object.keys(cfValues).length > 0
 
   const set = (key: string, v: unknown) =>
     setValues((prev) => ({ ...prev, [key]: v }))
@@ -276,12 +293,22 @@ function EditForm({
             </Field>
           </>
         )}
+        {customFields && (
+          <BulkCustomFields
+            model={customFields}
+            values={cfValues}
+            onChange={setCfValues}
+          />
+        )}
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onClose} disabled={save.isPending}>
           Cancel
         </Button>
-        <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
+        <Button
+          onClick={() => save.mutate()}
+          disabled={!dirty || save.isPending}
+        >
           <PendingLabel
             label={`Apply to ${ids.length}`}
             verb="Applying…"

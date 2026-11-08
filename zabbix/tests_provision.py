@@ -470,6 +470,37 @@ class AutoSyncTests(_Base):
             self.assertEqual(sync_tasks.enqueue_due_syncs()["queued"], 0)
         rq.get_queue.return_value.enqueue.assert_not_called()
 
+    def test_the_beat_skips_a_deactivated_tenant(self):
+        from zabbix import sync_tasks
+
+        self.conn.auto_sync = True
+        self.conn.save()
+        self.tenant.is_active = False
+        self.tenant.save(update_fields=["is_active"])
+        with mock.patch.object(sync_tasks, "django_rq") as rq:
+            out = sync_tasks.enqueue_due_syncs()
+        self.assertEqual(out, {"queued": 0, "maintenance": 0, "status": 0})
+        rq.get_queue.return_value.enqueue.assert_not_called()
+
+    def test_the_jobs_skip_a_deactivated_tenant(self):
+        """A job queued before the tenant was deactivated touches nothing."""
+        from zabbix.maintenance import run_maintenance_sync
+        from zabbix.status import run_status_sync
+        from zabbix.sync_tasks import run_sync
+
+        self.tenant.is_active = False
+        self.tenant.save(update_fields=["is_active"])
+        cid = str(self.conn.id)
+        with mock.patch("zabbix.provision.sync") as sync, \
+             mock.patch("zabbix.maintenance.reconcile") as reconcile, \
+             mock.patch("zabbix.status.refresh_host_status") as refresh:
+            for job in (run_sync, run_maintenance_sync, run_status_sync):
+                with self.subTest(job.__name__):
+                    self.assertEqual(job(cid), {"skipped": "tenant inactive"})
+        sync.assert_not_called()
+        reconcile.assert_not_called()
+        refresh.assert_not_called()
+
     def test_the_job_rechecks_the_switch_at_run_time(self):
         """A toggle flipped between enqueue and execution has to win, or
         Danbyte writes into a Zabbix somebody just switched off."""

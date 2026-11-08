@@ -310,6 +310,27 @@ class CountingRuleTests(APITestCase):
                 # A 24-port panel reads /24: its rear port is not capacity.
                 self.assertEqual(rows["pp-01"]["total"], 24)
 
+    def test_rollup_narrows_to_the_ids_on_screen(self):
+        """#488: the Devices page asks for its visible rows only. An id from
+        another tenant is not a way in; bad or too many ids are a 400."""
+        other = Device.objects.create(tenant=self.tenant, name="sw-02")
+        Interface.objects.create(device=other, name="Gi1")
+        foreign_tenant = Tenant.objects.create(org=self.org, name="Other", slug="other")
+        foreign = Device.objects.create(tenant=foreign_tenant, name="sw-x")
+        Interface.objects.create(device=foreign, name="Gi1")
+
+        r = self.client.get(
+            f"/api/devices/port-utilization/?ids={self.sw.id},{foreign.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual([row["name"] for row in r.json()["results"]], ["sw-01"])
+        self.assertEqual(
+            {row["name"] for row in self._rollup()["results"]}, {"sw-01", "sw-02"})
+        r = self.client.get("/api/devices/port-utilization/?ids=nope")
+        self.assertEqual(r.status_code, 400)
+        many = ",".join(str(self.sw.id) for _ in range(101))
+        r = self.client.get(f"/api/devices/port-utilization/?ids={many}")
+        self.assertEqual(r.status_code, 400)
+
     def test_rollup_carries_rack_and_basis_and_drops_virtual_only_devices(self):
         router = Device.objects.create(tenant=self.tenant, name="vr-01")
         Interface.objects.create(device=router, name="lo0", virtual=True)

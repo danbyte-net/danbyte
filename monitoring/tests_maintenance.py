@@ -395,3 +395,59 @@ class IcalFeedTests(_MaintBase):
         self.assertEqual(
             self.client.get("/api/planning/calendar.ics?token=bogus").status_code, 401
         )
+
+
+class DerivedImpactTests(_MaintBase):
+    """Planning maintenance on a cooling source (#434): the source's
+    ``affected`` impacts come along on the event's create and are written as
+    ``ingest`` writes a parser's."""
+
+    def setUp(self):
+        super().setUp()
+        from api.models import CoolingFeed, CoolingSource, Rack
+
+        self.dev = self._device()
+        self.rack = Rack.objects.create(tenant=self.tenant, site=self.dev.site, name="R1")
+        self.dev.rack = self.rack
+        self.dev.save()
+        self.source = CoolingSource.objects.create(
+            tenant=self.tenant, site=self.dev.site, name="CRAH-1")
+        CoolingFeed.objects.create(
+            tenant=self.tenant, source=self.source, rack=self.rack, name="L1")
+
+    def _affected(self):
+        r = self.client.get(f"/api/cooling-sources/{self.source.id}/affected/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()["impacts"]
+
+    def test_create_takes_the_derived_impacts(self):
+        impacts = self._affected()
+        r = self._event(status="confirmed", impacts=impacts)
+        self.assertEqual(r.status_code, 201, r.content)
+        got = {(i["object_type"], i["level"]) for i in r.json()["impacts"]}
+        self.assertEqual(got, {
+            ("api.coolingsource", "outage"), ("api.coolingfeed", "outage"),
+            ("api.rack", "outage"), ("api.device", "outage"),
+        })
+        event = MaintenanceEvent.objects.get(pk=r.json()["id"])
+        # A confirmed window over an impacted device suppresses its alerts.
+        self.assertIsNotNone(event.silence_id)
+        # The source's page finds the event through the reverse lookup.
+        r = self.client.get(
+            f"{URL}?open=1&object_type=coolingsource&object_id={self.source.id}")
+        self.assertEqual([e["id"] for e in r.json()["results"]], [str(event.id)])
+
+    def test_an_impact_the_caller_cannot_view_creates_nothing(self):
+        impacts = self._affected()
+        member = self._member("noc3", types=["maintenanceevent", "coolingsource"],
+                              actions=["view", "add", "change"])
+        self._as(member)
+        r = self._event(impacts=impacts)
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(MaintenanceEvent.objects.count(), 0)
+
+    def test_impacts_must_be_a_list_of_known_levels(self):
+        self.assertEqual(self._event(impacts="x").status_code, 400)
+        bad = [{"object_type": "rack", "object_id": str(self.rack.id), "level": "doom"}]
+        self.assertEqual(self._event(impacts=bad).status_code, 400)
+        self.assertEqual(MaintenanceEvent.objects.count(), 0)

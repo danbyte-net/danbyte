@@ -124,6 +124,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Enqueue due Zabbix inventory, provisioning and host-status syncs",
     ),
     ScheduledTask(
+        unit="danbyte-extmon-sync",
+        commands=("extmon_sync",),
+        every=MINUTE,
+        label="Enqueue due external monitoring passes (PRTG status reads)",
+    ),
+    ScheduledTask(
         unit="danbyte-oxidized-sync",
         commands=("oxidized_sync",),
         every=MINUTE,
@@ -167,6 +173,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Renew ACME certificates due for renewal",
     ),
     ScheduledTask(
+        unit="danbyte-update-check",
+        commands=("update_check",),
+        at=("00:50", "06:50", "12:50", "18:50"),
+        label="Refresh the cached release list the update check reads",
+    ),
+    ScheduledTask(
         unit="danbyte-prune",
         commands=("prune_check_results", "prune_changelog", "housekeeping"),
         at=("04:17",),
@@ -180,9 +192,9 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
     ),
     ScheduledTask(
         unit="danbyte-scripts",
-        commands=("run_scripts",),
+        commands=("run_scripts", "sweep_deploy_pipelines"),
         every=MINUTE,
-        label="Run scheduled scripts that are due",
+        label="Run scheduled scripts that are due; time out waiting pipeline steps",
     ),
     ScheduledTask(
         unit="danbyte-search-reindex",
@@ -192,9 +204,9 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
     ),
     ScheduledTask(
         unit="danbyte-cleanup",
-        commands=("cleanup_stale_ips",),
+        commands=("cleanup_stale_ips", "reconcile_flow_requirements"),
         at=("04:42",),
-        label="Retire stale discovered IPs",
+        label="Retire stale discovered IPs; re-resolve application flow requirements",
     ),
     ScheduledTask(
         unit="danbyte-document-linkcheck",

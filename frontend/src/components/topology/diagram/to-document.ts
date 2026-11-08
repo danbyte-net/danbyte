@@ -31,6 +31,7 @@ import type {
   DiagramNote,
   DiagramNub,
   DiagramPill,
+  DiagramPlace,
   LegendRow,
   LinkSem,
   Side as DocSide,
@@ -241,12 +242,22 @@ export function cardNode(
     h: box.h,
     fill,
     ink,
-    title: box.title.text,
+    // The whole name: a card never cuts it.
+    title: input.name,
     lines: box.lines.map((l) => l.text),
     ...(pill ? { pill } : {}),
     ...(nubs.length ? { nubs } : {}),
     place: {
       title: { x: x + box.title.x, y: y + box.title.y },
+      ...(box.titleRows.length > 1
+        ? {
+            titleRows: box.titleRows.map((r) => ({
+              text: r.text,
+              x: x + r.x,
+              y: y + r.y,
+            })),
+          }
+        : {}),
       lines: box.lines.map((l) => ({ x: x + l.x, y: y + l.y })),
       ...(pillRect ? { pill: pillRect } : {}),
     },
@@ -317,6 +328,7 @@ export function photoDocNode(
     ...(nubs.length ? { nubs } : {}),
     ...(opts.link ? { link: opts.link } : {}),
   }
+  const badgeHex = p.badge ? normalizeHex(p.badge.color) : null
   let pill: DiagramPill | undefined
   let pillRect: Rect | undefined
   // A pill that shows takes back the room its lines may have used.
@@ -333,13 +345,21 @@ export function photoDocNode(
     const r = captionPill(cap, pillWidth(text, opts.measure))
     pillRect = { ...r, x: x + r.x, y: y + r.y }
   }
-  if (!photo)
-    return { ...common, kind: "card", title: p.name, ...(pill ? { pill } : {}) }
+  if (!photo) return faceplateCard(common, p, pill, opts)
   return {
     ...common,
     kind: "photo",
-    title: cap.text,
+    title: p.name,
     ...(pill ? { pill } : {}),
+    ...(p.badge && cap.badge
+      ? {
+          badge: {
+            text: p.badge.text,
+            fill: badgeHex ?? NEUTRAL_CARD.fill,
+            ink: badgeHex ? inkOn(badgeHex) : NEUTRAL_CARD.ink,
+          },
+        }
+      : {}),
     photo: {
       href: shown.url!,
       x,
@@ -355,12 +375,19 @@ export function photoDocNode(
       })),
     },
     place: {
-      title: {
-        x: x + cap.x + cap.w / 2,
-        y: y + baselineAt(cap.top, CARD.TITLE_SIZE, PHOTO.CAPTION_LH),
-      },
+      ...captionPlace(cap, x, y, opts.measure ?? measureText),
       lines: [],
       ...(pillRect ? { pill: pillRect } : {}),
+      ...(p.badge && cap.badge
+        ? {
+            badge: {
+              x: x + cap.badge.x,
+              y: y + cap.top + (PHOTO.CAPTION_LH - PILL.H) / 2,
+              w: cap.badge.w,
+              h: PILL.H,
+            },
+          }
+        : {}),
       ...(cap.tail
         ? {
             tail: {
@@ -375,20 +402,109 @@ export function photoDocNode(
   }
 }
 
+/** Where a photo caption's name goes, absolute: its first row's centre
+ * and baseline, and every row when it wraps - left-aligned at the
+ * caption's start, the last on the caption's row. */
+function captionPlace(
+  cap: PhotoShown["caption"],
+  x: number,
+  y: number,
+  measure: Measure
+): Pick<DiagramPlace, "title" | "titleRows"> {
+  const texts = [...(cap.lead ?? []), cap.text]
+  const rows = texts.map((text, i) => {
+    const w =
+      i === texts.length - 1
+        ? cap.w
+        : Math.ceil(measure(text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
+    const top = cap.top - (texts.length - 1 - i) * PHOTO.CAPTION_LH
+    return {
+      text,
+      x: x + cap.x + w / 2,
+      y: y + baselineAt(top, CARD.TITLE_SIZE, PHOTO.CAPTION_LH),
+    }
+  })
+  return {
+    title: { x: rows[0].x, y: rows[0].y },
+    ...(rows.length > 1 ? { titleRows: rows } : {}),
+  }
+}
+
+/** A faceplate node as a card of its box: laid out by the card rule with
+ * its whole name (wrapped to the box's width when it is wider), the card
+ * lines its height holds under it, and the pill in its corner. */
+function faceplateCard(
+  common: Omit<DiagramNode, "kind" | "title">,
+  p: PhotoModel,
+  pill: DiagramPill | undefined,
+  opts: { pill?: CardPill | null; measure?: Measure }
+): DiagramNode {
+  const { x, y, w, h } = common
+  const box = cardLayout(
+    {
+      name: p.name,
+      lines: (p.badge ? [p.badge.text, ...p.lines] : p.lines).map(
+        (text, i) => ({ key: String(i), text })
+      ),
+      ...(opts.pill
+        ? { pill: { kind: opts.pill.kind, text: opts.pill.text } }
+        : {}),
+    },
+    null,
+    opts.measure,
+    { w, h },
+    w
+  )
+  const dx = (w - box.w) / 2
+  const lines = box.lines.filter((l) => l.top + l.lh <= h - CARD.PAD_Y + 0.5)
+  return {
+    ...common,
+    kind: "card",
+    title: p.name,
+    lines: lines.map((l) => l.text),
+    ...(pill ? { pill } : {}),
+    place: {
+      title: { x: x + dx + box.title.x, y: y + box.title.y },
+      ...(box.titleRows.length > 1
+        ? {
+            titleRows: box.titleRows.map((r) => ({
+              text: r.text,
+              x: x + dx + r.x,
+              y: y + r.y,
+            })),
+          }
+        : {}),
+      lines: lines.map((l) => ({ x: x + dx + l.x, y: y + l.y })),
+      ...(pill && box.pill
+        ? {
+            pill: {
+              ...box.pill.rect,
+              x: x + box.pill.rect.x,
+              y: y + box.pill.rect.y,
+            },
+          }
+        : {}),
+    },
+  }
+}
+
 /** A neutral card laid out for `input`, stretched to a fixed box with its
- * text kept centred. */
+ * text kept centred: its whole name, wrapped to the box's width when it
+ * is wider. */
 export function fitBox(
   input: CardLayoutInput,
   size: { w: number; h: number },
   measure?: Measure
 ): CardBox {
-  const box = cardLayout({ ...input, color: null }, null, measure)
+  const box = cardLayout({ ...input, color: null }, null, measure, {}, size.w)
   const dx = (size.w - box.w) / 2
+  const titleRows = box.titleRows.map((r) => ({ ...r, x: r.x + dx }))
   return {
     ...box,
     w: size.w,
     h: Math.max(box.h, size.h),
-    title: { ...box.title, x: box.title.x + dx },
+    title: titleRows[0],
+    titleRows,
     lines: box.lines.map((l) => ({ ...l, x: l.x + dx })),
   }
 }
@@ -541,7 +657,7 @@ export function chassisBands(
       return r ? [r] : []
     })
     if (!own.length) continue
-    const f = chassisFrame(ch.side, own)
+    const f = chassisFrame(ch.side, own, ch.least)
     out.push({
       id,
       kind: "chassis",
@@ -664,6 +780,9 @@ const isWiring = (e: Pick<Edge, "type"> & { data?: unknown }) => {
   const d = e.data as DiagramEdgeData | undefined
   return (
     e.type === "link" &&
+    // A circuit to a provider network (#466) is its own line, never a
+    // pair's folded cables.
+    !d?.raw?.circuit &&
     (d?.sem === "cable" || d?.sem === "lagbundle" || d?.sem === "bundle")
   )
 }
@@ -778,6 +897,7 @@ function edgeUrl(
   origin: string | undefined
 ): string | undefined {
   if (d.raw?.tunnel) return danbyteUrl(origin, `/tunnels/${d.raw.tunnel.id}`)
+  if (d.raw?.circuit) return danbyteUrl(origin, `/circuits/${d.raw.circuit.id}`)
   if (d.sem === "cable" && d.raw?.cable_id)
     return danbyteUrl(origin, `/cables/${d.raw.cable_id}`)
   const session = d.bgp?.sessions?.[0]
@@ -919,22 +1039,44 @@ export function toDocument(
       continue
     }
     // A site or location card on a grouped map: a neutral card at the
-    // group card's size, its name and device count at the top.
-    const size = model.fixed.get(n.id)!
+    // group card's size, its name and device count at the top. A provider
+    // network (#466) is one too: its name, then its provider.
+    const size = model.fixed.get(n.id)
+    if (!size) continue
     const r = rectAt(c, size)
     if (area && !overlaps(area, r)) continue
-    const group = data as { name?: string; device_count?: number }
+    const group = data as {
+      name?: string
+      device_count?: number
+      kind?: string
+      provider?: { name: string }
+      provider_network_id?: string
+    }
     const count = group.device_count
+    const network = group.kind === "provider_network"
     const groupCard: CardLayoutInput = {
       name: group.name ?? "",
-      lines:
-        count !== undefined
+      lines: network
+        ? group.provider
+          ? [{ key: "provider", text: group.provider.name }]
+          : []
+        : count !== undefined
           ? [{ key: "count", text: `${count} device${count === 1 ? "" : "s"}` }]
           : [],
     }
     rects.set(n.id, r)
     nodes.push(
-      cardNode(n.id, c, fitBox(groupCard, r, measure), groupCard, { measure })
+      cardNode(n.id, c, fitBox(groupCard, r, measure), groupCard, {
+        measure,
+        ...(network && group.provider_network_id
+          ? {
+              link: danbyteUrl(
+                opts.origin,
+                `/provider-networks/${group.provider_network_id}`
+              ),
+            }
+          : {}),
+      })
     )
   }
 
@@ -1061,10 +1203,14 @@ export function toDocument(
         if (overlay || !anchor || anchor.k === "junction" || !lines?.length)
           return undefined
         if (plan && !placed) return undefined
-        return lines.map((text, k) => ({
-          text,
-          ...(placed?.[k] ? { at: placed[k] } : {}),
-        }))
+        // Planned, only those placed: a run cut short drops its last
+        // ones (IPv6 before IPv4).
+        return (placed ? lines.slice(0, placed.length) : lines).map(
+          (text, k) => ({
+            text,
+            ...(placed?.[k] ? { at: placed[k] } : {}),
+          })
+        )
       }
       const la = port(aa, p ? p.a : undefined)
       const lb = port(ba, p ? p.b : undefined)

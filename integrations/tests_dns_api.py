@@ -319,6 +319,51 @@ class DnsApiTests(APITestCase):
         self.assertEqual(res.json()["created"], 2)
         self.assertEqual(res.json()["skipped"], 1)  # 203.0.113.9 has no prefix
 
+    def test_import_unmatched_by_ids(self):
+        """The listed records only; another tenant's id is left out."""
+        self.zone.sync = True
+        self.zone.save(update_fields=["sync"])
+        recs = [
+            DnsRecord.objects.create(
+                zone=self.zone, name=f"s{i}.danbyte.lan", record_type="A",
+                data=ip, ip=ip,
+            )
+            for i, ip in enumerate(["10.77.0.93", "10.77.0.94", "10.77.0.95"])
+        ]
+        org = Organization.objects.create(name="O2", slug="o2")
+        other_t = Tenant.objects.create(org=org, name="T2", slug="t2")
+        other_c = WindowsServerConnection.objects.create(
+            tenant=other_t, name="dc2", host="192.0.2.11", username="svc",
+            credentials={"password": "pw"}, dns_enabled=True,
+        )
+        other_z = DnsZone.objects.create(connection=other_c, name="other.lan")
+        Prefix.objects.create(tenant=other_t, cidr="10.77.0.0/24")
+        foreign = DnsRecord.objects.create(
+            zone=other_z, name="f.other.lan", record_type="A",
+            data="10.77.0.96", ip="10.77.0.96",
+        )
+        res = self.client.post(
+            "/api/dns-records/import_unmatched/",
+            {"ids": [str(recs[0].id), str(recs[2].id), str(foreign.id)]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["created"], 2)
+        for r in recs:
+            r.refresh_from_db()
+        foreign.refresh_from_db()
+        self.assertIsNotNone(recs[0].ip_address)
+        self.assertIsNone(recs[1].ip_address)
+        self.assertIsNotNone(recs[2].ip_address)
+        self.assertIsNone(foreign.ip_address)
+
+    def test_import_unmatched_rejects_bad_ids(self):
+        res = self.client.post(
+            "/api/dns-records/import_unmatched/", {"ids": ["nope"]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
     def test_zone_auto_create_is_writable(self):
         res = self.client.patch(
             f"/api/dns-zones/{self.zone.id}/", {"auto_create": True},

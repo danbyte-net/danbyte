@@ -5,8 +5,8 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
-  Paginated,
   ZabbixApplyResult,
   ZabbixChange,
   ZabbixConnection,
@@ -62,7 +62,7 @@ export function ZabbixChanges({
   const changes = useQuery({
     queryKey: ["zabbix-changes", connection.id, view],
     queryFn: () =>
-      api<Paginated<ZabbixChange>>(
+      apiAll<ZabbixChange>(
         `/api/zabbix/changes/?connection=${connection.id}${
           view === "dismissed" ? "&ignored=1" : ""
         }`

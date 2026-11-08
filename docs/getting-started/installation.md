@@ -241,7 +241,9 @@ The other tabs cover building from source and a local dev checkout.
     Keep it private: `chmod 600 ~/danbyte/.env`.
 
     **6 · Migrate, build, and start.** `bootstrap` seeds the default
-    organization, tenant, and status catalog, and creates your admin user:
+    organization, tenant, and status catalog, and creates your admin user.
+    It stops with an error if `DJANGO_SUPERUSER_PASSWORD` fails the password
+    checks (too short, too common, all digits, or too close to the username):
 
     ```bash
     .venv/bin/python manage.py migrate
@@ -390,12 +392,30 @@ gunicorn starts twice the CPU count plus one sync workers, capped at **8**.
 Each holds a database connection, and RQ workers and daphne hold theirs, so
 past that a large host ran out of Postgres's default 100 connections. Set
 `WEB_CONCURRENCY` in `.env` to go higher, and raise `max_connections` in
-Postgres with it. `GUNICORN_TIMEOUT` (default 60 s) is how long one request
+Postgres with it ([sizing](../reference/settings.md#persistent-connections)).
+Each worker keeps its connection open between requests (`DB_CONN_MAX_AGE`,
+default 60 s). `GUNICORN_TIMEOUT` (default 60 s) is how long one request
 may run before its worker is replaced.
 
 A stalled or restarting Redis no longer takes the web tier down: the one
 cache read every request makes falls back to the database, and Redis calls
 give up after two seconds.
+
+### Frontend files and compression
+
+The frontend server (`danbyte-frontend-prod`, `vite preview`) renders each
+page's HTML. The JavaScript, CSS and fonts that HTML loads are files under
+`/assets/` named by their content hash, and nginx serves those straight from
+`frontend/dist/client/assets/` with `Cache-Control: public, max-age=31536000,
+immutable`: a browser keeps them a year and never asks again, and a new
+release brings new names. `npm run build` (and `make frontend-build`) writes
+a `.gz` beside each, which nginx sends as it is (`gzip_static`). A file nginx
+cannot find or read still comes from the frontend server, uncached.
+
+nginx compresses only files on disk (`/assets/`, `/static/`). API responses
+are compressed by Django's `GZipMiddleware`, which pads each response with a
+random length against BREACH-style attacks on compressed HTTPS; nginx's own
+gzip has no such padding, so it stays off for them.
 
 ### DWG converter
 
@@ -470,6 +490,7 @@ Any of these can change later without a reinstall:
 |---|---|---|
 | `DB_HOST` / `DB_PORT` | `127.0.0.1` / `5432` | PostgreSQL host / port |
 | `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `danbyte` | Database name / role / password |
+| `DB_CONN_MAX_AGE` | `60` | Seconds a gunicorn worker keeps its database connection ([sizing](../reference/settings.md#persistent-connections)); `0` opens one per request |
 | `DB_JIT` | `off` | `off` turns PostgreSQL JIT off for Danbyte's sessions; `on` keeps the server's setting ([why](../reference/settings.md#database-postgres-only)) |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated; set on a server |
 | `DJANGO_SECRET_KEY` | `dev-key-change-in-prod` | **Required when `DEBUG=False`** |

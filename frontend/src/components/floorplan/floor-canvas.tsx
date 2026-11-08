@@ -1,21 +1,22 @@
-import { useEffect, useRef, useState } from "react"
-import { Server } from "lucide-react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 
 import type {
   FloorPlan,
   FloorPlanCablePath,
   FloorPlanLiveState,
+  FloorPlanPlaceable,
   FloorPlanTile,
   FloorPlanTray,
   FloorPlanWall,
+  RaisedFloorArea,
 } from "@/lib/api"
-// Pure geometry shared with the 3D room (world.ts imports no three.js) - the
-// same span math shapes both views, so a door gap can't sit in two places.
-import {
-  WALL_THICKNESS_M,
-  wallDoorSpans,
-  wallSegmentsWithOpenings,
-} from "@/components/floorplan3d/world"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,106 +25,212 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { tileIcon } from "@/components/object-icon"
+import { PointerMenu } from "@/components/pointer-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { useTheme } from "@/components/theme-provider"
 
-import { routeCable } from "./cable-route"
 import type { Pt } from "./cable-route"
-import { rackFigures, tileFill, tilePaint } from "./tile-paint"
+import { CELL, gridLineStep, tileIsZone, tileName } from "./canvas-geometry"
+import type { CellPoint, PaletteEntry } from "./canvas-geometry"
+import {
+  ClusterTile,
+  HallSymbolTile,
+  IconLeader,
+  RowSymbolTile,
+  ReadableSymbol,
+  TileMarkers,
+  TileShape,
+  createHoverStore,
+} from "./tile-layer"
+import {
+  CLUSTER_SIDE,
+  EMPTY_ICON_LAYOUT,
+  clusterFace,
+  clusterFitView,
+  drawnCentre,
+  keepBoxOf,
+  layoutIcons,
+  pullOut,
+  scaleBox,
+  squareAt,
+  zoomBucket,
+} from "./icon-layout"
+import { AreaMask } from "./area-mask"
+import type { ClusterFace, IconCluster, IconLayout } from "./icon-layout"
+import {
+  ICON_TILE_EXIT_PX,
+  READABLE_FONT_PX,
+  READABLE_SYMBOL_PX,
+  fontGrow,
+  growStubs,
+  iconTileIds,
+  iconTileShape,
+  readableHit,
+  readableOrder,
+  readableShape,
+  splitGrown,
+} from "./readable"
+import { MuteFilter, muteFilterId, mutesBasemap } from "./background-look"
+import { OnionLayer } from "./onion-layer"
+import type { OnionSkin } from "./onion-layer"
+import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
+import { layoutPlanLabels } from "./plan-label-pass"
+import type { CalloutLabel } from "./plan-label-pass"
+import { PlanCalloutsLayer } from "./plan-callouts-layer"
+import type { CalloutLine } from "./plan-callouts"
+import { LABEL_FONT_PX, LABEL_REPEAT_PX, CHIP_FONT_PX } from "./plan-labels"
+import {
+  LANE_MIN_PX,
+  bundledGroups,
+  cableLod,
+  laneOrder,
+  layoutCables,
+} from "./cable-draw"
+import type { CalloutMode, ObjectSize, ShapeOf } from "./readable"
+import { tileFill } from "./tile-paint"
+import { clusterMembersOf } from "./cluster-members"
+import type { ClusterMember } from "./cluster-members"
+import { ClusterHoverCard } from "./cluster-members-view"
 import type { ColorBy, RackFigures } from "./tile-paint"
+import {
+  AreaShapeView,
+  BoxHandles,
+  HANDLE_PX,
+  DrawPreview,
+  LabelShapeView,
+  VertexHandles,
+} from "./shape-layer"
+import { PLACE_MIME, fitToSizeRect } from "./placement"
+import {
+  boxBounds,
+  byZ,
+  labelBox,
+  opensLink as opensLabel,
+  opensName,
+  pointInBox,
+  pointInPolygon,
+  polygonPatch,
+  shapeBounds,
+  tileBox,
+  tileQuarter,
+} from "./shapes"
+import type { AreaShape, LabelShape, PlanShape } from "./shapes"
+import {
+  EMPTY_LOD,
+  barThickness,
+  planLod,
+  planRooms,
+  planRows,
+  roomAt,
+  symbolBox,
+  withSymbols,
+} from "./plan-lod"
+import type { PlanLod } from "./plan-lod"
+import {
+  isRaisedPolygon,
+  outlinePath,
+  raisedContains,
+  raisedOutline,
+  raisedRegions,
+  regionCaptionAnchor,
+} from "./raised-floor-shape"
+import { snapshotAreaLabel } from "./snapshot"
+import { TrayShape } from "./tray-layer"
+import { CableLayer } from "./cable-layer"
+import type { CableAnchor, CableHoverHit, CablePickAt } from "./cable-layer"
+import { CableChooser } from "./cable-chooser"
+import type { CableChooserAt } from "./cable-chooser"
+import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import { usePanZoom } from "./use-pan-zoom"
+import { useShapeGestures } from "./use-shape-gestures"
+import type { ShapeTool } from "./use-shape-gestures"
+import type { NewAreaGeometry } from "./use-shape-edits"
+import { WallShape, wallStrokePx } from "./wall-layer"
+import { LINK_KIND_NAME } from "./tile-open"
+import {
+  DoorHandles,
+  RectHandles,
+  RunHandles,
+  StructureOverlay,
+} from "./structure-handles"
+import {
+  nearestSegment,
+  pointsBoundsOf,
+  runsTouch,
+  structureLists,
+} from "./structure"
+import type { RunRow, StructShape } from "./structure"
+import { useStructureGestures } from "./use-structure-gestures"
+import { LiveCameraLayer } from "./camera-layer"
+import { coverageRegions } from "./camera-view"
 
+// The plan's geometry and its rules live in canvas-geometry.ts and each layer
+// in its own module; the canvas re-exports what its callers import from here.
+export {
+  CELL,
+  GUTTER,
+  cableRoutePoints,
+  findCollision,
+  tileHasFov,
+  tileIsZone,
+  tileName,
+  tilesCollide,
+} from "./canvas-geometry"
+export type { CellPoint, PaletteEntry } from "./canvas-geometry"
 export { tileFill }
 
-/** Default tray color when the user hasn't picked one - neutral gray. */
-const TRAY_DEFAULT = "#71717a"
+/** Rows shown but locked here (a live view's edge rows) draw faded. */
+const LOCKED_OPACITY = 0.5
+/** Stable empties, so the memoised cable layer keeps its props. */
+const NO_CABLES: FloorPlanCablePath[] = []
+const NO_IDS: string[] = []
+const NO_ICONS: ReadonlySet<string> = new Set()
+const NO_ROUTES: ReadonlyMap<string, CableRoute> = new Map()
+const NO_STRUCT: StructShape[] = []
 
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
 export interface FloorCanvasApi {
   fit: () => void
-  focusTile: (tile: FloorPlanTile, zoom?: number) => void
+  /** Centre and zoom onto the tile; returns where it now stands on screen
+   * (as `tilePoint`), null before the canvas has a size. */
+  focusTile: (
+    tile: FloorPlanTile,
+    zoom?: number
+  ) => { x: number; y: number } | null
+  /** The tile's centre on screen, in the canvas's own pixels (where the
+   * tile popover anchors). */
+  tilePoint?: (tile: FloorPlanTile) => { x: number; y: number } | null
   /** Fit the view to a set of cell-unit points (e.g. a cable's route). */
   focusPoints: (points: Pt[]) => void
+  /** The polygon being drawn: close it (Enter), take back its last point
+   * (Backspace), or drop it (Esc). `drawingShape` says whether one is. */
+  finishPolygon?: () => boolean
+  popPoint?: () => void
+  cancelDraw?: () => void
+  drawingShape?: () => boolean
+  /** The cell point at the middle of the view, and the one under the
+   * pointer while it is over the plan (the Place picker's "near"). */
+  centerCell?: () => Pt
+  pointerCell?: () => Pt | null
+  /** What the screen shows: its box (plan px), the zoom and the callouts
+   * placed at it - the report's "This view". */
+  screen?: () => ScreenView | null
+  /** A tray's cables in the cable chooser, opened at a client point (a
+   * panel's Show cables). */
+  showTrayCables?: (trayId: string, at: CablePickAt) => void
 }
 
-/** Pixel size of one grid cell in world coordinates. */
-export const CELL = 40
-/** Pixels a tile's drawn rect sits inside its cell footprint, so adjacent
- * tiles show a seam instead of touching strokes. */
-export const GUTTER = 2
-
-/** A normalized palette entry - a FloorTileType or a DeviceRole. */
-export interface PaletteEntry {
-  key: string // "tt:<id>" | "role:<id>"
-  kind: "tile_type" | "role"
-  id: string
-  name: string
-  color: string
-  icon: string
-  defaultWidth: number
-  defaultHeight: number
-  isZone: boolean
-  hasFov: boolean
-}
-
-export function tileName(t: FloorPlanTile): string {
-  return t.label || t.linked?.name || ""
-}
-
-/** Zone tiles paint the background - they render under normal tiles and are
- * exempt from the no-overlap rule. */
-export function tileIsZone(t: FloorPlanTile): boolean {
-  return t.tile_type?.is_zone ?? false
-}
-
-export function tileHasFov(t: FloorPlanTile): boolean {
-  return (t.tile_type?.has_fov || t.role_type?.has_fov) ?? false
-}
-
-/** Do two grid rects overlap? Zones never count. */
-export function tilesCollide(
-  a: { x: number; y: number; width: number; height: number },
-  b: FloorPlanTile
-): boolean {
-  return (
-    a.x < b.x + b.width &&
-    b.x < a.x + a.width &&
-    a.y < b.y + b.height &&
-    b.y < a.y + a.height
-  )
-}
-
-/** First non-zone tile the candidate rect would stack on, or null. */
-export function findCollision(
-  tiles: FloorPlanTile[],
-  rect: { x: number; y: number; width: number; height: number },
-  ignoreId?: string
-): FloorPlanTile | null {
-  for (const t of tiles) {
-    if (t.id === ignoreId || tileIsZone(t)) continue
-    if (tilesCollide(rect, t)) return t
-  }
-  return null
-}
-
-/** The routed A↔B points (cell units) of a cable, through its trays. Empty
- * when either endpoint tile is missing. Shared by the render + camera focus. */
-export function cableRoutePoints(
-  cp: FloorPlanCablePath,
-  trays: FloorPlanTray[],
-  tiles: FloorPlanTile[]
-): Pt[] {
-  const a = cp.a_tiles[0] ? tileCentreCells(tiles, cp.a_tiles[0]) : null
-  const b = cp.b_tiles[0] ? tileCentreCells(tiles, cp.b_tiles[0]) : null
-  if (!a || !b) return []
-  const polys = cp.tray_ids
-    .map((tid) => trays.find((tr) => tr.id === tid)?.points)
-    .filter((p): p is [number, number][] => !!p)
-  return routeCable(a, b, polys)
-}
-
-export interface CellPoint {
-  x: number
-  y: number
+/** The plan as the screen shows it now (FloorCanvasApi.screen). */
+export interface ScreenView {
+  box: { x: number; y: number; w: number; h: number }
+  k: number
+  callouts: readonly CalloutLabel[]
 }
 
 export interface FloorCanvasProps {
@@ -153,8 +260,11 @@ export interface FloorCanvasProps {
   onChangeTile?: (id: string, patch: Partial<FloorPlanTile>) => void
   /** Fired when a paint-drag completes (place-mode). */
   onCreateRect?: (rect: { x: number; y: number; w: number; h: number }) => void
-  /** Viewer: tile clicked (also fired in editor on plain click, after select). */
+  /** Open a tile: a double-click, the context menu, and a viewer's click
+   * unless `onClickTile` takes it. */
   onOpenTile?: (tile: FloorPlanTile) => void
+  /** Viewer: a single click on a tile, in place of opening it. */
+  onClickTile?: (tile: FloorPlanTile) => void
   /** Pointer entered/left a tile - `at` is screen-space relative to the canvas
    * wrapper, for anchoring the tile popover. Fired only on boundary crossings
    * (never per pointermove), so it can't regress canvas panning. */
@@ -182,42 +292,73 @@ export interface FloorCanvasProps {
   overlay?: React.ReactNode
   /** Auto-size labels to fit their tile instead of a fixed 11px + ellipsis. */
   labelFit?: boolean
-  /** Draw camera FOV cones for tiles whose type/role has them. */
+  /** Draw camera FOV cones for tiles whose type/role has them - each cut
+   * short by the walls (camera-view.ts). */
   showFov?: boolean
+  /** Display > Camera coverage: the floor no camera sees, tinted. */
+  showCoverage?: boolean
+  /** Display > Racks block view: racks and cabinets stop a camera's view. */
+  fovRacksBlock?: boolean
   /** Draw the name label on background zone tiles (Cold aisle, Hot aisle…). */
   showZoneLabels?: boolean
-  // ── Raised-floor areas (Structure mode) ────────────────────────────────
-  /** Raised-floor rectangles, drawn UNDER every tile in all modes. */
-  raisedFloors?: {
-    id: string
-    x: number
-    y: number
-    width: number
-    height: number
-    plenum_mm: number
-    label: string
-    color: string
-  }[]
+  /** Outline photo tiles that are not selected. */
+  photoOutlines?: boolean
+  /** Readable: placed objects keep a least size on screen from afar, with
+   * their names at a constant size (readable.ts). */
+  objectSize?: ObjectSize
+  /** Display > Icons when zoomed out: a device, rack or cabinet too small
+   * on screen draws as its icon tile (readable.ts). */
+  iconTiles?: boolean
+  /** Display > Callouts: Auto names a tile whose name will not sit
+   * cleanly by it in a box off to the side, a leader back to it
+   * (plan-callouts.ts); Off leaves such a name hidden. */
+  callouts?: CalloutMode
+  /** The lines under each tile's callout name (its panel layout's callout
+   * fields), by tile id. */
+  calloutLines?: ReadonlyMap<string, readonly CalloutLine[]>
+  /** Display > Muted background: the background image greyed and pushed
+   * toward the page (background-look.tsx), so the plan reads over it. */
+  muteBackground?: boolean
+  // ── Raised floors and walls (Structure mode) ───────────────────────────
+  /** Raised floors, drawn UNDER every tile in all modes. */
+  raisedFloors?: RaisedFloorArea[]
+  /** Structure mode: a raised floor is being drawn as a polygon - the
+   * area polygon tool, its outline handed to `onCreateRaisedPolygon`. */
+  raisedPolygonTool?: boolean
+  onCreateRaisedPolygon?: (points: [number, number][]) => void
+  /** Another level of an aligned floor plan, drawn faintly under this one. */
+  onion?: OnionSkin | null
   selectedAreaId?: string | null
-  /** Structure mode: an area outline was clicked. */
+  /** Structure mode: a raised floor was clicked. */
   onSelectArea?: (id: string | null) => void
-  /** Structure mode: an area was dragged/resized - persist its new rect. */
-  onAreaRectChange?: (
-    id: string,
-    rect: { x: number; y: number; width: number; height: number }
-  ) => void
-  // ── Walls (Structure mode) ─────────────────────────────────────────────
   /** Wall polylines with door openings - drawn in ALL modes; interactive
-   * (select / move / place doors) only in Structure mode. */
+   * (select, drag, doors) only in Structure mode. */
   walls?: FloorPlanWall[]
   selectedWallId?: string | null
   onSelectWall?: (id: string | null) => void
-  /** Structure mode: a whole-wall drag ended - persist the translated points. */
-  onMoveWall?: (id: string, points: [number, number][]) => void
-  /** "Add door" is armed: the next click on a wall segment drops an opening. */
+  /** The Door tool (or "Add door"): a press on a wall draws a door. */
   doorArmed?: boolean
-  /** Door placement: segment `seg` of wall `id` was clicked, `at` cells along it. */
-  onPlaceDoor?: (id: string, seg: number, at: number) => void
+  /** The walls, trays and raised floors of the draft - what the pointer
+   * edits; a tray not among them (a kept run) is drawn only. */
+  structure?: StructShape[]
+  /** A drag of structure dropped: rows changed (one removed after a
+   * join) - one undo step. */
+  onCommitStructure?: (c: { update: StructShape[]; remove?: string[] }) => void
+  /** A door drawn along segment `seg` of a wall, `t0` to `t1` cells. */
+  onAddDoor?: (wallId: string, seg: number, t0: number, t1: number) => void
+  selectedDoor?: { wallId: string; index: number } | null
+  onSelectDoor?: (door: { wallId: string; index: number } | null) => void
+  /** Walls or trays picked with Shift or Ctrl/⌘ (two that touch join). */
+  structSel?: ReadonlySet<string>
+  onToggleStruct?: (id: string) => void
+  /** What the right-click menu offers on a wall, door, tray or raised
+   * floor, and "Add walls around" on areas. */
+  structureActions?: StructureActions
+  /** Floats above the selected wall, door, tray or raised floor (Edit). */
+  structureToolbar?: React.ReactNode
+  /** Areas picked with Ctrl/⌘ - walls go round all of them at once. */
+  areaSel?: ReadonlySet<string>
+  onToggleArea?: (id: string) => void
   // ── Cable trays ────────────────────────────────────────────────────────
   /** "layout" edits tiles; "cable" draws/selects trays. */
   mode?: "layout" | "cable" | "structure"
@@ -229,11 +370,21 @@ export interface FloorCanvasProps {
   drawPoints?: [number, number][]
   onAddDrawPoint?: (pt: [number, number]) => void
   onFinishDraw?: () => void
-  /** Persist a moved/reshaped tray's new points (drag whole tray or a vertex). */
-  onMoveTray?: (id: string, points: [number, number][]) => void
   /** Tray edit mode: hide all cables and make every tray reshapeable (drag
    * points, add/remove bends). A toggle, not per-tray. */
   trayEditMode?: boolean
+  /** Picking a cable's trays ("After placing" → Pick trays): a click on a
+   * tray, in any mode, adds or takes it away; the picked ones show
+   * selected. */
+  trayPick?: { picked: readonly string[]; onPick: (id: string) => void }
+  /** Picking objects to connect to (Connect to…): a click on a tile, in
+   * any mode, picks it or takes it back; the picked ones show outlined. */
+  tilePick?: {
+    picked: ReadonlySet<string>
+    onPick: (tile: FloorPlanTile) => void
+  }
+  /** "Connect to…" on a placed device's, rack's or cabinet's menu. */
+  onConnectTile?: (tile: FloorPlanTile) => void
   // ── Cable A↔B links ────────────────────────────────────────────────────
   cablePaths?: FloorPlanCablePath[]
   showCableLinks?: boolean
@@ -242,6 +393,26 @@ export interface FloorCanvasProps {
   onSelectCable?: (id: string | null) => void
   /** Highlight several cables at once (right-click "trace cables here"). */
   onHighlightCables?: (ids: string[]) => void
+  /** Each cable's route (use-cable-routes.ts), worked out once per change
+   * of the plan's contents - never per frame. */
+  cableRoutes?: ReadonlyMap<string, CableRoute>
+  /** Routes computed but not saved (Document routes), drawn dotted. */
+  cablePreviews?: ReadonlyMap<string, CableRoute>
+  /** Cables with one end on this plan, drawn as stubs. */
+  cableStubs?: readonly CableStub[]
+  /** What the cables are coloured by. */
+  cableColorBy?: CableColorBy
+  /** Cable names along the runs, up close. */
+  showCableLabels?: boolean
+  /** Runs sharing a stretch draw as one stroke with a count where their
+   * lanes would not read. */
+  bundleCables?: boolean
+  /** Pointer or keyboard on a cable or a bundle - `at` in the wrapper's
+   * px, for the cable popover. */
+  onHoverCable?: (
+    hit: CableHoverHit | null,
+    at: { x: number; y: number } | null
+  ) => void
   /** Parent-held ref to drive fit/focus from the header (search, fit btn). */
   apiRef?: React.RefObject<FloorCanvasApi | null>
   /** Drawn in world px over the floor and under the grid - the plan's CAD
@@ -249,10 +420,112 @@ export interface FloorCanvasProps {
   underlay?: React.ReactNode
   /** Drawn in world px over everything else - calibration marks. */
   worldOverlay?: React.ReactNode
-  /** Point-pick mode (drawing calibration): a click anywhere reports its
-   * world px point instead of selecting or painting; a drag still pans. */
-  onPickPoint?: (pt: { x: number; y: number }) => void
+  /** Point-pick mode (drawing calibration, Detect outline): a click
+   * anywhere reports its world px point (and whether Shift was held)
+   * instead of selecting or painting; a drag still pans. A press on an
+   * element marked `data-outline-handle` is left to it. */
+  onPickPoint?: (
+    pt: { x: number; y: number },
+    mods: { shiftKey: boolean }
+  ) => void
+  // ── Areas and labels; free placement ─────────────────────────────────
+  /** Areas and labels as shown (hidden ones left out). Areas draw over the
+   * zones and under the tiles, labels over the tiles. */
+  shapes?: PlanShape[]
+  selectedShapeId?: string | null
+  /** A drawing tool in hand: presses draw instead of selecting. */
+  shapeTool?: ShapeTool | null
+  // ── Snapshots ─────────────────────────────────────────────────────────
+  /** The Snapshot tool in hand: a drag on the plan sweeps a rectangle of
+   * whole cells, reported on release. */
+  onSnapshotRect?: (rect: {
+    x: number
+    y: number
+    w: number
+    h: number
+  }) => void
+  /** "Snapshot this room…" on an area's menu: open the Snapshot dialog
+   * for it. */
+  onSnapshotShape?: (id: string) => void
+  /** Rows shown but not editable here: on a live view, the ones crossing
+   * its edge. Dimmed and inert while editing. */
+  lockedIds?: ReadonlySet<string>
+  /** Clip everything to the grid (a live view's objects run past it).
+   * The screen-size overlays - grown symbols, icon tiles, their names -
+   * are never clipped. */
+  clipToGrid?: boolean
+  /** A live view's room (cells): everything outside it dimmed. The
+   * screen-size overlays draw over the dimming and keep inside it where
+   * they can. */
+  maskOutline?: [number, number][] | null
+  /** Where the background image spans, in cells, when it is not the grid
+   * (a live view shows its part of the source's image). */
+  backgroundFrame?: {
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null
+  onSelectShape?: (id: string | null) => void
+  onChangeShape?: (id: string, patch: Partial<PlanShape>) => void
+  onCreateArea?: (geom: NewAreaGeometry) => void
+  onCreateLabel?: (at: { x: number; y: number }) => void
+  /** Viewing: an area or label clicked. */
+  onOpenShape?: (shape: PlanShape) => void
+  onDeleteShape?: (id: string) => void
+  /** Bring forward (+1) or send back (-1). */
+  onRestackShape?: (id: string, dir: 1 | -1) => void
+  // ── Placing objects ───────────────────────────────────────────────────
+  /** Rows dragged from the Place picker or the unplaced list were dropped
+   * at this cell point. */
+  onDropRows?: (rows: FloorPlanPlaceable[], at: Pt) => void
+  /** Floats above the one selected tile, area or label (Edit). */
+  selectionToolbar?: React.ReactNode
+  /** The right-click menu on empty plan space: in Edit, place, draw and
+   * label at the point; in View, "Edit here" for those who may edit. */
+  emptyActions?: EmptyActions
   className?: string
+}
+
+/** What the right-click menu offers on structure, at the point pressed. */
+export interface StructureActions {
+  addDoorAt?: (wallId: string, seg: number, t: number) => void
+  addBendAt?: (id: string, seg: number, t: number) => void
+  splitAt?: (id: string, seg: number, t: number) => void
+  join?: (aId: string, bId: string) => void
+  flipDoor?: (wallId: string, index: number) => void
+  deleteDoor?: (wallId: string, index: number) => void
+  deleteRow?: (id: string) => void
+  removePoint?: (id: string, index: number) => void
+  /** Walls round these areas. */
+  wallsAround?: (areaIds: string[]) => void
+  /** A raised floor with this area's outline. */
+  raisedFromArea?: (areaId: string) => void
+}
+
+/** What a right-click on structure hit. */
+type StructMenu = {
+  x: number
+  y: number
+  id: string
+  part: StructShape["part"]
+  seg?: number
+  t?: number
+  door?: number
+  /** A point of the run, right-clicked on its handle. */
+  vertex?: number
+}
+
+/** What a right-click on empty plan space offers, at its cell point. */
+export interface EmptyActions {
+  placeAt?: (at: Pt) => void
+  drawAreaAt?: (at: Pt) => void
+  /** Detect outline at the point. */
+  detectAt?: (at: Pt) => void
+  addLabelAt?: (at: Pt) => void
+  /** Paste what was copied, when anything was. */
+  pasteAt?: (at: Pt) => void
+  editHere?: (at: Pt) => void
 }
 
 type DragState =
@@ -270,29 +543,42 @@ type DragState =
   | { mode: "resize"; id: string; origin: CellPoint }
   | { mode: "paint"; start: CellPoint; end: CellPoint }
   | { mode: "marquee"; start: CellPoint; end: CellPoint }
-  | { mode: "area-move"; id: string; grabDx: number; grabDy: number }
-  | { mode: "area-resize"; id: string; origin: CellPoint }
-  | {
-      mode: "tray-move"
-      id: string
-      grab: [number, number]
-      orig: [number, number][]
-      moved: boolean
-    }
-  | {
-      mode: "tray-vertex"
-      id: string
-      index: number
-      moved: boolean
-      inserted?: boolean
-    }
-  | {
-      mode: "wall-move"
-      id: string
-      grab: [number, number]
-      orig: [number, number][]
-      moved: boolean
-    }
+  | { mode: "snapshot"; start: CellPoint; end: CellPoint }
+
+const sameView = (
+  a: { k: number; x: number; y: number; w: number; h: number },
+  b: { k: number; x: number; y: number; w: number; h: number }
+) => a.k === b.k && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
+
+/** An element's size on screen (px), kept up to date by a ResizeObserver;
+ * 0 by 0 until measured. */
+/** A tile as its cluster lists it. */
+function tileMember(t: FloorPlanTile): ClusterMember {
+  return {
+    id: t.id,
+    name: tileName(t) || t.linked?.name || "",
+    kind: t.linked?.kind ?? "other",
+    icon: tileIcon(t),
+    color: tileFill(t),
+  }
+}
+
+function useElementSize(ref: React.RefObject<Element | null>) {
+  const [size, setSize] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect()
+      setSize((s) =>
+        s.w === r.width && s.h === r.height ? s : { w: r.width, h: r.height }
+      )
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+  return size
+}
 
 /**
  * The rendering core: one `<svg>` with a pan/zoom `<g>`, a cell `<pattern>`
@@ -309,15 +595,25 @@ export function FloorCanvas({
   showGrid,
   armed,
   raisedFloors,
+  raisedPolygonTool = false,
+  onCreateRaisedPolygon,
   selectedAreaId,
   onSelectArea,
-  onAreaRectChange,
   walls = [],
   selectedWallId = null,
   onSelectWall,
-  onMoveWall,
   doorArmed = false,
-  onPlaceDoor,
+  structure = NO_STRUCT,
+  onCommitStructure,
+  onAddDoor,
+  selectedDoor = null,
+  onSelectDoor,
+  structSel,
+  onToggleStruct,
+  structureActions,
+  structureToolbar,
+  areaSel,
+  onToggleArea,
   onSelect,
   multiSelectedIds,
   onToggleSelect,
@@ -328,6 +624,7 @@ export function FloorCanvas({
   onChangeTile,
   onCreateRect,
   onOpenTile,
+  onClickTile,
   onHoverTile,
   exportRef,
   liveState,
@@ -338,7 +635,16 @@ export function FloorCanvas({
   overlay,
   labelFit = false,
   showFov = true,
+  showCoverage = false,
+  fovRacksBlock = false,
   showZoneLabels = true,
+  photoOutlines = false,
+  objectSize = "real",
+  iconTiles = true,
+  callouts = "off",
+  calloutLines,
+  muteBackground = false,
+  onion = null,
   mode = "layout",
   trays = [],
   showTrays = true,
@@ -347,59 +653,653 @@ export function FloorCanvas({
   drawPoints,
   onAddDrawPoint,
   onFinishDraw,
-  onMoveTray,
   trayEditMode = false,
-  cablePaths = [],
+  trayPick,
+  tilePick,
+  onConnectTile,
+  cablePaths = NO_CABLES,
   showCableLinks = false,
-  highlightCableIds = [],
+  highlightCableIds = NO_IDS,
   onSelectCable,
   onHighlightCables,
+  cableRoutes = NO_ROUTES,
+  cablePreviews,
+  cableStubs,
+  cableColorBy = "status",
+  showCableLabels = true,
+  bundleCables = true,
+  onHoverCable,
   apiRef,
   underlay,
   worldOverlay,
   onPickPoint,
+  shapes = [],
+  selectedShapeId = null,
+  shapeTool = null,
+  onSnapshotRect,
+  onSnapshotShape,
+  lockedIds,
+  clipToGrid = false,
+  maskOutline = null,
+  backgroundFrame = null,
+  onSelectShape,
+  onChangeShape,
+  onCreateArea,
+  onCreateLabel,
+  onOpenShape,
+  onDeleteShape,
+  onRestackShape,
+  onDropRows,
+  selectionToolbar,
+  emptyActions,
   className,
 }: FloorCanvasProps) {
+  // The cell point under the pointer while it is over the plan.
+  const pointerAt = useRef<Pt | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const drag = useRef<DragState | null>(null)
   // Point-pick mode: where the press started, to tell a click from a pan.
   const pickStart = useRef<{ x: number; y: number } | null>(null)
   const paintPreview = useRef<SVGRectElement>(null)
-  // Structure mode: the area being dragged/resized, rendered over the query
-  // data until release commits it (server validates overlap/bounds).
-  const [areaDraft, setAreaDraft] = useState<{
-    id: string
+  const drawPreview = useRef<SVGPolylineElement>(null)
+  // A hint beside the handle under the pointer: what dragging it does.
+  const [hint, setHint] = useState<{
+    text: string
     x: number
     y: number
-    width: number
-    height: number
   } | null>(null)
-  const drawPreview = useRef<SVGPolylineElement>(null)
-  // Live points of the tray being dragged/reshaped (null = none).
-  const [trayDraft, setTrayDraft] = useState<{
-    id: string
-    points: [number, number][]
-  } | null>(null)
-  // Live points of the wall being moved (whole-run translate).
-  const [wallDraft, setWallDraft] = useState<{
-    id: string
-    points: [number, number][]
-  } | null>(null)
+  // A right-click on a wall, door, tray or raised floor.
+  const [structMenu, setStructMenu] = useState<StructMenu | null>(null)
+  // Which cable? A bundle's, a cluster's or a tray's (cable-chooser.tsx),
+  // and the row under the pointer, drawn alone on the plan.
+  const [chooser, setChooser] = useState<CableChooserAt | null>(null)
+  const [chooserSolo, setChooserSolo] = useState<string | null>(null)
+  // View: a tray pressed - a click on it (no drag) lists its cables.
+  const trayClick = useRef<{ id: string; x: number; y: number } | null>(null)
+  // View: a tray right-clicked - its menu (Show cables).
+  const [trayMenu, setTrayMenu] = useState<
+    (CablePickAt & { id: string }) | null
+  >(null)
   // Right-click menu: screen-relative position + what's under the cursor.
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
     y: number
     tile: FloorPlanTile | null
-    vertex?: { trayId: string; index: number }
+    /** The cell point right-clicked. */
+    at?: Pt
   } | null>(null)
-  const { t, setT, onWheel, startPan, movePan, endPan, toWorld, fitTo } =
-    usePanZoom()
+  // View: the name of the plan the area or label under the pointer opens.
+  const [opensHint, setOpensHint] = useState<{
+    id: string
+    x: number
+    y: number
+    text: string
+  } | null>(null)
+  const {
+    t,
+    setT,
+    onWheel,
+    startPan,
+    movePan,
+    endPan,
+    toWorld,
+    fitTo,
+    pinchDown,
+    pinchMove,
+    pinchUp,
+  } = usePanZoom()
+
+  // Readable (Display > Object size): what grows from afar, and the names
+  // under it - the hovered tile's in a store of its own, so a hover
+  // re-renders the names and not the canvas.
+  const readable = objectSize === "readable"
+  const { theme } = useTheme()
+  const muteId = muteFilterId(plan.id)
+  // The base map, when this floor draws it, and whether the floor layer
+  // (picture or CAD drawing) is shown.
+  const mapImage = (plan.map_visible && plan.base_map?.image) || null
+  // Satellite imagery keeps its colours: only the street map is muted.
+  const muteMap = muteBackground && mutesBasemap(plan.base_map?.basemap)
+  const floorShown = plan.background_shown !== false
+  const pxPerCell = CELL * t.k
+  // The grid's lines every cell up close, every 10 or 100 cells when the
+  // cells get smaller on screen than a few pixels: a site-sized plan
+  // fitted whole draws a light grid, not a grey wash of lines.
+  const gridEvery = gridLineStep(pxPerCell)
+
+  const [hoverStore] = useState(createHoverStore)
+  const hoveredTile = useSyncExternalStore(
+    hoverStore.subscribe,
+    hoverStore.get,
+    hoverStore.get
+  )
+  const viewSize = useElementSize(svgRef)
+  // Icons when zoomed out: the tiles drawn as their icon, with hysteresis -
+  // the set from the last render decides which threshold each tile meets
+  // (stored during render, the documented previous-render pattern).
+  const [iconPrev, setIconPrev] = useState<ReadonlySet<string>>(NO_ICONS)
+  const iconIds = useMemo(
+    () => (iconTiles ? iconTileIds(tiles, pxPerCell, iconPrev) : NO_ICONS),
+    [iconTiles, tiles, pxPerCell, iconPrev]
+  )
+  if (iconIds !== iconPrev) setIconPrev(iconIds)
+  const pinnedNames = useMemo(() => {
+    const s = new Set(multiSelectedIds ?? [])
+    if (selectedId) s.add(selectedId)
+    return s
+  }, [multiSelectedIds, selectedId])
+  // The tile whose callout is hovered: lit on the plan with it.
+  const [calloutHot, setCalloutHot] = useState<string | null>(null)
+  // Settled: the view once a pan or zoom stops - the label pass and the
+  // icons' layout run on it, not on every frame.
+  const settledView = useSettled(
+    { k: t.k, x: t.x, y: t.y, w: viewSize.w, h: viewSize.h },
+    120,
+    sameView
+  )
+  // Icons that would overlap spread apart, or fold into clusters where
+  // there is no room (icon-layout.ts) - laid out for the settled zoom's
+  // bucket, so a pan never moves them; the last layout holds clusters a
+  // little longer (hysteresis). The selection never joins a cluster.
+  const layoutK = zoomBucket(settledView.k)
+  // Where the overlays keep (cells): the room of a live view, else the
+  // grid - inside first, past the edge only when nothing fits.
+  const keepBox = useMemo(
+    () => keepBoxOf(plan.grid_width, plan.grid_height, maskOutline),
+    [plan.grid_width, plan.grid_height, maskOutline]
+  )
+  // Rows from afar (plan-lod.ts): a row of icons is one symbol along
+  // it, a room's rows one summary once they run together - found once
+  // per plan, chosen per zoom bucket with hysteresis.
+  const rooms = useMemo(
+    () => planRooms(shapes.filter((s): s is AreaShape => s.kind === "area")),
+    [shapes]
+  )
+  const freePlan = plan.layout_mode === "free"
+  const planRowList = useMemo(
+    () =>
+      iconTiles
+        ? planRows(
+            tiles,
+            rooms,
+            freePlan ? (tile) => tileBox(tile).rotation : undefined
+          )
+        : [],
+    [iconTiles, tiles, rooms, freePlan]
+  )
+  const lastLod = useRef<PlanLod>(EMPTY_LOD)
+  const rowLod = useMemo(
+    () =>
+      planLod(planRowList, {
+        tiles,
+        iconIds,
+        rooms,
+        scale: CELL * layoutK,
+        prev: lastLod.current,
+      }),
+    [planRowList, tiles, iconIds, rooms, layoutK]
+  )
+  useEffect(() => {
+    lastLod.current = rowLod
+  }, [rowLod])
+  const lastIconLayout = useRef<IconLayout>(EMPTY_ICON_LAYOUT)
+  const looseIconLayout = useMemo(() => {
+    if (iconIds.size < 1) return EMPTY_ICON_LAYOUT
+    const items = tiles
+      .filter((tl) => iconIds.has(tl.id) && !rowLod.ownerOf.has(tl.id))
+      .map((tl) => ({
+        id: tl.id,
+        c: [tl.x + tl.width / 2, tl.y + tl.height / 2] as Pt,
+      }))
+    const scale = CELL * layoutK
+    const roomOf = new Map(
+      items.map((it) => [it.id, roomAt(rooms, it.c)?.id ?? null])
+    )
+    return layoutIcons(
+      items,
+      scale,
+      {
+        side: READABLE_SYMBOL_PX,
+        prev: lastIconLayout.current,
+        bounds: scaleBox(keepBox, scale),
+        groupOf: (id) => roomOf.get(id),
+      },
+      pinnedNames
+    )
+  }, [iconIds, tiles, layoutK, pinnedNames, keepBox, rowLod, rooms])
+  useEffect(() => {
+    lastIconLayout.current = looseIconLayout
+  }, [looseIconLayout])
+  const baseIconLayout = useMemo(
+    () => withSymbols(looseIconLayout, rowLod),
+    [looseIconLayout, rowLod]
+  )
+  // The tile the camera was last sent to (a search pick, a panel's Show
+  // on plan, ?tile=): drawn on its own until the next.
+  const [focusedTile, setFocusedTile] = useState<string | null>(null)
+  // Hovered, found, or pointed at from outside (the rack table, a pick):
+  // out of its cluster, on its own.
+  const iconLayout = useMemo(() => {
+    // The selection too: a row or a room symbol keeps it on its own.
+    const out = new Set<string>([...(highlightTileIds ?? []), ...pinnedNames])
+    if (hoveredTile) out.add(hoveredTile)
+    if (focusedTile) out.add(focusedTile)
+    for (const id of tilePick?.picked ?? []) out.add(id)
+    return pullOut(baseIconLayout, out)
+  }, [
+    baseIconLayout,
+    highlightTileIds,
+    pinnedNames,
+    hoveredTile,
+    focusedTile,
+    tilePick?.picked,
+  ])
+  const tileById = useMemo(
+    () => new Map(tiles.map((tl) => [tl.id, tl])),
+    [tiles]
+  )
+  const clusterFaces = useMemo(() => {
+    const m = new Map<string, ClusterFace>()
+    for (const c of iconLayout.clusters) {
+      const face = clusterFace(
+        c.members.map((id) => tileById.get(id)!).filter(Boolean),
+        (tl) => liveState?.tiles[tl.id]?.check
+      )
+      m.set(c.id, c.text ? { ...face, name: c.text } : face)
+    }
+    return m
+  }, [iconLayout, tileById, liveState])
+  /** A cluster's drawn box (cells) at `perCell` px per cell. */
+  const clusterBox = useCallback(
+    (c: IconCluster, perCell: number) =>
+      symbolBox(c, perCell) ??
+      squareAt(
+        drawnCentre(iconLayout, c.id, c.anchor, perCell),
+        READABLE_SYMBOL_PX * CLUSTER_SIDE,
+        perCell
+      ),
+    [iconLayout]
+  )
+  /** How a tile draws when not as itself: its icon tile - spread, or
+   * its cluster's box - else Readable's shape; null draws every tile at
+   * its real size. */
+  const shapeAt = useCallback(
+    (perCell: number): ShapeOf | null =>
+      !readable && iconIds.size === 0
+        ? null
+        : (tl) => {
+            if (!iconIds.has(tl.id))
+              return readable ? readableShape(tl, perCell) : null
+            const c = iconLayout.clusterOf.get(tl.id)
+            // A row's bar: each rack where it is, under it.
+            if (c?.row?.bar)
+              return {
+                box: { x: tl.x, y: tl.y, w: tl.width, h: tl.height },
+                grow: 1,
+                changed: true,
+                symbol: true,
+              }
+            const box = c
+              ? clusterBox(c, perCell)
+              : squareAt(
+                  drawnCentre(
+                    iconLayout,
+                    tl.id,
+                    [tl.x + tl.width / 2, tl.y + tl.height / 2],
+                    perCell
+                  ),
+                  READABLE_SYMBOL_PX,
+                  perCell
+                )
+            return {
+              box,
+              grow: box.w / Math.max(tl.width, tl.height),
+              changed: true,
+              symbol: true,
+            }
+          },
+    [readable, iconIds, iconLayout, clusterBox]
+  )
+  const shapeOf = useMemo(() => shapeAt(pxPerCell), [shapeAt, pxPerCell])
+  const shownStubs = useMemo(
+    () =>
+      shapeOf && cableStubs
+        ? growStubs(cableStubs, tiles, pxPerCell, undefined, undefined, shapeOf)
+        : cableStubs,
+    [shapeOf, cableStubs, tiles, pxPerCell]
+  )
+  // Mid-zoom the icons follow the view as it is; once settled a new
+  // layout eases them to their new places.
+  const iconsSettled = t.k === settledView.k
+  // Hovering a cluster lists its members.
+  const [clusterHint, setClusterHint] = useState<{
+    id: string
+    x: number
+    y: number
+    /** A row's name or a crowd's plate: what it names. */
+    heading?: string
+    members?: readonly string[]
+  } | null>(null)
+
+  // The cable layer is memoised; its callbacks must hold still while the
+  // canvas re-renders on every pan frame.
+  const tNow = useRef(t)
+  tNow.current = t
+  const cableProps = useRef({ onSelectCable, onHoverCable })
+  cableProps.current = { onSelectCable, onHoverCable }
+  const selectCable = useCallback(
+    (id: string | null) => cableProps.current.onSelectCable?.(id),
+    []
+  )
+  /** Several cables under one click: ask which (the chooser), no hover
+   * popover over it. */
+  const chooseCables = useCallback(
+    (ids: string[], at: CablePickAt, title?: string, ordered?: boolean) => {
+      cableProps.current.onHoverCable?.(null, null)
+      setChooserSolo(null)
+      setChooser({ x: at.x, y: at.y, ids, title, ordered })
+    },
+    []
+  )
+  /** The cables under a click on the plan, nearest first (cable-pick.ts). */
+  const choosePicked = useCallback(
+    (ids: string[], at: CablePickAt) => chooseCables(ids, at, undefined, true),
+    [chooseCables]
+  )
+  /** A client point on the plan, in cells - for the cable layer's pick. */
+  const clientToCell = useCallback((clientX: number, clientY: number) => {
+    const svg = svgRef.current
+    if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    const tt = tNow.current
+    return [
+      (clientX - rect.left - tt.x) / tt.k / CELL,
+      (clientY - rect.top - tt.y) / tt.k / CELL,
+    ] as Pt
+  }, [])
+  // The hovered run's ids, for the label pass: its name and its ends.
+  const [hoveredCables, setHoveredCables] = useState<readonly string[]>(NO_IDS)
+  const hoverCable = useCallback(
+    (hit: CableHoverHit | null, at?: CableAnchor) => {
+      setHoveredCables(hit && !hit.bundle ? hit.ids : NO_IDS)
+      const report = cableProps.current.onHoverCable
+      if (!report) return
+      const rect = svgRef.current?.getBoundingClientRect()
+      if (!hit || !at || !rect) {
+        report(null, null)
+        return
+      }
+      // Not while dragging or panning: a popover chasing the pointer.
+      if (drag.current) return
+      const tt = tNow.current
+      report(
+        hit,
+        "cell" in at
+          ? {
+              x: tt.x + at.cell[0] * CELL * tt.k,
+              y: tt.y + at.cell[1] * CELL * tt.k,
+            }
+          : { x: at.clientX - rect.left, y: at.clientY - rect.top }
+      )
+    },
+    []
+  )
 
   const editing = trayEditMode
   const gw = plan.grid_width * CELL
   const gh = plan.grid_height * CELL
   // Cable mode draws trays; Structure mode draws walls - same polyline rig.
   const drawing = (mode === "cable" || mode === "structure") && !!drawPoints
+  // A free plan: tiles move smoothly, turn to any angle, may overlap.
+  const free = plan.layout_mode === "free"
+  // Areas and labels answer the pointer in Layout mode only.
+  // A palette type armed paints tiles over them.
+  const snapshotting = editable && !!onSnapshotRect
+  const shapesLive =
+    mode === "layout" && !editing && !(editable && armed) && !snapshotting
+  /** Shown, but not to be edited here (a live view's edge rows). */
+  const isLocked = (id: string) => editable && !!lockedIds?.has(id)
+  const shapeG = useShapeGestures({
+    svgRef,
+    toWorld,
+    zoom: t.k,
+    plan,
+    shapes,
+    tiles,
+    tool:
+      mode === "layout"
+        ? shapeTool
+        : mode === "structure" && raisedPolygonTool
+          ? "polygon"
+          : null,
+    editable,
+    selectedShapeId,
+    onSelectShape,
+    onChangeShape,
+    onCreateArea:
+      mode === "structure"
+        ? (geom) => {
+            if (geom.shape === "polygon")
+              onCreateRaisedPolygon?.(
+                geom.points.map((p) => [p[0], p[1]] as [number, number])
+              )
+          }
+        : onCreateArea,
+    onCreateLabel,
+    onOpenShape,
+    onChangeTile,
+    onGestureStart,
+    onGestureEnd,
+    startPan: (e) => {
+      svgRef.current?.setPointerCapture(e.pointerId)
+      drag.current = { mode: "pan" }
+      startPan(e)
+    },
+  })
+  const structG = useStructureGestures({
+    svgRef,
+    toWorld,
+    zoom: t.k,
+    plan,
+    structure,
+    editable,
+    onCommit: onCommitStructure,
+    onAddDoor,
+    onSelectDoor,
+  })
+  const shownRow = <R extends { id: string }>(r: R): R =>
+    (structG.preview.rows.get(r.id) as R | undefined) ?? r
+  // The walls as shown - one mid-drag included - for the cameras' views.
+  const shownWalls = useMemo(
+    () => walls.map(shownRow),
+    [walls, structG.preview.rows]
+  )
+  const coverageFloor = useMemo(
+    () => (showCoverage ? coverageRegions(shapes, plan).outlines : []),
+    [showCoverage, shapes, plan]
+  )
+  const structRow = (id: string) => {
+    const r = structure.find((x) => x.id === id)
+    return r ? shownRow(r) : undefined
+  }
+  // The raised floors as shown (a dragged one where it will drop), and the
+  // regions they draw as.
+  const previewRows = structG.preview.rows
+  const raisedSaved = useMemo(
+    () => raisedRegions(raisedFloors ?? []),
+    [raisedFloors]
+  )
+  const raisedShown = useMemo(() => {
+    const saved = raisedFloors ?? []
+    if (!saved.some((r) => previewRows.has(r.id)))
+      return { rows: saved, regions: raisedSaved }
+    const rows = saved.map(
+      (r) => (previewRows.get(r.id) as RaisedFloorArea | undefined) ?? r
+    )
+    return { rows, regions: raisedRegions(rows) }
+  }, [raisedFloors, raisedSaved, previewRows])
+  const showHint = (text: string | null, e?: React.PointerEvent) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!text || !e || !rect || structG.active() || drag.current) {
+      setHint(null)
+      return
+    }
+    setHint({ text, x: e.clientX - rect.left, y: e.clientY - rect.top - 10 })
+  }
+  const structLive = editable && !drawing
+  // Right-click on an area, a label or a polygon's point.
+  const [shapeMenu, setShapeMenu] = useState<{
+    x: number
+    y: number
+    id: string
+    vertex?: number
+  } | null>(null)
+  const areas = shapes.filter((s) => s.kind === "area").sort(byZ)
+  const labels = shapes.filter((s) => s.kind === "label").sort(byZ)
+  // The label pass, run when a pan or zoom settles: everything the plan
+  // writes, in view, the cables first (plan-label-pass.ts).
+  const labelLayout = useMemo(
+    () => layoutCables(cableRoutes, laneOrder(cablePaths, cableRoutes)),
+    [cableRoutes, cablePaths]
+  )
+  const cableFocus = useMemo(
+    () => new Set([...highlightCableIds, ...hoveredCables]),
+    [highlightCableIds, hoveredCables]
+  )
+  const cablesShown = showCableLinks && !trayEditMode
+  const planLabels = useMemo(() => {
+    const k = settledView.k
+    const scale = CELL * k
+    const lod = cableLod(scale)
+    return layoutPlanLabels({
+      scale,
+      unitsPerPx: k,
+      font: LABEL_FONT_PX,
+      chipFont: CHIP_FONT_PX,
+      repeat: LABEL_REPEAT_PX,
+      gap: 4,
+      view:
+        settledView.w > 0
+          ? {
+              x: -settledView.x,
+              y: -settledView.y,
+              w: settledView.w,
+              h: settledView.h,
+            }
+          : null,
+      bounds: scaleBox(keepBox, scale),
+      clip: scaleBox(
+        { x: 0, y: 0, w: plan.grid_width, h: plan.grid_height },
+        scale
+      ),
+      tiles,
+      shapeOf: shapeAt(scale),
+      iconIds,
+      iconClusters: iconLayout.clusters.map((c) => ({
+        id: c.id,
+        box: clusterBox(c, scale),
+        // A row drawn as one icon: its short name by it.
+        name:
+          c.form === "row" && !c.row?.bar
+            ? (c.short ?? "")
+            : (clusterFaces.get(c.id)?.name ?? ""),
+        members: c.members,
+        row:
+          c.row?.bar && c.text
+            ? {
+                centre: c.anchor,
+                dir: c.row.dir,
+                length: c.row.length,
+                thick: barThickness(c.row.depth, scale),
+                text: c.text,
+                short: c.short ?? c.text,
+              }
+            : undefined,
+        hall: c.form === "hall" ? c.room : undefined,
+      })),
+      roomOf: (p) => roomAt(rooms, p),
+      labelFit,
+      angleOf: free ? (tile) => tileBox(tile).rotation : undefined,
+      zoneGrow: readable ? fontGrow(10, k) : 1,
+      pinnedTiles: hoveredTile
+        ? new Set([...pinnedNames, hoveredTile])
+        : pinnedNames,
+      trays: showTrays ? trays : [],
+      trayWidth: Math.max(10 * k, readable ? 6 : 4),
+      areas,
+      areaFontPx: 12 * (readable ? fontGrow(12, k) : 1),
+      // One caption per drawn region, its box's bottom-left where the
+      // canvas starts it.
+      raised: raisedSaved.map((rg) => {
+        const named = rg.rows.find((r) => r.label) ?? rg.rows[0]
+        const [ax, ay] = regionCaptionAnchor(rg.pieces)
+        const h = Math.max(ay - rg.bounds.minY, 0.01)
+        return {
+          id: named.id,
+          box: { x: ax, y: ay - h, w: rg.bounds.maxX - ax, h },
+          text: `${named.label || "Raised floor"} · ${rg.plenum_mm} mm`,
+          fontPx: 10 * (readable ? fontGrow(10, k) : 1),
+        }
+      }),
+      planLabels: labels,
+      cellMm: plan.cell_mm,
+      callouts: callouts === "auto" ? { lines: calloutLines } : null,
+      cables: cablesShown
+        ? {
+            paths: cablePaths,
+            routes: cableRoutes,
+            layout: labelLayout,
+            bundled: bundledGroups(labelLayout, {
+              lod,
+              bundle: bundleCables,
+              minGapCells: LANE_MIN_PX / scale,
+            }),
+            // While some are traced the rest dim: only the traced named.
+            names: showCableLabels && highlightCableIds.length === 0,
+            focus: cableFocus,
+            focusOnly: lod === "far",
+            lengths: lod === "near",
+            ends: lod !== "far",
+          }
+        : undefined,
+    })
+  }, [
+    settledView,
+    keepBox,
+    plan.grid_width,
+    plan.grid_height,
+    tiles,
+    readable,
+    shapeAt,
+    iconIds,
+    iconLayout,
+    clusterBox,
+    clusterFaces,
+    labelFit,
+    free,
+    pinnedNames,
+    hoveredTile,
+    showTrays,
+    trays,
+    shapes,
+    raisedSaved,
+    plan.cell_mm,
+    cablesShown,
+    cablePaths,
+    cableRoutes,
+    labelLayout,
+    bundleCables,
+    showCableLabels,
+    cableFocus,
+    callouts,
+    calloutLines,
+    rooms,
+  ])
+  const selectedShape = shapes.find((s) => s.id === selectedShapeId) ?? null
+  const selectedTile =
+    free && editable && mode === "layout" && selectedId
+      ? (tiles.find((x) => x.id === selectedId) ?? null)
+      : null
 
   // Fit the grid on first mount (and when the plan changes identity).
   useEffect(() => {
@@ -425,13 +1325,15 @@ export function FloorCanvas({
     apiRef.current = {
       fit: () => fitTo(svgRef.current, gw, gh),
       focusTile: (tile, zoom) => {
+        setFocusedTile(tile.id)
         const svg = svgRef.current
-        if (!svg) return
+        if (!svg) return null
         const rect = svg.getBoundingClientRect()
         const k = zoom ?? 1.4
         const tx = (tile.x + tile.width / 2) * CELL
         const ty = (tile.y + tile.height / 2) * CELL
         setT({ k, x: rect.width / 2 - tx * k, y: rect.height / 2 - ty * k })
+        return { x: rect.width / 2, y: rect.height / 2 }
       },
       focusPoints: (points) => {
         const svg = svgRef.current
@@ -460,6 +1362,66 @@ export function FloorCanvas({
       },
     }
   }, [apiRef, fitTo, setT, gw, gh])
+  /** A tray's cables drawn on this plan (the reader's; hidden ones are
+   * only counted). */
+  const trayCableIds = (tray: FloorPlanTray) => {
+    const drawn = new Set(cablePaths.map((cp) => cp.id))
+    return tray.cables.map((c) => c.id).filter((id) => drawn.has(id))
+  }
+  /** Show cables: one opens at once, several ask which. */
+  const showTrayCables = (trayId: string, at: CablePickAt) => {
+    const tray = trays.find((tr) => tr.id === trayId)
+    if (!tray) return
+    const ids = trayCableIds(tray)
+    if (ids.length === 1) selectCable(ids[0])
+    else if (ids.length > 1) chooseCables(ids, at, tray.name || "Tray")
+  }
+  /** View: a tray click lists its cables - not while picking trays for a
+   * route, nor while editing, where a click selects or drags it. */
+  const trayChooses = !editable && !trayPick && showCableLinks
+
+  // The polygon tool's keys (Enter, Backspace, Esc) reach it through the
+  // same handle; refreshed each render, as the drawing is state.
+  useEffect(() => {
+    if (!apiRef?.current) return
+    apiRef.current.finishPolygon = shapeG.finishPolygon
+    apiRef.current.popPoint = shapeG.popPoint
+    apiRef.current.cancelDraw = shapeG.cancelDraw
+    apiRef.current.drawingShape = () => !!shapeG.poly
+    apiRef.current.centerCell = () => {
+      const svg = svgRef.current
+      if (!svg) return [plan.grid_width / 2, plan.grid_height / 2]
+      const r = svg.getBoundingClientRect()
+      const w = toWorld(svg, r.left + r.width / 2, r.top + r.height / 2)
+      return [w.x / CELL, w.y / CELL]
+    }
+    apiRef.current.pointerCell = () => pointerAt.current
+    apiRef.current.tilePoint = (tile) =>
+      svgRef.current
+        ? {
+            x: t.x + (tile.x + tile.width / 2) * CELL * t.k,
+            y: t.y + (tile.y + tile.height / 2) * CELL * t.k,
+          }
+        : null
+    apiRef.current.screen = () => {
+      const svg = svgRef.current
+      if (!svg) return null
+      const r = svg.getBoundingClientRect()
+      if (!r.width || !r.height) return null
+      const a = toWorld(svg, r.left, r.top)
+      const b = toWorld(svg, r.right, r.bottom)
+      return {
+        box: { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y },
+        k: t.k,
+        callouts: planLabels.callouts,
+      }
+    }
+    apiRef.current.showTrayCables = showTrayCables
+  })
+  // Putting the tool down drops a drawing it left open.
+  useEffect(() => {
+    if (shapeTool !== "polygon" && !raisedPolygonTool) shapeG.cancelDraw()
+  }, [shapeTool, raisedPolygonTool])
 
   const toCell = (e: React.PointerEvent): CellPoint => {
     const w = toWorld(svgRef.current!, e.clientX, e.clientY)
@@ -549,8 +1511,13 @@ export function FloorCanvas({
       onAddDrawPoint?.(toLattice(e))
       return
     }
+    // A drawing tool (area, polygon, label) draws wherever it is pressed.
+    if ((mode === "layout" || raisedPolygonTool) && shapeG.drawDown(e)) return
     e.currentTarget.setPointerCapture(e.pointerId)
-    if (editable && !armed && e.shiftKey && onMarquee) {
+    if (snapshotting) {
+      const c = toCell(e)
+      drag.current = { mode: "snapshot", start: c, end: c }
+    } else if (editable && !armed && e.shiftKey && onMarquee) {
       // Shift-drag = selection sweep. Plain drag stays panning, so the
       // marquee never fights the hand tool.
       const c = toCell(e)
@@ -564,17 +1531,58 @@ export function FloorCanvas({
       onSelect?.(null)
       onSelectArea?.(null)
       onSelectWall?.(null)
+      onSelectDoor?.(null)
       onSelectCable?.(null)
+      onSelectShape?.(null)
     }
+  }
+
+  /** A press on a tile's callout: what a click on the tile does, but a
+   * drag - the callout never moves its tile. */
+  const pressCallout = (id: string, e: React.PointerEvent) => {
+    // A crowd's plate or a cluster's box: zoom to what it names.
+    const plate = planLabels.callouts.find((c) => c.id === id)
+    if (plate?.members) {
+      fitCluster({ members: [...plate.members] })
+      return
+    }
+    const tile = tileById.get(id)
+    if (!tile) return
+    if (tilePick) {
+      tilePick.onPick(tile)
+      return
+    }
+    if (mode === "cable" || mode === "structure" || editing) return
+    if (!editable) {
+      if (onClickTile) onClickTile(tile)
+      else onOpenTile?.(tile)
+      return
+    }
+    if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelect) {
+      onToggleSelect(tile.id)
+      return
+    }
+    onSelect?.(tile.id)
+    onSelectShape?.(null)
   }
 
   const handleTileDown = (tile: FloorPlanTile, e: React.PointerEvent) => {
     if (e.button !== 0) return
+    if (tilePick) {
+      e.stopPropagation()
+      tilePick.onPick(tile)
+      return
+    }
     // In cable/structure mode (or while editing a tray) tiles are inert.
     if (mode === "cable" || mode === "structure" || editing) return
+    // A drawing tool draws over the tile (the press reaches the plan).
+    if (editable && (shapeTool || snapshotting)) return
+    // Locked here (a live view's edge row): the press pans instead.
+    if (isLocked(tile.id)) return
     e.stopPropagation()
     if (!editable) {
-      onOpenTile?.(tile)
+      if (onClickTile) onClickTile(tile)
+      else onOpenTile?.(tile)
       return
     }
     // Shift- or Ctrl/⌘-click builds the multi-selection instead of moving -
@@ -613,6 +1621,12 @@ export function FloorCanvas({
       return
     }
     onSelect?.(tile.id)
+    onSelectShape?.(null)
+    // A free plan drags tiles smoothly (snapping as areas do).
+    if (free && !armed) {
+      shapeG.tileDown(tile, e)
+      return
+    }
     const c = toCell(e)
     drag.current = {
       mode: "move",
@@ -637,41 +1651,35 @@ export function FloorCanvas({
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
-  // Raw pointer position in cell units (no snapping) - for whole-tray moves.
-  const toCellRaw = (e: React.PointerEvent): [number, number] => {
-    const w = toWorld(svgRef.current!, e.clientX, e.clientY)
-    return [w.x / CELL, w.y / CELL]
-  }
-
-  // Grab a tray body → select it; in edit mode, arm a whole-tray move.
+  // Grab a tray body → select it (Shift or Ctrl/⌘: pick it to join) and
+  // drag it whole.
   const handleTrayDown = (tray: FloorPlanTray, e: React.PointerEvent) => {
-    if (e.button !== 0) return
-    e.stopPropagation()
-    onSelectTray?.(tray.id)
-    if (!editable || !trayEditMode) return
-    drag.current = {
-      mode: "tray-move",
-      id: tray.id,
-      grab: toCellRaw(e),
-      orig: tray.points.map((p) => [p[0], p[1]]),
-      moved: false,
+    if (trayChooses) {
+      // Not stopped: a drag from a tray still pans the plan; the release
+      // in place opens its cables (the svg's pointerup).
+      if (e.button === 0)
+        trayClick.current = { id: tray.id, x: e.clientX, y: e.clientY }
+      return
     }
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-
-  // Grab a selected tray's vertex → reshape that point.
-  const handleVertexDown = (
-    tray: FloorPlanTray,
-    index: number,
-    e: React.PointerEvent
-  ) => {
-    if (e.button !== 0 || !editable) return
+    if (e.button !== 0 || isLocked(tray.id)) return
     e.stopPropagation()
-    drag.current = { mode: "tray-vertex", id: tray.id, index, moved: false }
-    e.currentTarget.setPointerCapture(e.pointerId)
+    if (trayPick) {
+      trayPick.onPick(tray.id)
+      return
+    }
+    // A run "After placing" kept (not yet a tray of the draft) is not
+    // edited here.
+    const row = structRow(tray.id)
+    if (!row || row.part !== "tray") return
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && onToggleStruct) {
+      onToggleStruct(row.id)
+      return
+    }
+    onSelectTray?.(tray.id)
+    structG.runDown(row, e)
   }
 
-  // Click a segment's "+" handle → insert a bend there, then drag it.
+  // "+" in tray edit mode: a bend in the middle of the segment, at once.
   const handleInsertBend = (
     tray: FloorPlanTray,
     segIndex: number,
@@ -679,73 +1687,55 @@ export function FloorCanvas({
   ) => {
     if (e.button !== 0 || !editable) return
     e.stopPropagation()
-    const a = tray.points[segIndex]
-    const b = tray.points[segIndex + 1]
-    const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
-    const points = [
-      ...tray.points.slice(0, segIndex + 1),
-      mid,
-      ...tray.points.slice(segIndex + 1),
-    ]
-    setTrayDraft({ id: tray.id, points })
-    drag.current = {
-      mode: "tray-vertex",
-      id: tray.id,
-      index: segIndex + 1,
-      moved: false,
-      inserted: true,
-    }
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-
-  // Remove a vertex (keeps a tray at ≥2 points).
-  const removeVertex = (trayId: string, index: number) => {
-    const tray = trays.find((x) => x.id === trayId)
-    if (!tray || tray.points.length <= 2) return
-    onMoveTray?.(
-      trayId,
-      tray.points.filter((_, i) => i !== index)
+    const row = structRow(tray.id)
+    if (!row || row.part !== "tray") return
+    const a = row.points[segIndex]
+    const b = row.points[segIndex + 1]
+    structureActions?.addBendAt?.(
+      row.id,
+      segIndex,
+      Math.hypot(b[0] - a[0], b[1] - a[1]) / 2
     )
   }
 
-  // Grab a wall body → select it; in Structure mode, arm a whole-run move.
+  // Grab a wall body → select it (Shift or Ctrl/⌘: pick it to join) and
+  // drag it whole.
   const handleWallDown = (wall: FloorPlanWall, e: React.PointerEvent) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || isLocked(wall.id)) return
     e.stopPropagation()
-    onSelectWall?.(wall.id)
-    if (!editable) return
-    drag.current = {
-      mode: "wall-move",
-      id: wall.id,
-      grab: toCellRaw(e),
-      orig: wall.points.map((p) => [p[0], p[1]]),
-      moved: false,
+    const row = structRow(wall.id)
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && onToggleStruct && row) {
+      onToggleStruct(wall.id)
+      return
     }
+    onSelectWall?.(wall.id)
+    onSelectDoor?.(null)
+    if (row && row.part === "wall") structG.runDown(row, e)
   }
 
-  // Armed door placement: project the click onto the segment → cells along it.
-  const handleWallSegmentClick = (
-    wall: FloorPlanWall,
+  /** Where the pointer falls along segment `seg` of a run, in cells. */
+  const tAlong = (
+    points: [number, number][],
     seg: number,
-    e: React.PointerEvent
+    e: { clientX: number; clientY: number }
   ) => {
-    if (!doorArmed || !onPlaceDoor) return
-    e.stopPropagation()
-    const [cx, cy] = toCellRaw(e)
-    const [ax, ay] = wall.points[seg]
-    const [bx, by] = wall.points[seg + 1]
-    const dx = bx - ax
-    const dy = by - ay
-    const len = Math.hypot(dx, dy)
-    if (len < 1e-9) return
-    const at = Math.max(
-      0,
-      Math.min(len, ((cx - ax) * dx + (cy - ay) * dy) / len)
-    )
-    onPlaceDoor(wall.id, seg, at)
+    const w = toWorld(svgRef.current!, e.clientX, e.clientY)
+    const [ax, ay] = points[seg]
+    const [bx, by] = points[seg + 1]
+    const len = Math.hypot(bx - ax, by - ay) || 1
+    const v =
+      ((w.x / CELL - ax) * (bx - ax) + (w.y / CELL - ay) * (by - ay)) / len
+    return Math.max(0, Math.min(len, v))
   }
 
   const handleMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (svgRef.current) {
+      const w = toWorld(svgRef.current, e.clientX, e.clientY)
+      pointerAt.current = [w.x / CELL, w.y / CELL]
+    }
+    // Areas, labels and free tiles, and structure: their own gestures.
+    if (shapeG.move(e)) return
+    if (structG.move(e)) return
     // Tray drawing: trail a dashed preview from the last vertex to the cursor.
     if (drawPoints) {
       const [cx, cy] = toLattice(e)
@@ -799,61 +1789,6 @@ export function FloorCanvas({
       const h = Math.max(1, c.y - d.origin.y + 1)
       if (w !== tile.width || h !== tile.height)
         onChangeTile?.(d.id, { width: w, height: h })
-    } else if (d.mode === "tray-move") {
-      // Translate every vertex by the cursor delta, snapped to the 0.5 grid.
-      const [rx, ry] = toCellRaw(e)
-      const dxc = Math.round((rx - d.grab[0]) * 2) / 2
-      const dyc = Math.round((ry - d.grab[1]) * 2) / 2
-      const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v))
-      const pts = d.orig.map(([x, y]): [number, number] => [
-        clamp(x + dxc, plan.grid_width),
-        clamp(y + dyc, plan.grid_height),
-      ])
-      if (dxc !== 0 || dyc !== 0) d.moved = true
-      setTrayDraft({ id: d.id, points: pts })
-    } else if (d.mode === "tray-vertex") {
-      // Move the grabbed vertex to the (magnetically snapped) cursor.
-      const tray = trays.find((x) => x.id === d.id)
-      if (!tray) return
-      const base = trayDraft?.id === d.id ? trayDraft.points : tray.points
-      const pts = base.map((p): [number, number] => [p[0], p[1]])
-      pts[d.index] = toLattice(e)
-      d.moved = true
-      setTrayDraft({ id: d.id, points: pts })
-    } else if (d.mode === "wall-move") {
-      // Translate every vertex by the cursor delta, snapped to the 0.5 grid.
-      const [rx, ry] = toCellRaw(e)
-      const dxc = Math.round((rx - d.grab[0]) * 2) / 2
-      const dyc = Math.round((ry - d.grab[1]) * 2) / 2
-      const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v))
-      const pts = d.orig.map(([x, y]): [number, number] => [
-        clamp(x + dxc, plan.grid_width),
-        clamp(y + dyc, plan.grid_height),
-      ])
-      if (dxc !== 0 || dyc !== 0) d.moved = true
-      setWallDraft({ id: d.id, points: pts })
-    } else if (d.mode === "area-move") {
-      const a = raisedFloors?.find((x) => x.id === d.id)
-      if (a) {
-        setAreaDraft({
-          id: a.id,
-          x: Math.max(0, Math.round(c.x - d.grabDx)),
-          y: Math.max(0, Math.round(c.y - d.grabDy)),
-          width: a.width,
-          height: a.height,
-        })
-      }
-    } else if (d.mode === "area-resize") {
-      const a = raisedFloors?.find((x) => x.id === d.id)
-      if (a) {
-        setAreaDraft({
-          id: a.id,
-          x: a.x,
-          y: a.y,
-          width: Math.max(1, Math.round(c.x - d.origin.x)),
-          height: Math.max(1, Math.round(c.y - d.origin.y)),
-        })
-      }
     } else {
       d.end = c
       // Imperative preview - avoids re-rendering every tile per pointermove.
@@ -869,7 +1804,9 @@ export function FloorCanvas({
     }
   }
 
-  const handleUp = () => {
+  const handleUp = (e?: React.PointerEvent) => {
+    if (e && shapeG.up(e)) return
+    if (structG.up(e)) return
     const d = drag.current
     drag.current = null
     if (!d) return
@@ -886,37 +1823,31 @@ export function FloorCanvas({
     } else if (d.mode === "marquee") {
       paintPreview.current?.setAttribute("visibility", "hidden")
       onMarquee?.(paintRect(d.start, d.end))
-    } else if (d.mode === "area-move" || d.mode === "area-resize") {
-      setAreaDraft((draft) => {
-        if (draft && draft.id === d.id) {
-          const a = raisedFloors?.find((x) => x.id === d.id)
-          const changed =
-            !a ||
-            a.x !== draft.x ||
-            a.y !== draft.y ||
-            a.width !== draft.width ||
-            a.height !== draft.height
-          if (changed)
-            onAreaRectChange?.(d.id, {
-              x: draft.x,
-              y: draft.y,
-              width: draft.width,
-              height: draft.height,
-            })
-        }
-        return null
-      })
-    } else if (d.mode === "tray-move" || d.mode === "tray-vertex") {
-      // Persist a drag, OR a "+"-click that inserted a bend without dragging.
-      const changed = d.moved || (d.mode === "tray-vertex" && d.inserted)
-      if (changed && trayDraft?.id === d.id)
-        onMoveTray?.(d.id, trayDraft.points)
-      setTrayDraft(null)
-    } else if (d.mode === "wall-move") {
-      if (d.moved && wallDraft?.id === d.id)
-        onMoveWall?.(d.id, wallDraft.points)
-      setWallDraft(null)
+    } else if (d.mode === "snapshot") {
+      paintPreview.current?.setAttribute("visibility", "hidden")
+      onSnapshotRect?.(paintRect(d.start, d.end))
     }
+  }
+
+  // A pinch takes over from whatever one finger began: the drag stops where
+  // it is, a paint or sweep is dropped rather than committed, a structure
+  // drag snaps back, and an open undo step closes.
+  const cancelDrag = () => {
+    shapeG.cancel()
+    structG.cancel()
+    const d = drag.current
+    drag.current = null
+    pickStart.current = null
+    if (!d) return
+    if (d.mode === "pan") endPan()
+    else if (d.mode === "move" || d.mode === "resize" || d.mode === "group")
+      onGestureEnd?.()
+    else if (
+      d.mode === "paint" ||
+      d.mode === "marquee" ||
+      d.mode === "snapshot"
+    )
+      paintPreview.current?.setAttribute("visibility", "hidden")
   }
 
   // Right-click → a small menu; hit-test which non-zone tile is under it.
@@ -927,6 +1858,121 @@ export function FloorCanvas({
     const rect = svg.getBoundingClientRect()
     const wx = (e.clientX - rect.left - t.x) / t.k / CELL
     const wy = (e.clientY - rect.top - t.y) / t.k / CELL
+    // View: a tray that carries cables gets its menu (Show cables).
+    if (trayChooses && showTrays) {
+      const slack = 6 / (CELL * t.k)
+      let best: { id: string; d: number } | null = null
+      for (const tray of trays) {
+        if (tray.points.length < 2 || !trayCableIds(tray).length) continue
+        const n = nearestSegment(tray.points, [wx, wy])
+        const half = Math.max(5, 2 / t.k) / CELL
+        if (n && n.dist <= half + slack && (!best || n.dist < best.d))
+          best = { id: tray.id, d: n.dist }
+      }
+      if (best) {
+        setTrayMenu({ x: e.clientX, y: e.clientY, id: best.id })
+        return
+      }
+    }
+    // Editing: a door, a wall or a tray under the pointer (they draw over
+    // the rest), then a raised floor in Structure mode, get their own menu.
+    if (editable && structureActions) {
+      const slack = 6 / (CELL * t.k)
+      const {
+        walls: wallRows,
+        trays: trayRows,
+        raised,
+      } = structureLists(structure)
+      const runHit = (rows: RunRow[], extra: (r: RunRow) => number) => {
+        let best: { row: RunRow; seg: number; t: number; d: number } | null =
+          null
+        for (const r of rows) {
+          if (isLocked(r.id)) continue
+          const n = nearestSegment(r.points, [wx, wy])
+          if (n && n.dist <= extra(r) + slack && (!best || n.dist < best.d))
+            best = { row: r, seg: n.seg, t: n.t, d: n.dist }
+        }
+        return best
+      }
+      const trayHit =
+        showTrays && mode === "cable" ? runHit(trayRows, () => 5 / CELL) : null
+      const wallHit = runHit(
+        wallRows,
+        (r) => wallStrokePx(r as FloorPlanWall, plan.cell_mm) / 2 / CELL
+      )
+      const hit = trayHit ?? wallHit
+      if (hit) {
+        const door =
+          hit.row.part === "wall"
+            ? hit.row.openings.findIndex(
+                (o) => o.seg === hit.seg && hit.t >= o.from && hit.t <= o.to
+              )
+            : -1
+        setStructMenu({
+          x: e.clientX,
+          y: e.clientY,
+          id: hit.row.id,
+          part: hit.row.part,
+          seg: hit.seg,
+          t: hit.t,
+          door: door >= 0 ? door : undefined,
+        })
+        if (hit.row.part === "wall") {
+          onSelectWall?.(hit.row.id)
+          onSelectDoor?.(door >= 0 ? { wallId: hit.row.id, index: door } : null)
+        } else onSelectTray?.(hit.row.id)
+        return
+      }
+      const rf =
+        mode === "structure"
+          ? raised.find((r) => !isLocked(r.id) && raisedContains(r, [wx, wy]))
+          : undefined
+      if (rf) {
+        setStructMenu({ x: e.clientX, y: e.clientY, id: rf.id, part: rf.part })
+        onSelectArea?.(rf.id)
+        return
+      }
+    }
+    // Readable: a grown symbol draws over the areas and labels - it is
+    // what the pointer is on.
+    const grownHit = shapeOf
+      ? readableHit(
+          readableOrder(tiles, pxPerCell, pinnedNames, undefined, shapeOf),
+          wx,
+          wy,
+          pxPerCell,
+          undefined,
+          shapeOf
+        )
+      : null
+    if (grownHit && iconLayout.clusterOf.has(grownHit.id)) return
+    if (grownHit && shapeOf?.(grownHit)?.changed) {
+      setCtxMenu({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        tile: grownHit,
+        at: [wx, wy],
+      })
+      return
+    }
+    // Editing: a label or an area under the pointer gets its own menu
+    // (forward, back, delete) - labels first, they draw on top.
+    if (editable && mode === "layout") {
+      const shapeHit = [
+        ...labels.slice().reverse(),
+        ...areas.slice().reverse(),
+      ].find((s) => {
+        if (s.kind === "area" && s.shape === "polygon")
+          return pointInPolygon([wx, wy], s.points)
+        const b = s.kind === "label" ? labelBox(s, plan.cell_mm) : s
+        return pointInBox([wx, wy], b)
+      })
+      if (shapeHit) {
+        setShapeMenu({ x: e.clientX, y: e.clientY, id: shapeHit.id })
+        onSelectShape?.(shapeHit.id)
+        return
+      }
+    }
     const hit = [...tiles]
       .reverse()
       .find(
@@ -941,6 +1987,38 @@ export function FloorCanvas({
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
       tile: hit ?? null,
+      at: [wx, wy],
+    })
+  }
+
+  /** View: the topmost area or label with an Opens link under the pointer
+   * names its target beside it - set only when that shape changes. */
+  const hoverOpens = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (editable) return
+    const svg = svgRef.current
+    if (!svg) return
+    const rect = svg.getBoundingClientRect()
+    const p: Pt = [
+      (e.clientX - rect.left - t.x) / t.k / CELL,
+      (e.clientY - rect.top - t.y) / t.k / CELL,
+    ]
+    const hit = [...labels.slice().reverse(), ...areas.slice().reverse()].find(
+      (s) =>
+        (s.opens || s.opens_hidden) &&
+        (s.kind === "area" && s.shape === "polygon"
+          ? pointInPolygon(p, s.points)
+          : pointInBox(p, s.kind === "label" ? labelBox(s, plan.cell_mm) : s))
+    )
+    if (!hit) {
+      if (opensHint) setOpensHint(null)
+      return
+    }
+    if (opensHint?.id === hit.id) return
+    setOpensHint({
+      id: hit.id,
+      x: e.clientX - rect.left + 12,
+      y: e.clientY - rect.top + 14,
+      text: hit.opens ? `Opens ${opensName(hit)}` : "Opens a hidden plan",
     })
   }
 
@@ -954,7 +2032,12 @@ export function FloorCanvas({
     // Suppress while dragging/panning/drawing - a popover chasing the cursor
     // mid-drag is noise.
     if (drag.current || drawing) return
+    hoverStore.set(tile.id)
     onHoverTile?.(tile, { x: e.clientX - rect.left, y: e.clientY - rect.top })
+  }
+  const leaveHover = () => {
+    hoverStore.set(null)
+    onHoverTile?.(null, null)
   }
 
   // Cables whose A↔B run touches a tile - for "trace cables here".
@@ -964,6 +2047,192 @@ export function FloorCanvas({
         (cp) => cp.a_tiles.includes(tileId) || cp.b_tiles.includes(tileId)
       )
       .map((cp) => cp.id)
+
+  /** A click on a cluster: zoom to its members, close enough that they
+   * part or turn back into tiles. */
+  const fitCluster = (c: Pick<IconCluster, "members">) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    const members = c.members
+      .map((id) => tileById.get(id))
+      .filter((x): x is FloorPlanTile => !!x)
+    if (!rect || !members.length) return
+    setClusterHint(null)
+    setT(
+      clusterFitView(members, rect.width, rect.height, {
+        cell: CELL,
+        spacingPx: READABLE_SYMBOL_PX * 1.3,
+        tilePx: ICON_TILE_EXIT_PX + 4,
+        maxK: 4,
+        // Room round the extent for the icons and their names.
+        margin: 160,
+      })
+    )
+  }
+
+  const gridClipId = `fp-grid-clip-${plan.id}`
+  // The tiles but zones and icons, in drawing order: at their real size
+  // (clipped with the plan) and grown (Readable, in the overlays).
+  const solidTiles = (() => {
+    const ordered = readableOrder(
+      free
+        ? tiles
+            .filter((tl) => !tileIsZone(tl))
+            .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
+        : tiles.filter((tl) => !tileIsZone(tl)),
+      shapeOf ? pxPerCell : null,
+      pinnedNames,
+      undefined,
+      shapeOf ?? undefined
+    ).filter((tl) => !iconIds.has(tl.id))
+    return splitGrown(ordered, shapeOf)
+  })()
+
+  /** One label on the plan. */
+  const renderLabel = (l: LabelShape) => (
+    <LabelShapeView
+      key={l.id}
+      label={l}
+      cellMm={plan.cell_mm}
+      minFontPx={readable ? READABLE_FONT_PX : undefined}
+      zoom={t.k}
+      // View: a label takes the pointer only to open its link.
+      interactive={shapesLive && (editable ? !isLocked(l.id) : opensLabel(l))}
+      viewing={!editable}
+      onPointerDown={(e) => shapeG.shapeDown(l, e)}
+    />
+  )
+
+  /** One tile on the plan. */
+  const renderTile = (tile: FloorPlanTile) => {
+    // A free plan draws a tile turned by what its angle has beyond
+    // its quarter turn (shapes.ts tileResidual).
+    const residual = free ? tileBox(tile).rotation : 0
+    const shown = residual
+      ? { ...tile, orientation: tileQuarter(tile.orientation) }
+      : tile
+    // Readable from afar: drawn grown about its centre (its saved geometry
+    // untouched), its name left to the names layer, no resize grip - a
+    // resize is done zoomed in, at the real size.
+    const rs = shapeOf?.(tile) ?? null
+    // Folded into a cluster: the cluster draws it.
+    if (iconLayout.clusterOf.has(tile.id)) return null
+    // An icon spread off its true place: drawn there and moved, so a new
+    // layout eases it across.
+    const iconHome = iconIds.has(tile.id)
+      ? iconTileShape(tile, pxPerCell).box
+      : null
+    const shift =
+      iconHome && rs
+        ? [(rs.box.x - iconHome.x) * CELL, (rs.box.y - iconHome.y) * CELL]
+        : null
+    // Too thin, a photo too small to read, or an icon tile from afar: its
+    // symbol instead.
+    if (rs?.symbol)
+      return (
+        <g
+          key={tile.id}
+          pointerEvents={
+            mode === "structure" || isLocked(tile.id) ? "none" : undefined
+          }
+          opacity={isLocked(tile.id) ? LOCKED_OPACITY : undefined}
+          data-grown=""
+          style={
+            shift
+              ? {
+                  transform: `translate(${shift[0]}px, ${shift[1]}px)`,
+                  transition: iconsSettled
+                    ? "transform 180ms ease-out"
+                    : undefined,
+                }
+              : undefined
+          }
+        >
+          <ReadableSymbol
+            tile={tile}
+            box={iconHome ?? rs.box}
+            k={t.k}
+            selected={
+              tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
+            }
+            live={liveState?.tiles[tile.id]}
+            colorBy={colorBy}
+            figures={figures?.get(tile.id)}
+            iconTile={iconIds.has(tile.id)}
+            rotation={iconIds.has(tile.id) ? 0 : residual}
+            highlighted={
+              !!highlightTileIds?.has(tile.id) ||
+              !!tilePick?.picked.has(tile.id) ||
+              calloutHot === tile.id
+            }
+            onPointerDown={(e) => handleTileDown(tile, e)}
+            onDoubleClick={() => {
+              if (mode !== "cable") onOpenTile?.(tile)
+            }}
+            onPointerEnter={(e) => reportHover(tile, e)}
+            onPointerLeave={leaveHover}
+          />
+        </g>
+      )
+    const grow = rs?.changed ? rs.grow : 1
+    const ccx = (tile.x + tile.width / 2) * CELL
+    const ccy = (tile.y + tile.height / 2) * CELL
+    const transform =
+      [
+        residual ? `rotate(${residual},${ccx},${ccy})` : "",
+        grow > 1
+          ? `translate(${ccx},${ccy}) scale(${grow}) translate(${-ccx},${-ccy})`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined
+    return (
+      // In Structure mode tiles are context, not targets - they pass
+      // pointer events through so an area underneath stays reachable
+      // (and movable) even when fully covered by racks.
+      <g
+        key={tile.id}
+        pointerEvents={
+          mode === "structure" || isLocked(tile.id) ? "none" : undefined
+        }
+        opacity={isLocked(tile.id) ? LOCKED_OPACITY : undefined}
+        transform={transform}
+        data-grown={grow > 1 ? "" : undefined}
+      >
+        <TileShape
+          tile={shown}
+          grip={!free && grow <= 1}
+          hideName={planLabels.tileNamesHere.has(tile.id)}
+          zoneNameGrow={
+            readable && tileIsZone(tile) ? fontGrow(10, t.k) : undefined
+          }
+          handlePx={HANDLE_PX / t.k}
+          selected={tile.id === selectedId || !!multiSelectedIds?.has(tile.id)}
+          editable={editable}
+          labelFit={labelFit}
+          showZoneLabels={showZoneLabels}
+          photoOutline={photoOutlines}
+          live={liveState?.tiles[tile.id]}
+          colorBy={colorBy}
+          figures={figures?.get(tile.id)}
+          highlighted={
+            !!highlightTileIds?.has(tile.id) ||
+            !!tilePick?.picked.has(tile.id) ||
+            calloutHot === tile.id
+          }
+          dimmed={!!dimTileIds?.has(tile.id)}
+          onPointerDown={(e) => handleTileDown(tile, e)}
+          onResizeDown={(e) => handleResizeDown(tile, e)}
+          // In Cables mode a double-click finishes a tray draw - don't
+          // also open the tile's deep-view underneath it.
+          onDoubleClick={() => {
+            if (mode !== "cable") onOpenTile?.(tile)
+          }}
+          onPointerEnter={(e) => reportHover(tile, e)}
+          onPointerLeave={leaveHover}
+        />
+      </g>
+    )
+  }
 
   return (
     <div
@@ -976,52 +2245,109 @@ export function FloorCanvas({
         "relative h-full w-full overflow-hidden bg-background",
         className
       )}
+      // Rows dragged from the Place picker or the unplaced list.
+      onDragOver={(e) => {
+        if (!onDropRows || !e.dataTransfer.types.includes(PLACE_MIME)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = "copy"
+      }}
+      onDrop={(e) => {
+        if (!onDropRows || !svgRef.current) return
+        const raw = e.dataTransfer.getData(PLACE_MIME)
+        if (!raw) return
+        e.preventDefault()
+        let rows: FloorPlanPlaceable[]
+        try {
+          rows = JSON.parse(raw)
+        } catch {
+          return
+        }
+        if (!Array.isArray(rows) || !rows.length) return
+        const w = toWorld(svgRef.current, e.clientX, e.clientY)
+        onDropRows(rows, [w.x / CELL, w.y / CELL])
+      }}
     >
       <svg
         ref={svgRef}
         className="h-full w-full touch-none text-foreground select-none"
         onWheel={onWheel}
-        onPointerDownCapture={
-          onPickPoint
-            ? (e) => {
-                // Picking owns the press: nothing under it selects, moves
-                // or paints. A drag still pans the plan.
-                if (e.button !== 0) return
-                e.stopPropagation()
-                setCtxMenu(null)
-                e.currentTarget.setPointerCapture(e.pointerId)
-                drag.current = { mode: "pan" }
-                startPan(e)
-                pickStart.current = { x: e.clientX, y: e.clientY }
-              }
-            : undefined
-        }
+        onPointerDownCapture={(e) => {
+          // A second finger turns the touch into a pinch: it owns the
+          // press, and what the first finger started stops where it is.
+          if (pinchDown(e)) {
+            e.stopPropagation()
+            e.currentTarget.setPointerCapture(e.pointerId)
+            setCtxMenu(null)
+            cancelDrag()
+            return
+          }
+          if (!onPickPoint) return
+          // Picking owns the press: nothing under it selects, moves
+          // or paints. A drag still pans the plan. A corner handle of a
+          // found outline drags itself.
+          if (e.button !== 0) return
+          if ((e.target as Element).closest("[data-outline-handle]")) return
+          e.stopPropagation()
+          setCtxMenu(null)
+          e.currentTarget.setPointerCapture(e.pointerId)
+          drag.current = { mode: "pan" }
+          startPan(e)
+          pickStart.current = { x: e.clientX, y: e.clientY }
+        }}
         onPointerDown={(e) => {
           setCtxMenu(null)
           handleBackgroundDown(e)
         }}
-        onPointerMove={handleMove}
+        onPointerMove={(e) => {
+          if (pinchMove(e)) return
+          handleMove(e)
+          hoverOpens(e)
+        }}
+        onPointerCancel={pinchUp}
         onPointerUp={(e) => {
+          if (pinchUp(e)) {
+            pickStart.current = null
+            return
+          }
           const start = pickStart.current
           pickStart.current = null
+          const tc = trayClick.current
+          trayClick.current = null
+          if (tc && Math.hypot(e.clientX - tc.x, e.clientY - tc.y) < 5)
+            showTrayCables(tc.id, { x: e.clientX, y: e.clientY })
           if (
             start &&
             onPickPoint &&
             svgRef.current &&
             Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5
           )
-            onPickPoint(toWorld(svgRef.current, e.clientX, e.clientY))
-          handleUp()
+            onPickPoint(toWorld(svgRef.current, e.clientX, e.clientY), {
+              shiftKey: e.shiftKey,
+            })
+          handleUp(e)
         }}
-        onPointerLeave={() => {
+        onPointerLeave={(e) => {
           pickStart.current = null
-          handleUp()
+          pointerAt.current = null
+          setOpensHint(null)
+          setHint(null)
+          if (pinchUp(e)) return
+          handleUp(e)
         }}
-        onDoubleClick={() => drawing && onFinishDraw?.()}
+        onDoubleClick={() => {
+          if (drawing) onFinishDraw?.()
+          else if (shapeG.poly) shapeG.finishPolygon()
+        }}
         onContextMenu={handleContextMenu}
         style={{
           cursor:
-            (armed && editable) || drawing || onPickPoint
+            (armed && editable) ||
+            snapshotting ||
+            drawing ||
+            (doorArmed && editable && mode === "structure") ||
+            onPickPoint ||
+            (editable && mode === "layout" && shapeTool) ||
+            (editable && raisedPolygonTool)
               ? "crosshair"
               : "grab",
         }}
@@ -1029,31 +2355,66 @@ export function FloorCanvas({
         <defs>
           <pattern
             id="fp-grid"
-            width={CELL}
-            height={CELL}
+            width={CELL * gridEvery}
+            height={CELL * gridEvery}
             patternUnits="userSpaceOnUse"
           >
             <path
-              d={`M ${CELL} 0 L 0 0 0 ${CELL}`}
+              d={`M ${CELL * gridEvery} 0 L 0 0 0 ${CELL * gridEvery}`}
               fill="none"
               className="stroke-border"
               strokeWidth={1}
             />
           </pattern>
+          {((muteBackground && plan.background_image) ||
+            (muteMap && mapImage)) && (
+            <MuteFilter id={muteId} dark={theme === "dark"} />
+          )}
         </defs>
-        <g transform={`translate(${t.x},${t.y}) scale(${t.k})`}>
+        {clipToGrid && (
+          <defs>
+            <clipPath id={gridClipId}>
+              <rect width={gw} height={gh} />
+            </clipPath>
+          </defs>
+        )}
+        <g
+          transform={`translate(${t.x},${t.y}) scale(${t.k})`}
+          clipPath={clipToGrid ? `url(#${gridClipId})` : undefined}
+        >
           {/* Floor surface */}
           <rect width={gw} height={gh} className="fill-muted/30" rx={4} />
-          {plan.background_image && (
+          {/* Two background layers: the base map (a Site map snapshot),
+              then the floor's own picture or CAD drawing over it. */}
+          {mapImage && (
             <image
-              href={plan.background_image}
-              width={gw}
-              height={gh}
-              opacity={plan.background_opacity / 100}
+              href={mapImage}
+              data-layer="map"
+              x={(backgroundFrame?.x ?? 0) * CELL}
+              y={(backgroundFrame?.y ?? 0) * CELL}
+              width={backgroundFrame ? backgroundFrame.width * CELL : gw}
+              height={backgroundFrame ? backgroundFrame.height * CELL : gh}
+              opacity={(plan.map_opacity ?? 60) / 100}
               preserveAspectRatio="none"
+              filter={muteMap ? `url(#${muteId})` : undefined}
+              data-muted={muteMap || undefined}
             />
           )}
-          {underlay}
+          {plan.background_image && floorShown && (
+            <image
+              href={plan.background_image}
+              data-layer="floor"
+              x={(backgroundFrame?.x ?? 0) * CELL}
+              y={(backgroundFrame?.y ?? 0) * CELL}
+              width={backgroundFrame ? backgroundFrame.width * CELL : gw}
+              height={backgroundFrame ? backgroundFrame.height * CELL : gh}
+              opacity={plan.background_opacity / 100}
+              preserveAspectRatio="none"
+              filter={muteBackground ? `url(#${muteId})` : undefined}
+              data-muted={muteBackground || undefined}
+            />
+          )}
+          {floorShown && underlay}
           {showGrid && (
             <rect
               width={gw}
@@ -1074,172 +2435,235 @@ export function FloorCanvas({
 
           {/* Raised-floor areas - construction context under everything.
               Interactive (selectable) only in Structure mode. */}
-          {(raisedFloors ?? []).map((raw) => {
-            // While dragging/resizing, render the draft rect instead.
-            const a =
-              areaDraft && areaDraft.id === raw.id
-                ? { ...raw, ...areaDraft }
-                : raw
-            const labelText = `${a.label || "Raised floor"} · ${a.plenum_mm} mm`
+          {/* Touching raised floors of one depth and colour are one pad:
+              filled once, outlined only outside (raised-floor-shape.ts). */}
+          {raisedShown.regions.map((rg) => {
+            const color = rg.color || "#71717a"
+            const named = rg.rows.find((r) => r.label) ?? rg.rows[0]
+            const picked = rg.rows.some((r) => r.id === selectedAreaId)
+            const labelText = `${named.label || "Raised floor"} · ${rg.plenum_mm} mm`
+            const [ax, ay] = regionCaptionAnchor(rg.pieces)
             // ~5.6 px/char at 10px - hide the label when it would spill past
             // the area's edge (the rail always shows the full name).
-            const labelFits = a.width * CELL - 12 >= labelText.length * 5.6
+            // Readable: never under READABLE_FONT_PX on screen, and shown
+            // whatever it spills over.
+            const rfGrow = readable ? fontGrow(10, t.k) : 1
+            const labelFits =
+              readable ||
+              ((rg.bounds.maxX - ax) * CELL - 12 >= labelText.length * 5.6 &&
+                (rg.bounds.maxY - rg.bounds.minY) * CELL >= 20)
             return (
               <g
-                key={a.id}
-                onPointerDown={
-                  mode === "structure" && editable
-                    ? (e) => {
-                        if (e.button !== 0) return
-                        e.stopPropagation()
-                        onSelectArea?.(a.id)
-                        e.currentTarget.setPointerCapture(e.pointerId)
-                        const c = toCell(e)
-                        drag.current = {
-                          mode: "area-move",
-                          id: a.id,
-                          grabDx: c.x - a.x,
-                          grabDy: c.y - a.y,
-                        }
-                      }
-                    : mode === "structure"
-                      ? (e) => {
-                          e.stopPropagation()
-                          onSelectArea?.(a.id)
-                        }
-                      : undefined
+                key={rg.rows[0].id}
+                data-raised-region={rg.rows.map((r) => r.id).join(" ")}
+                opacity={
+                  rg.rows.every((r) => isLocked(r.id))
+                    ? LOCKED_OPACITY
+                    : undefined
                 }
-                style={{
-                  cursor:
-                    mode === "structure"
-                      ? editable
-                        ? "move"
-                        : "pointer"
-                      : undefined,
-                  pointerEvents: mode === "structure" ? "auto" : "none",
-                }}
+                pointerEvents="none"
               >
-                <rect
-                  x={a.x * CELL}
-                  y={a.y * CELL}
-                  width={a.width * CELL}
-                  height={a.height * CELL}
-                  fill={a.color || "#71717a"}
+                <path
+                  d={outlinePath(rg.pieces, CELL)}
+                  fill={color}
                   fillOpacity={0.1}
-                  stroke={a.color || "#71717a"}
-                  strokeOpacity={a.id === selectedAreaId ? 0.9 : 0.35}
-                  strokeWidth={a.id === selectedAreaId ? 2.5 : 1.5}
-                  strokeDasharray="7 4"
-                  rx={3}
+                  stroke="none"
                 />
-                {(a.label || a.id === selectedAreaId) && labelFits && (
-                  <text
-                    x={a.x * CELL + 6}
-                    y={a.y * CELL + 14}
-                    className="fill-muted-foreground"
-                    fontSize={10}
-                    pointerEvents="none"
-                  >
-                    {labelText}
-                  </text>
-                )}
-                {mode === "structure" &&
-                  editable &&
-                  a.id === selectedAreaId && (
-                    // Bottom-right resize grip, same drag pattern as tiles.
-                    <rect
-                      x={(a.x + a.width) * CELL - 7}
-                      y={(a.y + a.height) * CELL - 7}
-                      width={10}
-                      height={10}
-                      rx={2}
-                      fill={a.color || "#71717a"}
-                      style={{ cursor: "nwse-resize" }}
-                      onPointerDown={(e) => {
-                        if (e.button !== 0) return
-                        e.stopPropagation()
-                        e.currentTarget.setPointerCapture(e.pointerId)
-                        drag.current = {
-                          mode: "area-resize",
-                          id: a.id,
-                          origin: { x: a.x, y: a.y },
-                        }
-                      }}
-                    />
+                <path
+                  d={outlinePath(rg.outline, CELL, false)}
+                  fill="none"
+                  stroke={color}
+                  strokeOpacity={0.35}
+                  strokeWidth={1.5}
+                  strokeDasharray="7 4"
+                  strokeLinejoin="round"
+                />
+                {(named.label || picked) &&
+                  labelFits &&
+                  !planLabels.hiddenRaised.has(named.id) && (
+                    // Bottom-left: a room's name sits at its top-left, and a
+                    // raised floor usually covers the room exactly.
+                    <text
+                      data-raised-label={named.id}
+                      x={ax * CELL + 6 * rfGrow}
+                      y={ay * CELL - 6 * rfGrow}
+                      className="fill-muted-foreground"
+                      fontSize={10 * rfGrow}
+                      pointerEvents="none"
+                    >
+                      {labelText}
+                    </text>
                   )}
               </g>
             )
           })}
-
-          {/* Zones first (background), then normal tiles, then FOV cones. */}
-          {[
-            ...tiles.filter(tileIsZone),
-            ...tiles.filter((tl) => !tileIsZone(tl)),
-          ].map((tile) => (
-            // In Structure mode tiles are context, not targets - they pass
-            // pointer events through so an area underneath stays reachable
-            // (and movable) even when fully covered by racks.
-            <g
-              key={tile.id}
-              pointerEvents={mode === "structure" ? "none" : undefined}
-            >
-              <TileShape
-                tile={tile}
-                selected={
-                  tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
+          {raisedShown.rows.map((a) => {
+            const live =
+              mode === "structure" &&
+              !isLocked(a.id) &&
+              !drawing &&
+              !raisedPolygonTool
+            const picked = a.id === selectedAreaId
+            if (!live && !picked) return null
+            return (
+              <g
+                key={a.id}
+                data-raised={a.id}
+                onPointerDown={
+                  live
+                    ? (e) => {
+                        if (e.button !== 0) return
+                        e.stopPropagation()
+                        onSelectArea?.(a.id)
+                        const row = structRow(a.id)
+                        if (row?.part === "raised_floor")
+                          structG.rectDown(row, e)
+                      }
+                    : undefined
                 }
-                editable={editable}
-                labelFit={labelFit}
-                showZoneLabels={showZoneLabels}
-                live={liveState?.tiles[tile.id]}
-                colorBy={colorBy}
-                figures={figures?.get(tile.id)}
-                highlighted={!!highlightTileIds?.has(tile.id)}
-                dimmed={!!dimTileIds?.has(tile.id)}
-                onPointerDown={(e) => handleTileDown(tile, e)}
-                onResizeDown={(e) => handleResizeDown(tile, e)}
-                // In Cables mode a double-click finishes a tray draw - don't
-                // also open the tile's deep-view underneath it.
-                onDoubleClick={() => {
-                  if (mode !== "cable") onOpenTile?.(tile)
+                style={{
+                  cursor: live ? (editable ? "move" : "pointer") : undefined,
+                  pointerEvents: live ? "auto" : "none",
                 }}
-                onPointerEnter={(e) => reportHover(tile, e)}
-                onPointerLeave={() => onHoverTile?.(null, null)}
-              />
-            </g>
-          ))}
+              >
+                {/* The row's own outline: the press target, drawn only
+                    while selected - the region above is the picture. */}
+                <path
+                  d={outlinePath([raisedOutline(a)], CELL)}
+                  fill="transparent"
+                  stroke={picked ? a.color || "#71717a" : "none"}
+                  strokeOpacity={0.9}
+                  strokeWidth={2.5}
+                  strokeDasharray="7 4"
+                  strokeLinejoin="round"
+                />
+              </g>
+            )
+          })}
 
-          {showFov &&
-            tiles
-              .filter(
-                (tl) =>
-                  tileHasFov(tl) &&
-                  tl.fov_distance &&
-                  (tl.fov_ptz || tl.fov_deg)
-              )
-              .map((tl) => <FovCone key={`fov-${tl.id}`} tile={tl} />)}
+          {onion && <OnionLayer skin={onion} />}
+          {/* Zones first (background), then areas (rooms), then normal
+              tiles, then FOV cones. */}
+          {tiles.filter(tileIsZone).map(renderTile)}
+          <g data-layer="areas">
+            {areas.map((a) => (
+              <AreaShapeView
+                key={a.id}
+                area={a}
+                selected={a.id === selectedShapeId}
+                zoom={t.k}
+                minNamePx={readable ? READABLE_FONT_PX : undefined}
+                nameAt={planLabels.areas.get(a.id)}
+                interactive={shapesLive && !isLocked(a.id)}
+                multiSelected={!!areaSel?.has(a.id)}
+                onPointerDown={(e) => {
+                  if (
+                    editable &&
+                    onToggleArea &&
+                    e.button === 0 &&
+                    (e.ctrlKey || e.metaKey)
+                  ) {
+                    e.stopPropagation()
+                    onToggleArea(a.id)
+                    return
+                  }
+                  shapeG.shapeDown(a, e)
+                }}
+                onEdgeDoubleClick={
+                  editable && a.id === selectedShapeId
+                    ? (seg, e) => shapeG.addVertex(a.id, seg, e)
+                    : undefined
+                }
+              />
+            ))}
+          </g>
+          {/* On a free plan tiles may overlap: their z says which is on
+              top. Readable's grown symbols draw in the overlays. */}
+          {/* Camera coverage: the blind floor, under the tiles. */}
+          {showCoverage && (
+            <LiveCameraLayer
+              part="coverage"
+              tiles={tiles}
+              walls={shownWalls}
+              cellMm={plan.cell_mm}
+              racksBlock={fovRacksBlock}
+              regions={coverageFloor}
+              width={plan.grid_width}
+              height={plan.grid_height}
+              showSeen={!showFov}
+            />
+          )}
+          {solidTiles.real.map(renderTile)}
+          {/* From afar a placed device, rack or cabinet keeps a marker in
+              its colour where it would shrink to a dot - Readable grows
+              the whole symbol instead. */}
+          {!readable && !iconTiles && (
+            <TileMarkers
+              tiles={tiles}
+              k={t.k}
+              interactive={mode !== "structure"}
+              isLocked={isLocked}
+              onPointerDown={handleTileDown}
+              onPointerEnter={reportHover}
+              onPointerLeave={leaveHover}
+            />
+          )}
+
+          {showFov && (
+            <LiveCameraLayer
+              part="cones"
+              tiles={tiles}
+              walls={shownWalls}
+              cellMm={plan.cell_mm}
+              racksBlock={fovRacksBlock}
+            />
+          )}
 
           {/* Walls - the structural print, in every mode: solid spans broken
               by door gaps with threshold ticks. Interactive (select / move /
               place doors) only in Structure mode. */}
-          {walls.map((w) => (
-            <WallShape
-              key={w.id}
-              wall={
-                wallDraft?.id === w.id ? { ...w, points: wallDraft.points } : w
-              }
-              cellMM={plan.cell_mm}
-              selected={w.id === selectedWallId}
-              interactive={mode === "structure" && !drawing}
-              editable={editable && mode === "structure" && !drawing}
-              doorArmed={doorArmed}
-              onPointerDown={(e) => handleWallDown(w, e)}
-              onSegmentClick={(seg, e) => handleWallSegmentClick(w, seg, e)}
-            />
-          ))}
+          {walls.map((w) => {
+            const live = mode === "structure" && !drawing && !isLocked(w.id)
+            return (
+              <WallShape
+                key={w.id}
+                wall={shownRow(w)}
+                cellMM={plan.cell_mm}
+                selected={w.id === selectedWallId || !!structSel?.has(w.id)}
+                interactive={live}
+                doorArmed={doorArmed && editable}
+                selectedDoor={
+                  selectedDoor?.wallId === w.id ? selectedDoor.index : null
+                }
+                onBodyDown={(_seg, e) => handleWallDown(w, e)}
+                onSegmentDown={(seg, e) => {
+                  const row = structRow(w.id)
+                  if (!row || row.part !== "wall") return
+                  onSelectWall?.(w.id)
+                  structG.doorDrawDown(row, seg, e)
+                }}
+                onSegmentDoubleClick={(seg, e) => {
+                  if (!editable) return
+                  e.stopPropagation()
+                  structureActions?.splitAt?.(
+                    w.id,
+                    seg,
+                    tAlong(w.points, seg, e)
+                  )
+                }}
+                onDoorDown={(index, e) => {
+                  if (e.button !== 0) return
+                  e.stopPropagation()
+                  onSelectWall?.(w.id)
+                  structG.doorSlideDown(w.id, index, e)
+                }}
+              />
+            )
+          })}
 
           {/* Cable trays - drawn above tiles so the run reads on a builder's
-              print. Clickable only in cable mode so layout editing is undisturbed. */}
+              print. Clickable in cable mode so layout editing is undisturbed;
+              in View a click on one that carries cables lists them. */}
           {showTrays &&
             trays.map((tray) => {
               // In edit mode the SELECTED tray shows drag handles + "+" bend
@@ -1248,70 +2672,384 @@ export function FloorCanvas({
               return (
                 <TrayShape
                   key={tray.id}
-                  tray={
-                    trayDraft?.id === tray.id
-                      ? { ...tray, points: trayDraft.points }
-                      : tray
+                  tray={shownRow(tray)}
+                  zoom={t.k}
+                  readable={readable}
+                  hideName
+                  selected={
+                    trayPick
+                      ? trayPick.picked.includes(tray.id)
+                      : tray.id === selectedTrayId || !!structSel?.has(tray.id)
                   }
-                  selected={tray.id === selectedTrayId}
-                  interactive={mode === "cable" && !drawing}
-                  editable={
-                    editable && mode === "cable" && !drawing && trayEditMode
+                  interactive={
+                    trayPick
+                      ? !isLocked(tray.id)
+                      : trayChooses
+                        ? trayCableIds(tray).length > 0
+                        : mode === "cable" && !drawing && !isLocked(tray.id)
                   }
-                  editing={isEditing}
-                  dimmed={false}
+                  editable={false}
+                  editing={isEditing && editable}
+                  dimmed={isLocked(tray.id)}
                   onPointerDown={(e) => handleTrayDown(tray, e)}
-                  onDoubleClick={() => onSelectTray?.(tray.id)}
-                  onVertexDown={(index, e) => handleVertexDown(tray, index, e)}
-                  onInsertBend={(seg, e) => handleInsertBend(tray, seg, e)}
-                  onVertexContext={(index, ev) => {
-                    ev.preventDefault()
-                    ev.stopPropagation()
-                    const rect = svgRef.current?.getBoundingClientRect()
-                    if (!rect) return
-                    setCtxMenu({
-                      x: ev.clientX - rect.left,
-                      y: ev.clientY - rect.top,
-                      tile: null,
-                      vertex: { trayId: tray.id, index },
-                    })
+                  onDoubleClick={(e) => {
+                    const row = structRow(tray.id)
+                    if (!editable || !row || row.part !== "tray") return
+                    const w = toWorld(svgRef.current!, e.clientX, e.clientY)
+                    const n = nearestSegment(row.points, [
+                      w.x / CELL,
+                      w.y / CELL,
+                    ])
+                    if (n) structureActions?.splitAt?.(row.id, n.seg, n.t)
                   }}
+                  onVertexDown={() => {}}
+                  onInsertBend={(seg, e) => handleInsertBend(tray, seg, e)}
+                  onVertexContext={() => {}}
                 />
               )
             })}
 
-          {/* Cable A↔B links - routed THROUGH the cable's trays (falls back to
-              a straight line when the cable has no trays). The highlighted
-              cable renders LAST so it sits on top of any it shares a path
-              with; the rest dim so the traced run stands out. Clickable in
-              any mode when the links overlay is on - no Cables mode needed. */}
-          {/* Edit mode hides cables entirely so trays are free to grab. */}
-          {showCableLinks &&
-            !trayEditMode &&
-            [...cablePaths]
-              .sort(
-                (a, b) =>
-                  (highlightCableIds.includes(a.id) ? 1 : 0) -
-                  (highlightCableIds.includes(b.id) ? 1 : 0)
+          {/* Cable A↔B runs (cable-layer.tsx): in lanes along their trays,
+              orthogonal elbows between tiles, bundled where lanes would not
+              read. Clickable in any mode when the links overlay is on - no
+              Cables mode needed. Edit trays hides them so trays are free to
+              grab. */}
+          {showCableLinks && !trayEditMode && (
+            <CableLayer
+              cablePaths={cablePaths}
+              routes={cableRoutes}
+              k={t.k}
+              cellMm={plan.cell_mm}
+              colorBy={cableColorBy}
+              bundle={bundleCables}
+              showLabels={showCableLabels}
+              highlightIds={highlightCableIds}
+              interactive={!trayPick}
+              onSelect={selectCable}
+              onHover={hoverCable}
+              onChoose={choosePicked}
+              soloId={chooser ? chooserSolo : null}
+              toPlan={clientToCell}
+              previews={cablePreviews}
+              stubs={shownStubs}
+              tiles={tiles}
+              shapeOf={shapeOf}
+            />
+          )}
+
+          {/* A live view's room: the rest dimmed - over the plan, under
+              the overlays. */}
+          {maskOutline && (
+            <AreaMask
+              outline={maskOutline}
+              width={plan.grid_width}
+              height={plan.grid_height}
+            />
+          )}
+        </g>
+
+        {/* Screen-size overlays: grown symbols, icon tiles, the label
+            pass's names and the labels that open a link. Over the plan's
+            surround and a live view's dimming, never clipped to the grid -
+            the layout keeps them inside where it can. */}
+        <g
+          data-layer="overlays"
+          transform={`translate(${t.x},${t.y}) scale(${t.k})`}
+        >
+          {/* Readable: the grown symbols, the selection last. */}
+          <g data-layer="grown-tiles">{solidTiles.over.map(renderTile)}</g>
+
+          {/* Icons when zoomed out: over the trays and the cables that
+              end on them - their leaders, the icons (the selection last)
+              and the clusters. */}
+          <g data-layer="icon-tiles">
+            {/* Spread icons: a leader back to where each really is. */}
+            {tiles.map((tl) => {
+              if (!iconIds.has(tl.id) || iconLayout.clusterOf.has(tl.id))
+                return null
+              const o = iconLayout.offsets.get(tl.id)
+              if (!o || Math.hypot(o[0], o[1]) < 2) return null
+              const home: Pt = [tl.x + tl.width / 2, tl.y + tl.height / 2]
+              return (
+                <IconLeader
+                  key={`leader-${tl.id}-${Math.round(o[0])}-${Math.round(o[1])}`}
+                  from={drawnCentre(iconLayout, tl.id, home, pxPerCell)}
+                  to={home}
+                  k={t.k}
+                />
               )
-              .map((cp) => {
-                const route = cableRoutePoints(cp, trays, tiles)
-                if (route.length < 2) return null
-                const hi = highlightCableIds.includes(cp.id)
+            })}
+            {readableOrder(
+              tiles.filter((tl) => iconIds.has(tl.id)),
+              pxPerCell,
+              pinnedNames,
+              undefined,
+              shapeOf ?? undefined
+            ).map(renderTile)}
+            {/* Icons folded together: one tile each, the count on it. */}
+            {iconLayout.clusters.map((c) => {
+              const face = clusterFaces.get(c.id)
+              if (!face) return null
+              const props = {
+                id: c.id,
+                k: t.k,
+                face,
+                onActivate: () => fitCluster(c),
+                onPointerEnter: (e: React.PointerEvent) => {
+                  const rect = svgRef.current?.getBoundingClientRect()
+                  if (!rect || drag.current) return
+                  setClusterHint({
+                    id: c.id,
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                  })
+                },
+                onPointerLeave: () => setClusterHint(null),
+              }
+              // A row along its line; a room's summary on the room.
+              if (c.form === "row" && c.row?.bar)
                 return (
-                  <CableLink
-                    key={cp.id}
-                    route={route}
-                    color={cp.color}
-                    label={cp.label}
-                    type={cp.type}
-                    highlighted={hi}
-                    dimmed={highlightCableIds.length > 0 && !hi}
-                    interactive
-                    onSelect={() => onSelectCable?.(hi ? null : cp.id)}
+                  <RowSymbolTile
+                    key={c.id}
+                    {...props}
+                    at={c.anchor}
+                    row={c.row}
+                    thick={barThickness(c.row.depth, pxPerCell)}
                   />
                 )
-              })}
+              if (c.form === "hall")
+                return (
+                  <HallSymbolTile
+                    key={c.id}
+                    {...props}
+                    box={clusterBox(c, pxPerCell)}
+                  />
+                )
+              return (
+                <ClusterTile
+                  key={c.id}
+                  {...props}
+                  box={clusterBox(c, pxPerCell)}
+                />
+              )
+            })}
+          </g>
+
+          {/* Every text the label pass places: cable names along their
+              runs, trays' names, a focused cable's ends, Readable's tile
+              names - one pass, the cables first (plan-label-pass.ts). */}
+          <PlanLabelsLayer
+            labels={planLabels}
+            k={t.k}
+            trays={trays}
+            onRowHover={(row, e) => {
+              const rect = svgRef.current?.getBoundingClientRect()
+              if (!row || !e || !rect || drag.current) {
+                setClusterHint(null)
+                return
+              }
+              setClusterHint({
+                id: `row:${row.id}`,
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+                heading: row.text,
+                members: row.members,
+              })
+            }}
+            onRowPress={(row) => fitCluster({ members: [...row.members] })}
+          />
+
+          {/* Callouts: names that would not sit cleanly by their tiles,
+              in boxes off to the side with a leader each - hovered or
+              selected with their tile, a press opens the tile. */}
+          <PlanCalloutsLayer
+            callouts={planLabels.callouts}
+            k={t.k}
+            hot={calloutHot ?? hoveredTile}
+            selected={pinnedNames}
+            colorOf={(id) => {
+              const tile = tileById.get(id)
+              return tile ? tileFill(tile) : undefined
+            }}
+            onHover={(id, e) => {
+              if (drag.current) return
+              const plate = id
+                ? planLabels.callouts.find((c) => c.id === id)
+                : null
+              const rect = svgRef.current?.getBoundingClientRect()
+              if (plate?.members && e && rect) {
+                setClusterHint({
+                  id: plate.id,
+                  x: e.clientX - rect.left,
+                  y: e.clientY - rect.top,
+                  heading: plate.name,
+                  members: plate.members,
+                })
+                return
+              }
+              setClusterHint(null)
+              setCalloutHot(id)
+            }}
+            onPress={pressCallout}
+          />
+
+          {/* Labels - over the tiles, so "North side" reads over a row.
+              Clipped to the grid as the plan is, but for one that opens a
+              link (a back label): never covered or cut. */}
+          <g data-layer="labels">
+            {labels.map((l) =>
+              clipToGrid && !opensLabel(l) ? (
+                <g key={l.id} clipPath={`url(#${gridClipId})`}>
+                  {renderLabel(l)}
+                </g>
+              ) : (
+                renderLabel(l)
+              )
+            )}
+          </g>
+        </g>
+
+        {/* Editing on top: handles, previews, calibration marks. */}
+        <g
+          data-layer="edit-overlay"
+          transform={`translate(${t.x},${t.y}) scale(${t.k})`}
+          clipPath={clipToGrid ? `url(#${gridClipId})` : undefined}
+        >
+          {/* The selection's handles: a box (area, label, free tile) turns
+              and resizes; a polygon drags its points. */}
+          {editable &&
+            mode === "layout" &&
+            !shapeTool &&
+            selectedShape &&
+            !selectedShape.locked &&
+            (selectedShape.kind === "area" &&
+            selectedShape.shape === "polygon" ? (
+              <VertexHandles
+                area={selectedShape}
+                zoom={t.k}
+                gestures={shapeG}
+                onVertexMenu={(index, e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setShapeMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    id: selectedShape.id,
+                    vertex: index,
+                  })
+                }}
+              />
+            ) : (
+              <BoxHandles
+                box={
+                  selectedShape.kind === "label"
+                    ? labelBox(selectedShape, plan.cell_mm)
+                    : selectedShape
+                }
+                target={{ kind: "shape", id: selectedShape.id }}
+                zoom={t.k}
+                gestures={shapeG}
+                // A label's box follows its text: its corners scale it.
+                handles={
+                  selectedShape.kind === "label"
+                    ? ["nw", "ne", "se", "sw"]
+                    : undefined
+                }
+              />
+            ))}
+          {selectedTile && !multiSelectedIds?.size && (
+            <BoxHandles
+              box={tileBox(selectedTile)}
+              target={{ kind: "tile", id: selectedTile.id }}
+              zoom={t.k}
+              gestures={shapeG}
+              // A photo resizes from its corners, keeping its proportions.
+              handles={
+                selectedTile.display === "photo" && selectedTile.photo
+                  ? ["nw", "ne", "se", "sw"]
+                  : undefined
+              }
+            />
+          )}
+          <DrawPreview gestures={shapeG} width={gw} height={gh} zoom={t.k} />
+
+          {/* The selected wall's, tray's, raised floor's or door's handles. */}
+          {structLive &&
+            (() => {
+              const out: React.ReactNode[] = []
+              const run =
+                mode === "structure" && selectedWallId && !selectedDoor
+                  ? structRow(selectedWallId)
+                  : mode === "cable" && selectedTrayId && !trayPick
+                    ? structRow(selectedTrayId)
+                    : undefined
+              if (run && run.part !== "raised_floor" && !isLocked(run.id))
+                out.push(
+                  <RunHandles
+                    key="run"
+                    row={run}
+                    zoom={t.k}
+                    gestures={structG}
+                    hint={showHint}
+                    onVertexMenu={(index, ev) => {
+                      ev.preventDefault()
+                      ev.stopPropagation()
+                      setStructMenu({
+                        x: ev.clientX,
+                        y: ev.clientY,
+                        id: run.id,
+                        part: run.part,
+                        vertex: index,
+                      })
+                    }}
+                  />
+                )
+              const rf =
+                mode === "structure" && selectedAreaId
+                  ? structRow(selectedAreaId)
+                  : undefined
+              // A polygon is reshaped by drawing it again; it only moves.
+              if (
+                rf?.part === "raised_floor" &&
+                !isLocked(rf.id) &&
+                !isRaisedPolygon(rf)
+              )
+                out.push(
+                  <RectHandles
+                    key="rf"
+                    row={rf}
+                    zoom={t.k}
+                    gestures={structG}
+                    hint={showHint}
+                  />
+                )
+              const dw =
+                mode === "structure" && selectedDoor
+                  ? structRow(selectedDoor.wallId)
+                  : undefined
+              if (dw?.part === "wall" && selectedDoor && !isLocked(dw.id))
+                out.push(
+                  <DoorHandles
+                    key="door"
+                    wall={dw}
+                    index={selectedDoor.index}
+                    zoom={t.k}
+                    gestures={structG}
+                    hint={showHint}
+                    onFlip={() =>
+                      structureActions?.flipDoor?.(dw.id, selectedDoor.index)
+                    }
+                  />
+                )
+              return out
+            })()}
+          <StructureOverlay
+            preview={structG.preview}
+            walls={structureLists(structure).walls}
+            zoom={t.k}
+            width={gw}
+            height={gh}
+          />
 
           {/* In-progress tray preview (imperatively positioned) */}
           {drawing && (
@@ -1345,6 +3083,350 @@ export function FloorCanvas({
 
       {overlay}
 
+      {/* The floating toolbar, just above the selection. */}
+      {(() => {
+        if (!editable || shapeTool || drawing) return null
+        let b: ReturnType<typeof boxBounds> | null = null
+        if (mode !== "layout") {
+          if (!structureToolbar || structG.active()) return null
+          const id =
+            selectedDoor?.wallId ??
+            (mode === "structure"
+              ? (selectedWallId ?? selectedAreaId)
+              : selectedTrayId)
+          const r = id ? structRow(id) : undefined
+          if (!r) return null
+          b =
+            r.part === "raised_floor"
+              ? {
+                  minX: r.x,
+                  minY: r.y,
+                  maxX: r.x + r.width,
+                  maxY: r.y + r.height,
+                }
+              : pointsBoundsOf(r.points)
+        } else if (!selectionToolbar) return null
+        else if (areaSel && areaSel.size > 1) {
+          const picked = shapes.filter((s) => areaSel.has(s.id))
+          const all = picked.map((s) => shapeBounds(s, plan.cell_mm))
+          if (all.length)
+            b = {
+              minX: Math.min(...all.map((x) => x.minX)),
+              minY: Math.min(...all.map((x) => x.minY)),
+              maxX: Math.max(...all.map((x) => x.maxX)),
+              maxY: Math.max(...all.map((x) => x.maxY)),
+            }
+        } else if (selectedShape) b = shapeBounds(selectedShape, plan.cell_mm)
+        else if (selectedId && !multiSelectedIds?.size) {
+          const tl = tiles.find((x) => x.id === selectedId)
+          if (tl) b = boxBounds(tileBox(tl))
+        }
+        if (!b) return null
+        return (
+          <div
+            data-part="selection-toolbar"
+            className="pointer-events-auto absolute z-20 -translate-x-1/2 -translate-y-full"
+            style={{
+              left: ((b.minX + b.maxX) / 2) * CELL * t.k + t.x,
+              top: Math.max(40, b.minY * CELL * t.k + t.y - 10),
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {mode === "layout" ? selectionToolbar : structureToolbar}
+          </div>
+        )
+      })()}
+
+      {/* Hovering a cluster: its members. */}
+      {clusterHint &&
+        (() => {
+          const c = iconLayout.clusters.find((x) => x.id === clusterHint.id)
+          const face = c && clusterFaces.get(c.id)
+          const heading = clusterHint.heading ?? face?.name
+          const ids = clusterHint.members ?? c?.members
+          if (!heading || !ids) return null
+          return (
+            <ClusterHoverCard
+              at={clusterHint}
+              heading={heading}
+              members={clusterMembersOf(ids, (id) => {
+                const tl = tileById.get(id)
+                return tl ? tileMember(tl) : null
+              })}
+            />
+          )
+        })()}
+      {opensHint && !editable && (
+        <div
+          role="status"
+          data-part="opens-hint"
+          className="pointer-events-none absolute z-20 rounded-md border border-border bg-popover px-2 py-1 text-xs whitespace-nowrap shadow-md"
+          style={{ left: opensHint.x, top: opensHint.y }}
+        >
+          {opensHint.text}
+        </div>
+      )}
+
+      {/* What dragging the handle under the pointer does. */}
+      {hint && (
+        <Tooltip open>
+          <TooltipTrigger asChild>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute"
+              style={{ left: hint.x, top: hint.y }}
+            />
+          </TooltipTrigger>
+          <TooltipContent side="top" variant="default">
+            {hint.text}
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* A wall's, door's, tray's or raised floor's menu. */}
+      <PointerMenu
+        menu={structMenu}
+        onClose={() => setStructMenu(null)}
+        label="Structure"
+        keys={(m) => ({
+          Delete: () =>
+            m.door !== undefined
+              ? structureActions?.deleteDoor?.(m.id, m.door)
+              : structureActions?.deleteRow?.(m.id),
+        })}
+      >
+        {(m) => {
+          const a = structureActions
+          if (!a) return null
+          const item = (label: string, fn?: () => void, destructive = false) =>
+            fn ? (
+              <DropdownMenuItem
+                key={label}
+                variant={destructive ? "destructive" : undefined}
+                onSelect={fn}
+              >
+                {label}
+              </DropdownMenuItem>
+            ) : null
+          if (m.part === "raised_floor")
+            return item(
+              "Delete raised floor",
+              a.deleteRow && (() => a.deleteRow!(m.id)),
+              true
+            )
+          if (m.vertex !== undefined) {
+            const vertex = m.vertex
+            const row = structure.find((r) => r.id === m.id)
+            return (
+              <DropdownMenuItem
+                disabled={
+                  !row || row.part === "raised_floor" || row.points.length <= 2
+                }
+                onSelect={() => a.removePoint?.(m.id, vertex)}
+              >
+                Remove point
+              </DropdownMenuItem>
+            )
+          }
+          if (m.door !== undefined) {
+            const door = m.door
+            return (
+              <>
+                {item(
+                  "Flip swing",
+                  a.flipDoor && (() => a.flipDoor!(m.id, door))
+                )}
+                <DropdownMenuSeparator />
+                {item(
+                  "Delete door",
+                  a.deleteDoor && (() => a.deleteDoor!(m.id, door)),
+                  true
+                )}
+              </>
+            )
+          }
+          const seg = m.seg ?? 0
+          const at = m.t ?? 0
+          const row = structure.find((r) => r.id === m.id)
+          // The other run picked, when the two meet end to end.
+          const mate =
+            row && row.part !== "raised_floor" && structSel
+              ? structure.find(
+                  (r) =>
+                    r.id !== row.id &&
+                    structSel.has(r.id) &&
+                    r.part === row.part &&
+                    runsTouch(r as RunRow, row)
+                )
+              : undefined
+          return (
+            <>
+              {m.part === "tray" &&
+                trays.some(
+                  (tr) => tr.id === m.id && trayCableIds(tr).length > 0
+                ) && (
+                  <>
+                    {item("Show cables", () =>
+                      // After this menu has let the focus go.
+                      window.setTimeout(() =>
+                        showTrayCables(m.id, { x: m.x, y: m.y })
+                      )
+                    )}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+              {m.part === "wall" &&
+                item(
+                  "Add door here",
+                  a.addDoorAt && (() => a.addDoorAt!(m.id, seg, at))
+                )}
+              {item(
+                "Add bend here",
+                a.addBendAt && (() => a.addBendAt!(m.id, seg, at))
+              )}
+              {item(
+                "Split here",
+                a.splitAt && (() => a.splitAt!(m.id, seg, at))
+              )}
+              {mate &&
+                item(
+                  m.part === "wall" ? "Join walls" : "Join trays",
+                  a.join && (() => a.join!(mate.id, m.id))
+                )}
+              <DropdownMenuSeparator />
+              {item(
+                m.part === "wall" ? "Delete wall" : "Delete tray",
+                a.deleteRow && (() => a.deleteRow!(m.id)),
+                true
+              )}
+            </>
+          )
+        }}
+      </PointerMenu>
+
+      {/* View: a tray's menu. */}
+      <PointerMenu
+        menu={trayMenu}
+        onClose={() => setTrayMenu(null)}
+        label="Tray"
+      >
+        {(m) => {
+          const tray = trays.find((tr) => tr.id === m.id)
+          if (!tray) return null
+          const n = trayCableIds(tray).length
+          return (
+            <>
+              <DropdownMenuLabel className="truncate">
+                {tray.name || "Tray"}
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                disabled={n === 0}
+                onSelect={() =>
+                  window.setTimeout(() =>
+                    showTrayCables(m.id, { x: m.x, y: m.y })
+                  )
+                }
+              >
+                Show cables
+                <span className="num ml-auto text-xs text-muted-foreground">
+                  {n}
+                </span>
+              </DropdownMenuItem>
+            </>
+          )
+        }}
+      </PointerMenu>
+
+      {/* Which cable: a bundle's, a cluster's or a tray's. */}
+      <CableChooser
+        menu={chooser}
+        cablePaths={cablePaths}
+        colorBy={cableColorBy}
+        onClose={() => setChooser(null)}
+        onPreview={setChooserSolo}
+        onPick={(id) => {
+          setChooser(null)
+          setChooserSolo(null)
+          selectCable(id)
+        }}
+      />
+
+      {/* An area's or label's menu, and a polygon point's. */}
+      <PointerMenu
+        menu={shapeMenu}
+        onClose={() => setShapeMenu(null)}
+        label="Shape"
+        keys={(m) => ({ Delete: () => onDeleteShape?.(m.id) })}
+      >
+        {(m) => {
+          const s = shapes.find((x) => x.id === m.id)
+          if (!s) return null
+          if (m.vertex !== undefined && s.kind === "area")
+            return (
+              <DropdownMenuItem
+                disabled={s.points.length <= 3}
+                onSelect={() =>
+                  onChangeShape?.(
+                    s.id,
+                    polygonPatch(s.points.filter((_, i) => i !== m.vertex))
+                  )
+                }
+              >
+                Remove point
+              </DropdownMenuItem>
+            )
+          return (
+            <>
+              <DropdownMenuItem onSelect={() => onRestackShape?.(s.id, 1)}>
+                Bring forward
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onRestackShape?.(s.id, -1)}>
+                Send back
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => onChangeShape?.(s.id, { locked: !s.locked })}
+              >
+                {s.locked ? "Unlock" : "Lock"}
+              </DropdownMenuItem>
+              {s.kind === "area" && onSnapshotShape && (
+                <DropdownMenuItem onSelect={() => onSnapshotShape(s.id)}>
+                  {snapshotAreaLabel(s)}
+                </DropdownMenuItem>
+              )}
+              {s.kind === "area" && structureActions?.wallsAround && (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    const ids =
+                      areaSel && areaSel.size > 1 && areaSel.has(s.id)
+                        ? [...areaSel]
+                        : [s.id]
+                    structureActions.wallsAround!(ids)
+                  }}
+                >
+                  {areaSel && areaSel.size > 1 && areaSel.has(s.id)
+                    ? `Add walls around these (${areaSel.size})`
+                    : "Add walls around this"}
+                </DropdownMenuItem>
+              )}
+              {s.kind === "area" && structureActions?.raisedFromArea && (
+                <DropdownMenuItem
+                  onSelect={() => structureActions.raisedFromArea!(s.id)}
+                >
+                  Raised floor from this
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => onDeleteShape?.(s.id)}
+              >
+                Delete
+              </DropdownMenuItem>
+            </>
+          )
+        }}
+      </PointerMenu>
+
       {/* Right-click menu - a small, extensible action list.
           The trigger is a zero-size anchor parked at the pointer (the same trick
           the tile popover's anchor uses) and the menu itself is the shared
@@ -1376,16 +3458,39 @@ export function FloorCanvas({
             sideOffset={0}
             className="w-auto min-w-40"
           >
-            {ctxMenu.vertex && (
-              <DropdownMenuItem
-                onSelect={() => {
-                  removeVertex(ctxMenu.vertex!.trayId, ctxMenu.vertex!.index)
+            {!ctxMenu.tile &&
+              ctxMenu.at &&
+              emptyActions &&
+              (() => {
+                const at = ctxMenu.at
+                const run = (fn?: (p: Pt) => void) => () => {
                   setCtxMenu(null)
-                }}
-              >
-                Remove bend
-              </DropdownMenuItem>
-            )}
+                  fn?.(at)
+                }
+                const items = editable
+                  ? [
+                      ["Place device here…", emptyActions.placeAt],
+                      ["Draw room/area here", emptyActions.drawAreaAt],
+                      ["Detect outline here", emptyActions.detectAt],
+                      ["Add label here", emptyActions.addLabelAt],
+                      ["Paste", emptyActions.pasteAt],
+                    ]
+                  : [["Edit here", emptyActions.editHere]]
+                const shown = items.filter(
+                  (it): it is [string, (p: Pt) => void] => !!it[1]
+                )
+                if (!shown.length) return null
+                return (
+                  <>
+                    {shown.map(([label, fn]) => (
+                      <DropdownMenuItem key={label} onSelect={run(fn)}>
+                        {label}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                  </>
+                )
+              })()}
             {ctxMenu.tile && (
               <>
                 <DropdownMenuLabel className="truncate">
@@ -1405,19 +3510,53 @@ export function FloorCanvas({
                       Trace cables here
                     </DropdownMenuItem>
                   )}
-                {ctxMenu.tile.linked && onOpenTile && (
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      onOpenTile(ctxMenu.tile!)
-                      setCtxMenu(null)
-                    }}
-                  >
-                    Open{" "}
-                    {ctxMenu.tile.linked.kind === "floorplan"
-                      ? "plan"
-                      : ctxMenu.tile.linked.kind}
-                  </DropdownMenuItem>
-                )}
+                {onConnectTile &&
+                  ctxMenu.tile.linked &&
+                  !ctxMenu.tile.linked.hidden &&
+                  ["device", "rack", "cabinet"].includes(
+                    ctxMenu.tile.linked.kind
+                  ) && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        onConnectTile(ctxMenu.tile!)
+                        setCtxMenu(null)
+                      }}
+                    >
+                      Connect to…
+                    </DropdownMenuItem>
+                  )}
+                {ctxMenu.tile.linked &&
+                  !ctxMenu.tile.linked.hidden &&
+                  onOpenTile && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        onOpenTile(ctxMenu.tile!)
+                        setCtxMenu(null)
+                      }}
+                    >
+                      Open {LINK_KIND_NAME[ctxMenu.tile.linked.kind].one}
+                    </DropdownMenuItem>
+                  )}
+                {editable &&
+                  onChangeTile &&
+                  !isLocked(ctxMenu.tile.id) &&
+                  (() => {
+                    // A free plan's device tile to its measured width ×
+                    // depth - only when asked, never by itself.
+                    const rect = fitToSizeRect(ctxMenu.tile, plan)
+                    if (!rect) return null
+                    const id = ctxMenu.tile.id
+                    return (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          onChangeTile(id, rect)
+                          setCtxMenu(null)
+                        }}
+                      >
+                        Fit to size
+                      </DropdownMenuItem>
+                    )
+                  })()}
                 <DropdownMenuSeparator />
               </>
             )}
@@ -1443,881 +3582,5 @@ export function FloorCanvas({
         </DropdownMenu>
       )}
     </div>
-  )
-}
-
-/**
- * A wall polyline: solid spans broken by door gaps (dashed threshold + jamb
- * ticks across each gap) - the plan-view read of exactly what the 3D wall
- * builds, via the same shared span math. Interactive only in Structure mode:
- * click selects, drag translates the whole run, and with "Add door" armed a
- * click on a segment drops an opening there. Only the invisible fat
- * per-segment hit lines take pointer events, so the visuals can't steal or
- * double-fire a grab.
- */
-function WallShape({
-  wall,
-  cellMM,
-  selected,
-  interactive,
-  editable,
-  doorArmed,
-  onPointerDown,
-  onSegmentClick,
-}: {
-  wall: FloorPlanWall
-  cellMM: number
-  selected: boolean
-  interactive: boolean
-  editable: boolean
-  doorArmed: boolean
-  onPointerDown: (e: React.PointerEvent) => void
-  onSegmentClick: (seg: number, e: React.PointerEvent) => void
-}) {
-  if (wall.points.length < 2) return null
-  // Walls without a picked color follow the theme (the svg sets
-  // text-foreground), so structure reads on light and dark alike.
-  const color = wall.color || "currentColor"
-  // True thickness on this grid (0.1 m), floored so it always reads.
-  const px = Math.max(3.5, (WALL_THICKNESS_M * 1000 * CELL) / cellMM)
-  const openings = wall.openings
-  // Height 1 is a placeholder: plan view only keeps the floor-touching spans.
-  const solids = wallSegmentsWithOpenings(wall.points, openings, 1).filter(
-    (b) => b.y0 === 0
-  )
-  const doors = wallDoorSpans(wall.points, openings)
-  const outline = wall.points
-    .map(([x, y]) => `${x * CELL},${y * CELL}`)
-    .join(" ")
-  return (
-    <g
-      pointerEvents={interactive ? "auto" : "none"}
-      style={
-        interactive
-          ? {
-              cursor: doorArmed ? "crosshair" : editable ? "move" : "pointer",
-            }
-          : undefined
-      }
-    >
-      <title>
-        {wall.label || "Wall"}
-        {wall.height_mm ? ` · ${wall.height_mm} mm` : ""}
-        {doors.length
-          ? ` · ${doors.length} door${doors.length === 1 ? "" : "s"}`
-          : ""}
-      </title>
-      {selected && (
-        <polyline
-          points={outline}
-          fill="none"
-          stroke="#0ea5e9"
-          strokeOpacity={0.45}
-          strokeWidth={px + 5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          pointerEvents="none"
-        />
-      )}
-      {solids.map((b, i) => (
-        <line
-          key={`s${i}`}
-          x1={b.x0 * CELL}
-          y1={b.z0 * CELL}
-          x2={b.x1 * CELL}
-          y2={b.z1 * CELL}
-          stroke={color}
-          strokeOpacity={0.85}
-          strokeWidth={px}
-          strokeLinecap="square"
-          pointerEvents="none"
-        />
-      ))}
-      {doors.map((dv, i) => {
-        const x0 = dv.x0 * CELL
-        const y0 = dv.z0 * CELL
-        const x1 = dv.x1 * CELL
-        const y1 = dv.z1 * CELL
-        const len = Math.hypot(x1 - x0, y1 - y0) || 1
-        const nx = -(y1 - y0) / len
-        const ny = (x1 - x0) / len
-        const h = px / 2 + 2
-        return (
-          <g key={`d${i}`} pointerEvents="none">
-            {/* Threshold across the gap + a jamb tick at each end. */}
-            <line
-              x1={x0}
-              y1={y0}
-              x2={x1}
-              y2={y1}
-              stroke={color}
-              strokeOpacity={0.5}
-              strokeWidth={1.5}
-              strokeDasharray="3 3"
-            />
-            <line
-              x1={x0 - nx * h}
-              y1={y0 - ny * h}
-              x2={x0 + nx * h}
-              y2={y0 + ny * h}
-              stroke={color}
-              strokeOpacity={0.85}
-              strokeWidth={1.5}
-            />
-            <line
-              x1={x1 - nx * h}
-              y1={y1 - ny * h}
-              x2={x1 + nx * h}
-              y2={y1 + ny * h}
-              stroke={color}
-              strokeOpacity={0.85}
-              strokeWidth={1.5}
-            />
-          </g>
-        )
-      })}
-      {interactive &&
-        wall.points.slice(0, -1).map(([x, y], i) => {
-          const [ex, ey] = wall.points[i + 1]
-          return (
-            <line
-              key={`hit${i}`}
-              x1={x * CELL}
-              y1={y * CELL}
-              x2={ex * CELL}
-              y2={ey * CELL}
-              stroke="transparent"
-              strokeWidth={Math.max(px + 8, 12)}
-              strokeLinecap="round"
-              onPointerDown={(e) => {
-                if (doorArmed) onSegmentClick(i, e)
-                else onPointerDown(e)
-              }}
-            />
-          )
-        })}
-      {selected &&
-        editable &&
-        wall.points.map(([x, y], i) => (
-          <circle
-            key={`v${i}`}
-            cx={x * CELL}
-            cy={y * CELL}
-            r={3.5}
-            fill="var(--background)"
-            stroke={color}
-            strokeWidth={1.5}
-            pointerEvents="none"
-          />
-        ))}
-    </g>
-  )
-}
-
-/** A tray run: a subtle hollow channel (no bright core - cables show *inside*
- * it when traced). Selected shows vertex dots; editing shows drag handles plus
- * per-segment "+" bend-inserters. */
-function TrayShape({
-  tray,
-  selected,
-  interactive,
-  editable,
-  editing,
-  dimmed,
-  onPointerDown,
-  onDoubleClick,
-  onVertexDown,
-  onInsertBend,
-  onVertexContext,
-}: {
-  tray: FloorPlanTray
-  selected: boolean
-  interactive: boolean
-  editable: boolean
-  editing: boolean
-  dimmed: boolean
-  onPointerDown: (e: React.PointerEvent) => void
-  onDoubleClick: () => void
-  onVertexDown: (index: number, e: React.PointerEvent) => void
-  onInsertBend: (segIndex: number, e: React.PointerEvent) => void
-  onVertexContext: (index: number, e: React.MouseEvent) => void
-}) {
-  if (tray.points.length < 2) return null
-  const color = tray.color || TRAY_DEFAULT
-  const pts = tray.points.map(([x, y]) => `${x * CELL},${y * CELL}`).join(" ")
-  const mid = tray.points[Math.floor(tray.points.length / 2)]
-  const count = tray.cables.length
-  // Show handles when editing this tray, or (for a quick reshape) when it's
-  // the plain selection.
-  const showHandles = editable && (editing || selected)
-
-  return (
-    <g
-      opacity={dimmed ? 0.3 : 1}
-      onPointerDown={interactive ? onPointerDown : undefined}
-      onDoubleClick={interactive ? onDoubleClick : undefined}
-      style={{
-        cursor: interactive ? (editable ? "move" : "pointer") : "default",
-      }}
-    >
-      <title>
-        {tray.name}
-        {tray.kind ? ` · ${tray.kind}` : ""} · {count} cable
-        {count === 1 ? "" : "s"}
-        {interactive && !editing ? " · double-click to edit shape" : ""}
-      </title>
-      {/* Channel body - wide + faint. No centerline: the middle stays empty
-          so a traced cable reads as running inside the tray. */}
-      <polyline
-        points={pts}
-        fill="none"
-        stroke={color}
-        strokeOpacity={editing ? 0.6 : selected ? 0.5 : 0.3}
-        strokeWidth={editing || selected ? 11 : 10}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        pointerEvents={interactive ? "stroke" : "none"}
-      />
-      {/* Per-segment "+" handles to insert a bend (edit mode). */}
-      {editing &&
-        tray.points.slice(0, -1).map(([x, y], i) => {
-          const [nx, ny] = tray.points[i + 1]
-          const cx = ((x + nx) / 2) * CELL
-          const cy = ((y + ny) / 2) * CELL
-          return (
-            <g
-              key={`add-${i}`}
-              style={{ cursor: "copy" }}
-              onPointerDown={(e) => onInsertBend(i, e)}
-            >
-              <title>Insert a bend</title>
-              <circle
-                cx={cx}
-                cy={cy}
-                r={5}
-                fill="var(--background)"
-                stroke={color}
-                strokeWidth={1.25}
-                strokeDasharray="2 1.5"
-              />
-              <path
-                d={`M ${cx - 2.5} ${cy} H ${cx + 2.5} M ${cx} ${cy - 2.5} V ${cy + 2.5}`}
-                stroke={color}
-                strokeWidth={1.25}
-                strokeLinecap="round"
-                pointerEvents="none"
-              />
-            </g>
-          )
-        })}
-      {showHandles &&
-        tray.points.map(([x, y], i) => (
-          <circle
-            key={i}
-            cx={x * CELL}
-            cy={y * CELL}
-            r={editing ? 5 : 4.5}
-            fill={editing ? color : "var(--background)"}
-            fillOpacity={editing ? 0.9 : 1}
-            stroke={color}
-            strokeWidth={1.75}
-            style={{ cursor: "grab" }}
-            pointerEvents="auto"
-            onPointerDown={(e) => onVertexDown(i, e)}
-            onContextMenu={editing ? (e) => onVertexContext(i, e) : undefined}
-          />
-        ))}
-      <text
-        x={mid[0] * CELL}
-        y={mid[1] * CELL - 9}
-        textAnchor="middle"
-        fontSize={10}
-        fill={color}
-        fontWeight={600}
-        pointerEvents="none"
-      >
-        {tray.name}
-        {count > 0 ? ` · ${count}` : ""}
-      </text>
-    </g>
-  )
-}
-
-/** Centre point of a tile in CELL units (for the tray router). */
-function tileCentreCells(tiles: FloorPlanTile[], tileId: string): Pt | null {
-  const t = tiles.find((x) => x.id === tileId)
-  if (!t) return null
-  return [t.x + t.width / 2, t.y + t.height / 2]
-}
-
-/** One cable's physical run, already routed through its trays (cell units).
- * Rendered as a polyline through the tray channels with a dot at each end. */
-function CableLink({
-  route,
-  color: rawColor,
-  label,
-  type,
-  highlighted,
-  dimmed,
-  interactive,
-  onSelect,
-}: {
-  route: Pt[]
-  color: string
-  label: string
-  type: string
-  highlighted: boolean
-  dimmed: boolean
-  interactive: boolean
-  onSelect: () => void
-}) {
-  if (route.length < 2) return null
-  const color = rawColor || "#0ea5e9"
-  const pts = route.map(([x, y]) => `${x * CELL},${y * CELL}`).join(" ")
-  const a = route[0]
-  const b = route[route.length - 1]
-  const opacity = dimmed ? 0.2 : 1
-  return (
-    <g
-      opacity={opacity}
-      onPointerDown={
-        interactive
-          ? (e) => {
-              e.stopPropagation()
-              onSelect()
-            }
-          : undefined
-      }
-      style={{ cursor: interactive ? "pointer" : "default" }}
-    >
-      <title>
-        {label}
-        {type ? ` · ${type}` : ""} (A↔B)
-      </title>
-      {interactive && (
-        <polyline
-          points={pts}
-          fill="none"
-          stroke="transparent"
-          strokeWidth={14}
-        />
-      )}
-      {/* Highlighted run gets a soft halo so it reads clearly on top of the
-          cables it shares a path with. */}
-      {highlighted && (
-        <polyline
-          points={pts}
-          fill="none"
-          stroke={color}
-          strokeWidth={9}
-          strokeOpacity={0.25}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          pointerEvents="none"
-        />
-      )}
-      <polyline
-        points={pts}
-        fill="none"
-        stroke={color}
-        strokeWidth={highlighted ? 3.5 : 1.5}
-        strokeOpacity={highlighted ? 1 : 0.6}
-        strokeDasharray={highlighted ? "7 5" : undefined}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        pointerEvents="none"
-      >
-        {highlighted && (
-          <animate
-            attributeName="stroke-dashoffset"
-            from="24"
-            to="0"
-            dur="0.7s"
-            repeatCount="indefinite"
-          />
-        )}
-      </polyline>
-      {[a, b].map((p, i) => (
-        <circle
-          key={i}
-          cx={p[0] * CELL}
-          cy={p[1] * CELL}
-          r={highlighted ? 5.5 : 3.5}
-          fill={color}
-          stroke="var(--background)"
-          strokeWidth={1.5}
-          pointerEvents="none"
-        />
-      ))}
-    </g>
-  )
-}
-
-/** Native hover tooltip text: name · type · linked · (rack) used-U/%. */
-function tileTooltip(
-  tile: FloorPlanTile,
-  live?: FloorPlanLiveState["tiles"][string]
-): string {
-  const parts = [
-    tileName(tile) || tile.tile_type?.name || tile.role_type?.name || "Tile",
-  ]
-  const type = tile.tile_type?.name ?? tile.role_type?.name
-  if (type && type !== parts[0]) parts.push(type)
-  if (tile.status) parts.push(tile.status)
-  if (tile.linked) parts.push(`→ ${tile.linked.kind} ${tile.linked.name}`)
-  if (live?.kind === "rack" && live.u_height > 0) {
-    parts.push(
-      `${live.used_units}/${live.u_height}U (${Math.round(
-        (live.used_units / live.u_height) * 100
-      )}%)`
-    )
-  }
-  if (live?.kind === "cabinet") {
-    const n = (count: number, one: string) =>
-      `${count} ${one}${count === 1 ? "" : "s"}`
-    parts.push(
-      `${n(live.device_count, "device")}, ${n(live.rail_count, "rail")}`
-    )
-  }
-  if (live?.check) parts.push(`check: ${live.check}`)
-  return parts.join(" · ")
-}
-
-/** Label sizing: fixed 11px + ellipsis, or (labelFit) scaled to FILL the
- * tile - as big as the footprint allows, bounded by width per glyph and by
- * tile height (leaving room for the utilization bar). */
-function labelLayout(name: string, w: number, h: number, labelFit: boolean) {
-  if (!labelFit) {
-    const maxChars = Math.max(3, Math.floor(w / 7))
-    return {
-      fontSize: 11,
-      text: name.length > maxChars ? `${name.slice(0, maxChars - 1)}…` : name,
-    }
-  }
-  // ~0.62em average glyph width for the system sans.
-  const widthFit = (w - 8) / (Math.max(1, name.length) * 0.62)
-  return { fontSize: Math.max(5, Math.min(h * 0.55, widthFit)), text: name }
-}
-
-function TileShape({
-  tile,
-  selected,
-  editable,
-  labelFit,
-  showZoneLabels = true,
-  live,
-  colorBy = "type",
-  figures,
-  highlighted = false,
-  dimmed = false,
-  onPointerDown,
-  onResizeDown,
-  onDoubleClick,
-  onPointerEnter,
-  onPointerLeave,
-}: {
-  tile: FloorPlanTile
-  selected: boolean
-  editable: boolean
-  labelFit: boolean
-  showZoneLabels?: boolean
-  live?: FloorPlanLiveState["tiles"][string]
-  /** What the plan colours its racks by (`tile-paint.ts`). */
-  colorBy?: ColorBy
-  /** This rack tile's figures; without them a rack reads its live state. */
-  figures?: RackFigures
-  /** Pointed at from outside the canvas - a rack table row under the
-   * pointer. */
-  highlighted?: boolean
-  /** Left out by the rack table's filter. */
-  dimmed?: boolean
-  onPointerDown: (e: React.PointerEvent) => void
-  onResizeDown: (e: React.PointerEvent) => void
-  onDoubleClick: () => void
-  /** Hover in/out - fires only on tile boundary crossings, so the popover
-   * costs nothing per pointermove (see the note on handleMove). */
-  onPointerEnter?: (e: React.PointerEvent) => void
-  onPointerLeave?: (e: React.PointerEvent) => void
-}) {
-  const w = tile.width * CELL
-  const h = tile.height * CELL
-  const name = tileName(tile)
-  const zone = tileIsZone(tile)
-  const dashed = tile.status === "planned" || tile.status === "reserved"
-  const showLabel = !!name
-
-  // Live monitoring: down/degraded overrides the stroke so a rack going red
-  // is visible at any zoom - whatever the fill says about its capacity.
-  const rackLive = live?.kind === "rack" ? live : null
-  const paint = tilePaint({
-    tile,
-    colorBy,
-    rack: figures ?? rackFigures(null, rackLive),
-    check: live?.check ?? null,
-    selected,
-    dimmed,
-  })
-  const fill = paint.fill
-  const cabinetLive = live?.kind === "cabinet" ? live : null
-  // The figure along the foot: on a two-cell tile its text sits at the
-  // right; a capacity mode writes it on a one-cell tile too, centred. Where
-  // the tile is too small for both side by side, the name moves up to make
-  // room - never under Type, which keeps the plan's look.
-  const figure = paint.figure
-  const wide = w >= CELL * 2
-  const figureText = figure && (wide || figure.always) ? figure.text : null
-  const stacked = !!figureText && (!wide || (!!figure?.always && h < CELL * 2))
-  const label = showLabel
-    ? stacked
-      ? stackedLabel(labelLayout(name, w, h - 14, labelFit), h)
-      : labelLayout(name, w, h, labelFit)
-    : null
-  const labelY = stacked
-    ? (h - 14) / 2 + (label?.fontSize ?? 0) / 3
-    : h / 2 + (label?.fontSize ?? 0) / 3
-
-  if (zone) {
-    const zoneFill = tileFill(tile)
-    // Zones: soft area tint under everything, label pinned top-left, no
-    // selection handles beyond the outline.
-    return (
-      <g
-        transform={`translate(${tile.x * CELL},${tile.y * CELL})`}
-        onPointerDown={onPointerDown}
-        onDoubleClick={onDoubleClick}
-        style={{ cursor: editable ? "move" : "pointer" }}
-      >
-        <rect
-          width={w}
-          height={h}
-          rx={4}
-          fill={zoneFill}
-          fillOpacity={0.14}
-          stroke={zoneFill}
-          strokeOpacity={selected ? 0.9 : 0.35}
-          strokeWidth={selected ? 2 : 1}
-          strokeDasharray="4 4"
-        />
-        {showLabel && showZoneLabels && (
-          <text
-            x={6}
-            y={14}
-            fontSize={10}
-            fill={zoneFill}
-            pointerEvents="none"
-            fontWeight={500}
-          >
-            {name}
-          </text>
-        )}
-        {selected && editable && (
-          <rect
-            x={w - 7}
-            y={h - 7}
-            width={12}
-            height={12}
-            rx={2}
-            className="fill-background stroke-foreground/60"
-            strokeWidth={1.5}
-            style={{ cursor: "nwse-resize" }}
-            onPointerDown={onResizeDown}
-          />
-        )}
-      </g>
-    )
-  }
-
-  return (
-    <g
-      transform={`translate(${tile.x * CELL},${tile.y * CELL})`}
-      opacity={paint.opacity}
-      data-tile={tile.id}
-      data-highlighted={highlighted || undefined}
-      data-dimmed={dimmed || undefined}
-      onPointerDown={onPointerDown}
-      onDoubleClick={onDoubleClick}
-      onPointerEnter={onPointerEnter}
-      onPointerLeave={onPointerLeave}
-      style={{ cursor: editable ? "move" : "pointer" }}
-      // No <title>: that IS the native browser tooltip, which the rich popover
-      // replaces. The same summary stays as the accessible name, so screen
-      // readers lose nothing.
-      role="img"
-      aria-label={tileTooltip(tile, live)}
-    >
-      {/* The rect sits a gutter inside the cell footprint so adjacent tiles
-          get a visible seam instead of touching strokes. Linked tiles fill
-          heavier than unlinked planning tiles - same read as the 3D room's
-          solid cabinets vs ghost massing - which replaces the old link dot.
-          Coloured by a rack measure, the fill is the rack's level. */}
-      <rect
-        data-part="fill"
-        x={GUTTER}
-        y={GUTTER}
-        width={w - GUTTER * 2}
-        height={h - GUTTER * 2}
-        rx={5}
-        fill={fill}
-        fillOpacity={paint.fillOpacity}
-        stroke={paint.stroke}
-        strokeOpacity={paint.strokeOpacity}
-        strokeWidth={paint.strokeWidth}
-        strokeDasharray={dashed ? "6 3" : undefined}
-      />
-      {/* Pointed at from the rack table: a ring just outside the tile, in
-          the accent, so it reads over any fill. */}
-      {highlighted && (
-        <rect
-          data-part="highlight"
-          x={GUTTER - 2.5}
-          y={GUTTER - 2.5}
-          width={w - GUTTER * 2 + 5}
-          height={h - GUTTER * 2 + 5}
-          rx={7}
-          fill="none"
-          className="stroke-primary"
-          strokeWidth={2.5}
-          pointerEvents="none"
-        />
-      )}
-      {/* Facing is the tile's own property (build-in-advance): every
-          non-zone tile shows its front edge, linked or not - otherwise the
-          bulk facing arrows change unlinked tiles invisibly. */}
-      <g transform={`translate(${GUTTER},${GUTTER})`}>
-        <FacingEdge
-          w={w - GUTTER * 2}
-          h={h - GUTTER * 2}
-          orientation={tile.orientation}
-          color={fill}
-        />
-      </g>
-      {/* Icons live in the palette rail only - tiles stay clean: color,
-          label, and live state. */}
-      {label && (
-        <text
-          x={w / 2}
-          y={labelY}
-          textAnchor="middle"
-          fontSize={label.fontSize}
-          fill="currentColor"
-          opacity={paint.muted ? 0.6 : 1}
-          pointerEvents="none"
-        >
-          {label.text}
-        </text>
-      )}
-      {figure && (
-        // Rack tiles: a thin bar along the bottom edge - space, or the
-        // measure the plan is coloured by - and its figure.
-        <g pointerEvents="none" data-part="figure">
-          <rect
-            x={GUTTER + 3}
-            y={h - GUTTER - 7}
-            width={w - GUTTER * 2 - 6}
-            height={4}
-            rx={2}
-            className="fill-foreground/10"
-          />
-          {figure.ratio != null && (
-            <rect
-              x={GUTTER + 3}
-              y={h - GUTTER - 7}
-              width={Math.max(
-                2,
-                (w - GUTTER * 2 - 6) * Math.min(1, figure.ratio)
-              )}
-              height={4}
-              rx={2}
-              fill={figure.color}
-            />
-          )}
-          {figureText && (
-            <text
-              x={wide ? w - GUTTER - 4 : w / 2}
-              y={h - GUTTER - 10}
-              textAnchor={wide ? "end" : "middle"}
-              fontSize={8}
-              fill="currentColor"
-              opacity={figure.always ? 0.85 : 0.7}
-              className="num"
-            >
-              {figureText}
-            </text>
-          )}
-        </g>
-      )}
-      {cabinetLive && (
-        <CabinetCount
-          w={w}
-          h={h}
-          count={cabinetLive.device_count}
-          // The resize handle takes the corner on a selected tile.
-          inset={selected && editable ? 9 : 0}
-        />
-      )}
-      {selected && editable && (
-        <rect
-          x={w - 7}
-          y={h - 7}
-          width={12}
-          height={12}
-          rx={2}
-          className="fill-background stroke-foreground/60"
-          strokeWidth={1.5}
-          style={{ cursor: "nwse-resize" }}
-          onPointerDown={onResizeDown}
-        />
-      )}
-    </g>
-  )
-}
-
-/** A one-cell tile that also carries its figure: the name gets the room
- * above it, no larger than the cell can hold beside the figure. */
-function stackedLabel(
-  label: { fontSize: number; text: string },
-  h: number
-): { fontSize: number; text: string } {
-  return { ...label, fontSize: Math.min(label.fontSize, (h - 14) * 0.45) }
-}
-
-/** A cabinet tile's device count, small in its bottom-right corner: the
- * devices icon and the number, as a rack tile reads its use there. */
-function CabinetCount({
-  w,
-  h,
-  count,
-  inset = 0,
-}: {
-  w: number
-  h: number
-  count: number
-  /** Extra room at the right, px - kept clear of the resize handle. */
-  inset?: number
-}) {
-  const text = String(count)
-  const right = w - GUTTER - 4 - inset
-  const base = h - GUTTER - 4
-  // ~0.6em per digit at 8px, and a pixel between the glyph and the number.
-  const iconX = right - text.length * 4.8 - 1 - 8
-  return (
-    <g
-      data-part="device-count"
-      pointerEvents="none"
-      opacity={0.75}
-      aria-hidden="true"
-    >
-      <Server x={iconX} y={base - 7} width={8} height={8} strokeWidth={2.25} />
-      <text
-        x={right}
-        y={base}
-        textAnchor="end"
-        fontSize={8}
-        fill="currentColor"
-        className="num"
-      >
-        {text}
-      </text>
-    </g>
-  )
-}
-
-/**
- * A rack tile's facing indicator: a thin accent bar hugging the INSIDE of the
- * edge the cabinet's FRONT (door) points at - a door threshold on an
- * architectural plan. Inside the rect because adjacent tiles share edges: the
- * old outside placement bled straight into the neighbouring cell. It renders
- * before the utilization bar/label, so those draw over it where they meet.
- * Orientation matches the 3D room: 0 = up (north), 90 = right, 180 = down,
- * 270 = left.
- */
-function FacingEdge({
-  w,
-  h,
-  orientation,
-  color,
-}: {
-  w: number
-  h: number
-  orientation: number
-  color: string
-}) {
-  const t = 3 // bar thickness
-  const edge = 1.5 // sits just inside the tile's stroke
-  const inset = 7 // corner clearance (keeps the rounded corners clean)
-  const bar =
-    orientation === 90
-      ? { x: w - edge - t, y: inset, width: t, height: h - inset * 2 }
-      : orientation === 180
-        ? { x: inset, y: h - edge - t, width: w - inset * 2, height: t }
-        : orientation === 270
-          ? { x: edge, y: inset, width: t, height: h - inset * 2 }
-          : { x: inset, y: edge, width: w - inset * 2, height: t }
-  return (
-    <rect {...bar} rx={t / 2} fill={color} opacity={0.9} pointerEvents="none" />
-  )
-}
-
-/** Camera field-of-view wedge: direction (0° = up, clockwise), angle,
- * distance in cells. Rendered above tiles, ignores pointer events. */
-function FovCone({ tile }: { tile: FloorPlanTile }) {
-  const angle = Math.min(360, Math.max(10, tile.fov_deg ?? 90))
-  const dist = (tile.fov_distance ?? 3) * CELL
-  const dir = tile.fov_direction ?? 0
-  // The cone emits from the tile's anchor - a corner or the center
-  // (the dice-5 picker in the inspector).
-  const ax = tile.fov_anchor.includes("l")
-    ? 0
-    : tile.fov_anchor.includes("r")
-      ? 1
-      : 0.5
-  const ay = tile.fov_anchor.includes("t")
-    ? 0
-    : tile.fov_anchor.includes("b")
-      ? 1
-      : 0.5
-  const cx = (tile.x + tile.width * ax) * CELL
-  const cy = (tile.y + tile.height * ay) * CELL
-  const fill = tileFill(tile)
-
-  // PTZ: the camera can sweep the whole circle - draw a 360° ring instead
-  // of a fixed wedge.
-  if (tile.fov_ptz) {
-    return (
-      <circle
-        cx={cx}
-        cy={cy}
-        r={dist}
-        fill={fill}
-        fillOpacity={0.08}
-        stroke={fill}
-        strokeOpacity={0.45}
-        strokeWidth={1}
-        strokeDasharray="4 3"
-        pointerEvents="none"
-      />
-    )
-  }
-
-  const rad = (deg: number) => ((deg - 90) * Math.PI) / 180
-  const a0 = rad(dir - angle / 2)
-  const a1 = rad(dir + angle / 2)
-  const x0 = cx + dist * Math.cos(a0)
-  const y0 = cy + dist * Math.sin(a0)
-  const x1 = cx + dist * Math.cos(a1)
-  const y1 = cy + dist * Math.sin(a1)
-  const largeArc = angle > 180 ? 1 : 0
-
-  return (
-    <path
-      d={`M ${cx} ${cy} L ${x0} ${y0} A ${dist} ${dist} 0 ${largeArc} 1 ${x1} ${y1} Z`}
-      fill={fill}
-      fillOpacity={0.12}
-      stroke={fill}
-      strokeOpacity={0.45}
-      strokeWidth={1}
-      strokeDasharray="4 3"
-      pointerEvents="none"
-    />
   )
 }

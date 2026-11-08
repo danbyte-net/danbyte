@@ -12,8 +12,10 @@ from __future__ import annotations
 import ipaddress
 import re
 import uuid
+from contextvars import ContextVar
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from api.models import NumIdMixin, SecretBackedPSK
@@ -262,6 +264,9 @@ class ASPathListRule(models.Model):
 
 # ─── Routing policies (route maps) ──────────────────────────────────────────
 
+#: The origin validation states a route map matches (RFC 6811).
+RPKI_STATE_CHOICES = [("valid", "Valid"), ("invalid", "Invalid"), ("notfound", "Not found")]
+
 class RoutingPolicy(_Catalog):
     """A route map: ordered rules that match and set."""
 
@@ -299,6 +304,11 @@ class RoutingPolicyRule(models.Model):
     match_next_hop = models.ForeignKey(
         PrefixList, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="matched_as_next_hop_by",
+    )
+    #: ``match rpki <state>`` - the route's origin validation state, as the
+    #: router's RPKI caches report it. Blank = not matched.
+    match_rpki = models.CharField(
+        max_length=8, choices=RPKI_STATE_CHOICES, blank=True, default="", db_default=""
     )
     #: Vendor matches Danbyte does not model, e.g. {"tag": 100}.
     match_extra = models.JSONField(default=dict, blank=True)
@@ -369,6 +379,122 @@ class RoutingKeychain(SecretBackedPSK, _Catalog):
         ]
 
 
+# ─── RPKI ────────────────────────────────────────────────────────────────────
+
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)"
+    r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$"
+)
+
+
+def normalize_host(value: str, field: str = "address") -> str:
+    """An IP address as the box prints it, or a DNS name."""
+    value = (value or "").strip()
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        pass
+    if not _HOSTNAME_RE.match(value):
+        raise ValidationError({field: "An IP address or a hostname."})
+    return value.lower()
+
+
+class RPKICache(SecretBackedPSK, _Catalog):
+    """An RPKI-to-Router cache (RFC 8210) a BGP speaker validates route
+    origins against - FRR's ``rpki cache``. Over SSH the private key lives
+    in the secret store, never in the row, as a keychain's key does."""
+
+    psk_secret_prefix = "routing-rpki-caches"
+
+    TRANSPORT_CHOICES = [("tcp", "TCP"), ("ssh", "SSH")]
+
+    address = models.CharField(max_length=255, help_text="IP address or hostname.")
+    port = models.PositiveIntegerField(default=3323)
+    transport = models.CharField(max_length=3, choices=TRANSPORT_CHOICES, default="tcp")
+    #: Lower is preferred; FRR takes 1-255.
+    preference = models.PositiveSmallIntegerField(default=1)
+    ssh_username = models.CharField(max_length=64, blank=True, default="")
+    #: The server's public key the router expects. Public, so it sits in
+    #: the row.
+    ssh_host_key = models.TextField(blank=True, default="")
+
+    class Meta(_Catalog.Meta):
+        verbose_name = "RPKI cache"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_rpkicache_tenant_name"
+            )
+        ]
+
+    def clean(self):
+        self.address = normalize_host(self.address)
+        if not (1 <= (self.port or 0) <= 65535):
+            raise ValidationError({"port": "A port is 1-65535."})
+        if not (1 <= (self.preference or 0) <= 255):
+            raise ValidationError({"preference": "Preference is 1-255."})
+        self.ssh_username = (self.ssh_username or "").strip()
+        self.ssh_host_key = (self.ssh_host_key or "").strip()
+        if self.transport == "ssh":
+            if not self.ssh_username:
+                raise ValidationError({"ssh_username": "SSH needs a username."})
+        elif self.ssh_username or self.ssh_host_key:
+            raise ValidationError(
+                {"transport": "A username and host key are for SSH; this cache is TCP."}
+            )
+
+
+def validate_max_length(prefix: str, max_length) -> None:
+    net = ipaddress.ip_network(prefix)
+    top = 32 if net.version == 4 else 128
+    if max_length is None or not (net.prefixlen <= max_length <= top):
+        raise ValidationError(
+            {"max_length": f"Must be between {net.prefixlen} and {top}."}
+        )
+
+
+class ROA(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A Route Origin Authorization kept locally: this prefix, up to this
+    length, may be originated by this AS. Exported as SLURM (RFC 8416)
+    locally added assertions for a relying party (Routinator, rpki-client)
+    to serve - for space no RIR publishes ROAs for."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="routing_roas")
+    prefix = models.CharField(max_length=43, help_text="e.g. 10.16.0.0/12")
+    max_length = models.PositiveSmallIntegerField()
+    origin_asn = models.ForeignKey("api.ASN", on_delete=models.PROTECT, related_name="roas")
+    aggregate = models.ForeignKey(
+        "api.Aggregate", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="roas",
+    )
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "ROA"
+        ordering = ["prefix", "max_length"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "prefix", "max_length", "origin_asn"],
+                name="uniq_roa_tenant_prefix_maxlen_asn",
+            )
+        ]
+
+    def __str__(self) -> str:
+        asn = self.origin_asn.asn if self.origin_asn_id else "?"
+        return f"{self.prefix}-{self.max_length} AS{asn}"
+
+    def clean(self):
+        self.prefix = normalize_network(self.prefix)
+        validate_max_length(self.prefix, self.max_length)
+        if self.aggregate_id:
+            net = ipaddress.ip_network(self.prefix)
+            agg = ipaddress.ip_network(self.aggregate.prefix, strict=False)
+            if net.version != agg.version or not net.subnet_of(agg):
+                raise ValidationError(
+                    {"aggregate_id": f"{self.prefix} is not inside {self.aggregate.prefix}."}
+                )
+
+
 # ─── Static routes ───────────────────────────────────────────────────────────
 
 def _owner_check(name: str) -> models.CheckConstraint:
@@ -401,6 +527,21 @@ class _Owned:
     def owner_name(self) -> str:
         o = self.owner
         return o.name if o is not None else "?"
+
+
+#: Kernel table numbers a policy route may not name: unspec, default, main
+#: and local.
+RESERVED_TABLES = {0, 253, 254, 255}
+
+
+def validate_table(value, field: str = "table") -> None:
+    if value is None:
+        return
+    if value in RESERVED_TABLES or value > 4294967295:
+        raise ValidationError(
+            {field: "0, 253, 254 and 255 are the kernel's own tables "
+                    "(unspec, default, main, local)."}
+        )
 
 
 class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
@@ -452,6 +593,9 @@ class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, Tagga
         "api.VRF", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="leaked_static_routes",
     )
+    #: A kernel routing table number (``ip route … table 100``) for policy
+    #: routing. Null = main, or the VRF's own table.
+    table = models.PositiveIntegerField(null=True, blank=True)
     distance = models.PositiveSmallIntegerField(null=True, blank=True)
     metric = models.PositiveIntegerField(null=True, blank=True)
     tag = models.PositiveIntegerField(null=True, blank=True)
@@ -466,12 +610,13 @@ class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, Tagga
         ordering = ["device__name", "vrf__name", "prefix"]
         constraints = [
             models.UniqueConstraint(
-                fields=["device", "vrf", "prefix", "next_hop", "next_hop_interface"],
+                fields=["device", "vrf", "table", "prefix", "next_hop",
+                        "next_hop_interface"],
                 name="uniq_staticroute_path",
                 nulls_distinct=False, condition=_on_device(),
             ),
             models.UniqueConstraint(
-                fields=["virtual_machine", "vrf", "prefix", "next_hop",
+                fields=["virtual_machine", "vrf", "table", "prefix", "next_hop",
                         "next_hop_vm_interface"],
                 name="uniq_staticroute_vm_path",
                 nulls_distinct=False, condition=_on_vm(),
@@ -495,6 +640,12 @@ class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, Tagga
             self.next_hop = normalize_address(self.next_hop)
         if bool(self.device_id) == bool(self.virtual_machine_id):
             raise ValidationError({"device": "A route belongs to a device or to a VM."})
+        validate_table(self.table)
+        if self.table is not None and self.vrf_id:
+            raise ValidationError(
+                {"table": "A VRF is its own table: set the VRF or a table number, "
+                          "not both."}
+            )
         if self.next_hop_interface_id and self.virtual_machine_id:
             raise ValidationError({"next_hop_interface": "Pick one of the VM's interfaces."})
         if self.next_hop_vm_interface_id and self.device_id:
@@ -534,6 +685,138 @@ class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, Tagga
             raise ValidationError(
                 {"next_hop_vm_interface": "That interface is on another VM."}
             )
+
+
+# ─── Policy routing ──────────────────────────────────────────────────────────
+
+class PolicyRule(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """``ip rule add from 10.0.0.0/24 lookup 100 priority 1000`` on one device
+    or VM: which table a packet is looked up in, chosen by its source,
+    destination, ports or firewall mark."""
+
+    ACTION_CHOICES = [
+        ("lookup", "Lookup"),
+        ("blackhole", "Blackhole"),
+        ("unreachable", "Unreachable"),
+        ("prohibit", "Prohibit"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="policy_rules"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="policy_rules",
+    )
+    #: A routing VM (#217); exactly one of the two is set.
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="policy_rules",
+    )
+    family = models.CharField(max_length=4, choices=FAMILY_CHOICES, default="ipv4")
+    priority = models.PositiveIntegerField()
+    action = models.CharField(max_length=12, choices=ACTION_CHOICES, default="lookup")
+    #: The table a ``lookup`` rule sends the packet to - or ``vrf``, its table.
+    table = models.PositiveIntegerField(null=True, blank=True)
+    vrf = models.ForeignKey(
+        "api.VRF", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="policy_rules",
+    )
+    from_prefix = models.CharField(max_length=64, blank=True, default="")
+    to_prefix = models.CharField(max_length=64, blank=True, default="")
+    iif = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policy_rules_in",
+    )
+    oif = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policy_rules_out",
+    )
+    #: The same two, on a VM.
+    vm_iif = models.ForeignKey(
+        "api.VMInterface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policy_rules_in",
+    )
+    vm_oif = models.ForeignKey(
+        "api.VMInterface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policy_rules_out",
+    )
+    fwmark = models.PositiveIntegerField(null=True, blank=True)
+    #: ``not``: the rule matches what its selectors do not.
+    invert = models.BooleanField(default=False)
+    status = models.ForeignKey(
+        "api.Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="policy_rules",
+    )
+    description = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["device__name", "virtual_machine__name", "family", "priority"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device", "family", "priority"],
+                name="uniq_policyrule_device_priority", condition=_on_device(),
+            ),
+            models.UniqueConstraint(
+                fields=["virtual_machine", "family", "priority"],
+                name="uniq_policyrule_vm_priority", condition=_on_vm(),
+            ),
+            _owner_check("policyrule_device_xor_vm"),
+        ]
+
+    @property
+    def in_interface(self):
+        return self.iif if self.iif_id else (self.vm_iif if self.vm_iif_id else None)
+
+    @property
+    def out_interface(self):
+        return self.oif if self.oif_id else (self.vm_oif if self.vm_oif_id else None)
+
+    def __str__(self) -> str:
+        return f"{self.priority} {self.action}"
+
+    def clean(self):
+        if bool(self.device_id) == bool(self.virtual_machine_id):
+            raise ValidationError({"device": "A rule belongs to a device or to a VM."})
+        fams = set()
+        for f in ("from_prefix", "to_prefix"):
+            raw = (getattr(self, f) or "").strip()
+            if not raw:
+                setattr(self, f, "")
+                continue
+            try:
+                # A host address reads as its /32 or /128, as `ip rule` prints it.
+                net = ipaddress.ip_network(raw, strict=True)
+            except ValueError as exc:
+                raise ValidationError({f: f"Not a valid network: {exc}"}) from exc
+            setattr(self, f, str(net))
+            fams.add("ipv4" if net.version == 4 else "ipv6")
+        if len(fams) > 1:
+            raise ValidationError({"to_prefix": "From and to are different families."})
+        if fams:
+            self.family = fams.pop()
+        if self.family not in ("ipv4", "ipv6"):
+            raise ValidationError({"family": "IPv4 or IPv6."})
+        validate_table(self.table)
+        if self.action == "lookup":
+            if (self.table is None) == (not self.vrf_id):
+                raise ValidationError(
+                    {"table": "A lookup rule names a table number or a VRF - one of the two."}
+                )
+        elif self.table is not None or self.vrf_id:
+            raise ValidationError({"table": f"A {self.action} rule looks nothing up."})
+        if self.virtual_machine_id and (self.iif_id or self.oif_id):
+            raise ValidationError({"iif": "Pick one of the VM's interfaces."})
+        if self.device_id and (self.vm_iif_id or self.vm_oif_id):
+            raise ValidationError({"vm_iif": "Pick one of the device's interfaces."})
+        for f in ("iif", "oif"):
+            port = getattr(self, f) if getattr(self, f"{f}_id") else None
+            if port is not None and port.device_id != self.device_id:
+                raise ValidationError({f: "That interface is on another device."})
+            vport = getattr(self, f"vm_{f}") if getattr(self, f"vm_{f}_id") else None
+            if vport is not None and vport.vm_id != self.virtual_machine_id:
+                raise ValidationError({f"vm_{f}": "That interface is on another VM."})
 
 
 # ─── BGP ─────────────────────────────────────────────────────────────────────
@@ -667,6 +950,8 @@ class BGPInstance(_DeviceInstance):
     vpn_nexthop_export = models.CharField(
         max_length=45, blank=True, default="", db_default=""
     )
+    #: The RPKI caches this speaker validates route origins against.
+    rpki_caches = models.ManyToManyField(RPKICache, blank=True, related_name="bgp_instances")
 
     class Meta:
         ordering = ["device__name", "vrf__name"]
@@ -800,6 +1085,55 @@ class Redistribution(models.Model):
         return self.source
 
 
+def _max_prefix_threshold_field():
+    """``maximum-prefix N <threshold>`` - percent of N that logs a warning."""
+    return models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(100)],
+    )
+
+
+def _max_prefix_restart_field():
+    """``maximum-prefix N restart <minutes>`` - re-open a dropped session."""
+    return models.PositiveIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+
+
+#: The settings that qualify ``maximum_prefix``; they mean nothing without it.
+MAX_PREFIX_DETAIL = (
+    "maximum_prefix_threshold", "maximum_prefix_restart", "maximum_prefix_warning_only",
+)
+
+
+def check_max_prefix_exclusive(obj) -> None:
+    """``restart`` and ``warning-only`` are alternatives on one line."""
+    if obj.maximum_prefix_restart is not None and obj.maximum_prefix_warning_only:
+        raise ValidationError({
+            "maximum_prefix_restart": "Restart and warning only can't both be set.",
+        })
+
+
+def settle_max_prefix(knobs: dict, depth: dict) -> dict:
+    """Resolved ``maximum_prefix`` details made printable: none of them
+    without a maximum, and where inheritance brought both ``restart`` and
+    ``warning-only`` the more specific one wins (``depth`` is how far up the
+    chain each value came from; lower is more specific)."""
+    if not knobs.get("maximum_prefix"):
+        for k in MAX_PREFIX_DETAIL:
+            knobs[k] = None
+        return knobs
+    if knobs.get("maximum_prefix_restart") is not None and knobs.get(
+        "maximum_prefix_warning_only"
+    ):
+        if depth.get("maximum_prefix_restart", 99) < depth.get(
+            "maximum_prefix_warning_only", 99
+        ):
+            knobs["maximum_prefix_warning_only"] = False
+        else:
+            knobs["maximum_prefix_restart"] = None
+    return knobs
+
+
 class _PeerKnobs(models.Model):
     """The per-neighbour settings a session and a peer group share. Nullable
     on purpose: on a session, null means "as the group says"; on a group,
@@ -839,6 +1173,10 @@ class _PeerKnobs(models.Model):
     ttl_security_hops = models.PositiveSmallIntegerField(null=True, blank=True)
     #: ``neighbor X maximum-prefix N`` - the session drops past it.
     maximum_prefix = models.PositiveIntegerField(null=True, blank=True)
+    maximum_prefix_threshold = _max_prefix_threshold_field()
+    maximum_prefix_restart = _max_prefix_restart_field()
+    #: ``maximum-prefix N warning-only`` - log, keep the session up.
+    maximum_prefix_warning_only = models.BooleanField(null=True, blank=True)
     #: ``neighbor X allowas-in N`` - times the local AS may appear in a path.
     allowas_in = models.PositiveSmallIntegerField(null=True, blank=True)
     as_override = models.BooleanField(null=True, blank=True)
@@ -856,13 +1194,14 @@ class _PeerKnobs(models.Model):
 
     def clean(self):
         self.address_families = validate_address_families(self.address_families)
+        check_max_prefix_exclusive(self)
 
 
 PEER_KNOBS = (
     "address_families", "import_policy", "export_policy", "bfd", "bfd_profile",
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
     "keepalive", "hold_time", "keychain", "default_originate",
-    "default_originate_policy", "maximum_prefix",
+    "default_originate_policy", "maximum_prefix", *MAX_PREFIX_DETAIL,
     "allowas_in", "as_override", "remove_private_as", "soft_reconfiguration",
     "capability_extended_nexthop", "ttl_security_hops",
 )
@@ -1048,16 +1387,19 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
         """The settings the box ends up with: session → peer group → instance."""
         group = self.peer_group if self.peer_group_id else None
         out = {}
+        depth = {}
         for f in PEER_KNOBS:
             own = getattr(self, f)
             unset = own in (None, "", []) or own == {}
             gv = getattr(group, f) if group is not None else None
             val = gv if unset else own
+            depth[f] = 1 if unset else 0
             if f == "bfd" and val is None:
                 val = self.instance.bfd
             if f == "bfd_profile" and val is None:
                 val = self.instance.bfd_profile
             out[f] = val
+        settle_max_prefix(out, depth)
         extra = dict(group.extra or {}) if group is not None else {}
         extra.update(self.extra or {})
         out["extra"] = extra
@@ -1087,6 +1429,295 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
         else:
             out["kind"] = None
         return out
+
+
+#: Families in the order a config lists them.
+AFI_SAFI_ORDER = {v: i for i, (v, _) in enumerate(AFI_SAFI_CHOICES)}
+
+#: The per-address-family neighbour settings. Null (or blank) = inherit.
+AF_KNOBS = (
+    "import_policy", "export_policy", "prefix_list_in", "prefix_list_out",
+    "default_originate", "default_originate_policy", "next_hop_self",
+    "route_reflector_client", "soft_reconfiguration", "as_override",
+    "remove_private_as", "send_community", "allowas_in", "maximum_prefix",
+    *MAX_PREFIX_DETAIL,
+)
+#: The AF knobs a neighbour-level field also carries (every one but the
+#: prefix lists, which exist per family only).
+AF_NEIGHBOR_KNOBS = tuple(k for k in AF_KNOBS if not k.startswith("prefix_list_"))
+
+
+class BGPNeighborAF(models.Model):
+    """One address family of a neighbour - a session **or** a peer group -
+    with the policies and knobs that apply in that family only
+    (``neighbor X route-map OUT out`` under ``address-family ipv4 vpn``).
+
+    A null knob inherits. Per family and knob the most specific value wins:
+    the session's row for the family, the session's own neighbour-level
+    field, the peer group's row, the peer group's field.
+
+    The neighbour's ``address_families`` JSON list stays as the v0.16 view
+    of the rows: the families with ``activate`` on. Writing either side
+    keeps the other in step (``sync_af_rows`` / ``sync_af_mirror``).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        "BGPSession", on_delete=models.CASCADE, null=True, blank=True, related_name="afs",
+    )
+    peer_group = models.ForeignKey(
+        BGPPeerGroup, on_delete=models.CASCADE, null=True, blank=True, related_name="afs",
+    )
+    afi_safi = models.CharField(max_length=24, choices=AFI_SAFI_CHOICES)
+    #: Off prints ``no neighbor X activate`` - the default-ipv4 case.
+    activate = models.BooleanField(default=True)
+    import_policy = models.ForeignKey(
+        RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_imports",
+    )
+    export_policy = models.ForeignKey(
+        RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_exports",
+    )
+    prefix_list_in = models.ForeignKey(
+        PrefixList, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_in",
+    )
+    prefix_list_out = models.ForeignKey(
+        PrefixList, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_out",
+    )
+    default_originate = models.BooleanField(null=True, blank=True)
+    default_originate_policy = models.ForeignKey(
+        RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_default_originates",
+    )
+    next_hop_self = models.BooleanField(null=True, blank=True)
+    route_reflector_client = models.BooleanField(null=True, blank=True)
+    soft_reconfiguration = models.BooleanField(null=True, blank=True)
+    as_override = models.BooleanField(null=True, blank=True)
+    remove_private_as = models.BooleanField(null=True, blank=True)
+    send_community = models.CharField(
+        max_length=8, choices=SEND_COMMUNITY_CHOICES, blank=True, default=""
+    )
+    allowas_in = models.PositiveSmallIntegerField(null=True, blank=True)
+    maximum_prefix = models.PositiveIntegerField(null=True, blank=True)
+    maximum_prefix_threshold = _max_prefix_threshold_field()
+    maximum_prefix_restart = _max_prefix_restart_field()
+    maximum_prefix_warning_only = models.BooleanField(null=True, blank=True)
+    extra = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["afi_safi"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(session__isnull=False, peer_group__isnull=True)
+                    | models.Q(session__isnull=True, peer_group__isnull=False)
+                ),
+                name="bgpneighboraf_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=["session", "afi_safi"], condition=models.Q(session__isnull=False),
+                name="uniq_bgpneighboraf_session_afi",
+            ),
+            models.UniqueConstraint(
+                fields=["peer_group", "afi_safi"],
+                condition=models.Q(peer_group__isnull=False),
+                name="uniq_bgpneighboraf_group_afi",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.afi_safi
+
+    @property
+    def parent(self):
+        return self.session if self.session_id else self.peer_group
+
+    def has_knobs(self) -> bool:
+        return any(getattr(self, k) not in (None, "") for k in AF_KNOBS) or bool(self.extra)
+
+    def clean(self):
+        if bool(self.session_id) == bool(self.peer_group_id):
+            raise ValidationError(
+                {"session": "A family belongs to a session or to a peer group."}
+            )
+        check_max_prefix_exclusive(self)
+        on = [k for k in MAX_PREFIX_DETAIL
+              if getattr(self, k) is not None and getattr(self, k) is not False]
+        if on and not self.maximum_prefix_in_effect():
+            raise ValidationError({k: "No maximum prefix applies to this family." for k in on})
+
+    def maximum_prefix_in_effect(self):
+        """The maximum this family gets from what is saved now: the row,
+        its neighbour, then the peer group's row and the peer group."""
+        if self.maximum_prefix:
+            return self.maximum_prefix
+        if self.peer_group_id:
+            return self.peer_group.maximum_prefix
+        session = self.session
+        if session.maximum_prefix:
+            return session.maximum_prefix
+        group = session.peer_group if session.peer_group_id else None
+        if group is None:
+            return None
+        grow = group.afs.filter(afi_safi=self.afi_safi).first()
+        return (grow.maximum_prefix if grow is not None else None) or group.maximum_prefix
+
+
+def _af_rows(parent) -> list:
+    """The parent's family rows - prefetched when the caller did."""
+    return list(parent.afs.all()) if parent is not None and parent.pk else []
+
+
+#: Set while ``sync_af_rows`` writes rows, so each row's save does not
+#: rewrite the list half-way through.
+_SYNCING: ContextVar[bool] = ContextVar("bgp_af_syncing", default=False)
+
+
+def sync_af_mirror(parent) -> None:
+    """Write the active rows back into ``parent.address_families`` - the
+    list v0.16 clients and raw SQL read - keeping the order it had."""
+    if _SYNCING.get() or parent is None or parent.pk is None:
+        return
+    active = [r.afi_safi for r in parent.afs.all().order_by("afi_safi") if r.activate]
+    old = list(parent.address_families or [])
+    new = [a for a in old if a in active] + [a for a in active if a not in old]
+    if new != old:
+        type(parent).objects.filter(pk=parent.pk).update(address_families=new)
+        parent.address_families = new
+
+
+def sync_af_rows(parent) -> None:
+    """Bring the rows in line with ``parent.address_families`` after a write
+    of the list: a listed family gets a row (all knobs null) and is
+    activated; a dropped one is deleted when it carries nothing, else kept
+    with ``activate`` off - a client that only knows the list never wipes a
+    per-family policy."""
+    wanted = list(parent.address_families or [])
+    rows = {r.afi_safi: r for r in parent.afs.all()}
+    if sorted(wanted) == sorted(a for a, r in rows.items() if r.activate):
+        return
+    token = _SYNCING.set(True)
+    try:
+        _apply_af_list(parent, wanted, rows)
+    finally:
+        _SYNCING.reset(token)
+
+
+def _apply_af_list(parent, wanted, rows) -> None:
+    owner = {"session": parent} if isinstance(parent, BGPSession) else {"peer_group": parent}
+    for afi in wanted:
+        r = rows.get(afi)
+        if r is None:
+            BGPNeighborAF.objects.create(afi_safi=afi, activate=True, **owner)
+        elif not r.activate:
+            r.activate = True
+            r.save(update_fields=["activate"])
+    for afi, r in rows.items():
+        if afi in wanted or not r.activate:
+            continue
+        if r.has_knobs():
+            r.activate = False
+            r.save(update_fields=["activate"])
+        else:
+            r.delete()
+
+
+def _family_sets(session):
+    """``(own_rows, group_rows)`` keyed by family, from the rows or - for a
+    neighbour nothing has synced yet - the legacy list."""
+    group = session.peer_group if session.peer_group_id else None
+
+    def rows_of(parent):
+        if parent is None:
+            return {}
+        rows = {r.afi_safi: r for r in _af_rows(parent)}
+        if not rows:
+            rows = {a: None for a in (parent.address_families or [])}
+        return rows
+
+    return rows_of(session), rows_of(group), group
+
+
+def group_af_effective(row) -> dict:
+    """A peer group's family row with its knobs resolved against the
+    group's own fields - what a session that only names the group gets."""
+    group = row.peer_group
+    knobs = {}
+    depth = {}
+    for k in AF_KNOBS:
+        v = getattr(row, k)
+        depth[k] = 0
+        if v in (None, "") and k in AF_NEIGHBOR_KNOBS:
+            v = getattr(group, k)
+            depth[k] = 1
+        knobs[k] = None if v == "" else v
+    settle_max_prefix(knobs, depth)
+    return {"afi_safi": row.afi_safi, "activate": row.activate, **knobs,
+            "extra": dict(row.extra or {})}
+
+
+def group_effective_afs(group) -> list[dict]:
+    """Every family of a peer group, resolved against the group's fields -
+    from its rows, or from the legacy list for a group nothing has synced."""
+    rows = _af_rows(group)
+    if rows:
+        return [group_af_effective(r) for r in
+                sorted(rows, key=lambda r: AFI_SAFI_ORDER.get(r.afi_safi, 99))]
+    out = []
+    for afi in sorted(dict.fromkeys(group.address_families or []),
+                      key=lambda a: AFI_SAFI_ORDER.get(a, 99)):
+        knobs = {}
+        for k in AF_KNOBS:
+            v = getattr(group, k) if k in AF_NEIGHBOR_KNOBS else None
+            knobs[k] = None if v == "" else v
+        settle_max_prefix(knobs, {})
+        out.append({"afi_safi": afi, "activate": True, **knobs, "extra": {}})
+    return out
+
+
+def effective_afs(session) -> list[dict]:
+    """Every family the session speaks, each knob resolved: the session's
+    row, the session's field, the group's row, the group's field. The
+    family set is the session's own when it names any, else the group's -
+    as the list always worked. Values are model rows (policies, lists)."""
+    own, grp, group = _family_sets(session)
+    # A session whose rows are all switched off names no family of its own
+    # (the empty list did the same), so the group's set applies.
+    use_own = any(r is None or r.activate for r in own.values())
+    names = own if use_own else grp
+    out = []
+    for afi in sorted(names, key=lambda a: AFI_SAFI_ORDER.get(a, 99)):
+        srow = own.get(afi) if use_own else None
+        grow = grp.get(afi)
+        row_for_activate = srow if use_own else grow
+        activate = row_for_activate.activate if row_for_activate is not None else True
+        knobs = {}
+        depth = {}
+        for k in AF_KNOBS:
+            val = None
+            for level, (src, field_level) in enumerate(
+                ((srow, False), (session, True), (grow, False), (group, True))
+            ):
+                if src is None:
+                    continue
+                if field_level and k not in AF_NEIGHBOR_KNOBS:
+                    continue
+                v = getattr(src, k)
+                if v not in (None, ""):
+                    val = v
+                    depth[k] = level
+                    break
+            knobs[k] = val
+        settle_max_prefix(knobs, depth)
+        extra = {}
+        for src in (grow, srow):
+            if src is not None and src.extra:
+                extra.update(src.extra)
+        out.append({"afi_safi": afi, "activate": activate, **knobs, "extra": extra})
+    return out
 
 
 # ─── OSPF ────────────────────────────────────────────────────────────────────
@@ -1571,6 +2202,13 @@ class VTEPMembership(models.Model):
         related_name="vtep_memberships",
     )
     rd = models.CharField(max_length=32, blank=True, default="", help_text="Per-device RD override")
+    #: The leaf's ``vxlan<N>`` netdev for this VNI, when it is modelled as an
+    #: interface row (MTU, bridge membership). The VNI itself stays on the
+    #: L2VPN.
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="vtep_memberships",
+    )
     ingress_replication = models.BooleanField(default=True)
     mcast_group = models.CharField(max_length=64, blank=True, default="")
     extra = models.JSONField(default=dict, blank=True)
@@ -1587,6 +2225,9 @@ class VTEPMembership(models.Model):
     def clean(self):
         if self.l2vpn_id and self.l2vpn.type not in self.l2vpn.VXLAN_TYPES:
             raise ValidationError({"l2vpn": "A VTEP carries VXLAN overlays only."})
+        if (self.interface_id and self.vtep_id
+                and self.interface.device_id != self.vtep.device_id):
+            raise ValidationError({"interface": "That interface is on another device."})
         if self.mcast_group:
             self.mcast_group = normalize_address(self.mcast_group, "mcast_group")
 
@@ -1638,10 +2279,12 @@ class EthernetSegment(_Catalog):
     #: Type-3: ``evpn mh es-id N`` and ``evpn mh es-sys-mac``.
     es_id = models.PositiveIntegerField(null=True, blank=True)
     sys_mac = models.CharField(max_length=17, blank=True, default="")
-    #: ``evpn mh es-df-pref``: who forwards BUM traffic for the segment.
+    #: ``evpn mh es-df-pref``: who forwards BUM traffic for the segment. The
+    #: default for every member; a member may set its own.
     df_preference = models.PositiveIntegerField(null=True, blank=True)
     interfaces = models.ManyToManyField(
-        "api.Interface", blank=True, related_name="ethernet_segments"
+        "api.Interface", blank=True, related_name="ethernet_segments",
+        through="EthernetSegmentMember",
     )
 
     class Meta(_Catalog.Meta):
@@ -1669,6 +2312,45 @@ class EthernetSegment(_Catalog):
             )
         if self.es_id is not None and not 1 <= self.es_id <= 16777215:
             raise ValidationError({"es_id": "1 to 16777215."})
+
+
+class EthernetSegmentMember(models.Model):
+    """One port in a segment, with its own DF preference - leaf A and leaf B
+    of one server usually want different ``es-df-pref`` values.
+
+    This is the through model over the table the plain many-to-many created
+    (``routing_ethernetsegment_interfaces``), adopted by migration 0016
+    without copying a row. It keeps that table's integer ``id`` rather than
+    the UUID key domain models use: changing the key would rebuild the table
+    on every upgrade, and nothing outside the routing API names a membership
+    by its id.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    segment = models.ForeignKey(
+        EthernetSegment, on_delete=models.CASCADE, related_name="members",
+        db_column="ethernetsegment_id",
+    )
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.CASCADE,
+        related_name="ethernet_segment_memberships",
+    )
+    #: This port's ``es-df-pref``; null = the segment's.
+    df_preference = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = "routing_ethernetsegment_interfaces"
+        ordering = ["segment__name", "interface__device__name", "interface__name"]
+        unique_together = [("segment", "interface")]
+
+    def __str__(self) -> str:
+        return f"{self.segment.name}: {self.interface}"
+
+    @property
+    def df_preference_effective(self):
+        return self.df_preference if self.df_preference is not None else (
+            self.segment.df_preference
+        )
 
 
 # ─── MPLS / LDP ──────────────────────────────────────────────────────────────

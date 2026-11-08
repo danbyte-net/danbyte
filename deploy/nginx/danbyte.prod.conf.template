@@ -8,6 +8,7 @@
 #
 # Topology (vs the dev template):
 #     https://@@SERVER_NAME@@/          → built SSR frontend  (:3000, vite preview)
+#     https://@@SERVER_NAME@@/assets/   → its hashed build files, from disk
 #     https://@@SERVER_NAME@@/api/      → gunicorn WSGI        (:8000, danbyte-web)
 #     https://@@SERVER_NAME@@/admin/    → gunicorn WSGI        (:8000)
 #     https://@@SERVER_NAME@@/static/   → STATIC_ROOT on disk  (collectstatic)
@@ -18,6 +19,16 @@
 map $http_upgrade $danbyte_conn_upgrade {
     default upgrade;
     ''      close;
+}
+
+# The build names every file under /assets/ by its content hash, so a name
+# never changes content: browsers keep them a year and never revalidate
+# (#485). Empty elsewhere, and nginx adds no header for an empty value, so
+# this is set once at the server level and every location keeps the
+# security headers (a location's own add_header would drop them).
+map $uri $danbyte_asset_cache {
+    ~^/assets/  "public, max-age=31536000, immutable";
+    default     "";
 }
 
 # Plain HTTP → redirect to HTTPS.
@@ -59,7 +70,7 @@ server {
     # declare their own add_header (the maintenance page) intentionally opt out.
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
     add_header Referrer-Policy "same-origin" always;
     add_header Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=()" always;
     add_header Cross-Origin-Opener-Policy "same-origin" always;
@@ -75,11 +86,53 @@ server {
     # img-src additionally allows tile.openstreetmap.org - the Site map's
     # default raster tiles. If you configure a custom tile server in
     # Settings → Deployment → Map tiles, add its origin here too.
+    # frame-ancestors 'self' (and X-Frame-Options SAMEORIGIN): the topology
+    # report draws each saved view in a hidden same-origin frame of the map.
     # report-uri feeds /api/csp-report/ so any real-browser violation is logged
     # (danbyte.csp) rather than silently breaking - watch it before tightening.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
+    # Only /assets/ gets a value (the map above); not `always`, so a 404
+    # there is never cached.
+    add_header Cache-Control $danbyte_asset_cache;
+    # Django sends its own copy of the headers above for installs without
+    # nginx (#490); drop it so each goes out once, with the value here. A
+    # location with its own proxy_hide_header must repeat these lines.
+    proxy_hide_header Strict-Transport-Security;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header Referrer-Policy;
+    proxy_hide_header Cross-Origin-Opener-Policy;
 
     client_max_body_size 512m;
+
+    # ── The frontend's hashed build files, straight from disk (#485). The
+    #    build writes a .gz beside each (scripts/precompress.mjs), sent as it
+    #    is. Compression here covers only files on disk: dynamic responses
+    #    (/api/, the HTML) keep their current handling, see the upgrading docs.
+    #    A file that is not there (mid-upgrade, or nginx cannot read the
+    #    folder) still comes from the frontend server.
+    location /assets/ {
+        root @@FRONTEND_ROOT@@;
+        try_files $uri @danbyte_frontend_assets;
+        access_log off;
+        gzip_static on;
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types text/css application/javascript text/javascript application/json image/svg+xml application/wasm;
+    }
+    location @danbyte_frontend_assets {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # The server-level immutable header stands in for vite's no-cache.
+        proxy_hide_header Cache-Control;
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Referrer-Policy;
+        proxy_hide_header Cross-Origin-Opener-Policy;
+    }
 
     # ── Django static (admin + DRF browsable API), served straight from disk
     #    after `make collectstatic`. gunicorn does NOT serve static with DEBUG off.
@@ -87,6 +140,10 @@ server {
         alias @@STATIC_ROOT@@/;
         access_log off;
         expires 7d;
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types text/css application/javascript text/javascript application/json image/svg+xml;
     }
 
     # ── Uploaded media, through Django. Documents, image attachments and

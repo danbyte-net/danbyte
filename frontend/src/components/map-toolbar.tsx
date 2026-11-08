@@ -24,6 +24,15 @@ import { cn } from "@/lib/utils"
 const BAR =
   "h-7 text-xs [&_svg:not([class*='size-']):not([class*='h-'])]:size-3 [&_svg:not([class*='size-'])]:size-3"
 
+/** A Maps page's top bar. One h-14 row from `md` up; below it (a phone in
+ *  portrait) the bar grows and wraps, so every control stays on screen. */
+export const MAP_HEADER =
+  "flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2 md:h-14 md:flex-nowrap md:py-0 lg:px-6"
+
+/** The control group at the right of a Maps top bar; wraps below `md`. */
+export const MAP_HEADER_CONTROLS =
+  "ml-auto flex flex-wrap items-center gap-2 md:flex-nowrap"
+
 type ButtonProps = React.ComponentProps<typeof Button>
 
 /**

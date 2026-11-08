@@ -1,4 +1,4 @@
-import { baselineAt, fit, measureText } from "./measure"
+import { baselineAt, fit, measureText, wrapText } from "./measure"
 import type { Measure, Weight } from "./measure"
 import { BAND, CARD, ELBOW_RADIUS, LABEL, PILL } from "./theme"
 import type {
@@ -165,6 +165,89 @@ export function along(
   return { ...pts[pts.length - 1], angle: 0 }
 }
 
+// ── Arrowheads ───────────────────────────────────────────────────────────
+
+/** An arrowhead's length and half-width for a line of width `w`, px. */
+export const ARROW = { LEN: 7, HALF: 3.5, PER_WIDTH: 1.5 } as const
+
+const arrowSize = (w: number) => ({
+  len: ARROW.LEN + ARROW.PER_WIDTH * w,
+  half: ARROW.HALF + (ARROW.PER_WIDTH * w) / 2,
+})
+
+/** The ends that carry an arrowhead: the target for `end`, both for
+ * `both`. */
+function arrowEnds(link: Pick<DiagramLink, "arrow">): ("a" | "b")[] {
+  if (link.arrow === "end") return ["b"]
+  if (link.arrow === "both") return ["a", "b"]
+  return []
+}
+
+/** The last point before `poly`'s end (or its start) that is not on it. */
+function behind(poly: Pt[], fromStart: boolean): Pt | null {
+  const pts = fromStart ? poly : [...poly].reverse()
+  const tip = pts[0]
+  for (let i = 1; i < pts.length; i++)
+    if (dist(tip, pts[i]) > 0.01) return pts[i]
+  return null
+}
+
+/** A link's arrowheads (#163): solid triangles, three corners each, the tip
+ * first and on the end point. Polygons, not SVG markers - the PDF
+ * sanitizer allows no `<marker>`. */
+export function arrowHeads(
+  link: Pick<
+    DiagramLink,
+    "kind" | "source" | "target" | "points" | "width" | "arrow"
+  >
+): Pt[][] {
+  const ends = arrowEnds(link)
+  if (!ends.length) return []
+  const poly = routePolyline(link)
+  const { len, half } = arrowSize(Math.max(0.25, link.width || 1))
+  const out: Pt[][] = []
+  for (const end of ends) {
+    const tip = end === "b" ? poly[poly.length - 1] : poly[0]
+    const from = behind(poly, end === "a")
+    if (!from) continue
+    const d = dist(tip, from)
+    const ux = (tip.x - from.x) / d
+    const uy = (tip.y - from.y) / d
+    const base = { x: tip.x - ux * len, y: tip.y - uy * len }
+    out.push([
+      { x: tip.x, y: tip.y },
+      { x: base.x - uy * half, y: base.y + ux * half },
+      { x: base.x + uy * half, y: base.y - ux * half },
+    ])
+  }
+  return out
+}
+
+/** The link with each arrowed end pulled back to its arrowhead's base, so
+ * the drawn line stops where the head starts and never pokes past its
+ * tip. A link without arrows comes back as it is. */
+export function trimForArrows<T extends DiagramLink>(link: T): T {
+  const ends = arrowEnds(link)
+  if (!ends.length) return link
+  const poly = routePolyline(link)
+  const { len } = arrowSize(Math.max(0.25, link.width || 1))
+  const pull = (tip: Pt, from: Pt | null): Pt => {
+    if (!from) return tip
+    const d = dist(tip, from)
+    const t = Math.min(len * 0.8, d / 2) / d
+    return { x: tip.x + (from.x - tip.x) * t, y: tip.y + (from.y - tip.y) * t }
+  }
+  const out = { ...link }
+  if (ends.includes("b"))
+    out.target = {
+      ...link.target,
+      ...pull(poly[poly.length - 1], behind(poly, false)),
+    }
+  if (ends.includes("a"))
+    out.source = { ...link.source, ...pull(poly[0], behind(poly, true)) }
+  return out
+}
+
 // ── Labels ───────────────────────────────────────────────────────────────
 
 export interface LabelLine {
@@ -196,6 +279,9 @@ export interface LabelBlock {
    * their line: the box is the gap the line breaks for, in the page's
    * colour, with no edge. */
   chip: boolean
+  /** An end label on a curve (`PortPlace.path`): the text follows it
+   * glyph by glyph over a gap along it, instead of the turned box. */
+  path?: Pt[]
 }
 
 /** An end label's height: the 9px text and a hairline. The line breaks
@@ -203,11 +289,15 @@ export interface LabelBlock {
 export const PORT_H = LABEL.END_SIZE + 1
 
 /** Where an end label sits: the centre of its text, on its line, and its
- * turn in degrees (`uprightAngle`). */
+ * turn in degrees (`uprightAngle`). On a curve, `path` is the stretch of
+ * line it takes, in the order it reads: the text follows it glyph by glyph
+ * (`glyphsAlong`) over a gap as wide as the line bends; `rotate` is then
+ * its chord's turn, for writers that turn a label as a whole (draw.io). */
 export interface PortPlace {
   x: number
   y: number
   rotate: number
+  path?: Pt[]
 }
 
 /** A direction in degrees turned to read upright: [-100, 80). A run within
@@ -301,7 +391,78 @@ export function inlineBlock(
     ox: place.x,
     oy: place.y,
     chip: false,
+    ...(place.path ? { path: place.path } : {}),
   }
+}
+
+/** Glyphs of an end label laid along its curve. */
+export interface GlyphRun {
+  /** Each glyph's origin (its baseline's left end) and turn, degrees -
+   * SVG text's per-glyph `x`, `y` and `rotate`. */
+  chars: string[]
+  x: number[]
+  y: number[]
+  rotate: number[]
+}
+
+/**
+ * An end label's text laid along `path` (its stretch of curve, in the
+ * order it reads), centred on it as a straight label is on its run: each
+ * glyph at its place along the curve and turned with it, on the baseline
+ * a straight label has. Widths come from `measure`, so the glyphs sit
+ * where the text was measured - the canvas, the SVG and the PDF draw the
+ * same run.
+ */
+export function glyphsAlong(
+  path: readonly Pt[],
+  text: string,
+  measure: Measure = measureText
+): GlyphRun {
+  const size = LABEL.END_SIZE
+  const cum = [0]
+  for (let i = 1; i < path.length; i++)
+    cum.push(cum[i - 1] + dist(path[i - 1], path[i]))
+  const len = cum[cum.length - 1]
+  /** The point `s` px along the path, and its direction there. */
+  const walk = (s: number) => {
+    let i = 1
+    while (i < path.length - 1 && cum[i] < s) i++
+    const [p, q] = [path[i - 1], path[i]]
+    const seg = cum[i] - cum[i - 1] || 1
+    const k = (s - cum[i - 1]) / seg
+    return {
+      x: p.x + (q.x - p.x) * k,
+      y: p.y + (q.y - p.y) * k,
+      r: Math.atan2(q.y - p.y, q.x - p.x),
+    }
+  }
+  const chars = Array.from(text)
+  const w = endTextWidth(text, measure)
+  // How far the baseline sits below the line, as on a straight label.
+  const down = baselineAt(-PORT_H / 2, size, PORT_H)
+  const out: GlyphRun = { chars, x: [], y: [], rotate: [] }
+  let start = (len - w) / 2
+  let prefix = ""
+  for (const ch of chars) {
+    prefix += ch
+    const end = (len - w) / 2 + endTextWidth(prefix, measure)
+    const adv = end - start
+    // Turned as the curve runs under the glyph's middle, set back from
+    // there to its origin.
+    const m = walk(start + adv / 2)
+    const [c, s] = [Math.cos(m.r), Math.sin(m.r)]
+    out.x.push(m.x - (c * adv) / 2 - s * down)
+    out.y.push(m.y - (s * adv) / 2 + c * down)
+    out.rotate.push((m.r * 180) / Math.PI)
+    start = end
+  }
+  return out
+}
+
+/** SVG path data through a label's curve (the gap it breaks its line
+ * for, stroked as wide as the label is tall). */
+export function pathThrough(path: readonly Pt[]): string {
+  return path.map((p, i) => `${i ? "L" : "M"} ${at(p)}`).join(" ")
 }
 
 /** Where a link's labels go. */
@@ -457,7 +618,10 @@ export interface PlacedText {
 
 export interface CardText {
   pill?: Rect & { text: string }
+  /** The name's first row… */
   title: PlacedText
+  /** …and every row of it: one unless the name wraps. */
+  titleRows: PlacedText[]
   lines: PlacedText[]
   /** A photo's card lines after its name (`place.tail`): start-anchored,
    * muted, at card-line size. */
@@ -483,11 +647,15 @@ export function cardText(
 ): CardText {
   const pillText = node.pill?.text
   const place = node.place
-  if (place)
+  if (place) {
+    const titleRows = place.titleRows?.length
+      ? place.titleRows.map((r) => ({ text: r.text, x: r.x, y: r.y }))
+      : [{ text: node.title, x: place.title.x, y: place.title.y }]
     return {
       pill:
         place.pill && pillText ? { ...place.pill, text: pillText } : undefined,
-      title: { text: node.title, x: place.title.x, y: place.title.y },
+      title: titleRows[0],
+      titleRows,
       lines: node.lines.flatMap((text, i) =>
         place.lines[i]
           ? [{ text, x: place.lines[i].x, y: place.lines[i].y }]
@@ -503,6 +671,7 @@ export function cardText(
           }
         : {}),
     }
+  }
 
   const photo = node.kind === "photo" ? node.photo : undefined
   const cx = node.x + node.w / 2
@@ -544,22 +713,30 @@ export function cardText(
     top = node.y + CARD.PAD_Y + (stacked ? PILL.H + PILL.ROW_GAP : 0)
   }
 
-  const title = {
-    text: fit(
-      node.title,
-      Math.max(0, node.w - 2 * inset),
-      CARD.TITLE_SIZE,
-      CARD.TITLE_WEIGHT,
-      measure
-    ),
+  // The name whole, wrapped when the node is tall enough for its rows (a
+  // photo drawn as its card, grown for its caption's rows); else on one
+  // row, cut to fit.
+  const room = Math.max(0, node.w - 2 * inset)
+  const wrapped = photo
+    ? []
+    : wrapText(node.title, room, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT, measure)
+  const tall =
+    wrapped.length > 1 &&
+    top + wrapped.length * CARD.TITLE_LH <= node.y + node.h - CARD.PAD_Y + 0.5
+  const names = tall
+    ? wrapped
+    : [fit(node.title, room, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT, measure)]
+  const titleRows = names.map((text, i) => ({
+    text,
     x: cx,
-    y: baselineAt(top, CARD.TITLE_SIZE, CARD.TITLE_LH),
-  }
-  const linesTop = top + CARD.TITLE_LH + CARD.LINES_GAP
-  const room = photo
+    y: baselineAt(top + i * CARD.TITLE_LH, CARD.TITLE_SIZE, CARD.TITLE_LH),
+  }))
+  const title = titleRows[0]
+  const linesTop = top + names.length * CARD.TITLE_LH + CARD.LINES_GAP
+  const fitsLines = photo
     ? node.lines.length
     : Math.floor((node.y + node.h - CARD.PAD_Y - linesTop + 0.5) / CARD.LINE_LH)
-  const lines = node.lines.slice(0, Math.max(0, room)).map((line, i) => ({
+  const lines = node.lines.slice(0, Math.max(0, fitsLines)).map((line, i) => ({
     text: fit(
       line,
       Math.max(0, node.w - 2 * CARD.PAD_X),
@@ -570,7 +747,7 @@ export function cardText(
     x: cx,
     y: baselineAt(linesTop + i * CARD.LINE_LH, CARD.LINE_SIZE, CARD.LINE_LH),
   }))
-  return { pill, title, lines }
+  return { pill, title, titleRows, lines }
 }
 
 // ── Notes ────────────────────────────────────────────────────────────────

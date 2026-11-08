@@ -6,6 +6,7 @@ import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   BGPAddressFamily,
   BGPInstance,
@@ -42,6 +43,7 @@ import {
 import { RoutingDeleteDialog } from "./catalog-page"
 import { EIGRPSection, ISISSection, OSPFSection } from "./device-igp-section"
 import { LDPSection } from "./device-ldp-section"
+import { PolicyRulesSection } from "./device-policy-rules-section"
 import { VTEPSection } from "./device-vtep-section"
 import { StaticRouteForm } from "./object-forms"
 import { ownerDetailKey, ownerName, ownerNoun, ownerParam } from "./owner"
@@ -167,6 +169,7 @@ export function RoutingPanel({ owner }: { owner: RoutingOwner }) {
           canDelete={canDelete}
         />
       </Section>
+      <PolicyRulesSection owner={owner} />
 
       <Dialog
         open={adding || !!editing}
@@ -239,9 +242,7 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
   const instances = useQuery({
     queryKey: ["bgp-instances", owner.kind, owner.id],
     queryFn: () =>
-      api<Paginated<BGPInstance>>(
-        `/api/routing/bgp-instances/?${ownerParam(owner)}`
-      ),
+      apiAll<BGPInstance>(`/api/routing/bgp-instances/?${ownerParam(owner)}`),
   })
   const sessions = useQuery({
     queryKey: ["bgp-sessions", owner.kind, owner.id],
@@ -327,6 +328,11 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
               {inst.router_id && (
                 <span className="font-mono text-xs text-muted-foreground">
                   router-id {inst.router_id}
+                </span>
+              )}
+              {inst.rpki_caches.length > 0 && (
+                <span className="font-mono text-xs text-muted-foreground">
+                  rpki {inst.rpki_caches.map((c) => c.name).join(", ")}
                 </span>
               )}
               {inst.address_families.length > 0 && (

@@ -6,6 +6,7 @@ import { Download, Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Certificate,
   CertificateAssignment,
@@ -444,7 +445,7 @@ function WatchedBySection({ certificateId }: { certificateId: string }) {
   const q = useQuery({
     queryKey: ["certificate-watchers", certificateId],
     queryFn: () =>
-      api<Paginated<WatchedEndpoint>>(
+      apiAll<WatchedEndpoint>(
         `/api/monitoring/watched-endpoints/?certificate=${certificateId}`
       ),
   })
@@ -507,7 +508,10 @@ function PemSection({ cert }: { cert: Certificate }) {
           <Download className="h-3 w-3" /> Download
         </button>
       </div>
-      <pre className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+      <pre
+        tabIndex={0}
+        className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+      >
         {cert.pem}
       </pre>
     </section>

@@ -19,6 +19,7 @@ An IP prefix (CIDR), scoped to a `(tenant, VRF)` pair.
 | `vlan` | FK → `VLAN` | NULL | Optional |
 | `site` | FK → `Site` | NULL | Optional |
 | `description` | text | `""` | |
+| `auto_gateway` | bool | `true` | The site's gateway policy may create a gateway in this prefix when it is created. Off: nothing is created. Turning it off later keeps an existing gateway (see [Gateway autospawn](../features/gateway-autospawn.md)) |
 | `allocate_from_ranges` | bool | `false` | Only the IP ranges inside the prefix are allocatable: next available, free rows, pools and utilisation come from them; a new address outside every range is refused (see [IPAM objects](../features/ipam-objects.md#ip-ranges)) |
 | `custom_fields` | JSONB | `{}` | User-defined attributes |
 | `tags` | M2M Tag | empty | Via `TaggedItem` |
@@ -85,7 +86,7 @@ they never block a change - the tree re-nests them.
 
 | Hook | Trigger | Action |
 |---|---|---|
-| `prefix_create` view | POST | Save → if `gateway` is empty and site has a `gateway_policy`, autospawn an `IPAddress(role=gateway)` |
+| `prefix_create` view | POST | Save → if `gateway` is empty, the site has a `gateway_policy`, `auto_gateway` is on and the status is not `container`, autospawn an `IPAddress(role=gateway)` |
 | `prefix_edit` view | POST | Save → tags updated; gateway/site/vlan can be changed |
 | `prefix_detail` view | GET | Render IPs / Children / Map tabs |
 
@@ -100,6 +101,28 @@ stack-walking sorted prefixes per `(vrf, family)` bucket. This means:
 
 The cost is that "find all children" is O(n) within a VRF - fine for IPAMs at
 the scale Danbyte targets.
+
+Containment in SQL tests the stored text cast to `inet` (`cidr::inet <<= x`,
+`>>`, `>>=`), and the GiST index `prefix_cidr_inet_gist` is on exactly that
+expression (`USING gist ((cidr::inet) inet_ops)`), so the aggregate list's
+coverage, `contained_in`, the space map and search read the index instead
+of every prefix in the tenant. A new containment query must use the same
+bare `cidr::inet` cast - `network(cidr::inet)` or `cidr::cidr` does not
+match the index.
+
+Because the index casts every row, a `cidr` that is not an address can't
+be stored. CIDR validation has refused those since #47, but very old
+installs can still hold such rows. On upgrade to 0.19, migration
+`api.0265_drop_unparseable_prefixes` runs before the index is built. It
+deletes every prefix Postgres can't read as `inet` and logs each one
+(id, value, tenant) to the upgrade log as a `danbyte.migrations` warning.
+
+## API filters
+
+`GET /api/prefixes/` narrows by `search`, `vlan`, `vrf`, `site`,
+`location` and `contained_in`, and by tag: `?tag=<slug>` and
+`?tag_id=<id>`, each repeatable, every tag named required. See
+[Filtering by tag](../reference/api.md#filtering-by-tag).
 
 ## Related
 

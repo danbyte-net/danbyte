@@ -19,6 +19,7 @@ import {
   photoLod,
   photoShown,
   wantsPhotos,
+  withCaptionRows,
   withFaces,
 } from "./photo-anchors"
 import type { FacedData, PhotoLink } from "./photo-anchors"
@@ -568,13 +569,35 @@ describe("caption card lines", () => {
     expect(cap.full).toBe("leaf-01 · 10.100.200.250")
   })
 
-  it("names only the name when that is all it cut", () => {
+  it("wraps a name wider than the photo, never cuts it", () => {
     const long = "x".repeat(100)
     const cap = photoShown(f, [], long, [], mono).caption
-    expect(cap.text.endsWith("…")).toBe(true)
+    const rows = [...(cap.lead ?? []), cap.text]
+    expect(rows.length).toBeGreaterThan(1)
+    expect(rows.join("")).toBe(long)
+    expect(rows.some((r) => r.includes("…"))).toBe(false)
+    expect(cap.x).toBe(0)
+    // The last row sits a line box per row before it under the image.
+    expect(cap.top).toBe(
+      f.imgH + PHOTO.CAPTION_GAP + (rows.length - 1) * PHOTO.CAPTION_LH
+    )
     expect(cap.tail).toBeUndefined()
-    expect(cap.full).toBe(long)
+    expect(cap.full).toBeUndefined()
     expect(photoShown(f, [], "leaf-01", [], mono).caption.full).toBeUndefined()
+    // The node keeps room for the rows under its image.
+    const grown = withCaptionRows(f, long, [], mono)
+    expect(grown.h).toBe(f.h + (rows.length - 1) * PHOTO.CAPTION_LH)
+    expect(withCaptionRows(f, "leaf-01", [], mono)).toBe(f)
+  })
+
+  it("keeps a whole name no gap holds on the photo, never cut", () => {
+    // Leads every 60 px: no gap holds the name.
+    const ends = [60, 120, 180, 240, 300, 360, 420].map(down)
+    const name = "leaf-01-long-name"
+    const cap = photoShown(f, ends, name, [], mono).caption
+    expect(cap.text).toBe(name)
+    expect(cap.lead).toBeUndefined()
+    expect(cap.x + cap.w).toBeLessThanOrEqual(f.w)
   })
 
   it("cuts only a first value that could never fit whole", () => {

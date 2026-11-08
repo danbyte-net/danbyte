@@ -16,8 +16,8 @@ import {
   type AlertSeverity,
   type AlertsResponse,
   type MonitoringAlert,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -114,8 +114,7 @@ function AlertsPage() {
 
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/sites/?picker=1"),
     staleTime: 10 * 60_000,
     enabled: tab === "alerts",
   })

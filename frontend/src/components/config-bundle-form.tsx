@@ -2,13 +2,12 @@ import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   ConfigBundle,
   ConfigBundleWritePayload,
   DeviceRoleOption,
   ExportTemplate,
-  Paginated,
 } from "@/lib/api"
 import {
   Field,
@@ -61,9 +60,7 @@ export function ConfigBundleForm({
   const templates = useQuery({
     queryKey: ["export-templates", "device"],
     queryFn: () =>
-      api<Paginated<ExportTemplate>>(
-        "/api/export-templates/?object_type=device"
-      ),
+      apiAll<ExportTemplate>("/api/export-templates/?object_type=device"),
     staleTime: 5 * 60_000,
   })
   const templateOptions = useMemo<IdOption[]>(
@@ -78,8 +75,7 @@ export function ConfigBundleForm({
 
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceRoleOption>>("/api/device-roles/?picker=1"),
+    queryFn: () => apiAll<DeviceRoleOption>("/api/device-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const roleOptions = useMemo<IdOption[]>(

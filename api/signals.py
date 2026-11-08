@@ -102,3 +102,44 @@ def delete_drawing_files(sender, instance, **kwargs):
 
     plan_id = instance.floor_plan_id
     transaction.on_commit(lambda: delete_folder(plan_id))
+
+
+@receiver(post_delete, sender="api.FloorPlan", dispatch_uid="api.orphan_base_map")
+def drop_orphan_base_map(sender, instance, **kwargs):
+    """A base map lies under every level of its building; when the last
+    floor over it goes, it goes too, with its picture. After commit, so a
+    rolled-back delete keeps it."""
+    from django.db import transaction
+
+    from .floor_plan_layers import drop_orphan
+
+    map_id = instance.base_map_id
+    if map_id is not None:
+        transaction.on_commit(lambda: drop_orphan(map_id))
+
+
+@receiver(post_delete, sender="api.FloorPlanMap", dispatch_uid="api.base_map_file")
+def delete_base_map_file(sender, instance, **kwargs):
+    """A base map's picture goes with it, whichever way it was deleted
+    (a site or tenant delete cascades)."""
+    from django.db import transaction
+
+    from .floor_plan_layers import FloorPlan
+
+    name = instance.image.name if instance.image else ""
+    if not name:
+        return
+
+    def go():
+        from django.core.files.storage import default_storage
+
+        # A picture another floor still shows (a plan's own picture that
+        # became its map in api 0256 is never shared, but be safe).
+        if FloorPlan.objects.filter(background_image=name).exists():
+            return
+        try:
+            default_storage.delete(name)
+        except OSError:
+            pass
+
+    transaction.on_commit(go)

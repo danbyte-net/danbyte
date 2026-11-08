@@ -241,8 +241,7 @@ def _resolve_names(principal, filters: dict, settings_row) -> dict:
             continue
         try:
             _slug, prefix, viewset = resolve(target, settings_row)
-            request = _factory.get(f"/api/{prefix}/", {"name": value, "limit": 2})
-            status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
+            status, payload = _list_rows(principal, viewset, prefix, {"name": value}, SCAN_PAGE)
         except Exception:  # noqa: BLE001 - fall back to passing it through
             out[key] = value
             continue
@@ -260,6 +259,38 @@ def _resolve_names(principal, filters: dict, settings_row) -> dict:
 # filter that is quietly ignored would hand the model the whole table and
 # invite it to invent the grouping. Fetch, match here, then cap.
 FETCH_CAP = 2000
+
+# The rows a by-name lookup reads. Many list endpoints ignore a `name=` filter,
+# so the lookup matches in Python over the rows it reads; it always read
+# 10,000, the API's page ceiling until #452 cut that to 2,000. The rows come in
+# pages of at most the API's cap now, so a lower cap never shortens a scan.
+SCAN_PAGE = 10000
+
+
+def _list_rows(principal, viewset, prefix: str, params: dict, want: int):
+    """``(status, payload)`` for the first ``want`` rows of a list, read page
+    by page, at most ``API_MAX_PAGE_SIZE`` rows a page (#452). ``payload`` is
+    the first page with every row read in ``results``; an error, or a
+    response that does not page, comes back as it was answered."""
+    from django.conf import settings
+
+    size = max(1, min(want, settings.API_MAX_PAGE_SIZE))
+    head = None
+    rows: list = []
+    page = 1
+    while True:
+        request = _factory.get(f"/api/{prefix}/", {**params, "page_size": size, "page": page})
+        status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
+        if status >= 400 or not isinstance(payload, dict) or "results" not in payload:
+            if head is None:
+                return status, payload
+            break
+        head = head or payload
+        rows += payload.get("results") or []
+        if not payload.get("next") or len(rows) >= want:
+            break
+        page += 1
+    return 200, {**head, "results": rows[:want]}
 
 
 def _matches(row: dict, key: str, wanted) -> bool:
@@ -304,11 +335,12 @@ def list_objects(principal, slug: str, filters: dict, *, limit: int, cursor: int
     # unknown parameter, and the ones that do read it raise on a value that
     # is not a UUID - so a filter by name used to surface as a crash.
     fetch = min(max(limit + 1, 200), FETCH_CAP) if wanted else limit + 1
-    params = {"limit": fetch, **({"offset": cursor} if cursor else {})}
-    request = _factory.get(f"/api/{prefix}/", params)
-    status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
+    # The list endpoints page by number, so ask for the rows up to the cursor
+    # plus this batch and skip to the cursor here (#447), in pages the API's
+    # cap allows (#452).
+    status, payload = _list_rows(principal, viewset, prefix, {}, min(cursor + fetch, SCAN_PAGE))
     _refuse(status, payload, slug=resolved, what="those filters")
-    rows = rows_of(payload)
+    rows = rows_of(payload)[cursor:]
     if wanted:
         rows = [r for r in rows if all(_matches(r, k, v) for k, v in wanted.items())]
     matched = len(rows)
@@ -373,9 +405,8 @@ def _identify(principal, slug: str, prefix: str, viewset, ident: str, settings_r
         return text
     # `cid` is a circuit's identity the way `name` is a device's.
     for field in ("name", "numid", "cid", "address", "prefix", "slug"):
-        request = _factory.get(f"/api/{prefix}/", {field: text, "limit": 2})
         try:
-            status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
+            status, payload = _list_rows(principal, viewset, prefix, {field: text}, SCAN_PAGE)
         except Exception:  # noqa: BLE001 - the type may not filter on that field
             continue
         if status >= 400:
@@ -407,7 +438,7 @@ def _did_you_mean(principal, slug, prefix, viewset, text, settings_row) -> str:
     import difflib
 
     try:
-        request = _factory.get(f"/api/{prefix}/", {"limit": 500})
+        request = _factory.get(f"/api/{prefix}/", {"page_size": 500})
         status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
         if status >= 400:
             return ""

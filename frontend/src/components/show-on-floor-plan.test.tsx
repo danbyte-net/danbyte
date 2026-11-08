@@ -23,7 +23,7 @@ const { apiMock } = vi.hoisted(() => ({
 }))
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  api: apiMock,
+  api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
 }))
 
 const placed = (id: string, planId: string, plan: string): FloorPlanTile =>

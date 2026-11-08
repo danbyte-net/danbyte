@@ -10,6 +10,7 @@ import {
   type Platform,
   type PlatformGroup,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { PlatformGroupDeleteDialog } from "@/components/platform-group-delete-dialog"
@@ -191,7 +192,7 @@ function GroupPlatforms({ groupId }: { groupId: string }) {
   const q = useQuery({
     queryKey: ["platforms", "group", groupId],
     queryFn: () =>
-      api<Paginated<Platform>>(
+      apiAll<Platform>(
         `/api/platforms/?${new URLSearchParams({ group: groupId }).toString()}`
       ),
   })

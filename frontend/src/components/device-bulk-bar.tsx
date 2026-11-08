@@ -1,42 +1,45 @@
 import { BulkExport } from "@/components/bulk-export"
 import { AddToSlaButton } from "@/components/monitoring/sla-add"
 import { useState } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { Rocket, X } from "lucide-react"
-import { toast } from "sonner"
+import { Rocket, Trash2, X } from "lucide-react"
 
-import {
-  api,
-  type AutomationTarget,
-  type Device,
-  type DeployRun,
-  type Paginated,
-} from "@/lib/api"
+import { api } from "@/lib/api"
+import { DeployDialog as SharedDeployDialog } from "@/components/deploy-dialog"
+import type { DeployResult } from "@/components/deploy-dialog"
+import type { Device } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { PrintLabelButton } from "@/components/print-label-button"
-import { Spinner } from "@/components/ui/spinner"
-import { FormCombobox } from "@/components/forms"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { apiErrorToast } from "@/lib/api-toast"
+import { SafeBulkDeleteDialog } from "@/components/safe-bulk-delete-bar"
+import { ApplyProfileBulkButton } from "@/components/device-profile-bulk"
+import { reportExport, useObjectReport } from "@/components/object-report"
 
-// Floating action bar for /devices - appears when rows are selected. Today it
-// offers a single bulk action: deploy the selection to an automation target.
-// Danbyte hands off to the runner; it never touches the devices directly.
+// Floating action bar for /devices - appears when rows are selected: deploy
+// the selection to an automation target (Danbyte hands off to the runner; it
+// never touches the devices directly), apply a device profile, labels,
+// export, SLA and delete.
 export interface DeviceBulkBarProps {
   selected: Device[]
   onCleared: () => void
+  /** Offer Deploy (default true). */
+  canDeploy?: boolean
+  /** Offer Delete, with "Also remove from PRTG" (default false). */
+  canDelete?: boolean
+  /** Offer Apply profile. */
+  profiles?: boolean
 }
 
-export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
+export function DeviceBulkBar({
+  selected,
+  onCleared,
+  canDeploy = true,
+  canDelete = false,
+  profiles = false,
+}: DeviceBulkBarProps) {
   const [open, setOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const report = useObjectReport("device")
   if (selected.length === 0) return null
+  const ids = selected.map((d) => d.id)
   return (
     <>
       <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center">
@@ -45,25 +48,53 @@ export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
             {selected.length} selected
           </span>
           <span className="h-4 w-px bg-border" />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2"
-            onClick={() => setOpen(true)}
-          >
-            <Rocket className="mr-1 h-3 w-3" /> Deploy
-          </Button>
+          {canDeploy && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => setOpen(true)}
+            >
+              <Rocket className="mr-1 h-3 w-3" /> Deploy
+            </Button>
+          )}
+          {profiles && (
+            <ApplyProfileBulkButton
+              kind="device"
+              ids={selected.map((d) => d.id)}
+              onDone={onCleared}
+            />
+          )}
           <PrintLabelButton
             objectType="device"
             ids={selected.map((d) => d.id)}
             label={`Print labels (${selected.length})`}
             variant="ghost"
           />
-          <BulkExport ioType="device" ids={selected.map((d) => d.id)} />
+          <BulkExport
+            ioType="device"
+            ids={ids}
+            extraExports={[
+              reportExport(report.openReport, () => ({
+                ids,
+                scope: "selected",
+              })),
+            ]}
+          />
           <AddToSlaButton
             objectType="api.device"
             ids={selected.map((d) => d.id)}
           />
+          {canDelete && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-destructive hover:text-destructive"
+              onClick={() => setDeleting(true)}
+            >
+              <Trash2 className="mr-1 h-3 w-3" /> Delete
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -75,6 +106,18 @@ export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
           </Button>
         </div>
       </div>
+      {report.dialog}
+      {deleting && (
+        <SafeBulkDeleteDialog
+          ids={selected.map((d) => d.id)}
+          endpoint="/api/devices/"
+          noun={["device", "devices"]}
+          invalidate={[["devices"], ["devices-picker"], ["prtg-links"]]}
+          prtg
+          onClose={() => setDeleting(false)}
+          onDone={onCleared}
+        />
+      )}
       <DeployDialog
         open={open}
         onOpenChange={setOpen}
@@ -99,81 +142,34 @@ function DeployDialog({
   devices: Device[]
   onDone: () => void
 }) {
-  const [targetId, setTargetId] = useState<string | null>(null)
-
-  const targets = useQuery({
-    queryKey: ["automation-targets", "enabled"],
-    queryFn: () => api<Paginated<AutomationTarget>>("/api/automation-targets/"),
-    staleTime: 60_000,
-    enabled: open,
-  })
-  const options = (targets.data?.results ?? [])
-    .filter((t) => t.enabled)
-    .map((t) => ({ value: t.id, label: `${t.name} · ${t.kind_display}` }))
-
-  const deploy = useMutation({
-    mutationFn: () =>
-      api<DeployRun>(`/api/automation-targets/${targetId}/deploy/`, {
-        method: "POST",
-        body: JSON.stringify({ device_ids: devices.map((d) => d.id) }),
-      }),
-    onSuccess: (run) => {
-      if (run.status === "failed")
-        toast.error(`Deploy failed: ${run.detail || "see run"}`)
-      else
-        toast.success(
-          `Deploying ${run.device_ids.length} device${
-            run.device_ids.length === 1 ? "" : "s"
-          } (${run.status})`
-        )
-      onDone()
-    },
-    onError: (err) => apiErrorToast(err),
-  })
-
+  const ids = devices.map((d) => d.id)
+  // A shared role makes its default pipeline the preselected one.
+  const roles = new Set(devices.map((d) => d.role?.id ?? ""))
+  const roleIds = roles.size === 1 ? [...roles] : []
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Deploy {devices.length} devices</DialogTitle>
-          <DialogDescription>
-            Danbyte launches the runner, which holds the device credentials - it
-            never connects to the devices directly.
-          </DialogDescription>
-        </DialogHeader>
-        {options.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No enabled automation targets. Add one under Integrations →
-            Automation targets.
-          </p>
-        ) : (
-          <FormCombobox
-            label="Target"
-            value={targetId}
-            onChange={setTargetId}
-            options={options}
-            placeholder="Pick a target"
-            searchPlaceholder="Search targets…"
-            emptyText="No targets."
-          />
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!targetId || deploy.isPending}
-            onClick={() => deploy.mutate()}
-          >
-            {deploy.isPending ? (
-              <Spinner className="mr-1 size-4" />
-            ) : (
-              <Rocket className="mr-1 size-4" />
-            )}
-            Deploy
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <SharedDeployDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Deploy ${devices.length} devices`}
+      description="Danbyte launches the runner, which holds the device credentials - it never connects to the devices directly."
+      objectType="device"
+      roleIds={roleIds}
+      submit={(c) =>
+        api<DeployResult>(
+          c.kind === "pipeline"
+            ? `/api/deploy-pipelines/${c.id}/deploy/`
+            : `/api/automation-targets/${c.id}/deploy/`,
+          {
+            method: "POST",
+            body: JSON.stringify({ device_ids: ids, dry_run: c.dryRun }),
+          }
+        ).then((r) =>
+          c.kind === "pipeline"
+            ? ({ ...r, kind: "pipeline" } as DeployResult)
+            : r
+        )
+      }
+      onDone={onDone}
+    />
   )
 }

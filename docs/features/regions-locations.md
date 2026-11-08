@@ -103,12 +103,15 @@ and devices that live there.
 
 1. Open **Organization → Locations** and click **Add location**.
 2. Choose the **site** this location belongs to.
-3. Give it a **name** and a **slug**.
-4. Optionally pick a **parent location** (it must be in the same site), set a
-   **status**, and add a description.
+3. Give it a **name** and, optionally, a short **code** (`A1`, `B2`) - the
+   code labels its [outline on the Site map](site-map.md#building-outlines).
+4. Optionally pick a **type** ([location types](#location-types)), a
+   **parent location** (it must be in the same site), set a **status**, and
+   add a description.
 5. Optionally give it a **color** and a **Lucide icon** - they render as a
    badge next to the location's name on list and detail pages, the same
-   treatment floor-plan tile types get.
+   treatment floor-plan tile types get. With none set, the location takes
+   its type's color and icon.
 6. Save.
 
 !!! note "Changing the site clears the parent"
@@ -136,12 +139,72 @@ and devices that live there.
     A site's free-text **location** field is just an address line. The structured
     building → floor → room tree is what you build with **locations**.
 
+## Location types
+
+A **location type** says what kind of place a location is - *Building*,
+*Floor*, *Hall*, *Manhole*, whatever your estate is made of. Types are your
+own catalog under **Organization → Location types**: each has a name, a
+**color**, a **Lucide icon** and a description, and a name is unique in the
+tenant. Danbyte ships none - make the ones you use.
+
+- **On a location** - the **Type** field on the location form lists the types
+  as their color badges; the **+** beside it makes a new type without leaving
+  the form. The location's page shows the type next to its status, and the
+  **Locations** list has a **Type** column and filter.
+- **Color** - a location is drawn in its own color, else its type's: the
+  badge on the list and detail pages, the rooms that name it, and the
+  floor-plan areas linked to it. Give *Building* a color once and every
+  building without its own reads the same.
+- **Outlines** - a [building outline](site-map.md#building-outlines) on the
+  Site map takes its location's type color first, and "**+** New building"
+  on the map makes a location of the type named *Building* when you have
+  one.
+- **Deleting a type** leaves its locations in place, without a type. Select
+  several types on the list to edit their color, icon and description at
+  once, or to delete them.
+- **Permissions** - `locationtype`, a tenant-wide catalog like rack roles.
+  [Site roles](permissions.md#site-roles-local-it-in-one-click) read the
+  types; only a tenant-wide grant changes them. Import and export work like
+  any other list (**Import / Export** on the list's toolbar).
+
+What is not a location - a car park, a fence, a road drawn on a floor plan -
+has a catalog of its own beside this one, **Organization → Area types**
+([area types](floor-plans.md#area-types)): a colour, a fill pattern and an
+icon for the plain areas of a plan.
+
+API: `/api/location-types/` (`?picker=1` for the short form);
+`/api/locations/?location_type=<id>` (or `none`) filters locations by type,
+and a location carries `location_type`, `location_type_id` and `code`.
+
+## Rooms
+
+A location can hold [**rooms**](../dcim/rooms.md) - the comms room, Room 210 -
+that devices, racks and cabinets name as the room they stand in. The
+location's page lists them on its **Rooms** tab, with **Add room**. Locations
+you already nest as rooms stay as they are. A location that still has rooms
+cannot be deleted.
+
 ## Floor plans
 
 A location can be drawn as a **[floor plan](floor-plans.md)** - a grid canvas
-of tiles (racks, walls, cooling…) linked to real objects. The Location page's
-**Floor plan** button opens the location's plan, or creates one if none
-exists yet.
+of tiles (racks, walls, cooling…) linked to real objects, with one or more
+[floors](floor-plans.md#floors). The Location page's **Floor plan** button
+opens the location's plan, or creates one if none exists yet. A floor may
+sit at a location nested under its floor plan's location, so floors
+modelled as locations (Building A → Level 2) belong to one floor plan. A
+floor plan need not have a location at all: a
+[site-wide floor plan](floor-plans.md#site-wide-floor-plans) maps a whole
+site with many buildings, and its areas may stand for any location of the
+site.
+
+When the location is drawn as an [area](floor-plans.md#rooms-and-areas) on a
+floor plan, its page gets a **Floor plan** tab: its part of that floor,
+read-only and live, outside its outline dimmed, with **Open in floor plan**,
+**Make snapshot…** and a switcher when it is drawn on several floors - the
+same tab, rules and permissions as a
+[room's](../dcim/rooms.md#floor-plan). `GET /api/locations/<id>/plan/` reads
+it, as `GET /api/rooms/<id>/plan/` does for a room. The tab shows the areas
+linked to the location itself, not those of its rooms.
 
 ## Tags & custom fields
 

@@ -1,28 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { ColumnDef } from "@tanstack/react-table"
-import { useMemo, useState } from "react"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { useCallback, useMemo, useState } from "react"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type { LabelTemplate, Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
-import { TimeCell } from "@/components/cells/time-ago"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { buildLabelTemplateColumns } from "@/components/columns/label-template-columns"
 import { LabelTemplateFormDialog } from "@/components/label-template-form"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 
 export const Route = createFileRoute("/label-templates/")({
   component: LabelTemplatesPage,
@@ -30,8 +23,11 @@ export const Route = createFileRoute("/label-templates/")({
 
 function LabelTemplatesPage() {
   const { canDo } = useMe()
+  const qc = useQueryClient()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<LabelTemplate | null>(null)
+  const [deleting, setDeleting] = useState<LabelTemplate | null>(null)
+  const [selected, setSelected] = useState<LabelTemplate[]>([])
 
   const query = useQuery({
     queryKey: ["label-templates"],
@@ -40,92 +36,37 @@ function LabelTemplatesPage() {
   })
   const rows = useMemo(() => query.data?.results ?? [], [query.data])
   const canManage = canDo("labeltemplate", "change")
+  const canDelete = canDo("labeltemplate", "delete")
+  const selectable = canManage || canDelete
 
-  const columns = useMemo<ColumnDef<LabelTemplate>[]>(
-    () => [
-      {
-        id: "name",
-        accessorFn: (r) => r.name,
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) =>
-          canManage ? (
-            <button
-              type="button"
-              className="link font-medium"
-              onClick={() => {
-                setEditing(row.original)
-                setFormOpen(true)
-              }}
-            >
-              {row.original.name}
-            </button>
-          ) : (
-            <span className="font-medium">{row.original.name}</span>
-          ),
-      },
-      {
-        id: "object_type",
-        header: "Object type",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.object_type_label}
-          </span>
-        ),
-      },
-      {
-        id: "size",
-        header: "Size",
-        cell: ({ row }) => (
-          <span className="num text-muted-foreground">
-            {row.original.width_mm}×{row.original.height_mm} mm
-          </span>
-        ),
-      },
-      {
-        id: "qr",
-        header: "QR",
-        cell: ({ row }) =>
-          row.original.qr_enabled ? (
-            <Badge variant="secondary">On</Badge>
-          ) : (
-            <Badge variant="outline">Off</Badge>
-          ),
-      },
-      {
-        id: "default",
-        header: "Default",
-        cell: ({ row }) =>
-          row.original.is_default ? (
-            <Badge variant="secondary">Default</Badge>
-          ) : null,
-      },
-      {
-        id: "updated",
-        header: "Updated",
-        cell: ({ row }) => <TimeCell iso={row.original.updated_at} />,
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) =>
-          canManage ? (
-            <div className="flex justify-end gap-1">
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => {
-                  setEditing(row.original)
-                  setFormOpen(true)
-                }}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              <DeleteButton template={row.original} />
-            </div>
-          ) : null,
-      },
-    ],
-    [canManage]
+  const remove = useMutation({
+    mutationFn: (t: LabelTemplate) =>
+      api<void>(`/api/label-templates/${t.id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Label template deleted")
+      void qc.invalidateQueries({ queryKey: ["label-templates"] })
+      setDeleting(null)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const open = useCallback((t: LabelTemplate) => {
+    setEditing(t)
+    setFormOpen(true)
+  }, [])
+  const columns = useMemo(
+    () =>
+      buildLabelTemplateColumns({
+        selection: selectable,
+        onOpen: canManage ? open : undefined,
+        actions: {
+          onEdit: open,
+          canEdit: () => canManage,
+          onDelete: setDeleting,
+          canDelete: () => canDelete,
+        },
+      }),
+    [canManage, canDelete, selectable, open]
   )
 
   return (
@@ -152,60 +93,37 @@ function LabelTemplatesPage() {
           own HTML and a QR code, then print it from any object's page.
         </EmptyState>
       ) : (
-        <DataTable data={rows} columns={columns} tableId="label-templates" />
+        <DataTable
+          data={rows}
+          columns={columns}
+          tableId="label-templates"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
+        />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/label-templates/"
+        noun={["template", "templates"]}
+        invalidate={[["label-templates"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canManage}
+        canDelete={canDelete}
+        ioType="labeltemplate"
+      />
       <LabelTemplateFormDialog
         key={editing?.id ?? "new"}
         template={editing}
         open={formOpen}
         onOpenChange={setFormOpen}
       />
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={`Delete “${deleting?.name ?? ""}”?`}
+        pending={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting)}
+      />
     </ListPageShell>
-  )
-}
-
-function DeleteButton({ template }: { template: LabelTemplate }) {
-  const qc = useQueryClient()
-  const [open, setOpen] = useState(false)
-  const m = useMutation({
-    mutationFn: () =>
-      api<void>(`/api/label-templates/${template.id}/`, { method: "DELETE" }),
-    onSuccess: () => {
-      toast.success("Label template deleted")
-      qc.invalidateQueries({ queryKey: ["label-templates"] })
-      setOpen(false)
-    },
-    onError: (e) => apiErrorToast(e),
-  })
-  return (
-    <>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        className="text-destructive hover:text-destructive"
-        onClick={() => setOpen(true)}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Delete “{template.name}”?</DialogTitle>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={m.isPending}
-              onClick={() => m.mutate()}
-            >
-              {m.isPending ? "Deleting…" : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
   )
 }

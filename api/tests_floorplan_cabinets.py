@@ -42,8 +42,11 @@ class FloorPlanCabinetTests(_Base):
                                                  link_kind="cabinet", cabinet=self.cab)
 
     def test_a_tile_links_to_a_cabinet_of_the_tenant(self):
+        # Another floor: a cabinet stands once on each.
+        hall_b = FloorPlan.objects.create(tenant=self.tenant, location=self.loc,
+                                          name="Hall B")
         r = self.client.post("/api/floor-plan-tiles/", {
-            "floor_plan_id": str(self.plan.id), "tile_type_id": str(self.tt.id),
+            "floor_plan_id": str(hall_b.id), "tile_type_id": str(self.tt.id),
             "x": 5, "y": 5, "link_kind": "cabinet", "link_id": str(self.cab.id),
         }, format="json")
         self.assertEqual(r.status_code, 201, r.content)

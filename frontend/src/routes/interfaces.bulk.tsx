@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type Paginated, type TagOption, type VLANOption } from "@/lib/api"
+import { api, type TagOption, type VLANOption } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { EditPageShell } from "@/components/edit-page-shell"
 import {
@@ -61,12 +62,12 @@ function BulkInterfacesPage() {
 
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
+    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 

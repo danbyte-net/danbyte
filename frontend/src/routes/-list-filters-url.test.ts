@@ -23,6 +23,7 @@ const LIST_PAGES = [
     .map((n) => `routes/${n}`),
   "components/routing/catalog-page.tsx",
   "routes/fiber-cables.tsx",
+  "routes/lifecycle.tsx",
   "routes/port-utilization.tsx",
   "routes/saved-filters.tsx",
   "routes/monitoring-engines.tsx",

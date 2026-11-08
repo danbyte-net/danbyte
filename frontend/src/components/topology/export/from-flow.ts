@@ -36,6 +36,7 @@ import type { Rect } from "../diagram/types"
 import type { BundleMember } from "../edge-semantics"
 import type { GroupEdgeInfo, TopoGroupData } from "../group-node"
 import { sizeOf } from "../node-registry"
+import { isProviderNetwork } from "../provider-network-node"
 
 // The Hierarchy tab as an export document, in the Diagram's Simple look:
 // each device a compact role-coloured card centred where its card sits on
@@ -91,6 +92,10 @@ function cables(d: FlowEdgeData): number {
   return 1
 }
 
+/** The circuit a Hierarchy line stands for (#466), if it is one. */
+const circuitOf = (e: Edge) =>
+  (e.data as FlowEdgeData | undefined)?.raw?.circuit
+
 const WIRING = new Set(["cable", "lagbundle", "bundle", "groupedge"])
 
 const overlaps = (a: Rect, b: Rect) =>
@@ -111,7 +116,8 @@ export function fromFlow(
   for (const n of flowNodes) {
     if (n.hidden) continue
     const device = DEVICE_KINDS.has(n.type ?? "")
-    if (!device && n.type !== "sitegroup") continue
+    if (!device && n.type !== "sitegroup" && n.type !== "provider_network")
+      continue
     // Hierarchy cards are placed by their top-left corner; each export card is
     // centred on the card it stands for.
     const s = sizeOf(n)
@@ -144,19 +150,31 @@ export function fromFlow(
         h: s.height,
       }
       if (area && !overlaps(area, r)) continue
+      // A provider network (#466): its name, then its provider.
+      const pn = isProviderNetwork(n.data) ? n.data : null
       const input: CardLayoutInput = {
         name: g.name,
-        lines: [
-          {
-            key: "count",
-            text: `${g.device_count} device${g.device_count === 1 ? "" : "s"}`,
-          },
-        ],
+        lines: pn
+          ? [{ key: "provider", text: pn.provider.name }]
+          : [
+              {
+                key: "count",
+                text: `${g.device_count} device${g.device_count === 1 ? "" : "s"}`,
+              },
+            ],
       }
       rects.set(n.id, r)
       nodes.push(
         cardNode(n.id, c, fitBox(input, { w: r.w, h: r.h }, measure), input, {
           measure,
+          ...(pn
+            ? {
+                link: danbyteUrl(
+                  opts.origin,
+                  `/provider-networks/${pn.provider_network_id}`
+                ),
+              }
+            : {}),
         })
       )
     }
@@ -169,7 +187,8 @@ export function fromFlow(
   for (const e of flowEdges) {
     if (e.hidden || !rects.has(e.source) || !rects.has(e.target)) continue
     const sem = (e.data as FlowEdgeData | undefined)?.sem
-    if (sem === "ghost" || sem === "bgp") {
+    // A circuit (#466) is its own line, never a pair's folded cables.
+    if (sem === "ghost" || sem === "bgp" || circuitOf(e)) {
       order.push(e)
       continue
     }
@@ -208,16 +227,24 @@ export function fromFlow(
     const s = rects.get(e.source)!
     const t = rects.get(e.target)!
     const [[a, b]] = linkEnds({ a: [], b: [], simple: true }, s, t)
-    const mid =
-      sem === "ghost" ? ["LLDP"] : sem !== "bgp" && n > 1 ? [`${n}x`] : []
+    const circuit = group.length === 1 ? circuitOf(e) : undefined
+    const mid = circuit
+      ? [circuit.cid]
+      : sem === "ghost"
+        ? ["LLDP"]
+        : sem !== "bgp" && n > 1
+          ? [`${n}x`]
+          : []
     const cableId =
       group.length === 1 && d.sem === "cable" ? d.raw?.cable_id : undefined
     const session = sem === "bgp" ? d.bgp?.sessions?.[0] : undefined
-    const link = cableId
-      ? danbyteUrl(opts.origin, `/cables/${cableId}`)
-      : session
-        ? danbyteUrl(opts.origin, `/bgp-sessions/${session}`)
-        : undefined
+    const link = circuit
+      ? danbyteUrl(opts.origin, `/circuits/${circuit.id}`)
+      : cableId
+        ? danbyteUrl(opts.origin, `/cables/${cableId}`)
+        : session
+          ? danbyteUrl(opts.origin, `/bgp-sessions/${session}`)
+          : undefined
     links.push(
       routeLink(
         group.length > 1 ? `${e.id}+${group.length - 1}` : e.id,

@@ -11,7 +11,9 @@ import {
   type Paginated,
   type ServiceTemplate,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import { Badge } from "@/components/ui/badge"
 import { useRegisterAddActions } from "@/components/device-add-actions"
 import {
@@ -81,7 +83,7 @@ export function DeviceTypeServicesSection({
   const q = useQuery({
     queryKey: [QUERY_KEY, deviceTypeId],
     queryFn: () =>
-      api<Paginated<DeviceTypeService>>(
+      apiAll<DeviceTypeService>(
         `/api/device-type-services/?device_type=${deviceTypeId}`
       ),
   })
@@ -136,22 +138,26 @@ export function DeviceTypeServicesSection({
       cell: ({ row }) =>
         canWrite ? (
           <div className="flex justify-end gap-1">
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={() => setEditing(row.original)}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 text-destructive hover:text-destructive"
-              onClick={() => setDeleting(row.original)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            <IconTip label="Edit">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                onClick={() => setEditing(row.original)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </IconTip>
+            <IconTip label="Delete">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={() => setDeleting(row.original)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </IconTip>
           </div>
         ) : null,
     },
@@ -369,7 +375,8 @@ function ServiceTemplateForm({
           setPortErrors({ tcp: null, udp: null })
         }}
         errors={{
-          tcp: portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
+          tcp:
+            portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
           udp: portErrors.udp,
         }}
       />

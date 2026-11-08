@@ -1,11 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Plus, RefreshCw } from "lucide-react"
+import { Check, Plus, RefreshCw } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   OxidizedConnection,
   OxidizedNodeLink,
@@ -32,7 +33,9 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
-import { RowActions } from "@/components/row-actions"
+import { BulkExport } from "@/components/bulk-export"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
+import { buildOxidizedLinkColumns } from "@/components/columns/oxidized-link-columns"
 import { DevicePicker } from "@/components/device-picker"
 import { VMPicker } from "@/components/vm-picker"
 import {
@@ -76,8 +79,7 @@ function OxidizedPage() {
 
   const connections = useQuery({
     queryKey: ["oxidized-connections"],
-    queryFn: () =>
-      api<Paginated<OxidizedConnection>>("/api/oxidized/connections/"),
+    queryFn: () => apiAll<OxidizedConnection>("/api/oxidized/connections/"),
   })
   const all = connections.data?.results ?? []
   const conn = all.find((c) => c.id === selectedId) ?? all.at(0)
@@ -607,117 +609,33 @@ function LinkedNodes({
   const confirmLink = confirm.mutate
   const confirming = confirm.isPending ? confirm.variables : undefined
 
-  const columns = useMemo<ColumnDef<OxidizedNodeLink>[]>(
-    () => [
-      {
-        id: "device",
-        accessorFn: (r) => (r.device ?? r.virtual_machine)?.name ?? "",
-        header: ({ column }) => (
-          <SortHeader column={column} label="Device or VM" />
-        ),
-        cell: ({ row }) => <LinkTarget link={row.original} />,
-      },
-      {
-        id: "node",
-        accessorKey: "full_name",
-        header: ({ column }) => <SortHeader column={column} label="Node" />,
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">{row.original.full_name}</span>
-        ),
-      },
-      {
-        id: "ip",
-        accessorKey: "node_ip",
-        header: ({ column }) => <SortHeader column={column} label="Address" />,
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.node_ip || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "model",
-        accessorKey: "node_model",
-        header: ({ column }) => <SortHeader column={column} label="Model" />,
-      },
-      {
-        id: "matched_by",
-        accessorKey: "matched_by",
-        header: ({ column }) => (
-          <SortHeader column={column} label="Matched by" />
-        ),
-        cell: ({ row }) => (
-          <span className="inline-flex items-center gap-2">
-            <Badge
-              variant={
-                row.original.matched_by === "manual" ? "info" : "secondary"
+  const selectable = canUnlink || canConfirm
+  const [selected, setSelected] = useState<OxidizedNodeLink[]>([])
+  const columns = useMemo(
+    () =>
+      buildOxidizedLinkColumns({
+        selection: selectable,
+        notes,
+        actions:
+          canUnlink || canConfirm
+            ? {
+                onDelete: canUnlink ? setUnlinking : undefined,
+                deleteLabel: "Unlink",
+                extra: (link) =>
+                  canConfirm && link.proposed ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={confirming !== undefined}
+                      onClick={() => confirmLink(link.id)}
+                    >
+                      {confirming === link.id ? "Confirming…" : "Confirm"}
+                    </Button>
+                  ) : null,
               }
-            >
-              {row.original.matched_by === "manual"
-                ? "Pinned"
-                : row.original.matched_by === "address"
-                  ? "Address"
-                  : "Name"}
-            </Badge>
-            {row.original.proposed && <Badge variant="warning">Proposed</Badge>}
-          </span>
-        ),
-      },
-      {
-        id: "note",
-        accessorFn: (r) => notes.get(r.full_name) ?? "",
-        header: ({ column }) => <SortHeader column={column} label="Note" />,
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {notes.get(row.original.full_name) ?? ""}
-          </span>
-        ),
-      },
-      {
-        id: "seen",
-        accessorKey: "last_seen_at",
-        header: ({ column }) => (
-          <SortHeader column={column} label="Last seen" />
-        ),
-        cell: ({ row }) =>
-          row.original.last_seen_at ? (
-            <TimeCell iso={row.original.last_seen_at} />
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      ...(canUnlink || canConfirm
-        ? [
-            {
-              id: "actions",
-              enableHiding: false,
-              cell: ({ row }) => (
-                <RowActions
-                  onDelete={
-                    canUnlink ? () => setUnlinking(row.original) : undefined
-                  }
-                  deleteLabel="Unlink"
-                  extra={
-                    canConfirm && row.original.proposed ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={confirming !== undefined}
-                        onClick={() => confirmLink(row.original.id)}
-                      >
-                        {confirming === row.original.id
-                          ? "Confirming…"
-                          : "Confirm"}
-                      </Button>
-                    ) : null
-                  }
-                />
-              ),
-            } as ColumnDef<OxidizedNodeLink>,
-          ]
-        : []),
-    ],
-    [canUnlink, canConfirm, notes, confirming, confirmLink]
+            : undefined,
+      }),
+    [canUnlink, canConfirm, selectable, notes, confirming, confirmLink]
   )
 
   const rows = links.data?.results ?? []
@@ -734,8 +652,32 @@ function LinkedNodes({
           total={links.data?.count}
           columns={columns}
           flexColumn="node"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       )}
+      <SafeBulkDeleteBar
+        selected={selected}
+        endpoint="/api/oxidized/links/"
+        noun={["link", "links"]}
+        invalidate={[["oxidized-links"], ["oxidized-connections"]]}
+        onCleared={() => setSelected([])}
+        canDelete={canUnlink}
+        actions={
+          <>
+            <BulkExport
+              ioType="oxidizednodelink"
+              ids={selected.map((l) => l.id)}
+            />
+            {canConfirm && (
+              <BulkConfirm
+                ids={selected.filter((l) => l.proposed).map((l) => l.id)}
+                onDone={() => setSelected([])}
+              />
+            )}
+          </>
+        }
+      />
       <ConfirmDialog
         open={!!unlinking}
         onOpenChange={(o) => !o && setUnlinking(null)}
@@ -750,32 +692,46 @@ function LinkedNodes({
   )
 }
 
-/** The device or virtual machine a node backs, linked to its Config tab. */
-function LinkTarget({ link }: { link: OxidizedNodeLink }) {
-  if (link.virtual_machine)
-    return (
-      <span className="inline-flex items-center gap-2">
-        <Link
-          to="/virtual-machines/$id"
-          params={{ id: link.virtual_machine.id }}
-          search={{ tab: "config" }}
-          className="link font-medium"
-        >
-          {link.virtual_machine.name}
-        </Link>
-        <Badge variant="secondary">VM</Badge>
-      </span>
-    )
-  if (!link.device) return null
+/** Confirm the ticked proposed links, each as its own Confirm does. */
+function BulkConfirm({ ids, onDone }: { ids: string[]; onDone: () => void }) {
+  const qc = useQueryClient()
+  const m = useMutation({
+    mutationFn: () =>
+      api<{
+        confirmed: string[]
+        skipped: { id: string; name: string; reason: string }[]
+      }>("/api/oxidized/links/bulk-confirm/", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
+    onSuccess: (r) => {
+      const n = r.confirmed.length
+      const msg = `Confirmed ${n} link${n === 1 ? "" : "s"}`
+      if (r.skipped.length)
+        toast.warning(msg, {
+          description: `${r.skipped[0].name}: ${r.skipped[0].reason}`,
+        })
+      else toast.success(msg)
+      onDone()
+    },
+    onError: (e) => apiErrorToast(e),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["oxidized-links"] })
+      void qc.invalidateQueries({ queryKey: ["oxidized-connections"] })
+    },
+  })
+  if (ids.length === 0) return null
   return (
-    <Link
-      to="/devices/$id"
-      params={{ id: link.device.id }}
-      search={{ tab: "config" }}
-      className="link font-medium"
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-7 px-2"
+      disabled={m.isPending}
+      onClick={() => m.mutate()}
     >
-      {link.device.name}
-    </Link>
+      <Check className="mr-1 h-3 w-3" />
+      {m.isPending ? "Confirming…" : "Confirm"}
+    </Button>
   )
 }
 

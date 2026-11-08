@@ -76,7 +76,11 @@ const IP = {
   scope: "private",
   dns_name: "",
   assigned_device: { id: "d1", name: "sw1" },
-  assigned_interface: { id: "if1", name: "eth0" },
+  assigned_interface: {
+    id: "if1",
+    name: "eth0",
+    device: { id: "d1", name: "sw1" },
+  },
   assigned_vm: null,
   switch: null,
   switch_interface: null,
@@ -168,11 +172,35 @@ describe("AssignedIpsPane", () => {
     expect(href.searchParams.get("from")).toBe("/interfaces/if1?tab=ips")
   })
 
-  it("keeps the device scope on its own endpoint and Add IP link", async () => {
-    answers["/api/devices/d1/ips/"] = { count: 1, results: [IP] }
+  it("lists every address the device uses, with its assignment", async () => {
+    const elsewhere = {
+      ...IP,
+      id: "ip2",
+      ip_address: "10.0.0.11",
+      assigned_device: { id: "d2", name: "prox1" },
+      assigned_interface: null,
+      is_primary_for_device: false,
+    }
+    answers["/api/ips/?device=d1"] = { count: 2, results: [IP, elsewhere] }
+    mount({
+      kind: "device",
+      deviceId: "d1",
+      deviceName: "sw1",
+      slots: { primary: "ip2" },
+    })
+    expect(await screen.findByText("10.0.0.11")).toBeTruthy()
+    expect(apiMock).toHaveBeenCalledWith("/api/ips/?device=d1&page_size=1000")
+    expect(headers()).toEqual(expect.arrayContaining(["Assigned to"]))
+    // The slot is this device's, not the address's own device's.
+    expect(screen.getAllByText("★ Primary")).toHaveLength(1)
+    expect(screen.getByRole("link", { name: "eth0" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "prox1" })).toBeTruthy()
+  })
+
+  it("keeps the device scope's Add IP link", async () => {
+    answers["/api/ips/?device=d1"] = { count: 1, results: [IP] }
     mount({ kind: "device", deviceId: "d1", deviceName: "sw1" })
     expect(await screen.findByText("10.0.0.5")).toBeTruthy()
-    expect(apiMock).toHaveBeenCalledWith("/api/devices/d1/ips/")
     const link = screen.getByRole("link", { name: "+ Add IP" })
     const href = new URL(link.getAttribute("href") ?? "", "http://x")
     expect(href.searchParams.get("device")).toBe("d1")

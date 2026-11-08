@@ -404,6 +404,13 @@
       "keywords": ["wizard", "onboarding", "getting started"]
     },
     {
+      "key": "tenant.report-cover",
+      "label": "Report cover",
+      "description": "Cover page background, colours and image for PDF reports",
+      "page": "tenant-policy",
+      "keywords": ["cover", "report", "pdf", "branding", "image", "waves", "background"]
+    },
+    {
       "key": "separation.sites",
       "label": "Site separation",
       "description": "Each site behaves like a mini-tenant for site-scoped users",
@@ -741,6 +748,20 @@
       "keywords": ["popover", "tile", "hover", "fields", "floor plan"]
     },
     {
+      "key": "data.floorplan-cable-lengths",
+      "label": "Cable lengths",
+      "description": "Slack, service loops and rounding of route lengths",
+      "page": "floorplans",
+      "keywords": [
+        "cable",
+        "length",
+        "slack",
+        "service loop",
+        "route",
+        "floor plan"
+      ]
+    },
+    {
       "key": "data.topology-card-lines",
       "label": "Card lines",
       "description": "What a Diagram card shows",
@@ -797,6 +818,13 @@
         "microsoft",
         "active directory"
       ]
+    },
+    {
+      "key": "integrations.prtg",
+      "label": "PRTG monitoring",
+      "description": "Read monitoring status from PRTG",
+      "page": "integrations",
+      "keywords": ["prtg", "paessler", "sensors", "monitoring", "api key"]
     },
     {
       "key": "integrations.agent",

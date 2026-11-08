@@ -64,19 +64,105 @@ with a richer context:
 |---|---|
 | `device` | The device itself - `device.name`, `device.site`, `device.platform`, `device.custom_fields`, … |
 | `config_context` | The merged [config context](config-contexts.md) for the device. |
-| `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, custom_fields}`, or `None` on an uncabled port. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
+| `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, mac_address, mtu, custom_fields}` (the far port's own MAC and MTU), or `None` on an uncabled port. A far end on a device the reader may not view names nothing: every field is empty and `hidden` is true. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
 | `ip_addresses` | Every address assigned to the device; `assigned_interface_id` says where. |
-| `routing` | What the device routes with - VRFs, static routes, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
+| `routing` | What the device routes with - VRFs, static routes, policy rules, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
+| `tunnels` | Every tunnel end on the device, with its far end(s) resolved. See [Tunnels](#tunnels). |
+| `tunnels_by_interface` | The same rows keyed by the local port name (`tunnels_by_interface["wg0"]`). |
+| `backing_vm` | When the device runs as an [intended VM](virtual-machines.md#intended-vms) you may view (**Is router**), that VM's build: `name`, `vmid`, `cluster`, `node`, `cpu_type`, `sockets`, `vcpus`, `memory_mb`, `disk_gb`, `image`, `storage`, `hypervisor_options`, `interfaces` (each with `index`, `model`, `bridge`, `mac_address`, `mtu`, `vlan`, …) and `disks`. A plain dict, the same shape a [provision](iac-runner.md#provisioning-an-intended-vm) sends. `None` otherwise. |
 
-Virtual machines render the same way (`vm` and `device` both name the VM;
-`routing` is empty).
+#### Tunnels
+
+```
+tunnels: [{id, name, encapsulation, tunnel_id, role, interface: "wg0",
+           outside_ip: "198.51.100.4",
+           wireguard: {listen_port, public_key, private_key_ref, allowed_ips,
+                       endpoint_port, persistent_keepalive} | null,
+           peers: [{id, device, interface, role, outside_ip, endpoint_port,
+                    endpoint: "203.0.113.9:51820", public_key, allowed_ips,
+                    persistent_keepalive}]}]
+tunnels_by_interface: {"wg0": <the same row>}
+```
+
+`tunnel_id` is the tunnel's number, not a row id. `wireguard` is `null` on a
+tunnel of another encapsulation. `peers` follows the end's role (a peer
+talks to every other end, a hub to the spokes and other hubs, a spoke to the
+hubs), and each peer's `endpoint_port` is already resolved: the far end's
+endpoint port, else its listen port. `allowed_ips` on a peer is the
+addresses behind that peer - see [WireGuard](vpn.md#wireguard). A peer's
+device name is shown even when it sits at another site, as a BGP session's
+`peer_device` is.
+
+An `/etc/network/interfaces` block for a WireGuard end - the same template
+renders both ends, each printing the other's key:
+
+```jinja
+{% set t = tunnels_by_interface["wg0"] %}
+auto wg0
+iface wg0 inet static
+    pre-up ip link add wg0 type wireguard
+    pre-up wg set wg0 private-key {{ t.wireguard.private_key_ref }} listen-port {{ t.wireguard.listen_port }}
+{% for p in t.peers %}
+    pre-up wg set wg0 peer {{ p.public_key }} allowed-ips {{ p.allowed_ips|join(",") }}{% if p.endpoint %} endpoint {{ p.endpoint }}{% endif %}{% if p.persistent_keepalive %} persistent-keepalive {{ p.persistent_keepalive }}{% endif %}
+{% endfor %}
+```
+
+### Rendering one VM
+
+Virtual machines render the same way (`GET /api/virtual-machines/<id>/render/?template=`;
+`vm` and `device` both name the VM, `routing` holds what the VM routes
+with), plus:
+
+| Variable | What it holds |
+|---|---|
+| `interfaces` | The VM's interfaces, in slot (`index`) order, then by name. |
+| `disks` | Its [virtual disks](virtual-machines.md#disks). |
+| `represents_device` | `{id, name}` of the device the VM is, or `None`. |
+| `build` | The VM's build, as `backing_vm` above. |
+
+### Rendering one object of any type
+
+A template's list render (`objects`) puts every row of its type in one file.
+For one object, add `?object=<id>` to its preview or render:
+
+```
+GET /api/export-templates/<id>/preview/?object=<object id>   → {output}
+GET /api/export-templates/<id>/render/?object=<object id>    → the file
+GET /api/clusters/<id>/render/?template=<template id>        → {output, template}
+```
+
+The object must be of the template's type, in your tenant, and one you may
+view; anything else is a 404. Devices and VMs get the contexts above. Any
+other type gets the object under its type name (`cluster`) and as
+`object`, with `objects` holding just it and `count` 1. Clusters also get:
+
+| Variable | What it holds |
+|---|---|
+| `cluster` | The cluster - `cluster.name`, `cluster.type`, `cluster.group`, `cluster.site`, `cluster.custom_fields`, … |
+| `hosts` | Devices in the cluster, and the hosts its VMs run on, by name. |
+| `virtual_machines` | The cluster's VMs, by name. |
+| `vm_groups` | Its [VM groups](vm-groups.md). |
+
+Each list holds only the rows you may view, as in an export. The cluster
+alias needs the **view** permission on export templates and on clusters,
+and takes only a template whose object type is cluster. A Kolla
+`globals.yml` per cluster:
+
+```jinja
+kolla_internal_vip_address: "{{ cluster.custom_fields.kolla_vip }}"
+{% for h in hosts %}
+# {{ h.name }} {{ h.primary_ip.ip_address if h.primary_ip else "" }}
+{% endfor %}
+```
+
+[Bundles](#bundles-every-file-a-device-needs) stay device-only.
 
 A port description the way a running config carries it, from the far end:
 
 ```jinja
 {% for i in interfaces %}
 interface {{ i.name }}
-{% if i.link_peer %}
+{% if i.link_peer and not i.link_peer.hidden %}
  description to {{ i.link_peer.device }} {{ i.link_peer.custom_fields.frr_name or i.link_peer.interface }}
 {% elif i.description %}
  description {{ i.description }}
@@ -147,7 +233,7 @@ edits it; **Render** produces the file without leaving the page.
 - **Overview** - what the template is for (name, object type, description, and
   how many lines it has), what it produces (file extension, MIME type, inline or
   attachment), when it was created and last changed, and then the **template
-  body itself**, rendered in a scrollable monospace box.
+  body itself**, in the [file viewer](#the-file-viewer).
 - **Journal** - your notes on this template.
 - **Change log** - the automatic record of changes to the row.
 
@@ -168,6 +254,23 @@ is deliberately short - the template body is the content, and there is no
   produces the file (saved as an attachment when you enabled that option). The
   same action sits in the header of the template's own page.
 
+## Bulk changes
+
+Tick rows in the template list - with the `change` or `delete` grant - to
+reveal the bulk bar:
+
+- **Export** downloads the selected templates as CSV, Excel or JSON.
+- **Edit** sets **As attachment** or **Description** on every selected
+  template. The body, object type and file name stay per template.
+- **Delete** first shows what would happen and names the templates that sit
+  in a config bundle: they leave the bundle, as a single delete does.
+
+| Endpoint | Needs |
+|---|---|
+| `POST /api/export-templates/bulk-update/` | `exporttemplate.change`; `{ids, fields}` with `as_attachment`, `description` |
+| `GET /api/export-templates/bulk-edit-fields/` | `exporttemplate.change` |
+| `POST /api/export-templates/bulk-delete/` | `exporttemplate.delete`; `{ids, dry_run}` |
+
 ## Config-template bindings
 
 An export template with object type **device** can double as a device's **config
@@ -183,13 +286,34 @@ template by hand every time, bind one where it belongs:
 Resolution is **device → role → platform** - the first binding found wins.
 The binding is used in two places:
 
-- The device's **Config tab** preselects the resolved template in its
-  **Render config** box and shows how it was bound (*device* or *role/platform*).
+- The device's **Config tab** renders what is bound as soon as it opens - the
+  one bundle on the device's role, else the resolved template - and says how
+  it was bound (*role …*, *device* or *role/platform*). The picker still
+  renders any other template or bundle.
 - `GET /api/devices/<id>/render/` renders the bound template when no
   `?template=` parameter is given - so a drift runner doesn't need to know
   template ids per device.
 
 See [Config drift](iac-runner.md) for the full intended-vs-actual loop.
+
+### The file viewer
+
+The Config tab shows a render in a file viewer rather than a plain text box:
+
+| Part | What it does |
+|---|---|
+| **Files** | A bundle or directory template lists its files on the left: path, line count, and *Changed*, *Matches* or *Never pushed*. Above it, *N of M files changed since last push*. **Re-render** runs it again; **Download .tar** still fetches the whole set. |
+| **Colours** | Picked from the file's name, else from its first lines: JSON (keys, string values, numbers, `true`/`false`/`null`), XML (tags, attributes, values, comments, CDATA), YAML, INI and systemd units (`[Section]`, `Key=`), and network config such as FRR and `/etc/network/interfaces` (comments starting `!` or `#`, `interface`/`router`/`vrf`/`address-family`/`iface`/`auto`, IPv4 and IPv6 addresses and prefixes, numbers). Logs dim timestamps and mark errors and failures red, warnings amber and ok/succeeded green. A diff keeps its added/removed line colours with the code coloured inside. |
+| **Outline** | The file's sections - `interface …`, `router …`, `iface …`, `[Section]` headers (systemd-networkd, INI) and `### FILE:` markers. A click jumps to the line; the same lines carry fold markers in the gutter. |
+| **Search** | ++slash++ focuses it (when you are not typing elsewhere); matches are highlighted, ++enter++ / ++shift+enter++ or the arrows step through them. |
+| **Wrap**, **Copy**, **Download** | Copy and Download take the file on screen (or its diff), never the line numbers. |
+| **Diff vs last push** | Unified by default or **Side by side**, with old and new line numbers. **Only changes** shows each change with 3 lines of context; clear it to read the whole file with the changes in place. |
+| **Height** | The viewer fills the window and scrolls on its own. Drag the bar under it to resize (double-click resets); the height is kept per user in this browser. **Full screen** takes the whole window; ++esc++ leaves. |
+
+The same viewer shows the config context, the Ansible host vars, the config
+drift diff, a template's body and its **Run preview**, a script run's log and
+its text outputs, a pipeline run's step logs and its "What the next step
+receives" JSON, and a pipeline's *As code* YAML.
 
 ## Bundles: every file a device needs
 
@@ -201,13 +325,75 @@ so "push from Danbyte" is one call that returns every file with its path.
 
 Each template says where its file lands with a **Target path**
 (`/etc/frr/frr.conf`); a template without one is keyed by its name and
-extension. Two templates in one bundle cannot land at the same path.
+extension. Two templates in one bundle cannot land at the same path. A
+target path ending in `/` makes the template a directory of files - see
+[Several files from one template](#several-files-from-one-template).
 
 ```
 GET /api/devices/<id>/render/?bundle=leaf-files       → {bundle, files: {path: {…}}}
 GET /api/devices/<id>/render/?bundle=role             → the bundle bound to the device's role
 GET /api/devices/<id>/render/?bundle=role&archive=tar → a tarball, paths kept relative
 ```
+
+### Several files from one template
+
+Some files come one per thing on the device: a systemd `.link` unit per NIC
+(`10-mgmt0.link`, `11-gi1.link`, …), a WireGuard config per tunnel, a file
+per VRF. A device template whose **Target path ends in `/`** is a
+**directory**: each `{% file %}` block writes one file into it.
+
+```jinja
+{% for i in interfaces %}
+{% file "%02d-%s.link" % (10 + loop.index0, i.name) %}
+[Match]
+OriginalName={{ i.name }}
+{% endfile %}
+{% endfor %}
+```
+
+With the target path `/etc/systemd/network/`, a device with three NICs
+renders three files, `/etc/systemd/network/10-mgmt0.link` and so on. Each
+one appears in a bundle render, the bulk render and the tarball under its
+own path, with its own `sha256`, push record, `drift` and `diff` - exactly
+like a single-file template's file. Rendered on its own,
+`GET /api/devices/<id>/render/?template=<id>` answers
+`{template, template_id, path, files: {path: {…}}}` instead of one file, and
+`&archive=tar` works there too. The export template's own **preview** answers
+`{output: "", files}` and its **render** download is a tarball; both need
+`?object=<device id>`, since the files are per device.
+
+The rules, each a `400` with the reason:
+
+- **The name is a plain file name.** No `/` or `\`, not `.` or `..`, no NUL
+  or other control character, no leading or trailing space, at most 128
+  characters, and the directory plus the name fits 255. A push tool writes
+  these paths to disk, so nothing may step out of the directory - and the
+  check runs on the rendered name, so a NIC called `../x` is refused too.
+  The directory itself may not contain a `..` segment.
+- **Names are unique in one render.** Two blocks with one name is an error,
+  as are two templates of one bundle writing the same path. Two directory
+  templates may share a directory (`.link` and `.network` files side by
+  side); only a clash of whole paths is refused.
+- **Everything goes inside a block.** Whitespace between blocks is ignored;
+  any other text outside a block is refused rather than dropped, since it is
+  most often a forgotten `{% file %}`.
+- **No blocks, no files.** A device the template writes nothing for renders
+  no files: the bundle simply has none from that template, and the Render box
+  shows *No files for this device*.
+- **Blocks need a directory.** A file block in a template whose target path
+  does not end in `/` is refused on save and at render, and blocks cannot
+  nest. Only a device template can have a directory target.
+- At most 256 files per template render. `config-pushed` takes 50 files per
+  call; a tool with more sends several calls.
+
+[Config drift](iac-runner.md)'s `config-state` compares one running config
+per device, so it refuses a directory template; compare its files through
+`config-pushed` and the render's per-file `drift` instead.
+
+The bundle list takes the same bulk bar as the templates: **Export**, **Edit**
+(the **Description**) and a previewed **Delete**, through
+`/api/config-bundles/bulk-update/` (`configbundle.change`) and
+`/api/config-bundles/bulk-delete/` (`configbundle.delete`).
 
 Every rendered file carries its `sha256`, so a tool can skip what has not
 changed. `bundle=role` is an error rather than a guess when the role has no
@@ -265,6 +451,12 @@ every match of `<keychain:([^<>\s]+)>` with the key from
 An FHRP group's authentication key follows the same contract by group id:
 `<fhrp-key:ID>` (a `by_interface` row's `fhrp[].key_placeholder`), resolved
 from `POST /api/fhrp-groups/<ID>/reveal-psk/`.
+
+A WireGuard private key is never stored. A termination's
+`private_key_ref` (`tunnels[].wireguard.private_key_ref`) is printed as
+written: a path on the box, which the router fills itself, or a
+`<keychain:NAME>` placeholder, which the push tool resolves like any other
+keychain. Danbyte refuses a value that decodes as a key.
 
 ## Permissions and audit
 

@@ -30,18 +30,26 @@ current `/opt` layout.
     release source, the bundle upload, and at the bottom the releases with
     their notes - rendered as GitHub Markdown, `#123` linking to the issue
     in the release repo - and the upgrade button. **This install** holds the host it runs on: the
-    environment table (Python, Django, PostgreSQL, Redis, platform), the
-    services and their restart buttons, and the site certificate. The
+    environment table (Python, Django, PostgreSQL, Redis, platform) with
+    **Download SBOM** when the release shipped one ([Danbyte's
+    SBOM](sbom.md)), the services and their restart buttons, and the site
+    certificate. The
     running version and the environment come from a local, network-free
     check - so the page renders immediately even on an airgapped or offline
-    box. The release-repo check (the list of available versions) runs
-    separately; if it's slow, failing, or disabled, the version and
-    environment still show right away.
+    box. The list of available versions never comes from the release repo
+    during a page load: the `danbyte-update-check` timer (`manage.py
+    update_check`, every 6 hours; `run_scheduler` in a container) fetches it
+    into Redis, and the page and the badge read that copy. Until the first
+    fetch has run the Releases card says *Checking for releases…* and one
+    background refresh is queued (it needs `danbyte-workers`). A slow or
+    unreachable repo only makes the list older; the error shows under the
+    version line. Changing the release source or token starts a fresh check.
 
 !!! info "The top-bar update badge"
     When a newer release exists, a blue **Update available** badge appears
     beside the product name in the top bar - only for users who can manage
-    deployment settings (it links to **Settings → Updates**). The running
+    deployment settings (it links to **Settings → Updates**). It reads the
+    cached release list once per browser session. The running
     Danbyte version also shows at the bottom of the account menu. To hide the
     badge while still checking for updates, tick **Settings → Updates → Hide the
     "update available" badge** (airgapped mode hides it too, since no check
@@ -366,8 +374,8 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 | swap | the new code, frontend, static files and (bundle) vendor/ in place; the old ones kept aside; files the release no longer ships moved aside; new unit files linked | maintenance page |
 | deps, check | dependencies installed, `manage.py check`, the migration plan | maintenance page |
 | snapshot | `pg_dump` of the database - only when migrations are pending - into the run folder beside the app, which only the service user can read | maintenance page |
-| migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was; a migration that lost its database to a restart and rolled back whole runs once more, and if the database stays away only the code is rolled back | maintenance page |
-| static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
+| migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was; the deferred foreign-key checks run after each migration and after each of its data steps, as separate commits would; when the one transaction hits a database limit (too many locks, pending trigger events) it is rolled back and the migrations run one by one on a new connection; a migration that lost its database to a restart and rolled back whole runs once more, and if the database stays away only the code is rolled back | maintenance page |
+| static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static and frontend build files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
 | verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |
 | start | web, websockets, frontend, docs, workers - while the site still answers 503; `/api/health/` must say `ok` with the new version, the admin page must render, and nothing may keep restarting | 503 |
 | resume | the site opens; the timers that ran before start again (a timer you turned off stays off); a release's new timers are turned on | up |
@@ -489,11 +497,17 @@ The steps on the host - nginx, logrotate, the site-certificate unit - are
 what an upgrade from the app cannot do, because it never has root.
 Re-running `install.sh` from the bundle does them. On a host upgraded from
 the app, the bundle of the release that runs does them all at once - the
-command these steps lead with:
+command these steps lead with. An upgrade from the app, uploaded bundle
+included, deletes its bundle once it succeeds, so nothing is left on the
+host to run it from: the command downloads the bundle again as root and
+checks it. Offline, copy the tarball and its `.sha256` over instead:
 
 ```bash
-sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz    # the release that runs
-cd danbyte-<version>-linux-x86_64
+cd /root
+curl -fLO https://github.com/danbyte-net/danbyte/releases/download/v<version>/danbyte-<version>-linux-x86_64.tar.gz
+curl -fLO https://github.com/danbyte-net/danbyte/releases/download/v<version>/danbyte-<version>-linux-x86_64.tar.gz.sha256
+sha256sum -c danbyte-<version>-linux-x86_64.tar.gz.sha256
+sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz && cd danbyte-<version>-linux-x86_64
 sudo ./install.sh --host-only
 ```
 
@@ -505,6 +519,14 @@ replaced: the new render lands next to it as `danbyte.conf.new`, and
 with `--no-nginx` gets no nginx site from it while it has none, and no
 certificate unit either; `sudo make install-tls-unit APP=<app directory>`,
 in the same bundle, installs the unit alone.
+
+From 0.19 the site serves the frontend's hashed `/assets/` from disk, cached
+for good (see [Frontend files and
+compression](installation.md#frontend-files-and-compression)); the step
+*Let nginx serve the frontend's build files* stays up until the root steps
+have run. Until then the site works as before, only without that caching. A
+site you manage yourself needs the `/assets/` block and the
+`$danbyte_asset_cache` map from `deploy/nginx/danbyte.prod.conf.template`.
 
 !!! warning "Root runs only files root owns"
     The app directory belongs to the service account. A script or template

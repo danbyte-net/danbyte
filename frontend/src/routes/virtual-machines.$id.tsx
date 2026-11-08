@@ -1,15 +1,27 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import { LifecycleBar, hasLifetime } from "@/components/cells/lifecycle-cell"
+import {
+  SoftwareVersionSourceText,
+  SoftwareVersionText,
+} from "@/components/cells/software-version-cell"
 import { CatalogCell } from "@/components/cells/catalog-cell"
 import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { useQuery } from "@tanstack/react-query"
-import { GitCompareArrows, Pencil, RefreshCw, Trash2 } from "lucide-react"
-import { useCallback, useMemo, useState } from "react"
-import { type ColumnDef } from "@tanstack/react-table"
+import { listRowFromCache } from "@/lib/list-row-cache"
+import { Loading } from "@/components/loading"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  GitCompareArrows,
+  Pencil,
+  RefreshCw,
+  Target,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react"
+import { useCallback, useState } from "react"
 
-import { api, type VirtualDisk, type VirtualMachine } from "@/lib/api"
-import { DataTable } from "@/components/data-table"
+import { api, type VirtualMachine } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -26,23 +38,57 @@ import { useMe } from "@/lib/use-me"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VMInterfacesPane } from "@/components/vm-interfaces-pane"
+import { AssignedIpsPane } from "@/components/assigned-ips-pane"
 import { VmSnmpCard } from "@/components/vm-snmp-card"
 import { VmTopologyCard } from "@/components/vm-topology-card"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
 import { VmConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
+import { InstalledSoftwarePane } from "@/components/installed-software-pane"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
+import {
+  MonitoringBar,
+  MonitoringHeaderBadge,
+} from "@/components/monitoring/monitoring-bar"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
+import {
+  VmBuildCard,
+  VmDisks,
+  VmDriftCard,
+  VmProvisionButton,
+  hasBuild,
+} from "@/components/vm-build"
+import { DeviceProfilesCard } from "@/components/device-profiles-card"
+import {
+  SoftwareSummaryCard,
+  useSoftwareSummary,
+} from "@/components/software-summary-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { PrtgMonitoringRow } from "@/components/prtg/monitoring-row"
+import {
+  PrtgSensorsTab,
+  linkedSensorCount,
+  usePrtgLinks,
+} from "@/components/prtg/sensors-tab"
+import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
+import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
   // Typed so other pages can deep-link a tab (the MAC pages point at
   // Components); useUrlTab validates the value itself.
-  validateSearch: (s: Record<string, unknown>): { tab?: string } =>
-    typeof s.tab === "string" ? { tab: s.tab } : {},
+  // `?sensor=` opens that PRTG sensor's panel on the Sensors tab.
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { tab?: string; sensor?: string; state?: string } => ({
+    ...(typeof s.tab === "string" ? { tab: s.tab } : {}),
+    ...(typeof s.sensor === "string" ? { sensor: s.sensor } : {}),
+    // The monitoring bar's filter, on the Monitoring and Sensors tabs.
+    ...(typeof s.state === "string" && s.state ? { state: s.state } : {}),
+  }),
 })
 
 /** Memory in MB → "x GB" when an even multiple of 1024, else "x MB". */
@@ -53,19 +99,22 @@ function formatMemory(mb: number): string {
 
 function VmDetail() {
   const { id } = Route.useParams()
+  const qc = useQueryClient()
   const vm = useQuery({
     queryKey: ["virtual-machine", id],
     queryFn: () => api<VirtualMachine>(`/api/virtual-machines/${id}/`),
+    // Opened from the VM list: its row draws the page at once, and the
+    // detail read fills in the tab counts when it lands.
+    placeholderData: () =>
+      listRowFromCache<VirtualMachine>(qc, ["virtual-machines"], id),
   })
-  if (vm.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (vm.isPending) return <Loading />
   if (vm.isError)
     return (
       <div className="p-6">
         <QueryError error={vm.error} />
       </div>
     )
-  if (!vm.data) return null
   return <VmDetailBody vm={vm.data} />
 }
 
@@ -73,12 +122,17 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const { canDo } = useMe()
   const canEdit = canDo("virtualmachine", "change")
   const canDelete = canDo("virtualmachine", "delete")
+  const software = useSoftwareSummary({ kind: "vm", id: vm.id })
   const [tab, setTab] = useUrlTab<
     | "overview"
+    | "ips"
     | "components"
     | "services"
+    | "software"
+    | "flows"
     | "routing"
     | "monitoring"
+    | "sensors"
     | "snmp"
     | "certificates"
     | "config"
@@ -88,6 +142,35 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const openDelete = useCallback(() => setDeleting(vm), [vm])
+  // PRTG's sensors get a tab once PRTG has a device for this VM; the links
+  // come back empty while the integration is off.
+  const prtgLinks = usePrtgLinks({ virtual_machine: vm.id })
+  // With the integration on, the tab also says what PRTG will do: planned,
+  // excluded, or what is missing.
+  const prtgOn = usePrtgEnabled()
+  const hasPrtg = (prtgLinks.data ?? []).length > 0 || prtgOn
+  const search = Route.useSearch()
+  const openSensor = search.sensor
+  const selectSensor = useCallback(
+    (sensor: string | null) =>
+      nav({
+        to: "/virtual-machines/$id",
+        params: { id: vm.id },
+        search: { ...search, sensor: sensor ?? undefined },
+        replace: true,
+      }),
+    [nav, search, vm.id]
+  )
+  const setStateFilter = useCallback(
+    (state: string | null) =>
+      nav({
+        to: "/virtual-machines/$id",
+        params: { id: vm.id },
+        search: { ...search, state: state ?? undefined },
+        replace: true,
+      }),
+    [nav, search, vm.id]
+  )
   const goBack = useCallback(
     () => nav({ to: "/virtual-machines", search: { device: undefined } }),
     [nav]
@@ -102,6 +185,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       actions={
         <>
           <SpecSheetButton kind="vm" id={vm.id} />
+          {vm.intended && canDo("virtualmachine", "provision") && (
+            <VmProvisionButton vm={vm} />
+          )}
           {canEdit && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/virtual-machines/$id/edit" params={{ id: vm.id }}>
@@ -128,6 +214,19 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             <>
               <StatusBadge status={vm.status} />
               <PowerBadge state={vm.power_state} />
+              {vm.intended && (
+                <Badge variant="outline" className="gap-1 text-[10px]">
+                  <Target className="h-3 w-3" />
+                  Intended
+                </Badge>
+              )}
+              {vm.intended && vm.missing_since && (
+                <Badge variant="warning" className="gap-1 text-[10px]">
+                  <TriangleAlert className="h-3 w-3" />
+                  Not present
+                </Badge>
+              )}
+              <MonitoringHeaderBadge target={{ virtual_machine: vm.id }} />
               {vm.synced_from && (
                 <Link
                   to="/virtualization-sources/$id"
@@ -157,6 +256,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "ips", label: "IPs", count: vm.ip_count },
         {
           value: "components",
           // Same amber dot devices use for component drift - this is the same
@@ -172,11 +272,30 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         },
         { value: "services", label: "Services", count: vm.service_count },
         {
+          value: "software",
+          label: "Software",
+          // The Overview card's query is live after an edit on the tab; the
+          // payload's figure stands in until it lands.
+          count: software.data?.count ?? vm.install_count,
+        },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows" }]
+          : []),
+        {
           value: "routing",
           label: "Routing",
           count: vm.routing_count || undefined,
         },
         { value: "monitoring", label: "Monitoring" },
+        ...(hasPrtg
+          ? [
+              {
+                value: "sensors",
+                label: "Sensors",
+                count: linkedSensorCount(prtgLinks.data) || undefined,
+              },
+            ]
+          : []),
         { value: "snmp", label: "SNMP" },
         {
           value: "certificates",
@@ -191,7 +310,20 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <VmOverview vm={vm} />
+        <VmOverview vm={vm} onTab={setTab} />
+      </DetailTab>
+      <DetailTab value="ips">
+        <AssignedIpsPane
+          scope={{
+            kind: "vm",
+            vmId: vm.id,
+            vmName: vm.name,
+            slots: { primary: vm.primary_ip?.id },
+          }}
+          canAddIp={canDo("ipaddress", "add")}
+          canAssignIp={canDo("ipaddress", "change")}
+          canChangeDevice={false}
+        />
       </DetailTab>
       <DetailTab value="components">
         <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
@@ -208,6 +340,12 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       <DetailTab value="services">
         <ServicesPane parent={{ kind: "vm", id: vm.id }} />
       </DetailTab>
+      <DetailTab value="software">
+        <InstalledSoftwarePane parent={{ kind: "vm", id: vm.id }} />
+      </DetailTab>
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "vm", id: vm.id }} />
+      </DetailTab>
       <DetailTab value="monitoring">
         <div className="mb-6">
           <ObjectSlaPanel objectType="api.virtualmachine" objectId={vm.id} />
@@ -218,6 +356,8 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
               id: vm.primary_ip.id,
               ip_address: vm.primary_ip.ip_address,
             }}
+            state={search.state}
+            onState={setStateFilter}
           />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -231,6 +371,31 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             </Link>
           </p>
         )}
+        <div className="mt-6 empty:hidden">
+          <PrtgMonitoringRow
+            parent={{ virtual_machine: vm.id }}
+            prtgSync={vm.prtg_sync}
+            sensorsLink={(children, state) => (
+              <Link
+                to="/virtual-machines/$id"
+                params={{ id: vm.id }}
+                search={{ tab: "sensors", state }}
+                className="inline-flex"
+              >
+                {children}
+              </Link>
+            )}
+          />
+        </div>
+      </DetailTab>
+      <DetailTab value="sensors">
+        <PrtgSensorsTab
+          parent={{ virtual_machine: vm.id }}
+          selected={openSensor}
+          onSelect={selectSensor}
+          state={search.state}
+          onState={setStateFilter}
+        />
       </DetailTab>
       <DetailTab value="snmp">
         <VmSnmpCard vmId={vm.id} />
@@ -256,7 +421,13 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
 
 // The default "Overview" tab - VM facts in labelled cards with copy
 // buttons on the technical strings, then custom fields.
-function VmOverview({ vm }: { vm: VirtualMachine }) {
+function VmOverview({
+  vm,
+  onTab,
+}: {
+  vm: VirtualMachine
+  onTab: (tab: "ips") => void
+}) {
   const { humanIds } = useMe()
   const vmRows: KvRow[] = [
     ...(humanIds && vm.numid != null
@@ -313,7 +484,31 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         />
       ),
     },
-    { label: "Platform", value: <PlatformCell platform={vm.platform} /> },
+    {
+      label: "Platform",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          <PlatformCell platform={vm.platform} />
+          <SoftwareVersionText
+            version={vm.software_version}
+            target={vm.platform?.target_version}
+          />
+          <SoftwareVersionSourceText
+            source={vm.software_version_source}
+            seenAt={vm.software_version_seen_at}
+          />
+        </span>
+      ),
+    },
+    // The platform's effective dates: entered, else its end-of-life mapping.
+    ...(hasLifetime(vm.platform)
+      ? [
+          {
+            label: "OS support",
+            value: <LifecycleBar item={vm.platform} />,
+          } satisfies KvRow,
+        ]
+      : []),
     { label: "Description", value: vm.description || dash },
   ]
   const resourceRows: KvRow[] = [
@@ -413,16 +608,66 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
       value: <DnsNameLink name={vm.primary_ip?.dns_name} />,
       copy: vm.primary_ip?.dns_name || undefined,
     },
+    {
+      label: "IP addresses",
+      value: (
+        <button type="button" onClick={() => onTab("ips")} className="num link">
+          {vm.ip_count ?? 0}
+        </button>
+      ),
+    },
   ]
+  const notify = vm.primary_ip ? { ip: vm.primary_ip.id } : undefined
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <KvCard title="Virtual machine" rows={vmRows} />
-        <KvCard title="Resources" rows={resourceRows} />
-        <KvCard title="Placement" rows={placementRows} />
-        <KvCard title="Management" rows={managementRows} />
+      {vm.intended && vm.missing_since && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[13px]">
+          <TriangleAlert className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
+          <span>
+            Intended, not present on any hypervisor since{" "}
+            <TimeCell iso={vm.missing_since} />.
+          </span>
+        </div>
+      )}
+      <MonitoringBar
+        target={{ virtual_machine: vm.id }}
+        notify={notify}
+        slot="banner"
+      />
+      <PinnedSensorsCard
+        parent={{ virtual_machine: vm.id }}
+        sensorLink={(sensor, children) => (
+          <Link
+            to="/virtual-machines/$id"
+            params={{ id: vm.id }}
+            search={{ tab: "sensors", sensor }}
+            className="block h-full"
+          >
+            {children}
+          </Link>
+        )}
+      />
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <div className="min-w-0 space-y-6">
+          <KvCard title="Virtual machine" rows={vmRows} />
+          <KvCard title="Placement" rows={placementRows} />
+        </div>
+        <div className="min-w-0 space-y-6">
+          {/* All clear: one line beside the first card. */}
+          <MonitoringBar
+            target={{ virtual_machine: vm.id }}
+            notify={notify}
+            slot="compact"
+          />
+          <KvCard title="Resources" rows={resourceRows} />
+          {hasBuild(vm) && <VmBuildCard vm={vm} />}
+          <SoftwareSummaryCard parent={{ kind: "vm", id: vm.id }} />
+          <DeviceProfilesCard host={{ kind: "vm", id: vm.id }} />
+          <KvCard title="Management" rows={managementRows} />
+        </div>
       </div>
-      {vm.disks.length > 0 && <VmDisks disks={vm.disks} />}
+      {vm.intended && <VmDriftCard vmId={vm.id} />}
+      <VmDisks vm={vm} />
       <VmTopologyCard
         vmId={vm.id}
         vmName={vm.name}
@@ -430,67 +675,5 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
       />
       <CustomFieldValues model="virtualmachine" values={vm.custom_fields} />
     </div>
-  )
-}
-
-/** The VM's virtual disks (synced or operator-added). */
-function VmDisks({ disks }: { disks: VirtualDisk[] }) {
-  const columns = useMemo<ColumnDef<VirtualDisk>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: "Disk",
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.name || row.original.key}
-          </span>
-        ),
-      },
-      {
-        id: "size",
-        accessorKey: "size_gb",
-        header: "Size",
-        cell: ({ row }) =>
-          row.original.size_gb != null ? (
-            <span className="num text-xs">{row.original.size_gb} GB</span>
-          ) : (
-            dash
-          ),
-      },
-      {
-        id: "storage",
-        accessorKey: "storage",
-        header: "Storage",
-        cell: ({ row }) => (
-          <span className="text-xs">{row.original.storage || "-"}</span>
-        ),
-      },
-      {
-        id: "controller",
-        accessorKey: "controller",
-        header: "Controller",
-        cell: ({ row }) => (
-          <span className="text-xs uppercase">
-            {row.original.controller || "-"}
-          </span>
-        ),
-      },
-    ],
-    []
-  )
-  return (
-    <section>
-      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
-        Disks
-      </h2>
-      <DataTable
-        data={disks}
-        columns={columns}
-        tableId="vm-disks-embedded"
-        flexColumn="storage"
-        embedded
-      />
-    </section>
   )
 }

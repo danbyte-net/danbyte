@@ -99,11 +99,12 @@ class _OutpostIdentity:
 
 
 def engine_for_token(presented: str, *, pull_only: bool = True):
-    """The enabled remote engine whose token matches (constant-time), or None."""
+    """The enabled remote engine whose token matches (constant-time), or None.
+    An engine of a deactivated tenant never matches, so its token is refused."""
     if not presented:
         return None
     qs = MonitoringEngine.objects.filter(
-        kind=MonitoringEngine.REMOTE, enabled=True
+        kind=MonitoringEngine.REMOTE, enabled=True, tenant__is_active=True
     ).select_related("tenant")
     if pull_only:
         qs = qs.filter(transport=MonitoringEngine.PULL)

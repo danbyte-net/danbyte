@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CircuitTermination,
   CircuitTermSide,
@@ -144,13 +145,13 @@ export function CircuitTerminationDialog({
 
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/?picker=1"),
     enabled: open && kind === "site",
     staleTime: 10 * 60_000,
   })
   const providerNetworks = useQuery({
     queryKey: ["provider-networks-picker"],
-    queryFn: () => api<Paginated<ProviderNetwork>>("/api/provider-networks/"),
+    queryFn: () => apiAll<ProviderNetwork>("/api/provider-networks/"),
     enabled: open && kind === "provider_network",
     staleTime: 10 * 60_000,
   })

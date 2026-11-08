@@ -11,6 +11,8 @@ from datetime import timedelta
 from secrets import token_urlsafe
 
 from django.core.exceptions import FieldError
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -19,6 +21,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.bulk_delete import SafeBulkDeleteMixin
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.parsers import ObjectJSONParser
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
@@ -217,7 +220,7 @@ class SnmpProfileViewSet(TenantScopedViewSet):
     serializer_class = SnmpProfileSerializer
 
 
-class CertificateViewSet(TenantScopedViewSet):
+class CertificateViewSet(BulkEditMixin, TenantScopedViewSet):
     """Certificates - tenant-scoped, authenticated, and authored-or-observed.
 
     Observed rows are written by the collector; uploaded rows are authored by an
@@ -244,7 +247,22 @@ class CertificateViewSet(TenantScopedViewSet):
     parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
     # Importing a bundle creates rows, so it needs an ``add`` grant, not the
     # ``change`` a custom mutating action defaults to.
-    rbac_action_map = {"import_bundle": "add"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "import_bundle": "add"}
+    # The one authored field a list edits at once; the name is per certificate
+    # and every fact is read-only.
+    bulk_edit = BulkEditSpec(fields=("notes",), tags=False)
+
+    def normalize_bulk_updates(self, updates: dict) -> dict:
+        """The bulk write skips ``Certificate.save()`` and its key guard, so
+        the same refusal runs here."""
+        from .models import contains_private_key_material
+
+        for key, value in updates.items():
+            if contains_private_key_material(value):
+                raise ValidationError({key: "Private key material must never be stored "
+                                            "on a certificate. Certificates hold public "
+                                            "data only."})
+        return updates
 
     def get_queryset(self):
         from django.db.models import Count
@@ -452,6 +470,9 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
       OpenSSH public-key line; the type/blob/fingerprint are parsed from it, a
       private key or PEM cert is a clean 400, and an existing fingerprint dedups
       (marked uploaded, 200) rather than duplicating.
+    * There is no edit: a key belongs to the device it was uploaded or
+      observed on, so PUT/PATCH answer 405 (#458). Delete it and upload it on
+      the other device instead.
     * **delete** removes the row (an observed key re-appears on the next poll).
     * **accept-observed** declares an observed key as the expected one, clearing
       any ``ssh_host_key_mismatch`` for that device+type.
@@ -462,6 +483,7 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
     queryset = SSHHostKey.objects.select_related("device").all()
     serializer_class = SSHHostKeySerializer
     parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
+    http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_queryset(self):
         qs = super().get_queryset().order_by("device_id", "key_type")
@@ -491,15 +513,25 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
             raise ValidationError({"device": "This field is required."})
         if not line:
             raise ValidationError({"public_key_line": "This field is required."})
-        device = Device.objects.filter(pk=device_id, tenant=tenant).first()
+        try:
+            device = Device.objects.filter(pk=device_id, tenant=tenant).first()
+        except (ValueError, DjangoValidationError):
+            device = None  # not a UUID
         if device is None:
             raise ValidationError({"device": "Not found in this tenant."})
-        try:
-            row, created = upload_host_key(tenant, device, line)
-        except HostKeyUploadError as exc:
-            raise ValidationError({"public_key_line": str(exc)}) from exc
-        data = self.get_serializer(row).data
-        return Response(data, status=201 if created else 200)
+        # This create skips the base create(), so it runs the same post-save
+        # site-scope guard itself: a site-scoped user may only put a key on a
+        # device in their sites (#458).
+        with transaction.atomic():
+            try:
+                row, created = upload_host_key(tenant, device, line)
+            except HostKeyUploadError as exc:
+                raise ValidationError({"public_key_line": str(exc)}) from exc
+            response = Response(
+                self.get_serializer(row).data, status=201 if created else 200
+            )
+            self._assert_write_in_site_scope(response, "add")
+        return response
 
     @action(detail=True, methods=["post"], url_path="accept-observed")
     def accept_observed(self, request, pk=None):
@@ -902,7 +934,7 @@ class CertificateAssignmentViewSet(TenantScopedViewSet):
         return Response(self.get_serializer(assignment).data, status=201)
 
 
-class CertificateRequestViewSet(TenantScopedViewSet):
+class CertificateRequestViewSet(BulkEditMixin, TenantScopedViewSet):
     """Certificate signing requests - Danbyte generates the key + CSR.
 
     * **create** generates a key pair and CSR from the posted subject/SANs/key
@@ -918,9 +950,13 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         "issued_certificate", "created_by"
     )
     serializer_class = CertificateRequestSerializer
+    # Notes are the one writable field. A bulk delete goes row by row through
+    # perform_destroy, so each request's stored private key goes with it.
+    bulk_edit = BulkEditSpec(fields=("notes",), tags=False)
     # create defaults to `add`; the key-revealing + issue actions need `change`,
     # and downloading the public CSR is a read.
     rbac_action_map = {
+        **BulkEditMixin.rbac_action_map,
         "csr": "view",
         "private_key": "change",
         "import_issued": "change",
@@ -1173,7 +1209,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         super().perform_destroy(instance)
 
 
-class IssuerViewSet(TenantScopedViewSet):
+class IssuerViewSet(BulkEditMixin, TenantScopedViewSet):
     """External CA connectors (ACME directories). The EAB HMAC is write-only and
     stored encrypted; the ACME account key never leaves the secret store."""
 
@@ -1181,7 +1217,10 @@ class IssuerViewSet(TenantScopedViewSet):
     serializer_class = IssuerSerializer
     # Registering the ACME account mutates the issuer (stores the account key +
     # URI), so it needs `change`, not the default read.
-    rbac_action_map = {"register_account": "change"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "register_account": "change"}
+    # Plain settings only: the directory, DNS-01 setup and the write-only
+    # secrets stay per issuer.
+    bulk_edit = BulkEditSpec(fields=("enabled", "contact_email", "verify_tls"), tags=False)
 
     def perform_create(self, serializer):
         serializer.save(
@@ -1211,6 +1250,13 @@ class IssuerViewSet(TenantScopedViewSet):
         except AcmeError as exc:
             raise ValidationError({"detail": str(exc)}) from exc
         return Response({"account_uri": uri, **self.get_serializer(issuer).data})
+
+    def perform_destroy(self, instance):
+        # Single and bulk delete both come here (bulk_destroy).
+        from .acme_engine import forget_account
+
+        super().perform_destroy(instance)
+        forget_account(instance)
 
 
 class AcmeOrderViewSet(TenantScopedReadViewSet):

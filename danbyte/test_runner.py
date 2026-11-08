@@ -20,3 +20,11 @@ class DanbyteTestRunner(DiscoverRunner):
 
         middleware._IDLE_CACHE_TTL = None  # no expiry: counts stop depending on time
         middleware.clear_idle_timeout_cache()
+
+        # The per-user import/export type list (api.io_views, #488) is cached
+        # for a minute in production. Tests change a user's roles and ask
+        # again at once, and user ids repeat between runs on a kept Redis, so
+        # under test it is not cached; its own test turns it on.
+        from api import io_views
+
+        io_views.IO_TYPES_TTL = 0

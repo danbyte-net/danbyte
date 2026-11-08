@@ -21,6 +21,7 @@ does not apply to admin-configured issuer endpoints, matching Vault/Redfish.
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -28,9 +29,12 @@ import josepy as jose
 from acme import challenges, client, messages
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from django.db import transaction
 
 from .models import AcmeOrder, Issuer
 from .secret_store import require_secret_store
+
+log = logging.getLogger(__name__)
 
 USER_AGENT = "danbyte-acme"
 # How long finalize will poll authorizations + order before giving up. Short
@@ -400,6 +404,24 @@ def register_account(issuer: Issuer) -> str:
     issuer.account_ref = ref
     issuer.save(update_fields=["account_uri", "account_ref", "updated_at"])
     return issuer.account_uri
+
+
+def forget_account(issuer: Issuer) -> None:
+    """Remove a deleted issuer's ACME account key from the secret store.
+    Call it after the row's delete: the key goes when that commits, so a
+    delete rolled back keeps it. Best effort: a store that is disabled or
+    unreachable leaves the key behind, logged."""
+    if not issuer.account_uri and not issuer.account_ref:
+        return
+    tenant_id, ref = issuer.tenant_id, _account_ref(issuer)
+
+    def drop():
+        try:
+            require_secret_store().delete(tenant_id, ref)
+        except Exception:  # noqa: BLE001 - store disabled/unreachable
+            log.warning("could not remove the ACME account key %s", ref)
+
+    transaction.on_commit(drop)
 
 
 def _client(issuer: Issuer):

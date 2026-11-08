@@ -39,7 +39,9 @@ so the interactive docs work on **airgapped** installs with no CDN access.
   matter what the owning user may do - the right choice for reporting,
   inventory pulls, and AI assistants. Tokens are created and revoked from a
   signed-in session only: a request authenticated with a token can't create,
-  list or revoke tokens.
+  list or revoke tokens. One user holds at most 25 unexpired tokens
+  (`API_MAX_TOKENS_PER_USER`, see [Settings](settings.md#drf)); creating
+  another answers 400 until one is revoked or expires.
 - **Session** - when you are logged into the SPA, the same session cookie
   authorizes API calls from the browser.
 
@@ -55,6 +57,141 @@ remaining operational endpoints (monitoring, compliance, import/export, system,
 settings, …) are annotated with `@extend_schema` so they appear with proper
 summaries, request bodies, and responses.
 
+## Pagination
+
+Every list endpoint pages its answer:
+
+```json
+{
+  "count": 41600,
+  "next": "https://danbyte.example/api/interfaces/?page=2",
+  "previous": null,
+  "results": []
+}
+```
+
+- **`page_size`** - rows per page. Without it a list answers **100** rows
+  (the deployment's `API_PAGE_SIZE`, see [Settings](settings.md#drf)). Ask
+  for up to **2,000** with `?page_size=` (the deployment's
+  `API_MAX_PAGE_SIZE`); a larger number is cut to the cap, and a value that
+  is not a positive number is ignored. A cut page still carries `next`, so a
+  script that follows it reads every row whatever the cap.
+- **`page`** - which page, from 1. A page past the end answers `404`.
+- **`limit` / `offset`** are not read. `?limit=500` answers the default
+  100 rows, with a `next` to the rest; ask with `page_size` instead.
+  `/api/installed-software/` is one of these lists: 100 rows by default,
+  at most 2,000 with `page_size`. A client that reads only the first page
+  of any list misses rows, so follow `next`.
+- **`count`** - every matching row, not only the rows on this page.
+- **`next`** / **`previous`** - full links to the neighbouring pages, with
+  your filters and `page_size` kept, or `null` at either end. To read a
+  whole list, follow `next` until it is `null`.
+
+```bash
+# Every interface, 1,000 at a time
+url="https://danbyte.example/api/interfaces/?page_size=1000"
+while [ "$url" != "null" ]; do
+  page=$(curl -s -H "Authorization: Token $TOKEN" "$url")
+  echo "$page" | jq -c '.results[]'
+  url=$(echo "$page" | jq -r '.next')
+done
+```
+
+Ask for the rows you need rather than the cap, and follow `next`: a big page
+takes seconds to build and holds a server worker while it does. A few
+10,000-row pages used to hold every worker at once, so the cap is 2,000.
+
+**Large pages are limited per user.** A request whose `page_size` is above
+**1,000** (`API_LARGE_PAGE_THRESHOLD`) is a large page, and one user may have
+**2** in flight at a time (`API_LARGE_PAGE_CONCURRENCY`), counted across
+their session and every API token they own. The next one answers `429 Too Many Requests`
+with a `Retry-After` header in seconds; wait that long and send it again.
+Pages of 1,000 rows or fewer are never held back, so a script that pages at
+1,000, as the loop above does, never meets the limit, and neither does the
+web app. The script SDK and the web app retry a `429` after its
+`Retry-After` on their own.
+
+To serve bigger pages, an administrator sets `API_MAX_PAGE_SIZE` (and, to
+move or loosen the limit, `API_LARGE_PAGE_THRESHOLD` and
+`API_LARGE_PAGE_CONCURRENCY`) in the service environment and restarts the
+web service; see
+[Settings](settings.md#drf). Raising them trades other users' response
+times for one client's fewer round trips.
+
+A few lists page differently. Tags, statuses, IP roles and zones answer 500
+rows a page whatever `page_size` says; follow `next` for more. The monitoring check and history lists and
+the MAC lists answer `{count, page, page_size, num_pages, results}` with
+their own default and cap, as their schema entries say. The script SDK's
+`db.list()` follows `next` for you ([Scripts SDK](scripts-sdk.md)).
+
+## Sorting and facets on the big lists
+
+The device (`/api/devices/`), interface (`/api/interfaces/`), cable
+(`/api/cables/`) and virtual machine (`/api/virtual-machines/`) lists sort,
+filter and count on the server - the web app pages them this way. Every
+parameter here is optional, and a request without them answers as before.
+
+| Parameter | What it does |
+|---|---|
+| `ordering=<column>` / `-<column>` | Sort by one column of the list's table (`name`, `status`, `site`, `updated`…), a catalog field (`serial_number`, `site.region`) or a custom field (`custom_fields.<key>`). Names sort in natural order; empty values sort last both ways. A column the list cannot sort by is a `400`. |
+| `f_<facet>=a,b` | Rows in any of the listed buckets of one facet (`f_status=<id>,<id>`, `f_tags=core`, `f_manufacturer=Acme`). `__none__` is the empty bucket (the interface list's status uses `none`, which reads as Active). A comma inside a value is written `\,`. Facets combine with AND. An unknown facet is a `400`. |
+| `f_<facet>=min..max` | A range facet (the device list's `f_ips=2..10`); either side may be left out. |
+| `expr=<json>` | The Advanced filter as its JSON tree (`{"kind": "cmp", "field": "status.name", "cmp": "=", "value": "active"}`, groups as `{"kind": "group", "op": "and", "terms": [...]}`). Strings compare without case. A field the list does not have is a `400`. |
+| `view=table` | The slim row: only what the web app's table reads. The default row stays the full one. |
+| `include=a,b` | With `view=table`: add these fields of the full row. |
+
+`GET <list>/facets/` takes the same filters and answers the rail:
+`{"facets": {"<facet>": [{"value", "label", "count", "color", "text_color"}]}, "sortable": [...]}`.
+Each facet counts the rows every other filter leaves, so its own selection
+does not hide its other buckets; at most 500 buckets per facet, the selected
+ones always. `GET <list>/table-ids/` answers every matching id in list
+order (`{"count", "truncated", "results"}`, at most 50,000). Both are scoped
+exactly like the list: tenant, permissions and site scope.
+
+The facets per list:
+
+- **Devices**: `status`, `role`, `platform`, `eol`, `coverage`, `type`,
+  `manufacturer` (by name), `cooling`, `site`, `software_version`,
+  `software_target`, `ips` (range), `tags`.
+- **Interfaces**: `device`, `status`, `tags`.
+- **Cables**: `type`, `status`, `tags`.
+- **Virtual machines**: `cluster` and `group` (by name), `status`, `power`,
+  `synced_from`, `site`, `role`, `platform`, `eol`, `software_version`,
+  `software_target`, `tags`.
+
+```bash
+# The second page of planned devices at one site, by site then name
+curl -s -H "Authorization: Token $TOKEN" \
+  "https://danbyte.example/api/devices/?view=table&page=2&page_size=50&ordering=site&f_status=$PLANNED&f_site=$SITE"
+```
+
+## Filtering by tag
+
+The device, IP address (`/api/ips/`) and prefix (`/api/prefixes/`) lists
+take `?tag=<slug>` and `?tag_id=<id>`. Each is repeatable, and a row must
+carry every tag named: `?tag=pod-1&tag=anycast-gw` answers the rows tagged
+with both. A slug no row carries answers an empty list; a `tag_id` that is
+not a number answers `400`.
+
+```bash
+curl -s -H "Authorization: Token $TOKEN" \
+  "https://danbyte.example/api/ips/?tag=anycast-gw&page_size=1000"
+```
+
+## Catalog names and slugs
+
+The tenant catalogs - platforms, platform groups, manufacturers, device
+roles, RIRs, VLAN groups, service templates, location and area types,
+sensitivity labels, custom-field groups and the other name-and-slug
+catalogs - take one rule on `POST` and `PATCH`:
+
+- A name another row has, case aside, is refused on create and on a
+  rename, with the error on `name`. An edit that keeps the name is never
+  refused for it, so rows that already share a name stay editable.
+- Leave out `slug` and a create takes it from the name; an edit keeps the
+  row's slug unless it renames the row, which takes the new name's.
+- A `slug` you send that another row has is refused on `slug`.
+
 ## Asking the API what it accepts
 
 These endpoints describe the API's own vocabulary so a client never has to
@@ -62,8 +199,10 @@ hard-code a list that can go stale:
 
 - **`GET /api/dcim/choices/`** - the option lists behind the long taxonomy
   dropdowns (interface and cable types, duplex, 802.1Q modes, PoE, connector
-  fibre counts, common speeds). Each option carries `value`, `label` and a
-  `group` so a UI can render sub-categorised dropdowns.
+  fibre counts, common speeds), the hardware's `airflow` directions and
+  `cooling_method`s, and a rack's `cooling_capability`. Each option carries
+  `value` and `label`, and the grouped taxonomies a `group` so a UI can render
+  sub-categorised dropdowns.
 - **`GET /api/editable-fields/`** - which fields of a model a *field-level*
   write path may set, and what editor each needs. `?model=interface` (registry
   slug or `api.interface`) returns descriptors:
@@ -95,8 +234,10 @@ hard-code a list that can go stale:
   {"path": "/api/devices/", "model": "api.device", "slug": "device", "cf_model": "device",
    "fields": [
      {"key": "asset_tag",   "label": "Asset tag", "kind": "text",   "group": "fields"},
+     {"key": "face",        "label": "Face",      "kind": "choice", "group": "fields",
+      "options": [{"value": "front", "label": "Front"}, {"value": "rear", "label": "Rear"}]},
      {"key": "airflow",     "label": "Airflow",   "kind": "choice", "group": "fields",
-      "options": [{"value": "front-to-rear", "label": "Front to rear"}], "setting": "airflow"},
+      "choices": "airflow", "setting": "airflow"},
      {"key": "site.region", "label": "Region",    "kind": "object", "group": "related",
       "related": "api.region", "via": "Site"},
      {"key": "config_template", "path": "config_template.resolved", "label": "Config template",
@@ -107,8 +248,9 @@ hard-code a list that can go stale:
   `key` is a dotted path into a row (`path` when the value sits deeper);
   `kind` is one of `text`, `longtext`, `ip`, `number`, `bool`, `choice`,
   `date`, `datetime`, `color`, `object`, `objects`, `tags` or `auto` (render
-  by the value's shape). A long choice list names its `/api/dcim/choices/`
-  key in `choices` instead of inlining `options`. `related` is the
+  by the value's shape). A choice list `/api/dcim/choices/` publishes - the
+  long taxonomies, airflow, cooling - is named by its key in `choices` instead
+  of inlined as `options`. `related` is the
   `app.model` an object points at. `setting` names the device-field switch
   (Settings → Device fields) that hides the field. `custom_fields` are the
   model's visible custom-field definitions.
@@ -169,18 +311,29 @@ row is checked as its own `PATCH` would be, and the error names the row
 settings."]}`). Text is trimmed and booleans read as a `PATCH` reads them.
 One bad value refuses the whole call: nothing is written.
 
-A list that declares its bulk-edit fields (the routing lists) also answers
-`GET <list>/bulk-edit-fields/` with `{"fields": [...], "tags": true}`: the
-keys its `bulk-update/` accepts, each described as `/api/editable-fields/`
-describes a field (an object field carries the `endpoint` to pick it from).
-Its `bulk-update/` answers `409` when the values would make two rows the
-same (a static route's path), and its `bulk-delete/` keeps a row that other
-records still reference, with the reason in `skipped` - see
-[Routing](../features/routing.md#editing-and-deleting-several-at-once).
+A list that declares its bulk-edit fields (the routing lists, platforms
+and virtual machines) also answers `GET <list>/bulk-edit-fields/` with
+`{"fields": [...], "tags": true, "custom_fields": null}`: the keys its
+`bulk-update/` accepts, each described as `/api/editable-fields/` describes
+a field (an object field carries the `endpoint` to pick it from). Its
+`bulk-update/` answers `409` when the values would make two rows the same
+(a static route's path). The routing lists' `bulk-delete/` keeps a row that
+other records still reference, with the reason in `skipped` - see
+[Routing](../features/routing.md#editing-and-deleting-several-at-once);
+platforms keep one a device, virtual machine or device profile uses - see
+[Platforms](../dcim/device-catalog.md#platforms-bulk).
+
+Where `custom_fields` names a model (`"virtualmachine"`), `bulk-update/`
+also takes `fields.custom_fields`: an object of custom-field keys and their
+new values, checked as the field's type checks them. Only the keys sent
+change; `null` (or `""`, `[]`) clears one. A key that is not one of that
+model's custom fields, or clearing a required one, answers `400` under
+`custom_fields` - see
+[Virtual machines](../features/virtual-machines.md#editing-several-at-once).
 
 The lists that preview a delete (circuits, wireless, virtual chassis, power
-panels and feeds) answer `bulk-delete/` with `{deleted, deleted_ids,
-skipped: [{id, name, reason}], impact: [{label, count}], released: [{label,
+panels and feeds, platforms) answer `bulk-delete/` with `{deleted,
+deleted_ids, skipped: [{id, name, reason}], impact: [{label, count}], released: [{label,
 count}], notes: [{id, name, label, detail}], dry_run}`. `skipped` are the
 rows kept because something still uses them; `impact` counts everything else
 the delete removes, including a cable left with no port on one end; `notes`

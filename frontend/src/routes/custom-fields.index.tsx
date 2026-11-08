@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type CustomField, type Paginated } from "@/lib/api"
+import { type CustomField } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CUSTOMIZABLE_MODELS,
   CUSTOM_FIELD_TYPES,
@@ -40,7 +41,7 @@ function CustomFieldsPage() {
   const query = useQuery({
     queryKey: ["custom-fields", q],
     queryFn: () =>
-      api<Paginated<CustomField>>(
+      apiAll<CustomField>(
         `/api/custom-fields/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

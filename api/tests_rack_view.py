@@ -275,10 +275,12 @@ class FloorPlanSceneParityTests(_PinnedScene):
     device, feed and cabinet geometry moved to api.scene_geo (#248)."""
 
     def test_scene_is_unchanged(self):
+        self.maxDiff = None
         tile = {
             "w": 1, "h": 1, "orientation": 0, "status": "", "device_name": "",
             "type_name": "Rack", "color": "#64748b", "is_zone": False,
-            "perforated": False, "rack": None, "cabinet": None,
+            "perforated": False, "rack": None, "cabinet": None, "device": None,
+            "hidden": False, "icon": "", "riser": False, "riser_to": [],
         }
         body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
         self.assertTrue(body.pop("as_of"))
@@ -287,6 +289,11 @@ class FloorPlanSceneParityTests(_PinnedScene):
                 "id": str(self.plan.id), "name": "Hall A", "grid_width": 24,
                 "grid_height": 16, "cell_mm": 600, "ceiling_mm": 3000,
                 "background_image": None, "background_opacity": 60,
+                # Background layers and building levels, added since.
+                "background_shown": True, "base_map": None, "map_opacity": 60,
+                "basemap": None,
+                "elevation_mm": None, "slab_mm": 300, "align_dx": 0.0,
+                "align_dy": 0.0, "align_rot": 0.0,
             },
             "tiles": [
                 {**tile, "id": str(self.rack_tile.id), "x": 2, "y": 3,

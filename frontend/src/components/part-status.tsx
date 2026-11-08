@@ -3,6 +3,7 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query"
 import { Check } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   FacePort,
   FacePorts,
@@ -48,9 +49,7 @@ export function usePartStatuses(enabled = true) {
   return useQuery({
     queryKey: ["statuses", "inventoryitem"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=inventoryitem&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=inventoryitem&picker=1"),
     enabled,
     staleTime: 5 * 60_000,
   })

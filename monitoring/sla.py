@@ -530,9 +530,10 @@ def _prefix_addresses(prefixes) -> dict:
     return out
 
 
-def member_ip_ids(agreement_ids) -> set:
+def member_ip_ids(agreement_ids, tenant=None) -> set:
     """The addresses whose checks count for these agreements' members now -
-    what a dashboard or view scoped to an SLA narrows to."""
+    what a dashboard or view scoped to an SLA narrows to. ``tenant`` keeps
+    out agreements of any other tenant an id may name."""
     import uuid as _uuid
 
     from .models import SlaAgreement
@@ -545,7 +546,10 @@ def member_ip_ids(agreement_ids) -> set:
             continue
     now = timezone.now()
     out: set = set()
-    for agreement in SlaAgreement.objects.filter(pk__in=ids):
+    agreements = SlaAgreement.objects.filter(pk__in=ids)
+    if tenant is not None:
+        agreements = agreements.filter(tenant=tenant)
+    for agreement in agreements:
         members = resolve_members(agreement, now - timedelta(seconds=1), now)
         objects = _objects(members)
         for ips in _addresses(members, objects).values():

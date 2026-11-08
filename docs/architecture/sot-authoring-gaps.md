@@ -40,7 +40,7 @@ create path.
 | DNS zone | ✅ (managed, local) | 🟡 (`sync`/`auto_create`) | ✅ (managed only) | ✅ | ✅ | ✅ |
 | **DHCP exclusion** | 🔴 | 🔴 | 🔴 | 🔴 (no viewset) | ✅ | 🔴 |
 | **Virtual network** | 🔴 | 🔴 | 🔴 | 🔴 (`get` only) | ✅ | 🔴 |
-| **Virtual disk** | 🔴 | 🔴 | 🔴 | 🔴 (no viewset) | ✅ | 🔴 |
+| Virtual disk | ✅ (VM Overview) | ✅ | ✅ | ✅ (`/api/virtual-disks/`) | ✅ (prunes only its own, never on an intended VM) | ✅ |
 | DHCP lease | 🔴 | 🔴 | 🔴 | 🔴 (`get` only) | ✅ | ⚙️ (ephemeral, observed) |
 | VirtGuest (hypervisor↔VM link) | 🔴 | 🔴 | 🔴 | 🔴 (no viewset) | ✅ | ⚙️ (internal linkage) |
 | Deploy run | 🔴 | - | - | 🔴 (`retry` action only) | ✅ | ⚙️ (job record) |
@@ -73,9 +73,8 @@ create path.
    pre-declare networks.
 2. **DHCP exclusion** - no API or UI at all; only the sync creates them. An
    operator can't carve an exclusion by hand. Niche but a genuine hole.
-3. **Virtual disk** - display-only under a VM, though the data model allows
-   operator-added disks. Add create/edit/delete when VM disk authoring is
-   wanted.
+3. **Virtual disk** - authorable since the intended-VM work: an operator
+   declares an intended VM's disks first, and the sync only blank-fills them.
 
 ## Not gaps (⚙️ sync-only by design)
 

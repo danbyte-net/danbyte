@@ -1,15 +1,13 @@
 import { useMemo, useState } from "react"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
-import { Inbox, Plug, Plus, RefreshCw } from "lucide-react"
+import { Plug, Plus, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated, type VirtualizationSource } from "@/lib/api"
+import { api, type VirtualizationSource } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
-import { SyncStatusBadge } from "@/components/integrations/sync-status-badge"
 import { useMe } from "@/lib/use-me"
-import { Badge } from "@/components/ui/badge"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,11 +33,11 @@ import {
   FormText,
   FormCombobox,
 } from "@/components/forms"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
-import { TimeCell } from "@/components/cells/time-ago"
+import { buildVirtualizationSourceColumns } from "@/components/columns/virtualization-source-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { VirtChangesDialog } from "@/components/integrations/virt-changes-dialog"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -58,11 +56,13 @@ function VirtualizationSourcesPage() {
   const [editing, setEditing] = useState<VirtualizationSource | null>(null)
   const [reviewing, setReviewing] = useState<VirtualizationSource | null>(null)
   const [deleting, setDeleting] = useState<VirtualizationSource | null>(null)
+  const [selected, setSelected] = useState<VirtualizationSource[]>([])
+  const selectable = canEdit || canDelete
 
   const query = useQuery({
     queryKey: ["virtualization-sources", q],
     queryFn: () =>
-      api<Paginated<VirtualizationSource>>(
+      apiAll<VirtualizationSource>(
         `/api/virtualization-sources/?${new URLSearchParams({ search: q })}`
       ),
   })
@@ -140,144 +140,50 @@ function VirtualizationSourcesPage() {
     onError: (e) => apiErrorToast(e),
   })
 
-  const columns = useMemo<ColumnDef<VirtualizationSource>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <span className="flex items-center gap-2 font-medium">
-            <Link
-              to="/virtualization-sources/$id"
-              params={{ id: row.original.id }}
-              className="link"
-            >
-              {row.original.name}
-            </Link>
-            {!row.original.enabled && (
-              <Badge variant="secondary" className="text-[10px]">
-                disabled
-              </Badge>
-            )}
-          </span>
-        ),
-      },
-      {
-        id: "kind",
-        accessorKey: "kind_display",
-        header: "Platform",
-        cell: ({ row }) => (
-          <Badge variant="outline" className="text-[10px]">
-            {row.original.kind_display}
-          </Badge>
-        ),
-      },
-      {
-        id: "mode",
-        accessorKey: "sync_mode",
-        header: "Mode",
-        cell: ({ row }) => {
-          const m = row.original.sync_mode
-          const label =
-            m === "auto" ? "automatic" : m === "manual" ? "manual" : "review"
-          return (
-            <span className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-[10px]">
-                {label}
-              </Badge>
-              {row.original.pending_count > 0 && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 px-1.5 text-[11px]"
-                  onClick={() => setReviewing(row.original)}
-                >
-                  <Inbox className="h-3.5 w-3.5" />
-                  {row.original.pending_count} to review
-                </Button>
-              )}
-            </span>
-          )
-        },
-      },
-      {
-        id: "host",
-        accessorKey: "host",
-        header: "API",
-        cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-muted-foreground">
-            https://{row.original.host}:{row.original.port}
-          </span>
-        ),
-      },
-      {
-        id: "status",
-        header: "Last sync",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const s = row.original
-          return (
-            <span className="flex items-center gap-2">
-              <SyncStatusBadge
-                status={s.last_sync_status}
-                error={s.last_sync_error}
-                skipped={s.last_sync_skipped}
-              />
-              {s.last_sync_at && <TimeCell iso={s.last_sync_at} />}
-            </span>
-          )
-        },
-      },
-      {
-        id: "actions",
-        enableHiding: false,
-        cell: ({ row }) => {
+  const columns = useMemo(
+    () =>
+      buildVirtualizationSourceColumns<VirtualizationSource>({
+        selection: selectable,
+        onReview: setReviewing,
+        actions: {
+          onEdit: canEdit ? setEditing : undefined,
+          onDelete: canDelete ? setDeleting : undefined,
           // The mutation is shared by every row, so its pending flag must be
           // read against the row that started it - otherwise one sync turns
           // every row's button into "Syncing…" and reads as syncing them all.
-          const syncing =
-            syncNow.isPending && syncNow.variables?.id === row.original.id
-          const testing =
-            test.isPending && test.variables?.id === row.original.id
-          return (
-            <RowActions
-              onEdit={canEdit ? () => setEditing(row.original) : undefined}
-              onDelete={
-                canDelete ? () => setDeleting(row.original) : undefined
-              }
-              extra={
-                <>
+          extra: (r) => {
+            const syncing = syncNow.isPending && syncNow.variables?.id === r.id
+            const testing = test.isPending && test.variables?.id === r.id
+            return (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={testing}
+                  onClick={() => test.mutate(r)}
+                >
+                  <Plug className="h-3.5 w-3.5" />
+                  {testing ? "Testing…" : "Test"}
+                </Button>
+                {canEdit && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs"
-                    disabled={testing}
-                    onClick={() => test.mutate(row.original)}
+                    disabled={syncing}
+                    onClick={() => syncNow.mutate(r)}
                   >
-                    <Plug className="h-3.5 w-3.5" />
-                    {testing ? "Testing…" : "Test"}
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {syncing ? "Syncing…" : "Sync"}
                   </Button>
-                  {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      disabled={syncing}
-                      onClick={() => syncNow.mutate(row.original)}
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      {syncing ? "Syncing…" : "Sync"}
-                    </Button>
-                  )}
-                </>
-              }
-            />
-          )
+                )}
+              </>
+            )
+          },
         },
-      },
-    ],
-    [canEdit, canDelete, del, test, syncNow]
+      }),
+    [canEdit, canDelete, selectable, test, syncNow]
   )
 
   return (
@@ -307,8 +213,20 @@ function VirtualizationSourcesPage() {
           columns={columns}
           flexColumn="host"
           tableId="virtualization-sources"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/virtualization-sources/"
+        noun={["source", "sources"]}
+        invalidate={[["virtualization-sources"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="virtualizationsource"
+      />
       {creating && <SourceDialog onOpenChange={setCreating} />}
       {editing && (
         <SourceDialog
@@ -505,6 +423,14 @@ export function SourceDialog({
   const [matchVlans, setMatchVlans] = useState(
     source?.match_existing_vlans ?? false
   )
+  const [cablesFromVnets, setCablesFromVnets] = useState(
+    source?.cables_from_vnets ?? false
+  )
+  const [vnetZone, setVnetZone] = useState(source?.vnet_zone ?? "")
+  const [vnetPattern, setVnetPattern] = useState(
+    source?.vnet_name_pattern ?? ""
+  )
+  const [vnetTags, setVnetTags] = useState(source?.vnet_tag_range ?? "")
   const [syncHosts, setSyncHosts] = useState(source?.sync_hosts ?? false)
   const [syncHostHw, setSyncHostHw] = useState(
     source?.sync_host_hardware ?? false
@@ -512,9 +438,7 @@ export function SourceDialog({
   const [syncPlatforms, setSyncPlatforms] = useState(
     source?.sync_platforms ?? false
   )
-  const [syncMtu, setSyncMtu] = useState(
-    source?.sync_vm_interface_mtu ?? true
-  )
+  const [syncMtu, setSyncMtu] = useState(source?.sync_vm_interface_mtu ?? true)
   const [skipOffline, setSkipOffline] = useState(
     source?.skip_offline_vms ?? false
   )
@@ -538,8 +462,7 @@ export function SourceDialog({
   const [vrfMode, setVrfMode] = useState(source?.vrf_mode ?? "pinned")
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
 
@@ -556,6 +479,14 @@ export function SourceDialog({
         sync_disks: syncDisks,
         sync_networks: syncNetworks,
         match_existing_vlans: matchVlans,
+        ...(kind === "proxmox"
+          ? {
+              cables_from_vnets: cablesFromVnets,
+              vnet_zone: vnetZone.trim(),
+              vnet_name_pattern: vnetPattern.trim(),
+              vnet_tag_range: vnetTags.trim(),
+            }
+          : {}),
         sync_hosts: syncHosts,
         sync_host_hardware: syncHostHw,
         sync_platforms: syncPlatforms,
@@ -612,9 +543,7 @@ export function SourceDialog({
         }
       : { id: tokenId, setId: setTokenId, secret, setSecret }
   const valid =
-    name.trim() &&
-    host.trim() &&
-    (isEdit || (cred.id.trim() && cred.secret))
+    name.trim() && host.trim() && (isEdit || (cred.id.trim() && cred.secret))
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -718,6 +647,42 @@ export function SourceDialog({
                 checked={matchVlans}
                 onChange={setMatchVlans}
               />
+            )}
+            {syncNetworks && kind === "proxmox" && (
+              <FormCheckbox
+                label="Cables from VNets"
+                hint="A VNet with exactly two NICs on these VMs becomes a cable between the devices the VMs are. Existing cables are never changed."
+                checked={cablesFromVnets}
+                onChange={setCablesFromVnets}
+              />
+            )}
+            {kind === "proxmox" && (
+              <>
+                <FormText
+                  label="VNet zone"
+                  value={vnetZone}
+                  onChange={setVnetZone}
+                  mono
+                  placeholder="lab"
+                  info="The SDN zone the network plan proposes new VNets in."
+                />
+                <FormText
+                  label="VNet name pattern"
+                  value={vnetPattern}
+                  onChange={setVnetPattern}
+                  mono
+                  placeholder="c{n:04}"
+                  info="Names a VNet for a cable with none in the network plan; n is the cable number. The cable is not changed."
+                />
+                <FormText
+                  label="VNet tag range"
+                  value={vnetTags}
+                  onChange={setVnetTags}
+                  mono
+                  placeholder="1000-1999"
+                  info="Tags the network plan gives new VNets, lowest free first. Leave blank for a simple zone."
+                />
+              </>
             )}
             {spec.hosts && (
               <FormCheckbox

@@ -5,7 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated, type Silence } from "@/lib/api"
+import { api, type Silence } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -33,7 +34,7 @@ export function SilencesList() {
   const canDelete = canDo("silence", "delete")
   const q = useQuery({
     queryKey: ["silences"],
-    queryFn: () => api<Paginated<Silence>>("/api/monitoring/silences/"),
+    queryFn: () => apiAll<Silence>("/api/monitoring/silences/"),
     refetchInterval: 60_000,
   })
   const [deleting, setDeleting] = useState<Silence | null>(null)

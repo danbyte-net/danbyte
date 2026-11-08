@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner"
 
 import { api, formatBytes } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Backup,
   BackupComponent,
@@ -25,7 +26,6 @@ import type {
   BackupTargetTestResult,
   BackupsStatus,
   NotificationChannel,
-  Paginated,
   RestorePreview,
   RestoreRun,
   StorageKind,
@@ -209,7 +209,7 @@ function TargetsCard({ kinds }: { kinds: StorageKind[] }) {
   const qc = useQueryClient()
   const targets = useQuery({
     queryKey: ["backup-targets"],
-    queryFn: () => api<Paginated<BackupTarget>>("/api/backups/targets/"),
+    queryFn: () => apiAll<BackupTarget>("/api/backups/targets/"),
   })
   const [editing, setEditing] = useState<BackupTarget | "new" | null>(null)
   const [removing, setRemoving] = useState<BackupTarget | null>(null)
@@ -570,7 +570,7 @@ function SchedulesCard() {
   const qc = useQueryClient()
   const schedules = useQuery({
     queryKey: ["backup-schedules"],
-    queryFn: () => api<Paginated<BackupSchedule>>("/api/backups/schedules/"),
+    queryFn: () => apiAll<BackupSchedule>("/api/backups/schedules/"),
   })
   const [editing, setEditing] = useState<BackupSchedule | "new" | null>(null)
   const [removing, setRemoving] = useState<BackupSchedule | null>(null)
@@ -742,12 +742,11 @@ function ScheduleDialog({
 }) {
   const targets = useQuery({
     queryKey: ["backup-targets"],
-    queryFn: () => api<Paginated<BackupTarget>>("/api/backups/targets/"),
+    queryFn: () => apiAll<BackupTarget>("/api/backups/targets/"),
   })
   const channels = useQuery({
     queryKey: ["notification-channels"],
-    queryFn: () =>
-      api<Paginated<NotificationChannel>>("/api/monitoring/channels/"),
+    queryFn: () => apiAll<NotificationChannel>("/api/monitoring/channels/"),
   })
   const [name, setName] = useState(schedule?.name ?? "")
   const [components, setComponents] = useState<BackupComponent[]>(
@@ -875,7 +874,7 @@ function BackupsCard({ status }: { status: BackupsStatus | undefined }) {
   const qc = useQueryClient()
   const backups = useQuery({
     queryKey: ["backups"],
-    queryFn: () => api<Paginated<Backup>>("/api/backups/"),
+    queryFn: () => apiAll<Backup>("/api/backups/"),
     refetchInterval: (q) =>
       q.state.data?.results.some((b) => isActive(b.status)) ? 3_000 : false,
   })
@@ -1155,7 +1154,7 @@ function BackupNowDialog({
 }) {
   const targets = useQuery({
     queryKey: ["backup-targets"],
-    queryFn: () => api<Paginated<BackupTarget>>("/api/backups/targets/"),
+    queryFn: () => apiAll<BackupTarget>("/api/backups/targets/"),
   })
   const [components, setComponents] = useState<BackupComponent[]>([
     "db",
@@ -1394,7 +1393,7 @@ function RestoreDialog({
 function RestoresCard() {
   const runs = useQuery({
     queryKey: ["restore-runs"],
-    queryFn: () => api<Paginated<RestoreRun>>("/api/backups/restore-runs/"),
+    queryFn: () => apiAll<RestoreRun>("/api/backups/restore-runs/"),
     refetchInterval: (q) =>
       q.state.data?.results.some((r) => isActive(r.status)) ? 3_000 : false,
   })

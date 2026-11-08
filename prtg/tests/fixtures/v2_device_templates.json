@@ -1,0 +1,57 @@
+[{"file_name":"BuffaloTeraStation.odt","id":"buffalots","name":"Buffalo TeraStation NAS","priority":20,"add_device_name":"Buffalo TeraStation","device_icon":"vendors_Buffalo"}
+,{"file_name":"Cisco ADSL.odt","id":"ciscoadsl","name":"ADSL","priority":40,"add_device_name":"ADSL","device_icon":""}
+,{"file_name":"Cisco ASA VPN Connections.odt","id":"ciscoasavnpconnections","name":"Cisco ASA VPN","priority":40,"add_device_name":"ASA","device_icon":"vendors_Cisco"}
+,{"file_name":"Dell MDI.odt","id":"MDi","name":"Dell MDi Disk","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"Dell_EqualLogic.odt","id":"dellequallogic","name":"Dell EqualLogic","priority":1,"add_device_name":"Dell EqualLogic","device_icon":"vendors_Dell"}
+,{"file_name":"Device Generic Ping.odt","id":"ping","name":"Generic Device (Ping Only)","priority":160,"add_device_name":"","device_icon":""}
+,{"file_name":"Device Generic SNMP Detailed.odt","id":"snmpdetailed","name":"Generic Device (SNMP Enabled, Detailed)","priority":90,"add_device_name":"","device_icon":""}
+,{"file_name":"Device Generic SNMP.odt","id":"snmp","name":"Generic Device (SNMP Enabled)","priority":150,"add_device_name":"","device_icon":""}
+,{"file_name":"DeviceJuniper.odt","id":"juniper","name":"Juniper NS Device","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"Environment Jacarta.odt","id":"interseptor","name":"Environment Jacarta","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"Environment Poseidon.odt","id":"poseidon","name":"Environment Poseidon","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"ESX Server.odt","id":"esxserver","name":"VMware ESXi / vCenter Server","priority":40,"add_device_name":"VMware","device_icon":""}
+,{"file_name":"HyperVServer.odt","id":"hypervserver","name":"Hyper-V Host Server","priority":40,"add_device_name":"Hyper-V Server","device_icon":""}
+,{"file_name":"ipmi.odt","id":"ipmi","name":"IPMI-enabled Device","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"LenovoEMC NAS.odt","id":"lenovoemcnas","name":"NAS LenovoEMC","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"Linux SNMP.odt","id":"linuxsnmp","name":"Linux/UNIX Device (SNMP or SSH Enabled)","priority":90,"add_device_name":"Linux/Unix","device_icon":""}
+,{"file_name":"MQTT.odt","id":"mqtt","name":"MQTT Round Trip","priority":40,"add_device_name":"","device_icon":""}
+,{"file_name":"NetApp.odt","id":"netapp","name":"NetApp","priority":40,"add_device_name":"NetApp","device_icon":"vendors_Netapp"}
+,{"file_name":"OPC UA.odt","id":"opcua","name":"OPC UA","priority":40,"add_device_name":"","device_icon":""}
+,{"file_name":"Printer HP.odt","id":"hpprinter","name":"Printer (HP)","priority":40,"add_device_name":"HP Printer","device_icon":""}
+,{"file_name":"PrinterGeneric.odt","id":"custom","name":"Printer (Generic)","priority":120,"add_device_name":"","device_icon":""}
+,{"file_name":"Proxmox.odt","id":"proxmox","name":"Proxmox","priority":40,"add_device_name":"Proxmox","device_icon":"vendors_Proxmox"}
+,{"file_name":"QNAP NAS.odt","id":"nasqnap","name":"NAS QNAP","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"Rittal.odt","id":"rittal","name":"SNMP Rittal CMC III Hardware Status","priority":40,"add_device_name":"","device_icon":""}
+,{"file_name":"RMON.odt","id":"rmon","name":"RMON-compatible Device","priority":40,"add_device_name":"RMON","device_icon":""}
+,{"file_name":"Server Cisco UCS.odt","id":"server_cisco_ucs","name":"Server (Cisco UCS)","priority":60,"add_device_name":"Cisco UCS","device_icon":"vendors_Cisco"}
+,{"file_name":"Server Dell.odt","id":"serverdell","name":"Server (Dell)","priority":60,"add_device_name":"Dell Server","device_icon":"vendors_Dell"}
+,{"file_name":"Server DNS.odt","id":"dns","name":"DNS Server","priority":91,"add_device_name":"","device_icon":""}
+,{"file_name":"Server FTP.odt","id":"ftp","name":"FTP Server","priority":91,"add_device_name":"","device_icon":""}
+,{"file_name":"Server Fujitsu.odt","id":"serverfujitsu","name":"Server (Fujitsu)","priority":60,"add_device_name":"Fujitsu PRIMERGY Server","device_icon":"vendors_Fujitsu"}
+,{"file_name":"Server HP.odt","id":"compaqhp","name":"Server (Compaq/HP Agents)","priority":60,"add_device_name":"Compaq/HP Server","device_icon":"vendors_HP"}
+,{"file_name":"Server HTTP.odt","id":"http","name":"HTTP Web Server","priority":110,"add_device_name":"","device_icon":""}
+,{"file_name":"Server IBM.odt","id":"server_ibm","name":"Server (IBM)","priority":60,"add_device_name":"IBM Server","device_icon":"vendors_IBM"}
+,{"file_name":"Server Mail Exchange.odt","id":"exchangeserver","name":"Mail Server (MS Exchange)","priority":40,"add_device_name":"Exchange","device_icon":"B_Server_Mail"}
+,{"file_name":"Server Mail.odt","id":"mail","name":"Mail Server (Generic)","priority":91,"add_device_name":"","device_icon":"B_Server_Mail"}
+,{"file_name":"Server NTP.odt","id":"ntpserver","name":"NTP Server","priority":100,"add_device_name":"","device_icon":""}
+,{"file_name":"Server RDP.odt","id":"rdpserver","name":"RDP Server","priority":100,"add_device_name":"","device_icon":""}
+,{"file_name":"Sharepoint.odt","id":"sharepoint","name":"Microsoft SharePoint 2010","priority":40,"add_device_name":"SharePoint 2010","device_icon":""}
+,{"file_name":"SonicWALL.odt","id":"SonicWALL","name":"SonicWall","priority":60,"add_device_name":"Dell SonicWall","device_icon":"vendors_Dell"}
+,{"file_name":"SSL Security.odt","id":"sslsecurity","name":"SSL Security Check","priority":150,"add_device_name":"","device_icon":""}
+,{"file_name":"Switch Cisco Catalyst.odt","id":"ciscocatalyst","name":"Switch (Cisco Catalyst)","priority":30,"add_device_name":"Catalyst","device_icon":"vendors_Cisco"}
+,{"file_name":"Switch Cisco Generic.odt","id":"ciscoswitch","name":"Cisco Device (Generic)","priority":100,"add_device_name":"Cisco Device","device_icon":"vendors_Cisco"}
+,{"file_name":"Switch Cisco IOS.odt","id":"ciscoios","name":"Switch (Cisco IOS Based)","priority":30,"add_device_name":"Cisco IOS","device_icon":"vendors_Cisco"}
+,{"file_name":"Switch HP Procurve.odt","id":"hpprocurve","name":"Switch (HP Procurve)","priority":30,"add_device_name":"HP Switch","device_icon":"vendors_HP"}
+,{"file_name":"Synology NAS.odt","id":"nassynology","name":"NAS Synology","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"Unix Generic.odt","id":"unixlinux","name":"UNIX/Linux Device","priority":130,"add_device_name":"Linux/Unix","device_icon":""}
+,{"file_name":"UPS (APC).odt","id":"snmpapchealth","name":"UPS Health (APC)","priority":2,"add_device_name":"","device_icon":"vendors_APC"}
+,{"file_name":"UPS (Generic).odt","id":"snmpupsgeneric","name":"UPS Health (Generic)","priority":1,"add_device_name":"","device_icon":""}
+,{"file_name":"UPS (Liebert).odt","id":"LiebertUPS","name":"UPS Health (Liebert)","priority":2,"add_device_name":"","device_icon":"vendors_Liebert"}
+,{"file_name":"Webserver.odt","id":"Webserver","name":"Web Server","priority":40,"add_device_name":"Web Server","device_icon":""}
+,{"file_name":"Windows Advanced.odt","id":"windowsdetailed","name":"Windows (Detailed via WMI)","priority":30,"add_device_name":"Windows","device_icon":"C_OS_Win"}
+,{"file_name":"Windows Generic.odt","id":"windows","name":"Windows (via WMI)","priority":140,"add_device_name":"Windows","device_icon":"C_OS_Win"}
+,{"file_name":"Windows IIS via SNMP.odt","id":"windowsiis","name":"Windows IIS (via SNMP)","priority":30,"add_device_name":"IIS","device_icon":""}
+,{"file_name":"Windows RemotePS.odt","id":"windowsps","name":"Windows (via Remote PowerShell)","priority":70,"add_device_name":"Windows","device_icon":"C_OS_Win"}
+,{"file_name":"Xen Server Host.odt","id":"xenserver","name":"XenServer Hosts","priority":40,"add_device_name":"Xen","device_icon":""}
+,{"file_name":"Xen Server.odt","id":"xenvm","name":"XenServer Virtual Machines","priority":40,"add_device_name":"Xen","device_icon":""}
+]

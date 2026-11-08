@@ -3,6 +3,7 @@ scoped like the checks list."""
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -18,7 +19,19 @@ from .models import CheckKind, CheckRollupDaily, CheckRollupHourly, CheckState, 
 
 
 class _Base(APITestCase):
+    #: The fixtures put a closed hourly rollup an hour ago and expect it in
+    #: today's figures - untrue in the first hour after midnight UTC, when
+    #: that bucket is yesterday's (#475). Every test runs at midday instead
+    #: of the wall clock.
+    clock_at = (12, 0)
+
     def setUp(self):
+        real = timezone.now()
+        pinned = real.replace(hour=self.clock_at[0], minute=self.clock_at[1],
+                              second=0, microsecond=0)
+        patcher = mock.patch("django.utils.timezone.now", return_value=pinned)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         org = Organization.objects.create(name="Acme", slug="acme")
         self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
         self.site_a = Site.objects.create(tenant=self.tenant, name="Alpha")
@@ -198,9 +211,12 @@ class SlaScopeTests(_Base):
 
         a = SlaAgreement.objects.create(tenant=self.tenant, name="Gold", target_pct=Decimal("99"))
         g = SlaCheckGroup.objects.create(tenant=self.tenant, agreement=a, name="All")
+        # joined_at's default is the unpatched clock, which runs past the
+        # pinned one; join an hour before the pinned "now".
         SlaMember.objects.create(
             tenant=self.tenant, agreement=a, group=g, object_type="api.ipaddress",
-            object_id=self.ip_b.id,
+            object_id=self.ip_b.id, joined_at=timezone.now() - timedelta(hours=1),
         )
         r = self.client.get(f"/api/monitoring/explore/?group_by=site&sla={a.id}")
         self.assertEqual([x["name"] for x in r.json()["rows"]], ["Bravo"])
+

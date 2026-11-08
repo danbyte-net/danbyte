@@ -3,21 +3,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type ManufacturerOption,
   type ModuleType,
   type ModuleTypeWritePayload,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCombobox,
   FormFooter,
   FormSection,
+  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { useDcimChoices } from "@/lib/use-dcim-choices"
 
 export interface ModuleTypeFormProps {
   moduleType?: ModuleType
@@ -40,6 +41,9 @@ export function ModuleTypeForm({
     moduleType?.manufacturer?.id ?? null
   )
   const [partNumber, setPartNumber] = useState(moduleType?.part_number ?? "")
+  const [coolingMethod, setCoolingMethod] = useState<string | null>(
+    moduleType?.cooling_method || null
+  )
   const [description, setDescription] = useState(moduleType?.description ?? "")
 
   useEffect(() => {
@@ -47,14 +51,15 @@ export function ModuleTypeForm({
     setName(moduleType.name)
     setManufacturerId(moduleType.manufacturer?.id ?? null)
     setPartNumber(moduleType.part_number)
+    setCoolingMethod(moduleType.cooling_method || null)
     setDescription(moduleType.description)
     reset()
   }, [moduleType, reset])
+  const choices = useDcimChoices()
 
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
-    queryFn: () =>
-      api<Paginated<ManufacturerOption>>("/api/manufacturers/?picker=1"),
+    queryFn: () => apiAll<ManufacturerOption>("/api/manufacturers/?picker=1"),
     staleTime: 10 * 60_000,
   })
 
@@ -64,6 +69,7 @@ export function ModuleTypeForm({
         name: name.trim(),
         manufacturer_id: manufacturerId,
         part_number: partNumber.trim(),
+        cooling_method: coolingMethod ?? "",
         description: description.trim(),
       }
       return saveObject<ModuleType>({
@@ -124,6 +130,15 @@ export function ModuleTypeForm({
             onChange={setPartNumber}
             mono
             error={fieldErrors.part_number}
+          />
+          <FormSelect
+            label="Cooling"
+            value={coolingMethod}
+            onChange={setCoolingMethod}
+            noneLabel="Unspecified"
+            placeholder="Unspecified"
+            options={choices.cooling_method}
+            error={fieldErrors.cooling_method}
           />
         </div>
       </FormSection>

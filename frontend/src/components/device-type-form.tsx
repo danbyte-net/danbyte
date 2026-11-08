@@ -3,14 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type DeviceType,
   type DeviceTypeWritePayload,
   type DinProfile,
   type ManufacturerOption,
-  type Paginated,
   type PlatformOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { DIN_PROFILES, PROFILE_LABELS } from "@/lib/din-geometry"
 import {
   Field,
@@ -20,6 +19,7 @@ import {
   FormCombobox,
   FormDate,
   FormFooter,
+  FormIcon,
   FormSection,
   FormSelect,
   FormTags,
@@ -37,19 +37,8 @@ import {
   TopologyPhotoSizeSelect,
 } from "@/components/topology-photo-size-select"
 import { useSaveObject } from "@/lib/save-object"
-
-/** A size as the form holds it: blank stays blank, not 0. */
-const mmText = (v: number | string | null | undefined) =>
-  v == null || v === "" ? "" : String(Number(v))
-/** Blank clears the size. */
-const mmOrNull = (v: string) => (v.trim() === "" ? null : Number(v))
-/** Tenths of a millimetre, as the API keeps sizes. */
-const MM = {
-  type: "number",
-  inputMode: "decimal",
-  step: 0.1,
-  max: 5000,
-} as const
+import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { MM_INPUT as MM, mmOrNull, mmText } from "@/lib/mm-field"
 
 export interface DeviceTypeFormProps {
   deviceType?: DeviceType
@@ -93,9 +82,17 @@ export function DeviceTypeForm({
   const [photoSize, setPhotoSize] = useState(
     photoSizeOf(src?.topology_photo_size)
   )
+  const [icon, setIcon] = useState(src?.icon ?? "")
   const [description, setDescription] = useState(src?.description ?? "")
   const [isFullDepth, setIsFullDepth] = useState(src?.is_full_depth ?? true)
   const [airflow, setAirflow] = useState<string | null>(src?.airflow || null)
+  // How the hardware is cooled and the heat it gives off (#434).
+  const [coolingMethod, setCoolingMethod] = useState<string | null>(
+    src?.cooling_method || null
+  )
+  const [heatOutput, setHeatOutput] = useState(
+    src?.heat_output_w != null ? String(src.heat_output_w) : ""
+  )
   const [weight, setWeight] = useState(src?.weight ?? "")
   const [weightUnit, setWeightUnit] = useState(src?.weight_unit || "kg")
   const [subdeviceRole, setSubdeviceRole] = useState<string | null>(
@@ -130,9 +127,14 @@ export function DeviceTypeForm({
     setUHeight(String(deviceType.u_height))
     setRackWidth(deviceType.rack_width)
     setPhotoSize(photoSizeOf(deviceType.topology_photo_size))
+    setIcon(deviceType.icon ?? "")
     setDescription(deviceType.description)
     setIsFullDepth(deviceType.is_full_depth)
     setAirflow(deviceType.airflow || null)
+    setCoolingMethod(deviceType.cooling_method || null)
+    setHeatOutput(
+      deviceType.heat_output_w != null ? String(deviceType.heat_output_w) : ""
+    )
     setWeight(deviceType.weight ?? "")
     setWeightUnit(deviceType.weight_unit || "kg")
     setSubdeviceRole(deviceType.subdevice_role || null)
@@ -150,15 +152,16 @@ export function DeviceTypeForm({
 
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
-    queryFn: () =>
-      api<Paginated<ManufacturerOption>>("/api/manufacturers/?picker=1"),
+    queryFn: () => apiAll<ManufacturerOption>("/api/manufacturers/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const platforms = useQuery({
     queryKey: ["platforms-picker"],
-    queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
+    queryFn: () => apiAll<PlatformOption>("/api/platforms/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  // Airflow's options are the model's own list (/api/dcim/choices/).
+  const choices = useDcimChoices()
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: DeviceTypeWritePayload = {
@@ -170,9 +173,12 @@ export function DeviceTypeForm({
         u_height: uHeight.trim() === "" ? 0 : Number(uHeight),
         rack_width: rackWidth,
         topology_photo_size: photoSize ?? "",
+        icon,
         description: description.trim(),
         is_full_depth: isFullDepth,
         airflow: airflow ?? "",
+        cooling_method: coolingMethod ?? "",
+        heat_output_w: heatOutput.trim() === "" ? null : Number(heatOutput),
         weight: String(weight).trim() === "" ? null : String(weight).trim(),
         weight_unit: String(weight).trim() === "" ? "" : weightUnit,
         subdevice_role: subdeviceRole ?? "",
@@ -369,6 +375,13 @@ export function DeviceTypeForm({
                 onChange={setPhotoSize}
                 error={fieldErrors.topology_photo_size}
               />
+              <FormIcon
+                label="Icon"
+                hint="blank uses the role's"
+                value={icon}
+                onChange={setIcon}
+                error={fieldErrors.icon}
+              />
             </div>
             <div className="grid gap-3 @md:grid-cols-2">
               <FormSelect
@@ -378,14 +391,7 @@ export function DeviceTypeForm({
                 onChange={setAirflow}
                 noneLabel="Unspecified"
                 placeholder="Unspecified"
-                options={[
-                  { value: "front-to-rear", label: "Front to rear" },
-                  { value: "rear-to-front", label: "Rear to front" },
-                  { value: "left-to-right", label: "Left to right" },
-                  { value: "right-to-left", label: "Right to left" },
-                  { value: "passive", label: "Passive" },
-                  { value: "mixed", label: "Mixed" },
-                ]}
+                options={choices.airflow}
                 error={fieldErrors.airflow}
               />
               <div className="grid grid-cols-[1fr_90px] gap-2">
@@ -409,6 +415,28 @@ export function DeviceTypeForm({
                   ]}
                 />
               </div>
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Cooling"
+                info="Blank reads as air. Devices of the type take it unless they set their own."
+                value={coolingMethod}
+                onChange={setCoolingMethod}
+                noneLabel="Unspecified"
+                placeholder="Unspecified"
+                options={choices.cooling_method}
+                error={fieldErrors.cooling_method}
+              />
+              <FormText
+                label="Heat output (W)"
+                hint="optional"
+                info="The heat it gives off, where that is not its allocated draw. Blank counts the draw."
+                type="number"
+                min={0}
+                value={heatOutput}
+                onChange={setHeatOutput}
+                error={fieldErrors.heat_output_w}
+              />
             </div>
             <FormSelect
               label="Subdevice role"

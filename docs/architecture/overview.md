@@ -46,6 +46,8 @@ through one origin.
 | Tenant settings and shared platform behavior | `core/` |
 | Authentication, RBAC, API tokens, and LDAP | `auth_api/` |
 | Checks, alerts, engines, and SNMP | `monitoring/` |
+| Shared layer for external monitors (state maps, matching, review queue, beat) | `monitoring/external/` |
+| Zabbix integration | `zabbix/` |
 | Webhooks, automation, drift, and imports | `integrations/` |
 | Change history and journal | `audit/` |
 | Background execution | `jobs/` and RQ workers |
@@ -86,6 +88,8 @@ danbyte/
   auth_api/                # authentication and RBAC
   core/                    # tenant settings and shared platform behavior
   monitoring/              # monitoring, alerts, engines, and SNMP
+    external/              # shared layer every external monitor plugs into
+  zabbix/                  # Zabbix as a monitoring source and target
   integrations/            # external systems and automation
   audit/                   # change history and journal
   frontend/                # active React/TanStack application

@@ -9,13 +9,13 @@ import {
   type CustomField,
   type Device,
   type Interface,
-  type Paginated,
   type FloorPlanLiveState,
   type FloorPlanTile,
   type FloorTileRackState,
   type Rack,
   type ImagePorts,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { cabinetState } from "@/components/floorplan/cabinet-tile"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
@@ -31,11 +31,17 @@ import {
 import { tileName } from "@/components/floorplan/floor-canvas"
 import { CapacityBar } from "@/components/cells/capacity-bar"
 import { PortsFigure } from "@/components/cells/ports-figure"
-import { PowerFigure } from "@/components/cells/power-figure"
+import { CoolingFigure, PowerFigure } from "@/components/cells/power-figure"
 import { FaceplateView } from "@/components/device-faceplate"
 import type { FaceplateSide } from "@/lib/faceplate-layout"
 import { useDateFormat } from "@/lib/datetime"
-import { capacityRatio, hasPowerData } from "@/lib/rack-capacity"
+import {
+  capacityRatio,
+  formatWatts,
+  hasCoolingData,
+  hasPowerData,
+} from "@/lib/rack-capacity"
+import { shownLink } from "./shown-link"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
 
@@ -43,12 +49,26 @@ type LiveTile = FloorPlanLiveState["tiles"][string]
  * shape (role/status/description/tags/custom_fields) that the linked_* fields
  * work for all three; the ones only some of them have simply render null on
  * the others. */
-export type LinkedDetail = Partial<Rack> & Partial<Device>
+export type LinkedDetail = Partial<Rack> &
+  Partial<Device> &
+  // A linked cooling source's load and kind (#434), from its detail.
+  Partial<{
+    capacity: { available_w: number; heat_allocated_w: number }
+    type_display: string
+  }>
 
 /** Which link kinds carry enough detail to be worth fetching. */
 /** A field's `render` is called as a plain function, so it cannot hold a
  * hook - the timestamp gets its own component to read the viewer's timezone
  * from. */
+/** A plan position or size in cells: a free plan stores fractions, so at
+ * most two decimals, trailing zeros dropped. */
+export function formatCells(v: number): string {
+  if (!Number.isFinite(v)) return "—"
+  const r = Math.round(v * 100) / 100
+  return String(Object.is(r, -0) ? 0 : r)
+}
+
 function Stamp({ iso }: { iso: string }) {
   const { formatDateTime } = useDateFormat()
   return <span className="num text-[11px]">{formatDateTime(iso)}</span>
@@ -58,6 +78,7 @@ const DETAIL_ENDPOINT: Record<string, string> = {
   rack: "/api/racks",
   cabinet: "/api/cabinets",
   device: "/api/devices",
+  coolingsource: "/api/cooling-sources",
 }
 
 /** Which custom-field model a link kind maps to, for formatting cf_* values. */
@@ -65,6 +86,7 @@ const CF_MODEL: Record<string, string> = {
   rack: "rack",
   cabinet: "cabinet",
   device: "device",
+  coolingsource: "coolingsource",
 }
 
 /** Tile status → semantic badge tone. A tile's status is a plain string union
@@ -125,8 +147,7 @@ function TileFaceplate({
   const [side, setSide] = useState<FaceplateSide>("front")
   const ifaces = useQuery({
     queryKey: ["device-interfaces", deviceId],
-    queryFn: () =>
-      api<Paginated<Interface>>(`/api/devices/${deviceId}/interfaces/`),
+    queryFn: () => apiAll<Interface>(`/api/devices/${deviceId}/interfaces/`),
     staleTime: 60_000,
   })
   const dt = useQuery({
@@ -227,7 +248,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     label: "Position",
     render: ({ tile }) => (
       <span className="num">
-        {tile.x}, {tile.y}
+        {formatCells(tile.x)}, {formatCells(tile.y)}
       </span>
     ),
   },
@@ -235,7 +256,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     label: "Size",
     render: ({ tile }) => (
       <span className="num">
-        {tile.width}×{tile.height}
+        {formatCells(tile.width)}×{formatCells(tile.height)}
       </span>
     ),
   },
@@ -285,6 +306,41 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
       const r = rack(live)
       if (!r || !hasPowerData(r.power)) return null
       return <PowerFigure power={r.power} className="text-[11px]" />
+    },
+  },
+  cooling: {
+    label: "Cooling",
+    render: ({ live }) => {
+      // Heat / cooling capacity (#434), as the rack page reads it.
+      const r = rack(live)
+      if (!r || !hasCoolingData(r.cooling)) return null
+      return <CoolingFigure cooling={r.cooling} className="text-[11px]" />
+    },
+  },
+  source_load: {
+    label: "Cooling",
+    needsLinked: true,
+    // A cooling source's load (#434): the heat of the racks its feeds reach
+    // against its rating - a source tile's "utilization".
+    render: ({ tile, linked }) => {
+      const c = tile.linked?.kind === "coolingsource" ? linked?.capacity : null
+      if (!c) return null
+      const ratio = capacityRatio(c.heat_allocated_w, c.available_w)
+      return (
+        // Wraps onto a second line rather than clipping at the popover edge.
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <CapacityBar ratio={ratio} className="w-10" />
+          <span className="num text-[11px]">
+            {formatWatts(c.heat_allocated_w)}
+            {c.available_w > 0 && ` / ${formatWatts(c.available_w)}`}
+          </span>
+          {linked?.type_display && (
+            <span className="text-[11px] text-muted-foreground">
+              {linked.type_display}
+            </span>
+          )}
+        </span>
+      )
     },
   },
   ports: {
@@ -447,7 +503,9 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     // than a faceplate. Renders the type's photo when it has mapped ports,
     // else the drawn panel - the same choice the device page makes.
     render: ({ tile, linked }) =>
-      tile.linked?.kind === "device" && linked?.device_type?.id ? (
+      tile.linked?.kind === "device" &&
+      tile.linked.id &&
+      linked?.device_type?.id ? (
         <TileFaceplate
           deviceId={tile.linked.id}
           deviceTypeId={linked.device_type.id}
@@ -537,6 +595,13 @@ const CABINET_FILL = ["device_count", "rail_count"]
 
 /** The configured keys as they apply to one tile. */
 export function fieldsForTile(fields: string[], tile: FloorPlanTile): string[] {
+  // A cooling source's utilization is its load against its rating (#434).
+  if (tile.linked?.kind === "coolingsource")
+    return fields.flatMap((k) =>
+      k === "utilization" && !fields.includes("source_load")
+        ? ["source_load"]
+        : [k]
+    )
   if (tile.linked?.kind !== "cabinet") return fields
   return fields.flatMap((k) =>
     k === "utilization" ? CABINET_FILL.filter((c) => !fields.includes(c)) : [k]
@@ -560,7 +625,8 @@ export interface HoverTarget {
  * rack twice costs one request, and the popover re-renders when it lands.
  */
 function useLinkedDetail(tile: FloorPlanTile | undefined, needed: boolean) {
-  const linked = tile?.linked
+  // A Hidden link has nothing to fetch.
+  const linked = shownLink(tile?.linked)
   const base = linked ? DETAIL_ENDPOINT[linked.kind] : undefined
   const enabled = !!(needed && base && linked)
   const detail = useQuery({
@@ -663,6 +729,9 @@ export function TilePopover({
         side="top"
         align="start"
         sideOffset={12}
+        // Pinned near the canvas edge it stays wholly on screen.
+        collisionPadding={8}
+        sticky="always"
         // A faceplate at w-80 was an unreadable postage stamp - the wide
         // variant gets real room, capped to the viewport.
         className={
@@ -787,11 +856,24 @@ export function useTilePopover(delayMs = 250) {
     return true
   }
 
+  /** Pin this tile's popover: at the pointer while it is over the tile,
+   * else at `at` (the tile on screen - a pick from Find or the Objects
+   * list, a callout). Returns false when it has nowhere to anchor. */
+  const pinTile = (tile: FloorPlanTile, at?: { x: number; y: number }) => {
+    const hit = lastHover.current
+    const point = hit?.tile.id === tile.id ? hit : at
+    if (!point) return false
+    clearTimer()
+    pinned.current = true
+    setTarget({ tile, x: point.x, y: point.y, pinned: true })
+    return true
+  }
+
   const close = () => {
     clearTimer()
     pinned.current = false
     setTarget(null)
   }
 
-  return { target, onHover, pinCurrent, close }
+  return { target, onHover, pinCurrent, pinTile, close }
 }

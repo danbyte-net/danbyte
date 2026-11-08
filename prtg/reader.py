@@ -1,0 +1,830 @@
+"""Reading PRTG: the status pass, the linking pass and the push re-read.
+
+One status read is two calls - the devices table and the sensors table - and
+everything else follows from them:
+
+1. **Linking.** Every device of the tenant is matched against PRTG's devices
+   through the cascade (:mod:`prtg.matching`). An unambiguous match is linked
+   at once (``link_mode = auto``) or proposed in the review queue
+   (``review``); an ambiguity is always a queue row and never a link.
+2. **Sensors.** Each linked device's sensors are written as
+   :class:`~prtg.models.PrtgSensor` rows, their state mapped through the
+   connection's map; a sensor PRTG no longer has is deleted. Each row is
+   then tied to the address, interface or service it watches
+   (:mod:`prtg.objects`).
+3. **Roll-up.** Each link gets its device's worst state and its counts.
+
+The ``prtg`` check (:mod:`prtg.driver`) then answers from those rows - one
+read serves the device list, the panel and every check.
+
+Linking covers the whole tenant, not a provisioning scope: an object that is
+a device's by tag, address, DNS name or name is that device whichever checks
+or policies exist. Provisioning, when it comes, decides what PRTG should
+*have*; this decides what it already has.
+"""
+from __future__ import annotations
+
+import logging
+from collections import defaultdict
+from datetime import timedelta
+
+from django.db import models, transaction
+from django.utils import timezone
+
+from core.redaction import redact_secrets
+from monitoring.external.beat import skip_reason
+
+from . import status as st
+from .channels import scaled
+from .client import PrtgClient, PrtgError
+from .matching import (
+    annotate_devices,
+    annotate_vms,
+    index_devices,
+    match_device,
+    match_vm,
+    shared_addresses,
+)
+from .models import PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
+from .objects import resolve as resolve_objects
+
+log = logging.getLogger("prtg.reader")
+
+#: How long a pass may hold the connection. The classic API is served by the
+#: same web server as PRTG's own interface; two passes at once is one too many.
+LOCK_SECONDS = 300
+#: Problems carried per link for the hover and the check's detail.
+PROBLEM_LIMIT = 20
+
+
+def client_for(conn) -> PrtgClient:
+    return PrtgClient.for_connection(conn)
+
+
+# ── the lock ────────────────────────────────────────────────────────────────
+
+
+def _lock_key(conn) -> str:
+    return f"danbyte-prtg:{conn.id}"
+
+
+def _acquire(conn) -> bool:
+    """A per-connection Redis lock, so a burst of pushes cannot stack passes.
+    Without Redis the pass runs unlocked rather than not at all."""
+    try:
+        import django_rq
+
+        return bool(django_rq.get_connection("low").set(
+            _lock_key(conn), "1", nx=True, ex=LOCK_SECONDS
+        ))
+    except Exception:  # noqa: BLE001 - no Redis is not a reason to stop reading
+        return True
+
+
+def _release(conn) -> None:
+    try:
+        import django_rq
+
+        django_rq.get_connection("low").delete(_lock_key(conn))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# ── linking ─────────────────────────────────────────────────────────────────
+
+
+def _is_vm(obj) -> bool:
+    return bool(getattr(obj, "_prtg_vm", False))
+
+
+def _owner_key(obj) -> tuple:
+    return ("vm" if _is_vm(obj) else "device", obj.id)
+
+
+def _link_key(link) -> tuple:
+    return ("vm", link.virtual_machine_id) if link.virtual_machine_id else ("device", link.device_id)
+
+
+def _parent_kwargs(obj) -> dict:
+    """The parent fields of a link, sensor or change row for ``obj``."""
+    if _is_vm(obj):
+        return {"device": None, "virtual_machine": obj}
+    return {"device": obj, "virtual_machine": None}
+
+
+def _label(obj) -> str:
+    return f"VM {obj.name}" if _is_vm(obj) else obj.name
+
+
+def link_pass(conn: PrtgConnection, devices: list, now) -> dict:
+    """Match every device and virtual machine of the tenant to PRTG's
+    devices; link or propose.
+
+    ``devices`` are normalised ``table.json`` device rows. Returns counts.
+    A VM is matched by its tag, its primary or assigned addresses and their
+    DNS names - never by name alone (see :data:`prtg.matching.VM_CASCADE`).
+    """
+    from api.models import Device, VirtualMachine
+
+    counts = {"linked": 0, "proposed": 0, "ambiguous": 0, "unmatched": 0}
+    index = index_devices(devices)
+    owners = annotate_devices(
+        conn.tenant,
+        Device.objects.filter(tenant=conn.tenant).only("id", "name", "tenant_id", "prtg_host"),
+    ) + annotate_vms(
+        conn.tenant,
+        VirtualMachine.objects.filter(tenant=conn.tenant).only(
+            "id", "name", "tenant_id", "prtg_host"
+        ),
+    )
+    links = {_link_key(link): link for link in PrtgDeviceLink.objects.filter(connection=conn)}
+    shared = shared_addresses(conn.tenant, set(index["address"]))
+
+    by_label = {_label(o): o for o in owners}
+    # Which Danbyte object holds each PRTG device through a stored link -
+    # a decision, a link applied or made automatically. It is never asked
+    # about again from another object's side.
+    held = {link.objid: key for key, link in links.items()}
+
+    matches = []
+    by_objid: dict[str, list] = defaultdict(list)
+    for owner in owners:
+        link = links.get(_owner_key(owner))
+        match = match_vm(owner, index, link) if _is_vm(owner) else match_device(owner, index, link)
+        remote = match.remote
+        if remote is not None and match.how != "link" and held.get(
+            str(remote["objid"]), _owner_key(owner)
+        ) != _owner_key(owner):
+            # Another object holds this PRTG device: this one yields.
+            match.host, match.how = None, "none"
+        elif match.matched and match.how == "address":
+            host = (remote.get("host") or "").strip()
+            names = shared.get(host) if host else None
+            if names:
+                rivals = _contenders(names, by_label, links, remote, host)
+                winner = _by_name(rivals, remote)
+                if winner is not None or len(rivals) <= 1:
+                    if (winner or (rivals[0] if rivals else owner)) is not owner:
+                        match.host, match.how = None, "none"
+                else:
+                    match.host, match.how = None, "ambiguous"
+                    match.reason = (
+                        f"Address {host} of PRTG device {match_name(index, host)} is held "
+                        f"by several Danbyte objects ({', '.join(names[:4])})."
+                    )
+                    match.ask = {"remote": remote, "objects": rivals}
+        elif match.how == "ambiguous":
+            match.ask = {"remotes": _remote_rivals(owner, index)}
+        matches.append(match)
+        if match.matched:
+            by_objid[match.remote["objid"]].append(match)
+
+    fresh: set = set()
+    with transaction.atomic():
+        for match in matches:
+            owner = match.device
+            parent = _parent_kwargs(owner)
+            if match.how == "ambiguous":
+                counts["ambiguous"] += 1
+                PrtgChange.propose(
+                    conn, fresh, {"reason": match.reason, **_ask(conn, getattr(match, "ask", {}))},
+                    **parent, kind=PrtgChange.AMBIGUOUS, key="",
+                )
+                continue
+            if not match.matched:
+                counts["unmatched"] += 1
+                continue
+            remote = match.remote
+            rivals = by_objid[remote["objid"]]
+            if len(rivals) > 1:
+                stored = [m.device for m in rivals if m.how == "link"]
+                winner_obj = stored[0] if len(stored) == 1 else _by_name(
+                    [m.device for m in rivals], remote
+                )
+                if winner_obj is not None and winner_obj is not owner:
+                    counts["unmatched"] += 1
+                    continue
+            if len(rivals) > 1 and winner_obj is None:
+                # One PRTG device answering to two Danbyte objects is the
+                # same question asked from the other side.
+                counts["ambiguous"] += 1
+                names = ", ".join(sorted(_label(m.device) for m in rivals)[:4])
+                PrtgChange.propose(
+                    conn, fresh,
+                    {"reason": (
+                        f"PRTG device {remote.get('name')} matches several Danbyte "
+                        f"objects by {match.how} ({names})."
+                    ), "objid": remote["objid"],
+                     **_ask(conn, {"remote": remote, "objects": [m.device for m in rivals]})},
+                    **parent, kind=PrtgChange.AMBIGUOUS, key="",
+                )
+                continue
+            link = links.get(_owner_key(owner))
+            if link is not None and link.objid == remote["objid"]:
+                _refresh_link(link, remote, now)
+                counts["linked"] += 1
+                continue
+            if conn.link_mode == PrtgConnection.LINK_AUTO and _free(conn, owner, remote):
+                make_link(conn, owner, remote, match.how, now)
+                counts["linked"] += 1
+                continue
+            counts["proposed"] += 1
+            PrtgChange.propose(
+                conn, fresh,
+                {"objid": remote["objid"], "name": remote.get("name", ""),
+                 "host": remote.get("host", ""), "matched_by": match.how,
+                 "replaces": link.objid if link is not None else ""},
+                **parent, kind=PrtgChange.LINK, key=remote["objid"],
+            )
+        # Adoption proposals and planned writes have passes of their own
+        # (prtg.adopt, prtg.provision).
+        # A decision made stays on the queue as Applied for a day.
+        PrtgChange.pending(conn).filter(
+            kind__in=(PrtgChange.LINK, PrtgChange.AMBIGUOUS)
+        ).exclude(id__in=fresh).exclude(
+            detail__has_key="applied", updated_at__gte=now - timedelta(hours=24),
+        ).delete()
+    return counts
+
+
+def _norm_name(name: str) -> str:
+    """A device name compared across both sides: lower case, no domain."""
+    name = (name or "").strip().rstrip(".").lower()
+    return name if _address_like(name) else name.split(".")[0]
+
+
+def _address_like(value: str) -> bool:
+    import ipaddress
+
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _by_name(objects, remote):
+    """The one object whose name is the PRTG device's, or None."""
+    want = _norm_name(remote.get("name", ""))
+    hits = [o for o in objects if want and _norm_name(o.name) == want]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _contenders(names, by_label, links, remote, host) -> list:
+    """The objects that really contend for a PRTG device on a shared
+    address: not those PRTG already has as another device, and not those
+    whose PRTG host override points elsewhere."""
+    out = []
+    for name in names:
+        obj = by_label.get(name)
+        if obj is None:
+            continue
+        link = links.get(_owner_key(obj))
+        if link is not None and link.objid != str(remote["objid"]):
+            continue
+        override = (getattr(obj, "prtg_host", "") or "").strip().lower()
+        if override and override != host.lower():
+            continue
+        out.append(obj)
+    return out
+
+
+def _remote_rivals(owner, index) -> list:
+    """The PRTG devices one object matches equally well."""
+    from .matching import CASCADE, VM_CASCADE
+
+    cascade = VM_CASCADE if _is_vm(owner) else CASCADE
+    for level in cascade.levels:
+        by_key = index.get(level.name) or {}
+        for key in level.keys(owner):
+            rows = {str(r["objid"]): r for r in by_key.get(key) or []}
+            if len(rows) > 1:
+                return list(rows.values())
+    return []
+
+
+def _candidate(obj) -> dict:
+    from api.models import Device, VirtualMachine
+
+    vm = _is_vm(obj)
+    model = VirtualMachine if vm else Device
+    row = model.objects.filter(pk=obj.pk).select_related("site", "primary_ip").first()
+    ip = row.primary_ip if row is not None and row.primary_ip_id else None
+    return {
+        "kind": "virtual_machine" if vm else "device", "id": str(obj.pk), "name": obj.name,
+        "site": row.site.name if row is not None and row.site_id else "",
+        "address": (getattr(row, "prtg_host", "") or "") or (
+            str(ip.ip_address).split("/")[0] if ip is not None else ""
+        ),
+    }
+
+
+def _remote_ref(remote) -> dict:
+    return {"objid": str(remote["objid"]), "name": remote.get("name", ""),
+            "host": remote.get("host", ""), "group": remote.get("group", "")}
+
+
+def _ask(conn, ask: dict) -> dict:
+    """What a decision row offers: the PRTG device and the Danbyte objects
+    that contend for it, or the PRTG devices one object matches."""
+    if ask.get("remote") is not None:
+        remote = ask["remote"]
+        return {"objid": str(remote["objid"]), "remote": _remote_ref(remote),
+                "candidates": [_candidate(o) for o in ask.get("objects") or []]}
+    if ask.get("remotes"):
+        return {"remotes": [_remote_ref(r) for r in ask["remotes"]]}
+    return {}
+
+
+def match_name(index, host) -> str:
+    rows = index["address"].get(host) or []
+    return rows[0].get("name", host) if rows else host
+
+
+def _free(conn, owner, remote) -> bool:
+    """Whether linking would collide with another object's link."""
+    others = PrtgDeviceLink.objects.filter(connection=conn, objid=remote["objid"])
+    if _is_vm(owner):
+        others = others.exclude(virtual_machine=owner)
+    else:
+        others = others.exclude(device=owner)
+    return not others.exists()
+
+
+def _link_fields(remote, now) -> dict:
+    return {
+        "name": (remote.get("name") or "")[:255],
+        "host": (remote.get("host") or "")[:255],
+        "probe_name": (remote.get("probe") or "")[:255],
+        "group_path": (remote.get("group") or "")[:255],
+        "status_raw": remote.get("status_raw"),
+        "last_seen_at": now,
+    }
+
+
+def make_link(conn, owner, remote, how, now) -> PrtgDeviceLink:
+    """Pair ``owner`` (a device, or a VM marked by :func:`annotate_vms` or
+    passed with ``_prtg_vm``) with the PRTG device ``remote``, replacing any
+    older pairing of it on this connection."""
+    parent = _parent_kwargs(owner)
+    lookup = (
+        {"virtual_machine": owner} if _is_vm(owner) else {"device": owner}
+    )
+    link, _ = PrtgDeviceLink.objects.update_or_create(
+        connection=conn, **lookup,
+        defaults={
+            **parent,
+            "tenant": conn.tenant, "objid": str(remote["objid"]),
+            "matched_by": how, "unwanted_since": None,
+            "tagged": _tagged(owner.id, remote),
+            **_link_fields(remote, now),
+        },
+    )
+    return link
+
+
+def _tagged(owner_id, remote) -> bool:
+    """Whether the PRTG device carries this object's ``danbyte-<uuid>`` tag."""
+    return f"danbyte-{owner_id}".lower() in [t.lower() for t in remote.get("tags") or ()]
+
+
+def _refresh_link(link, remote, now) -> None:
+    for field, value in _link_fields(remote, now).items():
+        setattr(link, field, value)
+    link.tagged = _tagged(link.device_id or link.virtual_machine_id, remote)
+    link.save(update_fields=[*_link_fields(remote, now), "tagged"])
+
+
+def apply_link(change: PrtgChange) -> str:
+    """Apply a ``link_device`` proposal: the operator's act."""
+    conn = change.connection
+    detail = change.detail or {}
+    objid = str(detail.get("objid") or change.key or "")
+    owner = change.device if change.device_id else change.virtual_machine
+    if owner is None or not objid:
+        raise ValueError("This proposal names no device to link.")
+    if owner.tenant_id != conn.tenant_id:
+        raise ValueError("The device is not in this connection's tenant.")
+    if change.virtual_machine_id:
+        owner._prtg_vm = True
+    if not _free(conn, owner, {"objid": objid}):
+        raise ValueError("Another device is already linked to that PRTG device.")
+    make_link(conn, owner, {**detail, "objid": objid},
+              detail.get("matched_by") or "link", timezone.now())
+    name = detail.get("name") or objid
+    change.delete()
+    return f"Linked {owner.name} to PRTG device {name}."
+
+
+
+def _object_in(conn, kind: str, oid: str):
+    from api.models import Device, VirtualMachine
+
+    model = VirtualMachine if kind == "virtual_machine" else Device
+    obj = model.objects.filter(pk=oid, tenant=conn.tenant).first()
+    if obj is not None and kind == "virtual_machine":
+        obj._prtg_vm = True
+    return obj
+
+
+def can_create_separately(change: PrtgChange) -> bool:
+    """Whether a decision row may offer a separate PRTG device for its
+    object: something registers it (Monitor in PRTG, a policy, Register
+    all) and PRTG can create objects."""
+    from .provision import _prepare, decide
+
+    conn = change.connection
+    owner = change.device if change.device_id else change.virtual_machine
+    if owner is None or conn.write_mode == PrtgConnection.WRITE_NONE:
+        return False
+    if change.virtual_machine_id:
+        owner._prtg_vm = True
+    ctx, checked = _prepare(conn)
+    return decide(conn, owner, ctx, linked=False, checked=checked).managed
+
+
+def decide_ambiguous(change: PrtgChange, choice: dict, user=None) -> str:
+    """Settle a decision row at once, as the operator chose:
+
+    * ``{"link": {"kind", "id"}}`` - link the row's PRTG device to that
+      candidate;
+    * ``{"remote": "<objid>"}`` - link the row's object to that PRTG device;
+    * ``{"create": true}`` - create a separate PRTG device for the row's
+      object, on the same host, marked as created by Danbyte.
+
+    A link is remembered as ``decided`` and never asked again; the other
+    candidates' rows for that PRTG device go. Journals on the object; the
+    row stays as Applied with the result. Raises ``ValueError`` when the
+    choice cannot be made as it stands."""
+    from .writer import _actor, apply_object, record
+
+    conn = change.connection
+    if change.kind != PrtgChange.AMBIGUOUS:
+        raise ValueError("Only a decision row is decided.")
+    detail = dict(change.detail or {})
+    if detail.get("applied"):
+        raise ValueError("Already decided.")
+    owner = change.device if change.device_id else change.virtual_machine
+    if owner is None or owner.tenant_id != conn.tenant_id:
+        raise ValueError("The object is not in this connection's tenant.")
+    if change.virtual_machine_id:
+        owner._prtg_vm = True
+    now = timezone.now()
+    _, by = _actor(user)
+    choice = choice or {}
+
+    if choice.get("create"):
+        if not can_create_separately(change):
+            raise ValueError(
+                f"Nothing registers {owner.name} for PRTG. Set Monitor in PRTG on it first."
+            )
+        detail["applied"] = {"at": now.isoformat(), "by": by, "detail": "Creating…"}
+        change.detail = detail
+        change.save(update_fields=["detail", "updated_at"])
+        out = apply_object(conn, owner, user=user)
+        if out["link"] is None:
+            detail.pop("applied")
+            failed = out["failed"][0]["detail"] if out["failed"] else (
+                "Nothing could be created as it stands; see the review queue."
+            )
+            detail["last_error"] = {"at": now.isoformat(), "detail": failed}
+            change.detail = detail
+            change.save(update_fields=["detail", "updated_at"])
+            raise ValueError(failed)
+        sentence = (f"Created a separate PRTG device for {owner.name} "
+                    f"({out['link']['objid']}).")
+        detail["result"] = {"device": out["link"]["objid"]}
+    else:
+        if choice.get("link"):
+            ref = choice["link"] or {}
+            ids = {(c.get("kind"), c.get("id")) for c in detail.get("candidates") or []}
+            if (ref.get("kind"), str(ref.get("id"))) not in ids:
+                raise ValueError("Not one of this row's candidates.")
+            target = _object_in(conn, ref.get("kind"), str(ref.get("id")))
+            remote = detail.get("remote") or {}
+        elif choice.get("remote"):
+            target = owner
+            remote = next((r for r in detail.get("remotes") or []
+                           if str(r.get("objid")) == str(choice["remote"])), None)
+            if remote is None:
+                raise ValueError("Not one of this row's PRTG devices.")
+        else:
+            raise ValueError("Choose a link or a separate device.")
+        if target is None or not remote.get("objid"):
+            raise ValueError("That object or PRTG device is gone.")
+        objid = str(remote["objid"])
+        if not _free(conn, target, {"objid": objid}):
+            raise ValueError("Another object is already linked to that PRTG device.")
+        make_link(conn, target, remote, "decided", now)
+        # The question is settled for everyone who asked it.
+        PrtgChange.pending(conn).filter(
+            kind__in=(PrtgChange.AMBIGUOUS, PrtgChange.LINK)
+        ).filter(
+            models.Q(detail__objid=objid) | models.Q(key=objid)
+        ).exclude(pk=change.pk).delete()
+        sentence = f"Linked PRTG device {remote.get('name') or objid} to {target.name}."
+        detail["result"] = {"device": objid, "object": {
+            "kind": "virtual_machine" if _is_vm(target) else "device",
+            "id": str(target.pk), "name": target.name}}
+        if target is not owner:
+            record(owner, f"Decided in the review queue: {sentence}", user)
+        owner = target
+    detail["applied"] = {"at": now.isoformat(), "by": by, "detail": sentence}
+    detail.pop("last_error", None)
+    change.detail = detail
+    change.save(update_fields=["detail", "updated_at"])
+    record(owner, f"Decided in the review queue: {sentence}", user)
+    return sentence
+
+# ── sensors and the roll-up ─────────────────────────────────────────────────
+
+
+def write_sensors(conn, links, sensor_rows, now) -> dict:
+    """Upsert the sensors of ``links`` from ``sensor_rows`` and roll each link
+    up. Only the given links are touched, so one device's re-read leaves the
+    others alone."""
+    mapping = st.clean_map(conn.state_map)
+    by_parent: dict[str, list] = defaultdict(list)
+    for row in sensor_rows:
+        if row.get("parent_id") is not None:
+            by_parent[str(row["parent_id"])].append(row)
+
+    counts = {"sensors": 0, "deleted": 0}
+    with transaction.atomic():
+        for link in links:
+            rows = by_parent.get(link.objid, [])
+            existing = {s.objid: s for s in PrtgSensor.objects.filter(link=link)}
+            seen = set()
+            for row in rows:
+                objid = str(row["objid"])
+                seen.add(objid)
+                fields = {
+                    "tenant": conn.tenant, "connection": conn, "link": link,
+                    "device_id": link.device_id,
+                    "virtual_machine_id": link.virtual_machine_id,
+                    "name": (row.get("name") or "")[:255],
+                    "kind": (row.get("kind") or "")[:128],
+                    "kind_label": (row.get("type") or "")[:128],
+                    "status_raw": row.get("status_raw"),
+                    "state": st.map_code(row.get("status_raw"), mapping),
+                    "message": row.get("message") or "",
+                    "tags": list(row.get("tags") or []),
+                    "active": row.get("active", True),
+                    "last_check_at": row.get("last_check_at"),
+                    "last_seen_at": now,
+                    **_record_fields(row),
+                }
+                sensor = existing.get(objid)
+                if sensor is None:
+                    PrtgSensor.objects.update_or_create(
+                        connection=conn, objid=objid, defaults=fields
+                    )
+                else:
+                    for k, v in fields.items():
+                        setattr(sensor, k, v)
+                    sensor.save()
+                counts["sensors"] += 1
+            gone = [s.id for o, s in existing.items() if o not in seen]
+            if gone:
+                counts["deleted"] += PrtgSensor.objects.filter(id__in=gone).delete()[0]
+            resolve_objects(link, conn.tenant)
+            roll_up(link, mapping, now)
+    return counts
+
+
+def _record_fields(row) -> dict:
+    """The sensor's primary value and record, for the Sensors tab. Only the
+    columns the row carries: a narrower read leaves the rest as they were."""
+    out = {}
+    if "last_value" in row:
+        out["last_value"] = (row.get("last_value") or "")[:255]
+        # In the unit PRTG displays, like the channel values.
+        out["last_value_raw"] = scaled(row.get("last_value"), row.get("last_value_raw"))
+        out["unit"] = (row.get("unit") or "")[:32]
+    for key in ("interval_seconds", "uptime_pct", "downtime_pct", "priority",
+                "last_up_at", "last_down_at"):
+        if key in row:
+            out[key] = row[key]
+    if out.get("interval_seconds") is not None and out["interval_seconds"] < 0:
+        out["interval_seconds"] = None
+    if "probe" in row:
+        out["probe_name"] = (row.get("probe") or "")[:255]
+    if "group" in row:
+        out["group_path"] = (row.get("group") or "")[:255]
+    return out
+
+
+def roll_up(link, mapping, now) -> None:
+    """The link's state and counts from its sensor rows."""
+    sensors = list(PrtgSensor.objects.filter(link=link, active=True))
+    codes = [s.status_raw for s in sensors]
+    counts: dict[str, int] = {"total": len(sensors), "paused": 0}
+    for s in sensors:
+        if s.status_raw in st.PAUSED:
+            counts["paused"] += 1
+        else:
+            counts[s.state] = counts.get(s.state, 0) + 1
+    link.state = st.rollup(codes, mapping) if not link.paused else "unknown"
+    link.sensor_counts = counts
+    link.status_read_at = now
+    link.save(update_fields=["state", "sensor_counts", "status_read_at"])
+
+
+def problems_for(link) -> list[dict]:
+    """The link's down and degraded sensors, worst first, for the hover and
+    the check's detail."""
+    rank = {"down": 0, "degraded": 1}
+    rows = [
+        s for s in PrtgSensor.objects.filter(link=link, active=True)
+        if s.state in rank and s.status_raw not in st.PAUSED
+    ]
+    rows.sort(key=lambda s: (rank[s.state], s.name))
+    return [
+        {"name": s.name, "severity": s.state, "status": st.label(s.status_raw),
+         "message": s.message[:300], "objid": s.objid}
+        for s in rows[:PROBLEM_LIMIT]
+    ]
+
+
+def remap(conn) -> int:
+    """Re-apply a changed state map to the stored sensors and roll-ups, so
+    the device list does not wait for the next read."""
+    mapping = st.clean_map(conn.state_map)
+    changed = []
+    for sensor in PrtgSensor.objects.filter(connection=conn):
+        state = st.map_code(sensor.status_raw, mapping)
+        if state != sensor.state:
+            sensor.state = state
+            changed.append(sensor)
+    PrtgSensor.objects.bulk_update(changed, ["state"], batch_size=1000)
+    now = timezone.now()
+    for link in PrtgDeviceLink.objects.filter(connection=conn).select_related("device"):
+        roll_up(link, mapping, now)
+    return len(changed)
+
+
+# ── the passes ──────────────────────────────────────────────────────────────
+
+
+def read_status(conn: PrtgConnection, now=None, *, client: PrtgClient | None = None) -> dict:
+    """One status pass: devices, sensors, links, roll-ups. Raises
+    :class:`PrtgError` when PRTG cannot be read - nothing is written then,
+    because an unread tree says nothing about what is linked."""
+    now = now or timezone.now()
+    client = client or client_for(conn)
+    devices = client.devices()
+    sensors = client.sensors()
+    counts = link_pass(conn, devices.rows, now)
+    links = list(
+        PrtgDeviceLink.objects.filter(connection=conn)
+        .select_related("device", "virtual_machine")
+        .prefetch_related("device__tags", "virtual_machine__tags")
+    )
+    present = {str(r["objid"]) for r in devices.rows}
+    for link in links:
+        if link.objid not in present:
+            # PRTG no longer has it: the link stands (the next pass may find
+            # it again) but nothing it said is current.
+            link.status_raw = None
+    counts.update(write_sensors(conn, [lk for lk in links if lk.objid in present],
+                                sensors.rows, now))
+    for link in links:
+        if link.objid not in present:
+            PrtgSensor.objects.filter(link=link).delete()
+            link.state, link.sensor_counts, link.status_read_at = "unknown", {}, now
+            link.save(update_fields=["status_raw", "state", "sensor_counts", "status_read_at"])
+    counts["gone"] = sum(1 for lk in links if lk.objid not in present)
+    from .writer import sync_tags
+
+    if conn.write_mode != PrtgConnection.WRITE_NONE:
+        counts["tags"] = sync_tags(conn, [lk for lk in links if lk.objid in present],
+                                   devices.rows, client)
+    counts["skipped_rows"] = devices.skipped + sensors.skipped
+    counts["adopt"] = adoption_pass(conn, devices.rows)
+    from .acks import read_acks
+
+    counts["acknowledged"] = read_acks(conn)
+    counts["plan"] = plan_pass(conn, devices.rows, client, now)
+    return counts
+
+
+def plan_pass(conn, device_rows, client, now) -> dict:
+    """The planning pass after linking: what PRTG should have, proposed in
+    the queue. Its own failure (the group list could not be read) leaves the
+    planned proposals as they were and does not fail the status read."""
+    from .provision import plan, stamp
+
+    try:
+        counts = plan(conn, device_rows, client=client, now=now)
+    except PrtgError as exc:
+        counts = {"error": str(exc)[:300]}
+    stamp(conn, now, counts)
+    return counts
+
+
+def adoption_pass(conn, devices) -> int:
+    """Propose the PRTG devices nothing answers to, or clear the proposals
+    when adoption is off."""
+    from .adopt import drop_stale, plan_adoption
+
+    fresh: set = set()
+    with transaction.atomic():
+        n = plan_adoption(conn, devices, fresh) if conn.adopt_devices else 0
+        drop_stale(conn, fresh)
+    return n
+
+
+def _stamp(conn, now, *, error: str = "", summary: dict | None = None) -> None:
+    error = redact_secrets(error, conn.api_key) if error else ""  # #459
+    conn.last_status_at = now
+    conn.last_checked_at = now
+    conn.last_error = error[:500]
+    conn.last_status_summary = summary or ({"error": error[:300]} if error else {})
+    conn.save(update_fields=[
+        "last_status_at", "last_checked_at", "last_error", "last_status_summary",
+    ])
+
+
+def run_status_read(connection_id: str) -> dict:
+    """The status pass as an RQ job. Every switch is re-checked here, at run
+    time; the attempt is stamped even when it fails, so a broken connection
+    backs off to its interval instead of being queued every minute."""
+    conn = PrtgConnection.objects.filter(pk=connection_id).select_related("tenant").first()
+    reason = skip_reason(conn, "prtg")
+    if reason:
+        return {"skipped": reason}
+    if not (conn.enabled and conn.api_key_set):
+        return {"skipped": "connection off"}
+    if not _acquire(conn):
+        return {"skipped": "already reading"}
+    now = timezone.now()
+    try:
+        counts = read_status(conn, now)
+    except PrtgError as exc:
+        log.warning("prtg status %s failed: %s", conn.name, exc)
+        _stamp(conn, now, error=str(exc))
+        return {"error": str(exc)[:300]}
+    except Exception as exc:
+        log.exception("prtg status %s failed", conn.name)
+        _stamp(conn, now, error=f"Status read failed: {type(exc).__name__}")
+        raise
+    finally:
+        _release(conn)
+    _stamp(conn, now, summary=counts)
+    log.info("prtg status %s: %s", conn.name, counts)
+    return counts
+
+
+def refresh_device(connection_id: str, sensor_objid=None, device_objid=None) -> dict:
+    """Re-read one linked device's sensors - what a push hint asks for.
+
+    The hint's ids only say *where* to look. Nothing in the notification is
+    believed: PRTG is asked again, through the same client and the same map.
+    """
+    conn = PrtgConnection.objects.filter(pk=connection_id).select_related("tenant").first()
+    reason = skip_reason(conn, "prtg")
+    if reason:
+        return {"skipped": reason}
+    if not (conn.enabled and conn.api_key_set and conn.push_enabled):
+        return {"skipped": "push off"}
+    link = None
+    if device_objid:
+        link = PrtgDeviceLink.objects.filter(connection=conn, objid=str(device_objid)).first()
+    if link is None and sensor_objid:
+        sensor = PrtgSensor.objects.filter(
+            connection=conn, objid=str(sensor_objid)
+        ).select_related("link").first()
+        link = sensor.link if sensor else None
+    if link is None:
+        return {"skipped": "not linked"}
+    now = timezone.now()
+    try:
+        rows = client_for(conn).sensors({"parentid": link.objid}).rows
+    except PrtgError as exc:
+        return {"error": str(exc)[:300]}
+    counts = write_sensors(conn, [link], rows, now)
+    _hurry_checks(conn, link, now)
+    # An acknowledgement made in PRTG is a state change too: with push on it
+    # reaches the Danbyte alert in seconds rather than at the next read.
+    from .acks import read_acks
+
+    counts["acknowledged"] = read_acks(conn, [link])
+    return counts
+
+
+def _hurry_checks(conn, link, now) -> None:
+    """Make the device's ``prtg`` checks due now, so the hint reaches the
+    status in seconds rather than at the next interval."""
+    from monitoring.models import CheckState
+
+    from .checker import KIND
+
+    parent = (
+        {"target_ip__assigned_vm_id": link.virtual_machine_id}
+        if link.virtual_machine_id
+        else {"target_ip__assigned_device_id": link.device_id}
+    )
+    CheckState.objects.filter(
+        tenant=conn.tenant, kind=KIND, engine__in=conn.engines.all(),
+        in_flight=False, **parent,
+    ).update(next_run=now)

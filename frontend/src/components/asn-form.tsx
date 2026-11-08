@@ -3,13 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
-import {
-  api,
-  type ASN,
-  type ASNWritePayload,
-  type Paginated,
-  type RIROption,
-} from "@/lib/api"
+import { type ASN, type ASNWritePayload, type RIROption } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { SiteMultiSelect } from "@/components/cells/site-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
@@ -62,7 +57,7 @@ export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
 
   const rirs = useQuery({
     queryKey: ["rirs-picker"],
-    queryFn: () => api<Paginated<RIROption>>("/api/rirs/?picker=1"),
+    queryFn: () => apiAll<RIROption>("/api/rirs/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const sites = useSiteOptions()

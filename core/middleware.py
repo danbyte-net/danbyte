@@ -38,10 +38,19 @@ def clear_idle_timeout_cache() -> None:
     cache.delete(_IDLE_CACHE_KEY)
 
 
+#: How far the idle-timeout expiry may drift before a request writes it again
+#: (#486). Writing it on every request was one UPDATE of the session row per
+#: API call - 20+ per page load - for a window that only needs minute accuracy.
+IDLE_REFRESH_SLACK = 60
+
+
 class SessionIdleTimeoutMiddleware:
     """Rolling idle timeout for browser sessions. When an admin has configured a
-    timeout, every authenticated request resets that session's expiry window, so
-    a session that goes untouched for the configured span is signed out. Token
+    timeout, an authenticated request moves that session's expiry to "now +
+    timeout", so a session that goes untouched for the configured span is
+    signed out. The expiry is stored as a date and only rewritten once it has
+    drifted by ``IDLE_REFRESH_SLACK`` seconds, so a burst of requests writes
+    the session row once; the session may end up to a minute early. Token
     (API) requests carry no session and are unaffected.
 
     Must sit after ``AuthenticationMiddleware`` so ``request.user`` is resolved.
@@ -55,10 +64,38 @@ class SessionIdleTimeoutMiddleware:
         if user is not None and user.is_authenticated:
             minutes = idle_timeout_minutes()
             if minutes > 0:
-                # Reset the window; set_expiry marks the session modified so the
-                # new expiry is persisted (rolling, not absolute).
-                request.session.set_expiry(minutes * 60)
+                _refresh_idle_expiry(request.session, minutes * 60)
         return self.get_response(request)
+
+
+def start_idle_window(sender, request, user, **kwargs) -> None:
+    """``user_logged_in``: give a new session its idle expiry as it is made,
+    and warm the timeout's cache. Otherwise a session's first request would
+    write the session row (and, on a cold cache, read the deployment
+    settings) that every later request skips - so a page's first API call
+    cost more than the rest (#486)."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    minutes = idle_timeout_minutes()
+    if minutes > 0:
+        _refresh_idle_expiry(session, minutes * 60)
+
+
+def _refresh_idle_expiry(session, timeout: int) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    # A session from before #486 (or never touched by this middleware) has an
+    # age in seconds or no expiry at all; neither says how much is left.
+    if isinstance(session.get("_session_expiry"), str):
+        left = session.get_expiry_age()
+        # Inside the window, and not longer than it (the timeout was lowered).
+        if timeout - IDLE_REFRESH_SLACK <= left <= timeout:
+            return
+    # set_expiry marks the session modified, so the new expiry is persisted.
+    session.set_expiry(timezone.now() + timedelta(seconds=timeout))
 
 
 # Requests that must keep working while a restore or an upgrade holds the
@@ -132,3 +169,154 @@ class RejectNulQueryMiddleware:
                 {"detail": "Query parameters cannot contain NUL characters."}, status=400
             )
         return self.get_response(request)
+
+
+class ApiNoStoreMiddleware:
+    """``Cache-Control: private, no-store`` on API responses for a signed-in
+    caller (#491), so neither the browser's disk cache nor a shared proxy keeps
+    a copy of someone's data after they sign out. A view that sets its own
+    ``Cache-Control`` (a download, a thumbnail) keeps it.
+
+    Runs after the view, when DRF has copied a token user onto the request."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if (
+            request.path.startswith("/api/")
+            and not response.has_header("Cache-Control")
+            and (
+                getattr(getattr(request, "user", None), "is_authenticated", False)
+                or "HTTP_AUTHORIZATION" in request.META
+            )
+        ):
+            response["Cache-Control"] = "private, no-store"
+        return response
+
+
+# How long a large-page slot outlives a request that never released it (a
+# worker killed at its timeout skips the `finally`). Above gunicorn's timeout.
+LARGE_PAGE_SLOT_TTL = 120
+LARGE_PAGE_RETRY_AFTER = 2
+
+
+def _large_page_size(request) -> int | None:
+    """The ``page_size`` a list request names, when it is above
+    ``API_LARGE_PAGE_THRESHOLD``; ``None`` for every other request."""
+    if request.method not in ("GET", "HEAD") or not (request.path or "").startswith("/api/"):
+        return None
+    raw = request.GET.get("page_size")
+    if not raw:
+        return None
+    try:
+        size = int(raw)
+    except ValueError:
+        return None
+    from django.conf import settings
+
+    return size if size > settings.API_LARGE_PAGE_THRESHOLD else None
+
+
+TOKEN_OWNER_TTL = 300
+
+
+def _token_user_id(key_hash: str) -> int | None:
+    """The user behind an API token hash, cached for a few minutes; ``None``
+    when no token has that hash."""
+    cache_key = f"api:token-user:{key_hash}"
+    try:
+        hit = cache.get(cache_key)
+    except Exception:  # noqa: BLE001 - the cache is down: ask the database
+        hit = None
+    if hit is not None:
+        return hit or None  # 0 caches "no such token"
+    from auth_api.models import ApiToken
+
+    user_id = (
+        ApiToken.objects.filter(key_hash=key_hash).values_list("user_id", flat=True).first()
+    )
+    try:
+        cache.set(cache_key, user_id or 0, TOKEN_OWNER_TTL)
+    except Exception:  # noqa: BLE001
+        pass
+    return user_id
+
+
+def _large_page_owner(request) -> str | None:
+    """Whose slots a request uses: the user behind the API token it carries,
+    else the signed-in user. Every token of one user shares that user's slots,
+    so minting more tokens buys no more large pages (#457). A token no user
+    owns (stray or forged) is keyed by its hash and only ever competes with
+    itself; DRF refuses it right after."""
+    from rest_framework.authentication import get_authorization_header
+
+    parts = get_authorization_header(request).split()
+    if len(parts) == 2 and parts[0].lower() == b"token":
+        from auth_api.models import hash_api_key
+
+        key_hash = hash_api_key(parts[1].decode("latin-1"))
+        user_id = _token_user_id(key_hash)
+        return f"u:{user_id}" if user_id else "t:" + key_hash
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated:
+        return f"u:{user.pk}"
+    return None
+
+
+class LargePageGuardMiddleware:
+    """At most ``API_LARGE_PAGE_CONCURRENCY`` large list pages in flight per
+    user, all of their tokens together (#452, #457). A page above ``API_LARGE_PAGE_THRESHOLD`` rows
+    (1,000, the most the web app asks for) holds a worker for seconds; a
+    handful of them used to hold every worker. Each request
+    takes a slot (a Redis key with a TTL, so a request that dies without
+    letting go frees it anyway) and gives it back in ``finally``. With every
+    slot taken the answer is 429 with ``Retry-After``. Small pages, writes and
+    anonymous requests pass untouched, and so does everything when the cache
+    is unreachable: the guard protects workers, it is no reason to refuse."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if _large_page_size(request) is None:
+            return self.get_response(request)
+        owner = _large_page_owner(request)
+        if owner is None:
+            return self.get_response(request)
+        from django.conf import settings
+
+        slot = None
+        try:
+            for n in range(settings.API_LARGE_PAGE_CONCURRENCY):
+                key = f"api:large-page:{owner}:{n}"
+                if cache.add(key, 1, LARGE_PAGE_SLOT_TTL):
+                    slot = key
+                    break
+            else:
+                return _too_many_large_pages(settings.API_LARGE_PAGE_THRESHOLD)
+        except Exception:  # noqa: BLE001 - the cache is down: let it through
+            slot = None
+        try:
+            return self.get_response(request)
+        finally:
+            if slot is not None:
+                try:
+                    cache.delete(slot)
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+def _too_many_large_pages(page_size: int):
+    from django.http import JsonResponse
+
+    resp = JsonResponse(
+        {"detail": (
+            "Too many large pages at once. Wait for one to finish, or ask for "
+            f"{page_size} rows a page and follow `next`."
+        )},
+        status=429,
+    )
+    resp["Retry-After"] = str(LARGE_PAGE_RETRY_AFTER)
+    return resp

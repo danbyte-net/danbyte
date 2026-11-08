@@ -7,9 +7,9 @@ import {
   api,
   type ApiToken,
   type ApiTokenCreated,
-  type Paginated,
   type TenantPicker,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -31,11 +31,11 @@ export function ApiTokensSection() {
 
   const tokens = useQuery({
     queryKey: ["api-tokens"],
-    queryFn: () => api<Paginated<ApiToken>>("/api/api-tokens/"),
+    queryFn: () => apiAll<ApiToken>("/api/api-tokens/"),
   })
   const tenants = useQuery({
     queryKey: ["tenants", "picker"],
-    queryFn: () => api<Paginated<TenantPicker>>("/api/tenants/?picker=1"),
+    queryFn: () => apiAll<TenantPicker>("/api/tenants/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

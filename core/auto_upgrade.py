@@ -132,7 +132,7 @@ def check_and_upgrade(now=None) -> dict:
     repo = s.release_repo_url or DEFAULT_RELEASE_REPO
     token = (s.secrets or {}).get("release_repo_token", "")
     try:
-        rels = list_releases(repo, token)
+        rels = list_releases(repo, token, timeout=15)  # background tick
     except Exception:  # noqa: BLE001 - a repo hiccup shouldn't crash the timer
         return {"skipped": "repo_unreachable"}
     if s.update_channel == "stable":

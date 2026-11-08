@@ -7,10 +7,10 @@ import { toast } from "sonner"
 import {
   api,
   type DeviceSnmp,
-  type Paginated,
   type SnmpInterface,
   type VMInterface,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -49,8 +49,7 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
   // something to link to.
   const nics = useQuery({
     queryKey: ["vm-interfaces", vmId],
-    queryFn: () =>
-      api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
+    queryFn: () => apiAll<VMInterface>(`/api/vm-interfaces/?vm=${vmId}`),
   })
   const { ifaceByName, ipIdByAddr } = useMemo(() => {
     const byName = new Map<string, { id: string; name: string }>()

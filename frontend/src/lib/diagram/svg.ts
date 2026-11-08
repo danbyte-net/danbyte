@@ -1,15 +1,20 @@
 import { readableText } from "@/lib/color"
 
 import {
+  arrowHeads,
   cardText,
   fmt,
+  glyphsAlong,
   labelCorners,
   layerBadge,
   layerRules,
   linkLabels,
   linkPath,
   noteLayout,
+  pathThrough,
   pillWidth,
+  PORT_H,
+  trimForArrows,
   NOTE,
 } from "./geometry"
 import type { LabelBlock } from "./geometry"
@@ -263,16 +268,32 @@ function bandTitleSvg(b: DiagramBand, measure: Measure): string {
 
 function linkSvg(l: DiagramLink): string {
   const dash = dashOk(l.dash)
-  return el("path", {
-    d: linkPath(l),
+  const heads = arrowHeads(l)
+  const stroke = col(l.stroke, PRINT.subtle)
+  const line = el("path", {
+    // An arrowed end stops at its head's base; the head carries the tip.
+    d: linkPath(heads.length ? trimForArrows(l) : l),
     fill: "none",
-    stroke: col(l.stroke, PRINT.subtle),
+    stroke,
     "stroke-width": Math.max(0.25, l.width || 1),
     "stroke-dasharray": dash,
     // Round caps stretch every dash; dashed lines keep butt caps.
     "stroke-linecap": dash ? undefined : "round",
     "stroke-linejoin": "round",
   })
+  // Arrowheads are polygons in the line's colour: the PDF sanitizer
+  // allows no <marker>.
+  return (
+    line +
+    heads
+      .map((h) =>
+        el("polygon", {
+          points: h.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(" "),
+          fill: stroke,
+        })
+      )
+      .join("")
+  )
 }
 
 /** Where the run from `p` (inside `r`) towards `q` leaves `r`. */
@@ -288,10 +309,33 @@ function leaving(p: Pt, q: Pt, r: Rect): Pt {
   return { x: p.x + dx * t, y: p.y + dy * t }
 }
 
+/** A straight run less the nubs it crosses: they stay on top of it. */
+function aroundNubs(p: Pt, q: Pt, nubs: readonly Rect[]): [Pt, Pt][] {
+  let runs: [Pt, Pt][] = [[p, q]]
+  if (Math.abs(p.x - q.x) > 0.01) return runs
+  for (const b of nubs) {
+    if (p.x < b.x || p.x > b.x + b.w) continue
+    runs = runs.flatMap(([u, v]): [Pt, Pt][] => {
+      const [y0, y1] = [Math.min(u.y, v.y), Math.max(u.y, v.y)]
+      if (y1 <= b.y || y0 >= b.y + b.h) return [[u, v]]
+      const at = (y: number): Pt => ({ x: p.x, y })
+      return [
+        ...(y0 < b.y ? [[at(y0), at(b.y)] as [Pt, Pt]] : []),
+        ...(y1 > b.y + b.h ? [[at(b.y + b.h), at(y1)] as [Pt, Pt]] : []),
+      ]
+    })
+  }
+  return runs
+}
+
 /** The leads of a link's photo ports: the run from the port to the
  * photo node's edge, drawn again over the photo (the line itself is
- * drawn under the nodes). */
-function leadSvg(l: DiagramLink, boxes: ReadonlyMap<string, Rect>): string[] {
+ * drawn under the nodes) - but not over a nub of the photo's, which
+ * stays on top of its line as on a card. */
+function leadSvg(
+  l: DiagramLink,
+  boxes: ReadonlyMap<string, DiagramNode>
+): string[] {
   const pts = [l.source, ...l.points, l.target]
   const n = pts.length
   const runs: [Pt, Pt][] = []
@@ -299,7 +343,8 @@ function leadSvg(l: DiagramLink, boxes: ReadonlyMap<string, Rect>): string[] {
     const r = boxes.get(end.node)
     if (!end.marker || !r) return
     const to = leaving(end, next, r)
-    if (to.x !== end.x || to.y !== end.y) runs.push([end, to])
+    if (to.x !== end.x || to.y !== end.y)
+      runs.push(...aroundNubs(end, to, r.nubs ?? []))
   }
   lead(l.source, pts[1])
   lead(l.target, pts[n - 2])
@@ -319,7 +364,8 @@ function leadSvg(l: DiagramLink, boxes: ReadonlyMap<string, Rect>): string[] {
 /** A link label. A middle chip is a box with a hairline edge; an end
  * label sits on its line over a box of the colour under it (the page, or
  * the band it is on) - the gap the line breaks for. */
-function labelSvg(b: LabelBlock, page: string): string {
+function labelSvg(b: LabelBlock, page: string, measure: Measure): string {
+  if (b.path) return curvedLabelSvg(b, b.path, page, measure)
   const out: string[] = []
   const bg = b.chip
     ? { fill: PRINT.paper, stroke: PRINT.border, "stroke-width": 0.75 }
@@ -353,6 +399,37 @@ function labelSvg(b: LabelBlock, page: string): string {
     ? ` transform="rotate(${fmt(b.rotate)} ${fmt(b.ox)} ${fmt(b.oy)})"`
     : ""
   return `<g${transform}>${out.join("")}</g>`
+}
+
+/** An end label on a curve: its gap stroked along the curve, as wide as
+ * the label is tall, and its glyphs placed along it one by one (`x`, `y`
+ * and `rotate` lists - plain SVG text the PDF renderer draws as well). */
+function curvedLabelSvg(
+  b: LabelBlock,
+  path: Pt[],
+  page: string,
+  measure: Measure
+): string {
+  const g = glyphsAlong(path, b.lines[0]?.text ?? "", measure)
+  const list = (xs: number[]) => xs.map(fmt).join(" ")
+  return (
+    "<g>" +
+    el("path", {
+      d: pathThrough(path),
+      fill: "none",
+      stroke: page,
+      "stroke-width": PORT_H,
+    }) +
+    text(g.chars.join(""), {
+      x: list(g.x),
+      y: list(g.y),
+      rotate: list(g.rotate),
+      "font-size": b.size,
+      fill: PRINT.muted,
+      "text-rendering": "geometricPrecision",
+    }) +
+    "</g>"
+  )
 }
 
 // ── Nodes ────────────────────────────────────────────────────────────────
@@ -456,20 +533,46 @@ function nodeSvg(
       })
     )
   }
+  // A photo's role badge: the role colour its card would be filled with.
+  const tag = n.kind === "photo" ? n.place?.badge : undefined
+  if (tag && n.badge) {
+    const bf = col(n.badge.fill, PRINT.wash)
+    out.push(
+      el("rect", {
+        x: tag.x,
+        y: tag.y,
+        width: tag.w,
+        height: tag.h,
+        rx: PILL.RADIUS,
+        fill: bf,
+        stroke: mix("#000000", bf, CARD.EDGE_DARKEN),
+        "stroke-width": 1,
+      }),
+      text(n.badge.text, {
+        x: tag.x + tag.w / 2,
+        y: baselineAt(tag.y, PILL.SIZE, tag.h),
+        "text-anchor": "middle",
+        "font-size": PILL.SIZE,
+        "font-weight": PILL.WEIGHT,
+        fill: col(n.badge.ink, PRINT.text),
+      })
+    )
+  }
   // On a photo the name is a caption on the page, not on a fill.
   const titleInk = n.kind === "photo" ? PRINT.text : ink
   const lineInk =
     n.kind === "photo" ? PRINT.muted : mix(ink, fill, CARD.LINE_INK)
-  out.push(
-    text(t.title.text, {
-      x: t.title.x,
-      y: t.title.y,
-      "text-anchor": "middle",
-      "font-size": CARD.TITLE_SIZE,
-      "font-weight": CARD.TITLE_WEIGHT,
-      fill: titleInk,
-    })
-  )
+  for (const row of t.titleRows)
+    out.push(
+      text(row.text, {
+        x: row.x,
+        y: row.y,
+        "text-anchor": "middle",
+        "font-size": CARD.TITLE_SIZE,
+        "font-weight": CARD.TITLE_WEIGHT,
+        fill: titleInk,
+      })
+    )
   for (const line of t.lines)
     out.push(
       text(line.text, {
@@ -863,7 +966,7 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
   for (const n of doc.nodes)
     out.push(linked(n.link, nodeSvg(n, measure, photoId)))
   // Photo ports: each cable's lead over its photo.
-  const photoBoxes = new Map<string, Rect>(
+  const photoBoxes = new Map<string, DiagramNode>(
     doc.nodes
       .filter((n) => n.kind === "photo" && n.photo && photoId(n.photo.href))
       .map((n) => [n.id, n])
@@ -881,7 +984,7 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
         x: (cs[0].x + cs[2].x) / 2,
         y: (cs[0].y + cs[2].y) / 2,
       }
-      out.push(labelSvg(block, groundAt(doc.bands, c, page)))
+      out.push(labelSvg(block, groundAt(doc.bands, c, page), measure))
     }
   out.push(`</g>`)
   if (doc.notes.length) {

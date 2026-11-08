@@ -1,0 +1,1373 @@
+import { createFileRoute } from "@tanstack/react-router"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Plus } from "lucide-react"
+import { useMemo, useState } from "react"
+import { toast } from "sonner"
+
+import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type {
+  MonitoringEngine,
+  Paginated,
+  PrtgConnection,
+  PrtgDefaults,
+  PrtgHookToken,
+  PrtgSensorProfile,
+  PrtgTestResult,
+} from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
+import { useUrlTab } from "@/lib/use-url-tab"
+import { VENDORS } from "@/lib/vendors"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ListPageShell } from "@/components/list-page-shell"
+import { EmptyState } from "@/components/empty-state"
+import { KvTable, dash } from "@/components/kv-card"
+import { SettingsCard, SettingsGrid } from "@/components/settings/settings-card"
+import { copyWithToast } from "@/lib/clipboard"
+import type { KvRow } from "@/components/kv-card"
+import { TimeCell } from "@/components/cells/time-ago"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { IdMultiSelect } from "@/components/cells/id-multi-select"
+import { PrtgAdoptionRules } from "@/components/prtg/adoption-rules"
+import { PrtgGroupPicker } from "@/components/prtg/group-picker"
+import { PrtgPolicies } from "@/components/prtg/policies"
+import { PrtgProfiles } from "@/components/prtg/profiles"
+import { PrtgCredentials } from "@/components/prtg/credentials"
+import {
+  GroupLayoutFields,
+  GroupLayoutPreview,
+  PrtgGroupLayoutCard,
+  layoutOf,
+} from "@/components/prtg/group-layout"
+import type { GroupLayoutValue } from "@/components/prtg/group-layout"
+import { PrtgRetireRules } from "@/components/prtg/retire-rules"
+import {
+  PrtgChanges,
+  needsPerson,
+  usePrtgQueue,
+} from "@/components/prtg/changes"
+import { PrtgLinks } from "@/components/prtg/links"
+import { PrtgAlarms } from "@/components/prtg/alarms"
+import { PrtgSensors } from "@/components/prtg/sensors"
+import {
+  PrtgSensorBreakdown,
+  usePrtgSensorSummary,
+} from "@/components/prtg/sensor-strip"
+import { PrtgStateMapEditor, editableOnly } from "@/components/prtg/state-map"
+import { DeviceTypePicker } from "@/components/device-type-picker"
+import {
+  Field,
+  FormCheckbox,
+  FormColumn,
+  FormCombobox,
+  FormColumns,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
+
+export const Route = createFileRoute("/prtg/")({ component: PrtgPage })
+
+const PRTG_INTERVALS = [
+  { value: "60", label: "1 minute" },
+  { value: "120", label: "2 minutes" },
+  { value: "300", label: "5 minutes" },
+  { value: "600", label: "10 minutes" },
+  { value: "900", label: "15 minutes" },
+  { value: "1800", label: "30 minutes" },
+  { value: "3600", label: "1 hour" },
+]
+const INTERVAL_LABEL = Object.fromEntries(
+  PRTG_INTERVALS.map((o) => [o.value, o.label])
+)
+const LINK_MODES = [
+  { value: "auto", label: "Automatically" },
+  { value: "review", label: "After review" },
+]
+
+// The connection, the decisions waiting on a person, and the pairings the
+// reads have made - looked up when a device reads wrong.
+const TABS = [
+  "overview",
+  "review",
+  "alarms",
+  "sensors",
+  "links",
+  "policies",
+  "profiles",
+  "adoption",
+] as const
+type PrtgTab = (typeof TABS)[number]
+
+/** The PRTG integration: the connection, its review queue and its links. */
+function PrtgPage() {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const [editing, setEditing] = useState<PrtgConnection | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [deleting, setDeleting] = useState<PrtgConnection | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [results, setResults] = useState<Record<string, PrtgTestResult>>({})
+  const [tab, setTab] = useUrlTab<PrtgTab>("overview", "tab", TABS)
+
+  const connections = useQuery({
+    queryKey: ["prtg-connections"],
+    queryFn: () => apiAll<PrtgConnection>("/api/prtg/connections/"),
+  })
+  const all = connections.data?.results ?? []
+  const conn = all.find((c) => c.id === selectedId) ?? all.at(0)
+  const refresh = () =>
+    void qc.invalidateQueries({ queryKey: ["prtg-connections"] })
+  // Every imported sensor of the connection, counted per state: the
+  // Overview's strip and the Alarms and Sensors tab counts.
+  const summaryQuery = usePrtgSensorSummary(
+    conn ? { connection: conn.id } : {},
+    !!conn
+  )
+  const summary = summaryQuery.data ?? null
+  const alarmCount = summary ? summary.down + summary.degraded : 0
+  // Rows that need a person, from the same query the queue lists.
+  const queue = usePrtgQueue(conn?.id ?? "", !!conn)
+  const reviewCount = needsPerson(queue.data?.results)
+
+  const test = useMutation({
+    mutationFn: (id: string) =>
+      api<PrtgTestResult>(`/api/prtg/connections/${id}/test/`, {
+        method: "POST",
+      }).then((r) => ({ id, r })),
+    onSuccess: ({ id, r }) => {
+      setResults((prev) => ({ ...prev, [id]: r }))
+      toast.success(r.detail)
+      refresh()
+    },
+    onError: (e) => {
+      apiErrorToast(e)
+      refresh()
+    },
+  })
+
+  const readNow = useMutation({
+    mutationFn: (id: string) =>
+      api<Record<string, number>>(`/api/prtg/connections/${id}/status-now/`, {
+        method: "POST",
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        `Read PRTG - ${r.linked ?? 0} linked, ${r.ambiguous ?? 0} to decide.`
+      )
+      refresh()
+      void qc.invalidateQueries({ queryKey: ["prtg-links"] })
+      void qc.invalidateQueries({ queryKey: ["prtg-changes"] })
+      void qc.invalidateQueries({ queryKey: ["prtg-sensors"] })
+      void qc.invalidateQueries({ queryKey: ["prtg-sensor-summary"] })
+    },
+    onError: (e) => {
+      apiErrorToast(e)
+      refresh()
+    },
+  })
+
+  const planNow = useMutation({
+    mutationFn: (id: string) =>
+      api<Record<string, number>>(`/api/prtg/connections/${id}/plan-now/`, {
+        method: "POST",
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        `Planned - ${r.create ?? 0} to create, ${r.add_sensor ?? 0} sensors to add.`
+      )
+      refresh()
+      void qc.invalidateQueries({ queryKey: ["prtg-changes"] })
+    },
+    onError: (e) => {
+      apiErrorToast(e)
+      refresh()
+    },
+  })
+
+  const remove = useMutation({
+    mutationFn: (id: string) =>
+      api(`/api/prtg/connections/${id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Connection removed")
+      setDeleting(null)
+      setSelectedId(null)
+      refresh()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const canManage = canDo("prtgconnection", "change")
+  const canAdd = canDo("prtgconnection", "add")
+  const canDelete = canDo("prtgconnection", "delete")
+
+  return (
+    <ListPageShell
+      title="PRTG"
+      count={connections.data ? all.length : undefined}
+      actions={
+        canAdd && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add connection
+          </Button>
+        )
+      }
+      query={connections}
+    >
+      {connections.data && !conn && (
+        <EmptyState title="No PRTG connection">
+          Point Danbyte at a PRTG core server.
+        </EmptyState>
+      )}
+
+      {all.length > 1 && conn && (
+        <SegmentedTabs
+          value={conn.id}
+          onValueChange={setSelectedId}
+          items={all.map((c) => ({ value: c.id, label: c.name }))}
+          className="mb-4"
+        />
+      )}
+
+      {conn && (
+        <div className="flex flex-col gap-6">
+          <SegmentedTabs
+            value={tab}
+            onValueChange={setTab}
+            items={[
+              { value: "overview", label: "Overview" },
+              {
+                value: "review",
+                label: "Review queue",
+                count: reviewCount || undefined,
+              },
+              {
+                value: "alarms",
+                label: "Alarms",
+                count: alarmCount || undefined,
+              },
+              { value: "sensors", label: "Sensors", count: summary?.total },
+              { value: "links", label: "Links" },
+              { value: "policies", label: "Policies" },
+              { value: "profiles", label: "Profiles" },
+              { value: "adoption", label: "Adoption" },
+            ]}
+          />
+          {tab === "overview" && (
+            <div>
+              {/* Every block is a card, as on the settings pages: the
+                  short ones pack into two columns, the wide ones follow. */}
+              <SettingsGrid>
+                {summary && (
+                  <PrtgSensorBreakdown
+                    connection={conn}
+                    summary={summary}
+                    readAt={summary.read_at ?? conn.last_status_at}
+                    onOpen={setTab}
+                  />
+                )}
+                <ConnectionCards
+                  conn={conn}
+                  result={results[conn.id]}
+                  canManage={canManage}
+                  canDelete={canDelete}
+                  testing={test.isPending}
+                  reading={readNow.isPending}
+                  planning={planNow.isPending}
+                  onTest={() => test.mutate(conn.id)}
+                  onRead={() => readNow.mutate(conn.id)}
+                  onPlan={() => planNow.mutate(conn.id)}
+                  onEdit={() => setEditing(conn)}
+                  onDelete={() => setDeleting(conn)}
+                />
+                {conn.push_enabled && canManage && (
+                  <PushSetup conn={conn} onRotated={refresh} />
+                )}
+              </SettingsGrid>
+              <div className="mt-4 space-y-4">
+                {conn.write_mode !== "none" && (
+                  <PrtgGroupLayoutCard
+                    key={`${conn.id}-${conn.updated_at}`}
+                    connection={conn}
+                    canManage={canManage}
+                  />
+                )}
+                <PrtgRetireRules connection={conn} canManage={canManage} />
+              </div>
+            </div>
+          )}
+          {tab === "review" && (
+            <PrtgChanges
+              connection={conn}
+              onEditConnection={canManage ? () => setEditing(conn) : undefined}
+            />
+          )}
+          {tab === "policies" && (
+            <PrtgPolicies connection={conn} canManage={canManage} />
+          )}
+          {tab === "profiles" && (
+            <>
+              <PrtgProfiles connection={conn} canManage={canManage} />
+              <PrtgCredentials connection={conn} canManage={canManage} />
+            </>
+          )}
+          {tab === "adoption" && (
+            <PrtgAdoptionRules connection={conn} canManage={canManage} />
+          )}
+          {tab === "alarms" && <PrtgAlarms connection={conn} />}
+          {tab === "sensors" && <PrtgSensors connection={conn} />}
+          {tab === "links" && (
+            <PrtgLinks connection={conn} canManage={canManage} />
+          )}
+        </div>
+      )}
+
+      <p className="mt-6 text-[11px] text-muted-foreground">
+        {VENDORS.prtg?.notice}
+      </p>
+
+      <ConnectionDialog
+        connection={editing}
+        open={adding || editing !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAdding(false)
+            setEditing(null)
+          }
+        }}
+        onSaved={() => {
+          setAdding(false)
+          setEditing(null)
+          refresh()
+          void qc.invalidateQueries({ queryKey: ["prtg-links"] })
+        }}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={`Remove ${deleting?.name ?? "this connection"}?`}
+        description="Nothing in PRTG is touched."
+        confirmLabel="Remove"
+        pendingLabel="Removing…"
+        pending={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+      />
+    </ListPageShell>
+  )
+}
+
+/** The connection as four cards - Connection, Server, Two-way and
+ * Registration - each with the actions that belong to it in its footer. */
+function ConnectionCards({
+  conn,
+  result,
+  canManage,
+  canDelete,
+  testing,
+  reading,
+  planning,
+  onTest,
+  onRead,
+  onPlan,
+  onEdit,
+  onDelete,
+}: {
+  conn: PrtgConnection
+  result?: PrtgTestResult
+  canManage: boolean
+  canDelete: boolean
+  testing: boolean
+  reading: boolean
+  planning: boolean
+  onTest: () => void
+  onRead: () => void
+  onPlan: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const connection: KvRow[] = [
+    {
+      label: "URL",
+      value: <span className="font-mono text-xs break-all">{conn.url}</span>,
+    },
+    {
+      label: "API key",
+      value: conn.api_key_set ? (
+        <Badge variant="success">Set</Badge>
+      ) : (
+        <Badge variant="warning">Not set</Badge>
+      ),
+    },
+    { label: "Verify TLS", value: conn.verify_tls ? "Yes" : "No" },
+    {
+      label: "Read every",
+      value:
+        INTERVAL_LABEL[String(conn.status_interval_seconds)] ??
+        `${conn.status_interval_seconds} s`,
+    },
+    {
+      label: "Links",
+      value: conn.link_mode === "review" ? "After review" : "Automatically",
+    },
+    {
+      label: "Engines",
+      value: conn.engine_names.length
+        ? conn.engine_names.map((e) => e.name).join(", ")
+        : dash,
+    },
+  ]
+  const onOff = (on: boolean, label: string) =>
+    on ? (
+      <Badge variant="success">{label}</Badge>
+    ) : (
+      <Badge variant="secondary">Off</Badge>
+    )
+  const adoptDefaults = [
+    conn.adopt_names.site,
+    conn.adopt_names.role,
+    conn.adopt_names.device_type,
+  ].filter(Boolean)
+  const twoWay: KvRow[] = [
+    {
+      label: "Acknowledgements",
+      value: onOff(conn.write_acknowledgements, "Both ways"),
+    },
+    {
+      label: "Maintenance",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          {onOff(conn.sync_maintenance, "Pauses devices")}
+          {conn.sync_maintenance && conn.last_maintenance_sync_at && (
+            <TimeCell iso={conn.last_maintenance_sync_at} />
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "Inventory",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          {onOff(conn.read_inventory, "Read")}
+          {conn.read_inventory && conn.last_inventory_at && (
+            <TimeCell iso={conn.last_inventory_at} />
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "Adoption",
+      value: conn.adopt_devices ? (
+        <span className="inline-flex items-center gap-2">
+          <Badge variant="success">On</Badge>
+          {adoptDefaults.length > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              {adoptDefaults.join(" · ")}
+            </span>
+          ) : (
+            <Badge variant="warning">No defaults</Badge>
+          )}
+        </span>
+      ) : (
+        <Badge variant="secondary">Off</Badge>
+      ),
+    },
+  ]
+  const plan = conn.last_plan_summary ?? {}
+  const registration: KvRow[] = [
+    {
+      label: "Defaults",
+      value:
+        conn.register_profile_name || conn.register_group_path ? (
+          <span className="text-xs">
+            {conn.register_profile_name || "No profile"}
+            {conn.register_group_path ? ` · ${conn.register_group_path}` : ""}
+          </span>
+        ) : (
+          <Badge variant="warning">Not set</Badge>
+        ),
+    },
+    {
+      label: "Auto-apply",
+      value: (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Badge
+            variant={conn.auto_apply_registration ? "success" : "secondary"}
+          >
+            {conn.auto_apply_registration ? "On" : "Off"}
+          </Badge>
+          {conn.last_apply_at && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              last apply <TimeCell iso={conn.last_apply_at} />
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "Register all",
+      value: conn.register_all ? (
+        <span className="inline-flex items-center gap-2">
+          <Badge variant="success">On</Badge>
+          {conn.register_profile_name && (
+            <span className="text-xs text-muted-foreground">
+              {conn.register_profile_name}
+              {conn.register_group_path ? ` · ${conn.register_group_path}` : ""}
+            </span>
+          )}
+        </span>
+      ) : (
+        <Badge variant="secondary">Off</Badge>
+      ),
+    },
+    {
+      label: "Writes",
+      value: (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Badge variant={WRITE_VARIANT[conn.write_mode] ?? "secondary"}>
+            {WRITE_LABEL[conn.write_mode] ?? "Not checked"}
+          </Badge>
+          {conn.prune_devices && <Badge variant="secondary">Prune</Badge>}
+        </span>
+      ),
+    },
+    ...(conn.last_apply_at
+      ? [
+          {
+            label: "Last apply",
+            value: (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <TimeCell iso={conn.last_apply_at} />
+                <Badge variant="secondary" className="num">
+                  {Number(conn.last_apply_summary?.applied ?? 0)} applied
+                </Badge>
+                {Number(conn.last_apply_summary?.failed ?? 0) > 0 && (
+                  <Badge variant="destructive" className="num">
+                    {Number(conn.last_apply_summary?.failed)} failed
+                  </Badge>
+                )}
+              </span>
+            ),
+          },
+        ]
+      : []),
+    {
+      label: "Last plan",
+      value: conn.last_plan_at ? (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <TimeCell iso={conn.last_plan_at} />
+          {plan.error ? (
+            <Badge variant="destructive">{String(plan.error)}</Badge>
+          ) : (
+            <>
+              <Badge variant="secondary" className="num">
+                {Number(plan.create ?? 0)} to create
+              </Badge>
+              <Badge variant="secondary" className="num">
+                {Number(plan.add_sensor ?? 0)} sensors
+              </Badge>
+            </>
+          )}
+        </span>
+      ) : (
+        <Badge variant="secondary">Never planned</Badge>
+      ),
+    },
+  ]
+  const summary = conn.last_status_summary ?? {}
+  const server: KvRow[] = [
+    {
+      label: "Version",
+      value: conn.version ? (
+        <span className="inline-flex items-center gap-2">
+          <span className="num">{conn.version}</span>
+          {!conn.supported && <Badge variant="warning">Unsupported</Badge>}
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    ...(result?.probes != null
+      ? [
+          {
+            label: "Probes",
+            value: <span className="num">{result.probes}</span>,
+          },
+        ]
+      : []),
+    ...(result?.sensors != null
+      ? [
+          {
+            label: "Sensors",
+            value: <span className="num">{result.sensors}</span>,
+          },
+        ]
+      : []),
+    {
+      label: "API v2",
+      value:
+        conn.v2_available == null ? (
+          dash
+        ) : conn.v2_available ? (
+          <Badge variant="success">Available</Badge>
+        ) : (
+          <Badge variant="secondary">Not available</Badge>
+        ),
+    },
+    {
+      label: "Last read",
+      value: conn.last_status_at ? (
+        <span className="inline-flex items-center gap-2">
+          <TimeCell iso={conn.last_status_at} />
+          {typeof summary.linked === "number" && (
+            <Badge variant="secondary" className="num">
+              {summary.linked} linked
+            </Badge>
+          )}
+        </span>
+      ) : (
+        <Badge variant="secondary">Never read</Badge>
+      ),
+    },
+    ...(conn.last_error
+      ? [
+          {
+            label: "Last error",
+            value: <Badge variant="destructive">{conn.last_error}</Badge>,
+          },
+        ]
+      : []),
+  ]
+  const footer = (buttons: React.ReactNode) =>
+    canManage ? (
+      <div className="flex w-full flex-wrap items-center gap-2">{buttons}</div>
+    ) : undefined
+  return (
+    <>
+      <SettingsCard
+        title="Connection"
+        badge={!conn.enabled && <Badge variant="secondary">Disabled</Badge>}
+        layout="flush"
+        footer={footer(
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={testing}
+              onClick={onTest}
+            >
+              {testing ? "Testing…" : "Test connection"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={onEdit}>
+              Edit
+            </Button>
+            {canDelete && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto text-destructive hover:text-destructive"
+                onClick={onDelete}
+              >
+                Remove
+              </Button>
+            )}
+          </>
+        )}
+      >
+        <KvTable inset rows={connection} />
+      </SettingsCard>
+      <SettingsCard
+        title="Server"
+        layout="flush"
+        footer={footer(
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={reading || !conn.api_key_set}
+            onClick={onRead}
+          >
+            {reading ? "Reading…" : "Read now"}
+          </Button>
+        )}
+      >
+        <KvTable inset rows={server} />
+      </SettingsCard>
+      <SettingsCard title="Two-way" layout="flush">
+        <KvTable inset rows={twoWay} />
+      </SettingsCard>
+      <SettingsCard
+        title="Registration"
+        layout="flush"
+        footer={footer(
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={planning || !conn.api_key_set}
+            onClick={onPlan}
+          >
+            {planning ? "Planning…" : "Plan now"}
+          </Button>
+        )}
+      >
+        <KvTable inset rows={registration} />
+      </SettingsCard>
+    </>
+  )
+}
+
+/**
+ * What to enter in PRTG for push hints: an "Execute HTTP Action"
+ * notification template. The token is shown once, when it is made.
+ */
+function PushSetup({
+  conn,
+  onRotated,
+}: {
+  conn: PrtgConnection
+  onRotated: () => void
+}) {
+  const [token, setToken] = useState<PrtgHookToken | null>(null)
+  const rotate = useMutation({
+    mutationFn: () =>
+      api<PrtgHookToken>(
+        `/api/prtg/connections/${conn.id}/rotate-hook-token/`,
+        { method: "POST" }
+      ),
+    onSuccess: (r) => {
+      setToken(r)
+      onRotated()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const url = token ? `${window.location.origin}${token.path}` : ""
+  const rows: KvRow[] = [
+    { label: "Method", value: <span className="font-mono text-xs">POST</span> },
+    {
+      label: "URL",
+      value: url ? (
+        <span className="font-mono text-xs break-all">{url}</span>
+      ) : (
+        <span className="text-muted-foreground">
+          {conn.hook_token_set
+            ? "Shown once when made - make a new one to see it."
+            : "Make a token first."}
+        </span>
+      ),
+    },
+    {
+      label: "Payload",
+      value: (
+        <span className="font-mono text-xs break-all">
+          sensorid=%sensorid&amp;deviceid=%deviceid&amp;laststatus=%laststatus
+        </span>
+      ),
+    },
+  ]
+  return (
+    <SettingsCard
+      title="Push notification"
+      description="Execute HTTP Action"
+      layout="flush"
+      footer={
+        <div className="flex w-full flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={rotate.isPending}
+            onClick={() => rotate.mutate()}
+          >
+            {rotate.isPending
+              ? "Making…"
+              : conn.hook_token_set
+                ? "New token"
+                : "Make token"}
+          </Button>
+          {url && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void copyWithToast(url, "URL copied")}
+            >
+              Copy URL
+            </Button>
+          )}
+        </div>
+      }
+    >
+      <KvTable inset rows={rows} />
+    </SettingsCard>
+  )
+}
+
+const WRITE_LABEL: Record<string, string> = {
+  v2: "API v2",
+  seed: "Seed copies",
+  none: "Cannot create",
+}
+const WRITE_VARIANT: Record<string, "success" | "warning" | "secondary"> = {
+  v2: "success",
+  seed: "warning",
+  none: "secondary",
+}
+
+function ConnectionDialog({
+  connection,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  connection: PrtgConnection | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSaved: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="4xl" className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {connection ? `Edit ${connection.name}` : "Add PRTG connection"}
+          </DialogTitle>
+        </DialogHeader>
+        {open && (
+          <PrtgConnectionForm
+            connection={connection}
+            onSaved={onSaved}
+            onCancel={() => onOpenChange(false)}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function PrtgConnectionForm({
+  connection,
+  onSaved,
+  onCancel,
+}: {
+  connection: PrtgConnection | null
+  onSaved: () => void
+  onCancel: () => void
+}) {
+  const isEdit = !!connection
+  const { fieldErrors, handleApiError } = useFieldErrors()
+  const [name, setName] = useState(connection?.name ?? "")
+  const [url, setUrl] = useState(connection?.url ?? "")
+  const [apiKey, setApiKey] = useState("")
+  const [verifyTls, setVerifyTls] = useState(connection?.verify_tls ?? true)
+  const [enabled, setEnabled] = useState(connection?.enabled ?? true)
+  const [interval, setIntervalSeconds] = useState<string | null>(
+    String(connection?.status_interval_seconds ?? 120)
+  )
+  const [engineIds, setEngineIds] = useState<string[]>(
+    connection?.engines ?? []
+  )
+  const [linkMode, setLinkMode] = useState<string | null>(
+    connection?.link_mode ?? "auto"
+  )
+  const [push, setPush] = useState(connection?.push_enabled ?? false)
+  const [stateMap, setStateMap] = useState<Record<string, string>>(
+    connection?.state_map ?? {}
+  )
+  const [writeAcks, setWriteAcks] = useState(
+    connection?.write_acknowledgements ?? true
+  )
+  const [syncMaint, setSyncMaint] = useState(
+    connection?.sync_maintenance ?? false
+  )
+  const [readInventory, setReadInventory] = useState(
+    connection?.read_inventory ?? false
+  )
+  const [adopt, setAdopt] = useState(connection?.adopt_devices ?? false)
+  const [adoptSite, setAdoptSite] = useState<string | null>(
+    connection?.adopt_site ?? null
+  )
+  const [adoptRole, setAdoptRole] = useState<string | null>(
+    connection?.adopt_role ?? null
+  )
+  const [adoptType, setAdoptType] = useState<string | null>(
+    connection?.adopt_device_type ?? null
+  )
+  const [registerAll, setRegisterAll] = useState(
+    connection?.register_all ?? false
+  )
+  const [registerProfile, setRegisterProfile] = useState<string | null>(
+    connection?.register_profile ?? null
+  )
+  const [registerGroup, setRegisterGroup] = useState<string | null>(
+    connection?.register_group_id || null
+  )
+  const [registerPath, setRegisterPath] = useState(
+    connection?.register_group_path ?? ""
+  )
+  const [seedDevice, setSeedDevice] = useState<string | null>(
+    connection?.seed_device_objid || null
+  )
+  const [sendCredentials, setSendCredentials] = useState(
+    connection?.send_credentials ?? false
+  )
+  const [sendTags, setSendTags] = useState(connection?.send_tags ?? true)
+  const [tagSiteRole, setTagSiteRole] = useState(
+    connection?.tag_site_role ?? false
+  )
+  const [autoApply, setAutoApply] = useState(
+    connection?.auto_apply_registration ?? false
+  )
+  const [pruneDevices, setPruneDevices] = useState(
+    connection?.prune_devices ?? false
+  )
+  const [layout, setLayout] = useState<GroupLayoutValue | null>(
+    connection ? layoutOf(connection) : null
+  )
+  const [deleteRemove, setDeleteRemove] = useState(
+    connection?.delete_default_remove ?? false
+  )
+  const prtgDevices = useQuery({
+    queryKey: ["prtg-devices", connection?.id],
+    queryFn: () =>
+      api<{ objid: string; name: string; host: string; paused: boolean }[]>(
+        `/api/prtg/connections/${connection?.id}/prtg-devices/`
+      ),
+    enabled: !!connection?.api_key_set,
+    staleTime: 60_000,
+  })
+  const profiles = useQuery({
+    queryKey: ["prtg-profiles", connection?.id],
+    queryFn: () =>
+      apiAll<PrtgSensorProfile>(
+        `/api/prtg/profiles/?connection=${connection?.id}`
+      ),
+    enabled: !!connection,
+  })
+  const sites = useQuery({
+    queryKey: ["prtg-adopt-sites"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/sites/?page_size=500"),
+    staleTime: 60_000,
+    enabled: adopt,
+  })
+  const roles = useQuery({
+    queryKey: ["prtg-adopt-roles"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        "/api/device-roles/?page_size=500"
+      ),
+    staleTime: 60_000,
+    enabled: adopt,
+  })
+  const asOptions = (rows?: { id: string; name: string }[]) =>
+    (rows ?? []).map((r) => ({ value: r.id, label: r.name }))
+
+  // The codes come from the server so PRTG's list is not hard-coded twice.
+  const defaults = useQuery({
+    queryKey: ["prtg-defaults"],
+    queryFn: () => api<PrtgDefaults>("/api/prtg/connections/defaults/"),
+    staleTime: 60 * 60_000,
+  })
+  const engines = useQuery({
+    queryKey: ["prtg-engine-picker"],
+    queryFn: () => apiAll<MonitoringEngine>("/api/monitoring/engines/"),
+    staleTime: 60_000,
+  })
+  const engineOptions = useMemo(
+    () =>
+      (engines.data?.results ?? [])
+        .filter((e) => e.kind === "prtg")
+        .map((e) => ({ id: e.id, name: e.name })),
+    [engines.data]
+  )
+
+  // A plain request rather than the planning-aware save: a staged change
+  // would keep the API key in the plan.
+  const mutation = useMutation({
+    mutationFn: () =>
+      api<PrtgConnection>(
+        isEdit
+          ? `/api/prtg/connections/${connection.id}/`
+          : "/api/prtg/connections/",
+        {
+          method: isEdit ? "PATCH" : "POST",
+          body: JSON.stringify({
+            name: name.trim(),
+            url: url.trim(),
+            // Blank keeps what is stored.
+            ...(apiKey ? { api_key: apiKey } : {}),
+            verify_tls: verifyTls,
+            enabled,
+            status_interval_seconds: Number(interval ?? 120),
+            engines: engineIds,
+            link_mode: linkMode ?? "auto",
+            push_enabled: push,
+            state_map: editableOnly(stateMap, defaults.data),
+            write_acknowledgements: writeAcks,
+            sync_maintenance: syncMaint,
+            read_inventory: readInventory,
+            adopt_devices: adopt,
+            adopt_site: adopt ? adoptSite : null,
+            adopt_role: adopt ? adoptRole : null,
+            adopt_device_type: adopt ? adoptType : null,
+            // Registration needs the connection's own profiles, so it is
+            // only edited once the connection exists.
+            ...(isEdit
+              ? {
+                  register_all: registerAll,
+                  register_profile: registerProfile,
+                  register_group_id: registerGroup ?? "",
+                  register_group_path: registerPath,
+                  seed_device_objid: seedDevice ?? "",
+                  send_credentials: sendCredentials,
+                  send_tags: sendTags,
+                  tag_site_role: tagSiteRole,
+                  auto_apply_registration: autoApply,
+                  prune_devices: pruneDevices,
+                  ...(layout ?? {}),
+                  delete_default_remove: deleteRemove,
+                }
+              : {}),
+          }),
+        }
+      ),
+    onSuccess: (saved) => {
+      toast.success(isEdit ? `Updated ${saved.name}` : `Added ${saved.name}`)
+      onSaved()
+    },
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
+  })
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate()
+      }}
+      className="grid gap-4"
+    >
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Connection" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              placeholder="prtg"
+              error={fieldErrors.name}
+            />
+            <FormText
+              label="URL"
+              required
+              mono
+              value={url}
+              onChange={setUrl}
+              placeholder="https://prtg.example.com"
+              info="The PRTG web interface. An internal address needs a deployment admin to allow it under Settings → Security → Outbound connections."
+              error={fieldErrors.url ?? fieldErrors.api_v2_url}
+            />
+            <FormText
+              label="API key"
+              type="password"
+              hint={
+                connection?.api_key_set ? "Set. Blank keeps it." : undefined
+              }
+              info="An API key from the PRTG user's account settings. Dropped when the URL moves to another host."
+              value={apiKey}
+              onChange={setApiKey}
+              placeholder={connection?.api_key_set ? "••••••" : ""}
+              error={fieldErrors.api_key}
+            />
+            <FormCheckbox
+              label="Verify TLS certificate"
+              checked={verifyTls}
+              onChange={setVerifyTls}
+            />
+            <FormCheckbox
+              label="Enabled"
+              checked={enabled}
+              onChange={setEnabled}
+            />
+          </FormSection>
+        </FormColumn>
+        <FormColumn>
+          <FormSection title="Reading" card>
+            <FormSelect
+              label="Read every"
+              value={interval}
+              onChange={setIntervalSeconds}
+              options={PRTG_INTERVALS}
+              error={fieldErrors.status_interval_seconds}
+            />
+            <FormSelect
+              label="Link devices"
+              info="How a match between a Danbyte device and a PRTG device becomes a link. After review puts each one in the queue first. A match that is not clear always waits for a decision."
+              value={linkMode}
+              onChange={setLinkMode}
+              options={LINK_MODES}
+              error={fieldErrors.link_mode}
+            />
+            <Field
+              label="Engines"
+              hint={engineOptions.length ? undefined : "None yet"}
+              info="The monitoring engines whose PRTG checks this connection answers. Create one of kind PRTG under Governance → Monitoring engines, then link it here."
+              error={fieldErrors.engines}
+            >
+              <IdMultiSelect
+                options={engineOptions}
+                value={engineIds}
+                onChange={setEngineIds}
+                placeholder="Add an engine…"
+                searchPlaceholder="Search engines…"
+                emptyText="No PRTG engine."
+              />
+            </Field>
+            <FormCheckbox
+              label="Accept push notifications"
+              info="PRTG's Execute HTTP Action notification asks Danbyte to read one device again at once. Only the ids are used."
+              checked={push}
+              onChange={setPush}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Two-way" card>
+            <FormCheckbox
+              label="Acknowledgements both ways"
+              info="Acknowledging a Danbyte alert from a PRTG check acknowledges the Down sensors behind it in PRTG, with your name and note. A sensor acknowledged in PRTG acknowledges the Danbyte alert. PRTG cannot un-acknowledge."
+              checked={writeAcks}
+              onChange={setWriteAcks}
+            />
+            <FormCheckbox
+              label="Pause for maintenance windows"
+              info="A confirmed maintenance or outage window pauses each linked PRTG device it covers until the window ends; cancelling it resumes them. A device somebody paused in PRTG is left alone."
+              checked={syncMaint}
+              onChange={setSyncMaint}
+            />
+          </FormSection>
+          <FormSection title="Inventory" card>
+            <FormCheckbox
+              label="Read system information"
+              info="Reads what PRTG knows about each linked device - name, serial, vendor, model, OS - and shows a different name or serial in the device's drift inbox. Danbyte's own SNMP poll wins where both answer."
+              checked={readInventory}
+              onChange={setReadInventory}
+            />
+          </FormSection>
+        </FormColumn>
+        <FormColumn>
+          <FormSection title="Adoption" card>
+            <FormCheckbox
+              label="Adopt devices"
+              info="A PRTG device that no Danbyte device or VM answers to is offered in the review queue; applying makes the device. Adoption rules place it first, then a PRTG group named like a site, then these defaults."
+              checked={adopt}
+              onChange={setAdopt}
+            />
+            {adopt && (
+              <>
+                <FormCombobox
+                  label="Site"
+                  value={adoptSite}
+                  onChange={setAdoptSite}
+                  options={asOptions(sites.data?.results)}
+                  noneLabel="None"
+                  error={fieldErrors.adopt_site}
+                  searchPlaceholder="Search sites…"
+                  emptyText="No sites."
+                />
+                <FormCombobox
+                  label="Role"
+                  value={adoptRole}
+                  onChange={setAdoptRole}
+                  options={asOptions(roles.data?.results)}
+                  noneLabel="None"
+                  error={fieldErrors.adopt_role}
+                  searchPlaceholder="Search roles…"
+                  emptyText="No roles."
+                />
+                <DeviceTypePicker value={adoptType} onChange={setAdoptType} />
+              </>
+            )}
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      {connection && (
+        <FormSection
+          title={
+            connection.write_mode === "none"
+              ? "Registration"
+              : "Registration defaults"
+          }
+          card
+        >
+          {connection.write_mode !== "none" && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Used for objects set to Monitor in PRTG that no policy matches,
+                and for Register all.
+              </p>
+              <FormColumns>
+                <FormColumn>
+                  <FormCombobox
+                    label="Sensor profile"
+                    value={registerProfile}
+                    onChange={setRegisterProfile}
+                    options={asOptions(profiles.data?.results)}
+                    noneLabel="None"
+                    error={fieldErrors.register_profile}
+                    searchPlaceholder="Search profiles…"
+                    emptyText="No profiles."
+                  />
+                </FormColumn>
+                <FormColumn>
+                  <PrtgGroupPicker
+                    connectionId={connection.id}
+                    value={registerGroup}
+                    path={registerPath}
+                    onChange={(id, path) => {
+                      setRegisterGroup(id)
+                      setRegisterPath(path)
+                    }}
+                    error={fieldErrors.register_group_id}
+                  />
+                </FormColumn>
+              </FormColumns>
+            </>
+          )}
+          <FormCheckbox
+            label="Register all devices and VMs"
+            info="Every device and VM goes to PRTG with these defaults. Left out: retired statuses, objects already linked, objects set to Exclude from PRTG, and addresses excluded from monitoring. Policies win where they match. The review queue shows the plan; applying it writes to PRTG."
+            checked={registerAll}
+            onChange={setRegisterAll}
+          />
+        </FormSection>
+      )}
+
+      {connection && layout && connection.write_mode !== "none" && (
+        <FormSection title="Group layout" card>
+          <FormColumns>
+            <FormColumn>
+              <GroupLayoutFields
+                connection={connection}
+                value={layout}
+                onChange={setLayout}
+                errors={fieldErrors}
+              />
+            </FormColumn>
+            <FormColumn>
+              <GroupLayoutPreview connectionId={connection.id} value={layout} />
+            </FormColumn>
+          </FormColumns>
+        </FormSection>
+      )}
+
+      {connection && (
+        <FormSection title="Writes" card>
+          <Field
+            label="Can create"
+            info="Checked against PRTG: API v2 creates devices and sensors from PRTG 26.2.120 on. Without it, new devices and sensors are copies of the seed device. Test connection checks again."
+          >
+            <span className="inline-flex flex-wrap items-center gap-2 text-[13px]">
+              <Badge
+                variant={WRITE_VARIANT[connection.write_mode] ?? "secondary"}
+              >
+                {WRITE_LABEL[connection.write_mode] ?? "Not checked"}
+              </Badge>
+              {connection.write_detail && (
+                <span className="text-muted-foreground">
+                  {connection.write_detail}
+                </span>
+              )}
+            </span>
+          </Field>
+          <FormColumns>
+            <FormColumn>
+              <FormCombobox
+                label="Seed device"
+                info="An empty, paused PRTG device with one sensor of each kind to copy. Used only where API v2 cannot create objects."
+                value={seedDevice}
+                onChange={setSeedDevice}
+                options={(prtgDevices.data ?? []).map((d) => ({
+                  value: d.objid,
+                  label: `${d.name} (${d.objid})`,
+                }))}
+                noneLabel="None"
+                error={fieldErrors.seed_device_objid}
+                searchPlaceholder="Search PRTG devices…"
+                emptyText="No PRTG devices."
+              />
+            </FormColumn>
+            <FormColumn>
+              <FormCheckbox
+                label="Send credentials"
+                info="A device Danbyte creates gets the SNMP profile and Windows login Danbyte holds for it, as device settings with inheritance off. PRTG never returns them."
+                checked={sendCredentials}
+                onChange={setSendCredentials}
+              />
+              <FormCheckbox
+                label="Send Danbyte tags"
+                info="A device Danbyte creates in PRTG, and every sensor it adds, gets the object's own Danbyte tags as PRTG tags. Kept in step on each status read: Danbyte adds and removes only the tags it put there, never the ones set in PRTG."
+                checked={sendTags}
+                onChange={setSendTags}
+              />
+              {sendTags && (
+                <FormCheckbox
+                  label="Add site and role tags"
+                  info="Also site-<slug> and role-<slug>."
+                  checked={tagSiteRole}
+                  onChange={setTagSiteRole}
+                />
+              )}
+              <FormCheckbox
+                label="Apply automatically"
+                info="On: planned devices and their sensors are created in PRTG without a person - after each planning pass, and right after a device or VM is set to Monitor in PRTG. Moves to the group a policy names are applied too. It never removes anything, except a retirement rule's delete that allows it. Off: every planned change waits there for Apply."
+                checked={autoApply}
+                onChange={setAutoApply}
+              />
+              <FormCheckbox
+                label="Propose removing devices"
+                info="A PRTG device Danbyte created whose object leaves PRTG's plan is proposed for removal, and so is an empty group Danbyte made for the group layout. Devices and groups Danbyte did not create are never touched."
+                checked={pruneDevices}
+                onChange={setPruneDevices}
+              />
+              <FormCheckbox
+                label="Remove from PRTG on delete"
+                info="Ticks Also remove from PRTG by default when a device or VM is deleted. A PRTG device Danbyte did not create is paused instead unless Delete it anyway is picked."
+                checked={deleteRemove}
+                onChange={setDeleteRemove}
+              />
+            </FormColumn>
+          </FormColumns>
+        </FormSection>
+      )}
+
+      <PrtgStateMapEditor
+        defaults={defaults.data}
+        value={stateMap}
+        onChange={setStateMap}
+        error={fieldErrors.state_map}
+      />
+
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Add connection"}
+      />
+    </form>
+  )
+}

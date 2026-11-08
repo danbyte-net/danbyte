@@ -5,6 +5,8 @@
 // Type-only import (erased at compile time - api.ts stays runtime-import-free).
 // The faceplate doc types live beside their algorithms in faceplate-layout.ts.
 import type { FaceplateDoc } from "@/lib/faceplate-layout"
+import type { BuilderOp, Expr } from "@/lib/filter-expr"
+import type { ModelPortsDoc } from "@/lib/model-ports"
 
 const CSRF_COOKIE = "csrftoken"
 
@@ -62,7 +64,9 @@ export async function apiStatus<T>(
       headers.set("Content-Type", "application/json")
     }
   }
-  const res = await fetch(path, { credentials: "include", ...init, headers })
+  const res = isMutation
+    ? await fetch(path, { credentials: "include", ...init, headers })
+    : await fetchRead(path, { credentials: "include", ...init, headers })
   // Skip the global handler ONLY for the /api/me/ auth probe - a 401 there is
   // the normal "logged out" signal, not a session that just expired. Match the
   // exact path (query string stripped); `includes("/api/me")` wrongly swallowed
@@ -74,6 +78,66 @@ export async function apiStatus<T>(
   if (!res.ok) throw await apiErrorOf(res, path)
   if (res.status === 204) return { data: undefined as T, status: res.status }
   return { data: (await res.json()) as T, status: res.status }
+}
+
+// Large list pages (#452). The server lets one user have two pages above
+// 1,000 rows in flight (API_LARGE_PAGE_THRESHOLD) and answers the next with
+// 429 and Retry-After. The web app reads at most 1,000 a request, so it never
+// meets that limit; a read above it still queues for one of two slots here.
+// Any read answered 429 with a Retry-After is sent again after the wait.
+export const LARGE_PAGE_ROWS = 1000
+export const LARGE_PAGE_SLOTS = 2
+const READ_RETRIES = 5
+let largeInFlight = 0
+const largeWaiting: (() => void)[] = []
+
+function isLargePage(path: string): boolean {
+  const size = Number(new URL(path, "http://x").searchParams.get("page_size"))
+  return Number.isFinite(size) && size > LARGE_PAGE_ROWS
+}
+
+async function takeLargeSlot(): Promise<void> {
+  if (largeInFlight < LARGE_PAGE_SLOTS) {
+    largeInFlight++
+    return
+  }
+  // Released slots pass straight to the next waiter; the count stays put.
+  await new Promise<void>((resolve) => largeWaiting.push(resolve))
+}
+
+function releaseLargeSlot(): void {
+  const next = largeWaiting.shift()
+  if (next) next()
+  else largeInFlight--
+}
+
+function retryAfterMs(res: Response): number | null {
+  const raw = res.headers.get("Retry-After")
+  const s = Number(raw)
+  if (raw === null || !Number.isFinite(s)) return null
+  return Math.min(Math.max(s, 1), 30) * 1000
+}
+
+async function fetchWithRetry(
+  path: string,
+  init: RequestInit
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(path, init)
+    const wait = res.status === 429 ? retryAfterMs(res) : null
+    if (wait === null || attempt >= READ_RETRIES) return res
+    await new Promise((r) => setTimeout(r, wait))
+  }
+}
+
+async function fetchRead(path: string, init: RequestInit): Promise<Response> {
+  if (!isLargePage(path)) return fetchWithRetry(path, init)
+  await takeLargeSlot()
+  try {
+    return await fetchWithRetry(path, init)
+  } finally {
+    releaseLargeSlot()
+  }
 }
 
 // The ApiError a failed response carries. Reads the body ONCE as text, then
@@ -148,7 +212,23 @@ export interface Tag {
   /** Site this catalog entry is scoped to - null means tenant-wide (Global).
    * Only present from the Tags management API. */
   owning_site?: { id: string; name: string } | null
+  /** Deployment-global (no tenant): every tenant sees it. Only present from
+   * the Tags management and picker APIs. */
+  is_global?: boolean
   permissions?: ObjectPerms
+}
+
+/** Tag names used more than once among the tags this tenant sees. */
+export interface TagDuplicates {
+  count: number
+  results: { name: string; ids: number[] }[]
+}
+
+/** POST /api/tags/<id>/merge/ answer. */
+export interface TagMergeResult {
+  moved: number
+  already_tagged: number
+  into: Tag
 }
 
 export interface TagWritePayload {
@@ -227,6 +307,8 @@ export interface Prefix {
   /** The allocation ranges' accounting when `allocate_from_ranges` is on;
    * null when the prefix allocates from its whole network. */
   allocation: PrefixAllocation | null
+  /** The site's gateway policy may create a gateway in this prefix. */
+  auto_gateway: boolean
   monitoring_engine?: { id: string; name: string; is_local: boolean } | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -286,11 +368,7 @@ export interface ConnectProtocolWritePayload {
 // default. /api/me/ carries the RESOLVED values; the raw editable ones live
 // on /api/me/prefs/, /api/tenant-settings/ and /api/deployment/email/.
 export type DateFormat =
-  | "YYYY-MM-DD"
-  | "DD.MM.YYYY"
-  | "DD/MM/YYYY"
-  | "MM/DD/YYYY"
-  | "DD MMM YYYY"
+  "YYYY-MM-DD" | "DD.MM.YYYY" | "DD/MM/YYYY" | "MM/DD/YYYY" | "DD MMM YYYY"
 export type TimeStyle = "24h" | "12h"
 
 export interface DateTimeSettings {
@@ -436,6 +514,7 @@ export type RBACAction =
   | "set_default"
   | "view_config"
   | "view_cost"
+  | "provision"
 
 export interface RBACUser {
   id: number
@@ -679,6 +758,8 @@ export interface TagOption {
   slug: string
   color: string
   text_color: string
+  /** Deployment-global (no tenant) - marked in pickers. */
+  is_global?: boolean
 }
 
 // ─── Write payloads ────────────────────────────────────────────────────
@@ -701,6 +782,7 @@ export interface PrefixWritePayload {
   description?: string
   auto_assign_site?: boolean
   allocate_from_ranges?: boolean
+  auto_gateway?: boolean
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
 }
@@ -970,12 +1052,16 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "cable", label: "Cables" },
   { value: "circuit", label: "Circuits" },
   { value: "powerfeed", label: "Power feeds" },
+  { value: "coolingsource", label: "Cooling sources" },
+  { value: "coolingfeed", label: "Cooling feeds" },
   { value: "wirelesslan", label: "Wireless LANs" },
   { value: "tunnel", label: "Tunnels" },
   { value: "location", label: "Locations" },
+  { value: "room", label: "Rooms" },
   { value: "inventoryitem", label: "Inventory items" },
   { value: "maintenanceevent", label: "Maintenance & outage events" },
   { value: "natrule", label: "NAT rules" },
+  { value: "applicationflow", label: "Application flows" },
   { value: "l2vpn", label: "L2VPNs" },
   { value: "staticroute", label: "Static routes" },
   { value: "bgpsession", label: "BGP sessions" },
@@ -1009,6 +1095,9 @@ export interface Status {
   requires_note: boolean
   suppresses_alerts: boolean
   is_closed: boolean
+  /** Planned work, not yet built: a cable in it draws as a planned run on
+   * floor plans. */
+  is_planned: boolean
   /** The check state this status speaks for, "" when it is not a monitoring
    * status. See MONITORING_STATES. */
   monitoring_state: string
@@ -1032,6 +1121,7 @@ export interface StatusWritePayload {
   requires_note?: boolean
   suppresses_alerts?: boolean
   is_closed?: boolean
+  is_planned?: boolean
   monitoring_state?: string
 }
 
@@ -1099,12 +1189,7 @@ export interface ManufacturerOption {
 }
 
 export type DeviceStatus =
-  | "active"
-  | "planned"
-  | "staged"
-  | "offline"
-  | "inventory"
-  | "decommissioning"
+  "active" | "planned" | "staged" | "offline" | "inventory" | "decommissioning"
 
 // ─── Site map (geographic) ───────────────────────────────────────────────
 export interface SiteMapSite {
@@ -1172,7 +1257,9 @@ export interface SiteMapMarker {
   longitude: number
   label: string
   description: string
+  /** Null with `device_hidden` when the reader may not view the device. */
   device: SiteMapDeviceInfo | null
+  device_hidden?: boolean
   type: {
     id: string
     name: string
@@ -1198,6 +1285,36 @@ export interface SiteMapConnection {
   capacity?: SiteMapCapacity | null
   links?: SiteMapLink[]
   link_count?: number
+  /** A circuit to a provider network (#466): `site_z` is the network's
+   * marker (`pn:<id>`, at its placed point), not a site. */
+  provider_network?: { id: string; name: string }
+}
+
+/** A provider network on the site map (#466): placed at the centroid of
+ * the sites it serves (off them), with the circuits that reach it. */
+export interface SiteMapProviderNetwork {
+  id: string
+  name: string
+  service_id: string
+  provider: { id: string; name: string }
+  latitude: number
+  longitude: number
+  site_ids: string[]
+  circuits: {
+    id: string
+    cid: string
+    site: { id: string; name: string }
+    type: string | null
+    status: { name: string; color: string } | null
+    color: string
+    commit_rate_kbps: number | null
+  }[]
+}
+
+/** `GET /api/site-map/connections/`. */
+export interface SiteMapConnections {
+  connections: SiteMapConnection[]
+  provider_networks?: SiteMapProviderNetwork[]
 }
 
 /** Where a site map line's speed comes from (#246): a circuit's `commit`
@@ -1205,12 +1322,7 @@ export interface SiteMapConnection {
  * to it, a tunnel's own figure (`override`), or the lower end speed of a
  * `cable` link. */
 export type LinkCapacitySource =
-  | "commit"
-  | "port"
-  | "interface"
-  | "override"
-  | "cable"
-  | "mixed"
+  "commit" | "port" | "interface" | "override" | "cable" | "mixed"
 
 /** One link's speed in kbps; `up_kbps` only when the other direction
  * differs. `label` is the short form: `10G`, `500M`, `100/20M`. */
@@ -1287,6 +1399,23 @@ export interface SiteMapPayload {
   devices: SiteMapDevice[]
   markers: SiteMapMarker[]
   regions: SiteMapRegion[]
+  /** The boxes of the floor plans made from the map the reader may view. */
+  plan_footprints?: SiteMapPlanFootprint[]
+}
+
+/** A floor plan's box on the Site map (its geo anchor). An aligned floor
+ * plan (a building) is one footprint: `id` its ground level, `name` the
+ * floor plan's, `levels` every level's name in order. */
+export interface SiteMapPlanFootprint {
+  id: string
+  name: string
+  /** The floor plan (stack) it is a floor of. */
+  stack: string
+  site_id: string | null
+  /** [south, west, north, east] in degrees. */
+  bbox: [number, number, number, number]
+  /** The floors it stands for, lowest first (one for a single floor). */
+  levels?: string[]
 }
 
 /** GeoJSON Polygon/MultiPolygon geometry - an OSM-sourced region boundary. */
@@ -1321,6 +1450,24 @@ export interface GeocodeCandidate {
 /** Derived, most-severe-passed-milestone lifecycle state. "" = no dates. */
 export type LifecycleState = "" | "supported" | "eos" | "security_ended" | "eol"
 
+/** A platform's OS lifetime as the bars read it (#436): what was entered
+ * wins, field by field; the end-of-life mapping fills the blanks while that
+ * feature is on. `effective_source` says where the end came from (else the
+ * start): "entered" or a source key ("endoflife_date"). */
+export interface EffectiveOsDates {
+  effective_release?: string | null
+  effective_end?: string | null
+  effective_source?: string | null
+}
+
+/** The soonest dated end across a device's or VM's lifecycle sources
+ * (#436) - the lists' Next end of life column. Coverage carries no start. */
+export interface LifecycleNext {
+  source: "hardware" | "os" | "coverage" | "software"
+  end: string
+  start: string | null
+}
+
 /** Vendor lifecycle window (LifecycleMixin) - DeviceType + Platform. */
 export interface LifecycleInfo {
   /** GA / first-ship date - the start of the lifetime bar. */
@@ -1336,6 +1483,8 @@ export interface LifecycleInfo {
 
 /** A port marker anchored on a device-type photo. x/y/w/h are normalized
  * 0..1 (x,y = the marker's CENTER) so they scale to any render + to 3D. */
+export type { ModelPort, ModelPortsDoc } from "@/lib/model-ports"
+
 export interface ImagePortMarker {
   kind: string
   name: string
@@ -1391,11 +1540,20 @@ export interface DeviceType extends LifecycleInfo {
   rack_width: "full" | "half"
   /** Photo size on the topology Diagram; "" inherits. */
   topology_photo_size?: "" | TopologyPhotoSize
+  /** Lucide icon name on maps and floor plans; "" uses the role's. */
+  icon?: string
   description: string
   /** Absolute URL of the front rack-face image, or null. */
   front_image: string | null
   /** Absolute URL of the rear rack-face image, or null. */
   rear_image: string | null
+  /** Download URL of the type's 3D model (binary glTF), or null. */
+  model_3d?: string | null
+  model_3d_fit?: Model3DFit
+  model_3d_up?: Model3DUp
+  model_3d_front?: Model3DFront
+  /** Ports mapped onto the 3D model (lib/model-ports); null = none. */
+  model_ports?: ModelPortsDoc | null
   /** Saved front-panel layout (drag-and-drop builder); null = auto layout. */
   faceplate: FaceplateDoc | null
   /** Port markers anchored on the front/rear photo; null = none placed. */
@@ -1403,6 +1561,11 @@ export interface DeviceType extends LifecycleInfo {
   /** Occupies both rack faces (hatched on the opposite face in elevations). */
   is_full_depth: boolean
   airflow: string
+  /** How the hardware is cooled (#434); "" reads as air. */
+  cooling_method: string
+  /** Heat it gives off (W) where that is not its allocated draw; null
+   * counts its draw. */
+  heat_output_w: number | null
   weight: string | null
   weight_unit: string
   subdevice_role: string
@@ -1446,6 +1609,7 @@ export interface DeviceTypeWritePayload {
   u_height?: number
   rack_width?: "full" | "half"
   topology_photo_size?: "" | TopologyPhotoSize
+  icon?: string
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -1453,6 +1617,8 @@ export interface DeviceTypeWritePayload {
   image_ports?: ImagePorts | null
   is_full_depth?: boolean
   airflow?: string
+  cooling_method?: string
+  heat_output_w?: number | null
   weight?: string | null
   weight_unit?: string
   width_mm?: number | null
@@ -1474,12 +1640,15 @@ export interface DeviceTypeMini {
   name: string
   manufacturer: string | null
   manufacturer_id: string | null
+  /** Lucide icon name; "" uses the role's. */
+  icon?: string
   u_height: number
   rack_width: "full" | "half"
   is_full_depth: boolean
   /** Body width and height in mm; what a cabinet drawing sizes it by. */
   width_mm: number | null
   height_mm: number | null
+  depth_mm?: number | null
   /** Empty = not DIN-mounted. */
   din_profiles: DinProfile[]
   /** The rail's centreline below the body's top edge; null = the middle. */
@@ -1563,10 +1732,92 @@ export interface SiteRegionMini {
   region?: { id: string; name: string; slug: string } | null
 }
 
+/** How the 3D room sizes a model: fitted to the hardware, or its own size. */
+export type Model3DFit = "auto" | "native"
+export type Model3DUp = "y" | "z"
+export type Model3DFront = "+z" | "-z" | "+x" | "-x"
+
+/** What the 3D room draws for a device: its own model, else its type's. */
+export interface Model3DEffective {
+  url: string
+  source: "device" | "type"
+  fit: Model3DFit
+  up: Model3DUp
+  front: Model3DFront
+}
+
+export interface Model3DOptions {
+  fit?: Model3DFit
+  up?: Model3DUp
+  front?: Model3DFront
+  /** Keep the port mapping on a replaced model ("1"), the new model's
+   * upright size as JSON `[w, h, d]` in `ports_bounds`. */
+  keep_ports?: "1"
+  ports_bounds?: string
+}
+
+/** `GET/PUT /api/{device-types|devices}/{id}/model-ports/`. */
+export interface ModelPortsState {
+  /** The object's own mapping (a device's override), or null. */
+  model_ports: ModelPortsDoc | null
+  /** What a save names; a stale one answers 409. */
+  version: string
+  /** A device: the mapping it draws and whose it is. */
+  effective?: ModelPortsDoc | null
+  source?: "own" | "type" | null
+}
+
+export function saveModelPorts(
+  kind: "device-types" | "devices",
+  id: string,
+  body: { version: string; model_ports: ModelPortsDoc | null }
+): Promise<ModelPortsState> {
+  return api<ModelPortsState>(`/api/${kind}/${id}/model-ports/`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  })
+}
+
+/** Set or replace a device type's or device's 3D model (a .glb). */
+export function uploadModel3D<T>(
+  kind: "device-types" | "devices",
+  id: string,
+  glb: Blob,
+  opts: Model3DOptions = {}
+): Promise<T> {
+  const fd = new FormData()
+  fd.append("file", glb, "model.glb")
+  for (const [k, v] of Object.entries(opts)) if (v) fd.append(k, v)
+  return api<T>(`/api/${kind}/${id}/model/`, { method: "POST", body: fd })
+}
+
+/** Remove a device type's or device's own 3D model. */
+export function deleteModel3D(
+  kind: "device-types" | "devices",
+  id: string
+): Promise<void> {
+  return api<void>(`/api/${kind}/${id}/model/`, { method: "DELETE" })
+}
+
 export interface Device {
   id: string
   numid: number | null
   name: string
+  /** Download URL of the device's own 3D model, or null (inherits). */
+  model_3d?: string | null
+  model_3d_fit?: Model3DFit
+  model_3d_up?: Model3DUp
+  model_3d_front?: Model3DFront
+  /** The model the 3D room draws for it, or null. */
+  model_3d_effective?: Model3DEffective | null
+  /** Its own port mapping on the model; null inherits the type's. */
+  model_ports?: ModelPortsDoc | null
+  /** PRTG registration: follow policies, always, or never. */
+  prtg_sync?: PrtgSync
+  /** What PRTG polls instead of the primary address ("" = the primary). */
+  prtg_host?: string
+  /** On a save that changed the PRTG setting: what the plan made of it. */
+  prtg_plan?: PrtgSavePlan | null
   /** Per-device photo-port override; null = inherit the type's layout. */
   image_ports?: DeviceType["image_ports"] | null
   /** Topology card lines for this device; null inherits the view, role
@@ -1574,6 +1825,9 @@ export interface Device {
   topology_card?: string[] | null
   /** Photo size on the topology Diagram; "" inherits. */
   topology_photo_size?: "" | TopologyPhotoSize
+  /** Its own icon on maps and floor plans; "" uses its type's, then its
+   * role's. */
+  icon?: string
   device_type: DeviceTypeMini | null
   site: SiteRegionMini | null
   role: {
@@ -1583,36 +1837,66 @@ export interface Device {
     color: string
     icon: string
   } | null
-  platform: {
+  platform:
+    | ({
+        id: string
+        name: string
+        slug: string
+        release_date?: string | null
+        end_of_support?: string | null
+        lifecycle_state?: LifecycleState
+        /** The version operators want running (#395); "" = no target. */
+        target_version?: string
+        /** End-of-life data (#8); null while the feature is off. */
+        eol?: EolInfo | null
+      } & EffectiveOsDates)
+    | null
+  /** Read-only: the device's own platform, else its type's default. */
+  effective_platform: {
     id: string
     name: string
-    slug: string
-    release_date?: string | null
-    end_of_support?: string | null
-    lifecycle_state?: LifecycleState
-    /** End-of-life data (#8); null while the feature is off. */
-    eol?: EolInfo | null
+    target_version?: string
   } | null
-  /** Read-only: the device's own platform, else its type's default. */
-  effective_platform: { id: string; name: string } | null
   status: StatusMini | null
   serial_number: string
   asset_tag: string
+  /** The software version running (#395). */
+  software_version?: string
+  /** Set when an integration filled software_version; read-only. */
+  software_version_seen_at?: string | null
+  /** Where software_version came from (#451); read-only, "" when blank. */
+  software_version_source?: SoftwareVersionSource
   /** Last day of the unit's hardware warranty (#421). */
   warranty_end?: string | null
   /** Support & warranty coverage (#421), derived server-side. */
   coverage?: DeviceCoverageBrief
+  /** The soonest end across hardware, OS and coverage (#436). */
+  lifecycle_next?: LifecycleNext | null
   description: string
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
   airflow: string
   /** Read-only: the device's own airflow, else its type's default. */
   effective_airflow?: string
+  /** How the device is cooled (#434); "" inherits its type's. */
+  cooling_method?: string
+  /** Read-only: its own cooling method, else its type's, else "air". */
+  effective_cooling_method?: string
+  /** The body size in mm; null inherits its type's. */
+  width_mm?: number | null
+  height_mm?: number | null
+  depth_mm?: number | null
+  /** Read-only: its own size, else its type's, else null. */
+  effective_width_mm?: number | null
+  effective_height_mm?: number | null
+  effective_depth_mm?: number | null
   /** Port labels on this device's faceplate renders: inherit / on / off. */
   port_labels: DevicePortLabels
   latitude: string | null
   longitude: string | null
   location: { id: string; name: string } | null
+  /** The room it stands in, inside its location. */
+  room?: RoomRef | null
   cluster: { id: string; name: string } | null
   virtual_chassis: {
     id: string
@@ -1626,6 +1910,8 @@ export interface Device {
     own: { id: string; name: string } | null
     resolved: { id: string; name: string } | null
   } | null
+  /** This device's own config-context data, merged last; null = none. */
+  local_context_data?: Record<string, unknown> | null
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   secondary_ip?: { id: string; ip_address: string; dns_name: string } | null
   oob_ip?: { id: string; ip_address: string; dns_name: string } | null
@@ -1636,10 +1922,19 @@ export interface Device {
   hardware_count: number
   console_count: number
   power_count: number
+  /** Cooling intakes + outflows (#434); detail only. */
+  cooling_count?: number
   /** Detail payload only; 0 on the list. */
   front_port_count?: number
   rear_port_count?: number
   service_count: number
+  /** Installed software rows (#436), list and detail - the Software tab. */
+  install_count?: number
+  /** Device profiles in order, with their assignment state. */
+  device_profiles?: HostDeviceProfile[]
+  /** The VM this device runs as (a virtual router); detail only, null
+   * when there is none or the caller may not view it. */
+  backing_vm?: { id: string; name: string; intended: boolean } | null
   /** Per-tab counts served on the detail payload only. */
   routing_count?: number
   image_count?: number
@@ -1687,6 +1982,8 @@ export interface Device {
 
 export interface DeviceWritePayload {
   name: string
+  prtg_sync?: PrtgSync
+  prtg_host?: string
   device_type_id?: string | null
   site_id?: string | null
   role_id?: string | null
@@ -1694,6 +1991,8 @@ export interface DeviceWritePayload {
   status_id?: string | null
   serial_number?: string
   asset_tag?: string
+  /** The software version running (#395). */
+  software_version?: string
   /** Last day of the hardware warranty (#421). */
   warranty_end?: string | null
   description?: string
@@ -1714,17 +2013,24 @@ export interface DeviceWritePayload {
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments?: string
   airflow?: string
+  cooling_method?: string
+  width_mm?: number | null
+  height_mm?: number | null
+  depth_mm?: number | null
   port_labels?: DevicePortLabels
   latitude?: string | null
   longitude?: string | null
   location_id?: string | null
+  room_id?: string | null
   cluster_id?: string | null
   virtual_chassis_id?: string | null
   vc_position?: number | null
   vc_priority?: number | null
   config_template_id?: string | null
+  local_context_data?: Record<string, unknown> | null
   topology_card?: string[] | null
   topology_photo_size?: "" | TopologyPhotoSize
+  icon?: string
 }
 
 // Admin-controlled visibility for the promoted built-in Device fields.
@@ -1736,6 +2042,7 @@ export interface DeviceFieldVisibility {
   location: boolean
   cluster: boolean
   airflow: boolean
+  cooling_method: boolean
   latitude: boolean
   longitude: boolean
 }
@@ -1771,6 +2078,7 @@ export const DEFAULT_DEVICE_FIELD_VISIBILITY: DeviceFieldVisibility = {
   location: true,
   cluster: false,
   airflow: false,
+  cooling_method: false,
   latitude: false,
   longitude: false,
 }
@@ -1848,7 +2156,7 @@ export interface PlatformGroupOption {
   slug: string
 }
 
-export interface Platform extends LifecycleInfo {
+export interface Platform extends LifecycleInfo, EffectiveOsDates {
   id: string
   numid: number | null
   name: string
@@ -1856,6 +2164,16 @@ export interface Platform extends LifecycleInfo {
   group: { id: string; name: string; slug: string } | null
   manufacturer: { id: string; name: string; slug: string } | null
   config_template: { id: string; name: string } | null
+  /** The version operators want running (#395); "" = no target. */
+  target_version?: string
+  /** Regex that reads the version out of SNMP sysDescr (#451). */
+  version_pattern?: string
+  /** The OS's SPDX licence expression, for the SBOM; "" = unknown. */
+  license?: string
+  /** Package URL template for the SBOM ({version}, {os_version}). */
+  purl_template?: string
+  /** CPE 2.3 template for the SBOM ({version}, {os_version}). */
+  cpe_template?: string
   description: string
   tags: Tag[]
   /** End-of-life data (#8); null while the feature is off. */
@@ -1883,6 +2201,494 @@ export interface EolInfo {
   /** The product or cycle has left the catalog; the facts are the last known. */
   missing?: boolean
 }
+
+// ─── Applications and installed software (#436) ────────────────────────
+
+/** `?picker=1` rows; `path` reads "Parent › Child". */
+export interface ApplicationMini {
+  id: string
+  numid?: number | null
+  name: string
+  slug: string
+  path: string
+  depth: number
+  /** Direct children the reader may view. */
+  child_count: number
+}
+
+/** One cycle an application's installs run, with its catalog facts. */
+export interface ApplicationEolCycle extends EolInfo {
+  cycle: string
+}
+
+/** An application's end-of-life block; null while the feature is off. */
+export interface ApplicationEol {
+  source: string | null
+  product: string | null
+  cycles: ApplicationEolCycle[]
+}
+
+/** A cycle on the End of life card: its installs you may view. */
+export interface ApplicationEolDetailCycle extends ApplicationEolCycle {
+  install_count: number
+}
+
+/** GET /api/applications/<id>/eol/ - the End of life card. */
+export interface ApplicationEolDetail extends ApplicationEol {
+  /** The cycles the installs run, the ones with installs first. */
+  cycles: ApplicationEolDetailCycle[]
+  /** The product's other catalog cycles, no installs on them. */
+  other_cycles: ApplicationEolDetailCycle[]
+  /** Installs no cycle took. */
+  unmapped_installs: number
+  /** Null without a product. */
+  in_catalog: boolean | null
+  source_label: string | null
+  product_label: string | null
+  /** The product's page on the source's site, or a custom product's link. */
+  product_url: string | null
+  /** The product is one of the tenant's own; null without a product. */
+  custom?: boolean | null
+  /** A custom product's id, for its page. */
+  product_id?: string | null
+}
+
+/** An ancestor or child on the application's Hierarchy card. */
+export interface ApplicationTreeNode {
+  id: string
+  name: string
+  install_count: number
+  /** Children only. */
+  child_count?: number
+  children?: ApplicationTreeNode[]
+}
+
+export interface Application extends ApplicationMini {
+  parent: { id: string; name: string } | null
+  /** Detail only: root first. Empty on the list. */
+  ancestors?: ApplicationTreeNode[]
+  /** Detail only: three levels deep. Empty on the list. */
+  children?: ApplicationTreeNode[]
+  manufacturer: { id: string; name: string } | null
+  eol_source: string
+  eol_product: string
+  eol: ApplicationEol | null
+  /** SPDX licence expression the installs inherit; "" = unknown. */
+  license?: string
+  /** Package URL template for the SBOM ({version}, {os_version}). */
+  purl_template?: string
+  /** CPE 2.3 template for the SBOM ({version}, {os_version}). */
+  cpe_template?: string
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  install_count: number
+  child_count: number
+  /** Flows the reader may view (#163). */
+  flow_count: number
+  /** The application's flow requirements. */
+  requirement_count?: number
+  created_at: string
+  updated_at: string
+}
+
+export type InstalledSoftwareSource =
+  "manual" | "import" | "discovery" | "group"
+
+export interface InstalledSoftware extends EffectiveOsDates {
+  id: string
+  numid: number | null
+  application: { id: string; name: string; slug: string; path: string }
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  version: string
+  /** The end-of-life cycle; derived from the version unless set by hand. */
+  cycle: string
+  cycle_manual: boolean
+  service: { id: string; name: string } | null
+  release_date: string | null
+  end_of_support: string | null
+  /** End-of-life status of the (application, cycle); null while off. */
+  eol: EolInfo | null
+  source: InstalledSoftwareSource
+  last_seen: string | null
+  /** The application group that made the install, while it is its. */
+  group: { id: string; name: string; slug: string } | null
+  /** This install's own SPDX licence expression; "" = the application's. */
+  license?: string
+  /** The install's licence, else the application's; "" = unknown. */
+  effective_license?: string
+  /** This install's own package URL / CPE; "" = the application's. */
+  purl?: string
+  cpe?: string
+  /** What the SBOM writes: the install's own, else the application's
+   * template filled in; "" = none. */
+  effective_purl?: string
+  effective_cpe?: string
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+// ─── Application groups (#436) ─────────────────────────────────────────
+
+export interface ApplicationGroupMini {
+  id: string
+  numid?: number | null
+  name: string
+  slug: string
+}
+
+export interface ApplicationGroupMember {
+  id: string
+  application: { id: string; name: string; slug: string; path: string }
+  version: string
+  position: number
+}
+
+export interface ApplicationGroup extends ApplicationGroupMini {
+  description: string
+  members: ApplicationGroupMember[]
+  member_count: number
+  /** Devices and VMs the reader may view. */
+  host_count: number
+  install_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface ApplicationGroupAssignment {
+  id: string
+  group: { id: string; name: string; slug: string }
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  /** The installs the group made here that are still its. */
+  install_count: number
+  created_at: string
+}
+
+/** What an unassign did with the installs the group made. */
+export interface ApplicationGroupRelease {
+  removed: number
+  kept: number
+  moved: number
+}
+
+// ─── Device profiles ───────────────────────────────────────────────────
+
+export type DeviceProfileState = "ok" | "missing" | "edited" | "pending"
+
+/** A profile as a device or VM lists it. */
+export interface HostDeviceProfile {
+  id: string
+  assignment_id: string
+  name: string
+  slug: string
+  color: string
+  state: DeviceProfileState
+}
+
+export interface DeviceProfileMini {
+  id: string
+  numid?: number | null
+  name: string
+  slug: string
+  color: string
+  /** Names from the root, " / " between them. */
+  path: string
+}
+
+export type DeviceProfileSectionKind =
+  "application_group" | "tag" | "custom_field" | "platform"
+
+export interface DeviceProfileEffectiveItem {
+  label: string
+  /** The profile in the chain the item comes from. */
+  from: string
+  inherited: boolean
+  /** Custom fields: the value. */
+  value?: unknown
+}
+
+export interface DeviceProfile extends DeviceProfileMini {
+  description: string
+  parent: { id: string; name: string; slug: string; color: string } | null
+  applies_to_devices: boolean
+  applies_to_vms: boolean
+  platform: { id: string; name: string; slug: string } | null
+  runbook_url: string
+  notes: string
+  application_groups: { id: string; name: string; slug: string }[]
+  add_tags: Tag[]
+  cf_values: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  /** Devices and VMs the reader may view. */
+  assignment_count: number
+  child_count: number
+  /** Detail only: the sections with the parents applied. */
+  effective: Record<
+    DeviceProfileSectionKind,
+    DeviceProfileEffectiveItem[]
+  > | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DeviceProfileAssignment {
+  id: string
+  profile: { id: string; name: string; slug: string; color: string }
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  position: number
+  state: DeviceProfileState
+  missing_count: number
+  edited_count: number
+  reconciled_at: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** What an unassign did with the rows the profile wrote. */
+export interface DeviceProfileRelease {
+  removed: number
+  kept: number
+  moved: number
+}
+
+export interface DeviceProfilePreviewItem {
+  key: string
+  label: string
+  from: string
+  value?: unknown
+  reason?: string
+}
+
+export interface DeviceProfilePreview {
+  profile: { id: string; name: string; slug: string }
+  object: { id: string; name: string }
+  already_assigned: boolean
+  /** Why the profile cannot go on this object at all, or "". */
+  refused: string
+  sections: {
+    kind: DeviceProfileSectionKind
+    label: string
+    create: DeviceProfilePreviewItem[]
+    change: DeviceProfilePreviewItem[]
+    present: DeviceProfilePreviewItem[]
+    skip: DeviceProfilePreviewItem[]
+  }[]
+  missing_permissions: { type: string; action: string; label: string }[]
+}
+
+export type DeviceProfileBulkOutcome =
+  "assigned" | "unassigned" | "unchanged" | "denied" | "refused" | "failed"
+
+/** One object of an inline bulk run; `detail` says why it was skipped. */
+export interface DeviceProfileBulkItem {
+  id: string
+  /** Blank when the caller may not view the object. */
+  name: string
+  outcome: DeviceProfileBulkOutcome
+  detail?: string
+}
+
+export type DeviceProfileBulkResult =
+  | {
+      results: DeviceProfileBulkItem[]
+      counts: Partial<Record<DeviceProfileBulkOutcome, number>>
+    }
+  | { job_id: string; count: number }
+
+/** `POST /api/devices/bulk-create/`: the devices one name range made. */
+export interface DeviceBulkCreateResult {
+  count: number
+  results: { id: string; name: string }[]
+}
+
+// ─── Application flows (#163) ──────────────────────────────────────────
+
+export type FlowProtocol = "tcp" | "udp" | "tcp-udp" | "icmp" | "any"
+export type FlowDirection = "one-way" | "both"
+export type FlowEndKind = "ip" | "range" | "prefix" | "any"
+export type FlowSide = "source" | "destination"
+
+/** One end of a flow, ready to show: the address, range or prefix (or
+ * "Any"), with the device or VM an address is assigned to. An end the
+ * caller may not view (another site's, #453) keeps its kind and comes back
+ * `hidden`, with no id, device or VM. */
+export interface FlowEnd {
+  kind: FlowEndKind
+  id: string | null
+  label: string
+  device: { id: string; name: string } | null
+  vm: { id: string; name: string } | null
+  hidden?: boolean
+}
+
+export interface FlowIpRef {
+  id: string
+  ip_address: string
+  dns_name: string
+}
+
+export interface FlowRangeRef {
+  id: string
+  start_address: string
+  end_address: string
+  label: string
+}
+
+export interface ApplicationFlow {
+  id: string
+  numid: number | null
+  application: { id: string; name: string; slug: string; path: string }
+  name: string
+  description: string
+  source: FlowEnd
+  destination: FlowEnd
+  source_ip: FlowIpRef | null
+  source_range: FlowRangeRef | null
+  source_prefix: { id: string; cidr: string } | null
+  source_any: boolean
+  destination_ip: FlowIpRef | null
+  destination_range: FlowRangeRef | null
+  destination_prefix: { id: string; cidr: string } | null
+  destination_any: boolean
+  protocol: FlowProtocol
+  protocol_display: string
+  /** "443", "80, 443", "8000-8100"; blank = every port. */
+  ports: string
+  direction: FlowDirection
+  direction_display: string
+  status: StatusMini | null
+  service: { id: string; name: string } | null
+  /** The requirement that made the row; null on a hand-made flow. */
+  requirement: { id: string; name: string } | null
+  generated: boolean
+  /** Fields edited on a generated row; its requirement leaves them. */
+  overridden_fields: FlowOverride[]
+  /** The installs behind a generated row's host ends (null when hidden). */
+  source_install: FlowInstallRef | null
+  destination_install: FlowInstallRef | null
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type FlowOverride =
+  "protocol" | "ports" | "direction" | "status" | "service"
+
+export interface FlowInstallRef {
+  id: string
+  application: string
+  version: string
+  host: { kind: "device" | "vm"; id: string; name: string }
+}
+
+// ─── Application flow requirements ─────────────────────────────────────
+
+export type RequirementEndKind =
+  "self" | "app" | "ip" | "range" | "prefix" | "any"
+export type RequirementAddress = "primary" | "service" | "role" | "all"
+export type RequirementFamily = "any" | "ipv4" | "ipv6"
+export type RequirementPairing = "all" | "same_site"
+export type RequirementState =
+  "pending" | "resolved" | "partial" | "unresolved" | "idle"
+
+/** One end of a requirement, ready to show. A fixed end the caller may not
+ * view comes back `hidden` (#453). */
+export interface RequirementEnd {
+  kind: RequirementEndKind
+  id: string | null
+  label: string
+  application: { id: string; name: string } | null
+  address: RequirementAddress | null
+  address_role: { id: string; name: string; color: string } | null
+  hidden: boolean
+}
+
+/** An excluded pair. Restore goes by `id`; `binding_key` is null when it
+ * names an address or host you may not view (#453). */
+export interface FlowRequirementExclusion {
+  id: string
+  label: string
+  binding_key: string | null
+  created_at: string
+}
+
+/** A requirement on one host (`?device=` / `?vm=`): its flows there and
+ * why it is missing some. */
+export interface FlowRequirementHost {
+  flows: number
+  reason: string
+  state: RequirementState
+}
+
+export interface FlowRequirement {
+  id: string
+  application: { id: string; name: string; slug: string }
+  name: string
+  description: string
+  source: RequirementEnd
+  destination: RequirementEnd
+  source_kind: RequirementEndKind
+  destination_kind: RequirementEndKind
+  source_address: RequirementAddress | ""
+  destination_address: RequirementAddress | ""
+  family: RequirementFamily
+  pairing: RequirementPairing
+  protocol: FlowProtocol
+  protocol_display: string
+  ports: string
+  direction: FlowDirection
+  direction_display: string
+  status: StatusMini | null
+  state: RequirementState
+  state_detail: string
+  generated_count: number
+  gap_count: number
+  resolved_at: string | null
+  exclusions: FlowRequirementExclusion[]
+  host: FlowRequirementHost | null
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface FlowRequirementGap {
+  side: FlowSide
+  host: { kind: "device" | "vm"; id: string; name: string }
+  reason: string
+}
+
+export interface FlowRequirementGaps {
+  state: RequirementState
+  detail: string
+  gaps: FlowRequirementGap[]
+  /** Hosts without an address the caller may not view - counted only. */
+  hidden: number
+}
+
+export interface FlowRequirementPreview {
+  pairs: number
+  hosts: number
+  state: RequirementState
+  detail: string
+  warn: boolean
+  refused: boolean
+  warn_at: number
+  max: number
+  gaps: FlowRequirementGap[]
+  hidden: number
+}
+
 export interface EolSettings {
   enabled: boolean
   warning_days: number
@@ -1908,6 +2714,8 @@ export interface EolProductRow {
   name: string
   label: string
   category: string
+  /** One of the tenant's own products (`source` "custom"). */
+  custom?: boolean
 }
 export interface EolRelease {
   name: string
@@ -1915,9 +2723,30 @@ export interface EolRelease {
   release_date: string | null
   support_until: string | null
   eol_date: string | null
+  /** End of extended support, where the product sells it. */
+  extended_until?: string | null
   eol: boolean | null
   lts: boolean
   latest: string
+  /** A custom product's cycles carry their status; a write ignores it. */
+  status?: EolStatus
+}
+
+/** A tenant's own end-of-life product (`/api/eol/custom-products/`). */
+export interface EolCustomProduct {
+  id: string
+  source: "custom"
+  /** The key applications and mappings name it by; fixed once made. */
+  name: string
+  label: string
+  link: string
+  notes: string
+  releases: EolRelease[]
+  cycle_count: number
+  application_count: number
+  platform_count: number
+  created_at: string
+  updated_at: string
 }
 export interface EolSuggestion {
   source: string
@@ -1933,6 +2762,12 @@ export interface PlatformWritePayload {
   group_id?: string | null
   manufacturer_id?: string | null
   config_template_id?: string | null
+  /** The version operators want running (#395). */
+  target_version?: string
+  version_pattern?: string
+  license?: string
+  purl_template?: string
+  cpe_template?: string
   description?: string
   release_date?: string | null
   end_of_sale?: string | null
@@ -1977,11 +2812,7 @@ export interface RackRoleOption {
 }
 
 export type RackStatus =
-  | "active"
-  | "planned"
-  | "reserved"
-  | "available"
-  | "deprecated"
+  "active" | "planned" | "reserved" | "available" | "deprecated"
 
 export type RackWidth = 10 | 19 | 21 | 23
 
@@ -2031,6 +2862,12 @@ export interface RackTypeOption {
   outer_depth_mm: number | null
   max_weight: string | null
   max_weight_unit: string
+  /** The power budget (W) a rack of this model starts with; null = none. */
+  max_power_w: number | null
+  /** What the model's cooling takes (#434); "" = not recorded. */
+  cooling_capability: string
+  /** Heat (W) the model's cooling removes; null = not recorded. */
+  cooling_capacity_w: number | null
 }
 
 export interface RackType extends RackTypeOption {
@@ -2054,6 +2891,9 @@ export interface RackTypeWritePayload {
   outer_depth_mm?: number | null
   max_weight?: string | null
   max_weight_unit?: string
+  max_power_w?: number | null
+  cooling_capability?: string
+  cooling_capacity_w?: number | null
   description?: string
   tag_ids?: number[]
 }
@@ -2076,6 +2916,20 @@ export interface RackPower {
   supplied_w?: number
 }
 
+/** A rack's heat load against its cooling (api.capacity.rack_cooling,
+ * #434). Heat is each device's type heat output where set, else its power
+ * draw - allocated, beside the nameplate sum - PDUs aside, as for power. */
+export interface RackCooling {
+  /** The rack's cooling capacity (W); 0 without one. */
+  available_w: number
+  heat_allocated_w: number
+  heat_maximum_w: number
+  /** `budget`: the rack's own capacity; null: none recorded. */
+  supply: "budget" | null
+  /** Devices whose cooling method the rack's capability does not take. */
+  mismatched: number
+}
+
 export interface Rack {
   id: string
   numid: number | null
@@ -2092,17 +2946,26 @@ export interface Rack {
   rack_type: RackTypeOption | null
   status: StatusMini | null
   location: { id: string; name: string } | null
+  room?: RoomRef | null
   width: RackWidth
   max_weight: string | null
   max_weight_unit: string
   /** Power budget in watts; null = measure against the feeds. */
   max_power_w?: number | null
+  /** What the rack's cooling takes (#434); "" = not recorded, no check. */
+  cooling_capability?: string
+  /** Heat (W) the rack's cooling removes; null = not recorded. */
+  cooling_capacity_w?: number | null
   /** Sum of racked devices' type weights, normalised to kg. */
   total_weight_kg: number
   max_weight_kg: number | null
   /** Supply from primary feeds (else the PDUs' rating) vs the racked
    * devices' power-port draws. */
   power: RackPower
+  /** Heat load vs the rack's cooling capacity (#434). */
+  cooling?: RackCooling
+  /** Capacity less the allocated heat (W); null without a capacity. */
+  cooling_free_w?: number | null
   /** `?include=ports` only, else null (#247): the counted interfaces of
    * devices that are not patch panels. */
   ports?: PortCountRow | null
@@ -2129,9 +2992,12 @@ export interface Rack {
 
 export interface RackWritePayload {
   location_id?: string | null
+  room_id?: string | null
   max_weight?: string | null
   max_weight_unit?: string
   max_power_w?: number | null
+  cooling_capability?: string
+  cooling_capacity_w?: number | null
   site_id: string
   role_id?: string | null
   rack_type_id?: string | null
@@ -2327,6 +3193,7 @@ export interface Cabinet extends CabinetSizes {
   facility_id: string
   site: SiteRegionMini
   location: { id: string; name: string } | null
+  room?: RoomRef | null
   role: CabinetRoleOption | null
   cabinet_type: CabinetTypeOption | null
   status: StatusMini | null
@@ -2400,6 +3267,7 @@ export interface CabinetWritePayload {
   facility_id?: string
   site_id: string
   location_id?: string | null
+  room_id?: string | null
   role_id?: string | null
   cabinet_type_id?: string | null
   status_id?: string | null
@@ -2471,11 +3339,7 @@ export interface Antenna {
 
 /** What a faceplate prints inside a port marker; "" prints nothing. */
 export type PortLabelSource =
-  | ""
-  | "interface"
-  | "cable"
-  | "peer_device"
-  | "peer_port"
+  "" | "interface" | "cable" | "peer_device" | "peer_port"
 /** A device's say over the deployment's port-label setting. */
 export type DevicePortLabels = "" | "on" | "off"
 
@@ -2527,6 +3391,12 @@ export interface FacePort {
   /** One line naming what SNMP saw differently, or null when they agree. The
    * fields above stay the source of truth - this is drawn beside them. */
   drift: string | null
+  /** A port mapped onto the 3D model (`FacePorts.model`): its 0..1 spot and
+   * outward normal in the model's upright box. */
+  p?: [number, number, number]
+  n?: [number, number, number]
+  /** A mapped interface's untagged VLAN. */
+  vlan?: { vlan_id: number; name: string } | null
 }
 
 /** The module occupying a bay, as carried by a bay's resolution - enough to
@@ -2540,6 +3410,8 @@ export interface InstalledModuleMini {
 export interface FacePorts {
   front: FacePort[]
   rear: FacePort[]
+  /** The ports mapped onto its 3D model. Optional for older payloads. */
+  model?: FacePort[]
 }
 
 /** Counted ports under the shared rule - the Port utilization card's
@@ -2711,6 +3583,8 @@ export interface DcimChoices {
   lag_protocols: DcimChoice[]
   lacp_modes: DcimChoice[]
   lacp_rates: DcimChoice[]
+  lag_modes: DcimChoice[]
+  lag_hash_policies: DcimChoice[]
   poe_modes: DcimChoice[]
   poe_types: DcimChoice[]
   interface_types: DcimChoice[]
@@ -2725,6 +3599,20 @@ export interface DcimChoices {
   antenna_polarizations: DcimChoice[]
   rf_connector_types: DcimChoice[]
   feed_legs: DcimChoice[]
+  /** Chassis airflow directions - a device type's default and a device's
+   * own. */
+  airflow: DcimChoice[]
+  /** How hardware is cooled (#434): air, liquid, hybrid, immersion. */
+  cooling_method: DcimChoice[]
+  /** What a rack's cooling takes (#434): air, hybrid, liquid, immersion. */
+  cooling_capability: DcimChoice[]
+  /** Cooling source kinds (#434): chiller, CRAC, in-row… */
+  cooling_source_types: DcimChoice[]
+  /** What a cooling source moves heat with (#434). */
+  cooling_fluids: DcimChoice[]
+  /** Cooling feed kinds (#434): primary, redundant. */
+  cooling_feed_types: DcimChoice[]
+  cooling_connectors: DcimChoice[]
   /** Connector value → fibre count, to pre-fill FrontPort.positions. */
   connector_fibers: Record<string, number>
   common_speeds: string[]
@@ -2854,7 +3742,12 @@ export interface Interface {
   cable_count: number
   /** The far end of the cable - device and port names, and the far port's
    * printed label - or null. */
-  link_peer: { device: string; port: string; port_label: string } | null
+  link_peer: {
+    device: string
+    port: string
+    port_label: string
+    hidden?: boolean
+  } | null
   /** Leave this port's marker blank on faceplate renders. */
   hide_label: boolean
   /** This port's own label colour (#rrggbb), "" = the deployment's. */
@@ -2887,9 +3780,26 @@ export interface Interface {
   lacp_mode: LacpMode
   lacp_rate: LacpRate
   lag_min_links: number | null
+  /** Linux bond settings (aggregate only): bond-mode, hash policy, miimon.
+   * `802.3ad` mode means LACP. */
+  lag_mode: string
+  lag_mode_display: string
+  lag_hash_policy: string
+  lag_hash_policy_display: string
+  lag_miimon: number | null
+  /** MACsec (802.1AE, keyed by MKA). The cipher, keychain and replay
+   * window are blank unless enabled. The keychain carries no key. */
+  macsec_enabled: boolean
+  macsec_cipher: MacsecCipher
+  macsec_cipher_display: string
+  macsec_keychain: { id: string; name: string; algorithm: string } | null
+  macsec_replay_window: number | null
   created_at: string
   updated_at: string
 }
+
+export type MacsecCipher =
+  "" | "gcm-aes-128" | "gcm-aes-256" | "gcm-aes-xpn-128" | "gcm-aes-xpn-256"
 
 export interface InterfaceWritePayload {
   status_id?: string | null
@@ -2930,6 +3840,13 @@ export interface InterfaceWritePayload {
   lacp_mode?: LacpMode
   lacp_rate?: LacpRate
   lag_min_links?: number | null
+  lag_mode?: string
+  lag_hash_policy?: string
+  lag_miimon?: number | null
+  macsec_enabled?: boolean
+  macsec_cipher?: MacsecCipher
+  macsec_keychain_id?: string | null
+  macsec_replay_window?: number | null
 }
 
 // ─── Patch-panel ports ──────────────────────────────────────────────────────
@@ -3081,6 +3998,108 @@ export interface PowerOutletWritePayload {
   tag_ids?: number[]
 }
 
+// ─── Cooling intakes and outflows (#434) ────────────────────────────────────
+// Hoses are references, not cables: an intake names the feed - or the other
+// device's outflow (a CDU) - it takes coolant from.
+
+export interface CoolingDeviceRef {
+  id: string
+  name: string
+  device: { id: string; name: string }
+  hidden?: undefined
+}
+
+interface CoolingComponentBase {
+  id: string
+  device: { id: string; name: string }
+  name: string
+  label: string
+  connector: string
+  connector_display: string
+  diameter_mm: number | null
+  /** Decimal string, null when not recorded. */
+  max_flow_lpm: string | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface CoolingIntake extends CoolingComponentBase {
+  cooling_feed: {
+    id: string
+    name: string
+    /** null when the caller may not view the source (#453). */
+    source: { id: string; name: string } | null
+  } | null
+  outflow: CoolingDeviceRef | null
+  /** Connected to a feed or outflow the caller may not view (another
+   * site's, #453): `cooling_feed` and `outflow` read null. */
+  upstream_hidden?: boolean
+}
+
+/** An intake an outflow serves that the caller may not view (#453). */
+export interface CoolingHiddenRef {
+  id: null
+  name: null
+  device: null
+  hidden: true
+}
+
+export interface CoolingOutflow extends CoolingComponentBase {
+  intake: { id: string; name: string } | null
+  /** The intakes on other devices this outflow feeds. */
+  served: (CoolingDeviceRef | CoolingHiddenRef)[]
+}
+
+export interface CoolingComponentWritePayload {
+  device_id: string
+  name: string
+  label?: string
+  connector?: string
+  diameter_mm?: number | null
+  max_flow_lpm?: string | null
+  description?: string
+  cooling_feed_id?: string | null
+  outflow_id?: string | null
+  intake_id?: string | null
+}
+
+/** One hop of a cooling path, upstream first; a hop the caller may not
+ * view comes back `{kind, hidden: true}`. */
+export type CoolingHop =
+  | {
+      kind: "source" | "feed"
+      id: string
+      name: string
+      hidden?: undefined
+    }
+  | {
+      kind: "device"
+      id: string
+      name: string
+      intake: { id: string; name: string } | null
+      outflow: { id: string; name: string } | null
+      hidden?: undefined
+    }
+  | { kind: "source" | "feed" | "device"; hidden: true }
+
+export type CoolingPathStatus = "fed" | "open" | "loop" | "truncated"
+
+export interface CoolingPath {
+  intake: { id: string; name: string }
+  status: CoolingPathStatus
+  hops: CoolingHop[]
+}
+
+/** `GET /api/devices/<id>/cooling-path/`. */
+export interface DeviceCoolingPath {
+  device: { id: string; name: string }
+  max_depth: number
+  paths: CoolingPath[]
+}
+
 // ─── Device-type component templates ────────────────────────────────────────
 // Materialised onto every new device of the type.
 // ─── Modules (pluggable line cards) ─────────────────────────────────────────
@@ -3098,6 +4117,8 @@ export interface ModuleType {
   manufacturer: { id: string; name: string } | null
   part_number: string
   faceplate: FaceplateDoc | null
+  /** How the module is cooled (#434); "" = not recorded. */
+  cooling_method?: string
   description: string
   custom_fields: Record<string, unknown>
   tags: Tag[]
@@ -3111,6 +4132,7 @@ export interface ModuleTypeWritePayload {
   name: string
   manufacturer_id?: string | null
   part_number?: string
+  cooling_method?: string
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -3372,6 +4394,20 @@ export interface PowerOutletTemplate extends ComponentTemplateBase {
   feed_leg: "" | "A" | "B" | "C"
 }
 
+export interface CoolingIntakeTemplate extends Omit<
+  ComponentTemplateBase,
+  "type"
+> {
+  connector: string
+  connector_display: string
+  diameter_mm: number | null
+  max_flow_lpm: string | null
+}
+
+export interface CoolingOutflowTemplate extends CoolingIntakeTemplate {
+  intake_template: { id: string; name: string } | null
+}
+
 export interface RearPortTemplate extends ComponentTemplateBase {
   positions: number
   is_splitter?: boolean
@@ -3404,6 +4440,8 @@ export interface Cable {
   status: StatusMini | null
   length: string | null
   length_unit: string
+  /** "" a person entered the length; "computed" a floor-plan route did. */
+  length_source?: "" | "computed"
   color: string
   description: string
   /** Optical fibre: number of strands, or null for non-fibre. */
@@ -3412,6 +4450,8 @@ export interface Cable {
   strands: Record<string, { label?: string; status?: string }>
   /** True when `type` is an optical-fibre medium (smf/mmf). */
   is_fiber: boolean
+  /** The Proxmox SDN VNet id this cable is ("" = none). */
+  pve_vnet?: string
   a_terminations: Termination[]
   b_terminations: Termination[]
   tags: Tag[]
@@ -3440,6 +4480,7 @@ export interface CableWritePayload {
   a: TerminationInput[]
   b: TerminationInput[]
   label?: string
+  pve_vnet?: string
   type?: string
   status_id?: string | null
   length?: string | null
@@ -3455,12 +4496,7 @@ export interface CableWritePayload {
 // ─── Topology / trace graph (React Flow shape) ──────────────────────────────
 
 export type TopoPortKind =
-  | "interface"
-  | "front"
-  | "rear"
-  | "console"
-  | "power"
-  | "aux"
+  "interface" | "front" | "rear" | "console" | "power" | "aux"
 
 export interface TopoPort {
   name: string
@@ -3471,8 +4507,16 @@ export interface TopoPort {
 
 export interface TopoNode {
   id: string
-  /** "group" = a group_by=site|location aggregate (data is TopoGroupData). */
-  type: "device" | "interface" | "front_port" | "rear_port" | "group"
+  /** "group" = a group_by=site|location aggregate (data is TopoGroupData);
+   * "provider_network" = the node a set of circuits meets at (data is
+   * TopoProviderNetworkData, #466). */
+  type:
+    | "device"
+    | "interface"
+    | "front_port"
+    | "rear_port"
+    | "group"
+    | "provider_network"
   data: {
     name: string
     device_id?: string
@@ -3506,18 +4550,61 @@ export interface TopoNode {
     card?: TopoCard
     /** `include=photo` only. */
     photo?: TopoPhoto
+    /** Provider network nodes (#466) - see TopoProviderNetworkData. */
+    kind?: string
+    provider_network_id?: string
+    provider?: { id: string; name: string }
+    service_id?: string
+    circuit_count?: number
+    circuits?: TopoCircuitRef[]
   }
+}
+
+/** A circuit as the topology's provider network nodes and lines name it. */
+export interface TopoCircuitRef {
+  id: string
+  cid: string
+  provider: { id: string; name: string }
+  type: { id: string; name: string; color: string } | null
+  status: (StatusMini & { is_default?: boolean }) | null
+  commit_rate_kbps: number | null
+  /** On a node's list: the site its site-side end lands on. */
+  site?: { id: string; name: string }
+}
+
+/** One end of a circuit between two of your sites, as its line on the
+ * topology carries it: the termination, its site, and the device port it
+ * is cabled to (through the panels in `via`). */
+export interface TopoCircuitEnd {
+  side: "A" | "Z"
+  termination: {
+    id: string
+    side: string
+    port_speed_kbps: number | null
+    upstream_speed_kbps: number | null
+  }
+  site: { id: string; name: string }
+  device: { id: string; name: string }
+  port: { id: string; name: string; kind: string }
+  via: string[]
+}
+
+/** A provider network node's data (#466): the hub its circuits meet at. */
+export interface TopoProviderNetworkData {
+  kind: "provider_network"
+  provider_network_id: string
+  name: string
+  service_id: string
+  provider: { id: string; name: string }
+  circuit_count: number
+  circuits: TopoCircuitRef[]
+  dimmed?: boolean
 }
 
 /** Where a device's card lines came from, most specific first. `view` =
  * the query's `card_fields` (a saved view's own list). */
 export type TopoCardSource =
-  | "device"
-  | "view"
-  | "role"
-  | "tenant"
-  | "deployment"
-  | "default"
+  "device" | "view" | "role" | "tenant" | "deployment" | "default"
 
 /** An IP on a card line: `address` bare, `cidr` with its prefix length. */
 export interface TopoCardIp {
@@ -3655,6 +4742,29 @@ export interface TopoEdge {
     cable_label?: string
     /** A tunnel map's link (tunnels/tunnel-graph.ts): the tunnel it is. */
     tunnel?: { id: string; name: string }
+    /** A line to a provider network (`type: "circuit"`, #466): the circuit,
+     * its network, its site-side termination and site, and - when cabled -
+     * the device port it lands on. */
+    circuit?: TopoCircuitRef
+    /** A circuit between two of your sites (`id: "cc:<circuit id>"`): its
+     * two ends, the source's first. Absent on a line to a provider
+     * network. */
+    ends?: TopoCircuitEnd[]
+    provider_network?: {
+      id: string
+      name: string
+      service_id?: string
+      provider?: { id: string; name: string }
+    }
+    termination?: {
+      id: string
+      side: string
+      port_speed_kbps: number | null
+      upstream_speed_kbps: number | null
+    }
+    site?: { id: string; name: string }
+    device?: { id: string; name: string }
+    port?: { id: string; name: string; kind: string }
     length?: string | null
     length_unit?: string
     /** Link speed from an endpoint interface (free-form, e.g. "10G"). */
@@ -3739,7 +4849,8 @@ export interface DevicePathRun {
 
 /** The view styles that own an arrangement in a saved view. Mirrors
  * `TopologyViewSerializer.POSITION_STYLES`. */
-export type TopologyPositionStyle = "stencil" | "hierarchy" | "flat" | "diagram"
+export type TopologyPositionStyle =
+  "stencil" | "hierarchy" | "flat" | "diagram" | "routing"
 
 export type TopologyLineType = "straight" | "elbow" | "bendy" | "cyclical"
 
@@ -3763,6 +4874,10 @@ export interface TopologyViewZone {
   /** A row of several layers: a sub-row each (`stack`) or mixed in one
    * (`row`, the default). */
   layout?: "stack" | "row"
+  /** A row: the line its cards' cables take (absent: Default). */
+  line?: TopologyLineType
+  /** The Routing tab: the AS this box frames (an AS box). */
+  asn?: number
 }
 
 /** The Diagram tab's display settings (`state.filters.diagram`). */
@@ -3785,6 +4900,8 @@ export type TopologyPhotoAnchor = "ports" | "edge"
 export interface TopologyViewFilters {
   [key: string]: unknown
   diagram?: TopologyDiagramDisplay
+  /** The Routing tab's display. */
+  routing?: RoutingDisplay
 }
 
 /** A per-link override, keyed by the sorted device pair `"<uuid>|<uuid>"`. */
@@ -3830,7 +4947,12 @@ export interface TopologyViewState {
   /** Per-device overrides, keyed by device id. */
   nodes?: Record<
     string,
-    { face?: "card" | "photo"; anchor?: TopologyPhotoAnchor }
+    {
+      face?: "card" | "photo"
+      anchor?: TopologyPhotoAnchor
+      /** The line its cables take (absent: Default). */
+      line?: TopologyLineType
+    }
   >
   /** Diagram annotations (at most 500). */
   notes?: TopologyViewNote[]
@@ -3851,6 +4973,17 @@ export interface TopologyViewSummary {
   numid: number | null
   name: string
   updated_at: string
+}
+
+/** A saved view as the Topology page lists it
+ * (GET /api/topology-views/?summary=1): who made it and changed it last,
+ * from the change log ("" when the log has none), and whether it is the
+ * tenant's default. */
+export interface TopologyViewListRow extends TopologyViewSummary {
+  created_at: string
+  created_by: string
+  updated_by: string
+  is_default: boolean
 }
 
 export interface TopologyGraphMeta {
@@ -3935,6 +5068,348 @@ export function fetchTopology(
 ): Promise<TopologyGraph> {
   if (q.devices !== undefined) return postTopology(q, init)
   return api<TopologyGraph>(`/api/topology/?${topologyParams(q)}`, {
+    signal: init.signal,
+  })
+}
+
+// ── The Routing tab (`/api/topology/routing/`) ──────────────────────────
+
+/** A line layer of the Routing tab; each is an edge `type` too (the
+ * Circuits layer's lines are `circuit`, the Cables layer's `cable`). */
+export type RoutingLayer =
+  "ebgp" | "ibgp" | "ospf" | "isis" | "static" | "circuits" | "cables"
+
+/** A Routing card's lines (`filters.routing.fields`). */
+export type RoutingCardField =
+  "role" | "router_id" | "asn" | "loopback" | "site" | "primary_ip" | "status"
+
+/** The routing table the Routing tab draws: the global one, every one, or
+ * a VRF by id. */
+export type RoutingVrf = "global" | "all" | (string & {})
+
+/** The Routing tab's display a saved view keeps (`filters.routing`). */
+export interface RoutingDisplay {
+  mode?: "simple" | "detailed"
+  /** Each layer on or off; absent = its default. */
+  layers?: Partial<Record<RoutingLayer, boolean>>
+  /** The card lines; absent = the default list. */
+  fields?: RoutingCardField[]
+  /** The table drawn; absent = every table. */
+  vrf?: RoutingVrf
+  /** The Checks chip on; absent = off. */
+  checks?: boolean
+}
+
+/** A Checks item: something that looks wrong on one line. */
+export type RoutingCheckKind =
+  | "bgp_one_sided"
+  | "bgp_as_mismatch"
+  | "ospf_area"
+  | "ospf_timers"
+  | "ospf_mtu"
+  | "isis_level"
+
+export interface RoutingCheck {
+  id: string
+  kind: RoutingCheckKind
+  /** The line it is on. */
+  edge: string
+  layer: "ebgp" | "ibgp" | "ospf" | "isis" | "static"
+  /** The line's two ends ("r1 ⇄ r2"). */
+  title: string
+  text: string
+}
+
+/** A routing process on a router. */
+export interface RoutingProcess {
+  kind: "bgp" | "ospf" | "isis" | "eigrp" | "ldp" | "static"
+  id: string | null
+  vrf: string | null
+  router_id: string | null
+  asn?: number
+  asn_id?: string
+  cluster_id?: string | null
+  /** Static routes: how many. */
+  count?: number
+}
+
+export interface RoutingRouterData {
+  kind: "device" | "vm"
+  device_id: string | null
+  vm_id: string | null
+  name: string
+  role: { id: string; name: string; slug: string; color: string } | null
+  status_mini: (StatusMini & { is_default?: boolean }) | null
+  site: string | null
+  site_id: string | null
+  primary_ip: string | null
+  /** Runs a routing process (false: only the far end of a line). */
+  router: boolean
+  router_id: string | null
+  /** Its local ASes, one per BGP instance (table). */
+  asns: { asn: number; vrf: string | null }[]
+  /** The AS box it sits in. */
+  as_group: number | null
+  loopback: string | null
+  instances: RoutingProcess[]
+}
+
+export interface RoutingRef {
+  id: string
+  name: string
+}
+
+/** One BGP session as a line's panel lists it. */
+export interface RoutingSessionRow {
+  id: string
+  numid: number | null
+  name: string | null
+  /** The node whose session it is. */
+  node: string
+  vrf: string | null
+  local_asn: number | null
+  remote_asn: number | null
+  local_address: string | null
+  remote_address: string | null
+  interface: string | null
+  status_mini: (StatusMini & { is_default?: boolean }) | null
+  peer_group: RoutingRef | null
+  import_policy: RoutingRef | null
+  export_policy: RoutingRef | null
+  address_families: {
+    afi_safi: string
+    activate: boolean
+    import_policy: RoutingRef | null
+    export_policy: RoutingRef | null
+    maximum_prefix: number | null
+    maximum_prefix_threshold: number | null
+    maximum_prefix_restart: number | null
+    maximum_prefix_warning_only: boolean | null
+    route_reflector_client: boolean | null
+  }[]
+  maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
+  bfd: boolean
+  bfd_profile: RoutingRef | null
+  keepalive: number | null
+  hold_time: number | null
+  route_reflector_client: boolean
+  cluster_id: string | null
+  rpki_caches: RoutingRef[]
+}
+
+export interface RoutingBgpData {
+  kind: "ebgp" | "ibgp" | null
+  vrf: string | null
+  address_families: string[]
+  /** The source end's AS, then the target's. */
+  a_asn: number | null
+  b_asn: number | null
+  pairs: { a: string; b: string }[]
+  sessions: RoutingSessionRow[]
+  /** iBGP: a route reflector at the source, its client at the target. */
+  rr: { reflector: string; client: string; cluster_id: string | null } | null
+  /** Only one end defines the session. */
+  one_sided: boolean
+  vrf_id?: string | null
+  /** The Checks kinds on this line. */
+  problems?: RoutingCheckKind[]
+}
+
+/** One end of an OSPF or IS-IS adjacency. */
+export interface RoutingIgpEnd {
+  node: string
+  /** The OSPF / IS-IS interface row. */
+  id: string
+  instance_id: string
+  process: string | null
+  interface: string | null
+  interface_id: string | null
+  vm_interface_id: string | null
+  network_type: string | null
+  passive: boolean
+  bfd: boolean
+  bfd_profile: RoutingRef | null
+  /** The authentication kind (md5, sha…), null for none. */
+  authentication: string | null
+  /** The keychain's name - never its key. */
+  keychain: RoutingRef | null
+  // OSPF
+  area?: string
+  area_ref?: RoutingRef | null
+  cost?: number | null
+  priority?: number | null
+  hello?: number | null
+  dead?: number | null
+  mtu?: number | null
+  mtu_ignore?: boolean
+  // IS-IS
+  level?: "1" | "2" | "1-2"
+  metric?: number | null
+  metric_l2?: number | null
+  hello_interval?: number | null
+  hello_multiplier?: number | null
+}
+
+/** One adjacency on an IGP line: two interfaces joined by a cable (through
+ * patch panels) or sharing a subnet. */
+export interface RoutingIgpLink {
+  via: "cable" | "subnet"
+  cable_id: string | null
+  subnet: string | null
+  /** The end on the line's source, then its target's. */
+  a: RoutingIgpEnd
+  b: RoutingIgpEnd
+}
+
+export interface RoutingOspfData {
+  vrf: string | null
+  vrf_id: string | null
+  version: 2 | 3
+  /** The area both ends are in; null when they differ. */
+  area: string | null
+  /** Each end's area (the first link's), source first. */
+  areas: [string, string]
+  /** Each end's cost (the first link's), source first. */
+  cost: [number | null, number | null]
+  links: RoutingIgpLink[]
+  problems?: RoutingCheckKind[]
+}
+
+export interface RoutingIsisData {
+  vrf: string | null
+  vrf_id: string | null
+  /** The level the two ends meet at; null when they share none. */
+  level: "1" | "2" | "1-2" | null
+  levels: [string, string]
+  metric: [number | null, number | null]
+  links: RoutingIgpLink[]
+  problems?: RoutingCheckKind[]
+}
+
+/** Static routes from the source to the router their next hop is on. */
+export interface RoutingStaticData {
+  vrf: string | null
+  vrf_id: string | null
+  count: number
+  /** The first routes; `count` has them all. */
+  routes: {
+    id: string
+    numid: number | null
+    prefix: string
+    next_hop: string
+    distance: number | null
+  }[]
+  problems?: RoutingCheckKind[]
+}
+
+export interface RoutingCableData {
+  cables: {
+    id: string
+    numid: number | null
+    label: string | null
+    a: string | null
+    b: string | null
+  }[]
+}
+
+export type RoutingNode =
+  | { id: string; type: "router"; data: RoutingRouterData }
+  | { id: string; type: "provider_network"; data: TopoProviderNetworkData }
+
+/** A BGP line: eBGP or iBGP. */
+export interface RoutingBgpEdge<
+  TKind extends "ebgp" | "ibgp" = "ebgp" | "ibgp",
+> {
+  id: string
+  source: string
+  target: string
+  type: TKind
+  data: RoutingBgpData
+}
+
+export type RoutingEdge =
+  | RoutingBgpEdge<"ebgp">
+  | RoutingBgpEdge<"ibgp">
+  | {
+      id: string
+      source: string
+      target: string
+      type: "circuit"
+      data: NonNullable<TopoEdge["data"]>
+    }
+  | {
+      id: string
+      source: string
+      target: string
+      type: "cable"
+      data: RoutingCableData
+    }
+  | {
+      id: string
+      source: string
+      target: string
+      type: "ospf"
+      data: RoutingOspfData
+    }
+  | {
+      id: string
+      source: string
+      target: string
+      type: "isis"
+      data: RoutingIsisData
+    }
+  | {
+      id: string
+      source: string
+      target: string
+      type: "static"
+      data: RoutingStaticData
+    }
+
+/** An AS box: the cards whose global table runs this AS. */
+export interface RoutingAsGroup {
+  id: string
+  asn: number
+  asn_id: string | null
+  /** The ASN's description, first line. */
+  name: string | null
+  nodes: string[]
+}
+
+export interface RoutingTopology {
+  nodes: RoutingNode[]
+  edges: RoutingEdge[]
+  as_groups: RoutingAsGroup[]
+  meta: {
+    /** The layers the caller may see. */
+    layers: Record<RoutingLayer, boolean>
+    requested: RoutingLayer[]
+    /** The table drawn. */
+    vrf?: RoutingVrf
+    /** The VRFs the map's processes and routes run in. */
+    vrfs?: (RoutingRef & { color: string | null })[]
+  }
+  /** What looks wrong on the lines drawn. */
+  checks?: RoutingCheck[]
+}
+
+export type RoutingQuery = Omit<
+  TopologyQuery,
+  "include" | "card_fields" | "group_by" | "collapse_panels"
+> & { chassis?: string[]; layers?: RoutingLayer[]; vrf?: RoutingVrf }
+
+/** The Routing tab's map, the query as a JSON body (a device set would
+ * overflow a URL). */
+export function fetchRoutingTopology(
+  q: RoutingQuery,
+  init: { signal?: AbortSignal } = {}
+): Promise<RoutingTopology> {
+  return api<RoutingTopology>("/api/topology/routing/", {
+    method: "POST",
+    body: JSON.stringify(q),
     signal: init.signal,
   })
 }
@@ -4269,6 +5744,7 @@ export interface BulkUpdateFields {
   site_id?: string | null
   vlan_id?: string | null
   description?: string
+  auto_gateway?: boolean
   add_tag_ids?: number[]
   remove_tag_ids?: number[]
 }
@@ -4389,12 +5865,7 @@ export interface ZoneOption {
 // ─── FHRP groups ───────────────────────────────────────────────────────────
 
 export type FHRPProtocol =
-  | "vrrp2"
-  | "vrrp3"
-  | "hsrp"
-  | "glbp"
-  | "carp"
-  | "anycast"
+  "vrrp2" | "vrrp3" | "hsrp" | "glbp" | "carp" | "anycast"
 
 export interface FHRPGroupAssignment {
   id: string
@@ -4718,6 +6189,8 @@ export interface SiteCapacityRack {
   /** Units in use, as a whole percentage; null for a 0U rack. */
   u_pct: number | null
   power: RackPower
+  /** Heat load vs cooling capacity (#434). */
+  cooling?: RackCooling
   ports: PortCountRow
   panel_ports: PortCountRow
   device_count: number
@@ -4740,6 +6213,16 @@ export interface SiteCapacityTotals {
     budget?: number
     no_supply: number
   }
+  /** Heat load and cooling capacity added up (#434); `budget` / `no_supply`
+   * count the racks with and without a cooling capacity. */
+  cooling?: {
+    available_w: number
+    heat_allocated_w: number
+    heat_maximum_w: number
+    budget: number
+    no_supply: number
+    mismatched: number
+  }
   ports: PortCountRow
   panel_ports: PortCountRow
 }
@@ -4749,7 +6232,8 @@ export interface SiteCapacityTotals {
 export interface SiteCapacityPlan {
   id: string
   name: string
-  location: { id: string; name: string }
+  /** Null for a site-wide floor plan. */
+  location: { id: string; name: string } | null
   grid_width: number
   grid_height: number
   totals: SiteCapacityTotals
@@ -4828,10 +6312,7 @@ export interface RegionWritePayload {
 }
 
 export type LocationStatus =
-  | "active"
-  | "planned"
-  | "decommissioning"
-  | "retired"
+  "active" | "planned" | "decommissioning" | "retired"
 
 export interface LocationOption {
   id: string
@@ -4839,13 +6320,60 @@ export interface LocationOption {
   slug: string
 }
 
+/** A location type - the editable catalog of what kind of place a
+ * location is (Building, Floor, Manhole…). Nothing is seeded. */
+export interface LocationType {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  /** #rrggbb or "" for none. */
+  color: string
+  /** Lucide icon name, or "". */
+  icon: string
+  description: string
+  location_count: number
+  created_at: string
+  updated_at: string
+}
+
+/** How a location names its type (and `?picker=1` on /api/location-types/). */
+export interface LocationTypeRef {
+  id: string
+  name: string
+  color: string
+  icon: string
+}
+
+export interface LocationTypeWritePayload {
+  name: string
+  slug?: string
+  color?: string
+  icon?: string
+  description?: string
+}
+
+/** `/api/locations/?picker=1`: `color`/`icon` are what the location is
+ * drawn with - its own, else its type's. */
+export interface LocationPick extends LocationOption {
+  code: string
+  color: string
+  icon: string
+  location_type: LocationTypeRef | null
+  site_id: string
+  parent_id: string | null
+}
+
 export interface Location {
   id: string
   numid: number | null
   name: string
   slug: string
+  /** Short code (A1, B2), or "". */
+  code: string
   site: SiteOption | null
   parent: LocationOption | null
+  location_type: LocationTypeRef | null
   status: StatusMini | null
   /** Badge color (#rrggbb) or "" for the default. */
   color: string
@@ -4856,6 +6384,7 @@ export interface Location {
   device_count: number
   rack_count: number
   cabinet_count: number
+  room_count: number
   document_count: number
   created_at: string
   updated_at: string
@@ -4864,12 +6393,64 @@ export interface Location {
 export interface LocationWritePayload {
   name: string
   slug?: string
+  code?: string
   site_id: string
   parent_id?: string | null
+  location_type_id?: string | null
   status_id?: string | null
   color?: string
   icon?: string
   description?: string
+}
+
+// ─── Rooms (Region → Site → Location → Room) ────────────────────────────────
+
+/** How a device, rack or cabinet names its room. */
+export interface RoomRef {
+  id: string
+  name: string
+  code: string
+  /** Badge color (#rrggbb) or "" for the default. */
+  color: string
+}
+
+/** A `?picker=1` row. */
+export interface RoomOption extends RoomRef {
+  slug: string
+  location_id: string
+}
+
+export interface Room {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  /** The number or code on the door, e.g. "210". */
+  code: string
+  location: { id: string; name: string; color: string; icon: string }
+  site: { id: string; name: string }
+  status: StatusMini | null
+  color: string
+  description: string
+  device_count: number
+  rack_count: number
+  cabinet_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface RoomWritePayload {
+  name: string
+  slug?: string
+  code?: string
+  location_id: string
+  status_id?: string | null
+  color?: string
+  description?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
 }
 
 // ─── Virtualization: cluster types / groups / clusters ──────────────────────
@@ -4909,11 +6490,7 @@ export interface ClusterGroupWritePayload {
 }
 
 export type ClusterStatus =
-  | "active"
-  | "planned"
-  | "staging"
-  | "offline"
-  | "decommissioning"
+  "active" | "planned" | "staging" | "offline" | "decommissioning"
 
 export interface Cluster {
   id: string
@@ -4948,11 +6525,7 @@ export interface ClusterWritePayload {
 // ─── Virtual machine (full read+write) ───────────────────────────────────
 
 export type VMStatus =
-  | "active"
-  | "offline"
-  | "planned"
-  | "staged"
-  | "decommissioning"
+  "active" | "offline" | "planned" | "staged" | "decommissioning"
 
 /** A vApp, resource pool or folder - how the hypervisor groups its VMs.
  * The hypervisor owns membership; a group an operator sets by hand is
@@ -4987,6 +6560,14 @@ export interface VirtualMachine {
   id: string
   numid: number | null
   name: string
+  /** This VM's own config-context data, merged last; null = none. */
+  local_context_data?: Record<string, unknown> | null
+  /** PRTG registration: follow policies, always, or never. */
+  prtg_sync?: PrtgSync
+  /** What PRTG polls instead of the primary address ("" = the primary). */
+  prtg_host?: string
+  /** On a save that changed the PRTG setting: what the plan made of it. */
+  prtg_plan?: PrtgSavePlan | null
   cluster: { id: string; name: string; status: StatusMini | null }
   group: { id: string; name: string; kind: string } | null
   device: { id: string; name: string } | null
@@ -4998,14 +6579,29 @@ export interface VirtualMachine {
     color: string
     icon: string
   } | null
-  platform: {
-    id: string
-    name: string
-    slug: string
-    /** End-of-life data (#8); null while the feature is off. */
-    eol?: EolInfo | null
-  } | null
+  platform:
+    | ({
+        id: string
+        name: string
+        slug: string
+        release_date?: string | null
+        end_of_support?: string | null
+        lifecycle_state?: LifecycleState
+        /** The version operators want running (#395); "" = no target. */
+        target_version?: string
+        /** End-of-life data (#8); null while the feature is off. */
+        eol?: EolInfo | null
+      } & EffectiveOsDates)
+    | null
+  /** The platform's effective end of life (#436). */
+  lifecycle_next?: LifecycleNext | null
   status: StatusMini | null
+  /** The software version running (#395). */
+  software_version?: string
+  /** Set when an integration filled software_version; read-only. */
+  software_version_seen_at?: string | null
+  /** Where software_version came from (#451); read-only, "" when blank. */
+  software_version_source?: SoftwareVersionSource
   /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".
    * Null for a VM no sync tracks. Distinct from `status`, which is the
    * operator's lifecycle field: a VM can be Active and powered off. */
@@ -5021,11 +6617,33 @@ export interface VirtualMachine {
   memory_mb: number | null
   disk_gb: number | null
   disks: VirtualDisk[]
+  /** Danbyte holds the intent: sync raises drift, never overwrites it,
+   * never deletes the VM or prunes its NICs and disks. */
+  intended?: boolean
+  /** The Device this VM is (a virtual router), not its host. */
+  represents_device?: { id: string; name: string } | null
+  /** The hypervisor id to build it with; unique per cluster. */
+  vmid?: number | null
+  cpu_type?: string
+  sockets?: number | null
+  /** Template or cloud image; the runner interprets it. */
+  image?: string
+  /** Default storage for disks that name none. */
+  storage?: string
+  hypervisor_options?: Record<string, unknown>
+  /** When the hypervisor stopped reporting this VM's guest; null if present. */
+  missing_since?: string | null
   interface_count?: number
   disk_count?: number
   service_count?: number
   certificate_count?: number
   routing_count?: number
+  /** Installed software rows (#436), list and detail - the Software tab. */
+  install_count?: number
+  /** Every address the VM uses - on it, on its interfaces, or its primary. */
+  ip_count?: number
+  /** Device profiles in order, with their assignment state. */
+  device_profiles?: HostDeviceProfile[]
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
@@ -5036,6 +6654,7 @@ export interface VirtualMachine {
 
 export interface VirtualDisk {
   id: string
+  vm?: { id: string; name: string; status: StatusMini | null }
   key: string
   name: string
   size_gb: number | null
@@ -5046,10 +6665,25 @@ export interface VirtualDisk {
   description: string
 }
 
+export interface VirtualDiskWritePayload {
+  vm_id: string
+  key: string
+  name?: string
+  size_gb?: number | null
+  storage?: string
+  controller?: string
+  disk_format?: string
+  description?: string
+}
+
 export interface VirtNetwork {
   id: string
   name: string
   ext_key: string
+  /** Proxmox SDN: the VNet's zone ("" for a bridge or port group). */
+  sdn_zone?: string
+  sdn_alias?: string
+  sdn_tag?: number | null
   vlan: {
     id: string
     vlan_id: number
@@ -5101,6 +6735,8 @@ export interface VirtualSwitch {
 
 export interface VirtualMachineWritePayload {
   name: string
+  prtg_sync?: PrtgSync
+  prtg_host?: string
   cluster_id: string
   /** A VM group on the same cluster, or null for none. */
   group_id?: string | null
@@ -5113,6 +6749,17 @@ export interface VirtualMachineWritePayload {
   vcpus?: number | null
   memory_mb?: number | null
   disk_gb?: number | null
+  intended?: boolean
+  represents_device_id?: string | null
+  vmid?: number | null
+  cpu_type?: string
+  sockets?: number | null
+  image?: string
+  storage?: string
+  hypervisor_options?: Record<string, unknown>
+  /** The software version running (#395). */
+  software_version?: string
+  local_context_data?: Record<string, unknown> | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -5129,6 +6776,12 @@ export interface VMInterface {
   kind: "" | "bridge" | "loopback" | "tunnel"
   /** The interface this one rides on (wg0 over eth0); same-VM, no loops. */
   parent: { id: string; name: string } | null
+  /** Hypervisor slot (Proxmox netN); unique per VM. */
+  index?: number | null
+  model?: VMInterfaceModel
+  /** SDN VNet or Linux bridge name. */
+  bridge?: string
+  firewall?: boolean | null
   enabled: boolean
   /** Sync must not record this NIC's guest-reported IPs (Docker bridge). */
   sync_ignore_ips: boolean
@@ -5157,10 +6810,17 @@ export interface VMInterface {
   updated_at: string
 }
 
+export type VMInterfaceModel =
+  "" | "virtio" | "e1000" | "e1000e" | "vmxnet3" | "rtl8139"
+
 export interface VMInterfaceWritePayload {
   vm_id: string
   name: string
   kind?: string
+  index?: number | null
+  model?: VMInterfaceModel
+  bridge?: string
+  firewall?: boolean | null
   parent_id?: string | null
   enabled?: boolean
   sync_ignore_ips?: boolean
@@ -5436,6 +7096,8 @@ export interface NATRule {
   /** Optional restriction on who the rule applies to. */
   source_ip: { id: string; ip_address: string; dns_name: string } | null
   source_prefix: { id: string; cidr: string } | null
+  /** The egress port the rule applies on ("masquerade on mgmt0"). */
+  out_interface: { id: string; name: string } | null
   status: StatusMini | null
   description: string
   tags: Tag[]
@@ -5532,6 +7194,8 @@ export interface RoutingPolicyRule {
   match_community_lists: { id: string; name: string; kind: string }[]
   match_as_path_lists: { id: string; name: string }[]
   match_next_hop: PrefixListMini | null
+  /** `match rpki <state>`; blank = not matched. */
+  match_rpki: RPKIState
   match_extra: Record<string, unknown>
   set_local_pref: number | null
   set_med: number | null
@@ -5551,6 +7215,44 @@ export interface RoutingPolicy extends RoutingCatalogBase {
   rule_count: number
 }
 
+export type RPKIState = "" | "valid" | "invalid" | "notfound"
+
+export interface RPKICacheMini {
+  id: string
+  name: string
+  address: string
+  port: number
+  transport: "tcp" | "ssh"
+  preference: number
+}
+
+export interface RPKICache extends RoutingCatalogBase {
+  address: string
+  port: number
+  transport: "tcp" | "ssh"
+  preference: number
+  ssh_username: string
+  ssh_host_key: string
+  /** The SSH private key lives in the secret store; only whether one
+   * exists is read. */
+  ssh_private_key_set: boolean
+  bgp_instance_count: number
+}
+
+export interface ROA {
+  id: string
+  numid: number | null
+  prefix: string
+  max_length: number
+  origin_asn: ASNMini
+  aggregate: { id: string; prefix: string } | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface RoutingKeychain extends RoutingCatalogBase {
   algorithm: "md5" | "sha1" | "sha256" | "hmac-sha-256"
   /** The key lives in the secret store; only whether one exists is read. */
@@ -5567,12 +7269,7 @@ export type AfiSafi =
 
 export type RemoteAsnMode = "asn" | "external" | "internal"
 export type SendCommunity =
-  | ""
-  | "none"
-  | "standard"
-  | "extended"
-  | "both"
-  | "large"
+  "" | "none" | "standard" | "extended" | "both" | "large"
 
 export interface ASNMini {
   id: string
@@ -5609,14 +7306,26 @@ export interface EthernetSegment {
   esi: string
   es_id: number | null
   sys_mac: string
+  /** The default `es-df-pref`; a member may set its own. */
   df_preference: number | null
   interfaces: { id: string; name: string; device: DeviceMini }[]
+  members: EthernetSegmentMember[]
   device_count: number
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+/** One port of a segment (`/api/routing/ethernet-segment-members/`). */
+export interface EthernetSegmentMember {
+  id: number
+  interface: { id: string; name: string }
+  device: { id: string; name: string }
+  /** This port's own value; null = the segment's. */
+  df_preference: number | null
+  df_preference_effective: number | null
 }
 
 /** `mpls ldp` on one device. */
@@ -5658,6 +7367,9 @@ export interface BGPPeerKnobs {
   /** `default-originate route-map <policy>`. */
   default_originate_policy: { id: string; name: string } | null
   maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
   allowas_in: number | null
   as_override: boolean | null
   remove_private_as: boolean | null
@@ -5729,6 +7441,7 @@ export interface BGPInstance {
   vpn_nexthop_export: string
   bfd: boolean
   bfd_profile: BFDProfileMini | null
+  rpki_caches: RPKICacheMini[]
   address_families: BGPAddressFamily[]
   session_count: number
   status: StatusMini | null
@@ -5753,7 +7466,63 @@ export interface BGPPeerGroup extends RoutingCatalogBase, BGPPeerKnobs {
   remote_asn_mode: RemoteAsnMode
   local_asn: ASNMini | null
   update_source: string
+  /** One row per address family; `address_families` lists the active ones. */
+  afs: BGPNeighborAF[]
   session_count: number
+}
+
+/** A neighbour family with every knob resolved. */
+export interface BGPNeighborAFEffective {
+  afi_safi: AfiSafi
+  activate: boolean
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  prefix_list_in: { id: string; name: string } | null
+  prefix_list_out: { id: string; name: string } | null
+  default_originate: boolean | null
+  default_originate_policy: { id: string; name: string } | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  soft_reconfiguration: boolean | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  send_community: SendCommunity | null
+  allowas_in: number | null
+  maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
+  extra: Record<string, unknown>
+}
+
+/** One address family of a session or a peer group
+ * (`/api/routing/bgp-neighbor-afs/`). A null knob inherits. */
+export interface BGPNeighborAF {
+  id: string
+  parent: { kind: "session" | "peer_group"; id: string; name: string }
+  afi_safi: AfiSafi
+  afi_safi_display: string
+  activate: boolean
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  prefix_list_in: { id: string; name: string } | null
+  prefix_list_out: { id: string; name: string } | null
+  default_originate: boolean | null
+  default_originate_policy: { id: string; name: string } | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  soft_reconfiguration: boolean | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  send_community: "" | SendCommunity
+  allowas_in: number | null
+  maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
+  extra: Record<string, unknown>
+  /** What the box ends up with in this family (detail reads only). */
+  effective: BGPNeighborAFEffective | null
 }
 
 export interface BGPPeerGroupMini {
@@ -5778,6 +7547,9 @@ export interface BGPSessionEffective {
   keychain: { id: string; name: string; algorithm: string } | null
   default_originate: boolean | null
   maximum_prefix: number | null
+  maximum_prefix_threshold: number | null
+  maximum_prefix_restart: number | null
+  maximum_prefix_warning_only: boolean | null
   allowas_in: number | null
   as_override: boolean | null
   remove_private_as: boolean | null
@@ -5821,6 +7593,10 @@ export interface BGPSession extends BGPPeerKnobs {
     virtual_machine?: VMMini
   } | null
   effective: BGPSessionEffective
+  /** The session's own address-family rows. */
+  afs: BGPNeighborAF[]
+  /** Every family it speaks, resolved (detail reads only). */
+  effective_afs: BGPNeighborAFEffective[]
   status: StatusMini | null
   description: string
   tags: Tag[]
@@ -5851,11 +7627,7 @@ export interface OSPFInterface {
   area: OSPFAreaMini
   cost: number | null
   network_type:
-    | ""
-    | "broadcast"
-    | "point-to-point"
-    | "nbma"
-    | "point-to-multipoint"
+    "" | "broadcast" | "point-to-point" | "nbma" | "point-to-multipoint"
   /** Null = the instance's passive_by_default. */
   passive: boolean | null
   priority: number | null
@@ -5960,6 +7732,8 @@ export interface VTEPMembership {
   vlan: VLANMini | null
   /** The VLAN the render resolves for this leaf (own, else the site's). */
   resolved_vlan: VLANMini | null
+  /** The leaf's vxlan netdev, when it is an interface row. */
+  interface: { id: string; name: string; device: DeviceMini } | null
   rd: string
   ingress_replication: boolean
   mcast_group: string
@@ -6035,10 +7809,41 @@ export interface StaticRoute {
   next_hop_interface: { id: string; name: string; device: DeviceMini } | null
   next_hop_vm_interface: { id: string; name: string; vm: VMMini } | null
   next_hop_vrf: { id: string; name: string; rd: string; color: string } | null
+  /** Kernel table number for policy routing; null = main or the VRF's. */
+  table: number | null
   distance: number | null
   metric: number | null
   tag: number | null
   bfd: boolean
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** An `ip rule` on a device or VM (`/api/routing/ip-rules/`). */
+export interface PolicyRule {
+  id: string
+  numid: number | null
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
+  site: { id: string; name: string } | null
+  family: "ipv4" | "ipv6"
+  priority: number
+  action: "lookup" | "blackhole" | "unreachable" | "prohibit"
+  action_display: string
+  table: number | null
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  from_prefix: string
+  to_prefix: string
+  iif: { id: string; name: string; device: DeviceMini } | null
+  oif: { id: string; name: string; device: DeviceMini } | null
+  vm_iif: { id: string; name: string; vm: VMMini } | null
+  vm_oif: { id: string; name: string; vm: VMMini } | null
+  fwmark: number | null
+  invert: boolean
   status: StatusMini | null
   description: string
   tags: Tag[]
@@ -6143,6 +7948,8 @@ export interface ServiceTemplate {
   protocol_display: string
   ports: number[]
   protocol_ports?: ProtocolPorts
+  /** The software behind the service (#436). */
+  application?: { id: string; name: string } | null
   description: string
   service_count?: number
   created_at: string
@@ -6154,6 +7961,7 @@ export interface ServiceTemplateWritePayload {
   protocol: ServiceProtocol
   ports: number[]
   protocol_ports?: ProtocolPorts
+  application_id?: string | null
   description: string
 }
 
@@ -6380,12 +8188,7 @@ export type CheckKind =
   | "exec"
   | "tls_cert"
 export type CheckStatus =
-  | "up"
-  | "down"
-  | "degraded"
-  | "unknown"
-  | "stale"
-  | "skipped"
+  "up" | "down" | "degraded" | "unknown" | "stale" | "skipped"
 export type ScheduleMode = "follow_global" | "custom_on" | "custom_off"
 
 export interface CheckTemplate {
@@ -6649,6 +8452,23 @@ export interface BulkStatusEntry extends ExternalRollup {
   monitored_ips?: number
   /** An address excluded from monitoring (IP rows only). */
   excluded?: boolean
+  /** The checks behind a device's or VM's roll-up, worst first - only when
+   * the request asked for `detail` (a detail page's monitoring bar). */
+  items?: MonitoringCheckItem[]
+}
+
+/** One check behind a roll-up, for the monitoring bar's hover. */
+export interface MonitoringCheckItem {
+  id: string
+  name: string
+  kind: string
+  ip_id: string
+  address: string
+  status: CheckStatus
+  /** When it entered this state. */
+  since: string | null
+  /** The last run's error, when it was not up. */
+  error?: string
 }
 
 /** An engine kind a driver registered - configured on its own page rather
@@ -6948,6 +8768,8 @@ export interface SystemInfo {
   /** Migrations this code ships that the database has not run - new code on
    * an old schema (the DB is behind; run migrate). */
   pending_migrations: string[]
+  /** Danbyte's own SBOM ships with this install: GET /api/system/sbom/. */
+  sbom_available: boolean
 }
 
 /** GET /api/system/updates - current version + the release repo's versions. */
@@ -6988,6 +8810,10 @@ export interface SystemUpdates {
     is_current: boolean
   }[]
   error?: string
+  /** No release list cached yet; a background refresh is on its way. */
+  checking?: boolean
+  /** When the cached list was fetched (ISO). */
+  checked_at?: string | null
 }
 
 /** Releases available in the configured Outpost repo (for the version dropdown). */
@@ -7494,12 +9320,7 @@ export interface TimelineBatch {
 // certificate is authored solely by uploading a public PEM (never a key).
 
 export type PublicKeyAlgorithm =
-  | "rsa"
-  | "ec"
-  | "ed25519"
-  | "ed448"
-  | "dsa"
-  | "unknown"
+  "rsa" | "ec" | "ed25519" | "ed448" | "dsa" | "unknown"
 
 /** How the row came to exist: seen on the wire, uploaded by an operator, or
  * both (an uploaded cert later observed being served - one row, by fingerprint). */
@@ -7579,12 +9400,7 @@ export interface CertificateAssignment {
 }
 
 export type CertKeySpec =
-  | "rsa-2048"
-  | "rsa-3072"
-  | "rsa-4096"
-  | "ec-p256"
-  | "ec-p384"
-  | "ed25519"
+  "rsa-2048" | "rsa-3072" | "rsa-4096" | "ec-p256" | "ec-p384" | "ed25519"
 export type CertRequestStatus = "generated" | "issued" | "cancelled"
 
 /** A certificate signing request Danbyte generated (key held in the secret store). */
@@ -7640,12 +9456,7 @@ export interface Issuer {
 }
 
 export type AcmeOrderStatus =
-  | "pending"
-  | "ready"
-  | "processing"
-  | "valid"
-  | "invalid"
-  | "errored"
+  "pending" | "ready" | "processing" | "valid" | "invalid" | "errored"
 
 /** One challenge record the order must satisfy (DNS-01 TXT or HTTP-01 token). */
 export interface AcmeChallenge {
@@ -7934,7 +9745,56 @@ export type ComplianceCheck =
   | "required_cf"
   | "eol_status"
   | "coverage"
+  | "software_target"
+  | "expression"
 export type ComplianceSeverity = "critical" | "warning" | "info"
+
+/** A compliance rule's scope or conditions: the advanced filter's AST, with
+ * catalog rows named by id. */
+export type ComplianceExpr = Expr
+
+/** A row a rule's scope or conditions name, as the reader may see it. */
+export interface ComplianceRef {
+  model?: string
+  name: string | null
+  color?: string
+  /** The row is gone: the rule shows as Broken. */
+  missing?: boolean
+  /** The reader may not view the row. */
+  hidden?: boolean
+}
+
+/** One field of GET /api/compliance/fields/. */
+export interface ComplianceField {
+  key: string
+  label: string
+  kind:
+    "string" | "number" | "date" | "bool" | "choice" | "ref" | "tags" | "type"
+  /** The chosen object types that have it. */
+  types: string[]
+  ops: BuilderOp[]
+  ref: {
+    model: string
+    api: string
+    badge: "status" | "color" | ""
+    noun: string
+  } | null
+  choices: { value: string; label: string }[]
+}
+
+/** Response of POST /api/compliance-rules/preview/. */
+export interface CompliancePreview {
+  by_type: Record<
+    string,
+    {
+      in_scope: number
+      failing: number
+      sample: { id: string; repr: string; site_name: string }[]
+    }
+  >
+  error: string | null
+}
+
 export interface ComplianceRule {
   id: string
   name: string
@@ -7943,8 +9803,16 @@ export interface ComplianceRule {
   remediation: string
   enabled: boolean
   severity: ComplianceSeverity
+  /** The first of `object_types`. */
   object_type: string
+  object_types: string[]
   object_type_label: string
+  /** Which objects the rule judges; null = every object of its types. */
+  scope: ComplianceExpr | null
+  /** What a Conditions check requires of each object in scope. */
+  condition: ComplianceExpr | null
+  /** The rows the scope and conditions name, by id. */
+  refs: Record<string, ComplianceRef>
   check_type: ComplianceCheck
   check_type_display: string
   field: string
@@ -7955,6 +9823,10 @@ export interface ComplianceRule {
   eol_fail_on?: "" | "eol" | "ending" | "unknown"
   /** coverage checks (#421): expired | expiring. */
   coverage_fail_on?: "" | "expired" | "expiring"
+  /** software_target checks (#395): a blank software version fails too. */
+  fail_on_unknown?: boolean
+  /** eol_status checks (#436): installed software counts too. */
+  include_software?: boolean
   created_at: string
   updated_at: string
 }
@@ -7967,17 +9839,112 @@ export interface ComplianceViolation {
   object_route: string | null
   object_id: string
   object_repr: string
+  /** Why it fails, where the check says (software_target). */
+  detail?: string
+  /** The object's site (a site's own id), or null. */
+  site_id?: string | null
+  site_name?: string
+  /** The object's tag slugs. */
+  tags?: string[]
+  /** Triage: open until someone acknowledges or snoozes it. */
+  state?: ComplianceTriageState
+  acknowledged_at?: string | null
+  acknowledged_by?: string
+  /** Set only while the snooze runs. */
+  snoozed_until?: string | null
+  note?: string
+}
+export type ComplianceTriageState = "open" | "acknowledged" | "snoozed"
+/** One rule's result: whole counts, whatever the caller may view. */
+export interface ComplianceRuleResult {
+  id: string
+  name: string
+  object_type: string
+  object_types?: string[]
+  object_type_label?: string
+  /** Failing objects per object type. */
+  by_type?: Record<string, number>
+  /** Why the rule could not be judged (Broken), or null. */
+  error?: string | null
+  severity: ComplianceSeverity
+  violations: number
+  open?: number
+  acknowledged?: number
+  snoozed?: number
+}
+export interface ComplianceFacet {
+  value: string
+  label: string
+  count: number
+  /** Tags: the tag's id and colours. */
+  id?: number
+  color?: string
+  text_color?: string
 }
 export interface ComplianceEvaluation {
-  rules: {
-    id: string
-    name: string
-    object_type: string
-    severity: ComplianceSeverity
-    violations: number
-  }[]
+  evaluated_at?: string
+  rules: ComplianceRuleResult[]
   violations: ComplianceViolation[]
   total_violations: number
+  objects_in_violation?: number
+  /** Counts over the violations the caller may see, before the URL filters. */
+  facets?: Record<
+    "severity" | "state" | "rule" | "object_type" | "site" | "tag",
+    ComplianceFacet[]
+  >
+}
+
+/** Response of GET /api/compliance/summary/ - the Overview tab. */
+export interface ComplianceSummary {
+  evaluated_at: string
+  totals: {
+    rules: number
+    disabled_rules: number
+    passing: number
+    failing: number
+    violations: number
+    open: number
+    acknowledged: number
+    snoozed: number
+    objects_in_violation: number
+  }
+  by_severity: Record<
+    ComplianceSeverity,
+    { rules: number; failing_rules: number; violations: number; open: number }
+  >
+  /** Enabled rules (and config drift), worst first. */
+  rules: (ComplianceRuleResult &
+    Required<
+      Pick<
+        ComplianceRuleResult,
+        "open" | "acknowledged" | "snoozed" | "object_type_label"
+      >
+    > &
+    Pick<
+      ComplianceRule,
+      | "check_type"
+      | "field"
+      | "pattern"
+      | "tag"
+      | "cf_key"
+      | "eol_fail_on"
+      | "coverage_fail_on"
+      | "fail_on_unknown"
+    > &
+    Partial<Pick<ComplianceRule, "scope" | "condition" | "refs">>)[]
+  /** The visible objects failing the most rules. */
+  top_offenders: ComplianceOffender[]
+}
+export interface ComplianceOffender {
+  object_type: string
+  object_type_label: string
+  object_id: string
+  object_repr: string
+  site_name: string
+  violations: number
+  open: number
+  worst_severity: ComplianceSeverity
+  rules: string[]
 }
 
 /** Response of GET /api/compliance-rules/<id>/violations/ - the objects one
@@ -7988,14 +9955,20 @@ export interface ComplianceRuleViolations {
     name: string
     severity: ComplianceSeverity
     object_type: string
+    object_types?: string[]
     object_type_label: string
     enabled: boolean
   }
   violations: ComplianceViolation[]
   /** Failing rows serialized with the type's real serializer - feeds the
-   * genuine per-type table on the rule detail page. */
+   * genuine per-type table on the rule detail page. Single-type rules. */
   objects: Record<string, unknown>[]
+  /** The same, per object type - every rule. */
+  objects_by_type?: Record<string, Record<string, unknown>[]>
   total: number
+  /** The rule's whole counts, triage included; null when it is disabled. */
+  result?: ComplianceRuleResult | null
+  evaluated_at?: string
 }
 
 /** One failed rule on the per-device compliance status page. */
@@ -8013,6 +9986,11 @@ export interface DeviceComplianceViolation {
   cf_key: string
   eol_fail_on?: string
   coverage_fail_on?: string
+  fail_on_unknown?: boolean
+  scope?: ComplianceExpr | null
+  condition?: ComplianceExpr | null
+  refs?: Record<string, ComplianceRef>
+  detail?: string
 }
 
 /** Response of GET /api/compliance/devices/<id>/ - one device's compliance
@@ -8115,6 +10093,9 @@ export interface ChangeLogEntry {
   request_id: string
   /** How the change arrived: "ui", "api", "system", or "" on old rows. */
   via: string
+  /** Why a derived write happened ("Requirement 'WMS to Broker': install
+   * added on wms-07"); blank for ordinary edits. */
+  cause?: string
   /** Full row snapshots - only present on the detail endpoint. Pre is null
    * for a create, post is null for a delete. */
   pre_change?: Record<string, unknown> | null
@@ -8769,9 +10750,30 @@ export interface TenantSettings {
   capacity_critical_pct: number
   /** Support coverage ending within this many days reads as Expiring (#421). */
   coverage_warning_days: number
+  /** Floor-plan cable lengths: slack added to a route (%), a service loop
+   * per end (mm), the round-up step (mm, 0 = to the mm) and the port height
+   * of a device on its own tile (mm). */
+  cable_slack_pct: number
+  cable_service_loop_mm: number
+  cable_length_step_mm: number
+  cable_standalone_height_mm: number
+  /** The PDF report cover's look (api/report_cover.py): its full-page
+   * background and the wave background's horizon, wave and crest colours
+   * (a plain background is the horizon colour). The image itself goes
+   * through /api/tenant-settings/report-cover/. */
+  report_cover_style: ReportCoverStyle
+  report_cover_horizon: string
+  report_cover_wave: string
+  report_cover_crest: string
+  report_cover_image_set: boolean
+  report_cover_image_type: string
   updated_at: string
   deployment_defaults: TenantSettingsDefaults
 }
+
+export type ReportCoverStyle = "waves" | "plain" | "upload" | "none"
+/** A report's background: `default` is the tenant's. */
+export type ReportCoverBackground = "default" | ReportCoverStyle
 
 // ─── LDAP / Active Directory (admin) ────────────────────────────────────────
 export type LdapGroupType = "ad" | "group_of_names" | "posix"
@@ -8897,13 +10899,7 @@ export interface SsoGroupMapping {
 }
 
 export type ChannelKind =
-  | "webhook"
-  | "email"
-  | "slack"
-  | "teams"
-  | "discord"
-  | "pagerduty"
-  | "telegram"
+  "webhook" | "email" | "slack" | "teams" | "discord" | "pagerduty" | "telegram"
 
 export type MinSeverity = "info" | "warning" | "critical"
 
@@ -8923,8 +10919,11 @@ export interface NotificationChannel {
   match_prefix: string | null
   match_ip: string | null
   match_device: string | null
-  /** Telegram bot token is write-only; reads only say whether one is stored. */
+  /** Credentials are write-only; reads only say whether one is stored. The
+   *  webhook `url` and PagerDuty `routing_key` are sent inside `config`. */
   bot_token_set: boolean
+  url_set: boolean
+  routing_key_set: boolean
   auto_created: boolean
   created_at: string
   updated_at: string
@@ -8984,11 +10983,7 @@ export interface PlanningBoard {
 }
 
 export type PlanningSemanticGroup =
-  | "backlog"
-  | "unstarted"
-  | "started"
-  | "completed"
-  | "cancelled"
+  "backlog" | "unstarted" | "started" | "completed" | "cancelled"
 
 export interface PlanningStatus {
   id: string
@@ -9494,6 +11489,9 @@ export interface DeviceCoverageContract {
 /** GET /api/devices/<id>/coverage/ */
 export interface DeviceCoverage {
   status: CoverageStatus
+  /** Start of the contract that sets the end, when you may view it; null
+   * for a warranty, a hidden contract or one without a start (#436). */
+  start: string | null
   end: string | null
   warranty_end: string | null
   warning_days: number
@@ -9501,6 +11499,89 @@ export interface DeviceCoverage {
   /** Contracts covering the device that the caller may not view. */
   hidden_contracts: number
   flags: { code: "contract_after_eol" | "eol_under_contract"; label: string }[]
+}
+
+// ─── Lifecycle overview (#436) ─────────────────────────────────────────
+
+/** Where a lifecycle row's end comes from. `software` is installed
+ * software: one row per install. */
+export type LifecycleSource = "hardware" | "os" | "coverage" | "software"
+/** The fixed bucket of a row's end, the same scale for every source. */
+export type LifecycleWindow = "past" | "d90" | "d180" | "y1" | "later" | "none"
+
+/** GET /api/lifecycle/ - one row per object per source. */
+export interface LifecycleRow {
+  object: { id: string; name: string; kind: "device" | "virtualmachine" }
+  source: LifecycleSource
+  /** Device type, platform, contract (`id` null and named "Contract" when
+   * you may not view it) or the warranty; null when nothing covers it. */
+  item: {
+    type:
+      "devicetype" | "platform" | "supportcontract" | "warranty" | "application"
+    id: string | null
+    name: string
+    /** OS and software rows: "entered" or the end-of-life source. */
+    date_source?: string | null
+    /** Software rows: the application, its version and the install. */
+    application?: string
+    version?: string
+    install?: string
+  } | null
+  /** Hardware and OS: an EolStatus; coverage: a CoverageStatus. */
+  status: EolStatus | CoverageStatus
+  start: string | null
+  end: string | null
+  /** Negative once the end has passed; null without a date. */
+  days_left: number | null
+  window: LifecycleWindow
+  site: { id: string; name: string } | null
+  role: { id: string; name: string; color: string } | null
+  tenant: { id: string; name: string }
+  manufacturer: { id: string; name: string } | null
+  tags: Tag[]
+}
+
+export interface LifecycleOverview {
+  results: LifecycleRow[]
+  /** Every row the request reached, the undated ones included. */
+  counts: Record<LifecycleWindow, number>
+  windows: { eol_warning_days: number; coverage_warning_days: number }
+  eol_enabled: boolean
+}
+
+/** Where a device's or VM's software version came from (#451). */
+export type SoftwareVersionSource =
+  "" | "manual" | "snmp" | "virtualization" | "oxidized" | "import"
+
+/** One row of GET /api/lifecycle/versions/ (#451): a platform and version
+ * with its device and VM counts. */
+export interface SoftwareVersionRow {
+  platform: { id: string; name: string; target_version: string } | null
+  /** "" for objects with no version recorded. */
+  version: string
+  devices: number
+  virtual_machines: number
+  /** Null without a version or a platform target. */
+  on_target: boolean | null
+  /** Count per source; "none" for no source. */
+  sources: Partial<Record<Exclude<SoftwareVersionSource, ""> | "none", number>>
+}
+
+export interface SoftwareVersionFacet {
+  id: string | null
+  name: string
+  count: number
+  color?: string
+}
+
+/** GET /api/lifecycle/versions/?site=&platform=&role= */
+export interface SoftwareVersionSummary {
+  results: SoftwareVersionRow[]
+  facets: {
+    site: SoftwareVersionFacet[]
+    platform: SoftwareVersionFacet[]
+    role: SoftwareVersionFacet[]
+  }
 }
 
 /** GET /api/devices/coverage-summary/?site=&manufacturer= */
@@ -9607,6 +11688,132 @@ export interface PowerFeedWritePayload {
   custom_fields?: Record<string, unknown>
 }
 
+// ─── Cooling (#434) ────────────────────────────────────────────────────
+export interface CoolingSourceOption {
+  id: string
+  name: string
+}
+
+/** A source's load: the heat of the racks its feeds reach (each once)
+ * against its rating (`api/capacity.py cooling_source_capacity`). */
+export interface CoolingSourceCapacity {
+  /** The source's rated capacity (W); 0 without one. */
+  available_w: number
+  heat_allocated_w: number
+  heat_maximum_w: number
+  /** Racks the source's feeds reach. */
+  racks: number
+}
+
+export interface CoolingSource {
+  id: string
+  numid: number | null
+  name: string
+  site: SiteOption | null
+  location: { id: string; name: string } | null
+  type: string
+  type_display: string
+  status: StatusMini | null
+  /** "" when not recorded. */
+  fluid: string
+  fluid_display: string
+  rated_capacity_w: number | null
+  redundancy_group: string
+  device: { id: string; name: string } | null
+  comments: string
+  feed_count: number
+  capacity: CoolingSourceCapacity
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface CoolingSourceWritePayload {
+  name: string
+  site_id: string
+  location_id?: string | null
+  type?: string
+  status_id?: string | null
+  fluid?: string
+  rated_capacity_w?: number | null
+  redundancy_group?: string
+  device_id?: string | null
+  comments?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
+}
+
+/** A feed's load: its rack's heat against what the feed delivers - rated
+ * capacity × max utilisation (`api/capacity.py cooling_feed_capacity`). */
+export interface CoolingFeedCapacity {
+  available_w: number
+  rated_w: number
+  heat_allocated_w: number
+  heat_maximum_w: number
+  /** A redundant feed is measured against the whole rack too. */
+  redundant: boolean
+  /** "intakes": the heat of the devices cooling intakes connect to the
+   * feed, CDUs included; "rack": its rack's heat. */
+  basis?: "intakes" | "rack"
+  /** How many devices the intakes connect, on the "intakes" basis. */
+  devices?: number | null
+}
+
+/** A feed's flow (#434): the summed max flow of the intakes on it against
+ * its own flow rate, in L/min; null where not recorded. */
+export interface CoolingFeedFlow {
+  connected_lpm: number | null
+  rated_lpm: number | null
+  intakes: number
+}
+
+export type CoolingFeedType = "primary" | "redundant"
+
+export interface CoolingFeed {
+  id: string
+  numid: number | null
+  name: string
+  source: CoolingSourceOption
+  /** The source's site. */
+  site: SiteOption | null
+  rack: { id: string; name: string } | null
+  status: StatusMini | null
+  type: CoolingFeedType
+  type_display: string
+  rated_capacity_w: number | null
+  /** Decimal strings, null when not recorded. */
+  flow_rate_lpm: string | null
+  supply_temp_c: string | null
+  return_temp_c: string | null
+  connector: string
+  max_utilization: number
+  comments: string
+  capacity: CoolingFeedCapacity
+  flow?: CoolingFeedFlow
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface CoolingFeedWritePayload {
+  name: string
+  source_id: string
+  rack_id?: string | null
+  status_id?: string | null
+  type?: CoolingFeedType
+  rated_capacity_w?: number | null
+  flow_rate_lpm?: string | null
+  supply_temp_c?: string | null
+  return_temp_c?: string | null
+  connector?: string
+  max_utilization?: number
+  comments?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
+}
+
 // ─── Wireless ──────────────────────────────────────────────────────────
 export interface WirelessLANGroupOption {
   id: string
@@ -9632,10 +11839,7 @@ export interface WirelessLANGroupWritePayload {
 }
 
 export type WirelessLANStatus =
-  | "active"
-  | "reserved"
-  | "disabled"
-  | "deprecated"
+  "active" | "reserved" | "disabled" | "deprecated"
 export type WirelessAuthType =
   | ""
   | "open"
@@ -9726,11 +11930,7 @@ export type IPSecEncryption =
   | "aes-256-gcm"
   | "3des-cbc"
 export type IPSecAuth =
-  | "hmac-sha1"
-  | "hmac-sha256"
-  | "hmac-sha384"
-  | "hmac-sha512"
-  | "hmac-md5"
+  "hmac-sha1" | "hmac-sha256" | "hmac-sha384" | "hmac-sha512" | "hmac-md5"
 
 export interface IPSecProfileOption {
   id: string
@@ -9775,11 +11975,7 @@ export interface IPSecProfileWritePayload {
 
 export type TunnelStatus = "planned" | "active" | "disabled"
 export type TunnelEncapsulation =
-  | "ipsec-tunnel"
-  | "ipsec-transport"
-  | "gre"
-  | "ip-ip"
-  | "wireguard"
+  "ipsec-tunnel" | "ipsec-transport" | "gre" | "ip-ip" | "wireguard"
 
 export type TunnelTerminationRole = "peer" | "hub" | "spoke"
 
@@ -9798,8 +11994,32 @@ export interface TunnelTermination {
     vm: { id: string; name: string }
   } | null
   outside_ip: { id: string; ip_address: string } | null
+  /** WireGuard (a `wireguard` tunnel only). `private_key_ref` is a reference
+   * - `<keychain:NAME>` or a path on the box - never the key. */
+  listen_port: number | null
+  public_key: string
+  private_key_ref: string
+  /** The addresses behind this end; the other ends route them to it. */
+  allowed_ips: string[]
+  endpoint_port: number | null
+  persistent_keepalive: number | null
+  /** The far end(s) this end talks to (detail reads only). */
+  peers?: TunnelPeer[]
   created_at: string
   updated_at: string
+}
+
+export interface TunnelPeer {
+  id: string
+  device: string | null
+  interface: string | null
+  role: TunnelTerminationRole
+  outside_ip: string | null
+  endpoint_port: number | null
+  endpoint: string | null
+  public_key: string | null
+  allowed_ips: string[]
+  persistent_keepalive: number | null
 }
 
 export interface TunnelTerminationWritePayload {
@@ -9808,6 +12028,12 @@ export interface TunnelTerminationWritePayload {
   interface_id?: string | null
   vm_interface_id?: string | null
   outside_ip_id?: string | null
+  listen_port?: number | null
+  public_key?: string
+  private_key_ref?: string
+  allowed_ips?: string[]
+  endpoint_port?: number | null
+  persistent_keepalive?: number | null
 }
 
 export interface Tunnel {
@@ -9904,6 +12130,8 @@ export interface ConfigContext {
   sites: { id: string; name: string }[]
   device_roles: NamedRef[]
   platforms: NamedRef[]
+  /** Match devices/VMs carrying any of these (the tenant's own) tags. */
+  tags: Tag[]
   created_at: string
   updated_at: string
 }
@@ -9918,12 +12146,22 @@ export interface ConfigContextWritePayload {
   site_ids?: string[]
   device_role_ids?: string[]
   platform_ids?: string[]
+  tag_ids?: number[]
 }
+
+/** Where a rendered value came from: a matching context, or the object's own
+ * local context data (always last). */
+export type ConfigContextSource =
+  | { kind: "context"; id: string; name: string; weight: number }
+  | { kind: "local"; name: string }
 
 /** Rendered config context for a device/VM (GET .../config-context/). */
 export interface RenderedConfigContext {
   rendered: Record<string, unknown>
+  /** Names of the matching contexts, in merge order. */
   applied: string[]
+  /** Every source in merge order, local data last. */
+  sources?: ConfigContextSource[]
 }
 
 // ─── Export templates ──────────────────────────────────────────────────
@@ -9943,6 +12181,8 @@ export interface ExportTemplate {
   target_path: string
   /** Read-only: `target_path`, or `<name>.<file_extension>` when blank. */
   bundle_path: string
+  /** Read-only: `target_path` ends in `/` - one file per `{% file %}` block. */
+  is_directory: boolean
   created_at: string
   updated_at: string
 }
@@ -9966,6 +12206,7 @@ export interface ConfigBundleTemplate {
   object_type: string
   target_path: string
   bundle_path: string
+  is_directory: boolean
 }
 
 /** The set of files a device role needs, rendered together. */
@@ -10011,8 +12252,18 @@ export interface DeviceRenderFile {
   diff: string
 }
 
-/** GET /api/devices/<id>/render/?template=<id> */
-export type DeviceRenderResult = DeviceRenderFile
+/** GET /api/devices/<id>/render/?template=<id> - one file, or for a
+ * directory template (target path ending in `/`) one per file block. */
+export type DeviceRenderResult = DeviceRenderFile | DeviceDirectoryRenderResult
+
+/** A directory template's render: the files its `{% file %}` blocks wrote. */
+export interface DeviceDirectoryRenderResult {
+  template: string
+  template_id: string
+  /** The directory, ending in `/`. */
+  path: string
+  files: Record<string, DeviceRenderFile>
+}
 
 /** GET /api/devices/<id>/render/?bundle=<id|name|role> */
 export interface DeviceBundleRenderResult {
@@ -10102,6 +12353,45 @@ export async function ioExportFile(
   }
 }
 
+/** Filters for the CycloneDX SBOM (`/api/sbom/`): ids per filter. */
+export interface SbomFilter {
+  site?: string[]
+  tag?: string[]
+  role?: string[]
+  device?: string[]
+  virtual_machine?: string[]
+}
+
+/** The CycloneDX SBOM URL for a GET download (a site's, a few hosts'). */
+export function sbomUrl(filter: SbomFilter = {}): string {
+  const p = new URLSearchParams()
+  for (const [k, ids] of Object.entries(filter)) {
+    if (ids?.length) p.set(k, ids.join(","))
+  }
+  const q = p.toString()
+  return q ? `/api/sbom/?${q}` : "/api/sbom/"
+}
+
+/** The CycloneDX SBOM as a file to save. POSTed: a list's filtered rows can
+ * run to more ids than a URL holds. */
+export async function sbomFile(
+  filter: SbomFilter
+): Promise<{ blob: Blob; filename: string }> {
+  const path = "/api/sbom/"
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrf() },
+    body: JSON.stringify(filter),
+  })
+  if (res.status === 401) onUnauthorized?.()
+  if (!res.ok) throw await apiErrorOf(res, path)
+  const named = /filename="([^"]+)"/.exec(
+    res.headers.get("Content-Disposition") ?? ""
+  )
+  return { blob: await res.blob(), filename: named?.[1] ?? "sbom.cdx.json" }
+}
+
 export const ioFields = (slug: string) =>
   api<IOFields>(`/api/io/${slug}/fields/`)
 
@@ -10168,7 +12458,7 @@ export interface SecretStoreProvider {
 }
 
 // ─── Automation targets + deploy (Phase 2) ─────────────────────────────
-export type AutomationKind = "awx" | "webhook"
+export type AutomationKind = "awx" | "webhook" | "script"
 
 export interface AutomationTarget {
   id: string
@@ -10177,6 +12467,9 @@ export interface AutomationTarget {
   kind_display: string
   enabled: boolean
   base_url: string
+  /** The script a `script` target runs. */
+  script: string | null
+  script_name: string | null
   job_template_id: string
   token_set: boolean
   ssl_verify: boolean
@@ -10192,6 +12485,7 @@ export interface AutomationTargetWritePayload {
   kind: AutomationKind
   enabled?: boolean
   base_url: string
+  script?: string | null
   job_template_id?: string
   token?: string
   ssl_verify?: boolean
@@ -10204,8 +12498,11 @@ export interface DeployRun {
   id: string
   target_name: string
   event: string
+  /** The dispatched ids; the key keeps its name for compatibility. */
   device_ids: string[]
-  status: "queued" | "launched" | "failed"
+  /** What the ids are: "device", or "virtualmachine" for a provision. */
+  object_type?: string
+  status: DeployRunStatus
   detail: string
   created_at: string
   finished_at: string | null
@@ -10213,6 +12510,147 @@ export interface DeployRun {
   retry_of: string | null
   can_retry: boolean
   duration_ms: number | null
+  /** The script run a `script` target started; its end sets the status. */
+  script_run: string | null
+  script_run_status: ScriptRunStatus | null
+  /** The runner was asked to only report what it would do. */
+  dry_run?: boolean
+  /** Set when this dispatch is one step (1-based) of a pipeline run. */
+  pipeline_run?: string | null
+  pipeline_step?: number | null
+}
+
+export type DeployRunStatus = "queued" | "launched" | "succeeded" | "failed"
+
+export interface DeployPipelineStep {
+  id?: string
+  order?: number
+  target: string
+  target_name?: string
+  target_kind?: AutomationKind
+  target_kind_display?: string
+  target_enabled?: boolean
+  stop_on_failure: boolean
+  wait_for_result: boolean
+  timeout_minutes: number
+}
+
+export type DeployPipelineRunStatus =
+  "queued" | "running" | "succeeded" | "failed" | "cancelled"
+
+/** How one step of a pipeline run stands; pending/skipped/cancelled steps
+ * never started. */
+export type DeployPipelineStepStatus =
+  | "pending"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "cancelled"
+
+export interface DeployPipeline {
+  id: string
+  name: string
+  description: string
+  object_types: string[]
+  auto_on_change: boolean
+  enabled: boolean
+  roles: string[]
+  role_details: { id: string; name: string; color: string }[]
+  steps: DeployPipelineStep[]
+  steps_count: number
+  last_run: {
+    id: string
+    numid: number | null
+    status: DeployPipelineRunStatus
+    created_at: string
+    finished_at: string | null
+  } | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DeployPipelineWritePayload {
+  name: string
+  description?: string
+  object_types?: string[]
+  auto_on_change?: boolean
+  enabled?: boolean
+  roles?: string[]
+  steps: Omit<DeployPipelineStep, "id" | "order">[]
+}
+
+/** The as-code form: targets and roles by name. */
+export interface DeployPipelineCode {
+  name: string
+  description?: string
+  object_types?: string[]
+  auto_on_change?: boolean
+  enabled?: boolean
+  roles?: string[]
+  steps: {
+    target: string
+    stop_on_failure?: boolean
+    wait_for_result?: boolean
+    timeout_minutes?: number
+  }[]
+}
+
+export interface DeployPipelineRunStep {
+  step: number
+  target: string | null
+  target_name: string | null
+  kind: AutomationKind | null
+  stop_on_failure: boolean
+  wait_for_result: boolean
+  timeout_minutes: number | null
+  status: DeployPipelineStepStatus
+  deploy_run: string | null
+  detail: string
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  script_run: string | null
+  script_run_status: ScriptRunStatus | null
+  result_deadline: string | null
+  /** Detail only: the script run log, or the lines the runner posted. */
+  log?: string
+  /** "script", "runner", "hidden" (no right to the script's runs) or null. */
+  log_source?: "script" | "runner" | "hidden" | null
+  outputs?: { name: string; size: number; url: string }[]
+}
+
+export interface DeployPipelineRun {
+  id: string
+  numid: number | null
+  pipeline: string | null
+  pipeline_name: string
+  object_type: string
+  object_ids: string[]
+  objects: { id: string; name: string }[]
+  trigger: "deploy" | "on_change" | "rerun"
+  trigger_display: string
+  rerun_of: string | null
+  rerun_of_numid: number | null
+  triggered_by_name: string | null
+  dry_run: boolean
+  status: DeployPipelineRunStatus
+  detail: string
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  steps: DeployPipelineRunStep[]
+  failing_step: {
+    step: number | null
+    target_name: string | null
+    error: string
+  } | null
+}
+
+export interface DeployPipelineRunDetail extends DeployPipelineRun {
+  next_payload: Record<string, unknown> | null
 }
 
 export type DriftStatus = "in_sync" | "drift" | "unknown" | "error"
@@ -10280,12 +12718,7 @@ export interface SnmpBulkStart {
 }
 
 export type SnmpBulkOutcome =
-  | "ok"
-  | "unreachable"
-  | "failed"
-  | "denied"
-  | "busy"
-  | "outpost"
+  "ok" | "unreachable" | "failed" | "denied" | "busy" | "outpost"
 
 /** `GET /api/monitoring/snmp-drift/bulk-runs/<run_id>/`. */
 export interface SnmpBulkRun {
@@ -10328,12 +12761,7 @@ export interface PresentUser {
 // ---- Background jobs (RQ queue admin) -------------------------------------
 
 export type JobState =
-  | "queued"
-  | "started"
-  | "deferred"
-  | "scheduled"
-  | "finished"
-  | "failed"
+  "queued" | "started" | "deferred" | "scheduled" | "finished" | "failed"
 
 // ─── NetBox import (GET/POST /api/netbox-import/) ───────────────────────────
 export interface NetBoxTestResult {
@@ -10693,7 +13121,8 @@ export interface SiteMarker {
   longitude: string
   label: string
   description: string
-  device: { id: string; name: string } | null
+  /** A device the reader may not view: `{id: null, name: "Hidden", hidden}`. */
+  device: { id: string | null; name: string; hidden?: true } | null
   /** Exactly one of a floor tile type or a device role - `kind` says which. */
   type: {
     id: string
@@ -10719,14 +13148,11 @@ export type FloorPlanLinkKind =
   | "device"
   | "powerpanel"
   | "powerfeed"
+  | "coolingsource"
   | "floorplan"
 
 export type FloorTileStatus =
-  | ""
-  | "active"
-  | "planned"
-  | "reserved"
-  | "decommissioning"
+  "" | "active" | "planned" | "reserved" | "decommissioning"
 
 export interface FloorPlanTile {
   id: string
@@ -10747,19 +13173,36 @@ export interface FloorPlanTile {
     name: string
     slug: string
     color: string
+    icon?: string
     is_patch_panel: boolean
     has_fov: boolean
   } | null
-  orientation: 0 | 90 | 180 | 270
+  /** Degrees: 0/90/180/270 on a grid plan, any whole degree 0-359 on a
+   * free plan. */
+  orientation: number
   label: string
   color: string
   status: FloorTileStatus
   link_kind: "" | FloorPlanLinkKind
   linked: {
     kind: FloorPlanLinkKind
-    id: string
+    /** Null, with `hidden`, when the reader may not view the object. */
+    id: string | null
     name: string
-    route: string
+    route?: string
+    /** An object the reader may not view: name "Hidden", no id, route,
+     * room or role. The tile keeps its place and can't be opened. */
+    hidden?: true
+    /** A device, rack or cabinet: the room it names. */
+    room?: FloorPlanRoomRef | null
+    /** A device, rack or cabinet: its role as it is now - a tile with no
+     * type of its own draws in its colour and icon. */
+    role?: { id: string; name: string; color: string; icon: string } | null
+    /** A device's own icon, else its type's ("" for neither, and for a
+     * rack or cabinet) - it wins over the tile's type and the role. */
+    icon?: string
+    /** A device's measured size - what "Fit to size" resizes to. */
+    size_mm?: FloorObjectSize | null
   } | null
   fov_deg: number | null
   fov_distance: number | null
@@ -10768,8 +13211,238 @@ export interface FloorPlanTile {
   fov_anchor: FovAnchor
   /** PTZ: coverage is a full 360° ring (radius = reach), not a cone. */
   fov_ptz: boolean
+  /** A device or rack tile drawn as its coloured box or as its photo. */
+  display?: FloorTileDisplay
+  /** Stacking order on a free plan. */
+  z?: number
+  /** The photo a device or rack tile can show; null without one. */
+  photo?: FloorTilePhoto | null
+  /** A riser: cables leave this floor through it for another. */
+  riser?: boolean
+  /** The riser on another floor this one pairs with. Hidden (no id) on a
+   * floor the reader may not view. */
+  riser_pair?: {
+    id: string | null
+    label: string
+    floor_plan: { id: string; name: string } | null
+    hidden?: true
+  } | null
+  /** The vertical run to the paired floor; blank works it out. */
+  riser_height_mm?: number | null
   created_at: string
   updated_at: string
+}
+
+/** A riser tile on another floor of the site -
+ * GET /api/floor-plans/<id>/risers/ */
+export interface FloorPlanRiserOption {
+  id: string
+  label: string
+  floor_plan: { id: string; name: string; stack: string }
+  /** The riser it pairs with now, or null. */
+  pair: string | null
+}
+
+/** One end of a cable in the schedule. */
+export interface CableScheduleEnd {
+  device: string | null
+  port: string | null
+  room: string | null
+  on_floor: boolean
+  hidden: boolean
+}
+
+export interface CableScheduleRow {
+  id: string
+  label: string
+  type: string
+  type_display: string
+  color: string
+  status: { name: string; color: string; text_color: string } | null
+  a: CableScheduleEnd[]
+  b: CableScheduleEnd[]
+  trays: string[]
+  /** The trays in order, and the riser it leaves the floor by. */
+  route: string
+  /** "stored": a documented route; "trays": tray membership only. */
+  route_source: "stored" | "trays" | ""
+  riser: { label: string; floor: string; vertical_m: number | null } | null
+  computed_m: number | null
+  length: number | null
+  length_unit: string
+  length_m: number | null
+  length_source: "computed" | "entered" | ""
+  notes: string
+  rooms: string[]
+}
+
+/** GET /api/floor-plans/<id>/cable-schedule/ */
+export interface CableSchedule {
+  group: "room" | "tray"
+  rows: CableScheduleRow[]
+  groups: { name: string; rows: string[] }[]
+  totals: {
+    type: string
+    label: string
+    count: number
+    metres: number
+    unmeasured: number
+  }[]
+  total: { count: number; metres: number; unmeasured: number }
+  hidden_count: number
+}
+
+/** A role or status in a floor-plan report's inventory. */
+export interface ReportBadge {
+  name: string
+  color: string
+  text_color: string
+}
+
+/** A rack, cabinet or device in a floor-plan report's inventory. */
+export interface ReportInventoryRow {
+  kind: "rack" | "cabinet" | "device"
+  id: string
+  name: string
+  /** The rack or cabinet a device is listed under. */
+  parent: string | null
+  role: ReportBadge | null
+  type: string
+  status: ReportBadge | null
+  /** A device's rack or cabinet (Hidden when the reader may not view it). */
+  holder: string
+  position: string
+  serial: string
+  asset_tag: string
+  room: string
+  level: string
+}
+
+/** `POST /api/floor-plans/{id}/export/report/tables/`. */
+export interface FloorPlanReportTables {
+  title: string
+  scope: string
+  levels: string[]
+  cables?: CableSchedule
+  inventory?: {
+    groups: { name: string; rows: ReportInventoryRow[] }[]
+    count: { racks: number; cabinets: number; devices: number }
+    hidden_count: number
+  }
+  ports?: {
+    rows: {
+      device: string
+      device_id: string
+      port: string
+      cable: string
+      cable_color: string
+      far: string
+    }[]
+    hidden_count: number
+    truncated: boolean
+  }
+}
+
+export type FloorTileDisplay = "icon" | "photo"
+
+export interface FloorTilePhoto {
+  url: string
+  /** Height / width; null when unknown. */
+  aspect: number | null
+  /** The object's own image, or its device type's front image. */
+  source: "device" | "rack" | "type"
+  /** The device's width (its own, else its type's), for a true-size
+   * photo. */
+  width_mm: number | null
+}
+
+/** A device's measured body size in mm - its own, else its type's; each
+ * axis null where unknown. */
+export interface FloorObjectSize {
+  width_mm: number | null
+  height_mm: number | null
+  depth_mm: number | null
+}
+
+export interface FloorPlanRoomRef {
+  id: string
+  name: string
+  code: string
+  color: string
+}
+
+/** GET /api/floor-plans/<id>/placeable/ - a candidate for the Place picker. */
+export interface FloorPlanPlaceable {
+  kind: "device" | "rack" | "cabinet"
+  id: string
+  name: string
+  /** 0: in the room or location near the pointer; 1: the floor's location;
+   * 2: the rest of the site. */
+  rank: 0 | 1 | 2
+  room: FloorPlanRoomRef | null
+  location: { id: string; name: string } | null
+  status: { id: string; name: string; color: string } | null
+  role: { id: string; name: string; color: string; icon?: string } | null
+  photo: FloorTilePhoto | null
+  /** A device's measured size; null without one (and for racks and
+   * cabinets). Optional for older payloads. */
+  size_mm?: FloorObjectSize | null
+  placed_count: number
+  placed_on: {
+    floor_plan: { id: string; name: string; stack: string }
+    tile_id: string
+    this_floor: boolean
+  }[]
+  /** On a plan made from the Site map: the device's GPS position in the
+   * plan's cells, when it is on the grid. */
+  gps_cell?: [number, number] | null
+}
+
+/** POST /api/floor-plans/<id>/assign-rooms/ - a placed object whose tile
+ * stands in another room's area. */
+export interface FloorPlanRoomMismatch {
+  kind: "device" | "rack" | "cabinet"
+  id: string
+  name: string
+  tile_id: string
+  room: FloorPlanRoomRef | null
+  area_room: FloorPlanRoomRef
+  can_change: boolean
+}
+
+/** A 409 from a save: a row changed (or deleted) elsewhere. A cable's
+ * stored route (`cable_path`) or its length (`cable`) carry the cable's id. */
+export interface FloorPlanConflict {
+  kind:
+    | "tile"
+    | "area"
+    | "label"
+    | "wall"
+    | "tray"
+    | "raised_floor"
+    | "cable_path"
+    | "cable"
+  id: string
+  /** The row as it is now; null when it was deleted. */
+  current:
+    | FloorPlanTile
+    | FloorPlanArea
+    | FloorPlanLabel
+    | FloorPlanWall
+    | FloorPlanTray
+    | RaisedFloorArea
+    | StoredCablePath
+    | CableLengthNow
+    | null
+  changed_by: string
+}
+
+/** A cable's length as it is now, in a `cable` conflict. */
+export interface CableLengthNow {
+  length: number | null
+  length_unit: string
+  length_source: "" | "computed"
+  version: string
 }
 
 export interface FloorPlanTileWritePayload {
@@ -10791,6 +13464,12 @@ export interface FloorPlanTileWritePayload {
   fov_direction?: number | null
   fov_anchor?: FovAnchor
   fov_ptz?: boolean
+  display?: FloorTileDisplay
+  z?: number
+  riser?: boolean
+  /** Omit to keep the pair as it is; null unpairs. */
+  riser_to_id?: string | null
+  riser_height_mm?: number | null
 }
 
 /** POST /api/floor-plans/<id>/tiles/bulk/ - one transaction, fresh list back. */
@@ -10803,18 +13482,56 @@ export interface FloorPlanTilesBulkPayload {
 export interface FloorPlan {
   id: string
   numid: number | null
+  /** The floor's name ("B1", "Ground", "2"). */
   name: string
-  location: LocationOption
+  /** Null on a site-wide floor. */
+  location: LocationOption | null
   site: SiteOption
+  /** The floor plan (stack) this is a floor of; `aligned` when its floors
+   * are levels of one building. */
+  stack: { id: string; name: string; aligned?: boolean } | null
+  /** Sort key inside the stack, lowest first. */
+  floor_order: number
+  /** Set elevation (mm); null on an aligned floor = computed. */
+  elevation_mm: number | null
+  /** The elevation in use: set, else computed on an aligned floor plan. */
+  elevation?: number | null
+  /** The slab under this floor (mm). */
+  slab_mm?: number
+  /** Offset against the aligned stack's frame: cells and degrees. */
+  align_dx?: number
+  align_dy?: number
+  align_rot?: number
   grid_width: number
   grid_height: number
   /** Physical size of one grid cell (mm) - default 600, a raised-floor tile. */
   cell_mm: number
+  /** "grid": tiles on whole cells at quarter turns; "free": any position,
+   * size and angle. Back to grid only through snap-all/. */
+  layout_mode: FloorPlanLayoutMode
   /** Room ceiling height (mm). */
   ceiling_mm: number
-  /** Relative /media/… URL for the blueprint under the grid, or null. */
+  /** Relative /media/… URL for the floor's own picture (the floor layer,
+   * over the base map), or null. */
   background_image: string | null
   background_opacity: number
+  /** The floor layer (picture or CAD drawing) is drawn. */
+  background_shown?: boolean
+  /** The base layer: a Site map snapshot, shared by the levels of one
+   * building. */
+  base_map?: FloorPlanBaseMap | null
+  map_opacity?: number
+  /** Set by hand; null: shown except on a basement. */
+  map_shown?: boolean | null
+  /** Whether the base map is drawn. */
+  map_visible?: boolean
+  /** The floors a new frame in From site map grows, shrinks or moves
+   * together: this one and the levels of an aligned floor plan of the same
+   * grid and cell size. Null on a list. */
+  map_levels?: number | null
+  /** What is drawn on those floors, in whole cells: the smallest frame
+   * From site map may shrink to. Null when they are empty, and on a list. */
+  frame_extent?: { x: number; y: number; w: number; h: number } | null
   /** View prefs (overlay mode, grid on/off…) - free schema. */
   state: Record<string, unknown>
   description: string
@@ -10822,10 +13539,211 @@ export interface FloorPlan {
   /** The plan's CAD drawing, when it has one (docs: floor-plans "CAD
    * drawings"). The full record is GET …/drawing/. */
   drawing: FloorPlanDrawingSummary | null
+  /** "view": a live view of a rectangle of another plan - it holds nothing,
+   * shows the source's objects there and edits them. */
+  kind?: FloorPlanKind
+  /** What the plan was snapshotted from; null for a plan made otherwise. */
+  snapshot?: FloorPlanSnapshotInfo | null
+  /** The box of the Site map the grid spans, for a plan made from it. */
+  geo?: FloorPlanGeo | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export type FloorPlanKind = "plan" | "view"
+
+/** A floor's base map: a Site map snapshot under the floor drawing. */
+export interface FloorPlanBaseMap {
+  id: string
+  /** Relative /media/… URL. */
+  image: string | null
+  /** [south, west, north, east] in degrees. */
+  bbox: [number, number, number, number] | null
+  zoom: number | null
+  basemap: "map" | "sat"
+  attribution: string
+  captured_at: string | null
+  /** Floors drawing it (more than one on a building's levels); null in
+   * lists. */
+  floors: number | null
+}
+
+/** A plan's geo anchor: the Site map box its grid spans, linear in Web
+ * Mercator, and the map background rendered for it. */
+export interface FloorPlanGeo {
+  /** [south, west, north, east] in degrees. */
+  bbox: [number, number, number, number]
+  /** Metres per cell. */
+  mpc: number | null
+  zoom: number | null
+  /** The background's basemap; null when it is not a map render. */
+  basemap: "map" | "sat" | null
+  /** When the map background was rendered; null: no map background. */
+  captured_at: string | null
+  attribution: string
+}
+
+/** `POST /api/floor-plans/<id>/expand/` - the grown plan and what moved. */
+export interface FloorPlanExpanded extends FloorPlan {
+  expanded: {
+    left: number
+    top: number
+    right: number
+    bottom: number
+    moved: Record<string, number>
+    /** "rendered": the new render; "padded": the old image placed on a
+     * larger canvas; "none": no background. */
+    background: "rendered" | "padded" | "none"
+  }
+}
+
+/** `POST /api/floor-plans/<id>/import-outlines/` - an outline on offer. */
+export interface FloorPlanOutlineOffer {
+  id: string
+  label: string
+  location: { id: string; name: string } | null
+  color: string
+}
+
+/** A rectangle of a plan in whole cells. */
+export interface FloorPlanCrop {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface FloorPlanSnapshotInfo {
+  /** "view": a live view; "copy": an independent copy. */
+  kind: "view" | "copy"
+  /** Null when the source is gone or the reader may not view it. */
+  source: { id: string; name: string; stack: string } | null
+  /** In the source's cells. */
+  crop: FloorPlanCrop | null
+  at: string | null
+  /** A view's source grid, which its background image spans. */
+  source_grid?: { width: number; height: number }
+  /** A view made from a room, location or area: the area it follows (null
+   * otherwise or once the area is gone). */
+  area?: { id: string; name: string } | null
+  /** Cells around the area's box. */
+  margin?: number
+  /** The followed area's outline in the view's cells: outside it reads
+   * dimmed. */
+  mask?: [number, number][] | null
+}
+
+/** POST /api/floor-plans/<id>/snapshot/ - a dragged `crop`, or `area_id`
+ * (a room, location or area on the plan) with a `margin` in cells. */
+export interface FloorPlanSnapshotPayload {
+  name: string
+  crop?: FloorPlanCrop
+  area_id?: string
+  margin?: number
+  mode: "copy" | "view"
+  /** "plan": a floor plan of its own; "floor": a new floor of this one. */
+  target: "plan" | "floor"
+}
+
+/** GET /api/rooms/<id>/plan/ and /api/locations/<id>/plan/ - the part of a
+ * floor plan a room or location is drawn on. With no area, `areas` is empty
+ * and the rest null. */
+export interface FloorPlanRegion {
+  areas: FloorPlanRegionArea[]
+  area: string | null
+  /** The floor the picked area is on. */
+  floor_plan: FloorPlan | null
+  /** The area's box in whole cells of that floor, with the margin. */
+  crop: FloorPlanCrop | null
+  margin: number
+  /** The area's outline in the crop's cells. */
+  outline: [number, number][] | null
+  /** The rows inside the crop, in its cells. */
+  contents: FloorPlanContents | null
+}
+
+export interface FloorPlanRegionArea {
+  id: string
+  name: string
+  /** The linked room's or location's colour, else the area's own. */
+  color: string
+  floor_plan: {
+    id: string
+    name: string
+    stack: { id: string; name: string } | null
+  }
+}
+
+/** A snapshot or unlink answer: the plan, and what crossed the crop's edge
+ * and was copied whole. */
+export interface FloorPlanSnapshotResult extends FloorPlan {
+  crossing: { kind: "tile" | "area" | "label"; id: string; name: string }[]
+}
+
+export type FloorPlanLayoutMode = "grid" | "free"
+
+/** POST /api/floor-plans/<id>/snap-all/ - the tiles a free plan moves to go
+ * back onto the grid; `dry_run` changes nothing. */
+export interface FloorPlanSnapAllResult {
+  layout_mode: FloorPlanLayoutMode
+  moved: number
+  collisions: { id: string; name: string }[]
+  tiles?: FloorPlanTile[]
+}
+
+/** A floor as its floor plan lists it (the switcher's row). */
+export interface FloorPlanFloor {
+  id: string
+  numid: number | null
+  name: string
+  floor_order: number
+  location_id: string | null
+  kind?: FloorPlanKind
+  /** The plan a live view shows. */
+  view_of?: { id: string; name: string } | null
+  elevation_mm?: number | null
+  /** Set, else computed on an aligned floor plan; null otherwise. */
+  elevation?: number | null
+  ceiling_mm?: number
+  slab_mm?: number
+  grid_width?: number
+  grid_height?: number
+  cell_mm?: number
+  align_dx?: number
+  align_dy?: number
+  align_rot?: number
+}
+
+/** GET /api/floor-plan-stacks/ - a floor plan as users see it: a building or
+ * hall and its floors in order (docs: floor-plans "Floors"). */
+export interface FloorPlanStack {
+  id: string
+  name: string
+  description: string
+  /** Null for a site-wide floor plan (it spans the whole site). */
+  location: LocationOption | null
+  site: SiteOption
+  /** Its floors are levels of one building: one footprint, real heights. */
+  aligned?: boolean
+  floors: FloorPlanFloor[]
+  floor_count: number
+  /** The newest change to the floor plan or one of its floors. */
+  last_edited: string | null
+  tags: Tag[]
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPlanStackWritePayload {
+  name?: string
+  description?: string
+  /** Required on create unless location_id gives it; fixed afterwards. */
+  site_id?: string
+  /** Null: the whole site. */
+  location_id?: string | null
+  tag_ids?: number[]
 }
 
 export type FloorPlanDrawingStatus = "queued" | "ready" | "failed"
@@ -10848,7 +13766,12 @@ export interface FloorPlanDrawingLayer {
   frozen: boolean
   entity_count: number
   /** Entity counts per kind; kinds with no entities are left out. */
-  kinds: { geometry?: number; hatch?: number; dimension?: number; text?: number }
+  kinds: {
+    geometry?: number
+    hatch?: number
+    dimension?: number
+    text?: number
+  }
 }
 
 export interface FloorPlanDrawingPlacement {
@@ -10863,6 +13786,11 @@ export interface FloorPlanDrawingPlacement {
 
 /** GET /api/floor-plans/<id>/drawing/ */
 export interface FloorPlanDrawing extends FloorPlanDrawingSummary {
+  /** The part of the file a snapshot renders (drawing units); null for a
+   * whole drawing. */
+  clip?: { min_x: number; min_y: number; max_x: number; max_y: number } | null
+  /** On a live view: the plan whose drawing this is. */
+  view_of?: { id: string; name: string }
   error: string
   source_bytes: number
   source_url: string | null
@@ -10951,18 +13879,26 @@ export interface FloorPlanTray {
   /** Height above finished floor (mm, negative = underfloor). Null derives
    * from level: overhead → ceiling−300, underfloor → −300, floor → 0. */
   elevation_mm: number | null
+  /** How many cables the run holds; null when no limit is known. */
+  capacity?: number | null
   description: string
+  /** The cables in it the reader may view. */
   cables: TrayCableMini[]
+  /** Cables in it the reader may not view. */
+  hidden_cable_count: number
   created_at: string
   updated_at: string
 }
 
 export interface RaisedFloorArea {
   id: string
+  /** The whole cells it covers; a polygon's are set from its points. */
   x: number
   y: number
   width: number
   height: number
+  /** A polygon outline in cell units; empty for the rectangle above. */
+  points: [number, number][]
   /** Void depth under the finished floor (mm). */
   plenum_mm: number
   label: string
@@ -10977,6 +13913,7 @@ export interface RaisedFloorAreaWritePayload {
   y?: number
   width?: number
   height?: number
+  points?: [number, number][]
   plenum_mm?: number
   label?: string
   color?: string
@@ -10989,19 +13926,353 @@ export interface FloorPlanWallOpening {
   from: number
   to: number
   height_mm: number | null
+  /** A door's leaf: hinged at the span's start or end, swinging to the
+   * left or the right of the segment's direction. Neither: a plain
+   * opening. */
+  hinge?: "start" | "end"
+  side?: "left" | "right"
 }
 
 export interface FloorPlanWall {
   id: string
   label: string
-  /** [[x, y], …] in cell units, snapped to 0.5 steps (the tray lattice). */
+  /** [[x, y], …] in cell units, to 0.001 cell: on the half-cell lattice
+   * when drawn by hand, exactly on the outline when made from an area. */
   points: [number, number][]
   /** null = full height (the plan's ceiling). */
   height_mm: number | null
+  /** null = the standard 100 mm. */
+  thickness_mm?: number | null
   color: string
   openings: FloorPlanWallOpening[]
+  /** An outer wall: copied to new levels, outlines the 3D slab. */
+  exterior?: boolean
+  /** The area the wall was made from, while linked to it: the wall moves
+   * with the area, and a reshape offers to rebuild it. */
+  source_area?: string | null
   created_at: string
   updated_at: string
+}
+
+export type FloorPlanAreaBorder = "solid" | "dashed" | "none"
+
+/** How an area type fills its areas. */
+export type AreaPattern = "solid" | "hatched" | "crosshatched" | "dotted"
+
+/** An area type - the editable catalog of what a plain floor-plan area is
+ * (Parking, Fence, Road, Gate…), with its colour, fill pattern and icon.
+ * Nothing is seeded. */
+export interface AreaType {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  /** #rrggbb or "" for none. */
+  color: string
+  pattern: AreaPattern
+  /** Lucide icon name, or "". */
+  icon: string
+  description: string
+  area_count: number
+  created_at: string
+  updated_at: string
+}
+
+/** A sensitivity label - the editable catalog PDF reports are marked with
+ * (Public, Internal, Confidential…), coloured like a status, with an
+ * optional Lucide icon. `is_default`: new reports start with it. */
+export interface SensitivityLabel {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  /** #rrggbb or "" for none. */
+  color: string
+  text_color: string
+  /** Lucide icon name, or "". */
+  icon: string
+  description: string
+  weight: number
+  is_default: boolean
+  permissions?: ObjectPerms
+  created_at: string
+  updated_at: string
+}
+
+/** `?picker=1` on /api/sensitivity-labels/. */
+export type SensitivityLabelRef = Pick<
+  SensitivityLabel,
+  | "id"
+  | "numid"
+  | "name"
+  | "slug"
+  | "color"
+  | "text_color"
+  | "icon"
+  | "is_default"
+>
+
+export interface SensitivityLabelWritePayload {
+  name: string
+  slug?: string
+  color?: string
+  icon?: string
+  description?: string
+  weight?: number
+  is_default?: boolean
+}
+
+/** How an area names its type (and `?picker=1` on /api/area-types/). */
+export interface AreaTypeRef {
+  id: string
+  name: string
+  color: string
+  pattern: AreaPattern
+  icon: string
+}
+
+export interface AreaTypeWritePayload {
+  name: string
+  slug?: string
+  color?: string
+  pattern?: AreaPattern
+  icon?: string
+  description?: string
+}
+
+/** The floor plan a click on an area, label or Site map outline opens
+ * (docs: floor-plans "Opens links"). */
+export interface FloorPlanOpensRef {
+  id: string
+  name: string
+  stack_name: string | null
+  kind: "plan" | "view"
+  /** Whether the reader may change it - a Back button needs it. */
+  can_change: boolean
+}
+
+/** The label a Back button keeps on the plan its shape opens. */
+export interface FloorPlanBackLabelRef {
+  id: string
+  floor_plan_id: string
+  floor_plan_name: string
+  text: string
+}
+
+/** What an area or label opens: absent from older payloads. */
+export interface FloorPlanOpensFields {
+  opens?: FloorPlanOpensRef | null
+  /** It opens a plan the reader may not view. */
+  opens_hidden?: boolean
+  back_label?: FloorPlanBackLabelRef | null
+}
+
+/** A room, a location or a plain area drawn on a floor: a rotated rectangle
+ * or a polygon, under the tiles (docs: floor-plans "Rooms, areas and
+ * labels"). Coordinates are cell units. */
+export interface FloorPlanArea extends FloorPlanOpensFields {
+  id: string
+  shape: "rect" | "polygon"
+  /** The rectangle (polygon: its bounding box, read-only). */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Degrees about the rectangle's centre; 0 for a polygon. */
+  rotation: number
+  /** [[x, y], …] - a polygon's outline; [] for a rectangle. */
+  points: [number, number][]
+  room: { id: string; name: string; code: string; color: string } | null
+  location: { id: string; name: string; color: string } | null
+  /** What a plain area is (never set while a room or location is linked):
+   * its colour, fill pattern and icon. Absent from older payloads. */
+  area_type?: AreaTypeRef | null
+  /** Overrides the linked object's name. */
+  label: string
+  /** Blank: the room's or location's colour, else the type's. */
+  color: string
+  fill_opacity: number
+  border: FloorPlanAreaBorder
+  show_name: boolean
+  z: number
+  locked: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPlanAreaWritePayload {
+  floor_plan_id?: string
+  /** `bulk/` create only: the draft's id for the area, which a wall saved
+   * with it may name as its `source_area_id`. */
+  key?: string
+  shape?: FloorPlanArea["shape"]
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  rotation?: number
+  points?: [number, number][]
+  room_id?: string | null
+  location_id?: string | null
+  area_type_id?: string | null
+  opens_id?: string | null
+  label?: string
+  color?: string
+  fill_opacity?: number
+  border?: FloorPlanAreaBorder
+  show_name?: boolean
+  z?: number
+  locked?: boolean
+}
+
+/** The palette a label's colour comes from; "" is the theme's ink. */
+export type FloorPlanLabelColor =
+  "" | "muted" | "red" | "amber" | "green" | "blue" | "violet"
+
+/** Free text on a floor ("North side", "Loading dock"). Its size is the
+ * text's height on the floor in millimetres, so it scales with the plan. */
+export interface FloorPlanLabel extends FloorPlanOpensFields {
+  id: string
+  text: string
+  x: number
+  y: number
+  /** null: sized to the text. */
+  width: number | null
+  height: number | null
+  rotation: number
+  font_mm: number
+  weight: "normal" | "bold"
+  align: "left" | "center" | "right"
+  color: FloorPlanLabelColor
+  /** An opaque chip behind the text, so it reads over lines. */
+  plate: boolean
+  /** The plate's fill from the same palette; "" = the background. Absent
+   * from older payloads. */
+  plate_color?: FloorPlanLabelColor
+  /** A back label: the id of the area or label whose Back button made it. */
+  pair_id?: string | null
+  z: number
+  locked: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPlanLabelWritePayload {
+  floor_plan_id?: string
+  text?: string
+  x?: number
+  y?: number
+  width?: number | null
+  height?: number | null
+  rotation?: number
+  font_mm?: number
+  weight?: FloorPlanLabel["weight"]
+  align?: FloorPlanLabel["align"]
+  color?: FloorPlanLabelColor
+  plate?: boolean
+  plate_color?: FloorPlanLabelColor
+  opens_id?: string | null
+  z?: number
+  locked?: boolean
+}
+
+interface BulkPart<T> {
+  create?: T[]
+  /** `version`: the row's updated_at the edit is based on - a 409 when it
+   * changed since. */
+  update?: (T & { id: string; version?: string })[]
+  delete?: (string | { id: string; version?: string })[]
+}
+
+/** POST /api/floor-plans/<id>/bulk/ - tiles, areas, labels, walls, raised
+ * floors and trays in one transaction; the fresh lists come back. */
+export interface FloorPlanBulkPayload {
+  tiles?: BulkPart<FloorPlanTileWritePayload>
+  areas?: BulkPart<FloorPlanAreaWritePayload>
+  labels?: BulkPart<FloorPlanLabelWritePayload>
+  walls?: BulkPart<FloorPlanWallWritePayload>
+  raised_floors?: BulkPart<RaisedFloorAreaWritePayload>
+  cable_paths?: {
+    upsert?: CablePathUpsert[]
+    delete?: (string | { cable: string; version?: string })[]
+  }
+  /** New cables (Connect to…), made before the routes, in a planned
+   * status; all or nothing. */
+  cables?: { create: BulkCableCreate[] }
+  /** New trays - runs kept from "After placing". `key` is the draft's id
+   * for one, which `tray_order` of the paths saved with it may name. A
+   * tray with no name is called "Run N". */
+  trays?: {
+    create?: BulkTrayCreate[]
+    /** A tray update writes its cables only when it carries `cable_ids`. */
+    update?: (FloorPlanTrayWritePayload & { id: string; version?: string })[]
+    delete?: (string | { id: string; version?: string })[]
+  }
+}
+
+export interface BulkTrayCreate {
+  key: string
+  points: [number, number][]
+  level?: TrayLevel
+  elevation_mm?: number | null
+  name?: string
+  kind?: string
+  color?: string
+  capacity?: number | null
+  description?: string
+  cable_ids?: string[]
+}
+
+/** A cable's route to store: routed on the server when `legs` is left out,
+ * else the legs given (measured on the server). `write_length` fills a
+ * blank or computed length; `replace_length` also one a person entered. */
+export interface CablePathUpsert {
+  cable: string
+  kind?: StoredCablePath["kind"]
+  /** A manual leg may carry the height it runs at (a suggested run left
+   * as the cable's own path), for its drops. */
+  legs?: { points: [number, number][]; elevation_mm?: number }[]
+  tray_order?: string[]
+  /** The stored path's version the route is based on. */
+  version?: string
+  write_length?: boolean
+  replace_length?: boolean
+  /** The cable's updated_at the length write is based on. */
+  cable_version?: string
+  /** A riser tile of this plan: the cable is routed between floors through
+   * it (and the riser it pairs with), on the server; `legs` are not sent. */
+  riser?: string
+}
+
+export interface FloorPlanBulkResult {
+  tiles: FloorPlanTile[]
+  areas: FloorPlanArea[]
+  labels: FloorPlanLabel[]
+  /** The cable paths the save wrote. */
+  cable_paths?: StoredCablePath[]
+  /** The trays the save made, by the key each was sent with. */
+  trays?: { key: string; id: string }[]
+  /** The cables the save made, by the key each was sent with. */
+  cables?: { key: string; id: string }[]
+  walls?: FloorPlanWall[]
+  raised_floors?: RaisedFloorArea[]
+  /** The plan's trays afterwards. */
+  tray_rows?: FloorPlanTray[]
+}
+
+/** GET /api/floor-plans/{id}/contents/ - everything drawn on a plan in one
+ * read, every row (no pagination), each kind as its own list returns it. */
+export interface FloorPlanContents {
+  /** Newest updated_at across the rows; null for an empty plan. */
+  version: string | null
+  tiles: FloorPlanTile[]
+  trays: FloorPlanTray[]
+  walls: FloorPlanWall[]
+  raised_floors: RaisedFloorArea[]
+  areas: FloorPlanArea[]
+  labels: FloorPlanLabel[]
+  /** The stored cable routes (documented), each with its `cable`. */
+  cable_paths?: (StoredCablePath & { cable: string })[]
 }
 
 export interface FloorPlanWallWritePayload {
@@ -11009,8 +14280,12 @@ export interface FloorPlanWallWritePayload {
   label?: string
   points?: [number, number][]
   height_mm?: number | null
+  thickness_mm?: number | null
   color?: string
   openings?: FloorPlanWallOpening[]
+  /** An area of the same plan - in a `bulk/` save also the draft key of an
+   * area created in it. null unlinks. */
+  source_area_id?: string | null
 }
 
 export interface FloorPlanTrayWritePayload {
@@ -11021,8 +14296,86 @@ export interface FloorPlanTrayWritePayload {
   points?: [number, number][]
   level?: TrayLevel
   elevation_mm?: number | null
+  capacity?: number | null
   description?: string
   cable_ids?: string[]
+}
+
+/** A building (or any location) outlined on the Site map. */
+export interface SiteMapOutline {
+  id: string
+  site_id: string
+  location_id: string | null
+  location: {
+    id: string
+    name: string
+    code: string
+    /** What the location is drawn with: its own colour, else its type's. */
+    color: string
+    icon: string
+    location_type: LocationTypeRef | null
+  } | null
+  /** [[lat, lng], …], 3 to 500 points, never closed. */
+  points: [number, number][]
+  label: string
+  color: string
+  z: number
+  locked: boolean
+  /** The label drawn: its own, else the location's code, else its name. */
+  display_label: string
+  /** The colour drawn: its own, else the type's, else the location's; "" =
+   * neutral. */
+  display_color: string
+  /** The floor plan Open floor plan opens, in place of the location's. */
+  opens?: FloorPlanOpensRef | null
+  opens_hidden?: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** `POST /api/floor-plans/from-map/` - the new site-wide floor, with how
+ * many outlines became areas and the labels of those that could not. */
+export interface FloorPlanFromMap extends FloorPlan {
+  areas_created: number
+  outlines_skipped: string[]
+}
+
+export interface SiteMapOutlineWritePayload {
+  site_id?: string
+  location_id?: string | null
+  points?: [number, number][]
+  label?: string
+  color?: string
+  z?: number
+  locked?: boolean
+  opens_id?: string | null
+}
+
+/** `GET /api/site-map-outlines/<id>/drilldown/` - what is inside it. */
+export interface SiteMapOutlineDrilldown {
+  id: string
+  display_label: string
+  display_color: string
+  site: { id: string; name: string }
+  location: SiteMapOutline["location"]
+  /** In the location and under it, as far as the reader may view; null for
+   * an outline with no location. */
+  counts: {
+    locations: number
+    rooms: number
+    racks: number
+    devices: number
+  } | null
+  floor_plans: {
+    id: string
+    name: string
+    location: { id: string; name: string } | null
+    site_wide: boolean
+    floor_count: number
+    first_floor_id: string | null
+  }[]
+  /** The floor "Open floor plan" opens. */
+  open_floor_id: string | null
 }
 
 /** A geographic cable run on the site map - the outside-plant tray. */
@@ -11085,15 +14438,575 @@ export interface FloorPlanCablePath {
   label: string
   color: string
   type: string
+  /** The type's display name ("Cat6"), "" without a type. */
+  type_display?: string
+  /** The cable's status, with whether it means planned work. */
+  status?: (StatusMini & { is_planned: boolean }) | null
+  /** The stored length, in `length_unit`; null when none is recorded. */
+  length?: number | null
+  length_unit?: string
+  /** Where the length came from: "" a person entered it, "computed" a
+   * floor-plan route worked it out. */
+  length_source?: "" | "computed"
+  /** The cable's stored route on this plan (documented), or null. */
+  path?: StoredCablePath | null
+  /** Each end tile's top above the floor (mm): a rack's height, else 0 -
+   * the drop term of the route length the plan works out. */
+  a_top_mm?: number
+  b_top_mm?: number
   /** Tile ids at each end (device tile, else the device's rack tile). */
   a_tiles: string[]
   b_tiles: string[]
   /** Endpoint device + port name per termination - lets the 3D room anchor
    * the run to the exact photo-port quad. */
-  a_points: { device: string; port: string }[]
-  b_points: { device: string; port: string }[]
+  a_points: FloorPlanCableEnd[]
+  b_points: FloorPlanCableEnd[]
+  /** The ends on no tile of this plan (older servers leave them out). */
+  a_far?: FloorPlanCableFar[]
+  b_far?: FloorPlanCableFar[]
   tray_ids: string[]
 }
+
+/** An end of a plan's cable on no tile of the plan: the device and port,
+ * the floor of the plan's stack it stands on, and what to place to bring
+ * it here when it is on the plan's site - or, Hidden (#453), nothing. */
+export type FloorPlanCableFar =
+  | {
+      device: string
+      port: string
+      device_name?: string
+      hidden?: undefined
+      floor_plan?: { id: string; name: string } | null
+      place?: { kind: "device" | "rack" | "cabinet"; id: string } | null
+    }
+  | { device: null; port: null; hidden: true }
+
+/** A device as a floor plan panel names it: what it is and where it stands. */
+export interface FloorPlanPanelDevice {
+  id: string
+  name: string
+  role: { id: string; name: string; color: string } | null
+  status: StatusMini | null
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  rack: { id: string; name: string } | null
+  cabinet: { id: string; name: string } | null
+  position: number | null
+  face: string
+  u_height: number | null
+}
+
+/** One end of a cable in the cable panel - Hidden (#453) names nothing. */
+export type FloorPlanCablePanelEnd =
+  | { hidden: true; device?: undefined; port?: undefined }
+  | {
+      hidden?: undefined
+      device: FloorPlanPanelDevice | null
+      port:
+        | ({
+            kind: string
+            id: string
+            name: string
+            label: string
+            type: string
+            type_display: string
+            description: string
+          } & Partial<{
+            speed: string
+            enabled: boolean
+            mode: string
+            mac_address: string
+            vlan: {
+              id: string
+              vlan_id: number
+              name: string
+              color: string
+            } | null
+            ip_addresses: { id: string; ip_address: string }[]
+            tagged_vlan_count: number
+            lag: { id: string; name: string } | null
+            /** From the device's last SNMP poll; null when never polled. */
+            observed: {
+              oper_status: string
+              admin_status: string
+              speed_mbps: string
+            } | null
+          }>)
+        | null
+    }
+
+/** GET /api/floor-plans/{id}/cable-panel/{cable}/ */
+export interface FloorPlanCablePanel {
+  id: string
+  numid: number | null
+  label: string
+  /** The cable's display name ("Cable #12" without a label). */
+  name: string
+  type: string
+  type_display: string
+  color: string
+  status: StatusMini | null
+  length: number | null
+  length_unit: string
+  length_source: "" | "computed"
+  description: string
+  ends: { A: FloorPlanCablePanelEnd[]; B: FloorPlanCablePanelEnd[] }
+}
+
+export interface FloorPlanPanelCheck {
+  id: string
+  name: string
+  kind: string
+  status: CheckStatus
+  ip: string
+  last_checked: string | null
+  since: string | null
+  latency_ms: number | null
+}
+
+/** One entry of a detail panel's layout: a section heading or a field
+ * (a built-in key, a computed block, or `cf:<key>`). */
+export type PanelLayoutItem = { section: string } | { field: string }
+
+export type PanelObjectKind = "device" | "rack" | "cabinet"
+
+export type PanelLayoutScope =
+  | "default"
+  | "device_type"
+  | "device_role"
+  | "profile"
+  | "rack_type"
+  | "rack_role"
+  | "cabinet_type"
+  | "cabinet_role"
+
+/** The layout a panel was drawn with (`id` null: the built-in default). */
+export interface PanelLayoutResolved {
+  id: string | null
+  scope: PanelLayoutScope | "preview"
+  scope_id: string | null
+  scope_name: string
+  items: PanelLayoutItem[]
+  /** The fields a 2D plan callout adds under the name (at most 3). */
+  callout?: string[]
+}
+
+/** /api/panel-layouts/ - a tenant's saved layout. */
+export interface PanelLayoutRow {
+  id: string
+  object_kind: PanelObjectKind
+  scope: PanelLayoutScope
+  scope_id: string | null
+  scope_name: string
+  items: PanelLayoutItem[]
+  /** The fields a 2D plan callout adds under the name (at most 3). */
+  callout: string[]
+  updated_at: string
+}
+
+/** /api/panel-layouts/catalog/ */
+export type PanelLayoutCatalog = Record<
+  PanelObjectKind,
+  {
+    fields: { key: string; label: string; computed: boolean }[]
+    scopes: PanelLayoutScope[]
+    default: PanelLayoutItem[]
+    cf_model: string
+    /** The attributes a callout may show (and any `cf:<key>`). */
+    callout_fields: string[]
+    callout_max: number
+  }
+>
+
+export interface PanelCustomFieldValue {
+  key: string
+  label: string
+  type: string
+  value: string
+}
+
+type PanelRef = { id: string; name: string }
+type PanelTag = { id: number; name: string; color: string }
+
+/** A rack's or cabinet's device, as its panel lists it. */
+export type PanelContentDevice = Omit<
+  FloorPlanPanelDevice,
+  "site" | "location" | "rack" | "cabinet"
+> & {
+  device_type: string
+  rail: string
+  rail_offset_mm: number | null
+  check: CheckStatus | null
+}
+
+interface PanelCommon {
+  hidden?: undefined
+  layout: PanelLayoutResolved
+  custom_fields: PanelCustomFieldValue[]
+}
+
+export interface DeviceTilePanel extends PanelCommon {
+  kind: "device"
+  device: FloorPlanPanelDevice & {
+    numid: number | null
+    device_type: { id: string; model: string; manufacturer: string } | null
+    platform: PanelRef | null
+    serial_number: string
+    asset_tag: string
+    primary_ip: { id: string; ip_address: string; dns_name: string } | null
+    secondary_ip: { id: string; ip_address: string; dns_name: string } | null
+    oob_ip: { id: string; ip_address: string; dns_name: string } | null
+    tenant: PanelRef | null
+    description: string
+    software_version: string
+    tags: PanelTag[]
+    profiles: { id: string; name: string; color: string }[]
+  }
+  /** Present only when the layout asks for it. */
+  monitoring?: {
+    status: CheckStatus | null
+    counts: Partial<Record<CheckStatus, number>>
+    checks: FloorPlanPanelCheck[]
+  }
+  ports?: {
+    total: number
+    connected: number
+    free: number
+    disabled: number
+    observed: boolean
+    up: number | null
+    down: number | null
+  }
+  ips?: {
+    id: string
+    ip_address: string
+    dns_name: string
+    interface: string
+  }[]
+  /** The preview block: the type's photos, else the model the room draws.
+   * Present only when the layout asks for it. */
+  preview?: {
+    front_image: string | null
+    rear_image: string | null
+    model: Model3DEffective | null
+    model_ports: ModelPortsDoc | null
+    width_mm: number | null
+    height_mm: number | null
+    depth_mm: number | null
+  }
+}
+
+export interface RackTilePanel extends PanelCommon {
+  kind: "rack"
+  rack: {
+    id: string
+    numid: number | null
+    name: string
+    facility_id: string
+    role: { id: string; name: string; color: string } | null
+    status: StatusMini | null
+    site: PanelRef | null
+    location: PanelRef | null
+    rack_type: PanelRef | null
+    u_height: number
+    tenant: PanelRef | null
+    description: string
+    tags: PanelTag[]
+  }
+  monitoring: { status: CheckStatus | null }
+  devices: PanelContentDevice[]
+  used_units: number
+  hidden_count: number
+}
+
+export interface CabinetTilePanel extends PanelCommon {
+  kind: "cabinet"
+  cabinet: {
+    id: string
+    numid: number | null
+    name: string
+    facility_id: string
+    role: { id: string; name: string; color: string } | null
+    status: StatusMini | null
+    site: PanelRef | null
+    location: PanelRef | null
+    cabinet_type: PanelRef | null
+    /** Outer width × height × depth (mm), when all are known. */
+    size_mm: [number, number, number] | null
+    tenant: PanelRef | null
+    description: string
+    tags: PanelTag[]
+  }
+  monitoring: { status: CheckStatus | null }
+  devices: PanelContentDevice[]
+  hidden_count: number
+}
+
+/** GET /api/floor-plans/{id}/tile-panel/{tile}/ (and the settings
+ * preview). */
+export type FloorPlanTilePanel =
+  | { kind: PanelObjectKind; hidden: true; empty?: undefined }
+  | DeviceTilePanel
+  | RackTilePanel
+  | CabinetTilePanel
+
+/** Where one leg of a stored route starts or ends: the tile it was routed
+ * from and that tile's centre then (cells). */
+export interface CablePathAnchor {
+  /** "R": a riser the route leaves the floor by. */
+  end: "A" | "B" | "R"
+  tile: string
+  device: string | null
+  at: [number, number]
+  riser?: true
+}
+
+/** The riser a route between floors leaves this floor by. A stored path
+ * names only its tile and the vertical run; a preview names the pair. */
+export interface CablePathRiser {
+  tile: string
+  riser_mm: number
+  label?: string
+  pair?: string
+  pair_label?: string
+  floor_plan?: { id: string; name: string }
+}
+
+/** One leg of a stored route - one per far tile (a breakout has several). */
+export interface CablePathLeg {
+  from: CablePathAnchor
+  to: CablePathAnchor
+  /** The centreline, A to B, in cells. */
+  points: [number, number][]
+  /** The trays it rides, in travel order. */
+  trays: {
+    id: string
+    entry: [number, number]
+    exit: [number, number]
+    elevation_mm: number
+  }[]
+  /** Free points of a hand-drawn run. */
+  waypoints: [number, number][]
+  /** The height (mm) a run with no tray keeps - a suggested run left as
+   * the cable's own path. */
+  elevation_mm?: number
+}
+
+/** A cable's route on a plan, stored (documented) or computed (a preview,
+ * without id/version). Lengths in millimetres. */
+export interface StoredCablePath {
+  id?: string
+  kind: "trays" | "manual" | "direct"
+  /** A route between floors: this floor's part, to its riser; the
+   * lengths are the whole cable's. */
+  riser?: CablePathRiser | null
+  legs: CablePathLeg[]
+  tray_order: string[]
+  run_mm: number
+  drop_a_mm: number
+  drop_b_mm: number
+  /** Level changes and service loops. */
+  extra_mm: number
+  slack_mm: number
+  /** The total, by the tenant's length rules. */
+  length_mm: number
+  computed_at?: string | null
+  /** Out of date: an end's tile moved, or a tray it rides changed. */
+  stale?: boolean
+  version?: string | null
+}
+
+/** One cable in a route preview - POST /api/floor-plans/<id>/cable-plan/ */
+export interface CablePlanRow {
+  id: string
+  label: string
+  length: number | null
+  length_unit: string
+  length_source: "" | "computed"
+  can_change: boolean
+  /** The stored route, if any. */
+  path: StoredCablePath | null
+  /** The computed route; null with `reason` when there is none. */
+  route: StoredCablePath | null
+  reason: string
+  reachable?: boolean
+  /** Computed minus stored length (mm), null without a stored length. */
+  delta_mm: number | null
+  /** A save would fill the length without being asked to replace it. */
+  write_length: boolean
+  /** How `route` goes: through trays, along a suggested run, or direct. */
+  via?: CablePlanVia | null
+  /** The suggested runs (`CablePlanSuggestion.key`) the route uses. */
+  suggestions?: string[]
+  /** The cable's updated_at, for a length write's conflict check. */
+  cable_version?: string | null
+  /** With `objects`: the other end - the device and port, or Hidden. */
+  far?: { hidden: boolean; device_name: string | null; port: string | null }[]
+  /** With `objects`: the other end is not on this floor (not routed). */
+  off_floor?: boolean
+  /** It leaves the floor and is not routed: the nearest riser it would
+   * leave by. */
+  via_riser?: string
+}
+
+export type CablePlanVia = "trays" | "suggest" | "direct" | "riser"
+
+/** A run suggested where no tray joins a cable's ends. */
+export interface CablePlanSuggestion {
+  key: string
+  level: TrayLevel
+  elevation_mm: number
+  /** The whole run, tile centre to tile centre. */
+  points: [number, number][]
+  /** The part a new tray takes; null when nothing new is needed. */
+  run: [number, number][] | null
+  cable_ids: string[]
+}
+
+export interface CablePlanPreview {
+  cables: CablePlanRow[]
+  /** Runs suggested for cables no tray path serves (`suggest_runs`). */
+  suggestions?: CablePlanSuggestion[]
+  truncated: boolean
+  hidden_count: number
+  cell_mm: number
+  /** The CAD drawing's scale source; "assumed" when it was never set. */
+  scale_source: string | null
+}
+
+/** POST /api/floor-plans/<id>/cable-plan/ - what to preview, against the
+ * unsaved draft. */
+export interface CablePlanRequest {
+  cable_ids?: string[]
+  /** What was just placed: its cables to objects on this floor. */
+  objects?: { kind: "device" | "rack" | "cabinet"; id: string }[]
+  positions?: Record<
+    string,
+    { x: number; y: number; width?: number; height?: number }
+  >
+  new_tiles?: {
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    link_kind: string
+    link_id: string
+  }[]
+  removed_tiles?: string[]
+  /** Saved trays the draft deletes. */
+  removed_trays?: string[]
+  /** Trays as the draft has them: new ones, and saved ones (by their id)
+   * reshaped. */
+  draft_trays?: {
+    id: string
+    points: [number, number][]
+    level: TrayLevel
+    elevation_mm?: number | null
+  }[]
+  choices?: Record<string, { via: "auto" | CablePlanVia; tray_ids?: string[] }>
+  suggest_runs?: boolean
+  keep_runs?: boolean
+  run_level?: "overhead" | "underfloor"
+}
+
+/** What kind of cable Connect to… plans: network (interfaces and panel
+ * ports), console or power. */
+export type ConnectFamily = "data" | "console" | "power"
+
+/** A port as Connect to… pairs it. `media` is "" when the type does not
+ * say; `cage` is an empty transceiver cage. */
+export interface ConnectPort {
+  kind: string
+  id: string
+  name: string
+  device: string
+  device_name: string
+  type: string
+  media: "" | "copper" | "fibre" | "dac" | "cage"
+  connector: string
+  speed_mbps: number | null
+  uplink: boolean
+  mgmt_only: boolean
+  poe_mode: string
+}
+
+/** A port pair - a new cable - in a Connect to… preview. */
+export interface ConnectPair {
+  key: string
+  a: ConnectPort
+  b: ConnectPort
+  /** A cable type that fits the pair, or "". */
+  type: string
+  route: StoredCablePath | null
+  via: CablePlanVia | null
+  suggestions: string[]
+  /** Why there is no route (both ends on one tile). */
+  reason: string
+  /** Why a pair the user edited is not valid; "" when it is. */
+  error: string
+}
+
+/** POST /api/floor-plans/<id>/cable-plan/ with `mode: "new"`. */
+export interface ConnectRequest extends Omit<
+  CablePlanRequest,
+  "cable_ids" | "objects"
+> {
+  mode: "new"
+  source: { kind: "device" | "rack" | "cabinet"; id: string }[]
+  targets: { kind: "device" | "rack" | "cabinet"; id: string }[]
+  family?: ConnectFamily
+  per_target?: number
+  include_mgmt?: boolean
+  /** Ports the draft's new cables already take. */
+  exclude_ports?: { kind: string; id: string }[]
+  /** The pairs as the user edited them; without, the server proposes. */
+  pairs?: {
+    key: string
+    a: { kind: string; id: string }
+    b: { kind: string; id: string }
+  }[]
+}
+
+export interface ConnectPreview {
+  pairs: ConnectPair[]
+  /** Device pairs that got fewer cables than asked, and why. */
+  short: {
+    a_device: { id: string; name: string }
+    b_device: { id: string; name: string }
+    made: number
+    reason: string
+  }[]
+  /** The tenant's planned cable statuses - what a new cable may take. */
+  statuses: { id: string; name: string; color: string }[]
+  can_add: boolean
+  suggestions?: CablePlanSuggestion[]
+  cell_mm: number
+  scale_source: string | null
+}
+
+/** A new cable in a floor plan's save (Connect to…): the cable payload
+ * with the draft's `key`, which `cable_paths` may name as `cable`. */
+export interface BulkCableCreate {
+  key: string
+  a: { kind: string; id: string }[]
+  b: { kind: string; id: string }[]
+  type?: string
+  color?: string
+  status_id: string
+}
+
+/** One end of a plan's cable: the device and port, or - on a device the
+ * reader may not view (#453) - nothing but `hidden`. */
+export type FloorPlanCableEnd =
+  | {
+      device: string
+      port: string
+      /** The device's name. */
+      device_name?: string
+      hidden?: undefined
+    }
+  | { device: null; port: null; hidden: true }
 
 /** A tray as the routing editor sees it. */
 export interface TrayRef {
@@ -11110,35 +15023,49 @@ export interface CableRouting {
   trays: TrayRef[]
   /** Every tray on the plan - the pick list. */
   available: TrayRef[]
+  /** The route stored on this plan, null when there is none. */
+  path: StoredCablePath | null
+  /** PUT only: true when a route was stored; false when the trays named do
+   * not connect the two ends (they stay assigned, no path is stored); null
+   * when no route applies (an end off the plan, or both on one tile). */
+  reachable?: boolean | null
+  /** PUT only: why no route was stored. */
+  detail?: string
 }
 
 export interface FloorPlanWritePayload {
   name?: string
-  location_id?: string
+  /** Required on create unless stack_id or location_id gives it. */
+  site_id?: string
+  /** Null: the whole site. */
+  location_id?: string | null
+  stack_id?: string
+  floor_order?: number
   grid_width?: number
   grid_height?: number
   cell_mm?: number
   ceiling_mm?: number
   background_opacity?: number
+  background_shown?: boolean
+  map_opacity?: number
+  map_shown?: boolean | null
   state?: Record<string, unknown>
+  layout_mode?: FloorPlanLayoutMode
   description?: string
   tag_ids?: number[]
 }
 
 /** GET /api/floor-plans/<id>/state/ - live per-tile metrics, keyed by tile id. */
 export type FloorTileCheck =
-  | "up"
-  | "down"
-  | "degraded"
-  | "stale"
-  | "unknown"
-  | "skipped"
+  "up" | "down" | "degraded" | "stale" | "unknown" | "skipped"
 
 export interface FloorTileRackState {
   kind: "rack"
   used_units: number
   u_height: number
   power: RackPower
+  /** Heat load vs cooling capacity (#434), as the rack page reads it. */
+  cooling?: RackCooling
   total_weight_kg: number
   max_weight_kg: number | null
   device_count: number
@@ -11348,6 +15275,15 @@ export interface VirtualizationSource {
   sync_vm_groups: boolean
   /** Import vApp templates as if they were VMs. Off by default. */
   sync_templates: boolean
+  /** Proxmox: a VNet with exactly two NICs on this source's VMs becomes a
+   * cable between their devices' interfaces. Off by default. */
+  cables_from_vnets: boolean
+  /** Proxmox: the zone the network plan proposes new VNets in. */
+  vnet_zone: string
+  /** Proxmox: names a VNet for a cable with none, e.g. `c{n:04}`. Plan only. */
+  vnet_name_pattern: string
+  /** Proxmox: tags the plan allocates to new VNets, e.g. `1000-1999`. */
+  vnet_tag_range: string
   /** Remove a VM that has vanished from the hypervisor. */
   auto_prune: boolean
   /** Days it must stay missing first. 0 = on the next sync. */
@@ -11445,15 +15381,7 @@ export interface DnsRecordIP {
 }
 
 export type DnsRecordType =
-  | "A"
-  | "AAAA"
-  | "CNAME"
-  | "MX"
-  | "TXT"
-  | "NS"
-  | "SRV"
-  | "PTR"
-  | "CAA"
+  "A" | "AAAA" | "CNAME" | "MX" | "TXT" | "NS" | "SRV" | "PTR" | "CAA"
 
 export interface DnsRecordWritePayload {
   zone: string
@@ -11625,20 +15553,9 @@ export interface RestoreRun {
 export type ScriptLanguage = "python"
 export type ScriptVisibility = "owner" | "users" | "groups" | "global"
 export type ScriptRunStatus =
-  | "queued"
-  | "running"
-  | "success"
-  | "failed"
-  | "timeout"
-  | "canceled"
+  "queued" | "running" | "success" | "failed" | "timeout" | "canceled"
 export type ScriptParamType =
-  | "string"
-  | "text"
-  | "integer"
-  | "decimal"
-  | "boolean"
-  | "choice"
-  | "object"
+  "string" | "text" | "integer" | "decimal" | "boolean" | "choice" | "object"
 
 export interface ScriptParam {
   name: string
@@ -11815,12 +15732,7 @@ export interface ChatConnection {
 // ─── Service level agreements ───────────────────────────────────────────────
 
 export type SlaPeriod =
-  | "month"
-  | "quarter"
-  | "year"
-  | "rolling_7"
-  | "rolling_30"
-  | "rolling_90"
+  "month" | "quarter" | "year" | "rolling_7" | "rolling_30" | "rolling_90"
 
 export type SlaState = "ok" | "at_risk" | "breached" | "no_data" | "not_started"
 
@@ -12236,13 +16148,7 @@ export interface SlaPeriodSummary {
 }
 
 export type AvailabilityFrame =
-  | "24h"
-  | "7d"
-  | "30d"
-  | "90d"
-  | "mtd"
-  | "qtd"
-  | "ytd"
+  "24h" | "7d" | "30d" | "90d" | "mtd" | "qtd" | "ytd"
 
 /** One object's figure in one agreement's current period. */
 export interface SlaStatusAgreement {
@@ -12280,12 +16186,7 @@ export interface SlaStatusResponse {
 // ─── Named dashboards ───────────────────────────────────────────────────────
 
 export type DashboardScopeKey =
-  | "site"
-  | "region"
-  | "role"
-  | "device_type"
-  | "tag"
-  | "sla"
+  "site" | "region" | "role" | "device_type" | "tag" | "sla"
 
 export interface NamedDashboard {
   id: string
@@ -12493,4 +16394,1244 @@ export interface OxidizedDiff {
   too_large: boolean
   added: number
   removed: number
+}
+
+// ─── PRTG monitoring ────────────────────────────────────────────────────────
+
+/** One PRTG core server Danbyte reads from. The API key is write-only. */
+export interface PrtgConnection {
+  id: string
+  name: string
+  /** The classic web interface; the API lives under /api/ on it. */
+  url: string
+  /** Blank derives it from `url`; `v2_base` is what is used. */
+  api_v2_url: string
+  v2_base: string
+  api_key_set: boolean
+  verify_tls: boolean
+  enabled: boolean
+  status_interval_seconds: number
+  provision_scope: "checks" | "policies"
+  /** The PRTG monitoring engines whose `prtg` checks this answers. */
+  engines: string[]
+  engine_names: { id: string; name: string }[]
+  /** PRTG status code -> Danbyte state; stored cleaned, so every code is in
+   * it once saved. Empty = the defaults. */
+  state_map: Record<string, string>
+  link_mode: "auto" | "review"
+  push_enabled: boolean
+  /** Whether a push token exists. The token is shown once, by
+   * rotate-hook-token. */
+  hook_token_set: boolean
+  /** Acknowledgements both ways: Danbyte → PRTG and PRTG → Danbyte. */
+  write_acknowledgements: boolean
+  /** Pause linked PRTG devices for Danbyte's maintenance windows. */
+  sync_maintenance: boolean
+  last_maintenance_sync_at: string | null
+  /** Propose a Danbyte device for every PRTG device nothing answers to. */
+  adopt_devices: boolean
+  adopt_site: string | null
+  adopt_role: string | null
+  adopt_device_type: string | null
+  adopt_names: {
+    site: string | null
+    role: string | null
+    device_type: string | null
+  }
+  /** Read PRTG's system information into the drift inbox. */
+  read_inventory: boolean
+  last_inventory_at: string | null
+  version: string
+  supported: boolean
+  /** Whether API v2 answered the last test; null until one has run. */
+  v2_available: boolean | null
+  last_checked_at: string | null
+  last_error: string
+  last_status_at: string | null
+  last_status_summary: Record<string, number | string>
+  /** Register every device and VM (less the usual exclusions). */
+  register_all: boolean
+  register_profile: string | null
+  register_profile_name: string
+  register_group_id: string
+  register_group_path: string
+  groups_read_at: string | null
+  /** Group trees built from Danbyte's sites, locations and roles. */
+  group_layout: PrtgGroupLayout
+  layout_regions: boolean
+  layout_locations: boolean
+  /** The probe or group the layout is built under; "" = the registration
+   * group. */
+  layout_root_id: string
+  layout_root_path: string
+  last_plan_at: string | null
+  last_plan_summary: Record<string, number | string>
+  /** Writing to PRTG. */
+  seed_device_objid: string
+  send_credentials: boolean
+  /** Send the object's Danbyte tags to PRTG. */
+  send_tags?: boolean
+  /** Also site-<slug> and role-<slug>. */
+  tag_site_role?: boolean
+  auto_apply_registration: boolean
+  prune_devices: boolean
+  /** Tick "Also remove from PRTG" by default in the delete dialogs. */
+  delete_default_remove?: boolean
+  /** What this PRTG can create: v2, seed (copies), none, or "" before a
+   * check. */
+  write_mode: "" | "v2" | "seed" | "none"
+  write_detail: string
+  write_checked_at: string | null
+  last_apply_at: string | null
+  last_apply_summary: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** Whether PRTG should monitor a device or VM, set on the object. */
+export type PrtgSync = "inherit" | "always" | "never"
+
+export type PrtgGroupLayout = "none" | "sites" | "roles" | "sites_roles"
+
+/** GET /api/prtg/connections/<id>/layout-preview/ */
+export interface PrtgLayoutPreview {
+  root: { objid: string; path: string; name: string; kind: string } | null
+  layout: PrtgGroupLayout
+  rows: {
+    object: { kind: "device" | "virtual_machine"; id: string; name: string }
+    path: {
+      name: string
+      kind: "region" | "site" | "location" | "role"
+      exists: boolean
+      matched_by: "" | "tag" | "name"
+    }[]
+  }[]
+  groups: { path: string; names: string[]; objects: string[] }[]
+  /** How many devices and VMs the caller may view; the rows cover the
+   * first 500. */
+  total?: number
+}
+
+/** Where a profile puts the credentials one PRTG settings section holds. */
+export type PrtgCredentialMode = "inherit" | "group" | "device"
+
+export interface PrtgCredentialPlacementEntry {
+  mode: PrtgCredentialMode
+  credential?: string
+  snmp_profile?: string
+}
+
+export type PrtgCredentialPlacement = Record<
+  string,
+  PrtgCredentialPlacementEntry
+>
+
+/** A credential section a profile's sensors need. */
+export interface PrtgCredentialSection {
+  section: string
+  label: string
+  /** Danbyte can set it; otherwise only Inherit. */
+  writable: boolean
+  kinds: string[]
+}
+
+/** What PRTG has in effect for a credential section. */
+export interface PrtgCredentialState {
+  set: boolean | null
+  inherited: boolean | null
+  source: string
+  text?: string
+}
+
+/** GET /api/prtg/connections/<id>/credential-state/ */
+export interface PrtgCredentialStates {
+  objid: string
+  sections: Record<string, PrtgCredentialState>
+  error?: string
+}
+
+/** /api/prtg/credentials/ - secrets are write-only. */
+export interface PrtgCredential {
+  id: string
+  connection: string
+  name: string
+  kind: "proxmox" | "vmware" | "windows_login" | "ssh"
+  kind_display: string
+  params: {
+    user?: string
+    realm?: string
+    token_id?: string
+    domain?: string
+    port?: number
+  }
+  description: string
+  password_set: boolean
+  token_secret_set: boolean
+  private_key_set: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** A probe or group a PRTG device can live under. */
+export interface PrtgGroup {
+  objid: string
+  name: string
+  kind: "probe" | "group"
+  path: string
+  probe: string
+  parent_id: string
+  tags?: string[]
+}
+
+/** GET /api/prtg/groups/?connection= */
+export interface PrtgGroups {
+  connection: string
+  read_at: string | null
+  groups: PrtgGroup[]
+  error: string
+}
+
+export interface PrtgSensorKindParam {
+  name: string
+  type: "str" | "int" | "bool" | "choice"
+  label: string
+  default: string | number | boolean | null
+  required: boolean
+  choices: string[]
+  minimum: number | null
+  maximum: number | null
+}
+
+export interface PrtgSensorKind {
+  value: string
+  label: string
+  needs: "snmp" | "windows" | null
+  per: "device" | "interface"
+  default_name: string
+  params: PrtgSensorKindParam[]
+}
+
+/** A sensor kind PRTG offers to add by hand
+ * (`/api/prtg/connections/<id>/sensor-kinds/`). */
+export interface PrtgAddableKind {
+  /** PRTG's kind id ("ping", "paessler.snmp.traffic_sensor"), or Danbyte's
+   * kind when the list is Danbyte's own (seed copies). */
+  id: string
+  name: string
+  description: string
+  help: string
+  category: string
+  /** `danbyte`: Danbyte's parameter form; `generic`: PRTG's schema. */
+  form: "danbyte" | "generic"
+  danbyte_kind: string | null
+  /** Picks rows from PRTG's metascan first (one sensor per row). */
+  scan: boolean
+  credentials: string
+  manual: string
+  copy_from_seed: boolean
+  /** The same facts under the picker's names (the server sends both). */
+  danbyte_form?: boolean
+  needs_scan?: boolean
+  credential_group?: string
+}
+
+export interface PrtgAddableKinds {
+  mode: "" | "v2" | "seed" | "none"
+  source: "prtg" | "danbyte"
+  read_at: string | null
+  kinds: PrtgAddableKind[]
+  danbyte_forms: number
+  detail: string
+}
+
+/** One field of PRTG's create form for a kind. */
+export interface PrtgSchemaField {
+  key: string
+  section: string
+  section_title: string
+  name: string
+  label: string
+  type: "text" | "password" | "number" | "select" | "multi" | "checkbox"
+  default: unknown
+  required: boolean
+  options: { value: string; label: string }[]
+  minimum: number | null
+  maximum: number | null
+  help: string
+}
+
+export interface PrtgSensorSchema {
+  kind: string
+  fields: PrtgSchemaField[]
+  scan: { section: string; field: string } | null
+  /** Set when no linked device could describe the kind: no fields. */
+  note?: string
+}
+
+export interface PrtgScanRow {
+  value: string
+  name: string
+  status: string
+  connected: boolean | null
+  info: Record<string, unknown>
+}
+
+export interface PrtgDeviceTemplates {
+  source: "prtg" | "defaults"
+  read_at: string | null
+  templates: { file_name: string; name: string; id: string }[]
+}
+
+export interface PrtgAddSensorResult {
+  detail: string
+  objids: string[]
+  failed: string[]
+  sensors: PrtgSensor[]
+}
+
+/** GET /api/prtg/profiles/kinds/ */
+export interface PrtgSensorKinds {
+  kinds: PrtgSensorKind[]
+  intervals: number[]
+}
+
+export interface PrtgSensorDefinition {
+  id?: string
+  position?: number
+  kind: string
+  kind_label?: string
+  /** `danbyte`: Danbyte's own kind and form; `generic`: a PRTG kind id with
+   * PRTG's create form as `section.field` params. */
+  form?: "danbyte" | "generic"
+  name: string
+  params: Record<string, unknown>
+  interval_seconds: number | null
+  required: boolean
+  tags: string[]
+}
+
+export interface PrtgSensorProfile {
+  id: string
+  connection: string
+  name: string
+  description: string
+  definitions: PrtgSensorDefinition[]
+  policy_count: number
+  credential_placement?: PrtgCredentialPlacement
+  credential_sections?: PrtgCredentialSection[]
+  created_at: string
+  updated_at: string
+}
+
+export type PrtgPolicyScope =
+  | "global"
+  | "region"
+  | "site"
+  | "location"
+  | "platform"
+  | "device_type"
+  | "device_role"
+
+export interface PrtgPolicy {
+  id: string
+  connection: string
+  name: string
+  enabled: boolean
+  priority: number
+  scope: PrtgPolicyScope
+  scope_display: string
+  region: string | null
+  target_site: string | null
+  location: string | null
+  platform: string | null
+  device_type: string | null
+  device_role: string | null
+  target_name: string
+  match_tags: string[]
+  match_name: string
+  match_hardware: string
+  applies_to_devices: boolean
+  applies_to_vms: boolean
+  profile: string | null
+  profile_name: string
+  group_id: string
+  group_path: string
+  /** Place matched objects by the connection's group layout. */
+  use_layout?: boolean
+  /** Overrides the profiles' credential placement, section by section. */
+  credential_placement?: PrtgCredentialPlacement
+  created_at: string
+  updated_at: string
+  /** Only on GET /api/prtg/policies/<id>/: how many objects it matches. */
+  match_count?: number
+}
+
+/** Why an object is left out of PRTG's plan or a planned row cannot be
+ * written: the sentence, and what the SPA links it to. */
+export interface PrtgIssue {
+  code:
+    | "excluded"
+    | "retired"
+    | "address_excluded"
+    | "no_check"
+    | "no_match"
+    | "already_linked"
+    | "no_group"
+    | "group_gone"
+    | "no_snmp"
+    | "no_windows"
+    | "no_windows_vm"
+    | "no_address"
+    | "unwanted_sensor"
+    | "not_created_sensor"
+    | "no_writes"
+    | "snmp_scan"
+    | "group_writes"
+    | "credentials_missing"
+    | "no_credential"
+    | "empty_group"
+  text: string
+  /** The policy that decides the group, for no_group / group_gone; the
+   * policy that places a credential. */
+  policy?: string
+  /** The profile that places a credential, for credentials_missing and
+   * no_credential. */
+  profile?: string
+  /** The PRTG settings section a credential issue is about. */
+  section?: string
+  /** The object whose tab fixes it. */
+  object?: { kind: "device" | "virtual_machine"; id: string }
+}
+
+/** GET /api/prtg/policies/<id>/matches/ - one device or VM a policy hits. */
+export interface PrtgPolicyMatch {
+  kind: "device" | "virtual_machine"
+  id: string
+  name: string
+  site: { id: string; name: string } | null
+  role: { id: string; name: string } | null
+  platform: { id: string; name: string } | null
+  prtg_sync: PrtgSync
+  linked: boolean
+  link: { objid: string; name: string; url: string } | null
+  managed: boolean
+  via: "" | "never" | "always" | "policy" | "register_all"
+  reason: string
+  /** The policy that decides the object's group, when a policy does. */
+  group_policy: { id: string; name: string } | null
+  wins_group: boolean
+  policies: { id: string; name: string }[]
+}
+
+/** What registers an object in PRTG, in the plan's words. */
+export type PrtgRegistrationMode =
+  "never" | "always" | "policies" | "register_all" | "none"
+
+/** GET /api/prtg/plan/?device=|virtual_machine= - one per connection.
+ * `linked` says whether it is in PRTG, `managed` whether Danbyte created
+ * that PRTG device, `registration` what registers it and `planned` what
+ * the next plan proposes. */
+/** What a device or VM save made of a changed PRTG setting. */
+export interface PrtgSavePlan {
+  state: "applying" | "planned" | "attention" | "excluded" | "none"
+  connections: string[]
+  /** The saved object, for the toast's links. */
+  object?: { kind: "device" | "virtual_machine"; id: string }
+  /** With attention: the first thing blocking its rows. */
+  issue?: PrtgIssue | null
+}
+
+/** POST /api/prtg/changes/apply-object/ - one entry per connection. */
+export interface PrtgApplyObjectResult {
+  connection: { id: string; name: string }
+  applied: number
+  failed: { id: string; kind: string; ok: boolean; detail: string }[]
+  results: {
+    id: string
+    kind: string
+    ok: boolean
+    detail: string
+    status: PrtgChangeStatus
+  }[]
+  link: { id: string; objid: string; name: string; url: string } | null
+}
+
+export interface PrtgPlanEntry {
+  connection: {
+    id: string
+    name: string
+    /** Apply automatically is on for the connection. */
+    auto_apply?: boolean
+    write_mode?: string
+  }
+  prtg_sync: PrtgSync
+  /** Danbyte created the linked PRTG device. */
+  managed: boolean
+  /** Something registers the object (Monitor in PRTG, a policy, Register
+   * all). */
+  registers: boolean
+  registration: {
+    mode: PrtgRegistrationMode
+    policies: { id: string; name: string }[]
+    group: PrtgPlanEntry["group"]
+  }
+  planned: {
+    create_device: boolean
+    sensors: {
+      key: string
+      name: string
+      kind: string
+      kind_label: string
+      interface: { id: string; name: string } | null
+    }[]
+    move: {
+      from: { objid: string; path: string } | null
+      to: { objid: string; path: string; kind?: string } | null
+    } | null
+    remove: { objid: string; name: string; kind: string }[]
+    /** Why nothing is planned, when nothing registers it. */
+    reasons: PrtgIssue[]
+    /** Planned rows for this object waiting in the review queue. */
+    queued: number
+    /** Of those, the ones Add to PRTG now would write. */
+    ready?: number
+    /** How the queued rows stand. */
+    statuses?: PrtgChangeStatus[]
+    /** An apply of this object's rows is queued or running. */
+    applying?: boolean
+  }
+  via: "" | "never" | "always" | "policy" | "register_all"
+  reason: string
+  linked: {
+    objid: string
+    name: string
+    group: string
+    url: string
+    host?: string
+    matched_by?: string
+    created_here?: boolean
+    created_at?: string
+    sent_tags?: string[]
+  } | null
+  group: {
+    objid: string
+    path: string
+    kind?: string
+    source: string
+    policy?: string
+    policy_id?: string
+  } | null
+  policies: { id: string; name: string }[]
+  profiles: string[]
+  sensors: {
+    key: string
+    definition: string
+    profile: string
+    kind: string
+    kind_label: string
+    name: string
+    params: Record<string, unknown>
+    interval_seconds: number | null
+    tags: string[]
+    required: boolean
+    interface: { id: string; name: string } | null
+    template: string
+    present: boolean
+    sensor: { objid: string; name: string } | null
+  }[]
+  credentials: { kind: string; name: string; version?: string }[]
+  /** Where each credential section its sensors need is set, and for
+   * Inherit what PRTG had in effect at the last read. */
+  credential_placement?: {
+    section: string
+    label: string
+    mode: PrtgCredentialMode
+    credential: string
+    state: PrtgCredentialState | null
+    text: string
+  }[]
+  problems: string[]
+  last_apply?: PrtgLastApply | null
+  /** The reason as an issue, when the object is left out. */
+  reason_issue?: PrtgIssue | null
+  /** The problems as issues, with their link targets. */
+  issues?: PrtgIssue[]
+  /** Per wanted sensor, where it stands, and the sensors no policy wants. */
+  coverage?: PrtgCoverage
+}
+
+/** Where one sensor a policy wants stands for an object. */
+export type PrtgCoverageStatus =
+  "present" | "planned" | "failed" | "waiting" | "skipped" | "off"
+
+/** A wanted sensor turned off (or on) for one device or VM. */
+export interface PrtgSensorOverride {
+  enabled: boolean
+  /** Who set it. */
+  by: string
+  at: string
+  note: string
+}
+
+/** The plan entry's `coverage`: the sensors the matching policies and
+ * profiles want for the object, and the PRTG sensors none of them wants. */
+export interface PrtgCoverage {
+  policies: {
+    id: string
+    name: string
+    profile: { id: string; name: string } | null
+  }[]
+  group: PrtgPlanEntry["group"]
+  wanted: {
+    key: string
+    definition: string
+    profile: { id: string; name: string } | null
+    policy: { id: string; name: string } | null
+    name: string
+    kind: string
+    kind_label: string
+    required: boolean
+    interface: { id: string; name: string } | null
+    status: PrtgCoverageStatus
+    /** Set for this object against what the policies say. */
+    override?: PrtgSensorOverride | null
+    sensor_id?: string
+    sensor_objid?: string
+    /** The queue row that would write it (or did, and failed). */
+    change_id?: string
+    reason?: string
+    issue?: PrtgIssue | null
+  }[]
+  /** How many of `wanted` PRTG has; sensors turned off are not counted. */
+  present: number
+  extra: {
+    sensor_id: string
+    objid: string
+    name: string
+    kind_label: string
+    /** manual: added by hand in Danbyte; danbyte: an old definition;
+     * prtg: made in PRTG. */
+    origin: "manual" | "danbyte" | "prtg"
+  }[]
+}
+
+/** GET /api/prtg/connections/defaults/ - what the state map editor needs. */
+export interface PrtgDefaults {
+  codes: { value: string; label: string; fixed: boolean; reason: string }[]
+  default_map: Record<string, string>
+  statuses: {
+    value: string
+    label: string
+    color: string
+    text_color: string
+  }[]
+}
+
+export interface PrtgDeviceLink {
+  id: string
+  connection: string
+  /** The Danbyte tags Danbyte last wrote onto the PRTG device. */
+  sent_tags?: string[]
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  objid: string
+  name: string
+  host: string
+  probe_name: string
+  group_path: string
+  matched_by: string
+  created_here: boolean
+  tagged: boolean
+  status_raw: number | null
+  /** The roll-up of the device's sensors; "" until a read has seen it. */
+  state: CheckStatus | ""
+  sensor_counts: Record<string, number>
+  status_read_at: string | null
+  last_seen_at: string | null
+  /** The device's page in PRTG. */
+  url: string
+  /** Set while Danbyte holds the PRTG device paused for a maintenance
+   * window: when it paused it, until when, and for which windows. */
+  maintenance_paused_at: string | null
+  maintenance_paused_until: string | null
+  /** Paused in PRTG, by anyone. */
+  paused?: boolean
+  maintenance_events: { id: string; name: string }[]
+  maintenance_note: string
+  /** What Danbyte last wrote to PRTG for this device. */
+  last_apply?: PrtgLastApply | Record<string, never>
+  /** How the connection creates objects in PRTG: sensors can be added by
+   * hand under `v2` and `seed`. */
+  write_mode?: "" | "v2" | "seed" | "none"
+  /** Set while a retirement rule holds the PRTG device paused. */
+  rule_paused_at?: string | null
+  rule_paused_name?: string
+  /** The connection's default for "Also remove from PRTG". */
+  delete_default_remove?: boolean
+}
+
+export type PrtgRetireAction = "pause" | "delete" | "nothing"
+
+/** What happens in PRTG to a linked object that retires. */
+export interface PrtgRetireRule {
+  id: string
+  connection: string
+  name: string
+  position: number
+  /** Status slugs: any of them matches. */
+  statuses: string[]
+  /** Tag slugs: any of them matches. */
+  tags: string[]
+  action: PrtgRetireAction
+  action_display: string
+  /** Deletes the beat may apply by itself. */
+  allow_auto: boolean
+  /** Deletes reach PRTG devices Danbyte did not create. */
+  delete_any: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** What a delete did in PRTG, one row per linked PRTG device. */
+export interface PrtgDeleteResult {
+  connection: string
+  objid: string
+  name: string
+  object: string
+  action: "remove" | "pause"
+  ok: boolean
+  queued: boolean
+  detail: string
+}
+
+/** Where an adopted PRTG device lands, by what it looks like. */
+export interface PrtgAdoptionRule {
+  id: string
+  connection: string
+  scope: "name" | "group" | "probe" | "ip"
+  scope_display: string
+  /** Glob by default, `regex:` for a regular expression, a CIDR for an
+   * address rule. */
+  pattern: string
+  site: string
+  site_name: string
+  role: string | null
+  role_name: string
+  device_type: string | null
+  device_type_name: string
+  weight: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface PrtgChange {
+  id: string
+  kind:
+    | "link_device"
+    | "adopt"
+    | "ambiguous"
+    | "create_device"
+    | "add_sensor"
+    | "remove_sensor"
+    | "move_device"
+    | "update_host"
+    | "remove_device"
+    | "create_group"
+    | "rename_group"
+    | "remove_group"
+    | "group_creds"
+    | "pause_device"
+    | "resume_device"
+  kind_display: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  key: string
+  detail: Record<string, unknown>
+  ignored: boolean
+  applicable: boolean
+  /** A write to PRTG from the planning pass. */
+  planned: boolean
+  /** Where the row stands in the inbox. */
+  status: PrtgChangeStatus
+  /** Deletes something in PRTG: applied row by row, never by Apply all. */
+  destructive: boolean
+  /** A decision row's extra choice: a separate PRTG device for its object. */
+  decision?: { can_create: boolean } | null
+  created_at: string
+  updated_at: string
+}
+
+export type PrtgChangeStatus =
+  "ready" | "attention" | "applied" | "failed" | "decision"
+
+/** GET /api/prtg/changes/counts/ - the queue's rows by where they stand. */
+export interface PrtgChangeCounts {
+  open: number
+  applied: number
+  dismissed: number
+}
+
+/** One entry of a planned row's apply log (`detail.log`). */
+export interface PrtgApplyLogEntry {
+  at: string
+  by: string
+  ok: boolean
+  detail: string
+  steps: string[]
+  /** PRTG's own words, when the detail is Danbyte's reading of them. */
+  prtg?: string
+  issue?: PrtgIssue
+}
+
+/** A Danbyte object a decision row could link its PRTG device to. */
+export interface PrtgDecisionCandidate {
+  kind: "device" | "virtual_machine"
+  id: string
+  name: string
+  site: string
+  address: string
+}
+
+/** A PRTG device on a decision row. */
+export interface PrtgDecisionRemote {
+  objid: string
+  name: string
+  host: string
+  group?: string
+}
+
+/** What Danbyte last wrote to PRTG for an object. */
+export interface PrtgLastApply {
+  at: string
+  kind: string
+  ok: boolean
+  detail: string
+  result: Record<string, unknown>
+  by: string
+}
+
+/** POST /api/prtg/changes/apply-selected/ and apply-all/. */
+export interface PrtgApplyResults {
+  applied: number
+  failed: { id: string; detail: string }[]
+  results: { id: string; ok: boolean; detail: string; status?: string }[]
+}
+
+/** GET /api/prtg/device-states/ - one entry per linked device. */
+export interface PrtgDeviceState {
+  state: CheckStatus | null
+  down: number
+  warning: number
+  name: string
+  url: string
+}
+
+/** One imported PRTG sensor (GET /api/prtg/sensors/). Read-only: the row is
+ * PRTG's, rewritten by every status read. Belongs to a device or a VM. */
+export interface PrtgSensor {
+  id: string
+  connection: string
+  connection_name: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  /** The link (PRTG device) the sensor sits on. */
+  link?: string
+  /** The PRTG device the sensor sits on. */
+  prtg_device: string
+  objid: string
+  name: string
+  /** PRTG's raw type ("ping", "paessler.http.http_sensor.51"). */
+  kind: string
+  /** Its display name ("Ping v2"). */
+  kind_label: string
+  status_raw: number | null
+  /** PRTG's own word ("Paused by Dependency"). */
+  status: string
+  /** The Danbyte state the connection's map gives it. */
+  state: CheckStatus | ""
+  paused: boolean
+  /** Down (Acknowledged) in PRTG. */
+  acknowledged: boolean
+  /** Danbyte can acknowledge it in PRTG now: down, and the connection
+   * writes acknowledgements. */
+  ackable?: boolean
+  message: string
+  tags: string[]
+  active: boolean
+  last_value: string
+  last_value_raw: number | null
+  unit: string
+  interval_seconds: number | null
+  uptime_pct: number | null
+  downtime_pct: number | null
+  priority: number | null
+  last_check_at: string | null
+  last_up_at: string | null
+  last_down_at: string | null
+  probe_name: string
+  group_path: string
+  last_seen_at: string | null
+  /** The sensor's page in PRTG. */
+  url: string
+  /** The PRTG device's page. */
+  device_url: string
+  channels_at: string | null
+  /** The address PRTG reaches the device on (the link's host). */
+  ip_address: { id: string; address: string; dns_name: string } | null
+  /** The port an SNMP traffic sensor measures: a device interface or, with
+   * `kind: "vm_interface"`, a VM's; `parent` is the device or VM. */
+  interface: {
+    id: string
+    name: string
+    kind: "interface" | "vm_interface"
+    parent: string
+  } | null
+  /** The service an HTTP or SSL sensor checks, by its port. */
+  service: { id: string; name: string; ports: string } | null
+}
+
+/** GET /api/prtg/sensors/summary/ - counts for a status strip. The four
+ * states count sensors that are not paused; `paused` counts the rest. */
+export interface PrtgSensorSummary {
+  total: number
+  down: number
+  degraded: number
+  up: number
+  unknown: number
+  paused: number
+  acknowledged: number
+  read_at: string | null
+}
+
+/** PRTG's lookup vocabulary for one lookup value. */
+export type PrtgLookupState = "ok" | "warning" | "error" | "none" | "unknown"
+
+export interface PrtgChannel {
+  id: string
+  name: string
+  /** PRTG's display string ("0.03 Mbit/s", "No"). */
+  value: string
+  /** The number in the displayed unit, or a lookup channel's key. */
+  value_raw: number | null
+  unit: string
+  kind: "number" | "percent" | "lookup" | "text"
+  state: CheckStatus
+  /** PRTG's word for the channel's status. */
+  status: string
+  lookup_label: string
+  limits: {
+    warn_min: number | null
+    warn_max: number | null
+    error_min: number | null
+    error_max: number | null
+  }
+  /** Every value the lookup knows; `to` is set for a range. */
+  lookup_states: {
+    value: number
+    to: number | null
+    label: string
+    state: PrtgLookupState
+  }[]
+  min: number | null
+  max: number | null
+  primary: boolean
+}
+
+/** GET /api/prtg/sensors/<id>/channels/ - read on demand, cached for one
+ * status interval. `stale` when PRTG failed and the last read is served. */
+export interface PrtgChannels {
+  fetched_at: string
+  stale?: boolean
+  summary: {
+    message?: string
+    status?: string
+    last_value?: string
+    uptime_for?: string
+    downtime_for?: string
+  }
+  rows: PrtgChannel[]
+}
+
+export type PrtgHistoryRange = "1h" | "24h" | "7d"
+
+/** GET /api/prtg/sensors/<id>/history/?range=&channel= */
+export interface PrtgHistory {
+  range: PrtgHistoryRange
+  avg: number | null
+  fetched_at: string | null
+  stale: boolean
+  channels: {
+    id: string
+    name: string
+    unit: string
+    points: { t: string; v: number | null }[]
+  }[]
+}
+
+/** How a pinned channel is drawn: `auto` follows the channel (a gauge for
+ * a number, the lookup bar for a lookup, the text for text). */
+export type PrtgPinDisplay = "auto" | "gauge" | "lookup" | "value"
+
+/** GET /api/prtg/sensor-pins/?device=|virtual_machine= - a sensor or channel pinned
+ * to a device's or VM's Overview. */
+export interface PrtgSensorPin {
+  id: string
+  sensor: string
+  /** Blank: the whole sensor is pinned. */
+  channel_id: string
+  display: PrtgPinDisplay
+  position: number
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  /** Exactly one of the six names the pin's object. */
+  ip_address: { id: string; name: string } | null
+  interface: { id: string; name: string } | null
+  vm_interface: { id: string; name: string } | null
+  service: { id: string; name: string } | null
+  sensor_info: {
+    name: string
+    kind_label: string
+    state: CheckStatus
+    status: string
+    paused: boolean
+    url: string
+    last_value: string
+    last_check_at: string | null
+  }
+  created_at: string
+}
+
+export interface PrtgHookToken {
+  token: string
+  path: string
+}
+
+export interface PrtgTestResult {
+  ok: boolean
+  detail: string
+  version: string
+  probes: number | null
+  sensors: number | null
+  v2_available: boolean | null
+  v2_detail: string
+}
+
+// ─── Object reports (api/object_report.py) ──────────────────────────────────
+
+/** The types a PDF report covers, by RBAC slug. */
+export type ObjectReportKind = "device" | "prefix" | "ipaddress"
+
+/** Every report the report dialog makes: the object reports and the
+ * topology report (api/reports/kinds/topology.py). */
+export type ReportKind = ObjectReportKind | "topology"
+
+export interface ObjectReportColumn {
+  key: string
+  label: string
+}
+
+export interface ObjectReportSection {
+  key: string
+  label: string
+  kind: string
+  /** On when nothing was chosen before. */
+  default: boolean
+  /** False when the reader may not view it; `note` says why. */
+  available: boolean
+  note?: string
+  /** A section of the latest N entries (journal, change log). */
+  last: boolean
+  columns: ObjectReportColumn[]
+  default_columns: string[]
+}
+
+/** `GET /api/<type>/report/`: what a report can hold for this reader. */
+export interface ObjectReportSchema {
+  type: ReportKind
+  label: string
+  plural: string
+  columns: ObjectReportColumn[]
+  default_columns: string[]
+  group_by: ObjectReportColumn[]
+  /** The grouping a list starts with (prefixes: `vrf`), else null. */
+  default_group_by?: string | null
+  sections: ObjectReportSection[]
+  papers: string[]
+  /** The list can show each prefix's IP addresses (`options.show_ips`). */
+  show_ips?: boolean
+  /** The cover page: the tenant's name (the project line's default), whether
+   * it has an uploaded image, and its default background. */
+  cover?: {
+    project: string
+    upload: boolean
+    background: ReportCoverStyle
+  }
+  limits: {
+    objects: number
+    object_pages: number
+    section_rows: number
+    total_rows: number
+    columns: number
+    last: number
+    /** Table cells a report may hold before it renders in the background. */
+    cells?: number
+    /** Table cells a background report may hold before it is refused. */
+    background_cells?: number
+    /** The topology report: devices a view's tables list. */
+    devices?: number
+  }
+}
+
+/** One topology view in a topology report, drawn by the browser as the
+ * map's Export ▸ PDF draws it (lib/diagram/pdf-drawing.ts). */
+export interface TopologyReportView {
+  /** The saved view, when it is one. */
+  view?: string | null
+  title: string
+  filters: string
+  /** The drawing (sanitised on the server); "" for an estimate. */
+  svg: string
+  /** The devices the drawing shows. */
+  device_ids: string[]
+}
+
+/** `POST /api/topology/report/`'s body. */
+export interface TopologyReportRequest {
+  views: TopologyReportView[]
+  sections?: string[]
+  columns?: Record<string, string[]>
+  options?: {
+    title?: string
+    paper?: "a4" | "letter" | "a3"
+    orientation?: "portrait" | "landscape"
+    diagram_orientation?: "portrait" | "landscape"
+    title_block?: boolean
+    toc?: boolean | null
+    dividers?: "auto" | "full" | "compact"
+    /** Several views: one PDF with a chapter each, or a ZIP of PDFs. */
+    output?: "pdf" | "zip"
+    cover?: boolean
+    cover_title?: string
+    cover_subtitle?: string
+    cover_project?: string
+    cover_background?: ReportCoverBackground
+    /** This report's cover and chapter banner colours. */
+    cover_colors?: { horizon: string; wave: string; crest: string }
+    /** The sensitivity label every page is marked with. */
+    sensitivity_label?: string
+  }
+}
+
+/** `POST /api/<type>/report/?estimate=1`: what the report would cost. */
+export interface ObjectReportEstimate {
+  cells: number
+  /** Objects with details, and the cover page. */
+  pages: number
+  seconds: number
+  mode: "now" | "background" | "too_large"
+  /** Table cells that fit now and in the background. */
+  fits: { now: number; background: number }
+  /** Too large: what fits. */
+  detail?: string
+}
+
+/** `POST /api/<type>/report/?print=1`: a link now, or a background job
+ * (202) to poll at `status`. */
+export type ObjectReportStarted =
+  | { url: string }
+  | { job: string; status: string; state: string; seconds: number }
+
+/** `GET /api/<type>/report/job/<token>/`. */
+export interface ObjectReportJobStatus {
+  state: "queued" | "waiting" | "running" | "done" | "failed"
+  /** 0-95, the render's time so far against its estimate. */
+  progress?: number
+  url?: string
+  detail?: string
+}
+
+/** `POST /api/<type>/report/`'s body. */
+export interface ObjectReportRequest {
+  ids?: string[]
+  filters?: Record<string, string | string[]>
+  sections?: string[]
+  /** Per section, and `list` for the objects' table. */
+  columns?: Record<string, string[]>
+  options?: {
+    title?: string
+    paper?: "a4" | "letter" | "a3"
+    orientation?: "portrait" | "landscape"
+    group_by?: string | null
+    include_summary?: boolean
+    list_table?: boolean
+    per_object?: boolean
+    /** Prefixes: each list row followed by its IP addresses. */
+    show_ips?: boolean
+    last?: number
+    /** A cover page before the report (api/report_cover.py). */
+    cover?: boolean
+    cover_title?: string
+    /** Blank for none; absent for the generated one. */
+    cover_subtitle?: string
+    cover_project?: string
+    cover_background?: ReportCoverBackground
+    /** This report's cover colours, in place of the tenant's. */
+    cover_colors?: { horizon: string; wave: string; crest: string } | null
+    /** The sensitivity label the report is marked with; null for none. */
+    sensitivity_label?: string | null
+  }
+}
+
+/** GET /api/virtualization-sources/<id>/network-plan/ - read-only. */
+export interface NetworkPlanRef {
+  id: string
+  name: string
+}
+export interface NetworkPlanCable {
+  id: string
+  numid: number | null
+  label: string
+}
+export interface NetworkPlanNic {
+  vm: NetworkPlanRef
+  device: NetworkPlanRef
+  interface: NetworkPlanRef
+  cable: NetworkPlanCable
+  nic: string | null
+  mac: string
+  current: string | null
+  wanted: string
+}
+export interface NetworkPlan {
+  source: NetworkPlanRef
+  device: NetworkPlanRef | null
+  zone: string
+  generated_at: string
+  counts: Record<string, number>
+  vnets_to_create: {
+    name: string
+    zone: string
+    tag: number | null
+    suggested: boolean
+    cables: NetworkPlanCable[]
+  }[]
+  nics_wrong_vnet: NetworkPlanNic[]
+  nics_without_vnet: NetworkPlanNic[]
+  unused_vnets: {
+    name: string
+    zone: string
+    tag: number | null
+    alias: string
+  }[]
+  duplicates: { vnet: string; cables: NetworkPlanCable[] }[]
+  conflicts: {
+    kind: string
+    detail: string
+    cable?: NetworkPlanCable
+    vm?: NetworkPlanRef
+    interface?: NetworkPlanRef
+  }[]
+  cables_skipped: { cable: NetworkPlanCable; reason: string }[]
+  notes: string[]
 }

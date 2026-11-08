@@ -108,6 +108,7 @@ SCHEDULED_TASKS = [
     {"name": "alert-maintenance", "label": "Alert maintenance", "cadence": "every minute"},
     {"name": "external-sync", "label": "External sync (DHCP/DNS)", "cadence": "every minute"},
     {"name": "zabbix-sync", "label": "Zabbix sync", "cadence": "every minute"},
+    {"name": "extmon-sync", "label": "External monitoring sync", "cadence": "every minute"},
     {"name": "oxidized-sync", "label": "Oxidized node sync", "cadence": "every minute"},
     {"name": "scripts", "label": "Scheduled scripts", "cadence": "every minute"},
     {"name": "materialise", "label": "Materialise checks", "cadence": "every 5 min"},
@@ -118,7 +119,9 @@ SCHEDULED_TASKS = [
     {"name": "digest", "label": "Email digest", "cadence": "daily 07:00"},
     {"name": "eol-refresh", "label": "End-of-life data", "cadence": "daily 05:35"},
     {"name": "acme-renew", "label": "ACME renewal", "cadence": "every 4h"},
+    {"name": "update-check", "label": "Update check", "cadence": "every 6h"},
     {"name": "cleanup-ips", "label": "Stale-IP cleanup", "cadence": "daily"},
+    {"name": "flow-requirements", "label": "Flow requirements sweep", "cadence": "daily"},
     {"name": "prune-changelog", "label": "Prune changelog", "cadence": "daily"},
     {"name": "prune-results", "label": "Prune check results", "cadence": "daily"},
 ]
@@ -274,3 +277,82 @@ def job_cancel_view(request, job_id):
     if not rq.cancel_job(job_id):
         return Response({"detail": "Job not found (it may have expired)."}, status=404)
     return Response(status=204)
+
+
+#: Jobs one bulk call may name.
+MAX_BULK_JOBS = 500
+
+
+def _bulk_job_ids(request):
+    """``(ids, None)`` for a bulk call's non-empty list of RQ job ids, or
+    ``(None, a 400)``."""
+    data = request.data if isinstance(request.data, dict) else {}
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not ids:
+        return None, Response({"ids": "Provide a non-empty list of job ids."}, status=400)
+    if len(ids) > MAX_BULK_JOBS:
+        return None, Response({"ids": f"At most {MAX_BULK_JOBS} ids per call."}, status=400)
+    if not all(isinstance(i, str) and 0 < len(i) <= 128 for i in ids):
+        return None, Response({"ids": "Job ids are text."}, status=400)
+    return list(dict.fromkeys(ids)), None
+
+
+_BULK_REQUEST = inline_serializer(
+    name="JobBulkRequest",
+    fields={"ids": serializers.ListField(child=serializers.CharField())},
+)
+_BULK_RESPONSE = inline_serializer(
+    name="JobBulkResponse",
+    fields={
+        "done": serializers.ListField(child=serializers.CharField()),
+        "skipped": serializers.ListField(child=serializers.DictField()),
+    },
+)
+
+
+def _each(request, act, reason):
+    denied = _denied(request)
+    if denied is not None:
+        return denied
+    ids, bad = _bulk_job_ids(request)
+    if bad is not None:
+        return bad
+    done, skipped = [], []
+    for job_id in ids:
+        if act(job_id):
+            done.append(job_id)
+        else:
+            skipped.append({"id": job_id, "reason": reason})
+    return Response({"done": done, "skipped": skipped})
+
+
+@extend_schema(
+    summary="Requeue several failed background jobs",
+    tags=["jobs"],
+    request=_BULK_REQUEST,
+    responses=OpenApiResponse(
+        response=_BULK_RESPONSE,
+        description="Each job as its single requeue answers: only failed jobs "
+        "requeue, the rest are skipped with the reason.",
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def jobs_bulk_requeue_view(request):
+    return _each(request, rq.requeue_job, "Only failed jobs can be requeued.")
+
+
+@extend_schema(
+    summary="Cancel several background jobs",
+    tags=["jobs"],
+    request=_BULK_REQUEST,
+    responses=OpenApiResponse(
+        response=_BULK_RESPONSE,
+        description="Each job as its single cancel answers: a job that has "
+        "expired is skipped with the reason.",
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def jobs_bulk_cancel_view(request):
+    return _each(request, rq.cancel_job, "Not found (it may have expired).")

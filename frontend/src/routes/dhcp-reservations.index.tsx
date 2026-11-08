@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
@@ -15,12 +14,13 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
+import { buildDhcpReservationColumns } from "@/components/columns/dhcp-reservation-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { TableActions } from "@/components/table-actions"
 import { DhcpReservationDialog } from "@/components/integrations/dhcp-reservation-dialog"
-import { dash } from "@/components/kv-card"
 import { useFacetRail } from "@/lib/use-facet-rail"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -46,6 +46,8 @@ function DhcpReservationsPage() {
   const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<DhcpReservation | null>(null)
+  const [selected, setSelected] = useState<DhcpReservation[]>([])
+  const selectable = canChange || canDelete
 
   const scopesQ = useQuery({
     queryKey: ["dhcp-scopes", "picker"],
@@ -75,134 +77,20 @@ function DhcpReservationsPage() {
   const rows = query.data?.results ?? []
   const scopeLabel = scope ? rows[0]?.scope_display : undefined
 
-  const columns = useMemo<ColumnDef<DhcpReservation>[]>(
-    () => [
-      {
-        id: "ip",
-        accessorKey: "ip",
-        header: ({ column }) => <SortHeader column={column} label="IP" />,
-        cell: ({ row }) =>
-          row.original.ip_address ? (
-            <Link
-              to="/ips/$id"
-              params={{ id: row.original.ip_address }}
-              className="link font-mono text-xs"
-            >
-              {row.original.ip}
-            </Link>
-          ) : (
-            <span className="font-mono text-xs">{row.original.ip}</span>
-          ),
-      },
-      {
-        id: "mac",
-        accessorKey: "mac",
-        header: ({ column }) => <SortHeader column={column} label="MAC" />,
-        cell: ({ row }) => (
-          <Link
-            to="/macs/$mac"
-            params={{ mac: row.original.mac }}
-            className="link font-mono text-[11px]"
-          >
-            {row.original.mac}
-          </Link>
-        ),
-      },
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => row.original.name || dash,
-      },
-      {
-        id: "scope",
-        accessorKey: "scope_display",
-        header: ({ column }) => <SortHeader column={column} label="Scope" />,
-        // Scopes have no detail page - the informative destination is the
-        // prefix the scope backs in IPAM.
-        cell: ({ row }) =>
-          row.original.scope_prefix ? (
-            <Link
-              to="/prefixes/$id"
-              params={{ id: row.original.scope_prefix }}
-              className="link font-mono text-[11px]"
-            >
-              {row.original.scope_display}
-            </Link>
-          ) : (
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {row.original.scope_display}
-            </span>
-          ),
-      },
-      {
-        id: "server",
-        accessorKey: "connection_name",
-        header: ({ column }) => <SortHeader column={column} label="Server" />,
-        cell: ({ row }) =>
-          row.original.connection ? (
-            <Link
-              to="/windows-servers/$id"
-              params={{ id: row.original.connection }}
-              className="link text-xs"
-            >
-              {row.original.connection_name}
-            </Link>
-          ) : (
-            <span
-              className="text-xs text-muted-foreground"
-              title="Reservation in a local (Danbyte-owned) scope"
-            >
-              Local
-            </span>
-          ),
-      },
-      {
-        id: "origin",
-        header: "Origin",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.managed ? (
-            <Badge variant="outline" className="text-[10px]">
-              Danbyte
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">server</span>
-          ),
-      },
-      {
-        id: "drift",
-        header: "Drift",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.drift ? (
-            <Badge variant="destructive" className="text-[10px]">
-              {row.original.drift === "missing" ? "missing" : "modified"}
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">-</span>
-          ),
-      },
-      ...(canChange || canDelete
-        ? [
-            {
-              id: "actions",
-              header: "",
-              enableSorting: false,
-              cell: ({ row }) => (
-                <RowActions
-                  onEdit={canChange ? () => setEditing(row.original) : undefined}
-                  onDelete={
-                    canDelete ? () => del.mutate(row.original) : undefined
-                  }
-                  deleteLabel="Delete reservation"
-                />
-              ),
-            } satisfies ColumnDef<DhcpReservation>,
-          ]
-        : []),
-    ],
-    [canChange, canDelete, del]
+  const columns = useMemo(
+    () =>
+      buildDhcpReservationColumns<DhcpReservation>({
+        selection: selectable,
+        actions:
+          canChange || canDelete
+            ? {
+                onEdit: canChange ? setEditing : undefined,
+                onDelete: canDelete ? (r) => del.mutate(r) : undefined,
+                deleteLabel: "Delete reservation",
+              }
+            : undefined,
+      }),
+    [canChange, canDelete, del, selectable]
   )
 
   const { rail, filtered } = useFacetRail(rows, [
@@ -240,11 +128,14 @@ function DhcpReservationsPage() {
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "IP, MAC or name…" }}
       actions={
-        canAdd && (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" /> Add reservation
-          </Button>
-        )
+        <>
+          <TableActions ioType="dhcpreservation" />
+          {canAdd && (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" /> Add reservation
+            </Button>
+          )}
+        </>
       }
     >
       {scope && (
@@ -267,8 +158,22 @@ function DhcpReservationsPage() {
           data={filtered}
           columns={columns}
           tableId="dhcp-reservations-all"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       )}
+      {/* No bulk edit: an edit is pushed to the server one reservation at a
+          time. */}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/dhcp-reservations/"
+        noun={["reservation", "reservations"]}
+        invalidate={[["dhcp-reservations"], ["dhcp-scopes"]]}
+        onCleared={() => setSelected([])}
+        canEdit={false}
+        canDelete={canDelete}
+        ioType="dhcpreservation"
+      />
       {creating && (
         <DhcpReservationDialog
           scopes={scopesQ.data?.results ?? []}

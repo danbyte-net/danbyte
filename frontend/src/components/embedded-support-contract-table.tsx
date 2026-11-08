@@ -2,8 +2,8 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 
-import { api } from "@/lib/api"
-import type { Paginated, SupportContract } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { SupportContract } from "@/lib/api"
 import { buildSupportContractColumns } from "@/components/columns/support-contract-columns"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
@@ -22,7 +22,7 @@ export function useManufacturerContracts(
   return useQuery({
     queryKey: ["support-contracts", "manufacturer", manufacturerId],
     queryFn: () =>
-      api<Paginated<SupportContract>>(
+      apiAll<SupportContract>(
         `/api/support-contracts/?${new URLSearchParams({
           manufacturer: manufacturerId,
         }).toString()}`

@@ -6,6 +6,8 @@ also have plain serializers of their own for scripts and CSV.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
@@ -17,6 +19,7 @@ from api.models import (
     L2VPN,
     VLAN,
     VRF,
+    Aggregate,
     Device,
     Interface,
     IPAddress,
@@ -40,17 +43,20 @@ from api.serializers import (
     VLANMiniSerializer,
     VRFMiniSerializer,
     detail_only,
+    require_store_for_key,
 )
 from core.models import Tag
 
 from .models import (
     AFI_SAFI_CHOICES,
+    ROA,
     VTEP,
     ASPathList,
     ASPathListRule,
     BFDProfile,
     BGPAddressFamily,
     BGPInstance,
+    BGPNeighborAF,
     BGPPeerGroup,
     BGPSession,
     Community,
@@ -59,20 +65,26 @@ from .models import (
     EIGRPInstance,
     EIGRPInterface,
     EthernetSegment,
+    EthernetSegmentMember,
     ISISInstance,
     ISISInterface,
     LDPInstance,
     OSPFArea,
     OSPFInstance,
     OSPFInterface,
+    PolicyRule,
     PrefixList,
     PrefixListRule,
     Redistribution,
     RoutingKeychain,
     RoutingPolicy,
     RoutingPolicyRule,
+    RPKICache,
     StaticRoute,
     VTEPMembership,
+    check_max_prefix_exclusive,
+    effective_afs,
+    group_af_effective,
     link_remote_address,
     resolve_membership_vlan,
     validate_address_families,
@@ -320,6 +332,74 @@ class BFDProfileSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSe
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
 
 
+def _probe_clean(model, serializer, attrs):
+    """Build the row the write would leave and run its ``clean()``; hand
+    back the probe so normalised values can be copied onto ``attrs``."""
+    concrete = {f.name for f in model._meta.concrete_fields}
+    probe = model(**{k: v for k, v in attrs.items() if k in concrete})
+    if serializer.instance is not None:
+        for f in model._meta.concrete_fields:
+            if f.name not in attrs:
+                setattr(probe, f.name, getattr(serializer.instance, f.name))
+    _run_clean(probe)
+    return probe
+
+
+# ─── RPKI ────────────────────────────────────────────────────────────────────
+
+class RPKICacheMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = RPKICache
+        fields = ["id", "name", "address", "port", "transport", "preference"]
+
+
+class RPKICacheSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
+    """An RPKI cache. Over SSH the private key is write-only and lives in the
+    secret store: blank on edit keeps it, null clears it, and the read side
+    says only ``ssh_private_key_set``."""
+
+    cf_model = "rpkicache"
+
+    ssh_private_key = serializers.CharField(
+        source="psk", write_only=True, required=False, allow_blank=True,
+        allow_null=True, style={"input_type": "password"}, trim_whitespace=False,
+        help_text="Stored in the deployment's secret store, never in this row.",
+    )
+    ssh_private_key_set = serializers.BooleanField(source="psk_set", read_only=True)
+    bgp_instance_count = serializers.SerializerMethodField()
+
+    def get_bgp_instance_count(self, obj) -> int:
+        annotated = getattr(obj, "bgp_instance_count_annotated", None)
+        return annotated if annotated is not None else obj.bgp_instances.count()
+
+    def validate_ssh_private_key(self, value):
+        return require_store_for_key(value, "an SSH private key")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = _probe_clean(RPKICache, self, attrs)
+        for f in ("address", "ssh_username", "ssh_host_key"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        if probe.transport != "ssh":
+            if attrs.get("psk"):
+                raise serializers.ValidationError(
+                    {"ssh_private_key": "A private key is for SSH; this cache is TCP."}
+                )
+            # Back to TCP: the key has no use any more, so it goes.
+            if self.instance is not None and self.instance.psk_set:
+                attrs["psk"] = None
+        return attrs
+
+    class Meta:
+        model = RPKICache
+        fields = ["id", "numid", "name", "address", "port", "transport", "preference",
+                  "ssh_username", "ssh_host_key", "ssh_private_key", "ssh_private_key_set",
+                  "bgp_instance_count", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "ssh_private_key_set", "created_at", "updated_at"]
+
+
 class _BFDProfileFields(serializers.Serializer):
     """``bfd_profile`` read nested, ``bfd_profile_id`` on write."""
 
@@ -372,7 +452,7 @@ class RoutingPolicyRuleSerializer(_RuleSerializer):
                   "match_prefix_lists", "match_prefix_list_ids",
                   "match_community_lists", "match_community_list_ids",
                   "match_as_path_lists", "match_as_path_list_ids",
-                  "match_next_hop", "match_next_hop_id", "match_extra",
+                  "match_next_hop", "match_next_hop_id", "match_rpki", "match_extra",
                   "set_local_pref", "set_med", "set_weight", "set_origin",
                   "set_next_hop", "set_as_path_prepend",
                   "set_communities", "set_community_ids",
@@ -610,7 +690,75 @@ class StaticRouteSerializer(
                   "next_hop", "next_hop_interface", "next_hop_interface_id",
                   "next_hop_vm_interface", "next_hop_vm_interface_id",
                   "next_hop_vrf", "next_hop_vrf_id",
-                  "distance", "metric", "tag", "bfd",
+                  "table", "distance", "metric", "tag", "bfd",
+                  "status", "status_id", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+
+
+# ─── Policy routing ──────────────────────────────────────────────────────────
+
+class PolicyRuleSerializer(
+    _OwnerFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    NumIdModelSerializer,
+):
+    """``ip rule`` on a device or VM. The ports and the VRF are checked
+    against the tenant by their fields and against the owner by the model."""
+
+    cf_model = "policyrule"
+
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+    vrf = VRFMiniSerializer(read_only=True)
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    iif = InterfaceMiniSerializer(read_only=True)
+    iif_id = TenantScopedPrimaryKeyRelatedField(
+        source="iif", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    oif = InterfaceMiniSerializer(read_only=True)
+    oif_id = TenantScopedPrimaryKeyRelatedField(
+        source="oif", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vm_iif = VMInterfaceMiniSerializer(read_only=True)
+    vm_iif_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_iif", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vm_oif = VMInterfaceMiniSerializer(read_only=True)
+    vm_oif_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_oif", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = PolicyRule(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in PolicyRule._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in PolicyRule._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        for name in ("from_prefix", "to_prefix", "family"):
+            if name in attrs or name == "family":
+                attrs[name] = getattr(probe, name)
+        return attrs
+
+    class Meta:
+        model = PolicyRule
+        # The priority constraint spans nullable owner columns; the DB answers
+        # a duplicate with a 409.
+        validators = []
+        fields = ["id", "numid", *_OWNER_FIELDS, "family", "priority",
+                  "action", "action_display", "table", "vrf", "vrf_id",
+                  "from_prefix", "to_prefix", "iif", "iif_id", "oif", "oif_id",
+                  "vm_iif", "vm_iif_id", "vm_oif", "vm_oif_id", "fwmark", "invert",
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
@@ -623,6 +771,46 @@ class ASNMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = ASN
         fields = ["id", "asn"]
+
+
+class _AggregateMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = Aggregate
+        fields = ["id", "prefix"]
+
+
+class ROASerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
+    """A locally kept ROA: prefix, max length, origin AS and, optionally, the
+    aggregate it is carved from."""
+
+    cf_model = "roa"
+
+    origin_asn = ASNMiniSerializer(read_only=True)
+    origin_asn_id = TenantScopedPrimaryKeyRelatedField(
+        source="origin_asn", queryset=ASN.objects.all(), write_only=True,
+    )
+    aggregate = _AggregateMiniSerializer(read_only=True)
+    aggregate_id = TenantScopedPrimaryKeyRelatedField(
+        source="aggregate", queryset=Aggregate.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = _probe_clean(ROA, self, attrs)
+        if "prefix" in attrs:
+            attrs["prefix"] = probe.prefix
+        return attrs
+
+    class Meta:
+        model = ROA
+        fields = ["id", "numid", "prefix", "max_length", "origin_asn", "origin_asn_id",
+                  "aggregate", "aggregate_id", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        # The unique set is answered by the database (a 409), with the
+        # tenant the server sets.
+        validators = []
 
 
 class _ChildRowSerializer(NumIdModelSerializer):
@@ -804,6 +992,11 @@ class BGPInstanceSerializer(
         source="asn", queryset=ASN.objects.all(), write_only=True,
     )
     address_families = BGPAddressFamilySerializer(many=True, read_only=True)
+    rpki_caches = RPKICacheMiniSerializer(many=True, read_only=True)
+    rpki_cache_ids = TenantScopedPrimaryKeyRelatedField(
+        source="rpki_caches", queryset=RPKICache.objects.all(),
+        write_only=True, required=False, many=True,
+    )
     session_count = serializers.SerializerMethodField()
 
     def get_session_count(self, obj) -> int:
@@ -842,7 +1035,8 @@ class BGPInstanceSerializer(
                   "bestpath_multipath_relax",
                   "vpn_export", "vpn_import", "vpn_label_export", "vpn_nexthop_export",
                   "bfd",
-                  "bfd_profile", "bfd_profile_id", "address_families", "session_count",
+                  "bfd_profile", "bfd_profile_id", "rpki_caches", "rpki_cache_ids",
+                  "address_families", "session_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
@@ -898,6 +1092,24 @@ class _PeerKnobFields(serializers.Serializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.messages) from exc
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        _check_max_prefix(attrs, self.instance)
+        return attrs
+
+
+def _check_max_prefix(attrs, instance) -> None:
+    """``restart`` and ``warning-only`` refused together, on the merged
+    row a partial update would leave."""
+    probe = SimpleNamespace(**{
+        k: attrs[k] if k in attrs else getattr(instance, k, None)
+        for k in ("maximum_prefix_restart", "maximum_prefix_warning_only")
+    })
+    try:
+        check_max_prefix_exclusive(probe)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError(exc.message_dict) from exc
+
 
 _KNOB_FIELDS = [
     "address_families", "import_policy", "import_policy_id",
@@ -905,10 +1117,136 @@ _KNOB_FIELDS = [
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
     "keepalive", "hold_time", "keychain", "keychain_id", "extra",
     "default_originate", "default_originate_policy", "default_originate_policy_id",
-    "maximum_prefix", "allowas_in", "as_override",
+    "maximum_prefix", "maximum_prefix_threshold", "maximum_prefix_restart",
+    "maximum_prefix_warning_only", "allowas_in", "as_override",
     "remove_private_as", "soft_reconfiguration",
     "capability_extended_nexthop", "ttl_security_hops",
 ]
+
+
+def _af_effective_out(eff: dict) -> dict:
+    """An ``effective_afs`` entry with its rows as mini shapes."""
+    out = {}
+    for k, v in eff.items():
+        if k in ("import_policy", "export_policy", "default_originate_policy"):
+            out[k] = RoutingPolicyMiniSerializer(v).data if v is not None else None
+        elif k in ("prefix_list_in", "prefix_list_out"):
+            out[k] = PrefixListMiniSerializer(v).data if v is not None else None
+        else:
+            out[k] = v
+    return out
+
+
+class BGPNeighborAFSerializer(NumIdModelSerializer):
+    """One address family of a session or a peer group. Written on its own
+    endpoint (``session_id`` or ``peer_group_id``); read nested as ``afs``
+    on both, each row with ``effective`` - what the box ends up with in that
+    family."""
+
+    session_id = TenantScopedPrimaryKeyRelatedField(
+        source="session", queryset=BGPSession.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    peer_group_id = TenantScopedPrimaryKeyRelatedField(
+        source="peer_group", queryset=BGPPeerGroup.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    parent = serializers.SerializerMethodField()
+    afi_safi_display = serializers.CharField(source="get_afi_safi_display", read_only=True)
+    import_policy = RoutingPolicyMiniSerializer(read_only=True)
+    import_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="import_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    export_policy = RoutingPolicyMiniSerializer(read_only=True)
+    export_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="export_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    prefix_list_in = PrefixListMiniSerializer(read_only=True)
+    prefix_list_in_id = TenantScopedPrimaryKeyRelatedField(
+        source="prefix_list_in", queryset=PrefixList.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    prefix_list_out = PrefixListMiniSerializer(read_only=True)
+    prefix_list_out_id = TenantScopedPrimaryKeyRelatedField(
+        source="prefix_list_out", queryset=PrefixList.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    default_originate_policy = RoutingPolicyMiniSerializer(read_only=True)
+    default_originate_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="default_originate_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    effective = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_parent(self, obj):
+        if obj.session_id:
+            return {"kind": "session", "id": str(obj.session_id),
+                    "name": str(obj.session)}
+        return {"kind": "peer_group", "id": str(obj.peer_group_id),
+                "name": obj.peer_group.name}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_effective(self, obj):
+        if obj.session_id:
+            for eff in effective_afs(obj.session):
+                if eff["afi_safi"] == obj.afi_safi:
+                    return _af_effective_out(eff)
+            return None
+        return _af_effective_out(group_af_effective(obj))
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        session = attrs.get("session", getattr(self.instance, "session", None))
+        group = attrs.get("peer_group", getattr(self.instance, "peer_group", None))
+        if self.instance is not None and (
+            ("session" in attrs and attrs["session"] != self.instance.session)
+            or ("peer_group" in attrs and attrs["peer_group"] != self.instance.peer_group)
+        ):
+            raise serializers.ValidationError(
+                {"session_id": "A family stays with its neighbour."}
+            )
+        if bool(session) == bool(group):
+            raise serializers.ValidationError(
+                {"session_id": "Give a session or a peer group, not both and not neither."}
+            )
+        afi = attrs.get("afi_safi", getattr(self.instance, "afi_safi", None))
+        taken = BGPNeighborAF.objects.filter(
+            afi_safi=afi, **({"session": session} if session else {"peer_group": group})
+        )
+        if self.instance is not None:
+            taken = taken.exclude(pk=self.instance.pk)
+        if taken.exists():
+            raise serializers.ValidationError(
+                {"afi_safi": f"This neighbour already has {afi}."}
+            )
+        names = {f.name for f in BGPNeighborAF._meta.concrete_fields}
+        probe = BGPNeighborAF(**{k: v for k, v in attrs.items() if k in names})
+        if self.instance is not None:
+            for f in BGPNeighborAF._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        return attrs
+
+    class Meta:
+        model = BGPNeighborAF
+        fields = ["id", "parent", "session_id", "peer_group_id", "afi_safi",
+                  "afi_safi_display", "activate",
+                  "import_policy", "import_policy_id", "export_policy", "export_policy_id",
+                  "prefix_list_in", "prefix_list_in_id",
+                  "prefix_list_out", "prefix_list_out_id",
+                  "default_originate", "default_originate_policy",
+                  "default_originate_policy_id", "next_hop_self",
+                  "route_reflector_client", "soft_reconfiguration", "as_override",
+                  "remove_private_as", "send_community", "allowas_in", "maximum_prefix",
+                  "maximum_prefix_threshold", "maximum_prefix_restart",
+                  "maximum_prefix_warning_only", "extra", "effective"]
+        read_only_fields = ["id"]
+        validators = []
 
 
 class BGPPeerGroupSerializer(
@@ -922,6 +1260,9 @@ class BGPPeerGroupSerializer(
         write_only=True, required=False, allow_null=True,
     )
     session_count = serializers.SerializerMethodField()
+    #: The group's address-family rows; ``address_families`` stays the list
+    #: of the active ones.
+    afs = BGPNeighborAFSerializer(many=True, read_only=True)
 
     def get_session_count(self, obj) -> int:
         annotated = getattr(obj, "session_count_annotated", None)
@@ -931,7 +1272,7 @@ class BGPPeerGroupSerializer(
         model = BGPPeerGroup
         fields = ["id", "numid", "name", "description",
                   "remote_asn", "remote_asn_mode", "local_asn", "local_asn_id",
-                  "update_source", *_KNOB_FIELDS, "session_count",
+                  "update_source", *_KNOB_FIELDS, "afs", "session_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
 
@@ -949,7 +1290,7 @@ class BGPSessionSerializer(
     cf_model = "bgpsession"
     # The resolved knob set the session page draws, not one value a column
     # can show (see api.list_fields).
-    list_columns_exclude = ("effective",)
+    list_columns_exclude = ("effective", "afs", "effective_afs")
 
     instance = BGPInstanceMiniSerializer(read_only=True)
     instance_id = TenantScopedPrimaryKeyRelatedField(
@@ -988,6 +1329,16 @@ class BGPSessionSerializer(
     )
     peer_session = serializers.SerializerMethodField()
     effective = serializers.SerializerMethodField()
+    #: The session's own address-family rows.
+    afs = BGPNeighborAFSerializer(many=True, read_only=True)
+    #: Every family the session speaks, each knob resolved (own row, own
+    #: field, group row, group field).
+    effective_afs = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only([])
+    def get_effective_afs(self, obj):
+        return [_af_effective_out(e) for e in effective_afs(obj)]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_peer_session(self, obj):
@@ -1054,7 +1405,7 @@ class BGPSessionSerializer(
                   "remote_address", "interface", "interface_id",
                   "vm_interface", "vm_interface_id", "remote_address_obj",
                   "peer_device", "peer_device_id", "peer_session",
-                  *_KNOB_FIELDS, "effective",
+                  *_KNOB_FIELDS, "effective", "afs", "effective_afs",
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "remote_address_obj", "created_at", "updated_at"]
@@ -1420,6 +1771,11 @@ class VTEPMembershipSerializer(_ParentRefMixin, _ChildRowSerializer):
         source="vlan", queryset=VLAN.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    interface = InterfaceMiniSerializer(read_only=True)
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     #: The VLAN the render resolves for this leaf (own, else the site's).
     resolved_vlan = serializers.SerializerMethodField()
 
@@ -1431,6 +1787,7 @@ class VTEPMembershipSerializer(_ParentRefMixin, _ChildRowSerializer):
     class Meta:
         model = VTEPMembership
         fields = ["id", "vtep", "vtep_id", "l2vpn", "l2vpn_id", "vlan", "vlan_id", "resolved_vlan",
+                  "interface", "interface_id",
                   "rd", "ingress_replication", "mcast_group", "extra"]
         read_only_fields = ["id"]
         validators = []
@@ -1492,6 +1849,67 @@ class VTEPSerializer(
 # ─── EVPN multihoming ────────────────────────────────────────────────────────
 
 
+class EthernetSegmentMemberSerializer(NumIdModelSerializer):
+    """One port in a segment and its own DF preference. On its own endpoint
+    a member is created with ``segment_id`` + ``interface_id``; nested in a
+    segment it is read-only (``interface_ids`` and
+    ``member_df_preferences`` write it)."""
+
+    segment = serializers.SerializerMethodField()
+    segment_id = TenantScopedPrimaryKeyRelatedField(
+        source="segment", queryset=EthernetSegment.objects.all(),
+        write_only=True, required=False,
+    )
+    interface = InterfaceMiniSerializer(read_only=True)
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False,
+    )
+    device = serializers.SerializerMethodField()
+    df_preference_effective = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_segment(self, obj):
+        return {"id": str(obj.segment_id), "name": obj.segment.name,
+                "df_preference": obj.segment.df_preference}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device(self, obj):
+        d = obj.interface.device
+        return {"id": str(d.id), "name": d.name}
+
+    def get_df_preference_effective(self, obj) -> int | None:
+        return obj.df_preference_effective
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if self.instance is None and not (attrs.get("segment") and attrs.get("interface")):
+            raise serializers.ValidationError(
+                {"interface_id": "A member needs a segment and an interface."}
+            )
+        if self.instance is not None:
+            for f in ("segment", "interface"):
+                if f in attrs and attrs[f] != getattr(self.instance, f):
+                    raise serializers.ValidationError(
+                        {f"{f}_id": "Move a port by removing it and adding it again."}
+                    )
+        iface = attrs.get("interface")
+        if self.instance is None and iface is not None:
+            other = EthernetSegmentMember.objects.filter(interface=iface).first()
+            if other is not None:
+                raise serializers.ValidationError(
+                    {"interface_id": f"{iface.name} is already in {other.segment.name}."}
+                )
+        return attrs
+
+    class Meta:
+        model = EthernetSegmentMember
+        fields = ["id", "segment", "segment_id", "interface", "interface_id", "device",
+                  "df_preference", "df_preference_effective"]
+        read_only_fields = ["id"]
+        validators = []
+
+
 class EthernetSegmentSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
     """A segment and the LAG interfaces, on different leaves, that share it.
 
@@ -1508,9 +1926,79 @@ class EthernetSegmentSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdMo
         write_only=True, required=False, many=True,
     )
     device_count = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
+    #: ``{interface_id: int | null}`` - set members' own DF preference in the
+    #: same call (a port not in the segment is refused).
+    member_df_preferences = serializers.DictField(
+        child=serializers.IntegerField(min_value=0, allow_null=True),
+        write_only=True, required=False,
+    )
 
     def get_device_count(self, obj) -> int:
         return len({i.device_id for i in obj.interfaces.all()})
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_members(self, obj):
+        rows = sorted(
+            obj.members.all(),
+            key=lambda m: (m.interface.device.name, m.interface.name),
+        )
+        return [
+            {
+                "id": m.id,
+                "interface": {"id": str(m.interface_id), "name": m.interface.name},
+                "device": {"id": str(m.interface.device_id), "name": m.interface.device.name},
+                "df_preference": m.df_preference,
+                "df_preference_effective": (
+                    m.df_preference if m.df_preference is not None else obj.df_preference
+                ),
+            }
+            for m in rows
+        ]
+
+    def _check_free(self, interfaces):
+        """A port sits in one segment: adding one another segment holds is
+        refused (one already a member here stays)."""
+        mine = self.instance.pk if self.instance is not None else None
+        taken = (
+            EthernetSegmentMember.objects.filter(interface__in=interfaces)
+            .exclude(segment_id=mine).select_related("segment", "interface")
+        )
+        for m in taken:
+            raise serializers.ValidationError(
+                {"interface_ids": f"{m.interface.name} is already in {m.segment.name}."}
+            )
+
+    def _set_preferences(self, seg, prefs):
+        if not prefs:
+            return
+        rows = {str(m.interface_id): m for m in seg.members.all()}
+        missing = [k for k in prefs if str(k) not in rows]
+        if missing:
+            raise serializers.ValidationError(
+                {"member_df_preferences": "Only a port in the segment takes a DF preference."}
+            )
+        for key, value in prefs.items():
+            m = rows[str(key)]
+            if m.df_preference != value:
+                m.df_preference = value
+                m.save(update_fields=["df_preference"])
+
+    def create(self, validated_data):
+        prefs = validated_data.pop("member_df_preferences", None)
+        with transaction.atomic():
+            seg = super().create(validated_data)
+            self._set_preferences(seg, prefs)
+        return seg
+
+    def update(self, instance, validated_data):
+        prefs = validated_data.pop("member_df_preferences", None)
+        with transaction.atomic():
+            # `set()` keeps the members that stay, so their own DF preference
+            # survives an `interface_ids` write; new ones start without one.
+            seg = super().update(instance, validated_data)
+            self._set_preferences(seg, prefs)
+        return seg
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -1526,12 +2014,15 @@ class EthernetSegmentSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdMo
         for f in ("esi", "sys_mac"):
             if f in attrs:
                 attrs[f] = getattr(probe, f)
+        if "interfaces" in attrs:
+            self._check_free(attrs["interfaces"])
         return attrs
 
     class Meta:
         model = EthernetSegment
         fields = ["id", "numid", "name", "esi", "es_id", "sys_mac", "df_preference",
-                  "interfaces", "interface_ids", "device_count", "description",
+                  "interfaces", "interface_ids", "members", "member_df_preferences",
+                  "device_count", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "device_count", "created_at", "updated_at"]
 

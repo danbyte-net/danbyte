@@ -4,7 +4,8 @@ import { MoveRight } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { LocationOption, Paginated, Rack, RackMoveResult } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { LocationOption, Rack, RackMoveResult } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { invalidateSiteViews } from "@/lib/site-cache"
 import { useMe } from "@/lib/use-me"
@@ -62,7 +63,7 @@ function RackMoveDialog({
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
     queryFn: () =>
-      api<Paginated<LocationOption>>(`/api/locations/?picker=1&site=${siteId}`),
+      apiAll<LocationOption>(`/api/locations/?picker=1&site=${siteId}`),
     enabled: !!siteId,
   })
 

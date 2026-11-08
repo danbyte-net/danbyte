@@ -1,7 +1,7 @@
 import type { TopoNode, TopologyGraph, TopologyPhotoAnchor } from "@/lib/api"
 import { fit } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
-import { CARD, NUB, PILL, pillWidth } from "./card-layout"
+import { CARD, NUB, PILL, nameRows, pillWidth } from "./card-layout"
 import type { Anchor, PortRef, Rect } from "./types"
 
 // Photo nodes: a device drawn as its type's front photo, to scale, with
@@ -21,7 +21,8 @@ import type { Anchor, PortRef, Rect } from "./types"
 //   4. neither - the normal card.
 // The name is a caption under the image, placed clear of the leads that
 // run down through it, with the device's card lines after it on the same
-// line (muted, `· `-separated) as far as they fit.
+// line (muted, `· `-separated) as far as they fit. The name is never cut:
+// one wider than the photo wraps onto more rows, and the node is taller.
 //
 // A photo can instead take its cables at its edge (the view's
 // `photo_anchor`, or the device's own `anchor`): it is anchored like a
@@ -474,6 +475,45 @@ export function photoAnchors(
   return out
 }
 
+/** A photo caption's role badge: the device's role, coloured as its card
+ * would be. A photo has no card fill, so the badge is where its role
+ * colour shows. */
+export interface RoleBadge {
+  text: string
+  color: string | null
+}
+
+/** The role badge a device's photo caption carries: its role, unless
+ * its card lines were chosen without it. Lines from Danbyte's built-in
+ * default (`card.source` `default`, or no card in the payload) are not a
+ * choice, so the badge shows; a list set on the device, the saved view,
+ * the role, the tenant or the deployment shows it only when it lists
+ * `role`. */
+export function roleBadge(data: TopoNode["data"]): RoleBadge | null {
+  const name = data.role?.name
+  if (!name) return null
+  const card = data.card
+  if (card && card.source !== "default" && !card.fields.includes("role"))
+    return null
+  return { text: name, color: data.role?.color || null }
+}
+
+/** Does a device show its role's colour on the Diagram: as a card (its
+ * fill), or as a photo with a role badge? A device marked for its photo
+ * with none to show is drawn as its card. */
+export function roleColourShown(data: FacedData): boolean {
+  return !photoFace(data) || !!roleBadge(data)
+}
+
+/** A role badge's width: the pill's size, never cut. */
+export function badgeWidth(text: string, measure: Measure): number {
+  return Math.ceil(measure(text, PILL.SIZE, PILL.WEIGHT)) + 2 * PILL.PAD_X
+}
+
+/** The room a role badge takes after the name: the gap and the badge. */
+const badgeRoom = (badge: string | undefined, measure: Measure) =>
+  badge ? PILL.GAP + badgeWidth(badge, measure) : 0
+
 /** What a photo node draws: its image, the markers and stub leads its
  * cables land on, and its caption. */
 export interface PhotoShown {
@@ -504,9 +544,18 @@ export interface CaptionTail {
 
 export interface PhotoCaption {
   x: number
+  /** The top of the caption's last row: the one its lines and pill
+   * follow the name on. */
   top: number
+  /** The name's last row (its only one unless it wraps), and its width. */
   text: string
   w: number
+  /** A name wider than the photo: its rows before `text`, each a line box
+   * above the last, left-aligned at `x`. */
+  lead?: string[]
+  /** The role badge after the name's last row, before the lines: from
+   * `x`, `w` wide (`roleBadge`). */
+  badge?: { x: number; w: number }
   /** The card lines after the name while no pill shows. */
   tail?: CaptionTail
   /** The whole caption - the name and every line - when the drawn one is
@@ -530,6 +579,8 @@ export function captionWith(
     top: caption.top,
     text: caption.text,
     w: caption.w,
+    ...(caption.lead ? { lead: caption.lead } : {}),
+    ...(caption.badge ? { badge: caption.badge } : {}),
     ...(p.tail ? { tail: p.tail } : {}),
     ...(p.full ? { full: p.full } : {}),
   }
@@ -631,10 +682,41 @@ export function captionTail(
 export const captionCap = (face: Pick<PhotoFace, "h" | "imgH">) =>
   face.h - face.imgH
 
+/** The rows a photo's name takes in its caption: one while the name, its
+ * role badge (`badge`) and the widest pill the card fields can show
+ * (`slot`) fit across the photo, else the name wrapped to the photo's
+ * width less their room - the badge stays on the name's last row. */
+export function captionRows(
+  face: Pick<PhotoFace, "w">,
+  name: string,
+  slot: readonly string[],
+  measure: Measure,
+  badge?: string
+): string[] {
+  const slotW = Math.max(0, ...slot.map((t) => pillWidth(t, measure)))
+  const extra = (slotW ? PILL.GAP + slotW : 0) + badgeRoom(badge, measure)
+  return nameRows(name, Math.max(1, face.w - extra), measure)
+}
+
+/** A photo face with room under its image for its whole name: one more
+ * caption row for each row the name wraps onto past the first. */
+export function withCaptionRows(
+  face: PhotoFace,
+  name: string,
+  slot: readonly string[],
+  measure: Measure,
+  badge?: string
+): PhotoFace {
+  const rows = captionRows(face, name, slot, measure, badge).length
+  return rows > 1
+    ? { ...face, h: face.h + (rows - 1) * PHOTO.CAPTION_LH }
+    : face
+}
+
 /**
  * A photo node as drawn for its anchored ends (`ends`: the anchors of
- * every line landing on it). The caption - the name, its card lines
- * (`lines`) after it, then room for the widest pill the card fields can
+ * every line landing on it). The caption - the name, its role badge
+ * (`badge`) and its card lines (`lines`) after it, then room for the widest pill the card fields can
  * show (`slot`) - steps round the leads running down through it: from its
  * ports, or from its bottom edge. It takes the first gap the whole of it
  * fits; else the first that fits the name, the pill and as many whole
@@ -654,7 +736,8 @@ export function photoShown(
   measure: Measure,
   lod: number = PHOTO.LOD,
   lines: readonly string[] = [],
-  statusPill = false
+  statusPill = false,
+  badge?: string
 ): PhotoShown {
   const points = ends.filter((a): a is PointAnchor => a.k === "point")
   const at = new Set(
@@ -682,7 +765,10 @@ export function photoShown(
   ].map((x): [number, number] => [x - half, x + half])
   const slotW = Math.max(0, ...slot.map((t) => pillWidth(t, measure)))
   const extra = slotW ? PILL.GAP + slotW : 0
-  const nameW = Math.ceil(measure(name, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
+  // The badge goes with the name: never parted from it.
+  const tag = badgeRoom(badge, measure)
+  const nameW =
+    Math.ceil(measure(name, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT)) + tag
   const values = lines.map(tailValue).filter(Boolean)
   const gaps = captionGaps(face.w, blocked)
   const tailNeed = (k: number) =>
@@ -702,26 +788,34 @@ export function photoShown(
   const spot =
     kept ??
     (borrow ? place((k) => nameW + Math.max(tailNeed(k), extra)) : undefined)
-  const { x, room, to } = spot ?? captionRoom(face.w, blocked, nameW + extra)
-  const text = fit(
-    name,
-    Math.max(0, room - extra),
-    CARD.TITLE_SIZE,
-    CARD.TITLE_WEIGHT,
-    measure
-  )
+  // The name is never cut. Wider than the photo, it wraps from the left
+  // edge (`withCaptionRows` made the room under the image); else, when no
+  // gap between the leads holds it, it starts in the widest gap and runs
+  // on over the leads, kept on the photo.
+  const rows = captionRows(face, name, slot, measure, badge)
+  const lead = rows.slice(0, -1)
+  const text = rows[rows.length - 1]
   const w = Math.ceil(measure(text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
-  const tailX = x + w + PHOTO.TAIL_GAP
+  // The name's last row and its badge, as one.
+  const wt = w + tag
+  let { x, to } = lead.length
+    ? { x: 0, to: face.w }
+    : (spot ?? captionRoom(face.w, blocked, nameW + extra))
+  if (!lead.length && x + wt + extra > face.w) {
+    x = Math.max(0, face.w - wt - extra)
+    to = Math.max(to, Math.min(face.w, x + wt + extra))
+  }
+  const tailX = x + wt + PHOTO.TAIL_GAP
   // The lines in `pill` px less: a value is cut only when it could never
   // fit whole beside the whole name.
   const tailIn = (pill: number) => {
     const t = captionTail(
       values,
       to - tailX - pill,
-      face.w - nameW - PHOTO.TAIL_GAP - pill,
+      face.w - wt - PHOTO.TAIL_GAP - pill,
       measure
     )
-    const cut = text !== name || !!t?.cut || (values.length > 0 && !t)
+    const cut = !!t?.cut || (values.length > 0 && !t)
     return {
       ...(t ? { tail: { text: t.text, x: tailX, w: t.w } } : {}),
       ...(cut ? { full: [name, ...values].join(SEP) } : {}),
@@ -742,9 +836,11 @@ export function photoShown(
     stubs,
     caption: {
       x,
-      top: face.imgH + PHOTO.CAPTION_GAP,
+      top: face.imgH + PHOTO.CAPTION_GAP + lead.length * PHOTO.CAPTION_LH,
       text,
       w,
+      ...(lead.length ? { lead } : {}),
+      ...(badge ? { badge: { x: x + w + PILL.GAP, w: tag - PILL.GAP } } : {}),
       ...free,
       ...(same ? {} : { pilled }),
     },
@@ -756,7 +852,9 @@ export function photoShown(
 export function captionPill(caption: PhotoCaption, w: number): Rect {
   const end = caption.tail
     ? caption.tail.x + caption.tail.w
-    : caption.x + caption.w
+    : caption.badge
+      ? caption.badge.x + caption.badge.w
+      : caption.x + caption.w
   return {
     x: end + PILL.GAP,
     y: caption.top + (PHOTO.CAPTION_LH - PILL.H) / 2,

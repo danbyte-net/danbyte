@@ -197,9 +197,12 @@ def filters_pass(policy, ip, device, device_tags=None, device_hardware=None) -> 
     simply does not reach an unassigned address - narrower, never wider, which
     is the safe direction for a rule that can only add monitoring.
     """
-    tags = policy.match_tags or []
-    pattern = (policy.match_name or "").strip()
-    iface = (policy.match_interface or "").strip()
+    # Read defensively: a device-shaped rule from another app (see
+    # monitoring.external.policy) carries the same filter names but has no
+    # interface filter.
+    tags = getattr(policy, "match_tags", None) or []
+    pattern = (getattr(policy, "match_name", "") or "").strip()
+    iface = (getattr(policy, "match_interface", "") or "").strip()
     hardware = (getattr(policy, "match_hardware", "") or "").strip()
     if not tags and not pattern and not iface and not hardware:
         return True

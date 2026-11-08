@@ -5,7 +5,8 @@ import { ChevronDown } from "lucide-react"
 
 import { Link } from "@tanstack/react-router"
 
-import { api, type CustomField, type Paginated } from "@/lib/api"
+import { api, type CustomField } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { groupCustomFields, UNGROUPED_KEY } from "@/lib/custom-fields"
 import { Badge } from "@/components/ui/badge"
 import { KvCard } from "@/components/kv-card"
@@ -15,8 +16,7 @@ import { cn } from "@/lib/utils"
 export function useCustomFieldDefs(model: string) {
   return useQuery({
     queryKey: ["custom-fields-for", model],
-    queryFn: () =>
-      api<Paginated<CustomField>>(`/api/custom-fields/?model=${model}`),
+    queryFn: () => apiAll<CustomField>(`/api/custom-fields/?model=${model}`),
     // Hidden definitions never reach a card, table or form - the value
     // stays on the object and in search.
     select: (d) => ({ ...d, results: d.results.filter((f) => !f.hidden) }),
@@ -28,8 +28,7 @@ export function useCustomFieldDefs(model: string) {
 export function useHiddenCustomFieldKeys(model: string): Set<string> {
   const q = useQuery({
     queryKey: ["custom-fields-all", model],
-    queryFn: () =>
-      api<Paginated<CustomField>>(`/api/custom-fields/?model=${model}`),
+    queryFn: () => apiAll<CustomField>(`/api/custom-fields/?model=${model}`),
   })
   return new Set(
     (q.data?.results ?? []).filter((f) => f.hidden).map((f) => f.key)

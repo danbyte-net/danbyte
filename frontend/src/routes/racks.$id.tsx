@@ -8,7 +8,6 @@ import { useQuery } from "@tanstack/react-query"
 import { Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import {
   Suspense,
-  lazy,
   useCallback,
   useLayoutEffect,
   useMemo,
@@ -18,25 +17,26 @@ import {
 import { type ColumnDef } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
-import type {
-  Device,
-  Paginated,
-  PortCountRow,
-  Rack,
-  RackPortState,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Device, PortCountRow, Rack, RackPortState } from "@/lib/api"
 import { WITH_PORTS } from "@/lib/port-utilization"
 import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { PowerFigure } from "@/components/cells/power-figure"
+import { RoomCell } from "@/components/cells/room-cell"
+import { CoolingFigure, PowerFigure } from "@/components/cells/power-figure"
+import { CoolingMethodText } from "@/components/cells/cooling-cell"
+import { Badge } from "@/components/ui/badge"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
-import { EmbeddedPowerFeedTable } from "@/components/embedded-tables"
+import {
+  EmbeddedCoolingFeedTable,
+  EmbeddedPowerFeedTable,
+} from "@/components/embedded-tables"
 import { QueryError } from "@/components/query-error"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
 import { RackElevation } from "@/components/rack-elevation"
@@ -53,6 +53,7 @@ import { setLivePortsShown, useLivePortsShown } from "@/lib/live-ports-pref"
 import { RackExportMenu } from "@/components/rack-export-menu"
 import { Loading } from "@/components/loading"
 import { useMe } from "@/lib/use-me"
+import { lazyChunk } from "@/lib/lazy-chunk"
 
 export const Route = createFileRoute("/racks/$id")({
   component: RackDetail,
@@ -77,7 +78,13 @@ function RackDetail() {
 
 function RackDetailBody({ rack: r }: { rack: Rack }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "devices" | "power" | "documents" | "journal" | "history"
+    | "overview"
+    | "devices"
+    | "power"
+    | "cooling"
+    | "documents"
+    | "journal"
+    | "history"
   >("overview")
   const { canDo } = useMe()
   const nav = useNavigate()
@@ -131,6 +138,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: r.device_count },
         { value: "power", label: "Power feeds" },
+        { value: "cooling", label: "Cooling feeds" },
         { value: "documents", label: "Documents", count: r.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -145,7 +153,11 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
           <RackElevation rack={r} scale={0.6} draggable />
           <div className="min-w-0 flex-1">
-            <RackDevicesPane rackId={r.id} />
+            <RackDevicesPane
+              rackId={r.id}
+              mismatched={r.cooling?.mismatched ?? 0}
+              liquid={!!r.cooling_capability && r.cooling_capability !== "air"}
+            />
           </div>
         </div>
       </DetailTab>
@@ -154,6 +166,14 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
           filter={{ rack: r.id }}
           omitRack
           emptyText="No feeds deliver power to this rack yet."
+          searchable={false}
+        />
+      </DetailTab>
+      <DetailTab value="cooling">
+        <EmbeddedCoolingFeedTable
+          filter={{ rack: r.id }}
+          omitRack
+          emptyText="No feeds cool this rack yet."
           searchable={false}
         />
       </DetailTab>
@@ -176,17 +196,50 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
   )
 }
 
-function RackDevicesPane({ rackId }: { rackId: string }) {
+const COOLING_FILTERS = ["all", "mismatched", "unconnected"] as const
+type CoolingFilter = (typeof COOLING_FILTERS)[number]
+
+// The device list filter behind each cooling filter.
+const COOLING_QUERY: Record<CoolingFilter, string> = {
+  all: "",
+  // Blades in its chassis count too (#469).
+  mismatched: "&cooling_mismatch=1&bay_children=1",
+  unconnected: "&cooling_unconnected=1",
+}
+
+function RackDevicesPane({
+  rackId,
+  mismatched,
+  liquid,
+}: {
+  rackId: string
+  /** Devices whose cooling the rack does not take (#434). */
+  mismatched: number
+  /** The rack has a liquid loop or a tank - offer the unconnected filter. */
+  liquid: boolean
+}) {
+  // The devices the rack's cooling capability does not take, offered while
+  // there are any - or while a link asked for them (`?cooling=mismatched`).
+  const [cooling, setCooling] = useUrlTab<CoolingFilter>(
+    "all",
+    "cooling",
+    COOLING_FILTERS
+  )
+  const onlyMismatched = cooling === "mismatched"
   const q = useQuery({
-    queryKey: ["rack-devices", rackId],
-    queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rackId}`),
+    queryKey:
+      cooling === "all"
+        ? ["rack-devices", rackId]
+        : ["rack-devices", rackId, `cooling-${cooling}`],
+    queryFn: () =>
+      apiAll<Device>(`/api/devices/?rack=${rackId}${COOLING_QUERY[cooling]}`),
   })
   const rows = q.data?.results ?? []
   const columns = useMemo<ColumnDef<Device>[]>(() => {
     // Shared name + status from the device factory; the rack placement columns
     // (position, face, height) are this pane's own and sit between them.
-    const [name, status] = buildDeviceColumns({
-      include: ["name", "status"],
+    const [name, status, coolingColumn] = buildDeviceColumns({
+      include: ["name", "status", "cooling"],
     })
     return [
       name,
@@ -229,23 +282,73 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
         ),
       },
       status,
+      // What each device is cooled by - shown while the list is the ones
+      // that do not fit.
+      ...(cooling !== "all"
+        ? [
+            {
+              ...coolingColumn,
+              meta: { ...coolingColumn.meta, defaultHidden: false },
+            },
+          ]
+        : []),
     ]
-  }, [])
-  if (q.isLoading) return <Loading />
-  if (q.isError) return <QueryError error={q.error} />
-  if (rows.length === 0)
-    return (
-      <p className="text-sm text-muted-foreground">No devices in this rack.</p>
-    )
-  return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      flexColumn="name"
-      embedded
-      searchable
-      searchPlaceholder="Search devices…"
+  }, [cooling])
+  const showMismatched = mismatched > 0 || onlyMismatched
+  const showUnconnected = liquid || cooling === "unconnected"
+  const filter = (showMismatched || showUnconnected) && (
+    <SegmentedTabs<CoolingFilter>
+      value={cooling}
+      onValueChange={setCooling}
+      items={[
+        { value: "all", label: "All devices" },
+        ...(showMismatched
+          ? [{ value: "mismatched" as const, label: "Mismatched cooling" }]
+          : []),
+        ...(showUnconnected
+          ? [
+              {
+                value: "unconnected" as const,
+                label: "Liquid-cooled, no intake connected",
+              },
+            ]
+          : []),
+      ]}
     />
+  )
+  let body: React.ReactNode
+  if (q.isLoading) body = <Loading />
+  else if (q.isError) body = <QueryError error={q.error} />
+  else if (rows.length === 0)
+    body = (
+      <p className="text-sm text-muted-foreground">
+        {onlyMismatched
+          ? "Every device in this rack fits its cooling."
+          : cooling === "unconnected"
+            ? "Every liquid-cooled device here has an intake connected."
+            : "No devices in this rack."}
+      </p>
+    )
+  else
+    body = (
+      <DataTable
+        // A column set of its own per filter, so each keeps its layout.
+        key={cooling}
+        data={rows}
+        columns={columns}
+        flexColumn="name"
+        embedded
+        searchable
+        searchPlaceholder="Search devices…"
+      />
+    )
+  return filter ? (
+    <div className="grid gap-3">
+      {filter}
+      {body}
+    </div>
+  ) : (
+    body
   )
 }
 
@@ -284,6 +387,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
       <span className="text-muted-foreground">…</span>
     )
   const util = r.u_height ? Math.round((r.used_units / r.u_height) * 100) : 0
+  const mismatched = r.cooling?.mismatched ?? 0
   const overWeight =
     r.max_weight_kg != null && r.total_weight_kg > r.max_weight_kg
   const rackRows: KvRow[] = [
@@ -344,6 +448,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
         dash
       ),
     },
+    { label: "Room", value: <RoomCell room={r.room} /> },
   ]
   const capacityRows: KvRow[] = [
     { label: "Height", value: <span className="num">{r.u_height}U</span> },
@@ -371,6 +476,32 @@ function RackOverview({ rack: r }: { rack: Rack }) {
     {
       label: "Power",
       value: <PowerFigure power={r.power} />,
+    },
+    {
+      // Heat load over cooling capacity (#434), read like power.
+      label: "Cooling",
+      value: <CoolingFigure cooling={r.cooling} />,
+    },
+    {
+      label: "Cooling capability",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          <CoolingMethodText
+            value={r.cooling_capability}
+            list="cooling_capability"
+          />
+          {/* Devices placed before the capability was made stricter. */}
+          {mismatched > 0 && (
+            <Link
+              to="/racks/$id"
+              params={{ id: r.id }}
+              search={{ tab: "devices", cooling: "mismatched" }}
+            >
+              <Badge variant="warning">{mismatched} mismatched</Badge>
+            </Link>
+          )}
+        </span>
+      ),
     },
     {
       label: "Weight",
@@ -420,7 +551,7 @@ const DEFAULT_ZOOM: Record<RackDisplayMode, number> = {
 }
 
 // The rack in 3D - three.js and all, in its own chunk.
-const RackScene = lazy(() => import("@/components/floorplan3d/rack-scene"))
+const RackScene = lazyChunk(() => import("@/components/floorplan3d/rack-scene"))
 
 const VIZ = ["2d", "3d"] as const
 type Viz = (typeof VIZ)[number]

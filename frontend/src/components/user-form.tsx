@@ -3,14 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
-  type Paginated,
   type RBACGroup,
   type RBACUser,
   type RBACUserWritePayload,
   type SiteOption,
   type TenantPicker,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CheckList,
   Field,
@@ -90,15 +89,15 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
 
   const groupsQuery = useQuery({
     queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    queryFn: () => apiAll<RBACGroup>("/api/groups/"),
   })
   const tenantsQuery = useQuery({
     queryKey: ["tenants", "picker"],
-    queryFn: () => api<Paginated<TenantPicker>>("/api/tenants/?picker=1"),
+    queryFn: () => apiAll<TenantPicker>("/api/tenants/?picker=1"),
   })
   const sitesQuery = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/?picker=1"),
     enabled: !isEdit,
   })
   const siteOptions: CheckOption<string>[] = (

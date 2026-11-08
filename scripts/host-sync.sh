@@ -143,7 +143,7 @@ render() {
   fi
   sed -e "s|@@SERVER_NAME@@|$2|g" -e "s|@@CERT@@|$3|g" -e "s|@@KEY@@|$4|g" \
       -e "s|@@STATIC_ROOT@@|$APP/staticfiles|g" -e "s|@@MEDIA_ROOT@@|$APP/media|g" \
-      -e "s|@@MAINTENANCE_ROOT@@|$APP/deploy|g" \
+      -e "s|@@MAINTENANCE_ROOT@@|$APP/deploy|g" -e "s|@@FRONTEND_ROOT@@|$APP/frontend/dist/client|g" \
       -e "s|@@H2_LISTEN@@|$h2l|g" -e "s|@@H2_DIRECTIVE@@|$h2d|g" "$1"
 }
 store_hash() { install -d -m 755 "$HASH_DIR"; sha256sum "$SITE" | cut -d' ' -f1 >"$HASH_FILE"; }

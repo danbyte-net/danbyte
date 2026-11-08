@@ -241,6 +241,9 @@ class VSphereSoap:
                 "model": (props.get("hardware.systemInfo.model") or "").strip(),
                 "serial": _serial_from(props.get("summary.hardware")),
                 "platform": _esxi_version(props.get("summary.config.product")),
+                # The bare product version (8.0.3), for the software target (#395).
+                "version": (getattr(props.get("summary.config.product"), "version", "")
+                            or "").strip(),
                 "ips": _vnic_ips(props.get("config.network.vnic")),
                 "pnics": _pnics(props.get("config.network.pnic")),
                 "switch_uplinks": _switch_uplinks(

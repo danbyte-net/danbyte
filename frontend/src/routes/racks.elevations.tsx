@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type { Device, Paginated, Rack } from "@/lib/api"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -62,7 +63,7 @@ function RackElevationsPage() {
     queryFn: async () => {
       const pages = await Promise.all(
         batches(rackIds, RACK_BATCH).map((part) =>
-          api<Paginated<Device>>(`/api/devices/?rack=${part.join(",")}`)
+          apiAll<Device>(`/api/devices/?rack=${part.join(",")}`)
         )
       )
       const byRack = new Map<string, Device[]>(rackIds.map((id) => [id, []]))

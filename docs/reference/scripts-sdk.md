@@ -21,7 +21,7 @@ work.
 
 | Call | Does |
 |---|---|
-| `db.list(type, **filters)` | Every matching object, following pagination. Filters are the query parameters the UI uses, e.g. `db.list("devices", site="aarhus", status="active")`. `limit=` caps the result. |
+| `db.list(type, **filters)` | Every matching object, following pagination 1,000 rows a request, so the API's page cap never cuts it short. Filters are the query parameters the UI uses, e.g. `db.list("devices", site="aarhus", status="active")`. `limit=` caps the result. |
 | `db.get(type, id)` | One object by id. |
 | `db.create(type, data)` | Create, returning the new object. |
 | `db.update(type, id, data)` | Partial update, returning the object. |
@@ -41,6 +41,10 @@ except ApiError as exc:
         run.fail("This script's account cannot create devices.")
     raise
 ```
+
+A `429` (more large pages in flight than the run's token may have, see
+[Pagination](api.md#pagination)) is retried after the server's
+`Retry-After` before it reaches you as an `ApiError`.
 
 ## `run` - the run
 

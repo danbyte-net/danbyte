@@ -4,8 +4,8 @@ import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useState } from "react"
 import type { ReactNode } from "react"
 
-import { api } from "@/lib/api"
-import type { Paginated, VTEP, VTEPMembership } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { VTEP, VTEPMembership } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -104,8 +104,7 @@ export function VTEPSection({
   >(null)
   const q = useQuery({
     queryKey: ["vteps", "device", device.id],
-    queryFn: () =>
-      api<Paginated<VTEP>>(`/api/routing/vteps/?device=${device.id}`),
+    queryFn: () => apiAll<VTEP>(`/api/routing/vteps/?device=${device.id}`),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["vteps"] })
@@ -252,6 +251,15 @@ export function VTEPSection({
                     )}
                     {m.vlan && (
                       <span className="text-muted-foreground">own VLAN</span>
+                    )}
+                    {m.interface && (
+                      <Link
+                        to="/interfaces/$id"
+                        params={{ id: m.interface.id }}
+                        className="link font-mono"
+                      >
+                        {m.interface.name}
+                      </Link>
                     )}
                     {m.rd && (
                       <span className="font-mono text-muted-foreground">

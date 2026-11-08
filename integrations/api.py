@@ -7,9 +7,13 @@ from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
+from scripting.models import Script
 
 from .models import DeviceConfigSnapshot, DeviceConfigState, Webhook
+from .script_targets import declares_device_ids, may_start
 from .webhooks import deliver_webhook
 
 
@@ -80,9 +84,14 @@ class WebhookSerializer(serializers.ModelSerializer):
                             "additional_header_names", "created_at", "updated_at"]
 
 
-class WebhookViewSet(TenantScopedViewSet):
+class WebhookViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = Webhook.objects.all().order_by("name")
     serializer_class = WebhookSerializer
+    # The URL, the secret and the headers belong to one webhook: not bulk
+    # edits, and never read back.
+    bulk_edit = BulkEditSpec(
+        fields=("enabled", "on_create", "on_update", "on_delete"), tags=False
+    )
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -117,8 +126,14 @@ class AutomationTargetSerializer(serializers.ModelSerializer):
     token_set = serializers.SerializerMethodField()
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     # A plain CharField (not the model's ChoiceField) so plugin-registered
-    # automation kinds validate; the built-ins awx/webhook are registered too.
+    # automation kinds validate; the built-ins awx/webhook/script are too.
     kind = serializers.CharField()
+    # Only the active tenant's scripts resolve; a foreign id is a 400 here.
+    script = TenantScopedPrimaryKeyRelatedField(
+        queryset=Script.objects.all(), required=False, allow_null=True,
+    )
+    script_name = serializers.CharField(source="script.name", read_only=True, default=None)
+    base_url = serializers.URLField(max_length=512, required=False, allow_blank=True)
 
     def get_token_set(self, obj) -> bool:
         return bool(obj.token)
@@ -133,6 +148,49 @@ class AutomationTargetSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate(self, attrs):
+        inst = self.instance
+        kind = attrs.get("kind", getattr(inst, "kind", None))
+        script = attrs["script"] if "script" in attrs else getattr(inst, "script", None)
+        if kind == "script":
+            if script is None:
+                raise serializers.ValidationError({"script": ["Pick the script to run."]})
+            tenant = self._tenant()
+            if tenant is None or script.tenant_id != tenant.pk:
+                raise serializers.ValidationError({"script": ["Unknown script."]})
+            if not declares_device_ids(script):
+                raise serializers.ValidationError({"script": [
+                    "This script has no device_ids parameter. Add one to its parameters "
+                    "to use it as a deploy target."
+                ]})
+            # Choosing the script (or switching to the script kind) is what
+            # needs the rights; an unrelated edit of the target does not.
+            choosing = (
+                inst is None or inst.kind != "script" or script.pk != inst.script_id
+            )
+            if choosing:
+                request = self.context.get("request")
+                why = may_start(getattr(request, "user", None), script)
+                if why:
+                    raise serializers.ValidationError({"script": [why]})
+        else:
+            base_url = attrs.get("base_url", getattr(inst, "base_url", ""))
+            if not base_url:
+                raise serializers.ValidationError({"base_url": ["This field is required."]})
+            if "script" in attrs or (inst is not None and inst.script_id):
+                attrs["script"] = None  # only a script target names a script
+        return attrs
+
+    def _tenant(self):
+        if self.instance is not None:
+            return self.instance.tenant
+        request = self.context.get("request")
+        if request is None:
+            return None
+        from api.views import _get_active_tenant
+
+        return _get_active_tenant(request)
+
     def update(self, instance, validated):
         if validated.get("token", None) == "":
             validated.pop("token", None)  # blank = keep existing
@@ -141,16 +199,19 @@ class AutomationTargetSerializer(serializers.ModelSerializer):
     class Meta:
         model = AutomationTarget
         fields = ["id", "name", "kind", "kind_display", "enabled", "base_url",
+                  "script", "script_name",
                   "job_template_id", "token", "token_set", "ssl_verify",
                   "extra_vars", "auto_on_change", "object_types",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "kind_display", "token_set",
+        read_only_fields = ["id", "kind_display", "token_set", "script_name",
                             "created_at", "updated_at"]
 
 
-class AutomationTargetViewSet(TenantScopedViewSet):
+class AutomationTargetViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = AutomationTarget.objects.all().order_by("name")
     serializer_class = AutomationTargetSerializer
+    # The endpoint and the token belong to one target: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("enabled", "auto_on_change"), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -158,14 +219,24 @@ class AutomationTargetViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(base_url__icontains=s)
-        return qs
+        return qs.select_related("script")
 
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
-        """Reachability check - AWX /api/v2/ping/, or a HEAD to the webhook URL."""
+        """Reachability check - AWX /api/v2/ping/, or a HEAD to the webhook URL.
+        A script target is checked without running it."""
         from core.ssrf import safe_get, safe_request
 
         t = self.get_object()
+        if t.kind == "script":
+            s = t.script
+            why = (
+                "No script is set." if s is None
+                else f"The script {s.name} is disabled." if not s.enabled
+                else "The script has no device_ids parameter." if not declares_device_ids(s)
+                else may_start(request.user, s)
+            )
+            return Response({"ok": False, "error": why} if why else {"ok": True})
         try:
             if t.kind == "awx":
                 r = safe_get(
@@ -217,19 +288,23 @@ class AutomationTargetViewSet(TenantScopedViewSet):
             )
         from .dispatch import enqueue_deploy
 
-        run = enqueue_deploy(target, valid, event="bulk")
+        run = enqueue_deploy(target, valid, event="bulk", user=request.user,
+                             dry_run=bool((request.data or {}).get("dry_run")))
         return Response(DeployRunSerializer(run).data, status=202)
 
 
 class DeployRunSerializer(serializers.ModelSerializer):
     can_retry = serializers.SerializerMethodField()
     duration_ms = serializers.SerializerMethodField()
+    script_run_status = serializers.CharField(
+        source="script_run.status", read_only=True, default=None
+    )
 
     def get_can_retry(self, obj) -> bool:
         # A failed run can be re-fired only while its target still exists + is on.
         return bool(
             obj.status == "failed" and obj.target_id and obj.target
-            and obj.target.enabled
+            and obj.target.enabled and obj.pipeline_run_id is None
         )
 
     def get_duration_ms(self, obj):
@@ -239,14 +314,15 @@ class DeployRunSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DeployRun
-        fields = ["id", "target_name", "event", "device_ids", "status",
+        fields = ["id", "target_name", "event", "device_ids", "object_type", "status",
                   "detail", "created_at", "finished_at", "attempt", "retry_of",
-                  "can_retry", "duration_ms"]
+                  "can_retry", "duration_ms", "script_run", "script_run_status",
+                  "dry_run", "pipeline_run", "pipeline_step"]
         read_only_fields = fields
 
 
 class DeployRunViewSet(TenantScopedViewSet):
-    queryset = DeployRun.objects.select_related("target").order_by("-created_at")
+    queryset = DeployRun.objects.select_related("target", "script_run").order_by("-created_at")
     serializer_class = DeployRunSerializer
     # POST is enabled only for the `retry` detail action - the collection stays
     # read-only (create() below 405s so the generic ModelViewSet write that
@@ -276,6 +352,9 @@ class DeployRunViewSet(TenantScopedViewSet):
         status_ = self.request.query_params.get("status")
         if status_:
             qs = qs.filter(status=status_)
+        object_type = self.request.query_params.get("object_type")
+        if object_type:
+            qs = qs.filter(object_type=object_type)
         return qs
 
     @action(detail=True, methods=["post"])
@@ -302,11 +381,18 @@ class DeployRunViewSet(TenantScopedViewSet):
             return Response(
                 {"detail": "Only failed runs can be retried."}, status=400
             )
+        if run.pipeline_run_id is not None:
+            return Response(
+                {"detail": "This run is a pipeline step. Re-run the pipeline instead."},
+                status=400,
+            )
         target = run.target
         if target is None or not target.enabled:
             return Response(
                 {"detail": "Target is missing or disabled."}, status=400
             )
+        if run.object_type == "virtualmachine":
+            return self._retry_provision(request, run, target)
         from api.models import Device
 
         valid = list(
@@ -325,12 +411,48 @@ class DeployRunViewSet(TenantScopedViewSet):
 
         new = enqueue_deploy(
             target, valid, event=run.event,
-            attempt=run.attempt + 1, retry_of=run.retry_of or run,
+            attempt=run.attempt + 1, retry_of=run.retry_of or run, user=request.user,
+            dry_run=run.dry_run,
         )
         return Response(DeployRunSerializer(new).data, status=202)
 
 
-class DeviceConfigStateSerializer(serializers.ModelSerializer):
+    def _retry_provision(self, request, run, target):
+        """A provision retry needs the provision grant on each VM, and only
+        VMs still intended in the target's tenant go again."""
+        from api.models import VirtualMachine
+        from auth_api import rbac
+
+        from .dispatch import enqueue_deploy, target_covers
+        from .provision import audit_provision
+
+        if not target_covers(target, "virtualmachine"):
+            return Response(
+                {"detail": f"{target.name} does not take virtual machines."}, status=400
+            )
+        vms = list(
+            rbac.restrict_queryset(
+                VirtualMachine.objects.filter(
+                    tenant=target.tenant, intended=True, id__in=run.device_ids
+                ),
+                request.user, target.tenant, "virtualmachine", "provision",
+            )
+        )
+        if not vms:
+            return Response(
+                {"detail": "No intended VM here that you may provision."}, status=403
+            )
+        new = enqueue_deploy(
+            target, [v.id for v in vms], event=run.event,
+            attempt=run.attempt + 1, retry_of=run.retry_of or run, user=request.user,
+            object_type="virtualmachine", dry_run=run.dry_run,
+        )
+        for vm in vms:
+            audit_provision(request, vm, target, new, retry_of=run)
+        return Response(DeployRunSerializer(new).data, status=202)
+
+
+class DeviceConfigStateSerializer(TenantScopedModelSerializer):
     template_name = serializers.CharField(
         source="template.name", read_only=True, default=None
     )
@@ -379,6 +501,9 @@ class DeviceConfigStateViewSet(TenantScopedViewSet):
         status_ = self.request.query_params.get("status")
         if status_:
             qs = qs.filter(status=status_)
+        object_type = self.request.query_params.get("object_type")
+        if object_type:
+            qs = qs.filter(object_type=object_type)
         return qs
 
 

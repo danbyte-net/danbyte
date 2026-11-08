@@ -15,6 +15,7 @@ const INTEGRATION_NAMES: Record<string, string> = {
   virtualization: "Virtualization sync",
   ai: "Agent access",
   zabbix: "Zabbix",
+  prtg: "PRTG",
   oxidized: "Oxidized",
 }
 

@@ -8,7 +8,9 @@ context). Point an Ansible inventory plugin / `-i` script at it and playbooks
 render + push - credentials stay in the runner, never in Danbyte.
 
 Each host's ``danbyte.kind`` is ``device`` or ``virtual_machine``, and the
-``all_devices`` / ``all_vms`` groups let a play target one or the other. Host
+``all_devices`` / ``all_vms`` groups let a play target one or the other. Each
+host lists its application groups and installed applications (#436), and
+every assigned group is an ``app_group_<slug>`` inventory group. Host
 names are expected unique across devices and VMs (Ansible requires it); on the
 rare collision the device wins and the VM is skipped.
 """
@@ -66,6 +68,48 @@ def _iface_dict(iface) -> dict:
     }
 
 
+def _software_prefetches() -> list:
+    """The installs and application-group assignments a host's vars list
+    (#436), joined once for the whole fleet."""
+    from django.db.models import Prefetch
+
+    from .models import ApplicationGroupAssignment, InstalledSoftware
+
+    return [
+        Prefetch(
+            "installed_software",
+            queryset=InstalledSoftware.objects.select_related("application", "group")
+            .order_by(natural("application__name"), "version"),
+        ),
+        Prefetch(
+            "application_group_assignments",
+            queryset=ApplicationGroupAssignment.objects.select_related("group")
+            .order_by("group__slug"),
+        ),
+    ]
+
+
+def _software_vars(host) -> dict:
+    """``application_groups`` (slugs) and ``applications`` - what a runner
+    reads to set the host up."""
+    return {
+        "application_groups": [a.group.slug for a in host.application_group_assignments.all()],
+        "applications": [
+            {
+                "name": i.application.name,
+                "slug": i.application.slug,
+                "version": i.version or None,
+                "group": i.group.slug if i.group_id else None,
+            }
+            for i in host.installed_software.all()
+        ],
+    }
+
+
+def _software_groups(host) -> list[str]:
+    return [_grp("app_group", a.group.slug) for a in host.application_group_assignments.all()]
+
+
 def with_inventory_relations(qs):
     """Apply the select_related + Prefetch chain that ``device_hostvars`` /
     ``device_groups`` need, so building them is N+1-free - for the whole fleet
@@ -88,7 +132,7 @@ def with_inventory_relations(qs):
     return qs.select_related(
         "site", "site__region", "role", "platform",
         "primary_ip", "device_type", "device_type__manufacturer",
-    ).prefetch_related(TAGS, Prefetch("interfaces", queryset=iface_qs))
+    ).prefetch_related(TAGS, Prefetch("interfaces", queryset=iface_qs), *_software_prefetches())
 
 
 def device_hostvars(d, *, providers: bool = True) -> dict:
@@ -120,6 +164,7 @@ def device_hostvars(d, *, providers: bool = True) -> dict:
             # The device's interfaces (name/type/mtu/mac/vlan/assigned IPs),
             # so network plays can iterate ``danbyte.interfaces``.
             "interfaces": [_iface_dict(i) for i in d.interfaces.all()],
+            **_software_vars(d),
         },
         "config_context": render_config_context(d)["rendered"],
     }
@@ -152,6 +197,7 @@ def device_groups(d) -> list[str]:
     for key, val in (d.custom_fields or {}).items():
         if val is True:
             groups.append(_grp("cf", key))
+    groups.extend(_software_groups(d))
     return groups
 
 
@@ -195,7 +241,7 @@ def with_vm_inventory_relations(qs):
     return qs.select_related(
         "site", "site__region", "role", "platform", "status",
         "cluster", "cluster__group", "primary_ip", "device",
-    ).prefetch_related(TAGS, Prefetch("interfaces", queryset=iface_qs))
+    ).prefetch_related(TAGS, Prefetch("interfaces", queryset=iface_qs), *_software_prefetches())
 
 
 def vm_hostvars(vm) -> dict:
@@ -223,6 +269,7 @@ def vm_hostvars(vm) -> dict:
             "tags": [t.slug for t in tags_of(vm)],
             "custom_fields": vm.custom_fields or {},
             "interfaces": [_vm_iface_dict(i) for i in vm.interfaces.all()],
+            **_software_vars(vm),
         },
         "config_context": render_config_context(vm)["rendered"],
     }
@@ -253,6 +300,7 @@ def vm_groups(vm) -> list[str]:
     for key, val in (vm.custom_fields or {}).items():
         if val is True:
             groups.append(_grp("cf", key))
+    groups.extend(_software_groups(vm))
     return groups
 
 
@@ -303,8 +351,10 @@ def vm_groups(vm) -> list[str]:
         description=(
             "Standard Ansible inventory-script JSON: `_meta.hostvars` per device "
             "and VM (danbyte metadata incl. `kind`, interfaces, custom fields, "
+            "`application_groups` and `applications`, "
             "merged config context, ansible_host) plus site/region/role/platform/"
-            "status/tag groups, cluster/cluster-group for VMs, and all_devices/"
+            "status/tag groups, `app_group_<slug>` groups, cluster/cluster-group for VMs, "
+            "and all_devices/"
             "all_vms."
         ),
     ),

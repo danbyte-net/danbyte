@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated, type Tenant, type TenantGroup } from "@/lib/api"
+import { api, type Tenant, type TenantGroup } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
 import { Label } from "@/components/ui/label"
@@ -117,7 +118,7 @@ function BulkEditDialog({
 
   const groupsQuery = useQuery({
     queryKey: ["tenant-groups"],
-    queryFn: () => api<Paginated<TenantGroup>>("/api/tenant-groups/"),
+    queryFn: () => apiAll<TenantGroup>("/api/tenant-groups/"),
     enabled: open,
   })
   const groups = groupsQuery.data?.results ?? []
@@ -156,6 +157,7 @@ function BulkEditDialog({
           <div className="grid gap-1.5">
             <Label className="text-xs">Tenant group</Label>
             <Combobox
+              aria-label="Tenant group"
               value={group || KEEP}
               onChange={(v) => setGroup(!v || v === KEEP ? "" : v)}
               options={[
@@ -173,7 +175,7 @@ function BulkEditDialog({
               value={active || KEEP}
               onValueChange={(v) => setActive(v === KEEP ? "" : v)}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger aria-label="Status" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { useEffect, useMemo, useState } from "react"
+import { createFileRoute } from "@tanstack/react-router"
 import { useQuery, keepPreviousData } from "@tanstack/react-query"
-import type { ColumnDef } from "@tanstack/react-table"
 import { AlertTriangle, Cpu, Clock, RefreshCw } from "lucide-react"
 
 import { api } from "@/lib/api"
@@ -16,7 +15,14 @@ import type {
 import { Badge } from "@/components/ui/badge"
 import { FacetGroup, FilterRail } from "@/components/filter-rail"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
+import {
+  STATE_META,
+  StateBadge,
+  buildJobColumns,
+  fmtDuration,
+} from "@/components/columns/job-columns"
+import { JobBulkBar } from "@/components/job-bulk-bar"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -27,26 +33,9 @@ export const Route = createFileRoute("/jobs/")({ component: JobsPage })
 
 type Variant = "secondary" | "info" | "success" | "destructive" | "warning"
 
-// state → display label + badge tint. Kept here so the list + detail agree.
-export const STATE_META: Record<
-  string,
-  { label: string; variant: Variant } | undefined
-> = {
-  queued: { label: "Queued", variant: "secondary" },
-  started: { label: "Running", variant: "info" },
-  deferred: { label: "Deferred", variant: "warning" },
-  scheduled: { label: "Scheduled", variant: "secondary" },
-  finished: { label: "Finished", variant: "success" },
-  failed: { label: "Failed", variant: "destructive" },
-}
-
-export function StateBadge({ state }: { state: string }) {
-  const meta = STATE_META[state] ?? {
-    label: state,
-    variant: "secondary" as const,
-  }
-  return <Badge variant={meta.variant}>{meta.label}</Badge>
-}
+// The state badge and duration live with the job columns; the job page and
+// the NetBox import read them from here as before.
+export { STATE_META, StateBadge, fmtDuration }
 
 // Run-log status → badge tint (Scheduled tasks section).
 const RUN_VARIANT: Record<string, Variant> = {
@@ -162,18 +151,6 @@ function EnginesCard({ engines }: { engines: EngineHeartbeat[] }) {
   )
 }
 
-// Seconds → compact human duration.
-export function fmtDuration(s: number | null): string {
-  if (s == null) return "-"
-  if (s < 1) return `${Math.round(s * 1000)}ms`
-  if (s < 60) return `${s.toFixed(1)}s`
-  const m = Math.floor(s / 60)
-  const rem = Math.round(s % 60)
-  if (m < 60) return `${m}m ${rem}s`
-  const h = Math.floor(m / 60)
-  return `${h}h ${m % 60}m`
-}
-
 // Countdown formatting: whole seconds → "3m 20s" / "45s" / "any moment".
 function fmtCountdown(sec: number): string {
   if (sec <= 0) return "any moment"
@@ -258,82 +235,6 @@ const PAGE_SIZE = 50
 // Stable empty selection for the single-select rail facets below.
 const EMPTY_FACET: Set<string> = new Set()
 
-const columns: ColumnDef<JobBrief>[] = [
-  {
-    id: "status",
-    accessorFn: (r) => r.state,
-    header: ({ column }) => <SortHeader column={column} label="Status" />,
-    cell: ({ row }) => <StateBadge state={row.original.state} />,
-  },
-  {
-    id: "job",
-    header: "Job",
-    cell: ({ row }) => {
-      const j = row.original
-      return (
-        <div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/jobs/$id"
-              params={{ id: j.id }}
-              className="link truncate font-mono text-[13px] font-medium"
-            >
-              {j.func_short}
-            </Link>
-            {j.corrupt && (
-              <Badge variant="warning" className="shrink-0">
-                unreadable
-              </Badge>
-            )}
-          </div>
-          {j.description && (
-            <div className="truncate font-mono text-[11px] text-muted-foreground">
-              {j.description}
-            </div>
-          )}
-        </div>
-      )
-    },
-  },
-  {
-    id: "queue",
-    header: "Queue",
-    cell: ({ row }) => (
-      <span className="font-mono text-[11px] text-muted-foreground">
-        {row.original.queue}
-      </span>
-    ),
-  },
-  {
-    id: "worker",
-    header: "Worker",
-    cell: ({ row }) => (
-      <span className="font-mono text-[11px] text-muted-foreground">
-        {row.original.worker_name ? row.original.worker_name.slice(0, 12) : "-"}
-      </span>
-    ),
-  },
-  {
-    id: "enqueued",
-    header: "Enqueued",
-    cell: ({ row }) =>
-      row.original.enqueued_at ? (
-        <TimeCell iso={row.original.enqueued_at} />
-      ) : (
-        <span className="text-muted-foreground">-</span>
-      ),
-  },
-  {
-    id: "duration",
-    header: () => <span className="block text-right">Duration</span>,
-    cell: ({ row }) => (
-      <span className="block text-right font-mono text-[12px] text-muted-foreground tabular-nums">
-        {fmtDuration(row.original.duration)}
-      </span>
-    ),
-  },
-]
-
 function JobsPage() {
   const { can } = useMe()
   const [tab, setTab] = useState<"scheduled" | "engines" | "queue">("scheduled")
@@ -341,6 +242,10 @@ function JobsPage() {
   const [state, setState] = useUrlText("state", "all", { replace: true })
   const [queue, setQueue] = useUrlText("queue", "all", { replace: true })
   const [offset, setOffset] = useState(0)
+  // Ticked jobs, for Requeue and Cancel. The page polls, so the selection is
+  // kept by id across refreshes rather than by row object.
+  const [selected, setSelected] = useState<JobBrief[]>([])
+  const columns = useMemo(() => buildJobColumns({ selection: true }), [])
 
   const params = new URLSearchParams({
     state,
@@ -555,6 +460,8 @@ function JobsPage() {
             <DataTable
               data={rows}
               columns={columns}
+              onSelectedRowsChange={setSelected}
+              selectedRows={selected}
               flexColumn="job"
               stickyHeader
               tableId="jobs"
@@ -565,6 +472,10 @@ function JobsPage() {
                 totalRows: filteredTotal,
                 onPageChange: (p) => setOffset((p - 1) * PAGE_SIZE),
               }}
+            />
+            <JobBulkBar
+              ids={selected.map((j) => j.id)}
+              onCleared={() => setSelected([])}
             />
           </div>
         </ListPageShell>

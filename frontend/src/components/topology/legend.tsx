@@ -5,6 +5,7 @@ import { SPEED_TIERS, speedTierOf } from "@/lib/speed"
 import { TUNNEL_DASH, typeColor } from "./edge-style"
 import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
 import { naturalCompare } from "@/lib/natural-sort"
+import { roleColourShown } from "./diagram/photo-anchors"
 
 // Line-key legend for the topology views, in the maps' shared legend frame.
 // Collapsible, remembered per browser, and its rows adapt to the active view
@@ -82,7 +83,12 @@ export function graphLegend(
 ): Required<Pick<LegendOptions, "roles" | "monitorPill" | "present">> {
   const roles = new Map<string, string | undefined>()
   for (const n of graph.nodes)
-    if (n.data.role?.name && !roles.has(n.data.role.name))
+    if (
+      n.data.role?.name &&
+      !roles.has(n.data.role.name) &&
+      // A photo with no role badge draws no role colour.
+      roleColourShown(n.data)
+    )
       roles.set(n.data.role.name, n.data.role.color || undefined)
   const has = (test: (e: TopologyGraph["edges"][number]) => boolean) =>
     graph.edges.some(test)

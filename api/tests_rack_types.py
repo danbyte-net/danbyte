@@ -398,6 +398,48 @@ class RackTypeCatalogTests(APITestCase):
         )
         self.assertEqual(r.status_code, 400)
 
+    # ── The power budget a model gives its racks ─────────────────────────
+
+    def test_power_budget_rides_the_type_and_its_picker(self):
+        r = self._rack_type(max_power_w=6000)
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["max_power_w"], 6000)
+        row = self.client.get("/api/rack-types/?picker=1").json()["results"][0]
+        self.assertEqual(row["max_power_w"], 6000)
+        self._post_rack("rack-budget", r.json()["id"], False)
+        rack = self.client.get(
+            f"/api/racks/{Rack.objects.get(name='rack-budget').id}/"
+        ).json()
+        # The rack's embedded type carries it, for the form to pre-fill.
+        self.assertEqual(rack["rack_type"]["max_power_w"], 6000)
+        self.assertIsNone(rack["max_power_w"])
+        bad = self._rack_type(name="Negative", max_power_w=-1)
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("max_power_w", bad.json())
+
+    def test_sync_reports_and_copies_the_power_budget(self):
+        rt_id = self._rack_type(max_power_w=6000).json()["id"]
+        self._post_rack("rack-power", rt_id, False)
+        rack = Rack.objects.get(name="rack-power")
+        dry = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {}, format="json"
+        ).json()
+        self.assertEqual(
+            dry["diff"]["dims"]["max_power_w"], {"rack": None, "type": 6000}
+        )
+        r = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {"apply": True},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn("max_power_w", r.json()["result"]["dims"])
+        rack.refresh_from_db()
+        self.assertEqual(rack.max_power_w, 6000)
+        again = self.client.post(
+            f"/api/racks/{rack.id}/sync-from-type/", {}, format="json"
+        ).json()
+        self.assertNotIn("dims", again["diff"])
+
     def test_accessory_face_stamps_onto_the_device(self):
         # The channel an accessory names must reach the stamped device -
         # otherwise every factory PDU lands face-blank and draws on both

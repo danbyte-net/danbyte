@@ -67,6 +67,13 @@ a lot of data fast - typography and spacing serve that, not decoration.
   toward `--border`, title centred on top unless a cable crosses there -
   side bands on a pastel zone swatch; never a free colour picker, never the
   role colour the cards already carry.
+- **Arrowheads** only on lines that have a direction - an application
+  flow's (#163): a solid head in the line's own colour at the destination,
+  at both ends for a flow both ways, drawn as a polygon (never an SVG
+  `<marker>`, which the PDF sanitizer drops). Cables and sessions stay
+  plain lines.
+- **Flow diagrams** draw one neutral row band per application, titled with
+  its path, and neutral cards: the colour stays with roles and statuses.
 - **Canvas notes** are text in `text-foreground/75` and Lucide icons in
   `--muted-foreground`, no box unless outlined (`border-border` on
   `bg-card`); never coloured.
@@ -102,6 +109,8 @@ browser's own widget, ignores the theme, and drifts the moment tokens change.
 | Searchable picker in a popover | `Popover` + `Command` (see `ui/combobox.tsx`) | a hand-built input + `<button>` list |
 | Free text with common values | `FormText` with `suggestions` (or `SuggestInput` directly) | `<datalist>`, or a `<select>` that locks out other values |
 | Object reference | `ObjectPicker` or an existing domain picker preset (`onPickMany` when a list collects several at once) | a bespoke fetch + list |
+| A long read-only text: a rendered config, JSON, a log, a diff | `FileViewer` (`components/file-viewer/`): read-only CodeMirror on the semantic tokens, line numbers, search (`hotkey` for ++slash++), wrap, copy, download, syntax colours on the `--syntax-*` tokens (`language`: `json`, `xml`, `yaml`, `ini`, `netconf`, `log`, `text`; the default `config`, or `auto`, picks from the file name then the first lines), outline and folding for config and JSON, a diff view (unified or side by side), resizable with the height kept per user (`storageKey`), full screen | a `<pre className="max-h-96 overflow-auto">` |
+| PRTG sensor kind | `SensorKindPicker` (button + dialog) or `SensorKindBrowser` (inline) from `components/prtg/sensor-kind-picker.tsx`: search, category rail, sortable columns, Standard kinds pinned | a `FormSelect` of kinds, or another kind list |
 
 **Labels name their control.** `Field` (and every `Form*` built on it) gives
 its `<label>` an id and hands it to the control through context: `Input`,
@@ -109,10 +118,25 @@ its `<label>` an id and hands it to the control through context: `Input`,
 `Switch`, `DatePicker`, `TimePicker`, `IdMultiSelect` and `TagMultiSelect`
 take the id, `aria-labelledby`, `aria-describedby` for the hint and error,
 and `aria-invalid` on an error. A child of `<Field>` built from these needs no
-wiring. A second control in the same field (a unit box beside a number) goes
+wiring. A field that sits in a page header beside the other filters (a
+list's device filter) passes `labelHidden` (`Field`, and `ObjectPicker` with
+its presets): the label stays, for screen readers only, and the control lines
+up with the buttons. A second control in the same field (a unit box beside a number) goes
 in `NoFieldControl` with its own `aria-label`; popover, dialog, sheet and menu
 content already cut the link. An unlabelled control outside a `Field` (a
-filter rail) takes an `aria-label`.
+filter rail) takes an `aria-label`. A field whose body is a run of controls
+that each name themselves (the device form's **Card lines**) is a
+`<Field group>`: the same caption, but it names the `role="group"` instead of
+pointing a `<label>` at one control, and nothing inside takes the field's id.
+A caption that is not a `<label>` (a popover's `PopoverField`, a filter rail
+heading) names the control under it through `CaptionControl`;
+`<PopoverField group>` is the group form. `CodeEditor` takes its name from
+the surrounding `Field` too, or from `aria-label`. An icon-only button sits in
+`IconTip` (`components/icon-tip.tsx`): its `label` is both the aria-label and
+the tooltip. Scrollable `<pre>` blocks and regions with nothing focusable
+inside take `tabIndex={0}` so the keyboard can scroll them.
+`components/a11y-control-names.test.tsx` sweeps the source for select
+triggers, comboboxes and icon buttons without a name.
 
 Radix controls report changes differently from DOM ones - `Checkbox` uses
 `onCheckedChange(bool)` and `Select` uses `onValueChange(string)`, not
@@ -162,10 +186,16 @@ parts, so a control reads the same on each:
 | How much is hidden, with the sidebar shut | `HiddenChip` (`components/hidden-chip.tsx`): *N hidden · Show all*, in the corner the page names with `position` (the one its MiniMap, legend and attribution leave free) |
 | A right-click menu on a canvas | `PointerMenu` (`components/pointer-menu.tsx`): the shared dropdown opened at the pointer. A key an item shows (++h++, ++delete++) is passed in `keys`, so it acts on what was right-clicked, not on the selection |
 | The detail panel over a canvas | `PanelShell` (`components/map-panel.tsx`): title and Close, `PanelRow` key/value rows, `PanelSection`s under a `SectionLabel`, and the actions at the foot (*Open …* first). `SectionLabel` also heads a legend |
+| A name that will not sit clearly by its object on a floor plan | The label pass's callout (`components/floorplan/plan-callouts.ts`, drawn by `plan-callouts-layer.tsx`): a plain `rounded-md` box in `--popover` with a `--border` outline, at a constant size on screen, the name then at most three lines (a status or role as its badge, never a dot); a straight leader from the middle of the box edge facing the object to the object's edge - 1.25 px `--muted-foreground` on a 3 px `--background` casing, a small dot at the object - so it reads on any map or plan. Hover or selection lights the pair in `--primary` with a thicker leader, drawn over the rest; the others keep full ink (never faded). A row of racks whose names do not fit gets one row name instead (`plan-rows.ts`): bold text along the row at its angle, never upside down, on a `--background` plate with a `--border` outline. From afar the row is one bar along its line in its racks' colour, and a room's rows one `--popover` plate on the room with the racks' icon square and `Data Hall 1 · 120 racks` (`plan-lod.ts`) |
 | A chip on a canvas (*Partial map*) | Bordered `bg-background/95`, no shadow and no blur: shadows are for overlays |
-| A legend on a canvas | `LegendFrame` (`components/map-legend.tsx`): bordered and opaque `bg-background`, no shadow and no blur, headed *Legend* with a *Hide legend* button, open or folded (remembered per browser under its `storageKey`, or held by the page), so a colored rail or card behind it never shows through; folded, an outline `xs` button with the List icon. `w-60` unless its rows need their own width (`w-fit`). A legend that is part of an exported picture - the floor plan's Color by key, inside its PNG area - is `hideable={false}`: always open, no Hide button to land in the export. The topology's `CanvasLegend`, the rail maps' `RailLegend`, the site map's legend and the 3D room's key are built on it. `TopologyCanvas` takes its box as `keepClear`, so a fit keeps the map beside or above it; `RailCanvas` keeps room for it under the drawing |
+| A legend on a canvas | `LegendFrame` (`components/map-legend.tsx`): bordered and opaque `bg-background`, no shadow and no blur, headed *Legend* with a *Hide legend* button, open or folded (remembered per browser under its `storageKey`, or held by the page), so a colored rail or card behind it never shows through; folded, an outline `xs` button with the List icon. `w-60` unless its rows need their own width (`w-fit`). A legend that is part of an exported picture keeps its Hide button out of the export: the button and the folded chip carry `data-export-skip`, which the floor plan's PNG export filters out. The floor plan draws its keys - Color by, cables, area types - as sections of one card (`PlanLegend`, `components/floorplan/plan-legend.tsx`), never as boxes stacked in the corner; `hideable={false}` stays for a legend that must never fold. The topology's `CanvasLegend`, the rail maps' `RailLegend`, the site map's legend and the 3D room's key are built on it. `TopologyCanvas` takes its box as `keepClear`, so a fit keeps the map beside or above it; `RailCanvas` keeps room for it under the drawing |
 | A legend's rows | From `components/map-legend.tsx`: `LegendRow` (swatch, then label), `LegendLine` (a line keys a line), `LegendTones` (a colour mode's keys as short lines, wrapping), and `LegendPills` / `LegendStatuses` for roles and statuses as their `ColorBadge` / `StatusBadge` pills - never a coloured dot beside a name. `LegendItems` draws a list of `LegendItem`s in that order |
 | Speeds | `lib/speed.ts`: `parseSpeedMbps` (a bare number is kbps, as on the server), `parseSpeedKbps` (a speed typed into a `*_kbps` form field: whole kbps, null when blank, undefined when it is not a speed), `fmtKbps` / `fmtMbps` (short `10G`, `100/20M`; long `10 Gbps`) and the one tier scale, `SPEED_TIERS`, that the faceplates, the 3D room and the topology's and the site map's *Speed* colouring share |
+| Time left to an end date (end of life, support coverage) | `LifetimeBar` (`components/cells/lifecycle-cell.tsx`) is the one time bar: a thin muted track filled with the elapsed share of start → end, a terse countdown (*EoL in 2 y*, *Ends in 40 d*) and the exact date in the shared tooltip. Its colour goes by time left against the source's warning window - destructive once past, warning inside the window, else primary - never by percent, so it agrees with the status pills. An end without a start is the countdown alone, no end is the source's pill, nothing is a dash: never an empty track. `LifecycleBar` wraps it for a device type or platform |
+| What monitors an object (a device's or VM's Overview and header) | `MonitoringHeaderBadge` (`components/monitoring/monitoring-bar.tsx`) in the header: the overall pill (worst wins) with the sources on hover. `MonitoringBar` on the Overview: the overall pill once in its header line, then up to three problems, each a link with the state as a `w-1` left edge in its semantic colour plus the state's name (no second pill), the source as a bordered muted chip and the message clamped with the shared tooltip; then one segment per source - name, a stacked `h-1.5 rounded-md` bar (destructive / amber / emerald, muted for unknown and paused), counts as muted text. All clear, it is one line (`slot="compact"`, in the grid); with problems full width (`slot="banner"`). At most one pill per card. The Sensors strip and the Monitoring tab's PRTG row keep `MonitoringSourceRow` |
+| A measured value against its limits (a PRTG channel, a check's reading) | `Gauge` (`components/gauge.tsx`): a half-circle track, the value as an arc and as the big number with its unit, min and max at the ends, no needle. Props `value`, `unit`, `min`, `max`, `warn` and `error` - each a band `{ below?, above? }` drawn as a thin arc outside the track in the warning and destructive colours. The value arc takes the colour of the band it is in (`gaugeTone`), emerald inside the limits, and stays neutral when there are no bands |
+| A value from a fixed set of outcomes (a PRTG lookup channel: *Yes / No*, *Good / Weak / Unsafe*) | `LookupBar` (`components/lookup-bar.tsx`): one segment per possible state in order, the current one filled in its tone (`ok` emerald, `warning` amber, `error` destructive, `neutral` muted), the others quiet track, the current label underneath, each segment named in the shared tooltip. Props `states` (`{ key, label, tone }[]`), `current`, optional `label` |
+| A glance at recent values | `Sparkline` (`components/sparkline.tsx`): a small line in `currentColor`, muted by default, scaled to its own range, gaps left as gaps. The graph you read is a `ChartContainer` chart |
 | How full a rack is | `lib/rack-capacity.ts`: above the tenant's warning level amber, above its critical level red (80 / 95 % by default, `useCapacityThresholds`), in the status colours - never the accent - and `formatWatts`. `CapacityBar` (`components/cells/capacity-bar.tsx`) is its thin bar; `PowerFigure` (`components/cells/power-figure.tsx`) reads a rack's power as *demand / supply* and `PortsFigure` (`components/cells/ports-figure.tsx`) its ports as *in use / counted*. On a map the level goes on a rack's fill and monitoring keeps its outline (`components/floorplan/tile-paint.ts`). IPAM prefixes keep their own scale (`UtilCell`) |
 
 Anything that copies to the clipboard goes through `copyWithToast()`
@@ -242,12 +272,38 @@ can't drift page to page (source of truth:
 - Tables are paged by `DataTable` alone. When the API pages server-side, hand it
   `serverPagination={{ page, pageCount, totalRows, onPageChange }}` so that one
   pager drives the server - don't add a second Prev/Next row.
+- A **grouped** table (`groupBy`, e.g. Prefixes by VRF) pages like any other:
+  a page counts rows after expansion, group banners included, at the user's
+  page size (#479). The header checkbox ticks the page's rows, never a whole
+  group behind a banner; *Select all N* ticks the rest. `pagedWhenGrouped={false}`
+  opts out, only for a grouped table that stays short.
+- The big lists - Devices, Interfaces, Cables, Virtual machines - page, sort
+  and filter on the server through `useServerList` (`lib/server-list.ts`,
+  #482): it keeps the page, `ordering`, search and the rail in the URL, reads
+  the rail's counts from `<list>/facets/`, asks for the slim `view=table` row
+  (plus the catalog columns on show), and hands `DataTable` its
+  `serverPagination` (with *Select all N* across pages), `serverSorting`
+  (only what the server sorts keeps a sortable header) and an `exportAll`
+  that walks every matching row. The rail is `useServerTableFilters`: the
+  same URL params and saved-view snapshot as `useUrlTableFilters`, with
+  counts from the server. A facet the server does not count (one filled from
+  another request, like Monitoring) is left out of `facets`. A new big list
+  adds a `TableSpec` in `api/list_specs.py` and the `TableListMixin` on its
+  viewset.
 - A list page that fetches its rows in one capped request hands the shell the
   server's answer, `page={query.data}`. When `count` exceeds the rows that
   arrived, the count chip reads *N of M* in the `warning` badge, an amber notice
   over the table says the list is cut off, `FilterRail` says its counts are
   partial, and `DataTable`'s Download names the rows it holds - one context,
   no per-page wiring beyond the prop.
+- A list request without `page_size` answers 100 rows. A table, picker or
+  dropdown that needs every row fetches through `apiAll` (`lib/api-all.ts`),
+  which walks `next` 1,000 rows a request up to 10,000 and hands back one
+  page-shaped answer; anything else names its `page_size`. Never call `api`
+  on a list without one (#447), and never name a `page_size` above the API's
+  2,000 cap: walk `next` instead (#452). Keep reads at 1,000 rows or fewer;
+  the server limits pages above 1,000 to two at a time per user, and `api`
+  queues any such read to match and retries a `429` after its `Retry-After`.
 - An **embedded** table on a detail page fetches one capped page (`page_size=500`)
   rather than paging. Hand `DataTable` the server's `total={q.data?.count}` with
   it: when more rows exist than arrived it says so, instead of a site with 600
@@ -302,6 +358,16 @@ so it needs a parent that bounds its height - the pane is a
 row stays in view and the sideways scrollbar sits at the pane's bottom edge
 rather than after the last row. In a pane that grows with its content the
 header does not stick.
+
+A `DataTable` or `OverviewTable` wider than its frame gets a floating
+scrollbar (`components/table-scroll.tsx`): a thin proxy bar, sticky to the
+viewport's bottom edge while the table is on screen, that settles under the
+table once its end scrolls into view and stays in step with the table both
+ways. It replaces the frame's own horizontal bar, and a soft inset shadow
+marks each side with more columns to scroll to. A `stickyHeader` table that
+scrolls in a bounded pane keeps its native bar (already at the pane's
+bottom edge), and printing hides both. Shift-wheel and trackpad sideways
+scrolling work on the table as before.
 
 ## Column factories
 
@@ -403,7 +469,10 @@ Every object detail page follows one tab convention (source of truth:
 - All the remaining attributes live in an **Overview** tab - the first tab,
   and the default - rendered as `KvCard` tables (`<KvCard title rows>`) in a
   `grid gap-6 lg:grid-cols-2`, grouped into a few sensibly-titled cards. This
-  is the "read it as tables in the page body" layout.
+  is the "read it as tables in the page body" layout. A settings-style page
+  that groups its facts in `SettingsCard`s (the PRTG Overview) puts the same
+  rows in the card with `<KvTable inset rows>` and `layout="flush"`, and the
+  card's actions in its footer.
 - After Overview come the related-object tabs (with a count where the API
   provides one), then always **Journal** and **Change log** as the last two, in
   that order.

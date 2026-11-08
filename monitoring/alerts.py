@@ -208,6 +208,37 @@ def process_transitions(transitions, now) -> dict:
     return {"opened": opened, "updated": updated, "resolved": resolved}
 
 
+def set_acknowledged(alert, acknowledged: bool, *, actor=None, note: str = "", source=None):
+    """Acknowledge or clear the acknowledgement on one alert, and announce it.
+
+    The one place an acknowledgement is written, whoever makes it: an
+    operator through the API (``source`` None), or an external monitor
+    reporting that somebody acknowledged the problem on its side (``source``
+    names that system, ``actor`` is usually None). ``source`` travels on the
+    ``alert_acknowledged`` signal so the write-back to that same system is
+    skipped - an acknowledgement read from a remote system must never be
+    echoed back to it.
+    """
+    from django.utils import timezone
+
+    from .signals import alert_acknowledged
+
+    if not acknowledged:
+        alert.acknowledged_at = None
+        alert.acknowledged_by = None
+        alert.ack_note = ""
+    else:
+        alert.acknowledged_at = timezone.now()
+        alert.acknowledged_by = actor
+        alert.ack_note = (note or "")[:255]
+    alert.save(update_fields=["acknowledged_at", "acknowledged_by", "ack_note"])
+    alert_acknowledged.send(
+        sender=type(alert), alert=alert, acknowledged=acknowledged, actor=actor,
+        source=source,
+    )
+    return alert
+
+
 def _dispatch_notifications(opened_by_tenant: dict, individual: list) -> None:
     """Route freshly-opened alerts (grouped per tenant when a burst exceeds the
     tenant's threshold) and the individual update/resolve notifications."""

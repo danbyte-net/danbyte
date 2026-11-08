@@ -93,6 +93,37 @@ def public_end(end: date | None) -> date | None:
     return None if end == OPEN_ENDED else end
 
 
+def governed_by(contract_end: date | None, warranty_end: date | None) -> str | None:
+    """What sets a device's coverage end: ``contract`` (its contract with the
+    latest end - ``OPEN_ENDED`` for an open-ended one - reaches at least as
+    far as the warranty), ``warranty``, or ``None`` with neither. The
+    governing contract's start is where the coverage bar starts; a warranty
+    has no start."""
+    if contract_end is not None and (warranty_end is None or contract_end >= warranty_end):
+        return "contract"
+    if warranty_end is not None:
+        return "warranty"
+    return None
+
+
+def coverage_end(contract_end: date | None, warranty_end: date | None) -> date | None:
+    """The latest covered day, from its two halves - what
+    :func:`device_annotations` computes in SQL (``OPEN_ENDED`` for an
+    open-ended contract)."""
+    return max((e for e in (contract_end, warranty_end) if e is not None), default=None)
+
+
+def contract_order(prefix: str = "") -> tuple:
+    """Contracts best first: the latest end (open-ended first), then by
+    number - so the governing contract is the same one everywhere. ``prefix``
+    reaches the contract from another model (``"contract__"``)."""
+    return (
+        Coalesce(f"{prefix}end_date", Value(OPEN_ENDED), output_field=DateField()).desc(),
+        f"{prefix}contract_number",
+        f"{prefix}id",
+    )
+
+
 # ─── the warning window ──────────────────────────────────────────────────────
 
 
@@ -120,7 +151,10 @@ def warning_days_for(request=None, tenant=None) -> int:
 # ─── query helpers ───────────────────────────────────────────────────────────
 
 
-def _contract_end_subquery():
+def contract_end_subquery():
+    """A device's latest contract end (``OPEN_ENDED`` for an open-ended
+    contract, NULL with no contract) - the contract half of the coverage end,
+    for a Device queryset."""
     from .models import SupportCoverage
 
     return Subquery(
@@ -132,6 +166,18 @@ def _contract_end_subquery():
         )
         .values("m"),
         output_field=DateField(),
+    )
+
+
+def governing_contract_subquery():
+    """The id of the device's contract with the latest end (see
+    :func:`contract_order`), for a Device queryset."""
+    from .models import SupportCoverage
+
+    return Subquery(
+        SupportCoverage.objects.filter(device=OuterRef("pk"))
+        .order_by(*contract_order("contract__"))
+        .values("contract_id")[:1]
     )
 
 
@@ -159,7 +205,7 @@ def device_annotations() -> dict:
         # GREATEST ignores NULLs in PostgreSQL: a device with only a warranty
         # or only contracts takes that one; NULL only when it has neither.
         "coverage_end_annotated": Greatest(
-            _contract_end_subquery(), F("warranty_end"), output_field=DateField()
+            contract_end_subquery(), F("warranty_end"), output_field=DateField()
         ),
         "coverage_contracts_annotated": _contract_count_subquery(),
     }
@@ -458,6 +504,7 @@ def schema(kind: str):
     if kind == "device":
         return inline_serializer("DeviceCoverage", {
             "status": s.ChoiceField(choices=STATUSES),
+            "start": s.DateField(allow_null=True),
             "end": s.DateField(allow_null=True),
             "warranty_end": s.DateField(allow_null=True),
             "warning_days": s.IntegerField(),

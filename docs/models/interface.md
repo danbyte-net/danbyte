@@ -32,6 +32,9 @@ the name fans out into one interface per number.
 
 The media type (`1000base-t`, `10gbase-x-sfpp`, …) from the standard
 taxonomy. Drives the faceplate rendering and the speed-capability colouring.
+The virtual types - `virtual`, `bridge`, `lag` and `vxlan` (a VXLAN netdev a
+[VTEP membership](../features/routing.md#overlay-evpn-and-vxlan) can point
+at) - have no physical port and always save as virtual.
 
 ### Enabled
 
@@ -93,6 +96,14 @@ clears itself when a real cable is attached.
 A [port reservation](port-reservation.md) holding this (uncabled) port -
 who claimed it, the note, and since when. Read-only here; managed through
 the reserve actions or `/api/port-reservations/`.
+
+### Link peer
+
+What the port's cable reaches, read-only: `link_peer` is
+`{"device", "port", "port_label"}` for the far end, or `null` on an
+uncabled port. A far end on a device you may not view is not named: it reads
+`{"device": "", "port": "", "port_label": "", "hidden": true}`, in the API,
+the faceplate and rack port labels, export templates and the device report.
 
 ### Uplink
 
@@ -182,7 +193,36 @@ bundle settings." Picking type LAG marks the interface virtual.
 
 `lag_protocol`: blank = static aggregate (no negotiation), `lacp` (802.3ad),
 `pagp`. The port-channel / ae / bond is the logical link; this is the protocol
-negotiating it.
+negotiating it. The form labels blank **None (static)**; the API also accepts
+`"static"` as input and stores it blank, so there is one spelling to filter
+and template on.
+
+### Mode / Hash policy / MII monitor
+
+The Linux bond settings, for an `/etc/network/interfaces` or systemd-networkd
+render:
+
+- `lag_mode`: `balance-rr`, `active-backup`, `balance-xor`, `broadcast`,
+  `802.3ad`, `balance-tlb`, `balance-alb` (`bond-mode`). `802.3ad` sets the
+  protocol to LACP; LACP with any other mode is refused.
+- `lag_hash_policy`: `layer2`, `layer2+3`, `layer3+4`, `encap2+3`,
+  `encap3+4`, `vlan+srcmac` (`bond-xmit-hash-policy`).
+- `lag_miimon`: the link-monitor interval in ms (`bond-miimon`).
+
+All three are blank by default and cleared on save when the type is not LAG.
+Nothing guesses a mode for an existing static bundle. A template reads them
+off the interface row, with the members from `lag_members`:
+
+```jinja
+{% for i in interfaces if i.type == "lag" %}
+auto {{ i.name }}
+iface {{ i.name }} inet manual
+    bond-slaves {{ i.lag_members.all()|map(attribute="name")|join(" ") }}
+{% if i.lag_mode %}    bond-mode {{ i.lag_mode }}
+{% endif %}{% if i.lag_hash_policy %}    bond-xmit-hash-policy {{ i.lag_hash_policy }}
+{% endif %}{% if i.lag_miimon %}    bond-miimon {{ i.lag_miimon }}
+{% endif %}{% endfor %}
+```
 
 ### LACP mode / LACP rate
 
@@ -197,6 +237,103 @@ Only kept under LACP - any other protocol clears them on save.
 ### Bridge
 
 The bridge interface this one belongs to.
+
+## MACsec
+
+IEEE 802.1AE link encryption on the port, with the keys agreed by MKA
+(802.1X-2010). Danbyte documents the intent; it does not render or push
+device config, so a template of your own turns these fields into one (see the
+example below).
+
+The edit form has a **MACsec** section, the Overview a **MACsec** card, and
+the device's Interfaces tab bulk edit and CSV import / export carry all four
+fields. Interface templates do not: set MACsec on the interfaces themselves.
+
+### MACsec enabled
+
+`macsec_enabled`, off by default. The other three fields only mean something
+while it is on.
+
+### Cipher
+
+`macsec_cipher`: `gcm-aes-128`, `gcm-aes-256`, `gcm-aes-xpn-128`,
+`gcm-aes-xpn-256`, or blank for the device's default. The values are the
+`iproute2` spellings. The XPN suites use 64-bit packet numbers, for links
+fast enough to wrap a 32-bit counter during one key's lifetime.
+
+### Keychain
+
+`macsec_keychain` (write `macsec_keychain_id`): a
+[routing keychain](routing.md) whose secret holds the MKA CAK. It is the same
+contract as the BGP, OSPF and IS-IS keychain references: the interface API
+returns the keychain's id, name and algorithm, never the key. The key is read
+only through the audited `POST /api/routing/keychains/<id>/reveal-psk/`. A
+keychain must belong to the interface's tenant; one from another tenant is a
+400. Deleting the keychain clears the reference.
+
+### Replay window
+
+`macsec_replay_window`: replay protection's window in packets. Blank leaves
+replay protection to the device's default; `0` means strict ordering.
+
+### Validation
+
+Turning MACsec off clears the cipher, keychain and replay window on save, so
+a disabled port never carries stale settings. Setting any of the three on a
+port that has MACsec off, in the same request or already, is refused with a
+400 on that field: turn MACsec on in the same write. A bulk edit follows the
+same rules: one that turns MACsec off clears the three, and one that sets
+them without turning MACsec on is refused when a selected port has it off.
+
+### Example: both ends of a cable
+
+Both ends of a MACsec link need the same cipher and the same CAK / CKN. The
+template below takes two interface rows from the API: `a`
+(`GET /api/interfaces/<id>/`) and `b`, its far end (the interface named by
+`a.link_peer.port` on the device `a.link_peer.device`), and prints a Linux
+`ip link` line and a `wpa_supplicant` MKA block for each. The CAK is a
+`<keychain:NAME>` placeholder, the same shape the
+[routing templates](../features/routing-templates.md) print: the tool that
+pushes the config replaces it with the revealed key. The CKN is not secret;
+this example keeps it in a custom field `mka_ckn` on the keychain, passed
+in as `ckn`.
+
+```jinja
+{% if a.macsec_keychain and b.macsec_keychain
+      and a.macsec_keychain.id != b.macsec_keychain.id %}
+# WARNING: {{ a.name }} and {{ b.name }} use different keychains
+{% endif %}
+{% for i in [a, b] if i.macsec_enabled %}
+# {{ i.device.name }}: {{ i.name }}
+ip link add link {{ i.name }} macsec0 type macsec encrypt on
+{%- if i.macsec_cipher %} cipher {{ i.macsec_cipher }}{% endif %}
+{%- if i.macsec_replay_window is not none %} replay on window {{ i.macsec_replay_window }}{% endif %}
+
+# /etc/wpa_supplicant/macsec-{{ i.name }}.conf
+eapol_version=3
+ap_scan=0
+network={
+    key_mgmt=NONE
+    eapol_flags=0
+    macsec_policy=1
+{%- if i.macsec_cipher in ("gcm-aes-256", "gcm-aes-xpn-256") %}
+    macsec_csindex=1
+{%- endif %}
+{%- if i.macsec_replay_window is not none %}
+    macsec_replay_protect=1
+    macsec_replay_window={{ i.macsec_replay_window }}
+{%- endif %}
+    mka_cak=<keychain:{{ i.macsec_keychain.name }}>
+    mka_ckn={{ ckn }}
+}
+{% endfor %}
+```
+
+With MKA, `wpa_supplicant -D macsec_linux -i <if>` creates and keys the
+MACsec device itself; the `ip link` line is the static-key alternative, or a
+check that the kernel accepts the cipher. Network operating systems take the
+same three values: a cipher suite, a replay window and a key chain holding the
+CKN and CAK.
 
 ## Discovery
 

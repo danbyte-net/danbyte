@@ -1,5 +1,8 @@
 import { Link } from "@tanstack/react-router"
 import {
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyEnd,
+  AlignHorizontalJustifyStart,
   ArrowLeftRight,
   ArrowUpDown,
   ArrowUpRight,
@@ -42,8 +45,8 @@ import { STRIP_SIDE_ITEMS } from "./diagram/chassis-node"
 import { LINE_LOOKS } from "./diagram/line-tabs"
 import type { LineType, Side } from "./diagram/types"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
-import { ZONE_COLORS } from "./view-positions"
-import type { BandExits } from "./view-positions"
+import { BAND_PER_ROW_MAX, ZONE_COLORS } from "./view-positions"
+import type { BandAlign, BandExits } from "./view-positions"
 
 // The topology map's right-click menus, one set of items per thing clicked,
 // for PointerMenu (components/pointer-menu.tsx) to show at the pointer. An
@@ -85,6 +88,9 @@ export interface DeviceMenuProps {
     roleSlug?: string
     /** A member of a virtual chassis: its stack's items. */
     chassis?: ChassisMenu
+    /** The line this device's cables take (Default: the band's or the
+     * view's); left out on a grouped map. */
+    line?: LineChoice
   }
 }
 
@@ -117,7 +123,9 @@ export function DeviceMenuItems({
   diagram: d,
 }: DeviceMenuProps) {
   const extras =
-    !!id && !!d && !!(d.face || d.onCardLines || d.roleSlug || d.chassis)
+    !!id &&
+    !!d &&
+    !!(d.face || d.line || d.onCardLines || d.roleSlug || d.chassis)
   return (
     <>
       {id && (
@@ -158,6 +166,7 @@ export function DeviceMenuItems({
         <>
           <DropdownMenuSeparator />
           {d.face && <FaceItems face={d.face} />}
+          {d.line && <LineSubmenu {...d.line} />}
           {d.onCardLines && (
             <DropdownMenuItem inset onSelect={d.onCardLines}>
               Card lines…
@@ -346,11 +355,43 @@ export function groupMenuKeys({ onHide }: { onHide: () => void }): MenuKeys {
 /** A line's own look in a Diagram view, or the view's (`default`). */
 export type LinkLine = LineType | "default"
 
+/** A Line sub-menu: Default, then the four line types. A link's, a
+ * card's and a band's (diagram/line-source.ts says which wins). */
+export interface LineChoice {
+  value: LinkLine
+  onChange: (value: LinkLine) => void
+}
+
+function LineSubmenu({ value: now, onChange }: LineChoice) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger inset>Line</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="min-w-36">
+        <DropdownMenuRadioGroup
+          value={now}
+          onValueChange={(v) => {
+            if (v !== now) onChange(v as LinkLine)
+          }}
+        >
+          <DropdownMenuRadioItem value="default" inset>
+            Default
+          </DropdownMenuRadioItem>
+          {LINE_LOOKS.map(({ value, label, icon: Icon }) => (
+            <DropdownMenuRadioItem key={value} value={value}>
+              <Icon /> {label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
+}
+
 export interface EdgeMenuProps {
   /** The one cable the line draws; Open cable is offered only then. */
   cableId?: string
   /** A Diagram link: its own line, as its panel's Line row sets it. */
-  line?: { value: LinkLine; onChange: (value: LinkLine) => void }
+  line?: LineChoice
   /** Hide the line, as its eye in the Objects sidebar would. */
   onHide: () => void
 }
@@ -367,28 +408,7 @@ export function EdgeMenuItems({ cableId, line, onHide }: EdgeMenuProps) {
           </Link>
         </DropdownMenuItem>
       )}
-      {line && (
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger inset>Line</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="min-w-36">
-            <DropdownMenuRadioGroup
-              value={line.value}
-              onValueChange={(v) => {
-                if (v !== line.value) line.onChange(v as LinkLine)
-              }}
-            >
-              <DropdownMenuRadioItem value="default" inset>
-                Default
-              </DropdownMenuRadioItem>
-              {LINE_LOOKS.map(({ value, label, icon: Icon }) => (
-                <DropdownMenuRadioItem key={value} value={value}>
-                  <Icon /> {label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      )}
+      {line && <LineSubmenu {...line} />}
       {(cableId || line) && <DropdownMenuSeparator />}
       <DropdownMenuItem onSelect={onHide}>
         <EyeOff /> Hide
@@ -429,11 +449,18 @@ export function regionSwatches(kind: "band" | "zone"): Swatch[] {
   ]
 }
 
+/** The counts a row's Cards per row offers, besides Auto and All on one
+ * line. A count saved by hand that is none of these is listed too. */
+export const PER_ROW_CHOICES = [2, 3, 4, 6, 8, 10, 12, 16, 20, 24] as const
+
 /** Right-click on a band or a zone. */
 export function RegionMenuItems({
   kind,
   color,
   exits,
+  perRow,
+  align,
+  line,
   onRename,
   onRecolor,
   onDelete,
@@ -447,6 +474,21 @@ export function RegionMenuItems({
     value: BandExits | undefined
     onChange: (exits: BandExits | undefined) => void
   }
+  /** A row: how many cards stand on a line before it wraps (undefined
+   * value: Auto). Left out for side bands and zones. */
+  perRow?: {
+    value: number | undefined
+    onChange: (perRow: number | undefined) => void
+  }
+  /** A row: where its cards line up across its width (undefined value:
+   * Auto, centred). Left out for side bands and zones. */
+  align?: {
+    value: BandAlign | undefined
+    onChange: (align: BandAlign | undefined) => void
+  }
+  /** A Diagram row: the line its cards' cables take (`default`: the
+   * view's). Left out for side bands and zones. */
+  line?: LineChoice
   onRename: () => void
   onRecolor: (color: string | null) => void
   onDelete: () => void
@@ -531,6 +573,70 @@ export function RegionMenuItems({
           </DropdownMenuSubContent>
         </DropdownMenuSub>
       )}
+      {perRow && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger inset>Cards per row</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-36">
+            <DropdownMenuRadioGroup
+              value={perRow.value === undefined ? "auto" : String(perRow.value)}
+              onValueChange={(v) => {
+                const n = v === "auto" ? undefined : Number(v)
+                if (n !== perRow.value) perRow.onChange(n)
+              }}
+            >
+              <DropdownMenuRadioItem value="auto">Auto</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value={String(BAND_PER_ROW_MAX)}>
+                All on one line
+              </DropdownMenuRadioItem>
+              <DropdownMenuSeparator />
+              {[
+                ...new Set<number>([
+                  ...PER_ROW_CHOICES,
+                  ...(perRow.value !== undefined &&
+                  perRow.value !== BAND_PER_ROW_MAX
+                    ? [perRow.value]
+                    : []),
+                ]),
+              ]
+                .sort((a, b) => a - b)
+                .map((n) => (
+                  <DropdownMenuRadioItem key={n} value={String(n)}>
+                    <span className="num">{n}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
+      {align && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger inset>Align</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-36">
+            <DropdownMenuRadioGroup
+              value={align.value ?? "auto"}
+              onValueChange={(v) => {
+                const next =
+                  v === "left" || v === "center" || v === "right"
+                    ? v
+                    : undefined
+                if (next !== align.value) align.onChange(next)
+              }}
+            >
+              <DropdownMenuRadioItem value="auto">Auto</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="left">
+                <AlignHorizontalJustifyStart /> Left
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="center">
+                <AlignHorizontalJustifyCenter /> Center
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="right">
+                <AlignHorizontalJustifyEnd /> Right
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
+      {line && <LineSubmenu {...line} />}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={onDelete}>
         <Trash2 /> Delete

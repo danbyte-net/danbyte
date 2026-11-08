@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from api.serializers import TenantScopedModelSerializer
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
 
@@ -27,7 +28,7 @@ def _may_send_whole_reports(user, tenant) -> bool:
             and _sees_every_member(user, tenant))
 
 
-class SlaReportScheduleSerializer(serializers.ModelSerializer):
+class SlaReportScheduleSerializer(TenantScopedModelSerializer):
     next_at = serializers.SerializerMethodField()
     agreement_name = serializers.CharField(source="agreement.name", read_only=True, default=None)
 

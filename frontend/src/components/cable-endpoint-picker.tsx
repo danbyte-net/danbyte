@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { X } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Circuit,
   Interface,
@@ -12,12 +13,14 @@ import type {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import { Input } from "@/components/ui/input"
 import { DevicePicker } from "@/components/device-picker"
 import { FaceplateView, useHasImagePorts } from "@/components/device-faceplate"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Field, FormCombobox } from "@/components/forms"
 import { cn } from "@/lib/utils"
+import { PORT_ENDPOINT, PORT_KIND_TABS } from "@/lib/cable-runs"
 
 /** One end of a cable, picked the way people actually patch: look at the
  * panel, click the port. The faceplate is the primary control; the list
@@ -27,19 +30,7 @@ import { cn } from "@/lib/utils"
  * Ports already carrying a cable are shown but not selectable - hiding them
  * would make a 48-port panel lie about which slot is which. */
 
-const KIND_ENDPOINT: Record<
-  Exclude<TerminationKind, "power_feed" | "circuit_termination">,
-  string
-> = {
-  interface: "interfaces",
-  front_port: "front-ports",
-  rear_port: "rear-ports",
-  console_port: "console-ports",
-  console_server_port: "console-server-ports",
-  power_port: "power-ports",
-  power_outlet: "power-outlets",
-  aux_port: "aux-ports",
-}
+const KIND_ENDPOINT = PORT_ENDPOINT
 
 const LABEL_ENDPOINT: Record<TerminationKind, string> = {
   ...KIND_ENDPOINT,
@@ -47,14 +38,7 @@ const LABEL_ENDPOINT: Record<TerminationKind, string> = {
   circuit_termination: "circuit-terminations",
 }
 
-const KIND_TABS: { value: string; label: string }[] = [
-  { value: "interface", label: "Interfaces" },
-  { value: "front_port", label: "Front" },
-  { value: "rear_port", label: "Rear" },
-  { value: "console_port", label: "Console" },
-  { value: "power_port", label: "Power" },
-  { value: "aux_port", label: "Aux" },
-]
+const KIND_TABS = PORT_KIND_TABS
 
 interface PortRow {
   id: string
@@ -164,8 +148,7 @@ export function CableEndpointPicker({
   })
   const ifaces = useQuery({
     queryKey: ["device-interfaces", deviceId],
-    queryFn: () =>
-      api<Paginated<Interface>>(`/api/devices/${deviceId}/interfaces/`),
+    queryFn: () => apiAll<Interface>(`/api/devices/${deviceId}/interfaces/`),
     enabled: !!deviceId,
   })
   // Circuits carry their ends nested, so one fetch feeds both the circuit
@@ -434,96 +417,96 @@ export function CableEndpointPicker({
           deviceId &&
           !hidePanel &&
           (ifaces.data?.results?.length ?? 0) > 0 && (
-          <div className="grid gap-2">
-            {/* Orange, not the connected green: on a photo the jacks are
+            <div className="grid gap-2">
+              {/* Orange, not the connected green: on a photo the jacks are
                 themselves green and a green outline vanished into them. The
                 dark halo keeps it readable on any artwork. Hover is the
                 dashed version of the same. */}
-            <style>
-              {value
-                .map(
-                  (v) =>
-                    `[data-cable-pick="${label}"] [data-port-id="${v.id}"]{outline:3px solid #f97316;outline-offset:1px;background:#f97316d9;box-shadow:0 0 0 2px #00000073;--port-color:#f97316}`
-                )
-                .join("") +
-                (hoverId
-                  ? `[data-cable-pick="${label}"] [data-port-id="${hoverId}"]{outline:3px dashed #f97316;outline-offset:2px;box-shadow:0 0 0 2px #00000073}`
-                  : "")}
-            </style>
-            <div
-              data-cable-pick={label}
-              className="overflow-x-auto [&_a]:cursor-pointer"
-              onClickCapture={onPanelClick}
-            >
-              <FaceplateView
-                interfaces={ifaces.data?.results ?? []}
-                deviceId={deviceId}
-                deviceTypeId={device.data?.device_type?.id ?? null}
-                mode={effView === "rendered" ? "rendered" : "image"}
-                side={side}
-                fit="container"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-muted-foreground">
-                {effView === "bare"
-                  ? "Open the port view to pick by clicking"
-                  : "Click a port to select it"}
-              </span>
-              <span className="flex items-center gap-1">
-                {(dt?.rear_image || showRendered) && (
-                  <span className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
-                    {(["front", "rear"] as const).map((sd) => (
-                      <Button
-                        key={sd}
-                        type="button"
-                        variant={side === sd ? "secondary" : "ghost"}
-                        size="sm"
-                        className="h-5 px-1.5 text-[10px] capitalize"
-                        onClick={() => setSide(sd)}
-                      >
-                        {sd}
-                      </Button>
-                    ))}
-                  </span>
-                )}
-                {(hasPhoto || hasTypeImage) && (
+              <style>
+                {value
+                  .map(
+                    (v) =>
+                      `[data-cable-pick="${label}"] [data-port-id="${v.id}"]{outline:3px solid #f97316;outline-offset:1px;background:#f97316d9;box-shadow:0 0 0 2px #00000073;--port-color:#f97316}`
+                  )
+                  .join("") +
+                  (hoverId
+                    ? `[data-cable-pick="${label}"] [data-port-id="${hoverId}"]{outline:3px dashed #f97316;outline-offset:2px;box-shadow:0 0 0 2px #00000073}`
+                    : "")}
+              </style>
+              <div
+                data-cable-pick={label}
+                className="overflow-x-auto [&_a]:cursor-pointer"
+                onClickCapture={onPanelClick}
+              >
+                <FaceplateView
+                  interfaces={ifaces.data?.results ?? []}
+                  deviceId={deviceId}
+                  deviceTypeId={device.data?.device_type?.id ?? null}
+                  mode={effView === "rendered" ? "rendered" : "image"}
+                  side={side}
+                  fit="container"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-muted-foreground">
+                  {effView === "bare"
+                    ? "Open the port view to pick by clicking"
+                    : "Click a port to select it"}
+                </span>
+                <span className="flex items-center gap-1">
+                  {(dt?.rear_image || showRendered) && (
+                    <span className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+                      {(["front", "rear"] as const).map((sd) => (
+                        <Button
+                          key={sd}
+                          type="button"
+                          variant={side === sd ? "secondary" : "ghost"}
+                          size="sm"
+                          className="h-5 px-1.5 text-[10px] capitalize"
+                          onClick={() => setSide(sd)}
+                        >
+                          {sd}
+                        </Button>
+                      ))}
+                    </span>
+                  )}
+                  {(hasPhoto || hasTypeImage) && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => setShowRendered((v) => !v)}
+                    >
+                      {showRendered ? "Show photo" : "Show device ports"}
+                    </Button>
+                  )}
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="h-6 px-2 text-[11px]"
-                    onClick={() => setShowRendered((v) => !v)}
+                    className="h-6 px-2 text-[11px] text-muted-foreground"
+                    onClick={() => setPanelHidden(true)}
                   >
-                    {showRendered ? "Show photo" : "Show device ports"}
+                    Hide
                   </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-[11px] text-muted-foreground"
-                  onClick={() => setPanelHidden(true)}
-                >
-                  Hide
-                </Button>
-              </span>
+                </span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {source === "device" && (
-        <div className="grid gap-1.5">
-          <DevicePicker
-            label="Device"
-            value={deviceId}
-            onChange={(v) => {
-              setDeviceId(v)
-              setQ("")
-            }}
-          />
-          {deviceId && <PortsFreeBar deviceId={deviceId} />}
-        </div>
+          <div className="grid gap-1.5">
+            <DevicePicker
+              label="Device"
+              value={deviceId}
+              onChange={(v) => {
+                setDeviceId(v)
+                setQ("")
+              }}
+            />
+            {deviceId && <PortsFreeBar deviceId={deviceId} />}
+          </div>
         )}
 
         {source === "device" && deviceId && (
@@ -616,17 +599,19 @@ export function CableEndpointPicker({
                 <span className="font-mono">
                   {names[keyOf(v)] ?? v.id.slice(0, 8)}
                 </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-4 w-4"
-                  onClick={() =>
-                    onChange(value.filter((x) => keyOf(x) !== keyOf(v)))
-                  }
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+                <IconTip label="Remove">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4"
+                    onClick={() =>
+                      onChange(value.filter((x) => keyOf(x) !== keyOf(v)))
+                    }
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </IconTip>
               </Badge>
             ))}
           </div>

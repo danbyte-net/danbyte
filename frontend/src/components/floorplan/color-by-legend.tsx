@@ -15,6 +15,7 @@ import {
 import type { CapacityLevel } from "@/lib/rack-capacity"
 import { naturalCompare } from "@/lib/natural-sort"
 
+import { BareFrame } from "./plan-legend"
 import { COLOR_BY_LABEL, isCapacityMetric, metricRatio } from "./tile-paint"
 import type { CapacityMetric, ColorBy, RackFigures } from "./tile-paint"
 
@@ -22,6 +23,7 @@ import type { CapacityMetric, ColorBy, RackFigures } from "./tile-paint"
 const BASIS: Record<CapacityMetric, string> = {
   space: "units used",
   power: "demand of supply",
+  cooling: "heat of capacity",
   ports: "in use",
   panel_ports: "in use",
 }
@@ -120,14 +122,18 @@ export function ColorByLegend({
   colorBy,
   figures,
   alarm = false,
+  bare = false,
 }: {
   colorBy: ColorBy
   /** One per rack on the plan (null: nothing known about it yet). */
   figures: readonly (RackFigures | null)[]
   /** Some rack's outline is a monitoring alarm. */
   alarm?: boolean
+  /** Its rows only, for the plan's one legend card (plan-legend.tsx). */
+  bare?: boolean
 }) {
   const thresholds = useCapacityThresholds()
+  const Frame = bare ? BareFrame : LegendFrame
   if (colorBy === "type") return null
   const outline = alarm && (
     <LegendRow
@@ -146,7 +152,7 @@ export function ColorByLegend({
   if (isCapacityMetric(colorBy)) {
     const counts = levelCounts(figures, colorBy)
     return (
-      <LegendFrame hideable={false} className="w-48">
+      <Frame hideable={false} className="w-48">
         <p className="pb-1 whitespace-nowrap text-muted-foreground">
           <span className="font-medium text-foreground">
             {COLOR_BY_LABEL[colorBy]}
@@ -181,7 +187,7 @@ export function ColorByLegend({
           ))}
         </div>
         {outline}
-      </LegendFrame>
+      </Frame>
     )
   }
 
@@ -209,12 +215,12 @@ export function ColorByLegend({
     pills = <LegendStatuses className="pb-0" statuses={items} />
   }
   return (
-    <LegendFrame hideable={false} className="w-fit max-w-64">
+    <Frame hideable={false} className="w-fit max-w-64">
       <p className="pb-1 font-medium whitespace-nowrap">
         {COLOR_BY_LABEL[colorBy]}
       </p>
       {pills}
       {outline}
-    </LegendFrame>
+    </Frame>
   )
 }

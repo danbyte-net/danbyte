@@ -42,6 +42,101 @@ setting in force), or turn JIT off on the server instead:
 ALTER DATABASE danbyte SET jit = off;
 ```
 
+### Persistent connections
+
+The gunicorn web app keeps each worker's database connection open for
+`DB_CONN_MAX_AGE` seconds (default `60`) instead of opening and
+authenticating a new one per request; on a small API call that was most of
+the cost (p50 20 ms → 7 ms on a local database). `CONN_HEALTH_CHECKS` is on,
+so a connection the server dropped is replaced before a request uses it.
+`DB_CONN_MAX_AGE=0` restores a connection per request.
+
+Only the WSGI app does this: `danbyte/wsgi.py` marks the process before
+settings load. daphne (WebSockets), `runserver`, the RQ workers and
+management commands keep `0`.
+
+Size `max_connections` (Postgres default `100`) for every process that holds
+one at a time:
+
+```
+gunicorn workers (WEB_CONCURRENCY, default ≤ 8)
++ RQ workers (danbyte-workers and danbyte-fastlane, one per worker process)
++ daphne (one per open request it serves)
++ timers and management commands running at the same moment
++ headroom for psql, backups and upgrades (10 or so)
+```
+
+A connection that stays open is idle between requests, so persistent
+connections do not raise the peak: each gunicorn worker held one while it
+served a request before too. With a pooler (PgBouncer in transaction mode)
+in front, the pooler's own limits apply instead.
+
+### Tuning PostgreSQL
+
+The installer leaves the distribution's PostgreSQL defaults in place:
+`shared_buffers = 128MB` and `work_mem = 4MB`, sized for a small shared
+host. Danbyte runs on whatever the server is configured with, but a large
+tenant (thousands of devices, tens of thousands of interfaces and addresses)
+reads its lists and roll-ups faster with more memory. Nothing in Danbyte sets
+these; they belong to the host, so set them in `postgresql.conf` (or a file in
+`conf.d/`) and restart PostgreSQL.
+
+A starting point for a host that runs Danbyte and its database together:
+
+| Setting | Starting value | Why |
+|---|---|---|
+| `shared_buffers` | 25 % of RAM (e.g. `2GB` on 8 GB) | Keeps the hot tables and indexes in PostgreSQL's own cache |
+| `effective_cache_size` | 50-75 % of RAM | Tells the planner how much the OS caches too; indexes are chosen more readily |
+| `work_mem` | `16MB`-`32MB` | Per sort or hash per query; the natural-sort lists and facet counts sort in memory instead of on disk. Multiplied by concurrent queries, so stay modest |
+| `maintenance_work_mem` | `256MB` | Faster `VACUUM`, index builds and upgrade migrations |
+| `random_page_cost` | `1.1` on SSD/NVMe | The default `4` assumes spinning disks and steers the planner away from indexes |
+| `max_connections` | see [Persistent connections](#persistent-connections) | Every web worker, RQ worker and daphne holds one |
+
+Check what a running server uses with `SHOW shared_buffers;` (and so on) in
+`psql`. On a container install, pass the settings as `command:` arguments to
+the `postgres` service (`postgres -c shared_buffers=2GB -c work_mem=16MB`).
+
+#### Finding slow queries with `pg_stat_statements`
+
+`pg_stat_statements` records every statement's call count and time, which is
+the quickest way to see what a slow page costs the database. It ships with
+PostgreSQL (the `postgresql-contrib` package on older distributions) and needs
+a restart to load:
+
+```ini
+# postgresql.conf
+shared_preload_libraries = 'pg_stat_statements'
+```
+
+Then create the extension as a superuser in the **`postgres`** database, not
+in Danbyte's: it records statements from every database either way, and kept
+out of Danbyte's database it never ends up in a Danbyte backup. A restore runs
+as the `danbyte` role, which may not create the extension, so a backup that
+carries it would fail to restore.
+
+```bash
+sudo -u postgres psql -d postgres
+```
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- The ten Danbyte statements that took the most time in total.
+SELECT round(total_exec_time) AS ms, calls, round(mean_exec_time, 1) AS mean_ms,
+       left(query, 120) AS query
+FROM pg_stat_statements
+WHERE dbid = (SELECT oid FROM pg_database WHERE datname = 'danbyte')
+ORDER BY total_exec_time DESC
+LIMIT 10;
+
+-- Start a fresh measurement.
+SELECT pg_stat_statements_reset();
+```
+
+The extension is optional: no migration creates or needs it. Its cost is
+small (a few percent of CPU on a busy server); turn it off again by removing
+it from `shared_preload_libraries`.
+
 ## CORS
 
 ```python
@@ -58,6 +153,13 @@ Intentionally-public endpoints (the share-link resolve) opt in with `AllowAny`
 explicitly. Authentication is session cookie (SPA) or a scoped API token; there
 is no JWT (it was dead surface with weak defaults).
 
+JSON responses go through `api.renderers.FastJSONRenderer`. It renders with
+`orjson` when that package is installed and with DRF's own `JSONRenderer`
+otherwise, and both write the same bytes (dates, decimals, UUIDs and IP
+objects through DRF's encoder; `?indent=` and anything `orjson` refuses fall
+back to the standard renderer). `orjson` is not a requirement yet, so a
+normal install renders exactly as before.
+
 ```python
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -66,15 +168,67 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "api.pagination.StandardResultsSetPagination",
-    "PAGE_SIZE": 10000,
+    "PAGE_SIZE": API_PAGE_SIZE,  # 100
 }
 ```
 
-The SPA loads full result sets and filters client-side, so the page size is
-high by design; it is capped (`max_page_size = 10000`) so `?page_size=` can't
-be used to force an amplified, memory-heavy response. A list page whose tenant
-holds more rows than one request returns says so rather than looking complete
-(see [Very long lists](../features/table-preferences.md#very-long-lists)).
+A list request without `?page_size=` answers one page of `API_PAGE_SIZE`
+rows with a `next` link. A caller that wants more names it with
+`?page_size=`, up to `API_MAX_PAGE_SIZE`; a larger value is cut to the cap,
+so `?page_size=` can't force an amplified, memory-heavy response. The
+default is small because serializing 10,000 rows held a gunicorn worker for
+seconds, and the cap is 2,000 because a handful of 10,000-row pages still
+held every worker (see [Pagination](api.md#pagination)).
+
+A request whose `page_size` is above `API_LARGE_PAGE_THRESHOLD` (1,000, the
+most the web app asks for in one request) is a large page. One user may have
+`API_LARGE_PAGE_CONCURRENCY` of them in flight, counted across the session
+and every API token they own, so more tokens buy no more large pages; the
+next answers `429` with `Retry-After` until one finishes. Each
+large page holds a slot in Redis (the cache) with a two-minute expiry and
+gives it back when the response is built, so a worker killed mid-request
+frees its slot anyway. If Redis can't be reached the guard lets requests
+through rather than refusing them.
+
+| Setting | Env var | Default | Purpose |
+|---|---|---|---|
+| `API_PAGE_SIZE` | `API_PAGE_SIZE` | `100` | Rows a list answers when the request names no `page_size`. A positive whole number. |
+| `API_MAX_PAGE_SIZE` | `API_MAX_PAGE_SIZE` | `2000` | The most rows `?page_size=` can ask for in one response. A positive whole number, at least `API_PAGE_SIZE`; unset, it is 2,000 or `API_PAGE_SIZE` if that is larger. |
+| `API_LARGE_PAGE_THRESHOLD` | `API_LARGE_PAGE_THRESHOLD` | `1000` | A request whose `page_size` is above this is a large page. A positive whole number between `API_PAGE_SIZE` and `API_MAX_PAGE_SIZE`; unset, it is 1,000 kept within those two. |
+| `API_LARGE_PAGE_CONCURRENCY` | `API_LARGE_PAGE_CONCURRENCY` | `2` | Large pages one user, all of their tokens together, may have in flight at once. A positive whole number. |
+| `API_MAX_TOKENS_PER_USER` | `API_MAX_TOKENS_PER_USER` | `25` | Unexpired API tokens one user may hold. Creating one more answers 400 until one is revoked or expires; tokens a script run mints don't count. A positive whole number. |
+
+A value that is not a positive whole number, a cap below the default page,
+or a threshold outside the default page and the cap stops the service at start with an error naming the setting, rather than
+serving something other than what was configured. Set them in the service
+environment (`.env`, or the unit's `Environment=`) and restart the web
+service.
+
+The web app asks for what it needs: a table, picker or map that filters
+in the browser walks the pages, 1,000 rows a request up to 10,000, so it
+never asks for a large page (a read that is answered `429` is retried after
+its `Retry-After`), and a
+list page whose tenant holds more says so rather than looking complete (see
+[Very long lists](../features/table-preferences.md#very-long-lists)).
+
+## Application flow requirements
+
+An [application flow requirement](../features/application-flows.md#requirements)
+can mean thousands of generated flows. The requirement dialog's preview
+warns above `FLOW_REQUIREMENT_WARN_PAIRS` flows, and a requirement that
+resolves to more than `FLOW_REQUIREMENT_MAX_PAIRS` is refused: it reads
+*Unresolved* and writes nothing until it is narrowed with pairing or
+address, or this is raised.
+
+| Setting | Env var | Default | Purpose |
+|---|---|---|---|
+| `FLOW_REQUIREMENT_WARN_PAIRS` | `FLOW_REQUIREMENT_WARN_PAIRS` | `500` | The preview warns above this many generated flows for one requirement. A positive whole number. |
+| `FLOW_REQUIREMENT_MAX_PAIRS` | `FLOW_REQUIREMENT_MAX_PAIRS` | `5000` | A requirement resolving to more flows is refused. A positive whole number, at least the warning. |
+
+A value that is not a positive whole number, or a cap below the warning,
+stops the service at start with an error naming the setting. Set them in
+the service environment (`.env`, or the unit's `Environment=`) and restart
+the web service and the workers.
 
 ## DEBUG (default-closed)
 
@@ -107,8 +261,9 @@ This is deliberately independent of `DEBUG`: tying transport requirements to the
 debug flag means changing the `DEBUG` default silently locks every plain-http
 install out of login. `scripts/install.sh` configures nginx + TLS and writes
 `DANBYTE_HTTPS=True` into `.env` (and backfills it on upgrade), so
-installer-managed hosts stay hardened. nginx also sets HSTS at the edge for all
-upstreams regardless (see [Security headers](#security-headers)).
+installer-managed hosts stay hardened. Behind the shipped nginx, nginx sends
+HSTS for every upstream and drops Django's copy (see
+[Security headers](#security-headers)).
 
 ## Static
 
@@ -161,6 +316,23 @@ Trusted scripts are never confined.
 `http://127.0.0.1:8000`. When set, its host is added to `ALLOWED_HOSTS` so the
 backend answers to it; WebSocket origins and the site's public name keep to
 the `ALLOWED_HOSTS` you set. The Docker stack sets it to `http://backend:8000`.
+
+## Device 3D models (`DEVICE_MODEL_MAX_BYTES`)
+
+`DEVICE_MODEL_MAX_BYTES` is the largest
+[3D model](../dcim/device-catalog.md#3d-models) a device type or device
+takes, in bytes. The default is `26214400` (25 MB); a larger upload is
+refused with the limit in the message. Keep it under the web server's
+`client_max_body_size` (512 MB in the shipped nginx templates).
+
+## PDF reports (`DANBYTE_REPORT_JOB_TIMEOUT`)
+
+A [PDF report](../features/reports.md) too large to render within a request
+renders in the background, as a job on the `low` queue.
+`DANBYTE_REPORT_JOB_TIMEOUT` is that render's deadline in seconds (default
+`300`); a report estimated past about 70% of it is refused.
+`DANBYTE_REPORT_JOB_KEEP` is how long the finished PDF is kept for the user
+who asked for it, in seconds (default `3600`).
 
 ## CAD drawings (`DANBYTE_CAD_CONVERTER`)
 
@@ -296,8 +468,12 @@ uniformly and survives an app restart:
 
 - `server_tokens off` - no nginx version banner.
 - **HSTS** - `max-age=31536000; includeSubDomains`.
-- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` (also enforced by
-  Django's `SECURE_CONTENT_TYPE_NOSNIFF` / `X_FRAME_OPTIONS`).
+- `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` (also
+  enforced by Django's `SECURE_CONTENT_TYPE_NOSNIFF` / `X_FRAME_OPTIONS`), and
+  `frame-ancestors 'self'` in the CSP. Other sites can't frame Danbyte; the
+  topology report draws each saved view in a hidden frame of the map page,
+  which needs the same origin to be allowed. A site you manage yourself
+  with `DENY` or `frame-ancestors 'none'` leaves that report at *Drawing…*.
 - `Referrer-Policy: same-origin`, a restrictive `Permissions-Policy`, and
   `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy: same-origin`.
 - An **enforced Content-Security-Policy** with `report-uri /api/csp-report/`.
@@ -316,7 +492,34 @@ uniformly and survives an app restart:
 
 Django-side, `SECURE_REFERRER_POLICY`, `SECURE_CONTENT_TYPE_NOSNIFF`, and
 `X_FRAME_OPTIONS` are set unconditionally (not gated on `DEBUG`) as defence in
-depth for any path served without nginx in front.
+depth for any path served without nginx in front, and `DANBYTE_HTTPS=True` adds
+the same HSTS value for installs that terminate TLS somewhere else.
+
+**One owner per header.** Behind the shipped nginx configs, nginx owns HSTS,
+`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and
+`Cross-Origin-Opener-Policy`: each location drops Django's copy with
+`proxy_hide_header` and sends its own, so a browser gets one header with one
+value. Without nginx, Django's copy is the only one. The Docker image's nginx
+does the same for the headers it sets, and leaves HSTS to the backend
+(`DANBYTE_HTTPS`), since it only has a self-signed certificate.
+
+HSTS has no `preload` at either layer. Being on the browsers' preload list is
+a decision for whoever owns the domain, and it is hard to undo; add it in your
+own proxy if you want it.
+
+**API responses aren't cached.** Every `/api/` response to a signed-in caller
+(session or API token) carries `Cache-Control: private, no-store`, so a browser
+keeps no copy on disk after sign-out and a shared proxy keeps none at all
+(`core.middleware.ApiNoStoreMiddleware`). A view that sets its own
+`Cache-Control` keeps it - file downloads, 3D models and thumbnails choose
+their own. Anonymous API responses, `/media/`, `/static/` and the hashed
+`/assets/` are left to their own headers.
+
+!!! note "Your own nginx"
+    A hand-written site that adds these headers needs the same
+    `proxy_hide_header` lines in each proxied location (or once at the server
+    level, repeated in any location that has its own `proxy_hide_header`).
+    Otherwise every Django response carries two copies.
 
 ## Logging
 

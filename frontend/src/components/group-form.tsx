@@ -5,12 +5,11 @@ import { toast } from "sonner"
 import { useQuery } from "@tanstack/react-query"
 
 import {
-  api,
-  type Paginated,
   type RBACGroup,
   type RBACGroupWritePayload,
   type SiteOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CheckList,
   Field,
@@ -48,7 +47,7 @@ export function GroupForm({ group, onSaved, onCancel }: GroupFormProps) {
 
   const sitesQuery = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/?picker=1"),
     enabled: !isEdit,
   })
   const siteOptions: CheckOption<string>[] = (

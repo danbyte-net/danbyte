@@ -13,6 +13,11 @@ import uuid
 from django.db import models
 
 from core.models import Tenant, TimestampedModel
+from monitoring.external.models import (
+    ExternalAdoptionRuleBase,
+    ExternalChangeBase,
+    ExternalLinkBase,
+)
 from monitoring.secrets import EncryptedJSONField
 
 
@@ -246,7 +251,7 @@ class ZabbixConnection(TimestampedModel):
         return bool(v) and v >= self.MIN_VERSION
 
 
-class ZabbixHostLink(TimestampedModel):
+class ZabbixHostLink(ExternalLinkBase):
     """The durable link between a Danbyte device and a Zabbix host.
 
     Stored rather than re-derived every pass, because every other way of
@@ -254,10 +259,10 @@ class ZabbixHostLink(TimestampedModel):
     re-addressing breaks. Once a pairing is established it survives both.
 
     ``created_here`` is what makes pruning safe: Danbyte will only ever
-    consider removing a host it made itself.
+    consider removing a host it made itself. ``matched_by``, ``created_here``,
+    ``last_seen_at`` and ``unwanted_since`` come from the shared base.
     """
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="zabbix_links"
     )
@@ -271,14 +276,6 @@ class ZabbixHostLink(TimestampedModel):
     #: The Zabbix visible name at the time of linking - for the UI, and to
     #: notice a rename rather than silently following it.
     host_name = models.CharField(max_length=255, blank=True, default="")
-    #: How the pairing was first made: link | address | serial | name | created.
-    matched_by = models.CharField(max_length=16, blank=True, default="")
-    #: Danbyte created this host, so Danbyte may remove it.
-    created_here = models.BooleanField(default=False)
-    last_seen_at = models.DateTimeField(null=True, blank=True)
-    #: First pass that found no reason for this host any more. Cleared the
-    #: moment there is one again.
-    unwanted_since = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["host_name"]
@@ -295,7 +292,7 @@ class ZabbixHostLink(TimestampedModel):
         return f"{self.device_id} -> {self.hostid}"
 
 
-class ZabbixChange(TimestampedModel):
+class ZabbixChange(ExternalChangeBase):
     """One proposed write, waiting for a person.
 
     Its own model rather than the virtualization sync's ``VirtChange``, which
@@ -303,7 +300,8 @@ class ZabbixChange(TimestampedModel):
     anything else.
 
     A change is a **proposal**, never a record of something done: applying one
-    deletes it.
+    deletes it. ``detail`` and ``ignored``, and the propose / drop-stale
+    behaviour, come from the shared base.
     """
 
     CREATE = "create_host"
@@ -312,7 +310,7 @@ class ZabbixChange(TimestampedModel):
     #: rather than an update: it is a different API call, and "link two
     #: templates" is a different thing to agree to than "rename a host".
     TEMPLATE = "link_template"
-    AMBIGUOUS = "ambiguous"
+    AMBIGUOUS = ExternalChangeBase.AMBIGUOUS
     PRUNE = "prune_host"
     #: The other direction: a Zabbix host Danbyte has no device for becomes
     #: one. Keyed by ``detail.hostid`` rather than a device, since the device
@@ -330,7 +328,6 @@ class ZabbixChange(TimestampedModel):
         (ADOPT, "Adopt into Danbyte"),
     ]
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="zabbix_changes"
     )
@@ -342,11 +339,6 @@ class ZabbixChange(TimestampedModel):
         related_name="zabbix_changes",
     )
     kind = models.CharField(max_length=16, choices=KIND_CHOICES)
-    #: What would be written, and why - rendered for the operator to read
-    #: before they agree to it.
-    detail = models.JSONField(default=dict, blank=True)
-    #: Dismissed: kept so detection does not re-raise it every pass.
-    ignored = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["kind", "-created_at"]
@@ -561,7 +553,7 @@ class ZabbixHostFacts(TimestampedModel):
         return f"{self.device_id} facts"
 
 
-class ZabbixAdoptionRule(TimestampedModel):
+class ZabbixAdoptionRule(ExternalAdoptionRuleBase):
     """Where an adopted Zabbix host lands, decided by what it looks like.
 
     The connection's defaults put every adopted host at one site; an estate
@@ -573,7 +565,8 @@ class ZabbixAdoptionRule(TimestampedModel):
 
     First match wins, in weight order. A rule only sets what it names: one
     that says "``kbh-*`` is København" leaves the role and type to the
-    inventory model and the defaults, as before.
+    inventory model and the defaults, as before. ``pattern``, ``role``,
+    ``device_type``, ``weight`` and ``enabled`` come from the shared base.
     """
 
     SCOPE_NAME, SCOPE_GROUP, SCOPE_IP = "name", "group", "ip"
@@ -583,7 +576,6 @@ class ZabbixAdoptionRule(TimestampedModel):
         (SCOPE_IP, "Address"),
     ]
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="zabbix_adoption_rules"
     )
@@ -591,27 +583,9 @@ class ZabbixAdoptionRule(TimestampedModel):
         ZabbixConnection, on_delete=models.CASCADE, related_name="adoption_rules"
     )
     scope = models.CharField(max_length=8, choices=SCOPE_CHOICES, default=SCOPE_NAME)
-    pattern = models.CharField(
-        max_length=255,
-        help_text=(
-            "Glob such as kbh-* or *-core?. Prefix with regex: for a regular "
-            "expression. An address rule may be a CIDR."
-        ),
-    )
     site = models.ForeignKey(
         "api.Site", on_delete=models.CASCADE, related_name="zabbix_adoption_rules"
     )
-    role = models.ForeignKey(
-        "api.DeviceRole", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="+",
-    )
-    device_type = models.ForeignKey(
-        "api.DeviceType", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="+",
-    )
-    #: Lower runs first. Ties fall to the pattern, so the order is stable.
-    weight = models.PositiveSmallIntegerField(default=100)
-    enabled = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["weight", "pattern"]

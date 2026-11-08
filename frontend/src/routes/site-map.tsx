@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import L from "leaflet"
@@ -7,8 +7,10 @@ import { toast } from "sonner"
 import {
   Expand,
   MapPin,
+  MapPlus,
   Maximize,
   PanelRight,
+  Pentagon,
   Satellite,
   Search,
   Shrink,
@@ -25,6 +27,7 @@ import {
   type SiteMapDeviceInfo,
   type SiteMapFov,
   type SiteMapMarker,
+  type SiteMapOutline,
   type SiteMapCable,
   type SiteMapPayload,
   type SiteMapSite,
@@ -33,6 +36,7 @@ import {
   type CheckStatus,
   type CustomField,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   DetailRowList,
   DeviceExtraRows,
@@ -42,7 +46,13 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Loading } from "@/components/loading"
-import { BarIconButton, BarTip, BarToggle } from "@/components/map-toolbar"
+import {
+  BarIconButton,
+  BarTip,
+  BarToggle,
+  MAP_HEADER,
+  MAP_HEADER_CONTROLS,
+} from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { Input } from "@/components/ui/input"
 import {
@@ -78,6 +88,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   MAP_HIDDEN_KEYS,
   MapObjectsSidebar,
+  objectsStartOpen,
   NO_HIDDEN,
   type MapSelected,
   type MarkerTypeOption,
@@ -93,7 +104,9 @@ import {
   CableInspector,
   ConnectionInspector,
   DeviceInspector,
+  LineEnds,
   MarkerInspector,
+  ProviderNetworkInspector,
   SiteInspector,
 } from "@/components/site-map/inspector"
 import { SiteMapDisplayMenu } from "@/components/site-map/display-menu"
@@ -154,9 +167,21 @@ import {
 import {
   deviceIcon,
   freeMarkerIcon,
+  providerNetworkIcon,
   siteIcon,
 } from "@/components/site-map/map-icons"
 import { MapPaletteRail } from "@/components/site-map/palette-rail"
+import { useOutlineTool } from "@/components/site-map/use-outline-tool"
+import { OutlinePanel } from "@/components/site-map/outline-panel"
+import {
+  OutlineCreateDialog,
+  OutlineInspector,
+} from "@/components/site-map/outline-inspector"
+import { centroid } from "@/components/site-map/outline-geometry"
+import { useFrameTool } from "@/components/site-map/use-frame-tool"
+import { PlanFromMapDialog } from "@/components/site-map/plan-from-map-dialog"
+import { buildPlanFootprintsLayer } from "@/components/site-map/plan-footprints-layer"
+import type { Bbox } from "@/components/site-map/plan-from-map"
 import { buildFovLayer, type FovSource } from "@/components/site-map/fov-layer"
 import { useMe } from "@/lib/use-me"
 import { usePageTitle } from "@/lib/page-title"
@@ -250,6 +275,9 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       cables: true,
       routes: true,
       regions: true,
+      outlines: true,
+      plans: true,
+      providers: true,
     }
     try {
       const stored = JSON.parse(
@@ -343,8 +371,10 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     localStorage.setItem("site-map:basemap", b)
     setBasemap(b)
   }
-  const [showObjects, setShowObjects] = useState(
-    () => localStorage.getItem("site-map:sidebar") !== "closed"
+  // Below md (a phone) the panel would cover the map, so it starts closed
+  // there and opens as an overlay; the stored choice is for wider screens.
+  const [showObjects, setShowObjects] = useState(() =>
+    objectsStartOpen("site-map:sidebar")
   )
   const toggleObjects = () =>
     setShowObjects((v) => {
@@ -435,6 +465,94 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const canEditAny =
     data.sites.some((s) => s.can_edit) || canDo("device", "change")
 
+  // Building outlines: the layer, the Outline tool and its reshape handles.
+  const outlineTool = useOutlineTool({
+    map: mapReady ? mapRef.current : null,
+    mapReady,
+    mode,
+    shown: layers.outlines,
+    showLabels,
+    hiddenSiteIds,
+    sites: data.sites,
+    selectedId: selected?.kind === "outline" ? selected.id : null,
+    onSelect: (id) => setSelected(id ? { kind: "outline", id } : null),
+    passive: !!placing,
+  })
+  const selOutline = selected?.kind === "outline" ? outlineTool.selected : null
+
+  // New floor plan from this view: frame an area (drag, or Enter for the
+  // whole view), then the dialog makes the plan.
+  const canAddPlan = canDo("floorplan", "add")
+  const [framing, setFraming] = useState(false)
+  const [planFrame, setPlanFrame] = useState<{
+    bbox: Bbox
+    zoom: number
+  } | null>(null)
+  useFrameTool({
+    map: mapReady ? mapRef.current : null,
+    active: framing,
+    onFrame: (bbox) => {
+      setFraming(false)
+      setPlanFrame({ bbox, zoom: mapRef.current?.getZoom() ?? 18 })
+    },
+    onCancel: () => setFraming(false),
+  })
+  useEffect(() => {
+    if (mode !== "layout" || placing || outlineTool.drawing) setFraming(false)
+  }, [mode, placing, outlineTool.drawing])
+  // The boxes of the floor plans made from the map, under the outlines; a
+  // click opens the plan.
+  const navigate = useNavigate()
+  const footprintsRef = useRef<L.LayerGroup | null>(null)
+  const footprints = useMemo(
+    () =>
+      (data.plan_footprints ?? []).filter(
+        (f) => !f.site_id || !hiddenSiteIds.has(f.site_id)
+      ),
+    [data.plan_footprints, hiddenSiteIds]
+  )
+  const footprintsLive = !framing && !placing && !outlineTool.drawing
+  useEffect(() => {
+    const map = mapRef.current
+    footprintsRef.current?.remove()
+    footprintsRef.current = null
+    if (!map || !layers.plans || footprints.length === 0) return
+    if (!map.getPane("smPlanFootprints"))
+      map.createPane("smPlanFootprints").style.zIndex = "340"
+    const layer = buildPlanFootprintsLayer(footprints, {
+      pane: "smPlanFootprints",
+      interactive: footprintsLive,
+      onOpen: (id) => void navigate({ to: "/floorplans/$id", params: { id } }),
+    })
+    layer.addTo(map)
+    footprintsRef.current = layer
+  }, [footprints, layers.plans, footprintsLive, mapReady])
+  // The framed area stays outlined while the dialog is open.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !planFrame) return
+    const { south, west, north, east } = planFrame.bbox
+    const rect = L.rectangle(
+      [
+        [south, west],
+        [north, east],
+      ],
+      {
+        color: "#2563eb",
+        weight: 2,
+        dashArray: "6 4",
+        fillOpacity: 0.08,
+        interactive: false,
+      }
+    ).addTo(map)
+    return () => void rect.remove()
+  }, [planFrame])
+  const fitToOutline = (o: SiteMapOutline) => {
+    const map = mapRef.current
+    if (map && o.points.length >= 3)
+      map.fitBounds(L.latLngBounds(o.points).pad(0.4), { maxZoom: 19 })
+  }
+
   // Shared popover config - the SAME effective floorplan-popover settings the
   // floor-plan canvas uses, so which linked-device fields show on a device
   // popover is consistent between the floor plan and the site map.
@@ -449,30 +567,26 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const tileTypes = useQuery({
     queryKey: ["floor-tile-types-all"],
     queryFn: () =>
-      api<
-        Paginated<{
-          id: string
-          name: string
-          color: string
-          icon: string
-          has_fov?: boolean
-        }>
-      >("/api/floor-tile-types/"),
+      apiAll<{
+        id: string
+        name: string
+        color: string
+        icon: string
+        has_fov?: boolean
+      }>("/api/floor-tile-types/"),
     enabled: editing,
     staleTime: 5 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["device-roles-all"],
     queryFn: () =>
-      api<
-        Paginated<{
-          id: string
-          name: string
-          color: string
-          icon: string
-          has_fov?: boolean
-        }>
-      >("/api/device-roles/"),
+      apiAll<{
+        id: string
+        name: string
+        color: string
+        icon: string
+        has_fov?: boolean
+      }>("/api/device-roles/"),
     enabled: editing,
     staleTime: 5 * 60_000,
   })
@@ -505,6 +619,14 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     () => connQuery.data?.connections ?? [],
     [connQuery.data]
   )
+  // The provider networks the circuits meet at (#466), and the ones on the
+  // map: their layer on, not hidden by their eye, and serving a site that
+  // is not hidden.
+  const providerNetworks = useMemo(
+    () => connQuery.data?.provider_networks ?? [],
+    [connQuery.data]
+  )
+  const pnRef = useRef<L.LayerGroup | null>(null)
   const connRef = useRef<L.LayerGroup | null>(null)
   const midpointsRef = useRef<Map<string, [number, number]>>(new Map())
 
@@ -574,14 +696,30 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   // connections layer only draws circuits + tunnels.
   // An arc with a hidden end has nothing to land on, so it goes with the
   // site rather than hanging in the sea.
+  // A line to a provider network goes with the network's layer and eye.
   const linked = useCallback(
     (c: SiteMapConnection) =>
-      !hiddenSiteIds.has(c.site_a.id) && !hiddenSiteIds.has(c.site_z.id),
-    [hiddenSiteIds]
+      !hiddenSiteIds.has(c.site_a.id) &&
+      !hiddenSiteIds.has(c.site_z.id) &&
+      (!c.provider_network ||
+        (layers.providers &&
+          !hidden.providers.includes(c.provider_network.id))),
+    [hiddenSiteIds, layers.providers, hidden.providers]
   )
   const shownConnections = useMemo(
     () => connections.filter((c) => c.kind !== "cable" && linked(c)),
     [connections, linked]
+  )
+  const shownNetworks = useMemo(
+    () =>
+      layers.providers
+        ? providerNetworks.filter(
+            (pn) =>
+              !hidden.providers.includes(pn.id) &&
+              pn.site_ids.some((id) => !hiddenSiteIds.has(id))
+          )
+        : [],
+    [providerNetworks, layers.providers, hidden.providers, hiddenSiteIds]
   )
   // The lines on the map right now, for the legend's Status and Speed keys
   // and the Speed labels.
@@ -1011,6 +1149,32 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     midpointsRef.current = built.midpoints
   }, [shownConnections, layers.links, colorBy, util])
 
+  // Provider network markers (#466): where the circuits to a network meet.
+  // A layer of their own, over the lines; never stacked with the sites.
+  const selPnId = selected?.kind === "provider_network" ? selected.id : null
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    pnRef.current?.remove()
+    pnRef.current = null
+    if (shownNetworks.length === 0) return
+    const group = L.layerGroup()
+    for (const pn of shownNetworks) {
+      const isSel = selPnId === pn.id
+      const m = L.marker([pn.latitude, pn.longitude], {
+        icon: providerNetworkIcon(pn, { selected: isSel }),
+        zIndexOffset: isSel ? 1000 : 0,
+      })
+      m.on("click", (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e)
+        setSelected({ kind: "provider_network", id: pn.id })
+      })
+      group.addLayer(m)
+    }
+    group.addTo(map)
+    pnRef.current = group
+  }, [shownNetworks, selPnId, mapReady])
+
   // Route channels (view + edit); rebuilt on selection so the selected one
   // reads heavier, exactly like tray selection on the floor plan.
   useEffect(() => {
@@ -1333,6 +1497,10 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     selected?.kind === "cable"
       ? (shownCables.find((c) => c.id === selected.id) ?? null)
       : null
+  const selNetwork =
+    selected?.kind === "provider_network"
+      ? (shownNetworks.find((pn) => pn.id === selected.id) ?? null)
+      : null
 
   // Keyboard: Escape disarms/deselects; Delete removes a selected marker in
   // edit mode. Skipped while typing in a field.
@@ -1537,7 +1705,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
+      <header className={MAP_HEADER}>
         <div className="min-w-0">
           <h1 className="truncate text-base font-semibold">Site map</h1>
           <p className="truncate text-[11px] text-muted-foreground">
@@ -1565,7 +1733,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             )}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className={MAP_HEADER_CONTROLS}>
           {canEditAny && (
             <SegmentedTabs<"view" | "layout" | "cables">
               value={mode}
@@ -1582,12 +1750,48 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               ]}
             />
           )}
+          {editing && outlineTool.canAdd && (
+            <BarToggle
+              pressed={outlineTool.drawing}
+              onClick={() => {
+                if (outlineTool.drawing) outlineTool.cancelDraw()
+                else {
+                  setPlacing(null)
+                  setFraming(false)
+                  outlineTool.startDraw()
+                }
+              }}
+            >
+              <Pentagon /> Outline
+            </BarToggle>
+          )}
+          {editing && canAddPlan && (
+            <BarToggle
+              pressed={framing}
+              onClick={() => {
+                if (framing) setFraming(false)
+                else {
+                  setPlacing(null)
+                  outlineTool.cancelDraw()
+                  setFraming(true)
+                }
+              }}
+            >
+              <MapPlus /> New floor plan
+            </BarToggle>
+          )}
           <MapSearch
             sites={placed.filter(siteShown)}
             devices={data.devices.filter(deviceShown)}
             markers={data.markers}
+            outlines={layers.outlines ? outlineTool.outlines : []}
             onPick={(sel, lat, lng) => {
-              flyTo(lat, lng)
+              const o =
+                sel.kind === "outline"
+                  ? outlineTool.outlines.find((x) => x.id === sel.id)
+                  : null
+              if (o) fitToOutline(o)
+              else flyTo(lat, lng)
               setSelected(sel)
             }}
           />
@@ -1627,7 +1831,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       </header>
 
       {/* ── Body: palette rail · map · inspector · objects ──────────── */}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {mode === "cables" && (
           <RouteRail
             routes={routes}
@@ -1720,8 +1924,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             placed.length === 0 &&
             data.devices.length === 0 &&
             data.markers.length === 0 && (
-              <div className="pointer-events-none absolute inset-0 z-[900] flex items-center justify-center">
-                <div className="pointer-events-auto flex flex-col items-center gap-2 rounded-lg border border-border bg-background/95 px-6 py-5 text-center shadow-sm backdrop-blur">
+              <div className="pointer-events-none absolute inset-0 z-[900] flex items-center justify-center p-4">
+                <div className="pointer-events-auto flex max-w-full flex-col items-center gap-2 rounded-lg border border-border bg-background/95 px-6 py-5 text-center shadow-sm backdrop-blur">
                   <MapPin className="size-5 text-muted-foreground" />
                   <p className="text-sm font-medium">Nothing placed yet</p>
                   <p className="max-w-64 text-[12px] text-muted-foreground">
@@ -1769,6 +1973,28 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               Click the map along the run · double-click or Enter to finish ·
               Esc to cancel (<span className="num">{drawWaypoints.length}</span>
               )
+            </div>
+          )}
+          {framing && (
+            <div className="absolute bottom-4 left-1/2 z-[1000] -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
+              Drag over the area for the floor plan · Enter for the whole view ·
+              Esc to cancel
+            </div>
+          )}
+          {outlineTool.drawing && (
+            <div className="absolute bottom-4 left-1/2 z-[1000] -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
+              Click the outline&apos;s corners · double-click or Enter to finish
+              · Esc to cancel (
+              <span className="num">{outlineTool.draftCount}</span>)
+            </div>
+          )}
+          {selOutline && mode !== "layout" && (
+            <div className="pointer-events-none absolute inset-0 z-[900] [&>aside]:pointer-events-auto">
+              <OutlinePanel
+                key={selOutline.id}
+                outline={selOutline}
+                onClose={() => setSelected(null)}
+              />
             </div>
           )}
           {editing && placing && (
@@ -1866,6 +2092,19 @@ function MapBody({ data }: { data: SiteMapPayload }) {
         {!selectedRoute && selSite && (
           <SiteInspector site={selSite} onClose={() => setSelected(null)} />
         )}
+        {selOutline && mode === "layout" && (
+          <OutlineInspector
+            key={selOutline.id}
+            outline={selOutline}
+            siteName={
+              data.sites.find((s) => s.id === selOutline.site_id)?.name ?? ""
+            }
+            canEdit={outlineTool.canChange}
+            onPatch={(body) => outlineTool.patch(selOutline.id, body)}
+            onDelete={() => outlineTool.remove(selOutline.id)}
+            onClose={() => setSelected(null)}
+          />
+        )}
         {selDevice && (
           <DeviceInspector
             device={selDevice}
@@ -1908,6 +2147,13 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             onClose={() => setSelected(null)}
           />
         )}
+        {selNetwork && (
+          <ProviderNetworkInspector
+            network={selNetwork}
+            onFocusConnection={(id) => setSelected({ kind: "connection", id })}
+            onClose={() => setSelected(null)}
+          />
+        )}
         {!selectedRoute && selCable && (
           <CableInspector
             cable={selCable}
@@ -1929,6 +2175,23 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           }}
         />
 
+        <OutlineCreateDialog
+          points={outlineTool.pending}
+          sites={data.sites}
+          defaultSiteId={outlineTool.defaultSiteId}
+          onCancel={outlineTool.cancelCreate}
+          onCreate={outlineTool.create}
+        />
+
+        <PlanFromMapDialog
+          frame={planFrame}
+          tiles={data.tiles}
+          sites={data.sites}
+          outlines={outlineTool.outlines}
+          basemap={basemap}
+          onClose={() => setPlanFrame(null)}
+        />
+
         <MarkerLinkDialog
           prompt={linkPrompt}
           onClose={() => setLinkPrompt(null)}
@@ -1940,12 +2203,14 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
         {showObjects && (
           <MapObjectsSidebar
+            onClose={() => setShowObjects(false)}
             sites={data.sites}
             devices={data.devices}
             markers={data.markers}
             // What the map draws, so the list and the map agree: a link to a
             // hidden site is gone from both.
             connections={connections.filter(linked)}
+            providerNetworks={layers.providers ? providerNetworks : []}
             routes={shownRoutes}
             regions={data.regions ?? []}
             hidden={hidden}
@@ -1957,6 +2222,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 r.boundary as unknown as GeoJSON.GeoJsonObject
               ).getBounds()
               if (b.isValid()) map.fitBounds(b.pad(0.05))
+            }}
+            outlines={layers.outlines ? outlineTool.outlines : []}
+            onPickOutline={(o) => {
+              fitToOutline(o)
+              setSelected({ kind: "outline", id: o.id })
             }}
             selectedRouteId={selectedRouteId}
             selected={selected}
@@ -2067,11 +2337,13 @@ function MapSearch({
   sites,
   devices,
   markers,
+  outlines,
   onPick,
 }: {
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
   markers: SiteMapMarker[]
+  outlines: SiteMapOutline[]
   onPick: (sel: MapSelected, lat: number, lng: number) => void
 }) {
   const [value, setValue] = useState("")
@@ -2117,8 +2389,25 @@ function MapSearch({
           hint: m.type?.name ?? "marker",
         })
     }
+    for (const o of outlines) {
+      const name = o.display_label || o.location?.name || ""
+      const hay = [name, o.location?.name ?? "", o.location?.code ?? ""]
+      if (name && hay.some((h) => h.toLowerCase().includes(q))) {
+        const [lat, lng] = centroid(o.points)
+        rows.push({
+          sel: { kind: "outline", id: o.id },
+          lat,
+          lng,
+          name:
+            o.location && o.location.name !== name
+              ? `${name} · ${o.location.name}`
+              : name,
+          hint: o.location?.location_type?.name ?? "outline",
+        })
+      }
+    }
     return rows.slice(0, 8)
-  }, [q, sites, devices, markers])
+  }, [q, sites, devices, markers, outlines])
 
   return (
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>
@@ -2530,13 +2819,7 @@ function ConnectionPopover({
         )}
       </div>
       <div className="text-[12px] text-muted-foreground">
-        <Link to="/sites/$id" params={{ id: e.site_a.id }} className="link">
-          {e.site_a.name}
-        </Link>
-        {" ↔ "}
-        <Link to="/sites/$id" params={{ id: e.site_z.id }} className="link">
-          {e.site_z.name}
-        </Link>
+        <LineEnds edge={e} />
       </div>
       <LinkFacts line={e} compact />
       {e.kind === "circuit" && (

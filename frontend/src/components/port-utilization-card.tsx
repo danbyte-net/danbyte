@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 
+import { Loading } from "@/components/loading"
 import { api } from "@/lib/api"
 import { type CableState } from "@/lib/cable-state"
 import { cn } from "@/lib/utils"
@@ -65,6 +66,7 @@ export function PortUtilizationCard({
   vcId,
   onHoverState,
   onPick,
+  expected,
 }: {
   deviceId?: string
   /** A whole stack instead of one device - the members' ports summed. */
@@ -74,6 +76,9 @@ export function PortUtilizationCard({
   /** Clicking a legend entry (state + the kind holding most of it) or a
    * per-kind row (kind only). */
   onPick?: (s: CableState | null, kind: PortKind) => void
+  /** The caller knows there are ports: hold the card's place with the
+   * loading state while the figures load, rather than pop it in after. */
+  expected?: boolean
 }) {
   const q = useQuery({
     queryKey: vcId
@@ -89,6 +94,17 @@ export function PortUtilizationCard({
     staleTime: 60_000,
   })
   const d = q.data
+  if (!d && q.isPending && expected)
+    return (
+      <section>
+        <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+          Port utilization
+        </h2>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <Loading className="min-h-16" />
+        </div>
+      </section>
+    )
   if (!d || d.combined.total === 0) return null
   const used = d.combined.connected + d.combined.reserved
   const pct = Math.round((used / d.combined.total) * 100)

@@ -15,6 +15,7 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, override_settings
+from django.utils import timezone
 from lxml import etree
 from rest_framework.test import APITestCase
 
@@ -211,6 +212,86 @@ class SheetTests(_Base):
             with self.subTest(legend=str(legend)[:40]), self.fake as render:
                 self.assertEqual(self._post(body={"legend": legend}).status_code, 400)
                 render.assert_not_called()
+
+    def test_the_cables_legend_keys_colours_and_line_styles(self):
+        legend = {"title": "Cables · Status",
+                  "items": [{"label": "Active", "color": "#22c55e"},
+                            {"label": "Planned", "color": "#71717a", "line": "dashed"},
+                            {"label": "Bundle", "color": "#71717a", "line": "bundle"}]}
+        with self.fake as render:
+            r = self._post(body={"cable_legend": legend})
+        self.assertEqual(r.status_code, 200, r.content)
+        kw = render.call_args.kwargs
+        self.assertEqual(kw["cable_legend"]["items"][1]["line"], "dashed")
+        html = fp._legend_html(kw["cable_legend"])
+        # A colour as a fill swatch, a line style as a line in its style.
+        self.assertIn("rgba(34,197,94,0.35)", html)
+        self.assertIn("border-top:0.4mm dashed #71717a", html)
+        self.assertIn("border-top:0.9mm solid #71717a", html)
+        self.assertIn("Cables · Status", html)
+        for bad in ({"items": [{"label": "x", "color": "#123456", "line": "wavy"}]},
+                    {"items": [{"label": "x", "color": "url(#a)", "line": "solid"}]}):
+            with self.subTest(bad=bad), self.fake as render:
+                self.assertEqual(self._post(body={"cable_legend": bad}).status_code, 400)
+                render.assert_not_called()
+
+    def test_the_sheet_carries_both_legends(self):
+        html = fp.sheet_html(
+            fp.plan_sheet(960, 640, "a3", "landscape", True), title="Ground",
+            subtitle="", credit="", bar=None,
+            legend={"title": "Status", "items": [{"label": "Active", "color": "#22c55e"}]},
+            cable_legend={"title": "Cables · Type",
+                          "items": [{"label": "Cat6", "color": "#0ea5e9"},
+                                    {"label": "Inferred", "color": "#71717a",
+                                     "line": "thin"}]},
+            generated=timezone.now(), title_block=True,
+        )
+        self.assertIn("Cables · Type", html)
+        self.assertIn("border-top:0.25mm solid #71717a;opacity:0.6", html)
+        self.assertLess(html.index(">Status<"), html.index("Cables · Type"))
+
+    def test_the_area_types_legend_keys_colours_and_patterns(self):
+        legend = {"title": "Areas",
+                  "items": [{"label": "Parking", "color": "#2563eb", "pattern": "hatched"},
+                            {"label": "Lawn", "color": "#22c55e", "pattern": "dotted"},
+                            {"label": "Yard", "color": "#71717a", "pattern": "solid"}]}
+        with self.fake as render:
+            r = self._post(body={"area_legend": legend})
+        self.assertEqual(r.status_code, 200, r.content)
+        kw = render.call_args.kwargs
+        html = fp._legend_html(kw["area_legend"])
+        self.assertIn("repeating-linear-gradient(45deg,#2563eb", html)
+        self.assertIn("radial-gradient(#22c55e", html)
+        self.assertIn("background:rgba(113,113,122,0.35);border-color:#71717a", html)
+        for bad in ({"items": [{"label": "x", "color": "#123456", "pattern": "plaid"}]},
+                    {"items": [{"label": "x", "color": "#123456",
+                                "pattern": "url(#a)"}]}):
+            with self.subTest(bad=bad), self.fake as render:
+                self.assertEqual(self._post(body={"area_legend": bad}).status_code, 400)
+                render.assert_not_called()
+        sheet = fp.sheet_html(
+            fp.plan_sheet(960, 640, "a3", "landscape", True), title="Ground",
+            subtitle="", credit="", bar=None, legend=None, cable_legend=None,
+            area_legend=legend, generated=timezone.now(), title_block=True,
+        )
+        self.assertIn(">Areas<", sheet)
+
+    def test_a_patterned_area_survives_the_sanitiser(self):
+        """plan-svg.ts draws an area type's pattern as lines clipped to the
+        area - no <pattern>, which the sanitiser drops."""
+        hatched = PLAN.replace(
+            "</svg>",
+            '<clipPath id="ac-1"><rect x="0" y="0" width="80" height="40"/></clipPath>'
+            '<g clip-path="url(#ac-1)"><line x1="0" y1="40" x2="40" y2="0" '
+            'stroke="#2563eb" stroke-opacity="0.5" stroke-width="1"/></g></svg>',
+        )
+        with self.fake as render:
+            r = self._post(body={"svg": hatched})
+        self.assertEqual(r.status_code, 200, r.content)
+        svg = render.call_args.args[0]
+        self.assertIn(b"clipPath", svg)
+        self.assertIn(b'clip-path="url(#ac-1)"', svg)
+        self.assertIn(b"<line", svg)
 
     def test_the_sanitiser_is_applied(self):
         hostile = PLAN.replace(

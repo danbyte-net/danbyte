@@ -31,7 +31,7 @@ export type CableLook = Pick<
 >
 
 // Deterministic palette per cable type - informational hue, not state.
-const TYPE_PALETTE = [
+export const TYPE_PALETTE = [
   "#0ea5e9",
   "#8b5cf6",
   "#f59e0b",
@@ -77,11 +77,14 @@ export function statusColor(data?: CableLook | null): string | undefined {
 }
 
 /** The stroke one cable gets under a colour mode; undefined = the default
- * edge colour. */
+ * edge colour. A line to a provider network (#466) wears its circuit's
+ * colour - its type's, else its status's - under every mode, as the site
+ * map's circuit lines do. */
 export function edgeStroke(
-  data: CableLook | undefined,
+  data: (CableLook & { circuit?: unknown }) | undefined,
   mode: EdgeColorMode
 ): string | undefined {
+  if (data?.circuit) return cssColor(data.color) ?? statusColor(data)
   if (mode === "type" && data?.cable_type) return typeColor(data.cable_type)
   if (mode === "status") return statusColor(data)
   if (mode === "speed") return speedColor(data?.speed)
@@ -121,11 +124,26 @@ export interface EdgeLookContext {
   marked?: boolean
   /** A tunnel map's link (`TopoEdge.data.tunnel`): drawn in its own dash. */
   tunnel?: boolean
+  /** A circuit between two of your sites: a provider's service, not a
+   * cable - drawn in its own dash. */
+  circuit?: boolean
 }
 
 /** A tunnel's dash: dash-dot, apart from the LLDP ghost's, the BGP
  * session's and the patch-panel run's. */
 export const TUNNEL_DASH = "8 3 2 3"
+
+/** A site-to-site circuit's dash: long dashes, apart from the
+ * patch-panel run's, the LLDP ghost's and the tunnel's. */
+export const CIRCUIT_DASH = "14 5"
+
+/** Whether a line is a circuit between two of your sites (it carries both
+ * ends), not one to a provider network. */
+export function isSiteCircuit(
+  data: { circuit?: unknown; ends?: unknown[] } | undefined | null
+): boolean {
+  return !!data?.circuit && !!data.ends?.length
+}
 
 /** The drawn look of one edge kind. */
 export function edgeLook(sem: EdgeSem, ctx: EdgeLookContext = {}): EdgeLook {
@@ -138,6 +156,8 @@ export function edgeLook(sem: EdgeSem, ctx: EdgeLookContext = {}): EdgeLook {
         return { width: 2.5, stroke: "var(--map-accent)", label: {} }
       if (ctx.tunnel)
         return { width: 1.5, ...stroke, dash: TUNNEL_DASH, label: {} }
+      if (ctx.circuit)
+        return { width: 1.75, ...stroke, dash: CIRCUIT_DASH, label: {} }
       return {
         width: (ctx.count ?? 1) > 1 ? 1.75 : 1.25,
         ...stroke,

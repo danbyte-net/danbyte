@@ -14,8 +14,8 @@ import them, and everything below derives from what you entered.
 
 ## Contracts
 
-**DCIM → Support contracts** lists every contract of the tenant. A contract
-has:
+**Software & lifecycle → Support contracts** lists every contract of the
+tenant. A contract has:
 
 | Field | Meaning |
 |---|---|
@@ -73,8 +73,14 @@ under **Settings → Tenant policy → Support coverage** (1-730 days).
 ## Where it shows
 
 - **Device overview** - *Support coverage* next to *Hardware support* and *OS
-  support*: the status, the coverage end, the warranty end and every contract,
-  best first. Contracts you may not view are counted, not named.
+  support*: the status and a [lifetime bar](lifecycle.md#the-lifetime-bar)
+  from the start of the contract that sets the end to the coverage end
+  ("Ends in 40 d", the date in its tooltip) - amber inside the warning
+  window, red once coverage has ended. A warranty, or a contract you may not
+  view, has no start, so it is the countdown alone; an open-ended contract
+  reads *Open-ended*. Below it, the warranty end and a **Support contracts**
+  card listing every contract, best first, in the same card style as the
+  other Overview cards. Contracts you may not view are counted, not named.
 - **Devices list** - a *Coverage* column with a facet. `/devices?coverage=expired`
   opens the list filtered.
 - **Manufacturer page** - a *Contracts* tab lists the contracts with that
@@ -84,6 +90,9 @@ under **Settings → Tenant policy → Support coverage** (1-730 days).
 - **Dashboard** - the *Support coverage* widget: devices per status, narrowed
   by site and manufacturer, and the contracts that end soonest. A count opens
   the devices list filtered to it.
+- **Lifecycle overview** - a *Coverage* row per device next to its hardware
+  and OS rows, soonest end first (`GET /api/lifecycle/?source=coverage`). See
+  [Lifecycle overview](lifecycle-overview.md).
 
 ### Lifecycle flags
 
@@ -115,8 +124,10 @@ device on its status:
 | Expired or not covered | Expired or Not covered |
 | Expiring, expired or not covered | Expiring, Expired or Not covered |
 
-Give the rule a **tag** to judge only the devices that carry it - for example
-`production`.
+To judge only some devices - those tagged `production`, say - give the rule
+a [scope](compliance.md#scope-and-conditions): *Tags is any of production*. A
+rule from before scopes, with its own **tag**, keeps judging only the devices
+with that tag; editing it moves the tag into the scope.
 
 ## Import and export
 
@@ -143,7 +154,11 @@ the devices. The one-click site roles include Support coverage.
 
 A contract's device count, its `?device=` filter and the dashboard widget's
 site filter count only the devices you can see. A coverage row whose contract
-you can't see shows no contract, in the API and the export.
+you can't see shows no contract, in the API and the export. Its change-log
+entry is titled *Coverage of* its device; once the device is at a site you
+can't view (or is gone), the entry reads *Coverage of Hidden* and a search
+of the log does not match the device's name - see
+[change log](change-log.md).
 
 ### Cost
 
@@ -171,7 +186,7 @@ covers it.
 | `POST /api/support-coverage/bulk-remove/` | `{"contract_id", "device_ids": [...]}` → `removed` |
 | `GET /api/devices/?coverage=` | `covered`, `expiring`, `expired`, `none`; comma-separated for several |
 | `GET /api/devices/?support_contract=<id>` | The devices a contract covers |
-| `GET /api/devices/<id>/coverage/` | Status, contracts, `hidden_contracts`, flags |
+| `GET /api/devices/<id>/coverage/` | Status, `start` (of the contract that sets the end, when you may view it), `end`, contracts, `hidden_contracts`, flags |
 | `GET /api/devices/coverage-summary/` | `?site=`, `?manufacturer=`; counts per status and the contracts ending soonest |
 
 Every device payload carries `warranty_end` and

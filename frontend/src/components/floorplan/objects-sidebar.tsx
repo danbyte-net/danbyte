@@ -8,13 +8,19 @@ import {
   tileName,
 } from "@/components/floorplan/floor-canvas"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { getLucideIcon } from "@/components/dynamic-icon"
+import { tileIcon } from "@/components/object-icon"
 import {
   CheckCountBadge,
   FoldableGroup,
   RowCheckBadge,
   VisibilityToggle,
 } from "@/components/foldable-group"
-import { NO_FLOOR_HIDDEN, tileHidden } from "@/components/floorplan/hidden"
+import {
+  NO_FLOOR_HIDDEN,
+  placedGroupKey,
+  tileHidden,
+} from "@/components/floorplan/hidden"
 import type { FloorHidden } from "@/components/floorplan/hidden"
 import { hiddenCount, isHidden, setHidden } from "@/components/hidden-objects"
 import {
@@ -26,12 +32,38 @@ import {
 import type { CheckFilter } from "@/components/objects-panel"
 import { TruncatedText } from "@/components/ui/truncated-text"
 import { naturalCompare } from "@/lib/natural-sort"
+import {
+  areaColor,
+  areaFallbackName,
+  areaName,
+} from "@/components/floorplan/shapes"
+import type { PlanShape } from "@/components/floorplan/shapes"
+import { LINK_KIND_NAME } from "@/components/floorplan/tile-open"
+
+/** A placed object with no role: grouped by its kind. */
+const KIND_TITLE: Partial<Record<string, string>> = Object.fromEntries(
+  Object.entries(LINK_KIND_NAME).map(([k, n]) => [k, n.many])
+)
 
 interface Group {
   key: string
   title: string
   color: string
   tiles: FloorPlanTile[]
+}
+
+/** A row's icon: the one its tile draws with from afar (object-icon.ts),
+ * or nothing for a planning tile without one. */
+function TileIconGlyph({ tile }: { tile: FloorPlanTile }) {
+  const Icon = getLucideIcon(tileIcon(tile))
+  if (!Icon) return null
+  return (
+    <Icon
+      data-part="row-icon"
+      aria-hidden="true"
+      className="size-3.5 shrink-0 text-muted-foreground"
+    />
+  )
 }
 
 /** Group tiles by their type identity, ordered by name. */
@@ -82,7 +114,21 @@ export function ObjectsSidebar({
   hidden = NO_FLOOR_HIDDEN,
   onHiddenChange,
   omitRacks = false,
+  shapes = [],
+  selectedShapeId = null,
+  onPickShape,
+  unplaced,
+  cellMm,
 }: {
+  /** The plan's cell size, mm: an area with no name is listed by its size. */
+  cellMm?: number
+  /** Edit: the floor's objects not placed anywhere (drag onto the plan). */
+  unplaced?: React.ReactNode
+  /** The plan's areas and labels (hidden ones included, dimmed). */
+  shapes?: PlanShape[]
+  selectedShapeId?: string | null
+  /** Select + focus an area or a label. */
+  onPickShape?: (shape: PlanShape) => void
   tiles: FloorPlanTile[]
   liveState?: FloorPlanLiveState | null
   selectedId: string | null
@@ -103,34 +149,114 @@ export function ObjectsSidebar({
     onHiddenChange?.(setHidden(hidden, key, value, !shown))
   const checkOf = (t: FloorPlanTile) => liveState?.tiles[t.id]?.check ?? null
 
-  const { roleGroups, typeGroups, total, statusCounts, first } = useMemo(() => {
+  const { roleGroups, typeGroups, objectGroups, total, statusCounts, first } =
+    useMemo(() => {
+      const needle = q.trim().toLowerCase()
+      // Zones are background paint, not placed objects - they'd drown the list.
+      const placed = tiles.filter(
+        (t) => !tileIsZone(t) && !(omitRacks && t.linked?.kind === "rack")
+      )
+      const searched = needle
+        ? placed.filter((t) =>
+            [tileName(t), t.linked?.name, t.role_type?.name, t.tile_type?.name]
+              .filter(Boolean)
+              .some((s) => s!.toLowerCase().includes(needle))
+          )
+        : placed
+      const match = status
+        ? searched.filter((t) => liveState?.tiles[t.id]?.check === status)
+        : searched
+      const byRole = groupBy(match, (t) => t.role_type)
+      const byType = groupBy(match, (t) => t.tile_type)
+      // Placed straight from an object: no type, grouped by the object's role.
+      const byObject = groupBy(
+        match.filter((t) => !t.tile_type && !t.role_type && t.linked),
+        (t) => ({
+          id: placedGroupKey(t),
+          name:
+            t.linked?.role?.name ?? KIND_TITLE[t.linked?.kind ?? ""] ?? "Other",
+          color: t.linked?.role?.color ?? null,
+        })
+      )
+      return {
+        roleGroups: byRole,
+        typeGroups: byType,
+        objectGroups: byObject,
+        total: match.length,
+        statusCounts: checkCounts(
+          searched.map((t) => liveState?.tiles[t.id]?.check)
+        ),
+        first:
+          byObject.at(0)?.tiles.at(0) ??
+          byRole.at(0)?.tiles.at(0) ??
+          byType.at(0)?.tiles.at(0),
+      }
+    }, [tiles, q, status, liveState, omitRacks])
+
+  // Areas and labels: no monitoring of their own, so the status filter
+  // leaves them out.
+  const { areaRows, labelRows } = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    // Zones are background paint, not placed objects - they'd drown the list.
-    const placed = tiles.filter(
-      (t) => !tileIsZone(t) && !(omitRacks && t.linked?.kind === "rack")
-    )
-    const searched = needle
-      ? placed.filter((t) =>
-          [tileName(t), t.linked?.name, t.role_type?.name, t.tile_type?.name]
-            .filter(Boolean)
-            .some((s) => s!.toLowerCase().includes(needle))
-        )
-      : placed
-    const match = status
-      ? searched.filter((t) => liveState?.tiles[t.id]?.check === status)
-      : searched
-    const byRole = groupBy(match, (t) => t.role_type)
-    const byType = groupBy(match, (t) => t.tile_type)
+    const match = (s: string) => !needle || s.toLowerCase().includes(needle)
+    const named = (s: PlanShape) =>
+      s.kind === "area" ? areaName(s) || areaFallbackName(s, cellMm) : s.text
+    const rows = status ? [] : shapes.filter((s) => match(named(s)))
+    // Named areas first, the outlines with no name after them.
+    const unnamed = (s: PlanShape) =>
+      s.kind === "area" && !areaName(s) ? 1 : 0
+    const sort = (a: PlanShape, b: PlanShape) =>
+      unnamed(a) - unnamed(b) || naturalCompare(named(a), named(b))
     return {
-      roleGroups: byRole,
-      typeGroups: byType,
-      total: match.length,
-      statusCounts: checkCounts(
-        searched.map((t) => liveState?.tiles[t.id]?.check)
-      ),
-      first: byRole.at(0)?.tiles.at(0) ?? byType.at(0)?.tiles.at(0),
+      areaRows: rows.filter((s) => s.kind === "area").sort(sort),
+      labelRows: rows.filter((s) => s.kind === "label").sort(sort),
     }
-  }, [tiles, q, status, liveState, omitRacks])
+  }, [shapes, q, status, cellMm])
+
+  const shapeRow = (s: PlanShape) => {
+    const key = s.kind === "area" ? "areas" : "labels"
+    const off = eyes && isHidden(hidden, key, s.id)
+    const name =
+      s.kind === "area" ? areaName(s) : s.text.split("\n")[0] || "Label"
+    return (
+      <div
+        key={s.id}
+        className={cn(
+          "flex items-center gap-1.5 rounded pr-1 hover:bg-muted/60",
+          s.id === selectedShapeId && "bg-muted font-medium",
+          off && "opacity-50"
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => onPickShape?.(s)}
+          className="flex min-w-0 flex-1 px-1.5 py-1 pl-2 text-left text-[13px]"
+        >
+          {s.kind === "area" && (s.room || s.location || s.color) ? (
+            <ColorBadge
+              name={name || "Area"}
+              color={areaColor(s)}
+              className="max-w-52"
+            />
+          ) : name ? (
+            <TruncatedText className="block">{name}</TruncatedText>
+          ) : (
+            <TruncatedText className="block text-muted-foreground">
+              {s.kind === "area" ? areaFallbackName(s, cellMm) : "Unnamed"}
+            </TruncatedText>
+          )}
+        </button>
+        {eyes && (
+          <VisibilityToggle
+            vis={{
+              shown: !off,
+              onChange: (shown) => toggle(key, s.id, shown),
+              what: name || (s.kind === "area" ? "area" : "label"),
+            }}
+          />
+        )}
+      </div>
+    )
+  }
 
   const section = (
     label: string,
@@ -194,11 +320,14 @@ export function ObjectsSidebar({
                     onClick={() => onPick(t)}
                     className="flex min-w-0 flex-1 flex-col px-1.5 py-1 pl-6 text-left text-[13px]"
                   >
-                    {name ? (
-                      <TruncatedText className="block">{name}</TruncatedText>
-                    ) : (
-                      <span className="text-muted-foreground">Unnamed</span>
-                    )}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <TileIconGlyph tile={t} />
+                      {name ? (
+                        <TruncatedText className="block">{name}</TruncatedText>
+                      ) : (
+                        <span className="text-muted-foreground">Unnamed</span>
+                      )}
+                    </span>
                     {sub && (
                       <TruncatedText className="block text-[11px] leading-tight font-normal text-muted-foreground">
                         {sub}
@@ -244,12 +373,24 @@ export function ObjectsSidebar({
           Racks: in the table below
         </p>
       )}
-      {total === 0 ? (
+      {unplaced}
+      {total + areaRows.length + labelRows.length === 0 ? (
         <ObjectsEmpty filtered={!!q.trim() || !!status} />
       ) : (
         <>
+          {section("Placed objects", objectGroups, "roleTypes")}
           {section("Device roles", roleGroups, "roleTypes")}
           {section("Tile types", typeGroups, "tileTypes")}
+          {areaRows.length > 0 && (
+            <ObjectsSection heading="Rooms and areas">
+              {areaRows.map(shapeRow)}
+            </ObjectsSection>
+          )}
+          {labelRows.length > 0 && (
+            <ObjectsSection heading="Labels">
+              {labelRows.map(shapeRow)}
+            </ObjectsSection>
+          )}
         </>
       )}
     </ObjectsPanel>

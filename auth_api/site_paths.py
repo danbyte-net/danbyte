@@ -30,9 +30,15 @@ SITE_PATHS: dict[str, str] = {
     # A group belongs to exactly one cluster, so it inherits that cluster's site.
     "virtualmachinegroup": "cluster__site",
     "powerpanel": "site",
+    "coolingsource": "site",
     "location": "site",
+    # A building outline on the site map belongs to the site it is drawn at.
+    "sitemapoutline": "site",
+    # A room's site is its location's (floor plans P1b).
+    "room": "location__site",
     # Indirect (one hop).
     "powerfeed": "power_panel__site",
+    "coolingfeed": "source__site",
     "interface": "device__site",
     "frontport": "device__site",
     "rearport": "device__site",
@@ -40,6 +46,8 @@ SITE_PATHS: dict[str, str] = {
     "consoleserverport": "device__site",
     "powerport": "device__site",
     "poweroutlet": "device__site",
+    "coolingintake": "device__site",
+    "coolingoutflow": "device__site",
     "auxport": "device__site",
     "antenna": "device__site",
     # Denormalized on the row (its port could be any of nine kinds).
@@ -55,12 +63,20 @@ SITE_PATHS: dict[str, str] = {
     # Its own site, else the VM it lands on (#432) - an end at a provider
     # network bound to a VM interface belongs to that VM's site.
     "circuittermination": "site|vm_interface__vm__site",
-    "floorplan": "location__site",
-    "floorplantile": "floor_plan__location__site",
-    "floorplandrawing": "floor_plan__location__site",
-    "floorplantray": "floor_plan__location__site",
-    "floorplanraisedfloorarea": "floor_plan__location__site",
-    "floorplanwall": "floor_plan__location__site",
+    # A floor plan's own site (site-wide plans have no location). The
+    # location's site is the fallback only for a row a process still on the
+    # release before api 0231 wrote during an upgrade, with no site set.
+    "floorplan": "site|location__site",
+    # A floor plan stack (its floors) - its API follows the floorplan grant.
+    "floorplanstack": "site|location__site",
+    "floorplantile": "floor_plan__site|floor_plan__location__site",
+    "floorplandrawing": "floor_plan__site|floor_plan__location__site",
+    "floorplantray": "floor_plan__site|floor_plan__location__site",
+    "floorplanraisedfloorarea": "floor_plan__site|floor_plan__location__site",
+    "floorplanwall": "floor_plan__site|floor_plan__location__site",
+    "floorplanarea": "floor_plan__site|floor_plan__location__site",
+    "floorplanlabel": "floor_plan__site|floor_plan__location__site",
+    "floorplancablepath": "floor_plan__site|floor_plan__location__site",
     # A site's own scope is itself.
     "site": "id",
     # Per-site settings rows - a change grant scoped to sites=[X] makes its
@@ -69,9 +85,15 @@ SITE_PATHS: dict[str, str] = {
     # Routing rows hang off their device or VM (#217); the catalogs they reference
     # (policies, prefix lists, keychains) are tenant-wide.
     "staticroute": "device__site|virtual_machine__site",
+    "policyrule": "device__site|virtual_machine__site",
     "bgpinstance": "device__site|virtual_machine__site",
     "bgpaddressfamily": "instance__device__site|instance__virtual_machine__site",
     "bgpsession": "instance__device__site|instance__virtual_machine__site",
+    # A session's families follow its box; a peer group's are catalog rows
+    # (no site), as the group is.
+    "bgpneighboraf": (
+        "session__instance__device__site|session__instance__virtual_machine__site"
+    ),
     "ospfinstance": "device__site|virtual_machine__site",
     "ospfinterface": "instance__device__site|instance__virtual_machine__site",
     "isisinstance": "device__site|virtual_machine__site",
@@ -81,6 +103,8 @@ SITE_PATHS: dict[str, str] = {
     "vtep": "device__site",
     "ldpinstance": "device__site",
     "vtepmembership": "vtep__device__site",
+    # A segment is a tenant-wide catalog; each member port is its leaf's.
+    "ethernetsegmentmember": "interface__device__site",
     # An Oxidized node link follows the device or VM it backs (#386).
     "oxidizednodelink": "device__site|virtual_machine__site",
     # Rows that belong to a site through their device, VM, prefix, address or
@@ -111,6 +135,19 @@ SITE_PATHS: dict[str, str] = {
     "portutilizationrule": "device__site",
     "zabbixhostlink": "device__site",
     "zabbixchange": "device__site",
+    "prtgdevicelink": "device__site|virtual_machine__site",
+    "prtgsensor": "device__site|virtual_machine__site",
+    "prtgchange": "device__site|virtual_machine__site",
+    "prtghostfacts": "device__site|virtual_machine__site",
+    "prtgsensoroverride": "device__site|virtual_machine__site",
+    # A pin follows the object it sits on: the sensor's device or VM, or the
+    # address, interface or service the sensor watches.
+    "prtgsensorpin": (
+        "device__site|virtual_machine__site|ip_address__site|ip_address__prefix__site"
+        "|interface__device__site|vm_interface__vm__site|service__device__site"
+        "|service__virtual_machine__site|service__ip_address__site"
+        "|service__ip_address__prefix__site"
+    ),
     "dhcpscope": "prefix__site",
     "dhcpreservation": "scope__prefix__site",
     "dhcplease": "scope__prefix__site",
@@ -121,6 +158,26 @@ SITE_PATHS: dict[str, str] = {
     # A covered device's row follows the device (#421); the contract itself
     # is tenant-wide.
     "supportcoverage": "device__site",
+    # Installed software follows its device or VM (#436); the application
+    # catalog itself is tenant-wide, like platforms.
+    "installedsoftware": "device__site|virtual_machine__site",
+    # An application group follows its host the same way (#436); the group
+    # and its members are a tenant-wide catalog.
+    "applicationgroupassignment": "device__site|virtual_machine__site",
+    # A device profile follows its device or VM the same way; the profile
+    # itself is a tenant-wide catalog.
+    "deviceprofileassignment": "device__site|virtual_machine__site",
+    # An application flow belongs to the site of its first end that has one
+    # (#163): the source address (its own site, else its prefix's, as an
+    # address's site reads), then the destination address, then the
+    # prefixes, then the ranges (a range's site is its prefix's). A flow
+    # between two "any" ends is shared.
+    "applicationflow": (
+        "source_ip__site|source_ip__prefix__site"
+        "|destination_ip__site|destination_ip__prefix__site"
+        "|source_prefix__site|destination_prefix__site"
+        "|source_range__prefix__site|destination_range__prefix__site"
+    ),
 }
 
 # Site-bound types the one-click site roles do NOT grant (auth_api.api.
@@ -167,7 +224,26 @@ SITE_PATH_EXEMPT: dict[str, str] = {
     "virtplacementrule": "integration config; the site is where it places VMs",
     "zabbixadoptionrule": "integration config; the site is where it adopts hosts",
     "zabbixconnection": "integration config; adopt_site is a default",
+    "prtgadoptionrule": "integration config; the site is where it adopts devices",
+    "prtgconnection": "integration config; adopt_site is a default",
+    "prtgpolicy": "integration config; site and location are what it applies to",
 }
+
+# Tenant-wide catalogs that link to a site-bound row and that the site roles
+# still read, each with the reason. Their site links are references a reader
+# who can't view them sees as Hidden (#453, core.hidden_fields). Unlike
+# SITE_PATH_EXEMPT, site_role_catalog_types derives them like any catalog.
+SITE_PATH_EXEMPT_CATALOGS: dict[str, str] = {
+    # A requirement is a catalog like its application; the flows it
+    # generates are site-scoped as every flow is.
+    "applicationflowrequirement": "tenant-wide catalog; fixed ends are references",
+}
+
+# Compliance triage (``compliancetriage``) is tenant-wide and in neither map:
+# a row names its object as a generic (object_type, object_id) pair with no
+# foreign key to follow, so no ORM path reaches a site. The triage endpoint
+# checks instead that the caller may view every object it touches, under that
+# object's own site scope (auth_api.tests_site_paths_registry pins this).
 
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global
 # to the tenant). Unlike SITE_PATHS these are only site-scoped while the
@@ -191,6 +267,8 @@ CATALOG_SITE_PATHS: dict[str, str] = {
     "consoleserverporttemplate": "device_type__owning_site",
     "powerporttemplate": "device_type__owning_site",
     "poweroutlettemplate": "device_type__owning_site",
+    "coolingintaketemplate": "device_type__owning_site",
+    "coolingoutflowtemplate": "device_type__owning_site",
     "rearporttemplate": "device_type__owning_site",
     "frontporttemplate": "device_type__owning_site",
     "auxporttemplate": "device_type__owning_site",
@@ -199,6 +277,13 @@ CATALOG_SITE_PATHS: dict[str, str] = {
     "modulebaytemplate": "device_type__owning_site",
     "inventoryitemtemplate": "device_type__owning_site",
     "devicetypeservice": "device_type__owning_site",
+}
+
+
+# Tenant-wide catalogs the site roles read although no site type points at
+# them, each with the reason.
+SITE_ROLE_EXTRA_CATALOGS: dict[str, str] = {
+    "sensitivitylabel": "a site role's reports are marked with the tenant's labels",
 }
 
 
@@ -224,6 +309,7 @@ SITE_ROLE_REFERENCE_EXCLUDED: dict[str, str] = {
     "tunnel": "inventory that spans sites, not a catalog",
     "exporttemplate": "automation templates are administration",
     "oxidizedconnection": "integration configuration",
+    "prtgconnection": "integration configuration; holds the API key",
 }
 
 
@@ -239,7 +325,7 @@ def site_role_catalog_types() -> list[str]:
 
     registry = _registry()
     skip = set(SITE_PATHS) | set(SITE_PATH_EXEMPT) | set(SITE_ROLE_REFERENCE_EXCLUDED)
-    out: set[str] = set()
+    out: set[str] = set(SITE_ROLE_EXTRA_CATALOGS)
     for slug in site_role_types():
         model = registry[slug]["model"]
         if issubclass(model, CustomFieldsMixin):

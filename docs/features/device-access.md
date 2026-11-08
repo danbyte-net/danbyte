@@ -20,7 +20,11 @@ gated on the device **connect** permission (see [Permissions](permissions.md)).
 
 A **device credential** links a device to a login secret. Add and manage them in
 the **Credentials** card on the device's **Monitoring** tab (SSH password, SSH
-key, or HTTPS login).
+key, HTTPS login, Windows login, Proxmox API token or VMware login). The last
+three are what PRTG's sensors get when a sensor profile sets credentials **on
+the device** with none picked (see [PRTG](prtg.md#where-credentials-go)):
+Windows takes `DOMAIN\user` as the username, Proxmox `user@realm!tokenid` with
+the token secret as the password.
 
 Each credential sources its secret one of two ways:
 

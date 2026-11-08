@@ -10,6 +10,10 @@ way into Danbyte, not just something Danbyte writes into.
 provisioning scope: a host that matches a device by address, serial or name is
 that device, whether or not anyone asked Zabbix to watch it, and adopting it
 would be a duplicate with a different name.
+
+The placement chain, the defaults refresh and making the device are shared
+with every external monitor (:mod:`monitoring.external.adoption`); this
+module reads Zabbix hosts.
 """
 from __future__ import annotations
 
@@ -18,34 +22,20 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
+from monitoring.external import adoption as shared
+from monitoring.external.adoption import applicable, device_index
+
 from .models import ZabbixAdoptionRule, ZabbixChange, ZabbixHostLink
+
+#: ``applicable`` and ``device_index`` are the shared ones, re-exported for
+#: the callers that import them from here.
+__all__ = ["applicable", "device_index", "refresh_pending_proposals"]
 
 log = logging.getLogger("zabbix.adopt")
 
 #: Zabbix interface types, in the order an adopted address is taken from them:
 #: what SNMP polls is the management address; the agent's is the fallback.
 _IFACE_PREFERENCE = ("2", "1", "3", "4")
-
-
-def device_index(tenant) -> dict:
-    """Every address, serial and name the tenant's devices answer to."""
-    from api.models import Device, IPAddress
-
-    addresses = {
-        str(ip).split("/")[0]
-        for ip in IPAddress.objects.filter(
-            tenant=tenant, assigned_device__isnull=False
-        ).values_list("ip_address", flat=True)
-    }
-    serials, names = set(), set()
-    for name, serial in Device.objects.filter(tenant=tenant).values_list(
-        "name", "serial_number"
-    ):
-        if name:
-            names.add(name.strip().lower())
-        if serial:
-            serials.add(serial.strip().lower())
-    return {"addresses": addresses, "serials": serials, "names": names}
 
 
 def is_known(host, index) -> bool:
@@ -86,27 +76,15 @@ def placement(host: dict, rules) -> dict:
     addresses. It sets only what it names, so a name rule that knows the site
     but not the type leaves the type to the inventory model and the defaults.
     """
-    from integrations.placement import pattern_matches
-
     if not rules:
         return {}
     groups = [g.get("name", "") for g in host.get("hostgroups") or host.get("groups") or []]
     addresses = [(i.get("ip") or "").strip() for i in host.get("interfaces") or []]
-    candidates = {
+    return shared.first_matching_rule(rules, {
         ZabbixAdoptionRule.SCOPE_NAME: [host.get("name") or "", host.get("host") or ""],
         ZabbixAdoptionRule.SCOPE_GROUP: groups,
         ZabbixAdoptionRule.SCOPE_IP: [a for a in addresses if a],
-    }
-    for rule in rules:
-        values = candidates.get(rule.scope) or []
-        if any(pattern_matches(rule.pattern, v, scope=rule.scope) for v in values):
-            out = {"rule": rule.pattern, "site": (rule.site_id, rule.site.name)}
-            if rule.role_id:
-                out["role"] = (rule.role_id, rule.role.name)
-            if rule.device_type_id:
-                out["device_type"] = (rule.device_type_id, rule.device_type.model)
-            return out
-    return {}
+    })
 
 
 def proposal(conn, host, *, sites, types, rules=()) -> dict:
@@ -124,39 +102,19 @@ def proposal(conn, host, *, sites, types, rules=()) -> dict:
     groups = [g.get("name", "") for g in host.get("hostgroups") or host.get("groups") or []]
     placed = placement(host, rules)
 
-    # Which fields came from the connection's defaults, so a later change
-    # to the defaults can be re-applied to a pending proposal without
-    # disturbing what a rule or the host itself decided.
-    defaulted: list[str] = []
-
-    site = placed.get("site")
-    if site is None:
-        # The first host group that names one of this tenant's sites - the
-        # reverse of what provisioning writes, so an estate Danbyte provisioned
-        # and one somebody built by hand read the same way.
-        site = next(
-            ((sites[g.lower()], g) for g in groups if g.lower() in sites),
-            None,
-        )
-    if site is None:
-        defaulted.append("site")
-        if conn.adopt_site_id:
-            site = (conn.adopt_site_id, conn.adopt_site.name)
-
+    # The first host group that names one of this tenant's sites - the
+    # reverse of what provisioning writes, so an estate Danbyte provisioned
+    # and one somebody built by hand read the same way.
+    site = next(
+        ((sites[g.lower()], g) for g in groups if g.lower() in sites),
+        None,
+    )
     model = (inventory.get("model") or "").strip()
-    device_type = placed.get("device_type")
-    if device_type is None and model and model.lower() in types:
-        device_type = (types[model.lower()], model)
-    if device_type is None:
-        defaulted.append("device_type")
-        if conn.adopt_device_type_id:
-            device_type = (conn.adopt_device_type_id, conn.adopt_device_type.model)
-
-    role = placed.get("role")
-    if role is None:
-        defaulted.append("role")
-        if conn.adopt_role_id:
-            role = (conn.adopt_role_id, conn.adopt_role.name)
+    device_type = (types[model.lower()], model) if model and model.lower() in types else None
+    # Which fields came from the connection's defaults is recorded, so a later
+    # change to the defaults can be re-applied to a pending proposal without
+    # disturbing what a rule or the host itself decided.
+    chosen, defaulted = shared.place(conn, placed, site=site, device_type=device_type)
 
     detail = {
         "hostid": host["hostid"],
@@ -168,12 +126,7 @@ def proposal(conn, host, *, sites, types, rules=()) -> dict:
         "model": model,
         "vendor": (inventory.get("vendor") or "").strip(),
         "os": (inventory.get("os") or "").strip(),
-        "site_id": str(site[0]) if site else None,
-        "site": site[1] if site else None,
-        "role_id": str(role[0]) if role else None,
-        "role": role[1] if role else None,
-        "device_type_id": str(device_type[0]) if device_type else None,
-        "device_type": device_type[1] if device_type else None,
+        **shared.placement_detail(chosen),
         # Which rule placed it, so the queue can say why this site and not
         # the default.
         "rule": placed.get("rule"),
@@ -183,68 +136,26 @@ def proposal(conn, host, *, sites, types, rules=()) -> dict:
     return detail
 
 
-_MISSING_LABEL = {"site": "site", "role": "role", "device_type": "device type"}
+#: What a proposal with a gap says beyond "set the defaults".
+_HINT = "name the site in a host group"
 
 
 def _reason(detail: dict) -> None:
-    missing = [
-        _MISSING_LABEL[f] for f in ("site", "role", "device_type") if not detail.get(f"{f}_id")
-    ]
-    if missing:
-        detail["reason"] = (
-            "No " + ", ".join(missing) + " to adopt into - set the defaults on "
-            "the connection, or name the site in a host group."
-        )
-    else:
-        detail.pop("reason", None)
+    shared.set_reason(detail, _HINT)
 
 
 def refresh_pending_proposals(conn) -> int:
     """Re-apply the connection's defaults to the adoptions still waiting.
 
-    A proposal records what it decided at sync time; the defaults are its
-    last resort, so when they change the proposals that leaned on them (or
-    had nothing to lean on) must follow at once - an operator who has just
-    pressed *Set defaults* is looking at the queue, not waiting for the next
-    pass. Fields a rule or the host decided are left alone. Returns how
-    many proposals changed.
+    Fields a rule or the host decided are left alone. Returns how many
+    proposals changed.
     """
-    defaults = {
-        "site": (conn.adopt_site_id, conn.adopt_site.name) if conn.adopt_site_id else None,
-        "role": (conn.adopt_role_id, conn.adopt_role.name) if conn.adopt_role_id else None,
-        "device_type": (
-            (conn.adopt_device_type_id, conn.adopt_device_type.model)
-            if conn.adopt_device_type_id else None
+    return shared.refresh_pending_proposals(
+        conn,
+        ZabbixChange.objects.filter(
+            connection=conn, kind=ZabbixChange.ADOPT, ignored=False, device__isnull=True
         ),
-    }
-    changed = 0
-    for change in ZabbixChange.objects.filter(
-        connection=conn, kind=ZabbixChange.ADOPT, ignored=False, device__isnull=True
-    ):
-        detail = dict(change.detail or {})
-        # Older proposals carry no marker: a field with no value is one the
-        # defaults may fill, which is what the marker would have said.
-        defaulted = set(detail.get("defaulted") or []) | {
-            f for f in ("site", "role", "device_type") if not detail.get(f"{f}_id")
-        }
-        before = {k: detail.get(k) for k in ("site_id", "role_id", "device_type_id", "reason")}
-        for field in defaulted:
-            value = defaults[field]
-            detail[f"{field}_id"] = str(value[0]) if value else None
-            detail[field] = value[1] if value else None
-        detail["defaulted"] = sorted(defaulted)
-        _reason(detail)
-        after = {k: detail.get(k) for k in ("site_id", "role_id", "device_type_id", "reason")}
-        if after != before or "defaulted" not in (change.detail or {}):
-            change.detail = detail
-            change.save(update_fields=["detail"])
-            changed += 1
-    return changed
-
-
-def applicable(detail: dict) -> bool:
-    return bool(
-        detail.get("site_id") and detail.get("role_id") and detail.get("device_type_id")
+        hint=_HINT,
     )
 
 
@@ -293,53 +204,17 @@ def apply_adoption(change) -> str:
     of the tenant's contains it - an address with nowhere to live is left to
     the operator rather than invented a prefix for.
     """
-    from api.models import Device, DeviceRole, DeviceType, IPAddress, Site
-    from api.status_registry import resolve_status
-    from api.vrf_placement import containing_prefix, row_in_vrf
-
     conn = change.connection
     detail = change.detail or {}
-    if not applicable(detail):
-        raise ValueError(detail.get("reason") or "This proposal is missing a default.")
-    tenant = conn.tenant
-    site = Site.objects.filter(tenant=tenant, pk=detail["site_id"]).first()
-    role = DeviceRole.objects.filter(tenant=tenant, pk=detail["role_id"]).first()
-    dtype = DeviceType.objects.filter(tenant=tenant, pk=detail["device_type_id"]).first()
-    if site is None or role is None or dtype is None:
-        raise ValueError("A default named in this proposal no longer exists.")
-
-    name = detail.get("name") or detail.get("host") or f"zabbix-{detail['hostid']}"
+    name = detail.get("name") or detail.get("host") or f"zabbix-{detail.get('hostid')}"
     with transaction.atomic():
-        device = Device.objects.create(
-            tenant=tenant, name=name[:255], device_type=dtype, role=role, site=site,
-            serial_number=(detail.get("serial") or "")[:255],
-            status=resolve_status(tenant, "active", "device"),
-            description=f"Adopted from Zabbix «{conn.name}»",
+        device, note = shared.make_device(
+            conn, detail, name=name, origin=f"Zabbix «{conn.name}»"
         )
-        note = ""
-        address = (detail.get("address") or "").strip()
-        if address:
-            # Zabbix names no VRF: an address held in several VRFs resolves to
-            # the one it places into, never an arbitrary one (#331).
-            row = row_in_vrf(tenant, address)
-            if row is None:
-                prefix = containing_prefix(tenant, address)
-                if prefix is not None:
-                    row = IPAddress.objects.create(
-                        tenant=tenant, ip_address=address, prefix=prefix,
-                        description=f"Adopted from Zabbix «{conn.name}»",
-                    )
-                else:
-                    note = f" {address} is in no prefix of yours, so it was not recorded."
-            if row is not None and row.assigned_device_id is None:
-                row.assigned_device = device
-                row.save(update_fields=["assigned_device"])
-                device.primary_ip = row
-                device.save(update_fields=["primary_ip"])
         ZabbixHostLink.objects.update_or_create(
             connection=conn, hostid=detail["hostid"],
             defaults={
-                "tenant": tenant, "device": device,
+                "tenant": conn.tenant, "device": device,
                 "host_name": (detail.get("name") or "")[:255],
                 "matched_by": "adopted", "created_here": False,
                 "last_seen_at": timezone.now(), "unwanted_since": None,

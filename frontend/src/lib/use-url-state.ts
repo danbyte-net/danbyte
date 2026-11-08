@@ -136,7 +136,8 @@ export function useUrlText(
 }
 
 /** A toggle written as `1` / `0`, present only when it differs from the
- * default - `?panels=1` on a page whose panels are hidden by default. */
+ * default - `?panels=1` on a page whose panels are hidden by default. A
+ * hand-typed `?panels=1` arrives JSON-parsed, as the number. */
 export function useUrlFlag(
   key: string,
   fallback: boolean
@@ -144,9 +145,9 @@ export function useUrlFlag(
   return useUrlParam<boolean>({
     key,
     parse: (raw) =>
-      raw === true || raw === "1" || raw === "true"
+      raw === true || raw === 1 || raw === "1" || raw === "true"
         ? true
-        : raw === false || raw === "0" || raw === "false"
+        : raw === false || raw === 0 || raw === "0" || raw === "false"
           ? false
           : undefined,
     format: (v) => (v ? "1" : "0"),

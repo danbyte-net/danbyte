@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 
-import { api, type DeployRun, type Paginated } from "@/lib/api"
+import { type DeployRun } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/deploy-runs")({
   component: DeployRunsPage,
 })
 
-const STATUSES = ["queued", "launched", "failed"] as const
+const STATUSES = ["queued", "launched", "succeeded", "failed"] as const
 
 function DeployRunsPage() {
   const [status, setStatus] = useState<string>("all")
@@ -30,7 +31,7 @@ function DeployRunsPage() {
     queryFn: () => {
       const p = new URLSearchParams()
       if (status !== "all") p.set("status", status)
-      return api<Paginated<DeployRun>>(`/api/deploy-runs/?${p.toString()}`)
+      return apiAll<DeployRun>(`/api/deploy-runs/?${p.toString()}`)
     },
     refetchInterval: 10_000,
   })
@@ -44,7 +45,7 @@ function DeployRunsPage() {
       count={query.data ? rows.length : undefined}
       actions={
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="h-8 w-36 text-xs">
+          <SelectTrigger aria-label="Status" className="h-8 w-36 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

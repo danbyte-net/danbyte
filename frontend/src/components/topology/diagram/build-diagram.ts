@@ -13,11 +13,12 @@ import {
   edgeLook,
   edgeStroke,
   flowEdgeStyle,
+  isSiteCircuit,
 } from "../edge-style"
 import type { EdgeColorMode, EdgeSem } from "../edge-style"
 import { sharedLag } from "../lag-bundles"
 import type { EdgeLag } from "../lag-bundles"
-import { GROUP_H, GROUP_W } from "../group-size"
+import { groupSize } from "../group-size"
 import type { BandExits } from "../view-positions"
 import { layoutNodes } from "../layout"
 import type { SizeOf } from "../layout"
@@ -46,6 +47,7 @@ import {
   chassisStrip,
   innerSides,
   memberFrames,
+  stripLeast,
   stripUpright,
   vcOf,
 } from "./chassis"
@@ -78,14 +80,18 @@ import {
 } from "./link-labels"
 import type { LabelToken, LinkLabelSet } from "./link-labels"
 import { ELBOW_RADIUS, leaves, portStub, routeThrough } from "./link-geometry"
+import { bandOfCards, lineResolver } from "./line-source"
+import type { LineResolver, ResolvedLine } from "./line-source"
 import {
+  withCaptionRows,
   captionCap,
   PHOTO,
   photoFace,
   photoLod,
   photoShown,
+  roleBadge,
 } from "./photo-anchors"
-import type { PhotoFace, PhotoShown } from "./photo-anchors"
+import type { PhotoFace, PhotoShown, RoleBadge } from "./photo-anchors"
 import { packLoose } from "./pack"
 import { settleGrown } from "./placement"
 import { endRun, planEdges } from "./plan"
@@ -150,6 +156,12 @@ export interface DiagramOptions {
   /** The view's line type; `links` overrides it per device pair. */
   line: LineType
   links?: Record<string, TopologyLinkOverride>
+  /** Device id → its own line (`state.nodes[id].line`): a link with no
+   * line of its own takes its ends' (line-source.ts). */
+  nodeLines?: Readonly<Record<string, LineType>>
+  /** Band id → its line: a link takes it from the row an end's card
+   * stands in (by `positions` and `rows`), after the devices'. */
+  bandLines?: Readonly<Record<string, LineType>>
   colorMode: EdgeColorMode
   direction?: "LR" | "TB"
   roleOrder?: string[]
@@ -190,9 +202,6 @@ export interface DiagramOptions {
    * kind the topology API sends - sized as `group-size.ts` says. */
   sizeOf?: SizeOf
 }
-
-/** A node the Diagram does not size itself, without the node registry. */
-const plainSize: SizeOf = () => ({ width: GROUP_W, height: GROUP_H })
 
 /** What a drag needs to re-anchor the links without a new layout. */
 export interface DiagramModel {
@@ -254,6 +263,8 @@ export interface ChassisModel {
   /** Cables between two of its members: not drawn - the frame stands for
    * them. */
   inner: number
+  /** Its name strip's least length: the whole name (`stripLeast`). */
+  least?: number
 }
 
 /** A photo node as the anchoring sees it. */
@@ -268,6 +279,9 @@ export interface PhotoModel {
   /** Its status pill shows whatever the monitoring says: the lines never
    * take the pill's room. */
   statusPill?: true
+  /** Its role as a badge after the name (`roleBadge`); a role line in
+   * its card lines is then not in `lines`. */
+  badge?: RoleBadge
 }
 
 /** A breakout cable as the anchoring sees it. */
@@ -368,15 +382,22 @@ function cablesOf(
 const swapLag = (lag: EdgeLag | null | undefined): EdgeLag | null =>
   lag ? { a: lag.b, b: lag.a } : null
 
+/** A link's `lineFrom` when an end's device or band chose its line. */
+function lineFromOf(r: ResolvedLine): Pick<DiagramEdgeData, "lineFrom"> {
+  return r.from.kind === "device" || r.from.kind === "band"
+    ? { lineFrom: r.from }
+    : {}
+}
+
 /** The base edge for one classified payload edge; anchors come later. */
 function diagramEdge(
   c: EdgeClass,
   keyOf: (id: string) => string,
-  opts: DiagramOptions
+  opts: DiagramOptions,
+  lines: LineResolver
 ): Edge<DiagramEdgeData> {
   const ends = { id: c.id, source: c.source, target: c.target }
   const pk = pairKey(keyOf(c.source), keyOf(c.target))
-  const lineOf = () => opts.links?.[pk]?.line ?? opts.line
   const base = (sem: EdgeSem, line: LineType) => ({
     sem,
     pairKey: pk,
@@ -386,6 +407,12 @@ function diagramEdge(
     labels: {},
     ...(line === "cyclical" ? { arcAsk: arcAsk(opts, pk) } : {}),
   })
+  // Wiring takes its line by line-source.ts's order (once per edge);
+  // LLDP, BGP and the rest keep their fixed straight line.
+  const wired = (sem: EdgeSem) => {
+    const r = lines(c.source, c.target, keyOf(c.source), keyOf(c.target), pk)
+    return { ...base(sem, r.line), ...lineFromOf(r) }
+  }
   switch (c.sem) {
     case "bgp":
       // A session, not wiring: the centre-to-centre overlay line.
@@ -436,11 +463,35 @@ function diagramEdge(
     case "cable": {
       // One cable, however many port pairs it carries: never a count.
       const r = c.raw
+      // A circuit to a provider network (#466): one line from the card's
+      // side to the network's, named by its circuit id. The network card
+      // has no ports, so its line anchors as a Simple one in either mode.
+      // A circuit between two sites' devices is the same line between the
+      // two cards, dashed: a provider's service, not a cable.
+      if (r?.circuit)
+        return {
+          ...ends,
+          type: "link",
+          label: r.circuit.cid,
+          data: {
+            ...wired("cable"),
+            raw: r,
+            simple: true,
+            labels: { mid: [r.circuit.cid] },
+          },
+          ...flowEdgeStyle(
+            edgeLook("cable", {
+              stroke: edgeStroke(r, opts.colorMode),
+              via: !!r.via?.length,
+              circuit: isSiteCircuit(r),
+            })
+          ),
+        }
       return {
         ...ends,
         type: "link",
         animated: r?.marked,
-        data: { ...base("cable", lineOf()), raw: r },
+        data: { ...wired("cable"), raw: r },
         ...flowEdgeStyle(
           edgeLook("cable", {
             stroke: edgeStroke(r, opts.colorMode),
@@ -458,7 +509,7 @@ function diagramEdge(
         type: "link",
         animated: marked,
         data: {
-          ...base("lagbundle", lineOf()),
+          ...wired("lagbundle"),
           cables: c.cables,
           lag: c.lag,
           labels: { mid: bundleLabel(distinctCables(c.cables), c.lag) },
@@ -477,7 +528,7 @@ function diagramEdge(
         ...ends,
         type: "link",
         data: {
-          ...base("bundle", lineOf()),
+          ...wired("bundle"),
           cables: c.cables,
           ...(lag ? { lag } : {}),
           labels: { mid: bundleLabel(distinctCables(c.cables), lag) },
@@ -622,7 +673,8 @@ function fanParts(
   keyOf: (id: string) => string,
   mode: DiagramMode,
   opts: DiagramOptions,
-  measure: Measure
+  measure: Measure,
+  lines: LineResolver
 ): {
   node: Node
   edges: Edge<DiagramEdgeData>[]
@@ -641,8 +693,11 @@ function fanParts(
     })
   )
   const far = [...new Set(f.legs.map((l) => l.node))]
-  const lineTo = (node: string): LineType =>
-    opts.links?.[pairKey(keyOf(f.trunk.node), keyOf(node))]?.line ?? opts.line
+  const lineTo = (node: string) => {
+    const [a, b] = [keyOf(f.trunk.node), keyOf(node)]
+    const r = lines(f.trunk.node, node, a, b, pairKey(a, b))
+    return { line: r.line, ...lineFromOf(r) }
+  }
   // A tunnel map's hub needs no name on its trunk: the map is the one
   // tunnel, and its outside address goes there.
   const chip = raw.tunnel ? [] : fanChip(raw)
@@ -672,11 +727,14 @@ function fanParts(
     legs.map((l) => l.pairs),
     tokens
   )
-  const common = (pk: string, line: LineType) => ({
+  const common = (
+    pk: string,
+    line: Pick<DiagramEdgeData, "line" | "lineFrom">
+  ) => ({
     sem: "cable" as const,
     raw,
     pairKey: pk,
-    line,
+    ...line,
     a: [],
     b: [],
     cableId: f.cable,
@@ -688,7 +746,9 @@ function fanParts(
     type: "link",
     animated: raw.marked,
     data: {
-      ...common(pairKey(keyOf(f.trunk.node), keyOf(far[0])), "straight"),
+      ...common(pairKey(keyOf(f.trunk.node), keyOf(far[0])), {
+        line: "straight",
+      }),
       fan: { role: "trunk", junction: f.id },
       labels: foldLabels(chip.length ? { mid: chip } : {}, sets.trunk, tokens),
     },
@@ -812,7 +872,8 @@ function meshParts(
   keyOf: (id: string) => string,
   mode: DiagramMode,
   opts: DiagramOptions,
-  measure: Measure
+  measure: Measure,
+  lines: LineResolver
 ): {
   nodes: Node[]
   edges: Edge<DiagramEdgeData>[]
@@ -899,6 +960,9 @@ function meshParts(
   ] as const)
     legsOf(terms).forEach((l, i) => {
       const key = pairKey(keyOf(l.node), keyOf(others[0]))
+      // The A side is the source end, as for any other link.
+      const [s, t] = end === "a" ? [l.node, others[0]] : [others[0], l.node]
+      const r = lines(s, t, keyOf(s), keyOf(t), key)
       const id = `${m.id}:${end}${i}`
       edges.push({
         id,
@@ -907,7 +971,8 @@ function meshParts(
         type: "link",
         animated: raw.marked,
         data: {
-          ...common(key, opts.links?.[key]?.line ?? opts.line),
+          ...common(key, r.line),
+          ...lineFromOf(r),
           fan: {
             role: "leg",
             junction,
@@ -1350,22 +1415,24 @@ function nextShown(
 function photoBox(p: PhotoModel, color?: string | null): CardBox {
   const fill = normalizeHex(color)
   const top = p.face.imgH + PHOTO.CAPTION_GAP
+  const title = {
+    text: p.name,
+    size: CARD.TITLE_SIZE,
+    weight: CARD.TITLE_WEIGHT,
+    x: 0,
+    y: top + CARD.TITLE_LH,
+    top,
+    lh: CARD.TITLE_LH,
+    anchor: "start" as const,
+    w: 0,
+  }
   return {
     w: p.face.w,
     h: p.face.h,
     fill,
     ink: fill ? readableText(fill) : null,
-    title: {
-      text: p.name,
-      size: CARD.TITLE_SIZE,
-      weight: CARD.TITLE_WEIGHT,
-      x: 0,
-      y: top + CARD.TITLE_LH,
-      top,
-      lh: CARD.TITLE_LH,
-      anchor: "start",
-      w: 0,
-    },
+    title,
+    titleRows: [title],
     lines: [],
     pill: null,
     stacked: false,
@@ -1406,7 +1473,8 @@ function photosShown(
         model.measure,
         lod,
         p.lines,
-        p.statusPill
+        p.statusPill,
+        p.badge?.text
       )
     )
   return out
@@ -1616,7 +1684,13 @@ function chassisSize(
 ): Size | null {
   const sizes = ch.members.map(sizeOf)
   if (sizes.some((b) => !b)) return null
-  const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps, ch.side)
+  const g = chassisGeometry(
+    ch.orient,
+    sizes as Size[],
+    ch.gaps,
+    ch.side,
+    ch.least
+  )
   return { w: g.w, h: g.h }
 }
 
@@ -1641,10 +1715,16 @@ function placeChassis(
         return at ? [rectAt(at, sizes[i]!)] : []
       })
       if (!rects.length) continue
-      const f = chassisFrame(ch.side, rects)
+      const f = chassisFrame(ch.side, rects, ch.least)
       c = { x: f.x + f.w / 2, y: f.y + f.h / 2 }
     }
-    const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps, ch.side)
+    const g = chassisGeometry(
+      ch.orient,
+      sizes as Size[],
+      ch.gaps,
+      ch.side,
+      ch.least
+    )
     ch.members.forEach((m, i) =>
       centres.set(m, { x: c.x + g.offsets[i].x, y: c.y + g.offsets[i].y })
     )
@@ -1954,6 +2034,8 @@ export interface ChassisNodeData {
   members: string[]
   /** Cables between its members, not drawn. */
   inner: number
+  /** Its name strip's least length (`stripLeast`). */
+  least?: number
   [key: string]: unknown
 }
 
@@ -1966,6 +2048,7 @@ function chassisNode(id: string, ch: ChassisModel, f: Rect): Node {
     side: ch.side,
     members: ch.members,
     inner: ch.inner,
+    ...(ch.least ? { least: ch.least } : {}),
   }
   return {
     id,
@@ -1989,7 +2072,8 @@ export function buildDiagram(
   opts: DiagramOptions
 ): DiagramBuild {
   const measure = opts.measure ?? measureText
-  const sizeOf = opts.sizeOf ?? plainSize
+  const sizeOf: SizeOf =
+    opts.sizeOf ?? ((n) => groupSize(n.data, measure))
   const direction = opts.direction ?? "LR"
   const grouped = graph.nodes.some((n) => n.type === "group")
   // A grouped map is always the Simple picture: one line per group pair.
@@ -2012,12 +2096,25 @@ export function buildDiagram(
     }
     const face = type === "card" ? photoFace(n.data) : null
     if (face) {
-      // Drawn as its photo: a fixed box, not a card that grows.
+      // Drawn as its photo: a fixed box, not a card that grows - but tall
+      // enough for its whole name under the image.
       const content = cardContent(n.data, { checkLabels: opts.checkLabels })
+      // A photo has no card fill: its role, when its lines show it, is a
+      // badge after the name.
+      const badge = roleBadge(n.data)
       const p: PhotoModel = {
-        face,
+        face: withCaptionRows(
+          face,
+          content.name,
+          content.pillSlot,
+          measure,
+          badge?.text
+        ),
         name: content.name,
-        lines: content.lines.map((l) => l.text),
+        lines: content.lines
+          .filter((l) => !(badge && l.key === "role"))
+          .map((l) => l.text),
+        ...(badge ? { badge } : {}),
         slot: content.pillSlot,
         ...(content.pill ? { statusPill: true as const } : {}),
       }
@@ -2040,6 +2137,17 @@ export function buildDiagram(
     return node
   })
   const key = (id: string) => keyOf.get(id) ?? deviceKey(id)
+  // Each link's line (line-source.ts): its own, its ends' devices', the
+  // bands their cards stand in (by the saved arrangement), the view's.
+  const lines = lineResolver({
+    view: opts.line,
+    links: opts.links,
+    nodes: grouped ? undefined : opts.nodeLines,
+    bands: opts.bandLines,
+    bandOf: grouped
+      ? undefined
+      : bandOfCards(opts.rows, opts.bandLines, opts.positions),
+  })
 
   // Virtual chassis drawn as stacks (chassis.ts): each a frame whose
   // members stand round its centre - not on a grouped map or a trace.
@@ -2065,6 +2173,7 @@ export function buildDiagram(
       members,
       gaps: [],
       inner: 0,
+      least: stripLeast(spec.vc.name, measure),
     })
     leadOf.set(
       spec.id,
@@ -2084,8 +2193,10 @@ export function buildDiagram(
     ...fans.flatMap((f) => f.edges),
     ...meshes.flatMap((m) => m.edges),
   ])
-  const parts = fans.map((f) => fanParts(f, key, mode, opts, measure))
-  const meshed = meshes.map((m) => meshParts(m, key, mode, opts, measure))
+  const parts = fans.map((f) => fanParts(f, key, mode, opts, measure, lines))
+  const meshed = meshes.map((m) =>
+    meshParts(m, key, mode, opts, measure, lines)
+  )
 
   const { edges: oriented, flipped } = orientHubToLeaf(
     classifyEdges(
@@ -2101,7 +2212,7 @@ export function buildDiagram(
               ? "lag"
               : "none",
       }
-    ).map((c) => diagramEdge(c, key, opts)),
+    ).map((c) => diagramEdge(c, key, opts, lines)),
     opts.run
   )
   // Twins - two devices of one role with a neighbour in common, like a

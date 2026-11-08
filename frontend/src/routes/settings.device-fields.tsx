@@ -7,6 +7,7 @@ import { api, type DeviceFieldVisibility } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { FormCheckbox } from "@/components/forms"
+import { Loading } from "@/components/loading"
 import {
   SettingsCard,
   SettingsGrid,
@@ -34,14 +35,18 @@ const DEVICE_FIELDS: {
     hint: "Link a device to its virtualization cluster",
   },
   { key: "airflow", label: "Airflow", hint: "Chassis airflow direction" },
+  {
+    key: "cooling_method",
+    label: "Cooling method",
+    hint: "A device's own cooling, over its type's",
+  },
   { key: "latitude", label: "Latitude", hint: "GPS coordinates (for maps)" },
   { key: "longitude", label: "Longitude", hint: "GPS coordinates (for maps)" },
 ]
 
 function DeviceFieldsPage() {
   const { canManageDeployment, isLoading } = useMe()
-  if (isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (isLoading) return <Loading />
   if (!canManageDeployment) {
     return (
       <p className="text-sm text-muted-foreground">

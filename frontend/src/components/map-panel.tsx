@@ -82,6 +82,7 @@ export function PanelShell({
   titleText,
   onClose,
   footer,
+  bodyClassName,
   children,
 }: {
   /** What the panel is ("Device", "Cable"), for screen readers. */
@@ -93,13 +94,15 @@ export function PanelShell({
   onClose: () => void
   /** Actions: "Open X" first, then those that stay on the map. */
   footer?: React.ReactNode
+  /** Extra classes for the scrolling body. */
+  bodyClassName?: string
   children: React.ReactNode
 }) {
   return (
     <aside
       aria-label={label}
       // Opaque: a panel is read, and a card behind it would tint its rows.
-      className="absolute top-3 right-3 z-10 flex max-h-[calc(100%-1.5rem)] w-80 flex-col rounded-lg border border-border bg-background"
+      className="absolute top-3 right-3 z-30 flex max-h-[calc(100%-1.5rem)] w-80 flex-col rounded-lg border border-border bg-background"
     >
       <div className="flex items-center gap-2 border-b border-border py-1.5 pr-1.5 pl-3">
         <TruncatedText
@@ -124,7 +127,11 @@ export function PanelShell({
           </TooltipContent>
         </Tooltip>
       </div>
-      <div className="min-h-0 overflow-auto p-3 text-[12px]">{children}</div>
+      <div
+        className={cn("min-h-0 overflow-auto p-3 text-[12px]", bodyClassName)}
+      >
+        {children}
+      </div>
       {footer && (
         <div className="flex gap-2 border-t border-border px-3 py-2 [&>*]:flex-1">
           {footer}

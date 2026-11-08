@@ -30,6 +30,7 @@ import {
 } from "lucide-react"
 
 import { ColorBadge } from "@/components/cells/color-badge"
+import { TruncatedText } from "@/components/ui/truncated-text"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   Command,
@@ -123,6 +124,9 @@ export interface BandData {
   /** Set by the band's menu (Rename): a new stamp opens the title's
    * editor. */
   renameAt?: number
+  /** A row another map lays out (the Application map's): not moved,
+   * renamed or edited; its title strip only takes a click. */
+  readOnly?: boolean
   [key: string]: unknown
 }
 
@@ -230,6 +234,7 @@ export function BandNode({
 
   const field = (
     <input
+      aria-label="Band name"
       ref={input}
       value={draft}
       autoFocus
@@ -393,11 +398,15 @@ export function BandNode({
           </div>
         ) : (
           <div
-            className={`${BAND_DRAG_HANDLE} pointer-events-auto flex w-full cursor-grab items-center justify-center px-3 active:cursor-grabbing`}
+            className={
+              d.readOnly
+                ? "pointer-events-auto flex w-full items-center justify-center px-3"
+                : `${BAND_DRAG_HANDLE} pointer-events-auto flex w-full cursor-grab items-center justify-center px-3 active:cursor-grabbing`
+            }
             style={{ height: BAND.TITLE }}
-            onDoubleClick={rename}
-            data-tip="Move"
-            data-tip-plain=""
+            onDoubleClick={d.readOnly ? undefined : rename}
+            data-tip={d.readOnly ? undefined : "Move"}
+            data-tip-plain={d.readOnly ? undefined : ""}
           >
             {editing && field}
           </div>
@@ -752,12 +761,12 @@ function LayerList({
                   {by === "role" ? (
                     <ColorBadge name={o.name} color={o.color ?? undefined} />
                   ) : (
-                    <span className="truncate">{o.name}</span>
+                    <TruncatedText>{o.name}</TruncatedText>
                   )}
                   {o.held && !on && o.held !== o.name && (
-                    <span className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground">
+                    <TruncatedText className="ml-auto text-[11px] text-muted-foreground">
                       {o.held}
-                    </span>
+                    </TruncatedText>
                   )}
                 </CommandItem>
               )

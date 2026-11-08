@@ -180,10 +180,11 @@ class DeviceCatalogTests(_Base):
         airflow = fields["airflow"]
         self.assertEqual(airflow["kind"], "choice")
         self.assertEqual(airflow["setting"], "airflow")
+        # Named in /api/dcim/choices/, the list the forms read.
+        self.assertEqual(airflow["choices"], "airflow")
+        self.assertNotIn("options", airflow)
         self.assertEqual(fields["effective_airflow"]["setting"], "airflow")
-        self.assertEqual(
-            fields["effective_airflow"]["options"], airflow["options"]
-        )
+        self.assertEqual(fields["effective_airflow"]["choices"], "airflow")
         self.assertNotIn("setting", fields["asset_tag"])
 
     def test_real_fields_ending_in_id_are_kept(self):

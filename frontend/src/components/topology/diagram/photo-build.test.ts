@@ -175,7 +175,18 @@ describe("photo nodes", () => {
   }
 
   it("lands marked ports on their markers, the servers' on stub leads", () => {
-    const b = build(photos)
+    // Card lines chosen without the role: no role badge, so the firewall's
+    // name alone steps between its leads.
+    const b = build({
+      ...photos,
+      nodes: photos.nodes.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          card: { fields: [], source: "view" as const, values: {} },
+        },
+      })),
+    })
     const at = (name: string) =>
       (b.nodes.find((n) => n.id === aarhusId(name))!.data as DiagramCardData)
         .diagram.photo!

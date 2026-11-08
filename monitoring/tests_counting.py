@@ -378,15 +378,18 @@ class RollupFigureTests(_Base):
     def test_the_dashboard_availability_is_trimmed(self):
         from api.dashboard_views import _monitoring_charts
 
+        from .rollups import HOUR, _floor
+
         now = timezone.now()
-        for ago, status in ((5, "down"), (4, "down"), (1, "up")):
-            CheckResult.objects.create(
-                tenant=self.tenant, target_ip=self.ip, template=self.ping, kind="icmp",
-                status=status, timestamp=now - timedelta(hours=ago))
+        top = _floor(now, HOUR)
+        for ago, up in ((5, False), (4, False), (1, True)):
+            self.row(CheckRollupHourly, top - ago * HOUR,
+                     up=3600 if up else 0, down=0 if up else 3600)
         req = mock.Mock(user=self.user)
         self.assertEqual(
             _monitoring_charts(req, self.user, self.tenant)["availability_7d"], 33.33)
-        self.cut_at(self.ip, now - timedelta(hours=2))
+        # Counts from the next whole hour after the cut: the up hour only.
+        self.cut_at(self.ip, top - 2 * HOUR - timedelta(minutes=30))
         self.assertEqual(
             _monitoring_charts(req, self.user, self.tenant)["availability_7d"], 100.0)
 

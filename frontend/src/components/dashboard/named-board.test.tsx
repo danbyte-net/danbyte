@@ -35,6 +35,7 @@ vi.mock("./board", () => ({
   DashboardGrid: () => null,
   StatBand: () => null,
   metaForItem: () => ({ min: { w: 1, h: 1 }, max: { w: 12, h: 12 } }),
+  useIncludeKeys: () => "",
   withWidget: (items: unknown[]) => items,
 }))
 vi.mock("./dashboard-settings", () => ({

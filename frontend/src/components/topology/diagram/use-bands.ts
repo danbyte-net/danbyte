@@ -24,6 +24,8 @@ import {
   sameGeometry,
   setLayers,
   setLayout,
+  setAlign,
+  setPerRow,
   snapSide,
   splitLayers,
 } from "./bands"
@@ -234,6 +236,32 @@ export function useBands(opts: {
               room: room(),
               id: e.id,
               layout: e.layout,
+            })
+          )
+          return
+        }
+        if (e.type === "per_row") {
+          apply(
+            setPerRow({
+              regions: now,
+              cards: allCards(),
+              levels,
+              room: room(),
+              id: e.id,
+              perRow: e.perRow,
+            })
+          )
+          return
+        }
+        if (e.type === "align") {
+          apply(
+            setAlign({
+              regions: now,
+              cards: allCards(),
+              levels,
+              room: room(),
+              id: e.id,
+              align: e.align,
             })
           )
           return

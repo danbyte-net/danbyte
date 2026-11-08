@@ -18,6 +18,21 @@ Prefix exists - sync never invents address space).
 Adoption rules mirror the DHCP/DNS engines: rows the operator already has are
 adopted and blank-filled, never overwritten; only VMs the sync created are
 removed again when their guest disappears.
+
+An **intended** VM (``VirtualMachine.intended``) is one Danbyte holds the
+intent for. Every rule below defaults to the behaviour above when the flag is
+off; with it on:
+
+* it is adopted by VMID (Proxmox) before the name match;
+* when the guest it is linked to has gone and a new guest matches it by VMID
+  or name (a rebuild), the stale tracking row is dropped and the new guest
+  linked;
+* spec and NIC differences are always queued as drift, in auto mode too and
+  even for a VM the sync created - never applied;
+* blank fields are still blank-filled;
+* it is never deleted or proposed for removal, and its NICs and disks are
+  never pruned. Its tracking row stays, flagged missing, so the VM page can
+  say it is not running anywhere.
 """
 from __future__ import annotations
 
@@ -41,6 +56,14 @@ logger = logging.getLogger("danbyte.virt_sync")
 
 _MAC_RE = re.compile(r"\b([0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5})\b")
 _NET_KEY = re.compile(r"^net(\d+)$")
+#: The NIC models VMInterface.model holds, as Proxmox spells them.
+_NIC_MODELS = frozenset({"virtio", "e1000", "e1000e", "vmxnet3", "rtl8139"})
+
+
+def _intended(vm) -> bool:
+    """Whether Danbyte holds the intent for ``vm`` - see the intended-VM rules
+    in the module docstring."""
+    return bool(vm is not None and getattr(vm, "intended", False))
 
 
 def _parse_net(value: str) -> dict:
@@ -49,14 +72,19 @@ def _parse_net(value: str) -> dict:
     QEMU: ``virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,tag=10``
     LXC:  ``name=eth0,bridge=vmbr0,hwaddr=AA:…,ip=dhcp``
     """
-    out = {"mac": "", "name": "", "bridge": "", "tag": None, "mtu": None}
+    out = {"mac": "", "name": "", "bridge": "", "tag": None, "mtu": None,
+           "model": "", "firewall": None}
     m = _MAC_RE.search(value or "")
     if m:
         out["mac"] = m.group(1).lower()
     for part in (value or "").split(","):
         k, _, v = part.partition("=")
         k, v = k.strip(), v.strip()
-        if k == "name":
+        if k in _NIC_MODELS:
+            out["model"] = k  # QEMU states the model as the key of its MAC
+        elif k == "firewall" and v in ("0", "1"):
+            out["firewall"] = v == "1"
+        elif k == "name":
             out["name"] = v
         elif k == "bridge":
             out["bridge"] = v
@@ -90,6 +118,7 @@ def _sync_disks(guest, cfg: dict) -> int:
 
     if guest.vm is None or not cfg:
         return 0
+    keep = _intended(guest.vm)
     seen, n = set(), 0
     for key, value in cfg.items():
         key = str(key)
@@ -105,9 +134,10 @@ def _sync_disks(guest, cfg: dict) -> int:
         n += 1
         _upsert_disk(guest.vm, key, name=key, size_gb=_disk_size_gb(val),
                      storage=storage, controller=km.group(1))
-    VirtualDisk.objects.filter(
-        vm=guest.vm, created_disk=True
-    ).exclude(key__in=seen).delete()
+    if not keep:  # an intended VM's disks are its intent: never pruned
+        VirtualDisk.objects.filter(
+            vm=guest.vm, created_disk=True
+        ).exclude(key__in=seen).delete()
     return n
 
 
@@ -128,11 +158,13 @@ def _upsert_disk(vm, key, *, name="", size_gb=None, storage="",
         )
         return
     changed = []
+    # On an intended VM every disk is intent: blank-filled, never rewritten.
+    follow = disk.created_disk and not _intended(vm)
     for f, v in (("name", name), ("size_gb", size_gb), ("storage", storage),
                  ("controller", controller), ("disk_format", disk_format)):
         if v in (None, ""):
             continue
-        if disk.created_disk or getattr(disk, f) in (None, ""):
+        if follow or getattr(disk, f) in (None, ""):
             if getattr(disk, f) != v:
                 setattr(disk, f, v)
                 changed.append(f)
@@ -182,6 +214,7 @@ def _apply_tags(vm, names, colors: dict | None = None) -> None:
     from django.utils.text import slugify
 
     from core.models import Tag
+    from core.tags import find_visible_tag
 
     want = [n.strip() for n in names if n and n.strip()]
     if not want:
@@ -192,12 +225,17 @@ def _apply_tags(vm, names, colors: dict | None = None) -> None:
         color = colors.get(name, "")
         tag = have.get(name)
         if tag is None:
+            # A tag of that name the tenant already sees (its own or a
+            # global one, case ignored) is reused, never doubled.
+            tag = find_visible_tag(name, vm.tenant)
+        if tag is None:
             tag, _ = Tag.objects.get_or_create(
                 tenant=vm.tenant, slug=slugify(name)[:100] or name[:100],
                 defaults={"name": name, "color": color},
             )
+        if tag.pk not in {t.pk for t in have.values()}:
             vm.tags.add(tag)
-        if color and not tag.color:
+        if color and not tag.color and tag.tenant_id is not None:
             tag.color = color
             tag.save(update_fields=["color"])
 
@@ -372,8 +410,9 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     return 1
 
 
-def _sync_networks_proxmox(source, cluster, guest, cfg, now) -> int:
-    """Proxmox NIC bridges/tags → VirtualSwitch + VirtNetwork(→VLAN)."""
+def _sync_networks_proxmox(source, cluster, guest, cfg, now, sdn=None) -> int:
+    """Proxmox NIC bridges/tags → VirtualSwitch + VirtNetwork(→VLAN). A NIC
+    whose bridge is an SDN VNet links to that VNet's network instead."""
     if guest.vm is None or not cfg:
         return 0
     n = 0
@@ -382,11 +421,47 @@ def _sync_networks_proxmox(source, cluster, guest, cfg, now) -> int:
             continue
         parsed = _parse_net(str(value))
         iface_name = parsed["name"] or str(key)
+        if sdn is not None and parsed["bridge"] in sdn.vnets:
+            n += _link_vnet(sdn, cluster(), guest, iface_name, parsed["bridge"], now)
+            continue
         n += _link_network(
             source, cluster, guest, iface_name,
             parsed["bridge"], parsed["tag"], "", now,
         )
     return n
+
+
+def _link_vnet(sdn, cluster, guest, iface_name, vnet_id, now) -> int:
+    """Link a VM interface to the SDN VNet its NIC sits on."""
+    from api.models import VMInterface
+
+    from .models import VirtNetworkLink
+
+    vn = sdn.network(cluster, vnet_id)
+    iface = VMInterface.objects.filter(vm=guest.vm, name=iface_name).first()
+    if iface is not None:
+        VirtNetworkLink.objects.update_or_create(
+            network=vn, vm_interface=iface, defaults={"last_seen_at": now},
+        )
+    return 1
+
+
+def _sdn_post_pass(source, sdn, cluster_name, *, cluster_for, warnings, counts):
+    """After the guests: every VNet gets its row (an unused one too, for the
+    network plan), then the opt-in cables from VNets."""
+    from .models import VirtGuest
+    from .virt_sdn import cables_from_vnets
+
+    counts["sdn_zones"] = len(sdn.zones)
+    counts["sdn_vnets"] = len(sdn.vnets)
+    # Only once a guest has landed: a review-mode source with nothing
+    # accepted stays inert, as for bridges.
+    if sdn.vnets and VirtGuest.objects.filter(source=source, vm__isnull=False).exists():
+        cluster = cluster_for(cluster_name)
+        for vnet_id in sorted(sdn.vnets):
+            sdn.network(cluster, vnet_id)
+    if source.cables_from_vnets:
+        cables_from_vnets(source, sdn.vnets, sdn.now, warnings, counts)
 
 
 def _sync_proxmox_uplinks(source, cluster_name, nodes) -> int:
@@ -588,6 +663,19 @@ def sync_proxmox(source) -> dict:
         opts.get("tag-style") if isinstance(opts, dict) else ""
     )
 
+    # SDN zones and VNets (read-only). A token without SDN.Audit, or a
+    # release without SDN, skips this with a warning; the pass carries on.
+    sdn = None
+    extra_warnings = []
+    if source.sync_networks:
+        from .virt_sdn import SdnState, fetch_sdn
+
+        zones, vnets, sdn_warning = fetch_sdn(source, proxmox_get)
+        if sdn_warning:
+            extra_warnings.append(sdn_warning)
+        else:
+            sdn = SdnState(source, zones, vnets, now)
+
     # Hosts first: the VM pass links each guest to the Device of the same name,
     # and the uplink pass needs those Devices to hang bridge ports off.
     if source.sync_hosts:
@@ -595,9 +683,12 @@ def sync_proxmox(source) -> dict:
     result = _run_pass(source, cluster_name, resources, details, now, counts,
                        _sync_interfaces, _sync_ips,
                        sync_disks_fn=_sync_disks,
-                       sync_nets_fn=_sync_networks_proxmox,
+                       sync_nets_fn=partial(_sync_networks_proxmox, sdn=sdn),
                        sync_meta_fn=partial(_sync_meta_proxmox,
                                             tag_colors=tag_colors),
+                       extra_warnings=extra_warnings,
+                       post_fn=(partial(_sdn_post_pass, source, sdn, cluster_name)
+                                if sdn is not None else None),
                        label="proxmox")
     # Switches exist now - link their bridge uplinks to the node's real NICs.
     if source.sync_networks:
@@ -608,7 +699,7 @@ def sync_proxmox(source) -> dict:
 def _run_pass(source, cluster_name, resources, details, now, counts,
               sync_ifaces, sync_ips, *, sync_disks_fn=None,
               sync_nets_fn=None, sync_meta_fn=None, extra_warnings=None,
-              label) -> dict:
+              post_fn=None, label) -> dict:
     """Reconcile one fetched inventory against Danbyte - hypervisor-agnostic.
 
     ``resources`` is a list of normalised guest dicts (``vmid`` or ``ext_id``,
@@ -659,6 +750,13 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
 
         seen = set()
         fresh_changes: set = set()  # (guest_id, kind) queued this pass
+        # Every guest key this pass reports, known before the loop: a rebuilt
+        # intended VM's new guest may come before or after the old key in the
+        # list, and only a key absent from the whole pass counts as gone.
+        present = {
+            r.get("ext_id") or r.get("vmid") for r in resources
+            if (r.get("ext_id") or r.get("vmid")) not in (None, "")
+        }
         for r in resources:
             # Whichever identity the hypervisor keys its guests by: an
             # integer (Proxmox VMID, vCenter MoRef) or a string urn (Cloud
@@ -719,7 +817,8 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             if not place.ok and (rules or site_by_name):
                 warnings.append(placement.unplaced_warning(guest_path))
             _reconcile_guest(source, guest_cluster, guest_cluster_name, guest, r,
-                             apply, now, counts, fresh_changes, place, warnings)
+                             apply, now, counts, fresh_changes, place, warnings,
+                             present=present)
             if guest.vm_id:
                 # The hypervisor's own grouping - a vApp, a pool or a folder.
                 # Blank-fill, or follow when the sync owns the row. A backend
@@ -729,7 +828,8 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                     counts["vm_groups"] = counts.get("vm_groups", 0) + _link_group(
                         source, guest_cluster, guest.vm, r.get("group") or "",
                         kind=r["group_kind"],
-                        follow=apply and guest.created_vm,
+                        follow=apply and guest.created_vm
+                        and not _intended(guest.vm),
                     )
                 d = details.get(key) or {}
                 made, seen_ifaces = sync_ifaces(guest, d.get("ifaces"))
@@ -755,12 +855,27 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                 if sync_meta_fn:
                     sync_meta_fn(guest, d.get("meta"))
 
+        if post_fn is not None:
+            post_fn(cluster_for=cluster_for, warnings=warnings, counts=counts)
+
         # Guests gone from the hypervisor.
         grace = timedelta(days=source.auto_prune_after_days)
-        for gone in VirtGuest.objects.filter(source=source).exclude(pk__in=seen):
+        for gone in (
+            VirtGuest.objects.filter(source=source).exclude(pk__in=seen)
+            .select_related("vm")
+        ):
             if gone.missing_since is None:
                 gone.missing_since = now
                 gone.save(update_fields=["missing_since"])
+            if _intended(gone.vm):
+                # Danbyte holds the intent: the VM is never deleted or
+                # proposed for removal, whatever the mode or prune setting.
+                # The tracking row stays, flagged missing, so the VM page can
+                # say it is not running anywhere; a rebuild re-links it.
+                counts["vms_missing_intended"] = (
+                    counts.get("vms_missing_intended", 0) + 1
+                )
+                continue
             if gone.vm_id and gone.created_vm:
                 if now - gone.missing_since < grace:
                     # Not yet. A vCenter that 500s for one poll must not cost
@@ -836,7 +951,7 @@ def _desired_specs(resource: dict) -> dict:
 #: Interface fields the sync can compare, and how to read each side. Only
 #: fields a hypervisor genuinely reports belong here: one that is never stated
 #: would read as "Danbyte disagrees with nothing" on every single interface.
-_IFACE_FIELDS = ("mac_address", "mtu", "vlan_vid")
+_IFACE_FIELDS = ("mac_address", "mtu", "vlan_vid", "model", "bridge", "index")
 
 
 def _iface_value(iface, field):
@@ -909,8 +1024,13 @@ def _reconcile_interfaces(guest, seen, now, fresh_changes, apply=False) -> None:
     if not extra:
         _clear_change(guest, "iface_extra")
         return
-    stale = [i for i in extra if i.created_interface]
-    theirs = [i for i in extra if not i.created_interface]
+    if _intended(guest.vm):
+        # Every NIC on an intended VM is intent, even one the sync created:
+        # none is pruned, each missing one is raised.
+        stale, theirs = [], extra
+    else:
+        stale = [i for i in extra if i.created_interface]
+        theirs = [i for i in extra if not i.created_interface]
     if stale:
         VMInterface.objects.filter(pk__in=[i.pk for i in stale]).delete()
     if theirs:
@@ -929,6 +1049,8 @@ def _diff_interfaces(guest, seen, now, fresh_changes, apply) -> None:
     by_name = {
         i.name: i for i in VMInterface.objects.filter(vm=guest.vm).select_related("vlan")
     }
+    # An intended VM's NICs are raised, never rewritten - in mirror mode too.
+    apply = apply and not _intended(guest.vm)
     drifted, applied = {}, []
     for reported in seen:
         iface = by_name.get(reported.get("name"))
@@ -997,8 +1119,43 @@ def _owned_by_another_guest(vm, source, guest) -> bool:
     )
 
 
+def _intended_by_vmid(source, guest, cluster_name):
+    """The intended VM whose VMID is this Proxmox guest's, if exactly one
+    answers (a cluster of the same name breaks a tie)."""
+    from api.models import VirtualMachine
+
+    if source.kind != "proxmox" or guest.vmid is None:
+        return None
+    rows = list(
+        VirtualMachine.objects.filter(
+            tenant=source.tenant, intended=True, vmid=guest.vmid
+        ).select_related("cluster")[:5]
+    )
+    if len(rows) > 1:
+        rows = [v for v in rows if v.cluster.name == cluster_name]
+    return rows[0] if len(rows) == 1 else None
+
+
+def _stale_links(vm, source, guest, present) -> list | None:
+    """The other tracking rows linking ``vm``, when every one of them has
+    gone from its hypervisor - the rebuild case. ``None`` when one is still
+    there. A guest of this source is gone when its key is absent from this
+    pass (``present``); another source's when it is flagged missing."""
+    from .models import VirtGuest
+
+    others = list(VirtGuest.objects.filter(vm=vm).exclude(pk=guest.pk))
+    for other in others:
+        if other.source_id == source.pk:
+            if other.key() in present:
+                return None
+        elif other.missing_since is None:
+            return None
+    return others
+
+
 def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
-                     counts, fresh_changes, place=None, warnings=None) -> None:
+                     counts, fresh_changes, place=None, warnings=None,
+                     present=frozenset()) -> None:
     """Bring one guest into line with the inventory - applying (auto) or
     queuing a change (review/manual)."""
     from api.models import VirtualMachine
@@ -1009,11 +1166,23 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
     os_info = (resource.get("os_kind") or "", resource.get("os_name") or "")
 
     if guest.vm_id is None:
-        # Adopt an operator's existing VM of the same name - a non-destructive
-        # link, so it happens in every mode.
-        adopted = VirtualMachine.objects.filter(
-            tenant=source.tenant, name=name
-        ).first()
+        # Adopt an intended VM by its VMID first, then an operator's existing
+        # VM of the same name - a non-destructive link, so it happens in
+        # every mode.
+        adopted = _intended_by_vmid(source, guest, cluster_name) or (
+            VirtualMachine.objects.filter(tenant=source.tenant, name=name).first()
+        )
+        if _intended(adopted):
+            stale = _stale_links(adopted, source, guest, present)
+            if stale:
+                # A rebuild: the guest it was linked to has gone and this one
+                # answers to its VMID or name. Drop the stale tracking rows
+                # (bookkeeping only - the VM is untouched) and link this one.
+                logger.info("re-linking intended VM %r to guest %s",
+                            adopted.name, guest.key())
+                for row in stale:
+                    row.delete()
+                counts["vms_relinked"] = counts.get("vms_relinked", 0) + 1
         if adopted is not None and _owned_by_another_source(adopted, source):
             # Two hypervisors, two different machines, one name. VM names are
             # unique per tenant, so adopting would merge them into a single row
@@ -1071,11 +1240,22 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
     # _diff_interfaces. (They used to raise nothing at all, so a RAM change on
     # the hypervisor was silently invisible on an adopted VM forever.)
     vm = guest.vm
+    intended = _intended(vm)
     diffs = {}
     for field, value in specs.items():
         if value is not None and getattr(vm, field) not in (None, 0) \
                 and getattr(vm, field) != value:
             diffs[field] = {"danbyte": getattr(vm, field), "hypervisor": value}
+    if intended and source.kind == "proxmox" and guest.vmid is not None:
+        if vm.vmid is None:
+            # Blank-fill, unless another VM of the cluster already claims it.
+            if not VirtualMachine.objects.filter(
+                cluster_id=vm.cluster_id, vmid=guest.vmid
+            ).exclude(pk=vm.pk).exists():
+                vm.vmid = guest.vmid
+                vm.save(update_fields=["vmid"])
+        elif vm.vmid != guest.vmid:
+            diffs["vmid"] = {"danbyte": vm.vmid, "hypervisor": guest.vmid}
     # A rename is drift like any other spec. It used to be read only at
     # adoption, so a guest renamed on the hypervisor kept its old name here
     # for good - the vApp it sat in followed the rename and the VM did not.
@@ -1090,7 +1270,8 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
         else:
             diffs["name"] = {"danbyte": vm.name, "hypervisor": name}
     if diffs:
-        if apply and guest.created_vm:
+        # Danbyte holds an intended VM's intent: its drift is always raised.
+        if apply and guest.created_vm and not intended:
             for field, pair in diffs.items():
                 setattr(vm, field, pair["hypervisor"])
             vm.save(update_fields=list(diffs))
@@ -1637,6 +1818,12 @@ def _apply_host_hardware(dev, hw, source) -> list:
             )
         dev.platform = plat
         changed.append("platform")
+
+    # The running version (#395). A value an integration filled before
+    # follows the host; one a person typed or imported is theirs (#451).
+    from api.software_versions import record
+
+    changed += record(dev, hw.get("version"), "virtualization")
     return changed
 
 
@@ -1742,9 +1929,21 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
     # "Not stated" is already the rule everything downstream follows, so this
     # one line turns off the blank-fill AND the drift row - rather than
     # leaving MTU showing as a disagreement nobody may accept.
+    # What the hypervisor said, kept on the tracking row for the network
+    # plan and cables from VNets: the wire, where the VM interface is intent.
+    from .virt_sdn import guest_nics
+
+    nics = guest_nics(cfg)
+    if guest.nics != nics:
+        guest.nics = nics
+        guest.save(update_fields=["nics"])
     keep_mtu = guest.source.sync_vm_interface_mtu
+    # The build fields (slot, model, bridge) are kept for an intended VM,
+    # whose page and rebuild read them; other VMs behave as before.
+    build = _intended(guest.vm)
     for key, value in (cfg or {}).items():
-        if not _NET_KEY.match(str(key)):
+        km = _NET_KEY.match(str(key))
+        if not km:
             continue
         parsed = _parse_net(str(value))
         mtu = parsed["mtu"] if keep_mtu else None
@@ -1753,12 +1952,23 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
         # diff it. Absent keys mean "not reported" and are never treated as
         # disagreement - see _iface_drift.
         seen.append({"name": name, "mac_address": parsed["mac"],
-                     "mtu": mtu, "vlan_vid": parsed["tag"]})
+                     "mtu": mtu, "vlan_vid": parsed["tag"],
+                     "model": parsed["model"], "bridge": parsed["bridge"],
+                     "index": int(km.group(1))})
         iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
+        slot = int(km.group(1))
+        if build and VMInterface.objects.filter(vm=guest.vm, index=slot).exclude(
+            name=name
+        ).exists():
+            slot = None  # another NIC holds that slot in the intent: drift, not a clash
         if iface is None:
+            extra = {}
+            if build:
+                extra = {"model": parsed["model"], "bridge": parsed["bridge"],
+                         "index": slot}
             iface = VMInterface.objects.create(
                 vm=guest.vm, name=name, mac_address=parsed["mac"],
-                mtu=mtu, created_interface=True,
+                mtu=mtu, created_interface=True, **extra,
             )
             logger.info("created interface %s/%s (%s)", guest.vm.name, name,
                         parsed["mac"] or "no mac")
@@ -1770,6 +1980,12 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
             if mtu and iface.mtu is None:
                 iface.mtu = mtu
                 fill.append("mtu")
+            if build:
+                for field, val in (("model", parsed["model"]),
+                                   ("bridge", parsed["bridge"]), ("index", slot)):
+                    if val not in (None, "") and getattr(iface, field) in (None, ""):
+                        setattr(iface, field, val)
+                        fill.append(field)
             if fill:
                 iface.save(update_fields=fill)
         n += 1
@@ -2285,9 +2501,10 @@ def _sync_vcenter_disks(guest, disks) -> int:
         n += 1
         _upsert_disk(guest.vm, key, name=d.get("label") or key, size_gb=size_gb,
                      storage=storage, controller=(d.get("type") or "").lower())
-    VirtualDisk.objects.filter(
-        vm=guest.vm, created_disk=True
-    ).exclude(key__in=seen).delete()
+    if not _intended(guest.vm):
+        VirtualDisk.objects.filter(
+            vm=guest.vm, created_disk=True
+        ).exclude(key__in=seen).delete()
     return n
 
 
@@ -2926,7 +3143,9 @@ def apply_change(change) -> None:
 
     guest = change.guest
     if change.kind == "removed_guest":
-        if guest.vm_id and guest.created_vm:
+        # An intended VM is never deleted by sync, even through a removal
+        # queued before it was marked intended.
+        if guest.vm_id and guest.created_vm and not _intended(guest.vm):
             guest.vm.delete()
         guest.delete()  # cascades the change row
         return
@@ -2960,6 +3179,11 @@ def apply_change(change) -> None:
                         "not renaming %r to %r: the name is taken",
                         vm.name, wanted,
                     )
+                    continue
+                if field == "vmid" and wanted is not None and VirtualMachine.objects.filter(
+                    cluster_id=vm.cluster_id, vmid=wanted
+                ).exclude(pk=vm.pk).exists():
+                    logger.warning("not setting VMID %s on %r: it is taken", wanted, vm.name)
                     continue
                 setattr(vm, field, wanted)
                 fields.append(field)

@@ -5,11 +5,11 @@ import { toast } from "sonner"
 
 import {
   api,
-  type Paginated,
   type SiteBulkUpdateFields,
   type SiteGatewayPolicy,
   type TagOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import {
@@ -55,7 +55,7 @@ function BulkEditSitesPage() {
 
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 

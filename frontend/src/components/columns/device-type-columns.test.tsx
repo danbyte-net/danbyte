@@ -46,6 +46,8 @@ function dt(patch: Partial<DeviceType> = {}): DeviceType {
     image_ports: null,
     is_full_depth: true,
     airflow: "",
+    cooling_method: "",
+    heat_output_w: null,
     weight: null,
     weight_unit: "kg",
     subdevice_role: "",

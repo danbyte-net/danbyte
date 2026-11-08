@@ -3,12 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
-  type Paginated,
   type Tenant,
   type TenantGroup,
   type TenantWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCheckbox,
   FormColor,
@@ -53,7 +52,7 @@ export function TenantForm({ tenant, onSaved, onCancel }: TenantFormProps) {
 
   const groupsQuery = useQuery({
     queryKey: ["tenant-groups"],
-    queryFn: () => api<Paginated<TenantGroup>>("/api/tenant-groups/"),
+    queryFn: () => apiAll<TenantGroup>("/api/tenant-groups/"),
   })
 
   useEffect(() => {

@@ -35,7 +35,7 @@ import ipaddress
 import logging
 import re
 
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.utils import timezone
 
 from .winrm_client import WinRMError, ps_str, run_json
@@ -125,6 +125,25 @@ def _mac_for_ip(value: str) -> str:
     return value if _MAC_RE.match(value or "") else ""
 
 
+def _clip(model, field: str, value) -> str:
+    """``value`` cut to ``model.field``'s column width (blank for None).
+
+    The server decides how long a name or ClientId is, not us. A value wider
+    than its column used to abort the whole sync with *"value too long for
+    type character varying"* (#463); clipping at the boundary keeps one odd
+    row from taking every other scope down with it.
+    """
+    text = "" if value is None else str(value)
+    limit = model._meta.get_field(field).max_length
+    return text[:limit] if limit else text
+
+
+def _row_failed(warnings: list, what: str, exc: Exception) -> None:
+    """Record a row the database refused; the rest of the sync carries on."""
+    logger.warning("dhcp sync: skipped %s: %s", what, exc)
+    warnings.append(f"Skipped {what}: {str(exc).strip().splitlines()[0][:200]}")
+
+
 def _parse_when(iso: str | None):
     if not iso:
         return None
@@ -165,7 +184,7 @@ def sync_dhcp(conn) -> dict:
 
 
 def _apply(conn, data: dict, now) -> dict:
-    from .models import DhcpExclusion, DhcpLease, DhcpReservation, DhcpScope
+    from .models import DhcpExclusion, DhcpReservation, DhcpScope
 
     counts = {"scopes": 0, "prefixes_created": 0, "exclusions": 0,
               "reservations": 0, "leases": 0, "drift": 0}
@@ -183,12 +202,16 @@ def _apply(conn, data: dict, now) -> dict:
     for s in _as_list(data.get("scopes")):
         sid = s["scope_id"]
         seen_scope_ids.add(sid)
+        try:
+            with transaction.atomic():
+                scope, created = _apply_scope(conn, s, options_by_scope, now)
+        except DatabaseError as exc:
+            _row_failed(warnings, f"scope {sid}", exc)
+            continue
         counts["scopes"] += 1
-        prefix, created = _prefix_for_scope(
-            conn, sid, s.get("mask"), vrf=conn.vrf
-        )
         if created:
             counts["prefixes_created"] += 1
+        prefix = scope.prefix
         if prefix is None and s.get("mask"):
             # The CIDR exists in more than one VRF, so linking it would be a
             # guess. Say which scope is affected - the scope still syncs, it
@@ -197,21 +220,6 @@ def _apply(conn, data: dict, now) -> dict:
                 f"Scope {sid}/{s.get('mask')} matches prefixes in several VRFs "
                 f"- set this connection's VRF to choose one"
             )
-        scope, _ = DhcpScope.objects.update_or_create(
-            connection=conn, scope_id=sid,
-            defaults={
-                "name": s.get("Name") or "",
-                "description": s.get("Description") or "",
-                "state": s.get("state") or "",
-                "start_range": s.get("start"),
-                "end_range": s.get("end"),
-                "subnet_mask": s.get("mask"),
-                "lease_duration": s.get("lease_duration") or "",
-                "options": options_by_scope.get(sid, []),
-                "prefix": prefix,
-                "last_seen_at": now,
-            },
-        )
         scopes_by_id[sid] = scope
 
     # Scopes deleted on the server: drop the link rows (the Prefix stays -
@@ -252,30 +260,15 @@ def _apply(conn, data: dict, now) -> dict:
         scope = scopes_by_id.get(sid)
         if scope is None:
             continue
+        try:
+            with transaction.atomic():
+                drifted = _apply_reservation(conn, scope, ip, r, now)
+        except DatabaseError as exc:
+            _row_failed(warnings, f"reservation {ip} in scope {sid}", exc)
+            continue
         counts["reservations"] += 1
-        row = DhcpReservation.objects.filter(scope=scope, ip=ip).first()
-        mac = _norm_mac(r.get("mac") or "")
-        name = r.get("Name") or ""
-        desc = (r.get("Description") or "").replace(MANAGED_MARK, "").strip()
-        if row is None:
-            row = DhcpReservation(scope=scope, ip=ip, managed=False)
-        if row.managed:
-            drift_detail = {}
-            for field, server_val in (("mac", mac), ("name", name),
-                                      ("description", desc)):
-                ours = getattr(row, field)
-                if ours != server_val:
-                    drift_detail[field] = {"danbyte": ours, "server": server_val}
-            row.drift = "modified" if drift_detail else ""
-            row.drift_detail = drift_detail
-            if drift_detail:
-                counts["drift"] += 1
-        else:
-            row.mac, row.name, row.description = mac, name, desc
-        row.last_seen_at = now
-        if row.ip_address_id is None:
-            row.ip_address = _ip_for_reservation(conn, scope, row)
-        row.save()
+        if drifted:
+            counts["drift"] += 1
     # Managed rows missing on the server = drift; unmanaged mirrors just go.
     for scope in scopes_by_id.values():
         for row in scope.reservations.all():
@@ -301,16 +294,13 @@ def _apply(conn, data: dict, now) -> dict:
         # A reservation on the same address always wins over its lease echo.
         if DhcpReservation.objects.filter(scope=scope, ip=ip).exists():
             continue
+        try:
+            with transaction.atomic():
+                _apply_lease(conn, scope, ip, lease, now)
+        except DatabaseError as exc:
+            _row_failed(warnings, f"lease {ip} in scope {sid}", exc)
+            continue
         counts["leases"] += 1
-        row, _ = DhcpLease.objects.get_or_create(scope=scope, ip=ip)
-        row.mac = _norm_mac(lease.get("mac") or "")
-        row.hostname = lease.get("HostName") or ""
-        row.address_state = lease.get("state") or ""
-        row.expires_at = _parse_when(lease.get("expires"))
-        row.last_seen_at = now
-        if row.ip_address_id is None:
-            row.ip_address, row.created_ip = _ip_for_lease(conn, scope, row)
-        row.save()
     for scope in scopes_by_id.values():
         if not scope.lease_sync:
             # Opt-out (or never opted in): drop lease mirrors + our IP rows.
@@ -335,6 +325,75 @@ def _apply(conn, data: dict, now) -> dict:
     conn.save(update_fields=["last_sync_at", "last_sync_status",
                              "last_sync_error", "last_sync_skipped"])
     return counts
+
+
+def _apply_scope(conn, s: dict, options_by_scope: dict, now):
+    """Upsert one scope's link row. Returns (scope, prefix_created)."""
+    from .models import DhcpScope
+
+    sid = s["scope_id"]
+    prefix, created = _prefix_for_scope(conn, sid, s.get("mask"), vrf=conn.vrf)
+    scope, _ = DhcpScope.objects.update_or_create(
+        connection=conn, scope_id=sid,
+        defaults={
+            "name": _clip(DhcpScope, "name", s.get("Name")),
+            "description": s.get("Description") or "",
+            "state": _clip(DhcpScope, "state", s.get("state")),
+            "start_range": s.get("start"),
+            "end_range": s.get("end"),
+            "subnet_mask": s.get("mask"),
+            "lease_duration": _clip(DhcpScope, "lease_duration", s.get("lease_duration")),
+            "options": options_by_scope.get(sid, []),
+            "prefix": prefix,
+            "last_seen_at": now,
+        },
+    )
+    return scope, created
+
+
+def _apply_reservation(conn, scope, ip: str, r: dict, now) -> bool:
+    """Mirror (or drift-check) one server reservation. True if it drifted."""
+    from .models import DhcpReservation
+
+    row = DhcpReservation.objects.filter(scope=scope, ip=ip).first()
+    mac = _clip(DhcpReservation, "mac", _norm_mac(r.get("mac") or ""))
+    name = _clip(DhcpReservation, "name", r.get("Name"))
+    desc = (r.get("Description") or "").replace(MANAGED_MARK, "").strip()
+    if row is None:
+        row = DhcpReservation(scope=scope, ip=ip, managed=False)
+    drifted = False
+    if row.managed:
+        drift_detail = {}
+        for field, server_val in (("mac", mac), ("name", name),
+                                  ("description", desc)):
+            ours = getattr(row, field)
+            if ours != server_val:
+                drift_detail[field] = {"danbyte": ours, "server": server_val}
+        row.drift = "modified" if drift_detail else ""
+        row.drift_detail = drift_detail
+        drifted = bool(drift_detail)
+    else:
+        row.mac, row.name, row.description = mac, name, desc
+    row.last_seen_at = now
+    if row.ip_address_id is None:
+        row.ip_address = _ip_for_reservation(conn, scope, row)
+    row.save()
+    return drifted
+
+
+def _apply_lease(conn, scope, ip: str, lease: dict, now) -> None:
+    """Mirror one server lease onto its link row."""
+    from .models import DhcpLease
+
+    row, _ = DhcpLease.objects.get_or_create(scope=scope, ip=ip)
+    row.mac = _clip(DhcpLease, "mac", _norm_mac(lease.get("mac") or ""))
+    row.hostname = _clip(DhcpLease, "hostname", lease.get("HostName"))
+    row.address_state = _clip(DhcpLease, "address_state", lease.get("state"))
+    row.expires_at = _parse_when(lease.get("expires"))
+    row.last_seen_at = now
+    if row.ip_address_id is None:
+        row.ip_address, row.created_ip = _ip_for_lease(conn, scope, row)
+    row.save()
 
 
 def _prefix_for_scope(conn, scope_id: str, mask: str | None, *,

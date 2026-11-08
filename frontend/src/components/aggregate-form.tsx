@@ -3,12 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type Aggregate,
   type AggregateWritePayload,
-  type Paginated,
   type RIROption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
   FormDate,
@@ -62,7 +61,7 @@ export function AggregateForm({
 
   const rirs = useQuery({
     queryKey: ["rirs-picker"],
-    queryFn: () => api<Paginated<RIROption>>("/api/rirs/?picker=1"),
+    queryFn: () => apiAll<RIROption>("/api/rirs/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

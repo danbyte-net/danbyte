@@ -3,14 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type ExportTemplate,
   type ManufacturerOption,
-  type Paginated,
   type Platform,
   type PlatformGroupOption,
   type PlatformWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCombobox,
   FormFooter,
@@ -64,6 +63,17 @@ export function PlatformForm({
   const [configTemplateId, setConfigTemplateId] = useState<string | null>(
     platform?.config_template?.id ?? null
   )
+  const [targetVersion, setTargetVersion] = useState(
+    platform?.target_version ?? ""
+  )
+  const [versionPattern, setVersionPattern] = useState(
+    platform?.version_pattern ?? ""
+  )
+  const [license, setLicense] = useState(platform?.license ?? "")
+  const [purlTemplate, setPurlTemplate] = useState(
+    platform?.purl_template ?? ""
+  )
+  const [cpeTemplate, setCpeTemplate] = useState(platform?.cpe_template ?? "")
   const [description, setDescription] = useState(platform?.description ?? "")
   const [lifecycle, setLifecycle] = useState(lifecycleFormValue(platform))
   const [tagIds, setTagIds] = useState<number[]>(
@@ -78,6 +88,11 @@ export function PlatformForm({
     setGroupId(platform.group?.id ?? null)
     setManufacturerId(platform.manufacturer?.id ?? null)
     setConfigTemplateId(platform.config_template?.id ?? null)
+    setTargetVersion(platform.target_version ?? "")
+    setVersionPattern(platform.version_pattern ?? "")
+    setLicense(platform.license ?? "")
+    setPurlTemplate(platform.purl_template ?? "")
+    setCpeTemplate(platform.cpe_template ?? "")
     setDescription(platform.description)
     setLifecycle(lifecycleFormValue(platform))
     setTagIds(platform.tags?.map((t) => t.id) ?? [])
@@ -92,21 +107,18 @@ export function PlatformForm({
   const groups = useQuery({
     queryKey: ["platform-groups-picker"],
     queryFn: () =>
-      api<Paginated<PlatformGroupOption>>("/api/platform-groups/?picker=1"),
+      apiAll<PlatformGroupOption>("/api/platform-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
-    queryFn: () =>
-      api<Paginated<ManufacturerOption>>("/api/manufacturers/?picker=1"),
+    queryFn: () => apiAll<ManufacturerOption>("/api/manufacturers/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const templates = useQuery({
     queryKey: ["export-templates", "device"],
     queryFn: () =>
-      api<Paginated<ExportTemplate>>(
-        "/api/export-templates/?object_type=device"
-      ),
+      apiAll<ExportTemplate>("/api/export-templates/?object_type=device"),
     staleTime: 5 * 60_000,
   })
 
@@ -118,6 +130,11 @@ export function PlatformForm({
         group_id: groupId,
         manufacturer_id: manufacturerId,
         config_template_id: configTemplateId,
+        target_version: targetVersion.trim(),
+        version_pattern: versionPattern.trim(),
+        license: license.trim(),
+        purl_template: purlTemplate.trim(),
+        cpe_template: cpeTemplate.trim(),
         description: description.trim(),
         tag_ids: tagIds,
         ...lifecyclePayload(lifecycle),
@@ -243,6 +260,73 @@ export function PlatformForm({
           searchPlaceholder="Search templates…"
           emptyText="No device export templates."
           error={fieldErrors.config_template_id}
+        />
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Target version"
+            value={targetVersion}
+            onChange={setTargetVersion}
+            mono
+            placeholder="17.9.5"
+            error={fieldErrors.target_version}
+          />
+          <FormText
+            label="Version pattern"
+            info={
+              <>
+                A regular expression that reads the running version out of SNMP
+                sysDescr, tried before the built-in Cisco, Juniper and Arista
+                readers. One capture group, or a group named{" "}
+                <code>version</code>.
+              </>
+            }
+            value={versionPattern}
+            onChange={setVersionPattern}
+            mono
+            placeholder="Version (?P<version>\S+),"
+            error={fieldErrors.version_pattern}
+          />
+        </div>
+        <FormText
+          label="License"
+          info={
+            <>
+              An SPDX licence expression, such as <code>MIT</code> or{" "}
+              <code>MIT OR Apache-2.0</code>. The SBOM reports it.
+            </>
+          }
+          value={license}
+          onChange={setLicense}
+          mono
+          placeholder="GPL-2.0-only"
+          error={fieldErrors.license}
+        />
+        <FormText
+          label="Package URL"
+          info={
+            <>
+              A purl template for the SBOM, such as{" "}
+              <code>pkg:deb/debian/frr@{"{version}"}</code>.{" "}
+              <code>{"{version}"}</code> and <code>{"{os_version}"}</code> are
+              filled in per host.
+            </>
+          }
+          value={purlTemplate}
+          onChange={setPurlTemplate}
+          mono
+          placeholder="pkg:deb/debian/debian@{version}"
+          error={fieldErrors.purl_template}
+        />
+        <FormText
+          label="CPE"
+          info={
+            <>A CPE 2.3 template for the SBOM, with the same placeholders.</>
+          }
+          value={cpeTemplate}
+          onChange={setCpeTemplate}
+          mono
+          placeholder="cpe:2.3:o:debian:debian_linux:{version}:*:*:*:*:*:*:*"
+          error={fieldErrors.cpe_template}
         />
         <FormTextarea
           label="Description"

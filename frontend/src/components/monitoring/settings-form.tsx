@@ -1,12 +1,12 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useId, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   AvailabilityFrame,
   MonitoringSettings,
-  Paginated,
   VRFOption,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -58,12 +58,12 @@ export function MonitoringSettingsForm() {
   })
   const vrfsQ = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const statusesQ = useQuery({
     queryKey: ["statuses-all"],
-    queryFn: () => api<Paginated<IpStatus>>("/api/statuses/"),
+    queryFn: () => apiAll<IpStatus>("/api/statuses/"),
     staleTime: 5 * 60_000,
   })
 
@@ -899,8 +899,13 @@ function NumberField({
   value: number
   onChange: (v: number) => void
 }) {
+  // The label names the input (#461).
+  const id = useId()
+  const hintId = hint ? `${id}-hint` : undefined
   const input = (
     <Input
+      id={id}
+      aria-describedby={hintId}
       type="number"
       min={min}
       value={value}
@@ -910,10 +915,14 @@ function NumberField({
   )
   return (
     <div className="space-y-1">
-      <Label className="flex items-center gap-1 text-xs whitespace-nowrap">
-        {label}
+      {/* The (i) sits beside the label, not in it: inside, it would be read
+          out as part of the input's name. */}
+      <span className="flex items-center gap-1">
+        <Label htmlFor={id} className="text-xs whitespace-nowrap">
+          {label}
+        </Label>
         {info && <InfoTip>{info}</InfoTip>}
-      </Label>
+      </span>
       {unit ? (
         <div className="flex items-center gap-2">
           {input}
@@ -922,7 +931,11 @@ function NumberField({
       ) : (
         input
       )}
-      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
+      {hint && (
+        <p id={hintId} className="text-[10px] text-muted-foreground">
+          {hint}
+        </p>
+      )}
     </div>
   )
 }
@@ -945,11 +958,21 @@ function CadenceSelect({
   onChange: (v: number) => void
 }) {
   const known = options.some((o) => o.value === String(value))
+  // The label names the select (#461).
+  const id = useId()
+  const hintId = hint ? `${id}-hint` : undefined
   return (
     <div className="space-y-1">
-      <Label className="text-xs">{label}</Label>
+      <Label id={`${id}-label`} htmlFor={id} className="text-xs">
+        {label}
+      </Label>
       <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
-        <SelectTrigger className="h-8 text-sm">
+        <SelectTrigger
+          id={id}
+          aria-labelledby={`${id}-label ${id}`}
+          aria-describedby={hintId}
+          className="h-8 text-sm"
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -965,7 +988,11 @@ function CadenceSelect({
           ))}
         </SelectContent>
       </Select>
-      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
+      {hint && (
+        <p id={hintId} className="text-[10px] text-muted-foreground">
+          {hint}
+        </p>
+      )}
     </div>
   )
 }

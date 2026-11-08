@@ -10,7 +10,7 @@ Two settings stores:
 | Store | Scope | Holds |
 |---|---|---|
 | `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults (Settings → Email), deployment LDAP (Settings → Directory), updates/release repo, `public_base_url`, proxy/timeouts (Settings → Security → Outbound delivery), drift scheduler, retention, deployment name, branding (`favicon`, `login_logo`), faceplate knobs and `port_count_virtual` (Settings → Component details → Port counting) - plus the **defaults** for every overridable group |
-| `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` - its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` - its own `override_datetime` toggle), **Topology card lines** (`topology_card_fields`, `topology_card_role_overrides` - its own `override_topology_card` toggle; Settings → Topology) - plus tenant-only fields with no deployment default, such as `default_topology_view` (the saved view a bare `/topology` opens; `SET_NULL` when the view is deleted; written through `/api/topology-views/default/`) and the rack capacity levels `capacity_warn_pct` / `capacity_critical_pct` (80 / 95; Settings → Tenant policy → Rack capacity) |
+| `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` - its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` - its own `override_datetime` toggle), **Topology card lines** (`topology_card_fields`, `topology_card_role_overrides` - its own `override_topology_card` toggle; Settings → Topology) - plus tenant-only fields with no deployment default, such as `default_topology_view` (the saved view a bare `/topology/map` opens; `SET_NULL` when the view is deleted; written through `/api/topology-views/default/`) and the rack capacity levels `capacity_warn_pct` / `capacity_critical_pct` (80 / 95; Settings → Tenant policy → Rack capacity) |
 | `SiteSettings` (`core/models.py`, OneToOne per site) | one site | **Email/SMTP only (v1)** - site-local relay + From address, for orgs whose sites run their own IT. Gated by `allow_site_settings` + site-admin qualification (`core/site_settings.py`) |
 
 Each group on `TenantSettings` carries an `override_*` toggle. **Off (and no
@@ -41,6 +41,24 @@ plans, the 3D room and the site Capacity tab all colour at the same levels.
 `coverage_warning_days(tenant)` returns the support-coverage warning window
 (`coverage_warning_days`, 90 without a row): coverage ending within it reads
 as Expiring ([support coverage](../features/support-coverage.md)).
+`cable_length_rules(tenant)` returns how a floor-plan route becomes a cable
+length - `{"slack_pct", "service_loop_mm", "step_mm",
+"standalone_height_mm"}` from `cable_slack_pct`, `cable_service_loop_mm`,
+`cable_length_step_mm` and `cable_standalone_height_mm` (10 / 0 / 500 / 0
+without a row; Settings → Floor plans → Cable lengths;
+[stored routes and lengths](../features/floor-plans.md#lengths)).
+The PDF report cover's look is per tenant only (no deployment layer):
+`report_cover_style` (`waves`/`plain`/`upload`/`none`; `upload` needs an
+image), the colours `report_cover_horizon`, `report_cover_wave` and
+`report_cover_crest` (`#rrggbb`, default `#063d66`/`#0b6fb0`/`#ffffff`), and
+the image itself in `report_cover_image` (bytes, with
+`report_cover_image_type`) - kept in the row rather than under `/media/`,
+which is served without a session. `api/report_cover.py` reads them
+(`look_for`) and lays out the cover; `api/report_background.py` colours the
+greyscale wave still (`api/report_assets/`) with a gradient map and caches
+the page JPEG under `MEDIA_ROOT/cache/report-covers/`; see
+[PDF reports](../features/reports.md#cover-page). The change log records the
+image as its size and a short SHA-256, never the bytes.
 
 **Topology card lines have two more layers below the tenant.** What a device
 card on the topology Diagram shows under its name is an ordered list of keys
@@ -134,9 +152,14 @@ Two deployment-wide session controls live on `DeploymentSettings` and are set
 from **Settings → Security** (`users.manage`):
 
 - **Idle timeout** (`session_idle_timeout_minutes`, `0` = off). A rolling
-  inactivity timeout: `core.middleware.SessionIdleTimeoutMiddleware` resets each
-  authenticated session's expiry on every request, so a session untouched for
-  the configured span is signed out. The value is cached for ~60s (cleared on
+  inactivity timeout: `core.middleware.SessionIdleTimeoutMiddleware` moves each
+  authenticated session's expiry to "now + timeout", so a session untouched for
+  the configured span is signed out. The expiry is only rewritten once it has
+  drifted by a minute, so a page load's burst of API calls writes the session
+  row once rather than once per call; a session can end up to a minute early,
+  and a lowered timeout shortens a longer expiry on the next request. Signing
+  in sets the first expiry (`core.middleware.start_idle_window`, on
+  `user_logged_in`), so a session's first request writes nothing either. The value is cached for ~60s (cleared on
   save) to keep it off the hot path; API-token requests carry no session and are
   unaffected.
 - **End all sessions** (`POST /api/deployment/end-all-sessions/`). Deletes every
@@ -209,6 +232,10 @@ ordered **directory chain** (`ldap_directory_chain(username)`):
 - `GET/PUT /api/tenant-settings/` - overrides + non-secret
   `deployment_defaults` for the UI's inherit summaries (tenant admin).
 - `POST /api/tenant-settings/email/test/` - test through the *effective* SMTP.
+- `GET/POST/DELETE /api/tenant-settings/report-cover/` - the report cover
+  image (tenant admin): `POST` multipart `image` (PNG, JPEG or SVG, at most
+  2 MB; an SVG is sanitised), `DELETE` removes it, `GET` serves it back
+  sandboxed for the Settings preview. Both writes answer the tenant settings.
 - `GET /api/device-fields/` - effective device-field visibility (any member).
 - `GET/PUT /api/deployment/topology-card/` - deployment card lines
   (`can_manage_deployment`); `GET/PUT /api/tenant-settings/topology-card/` -

@@ -7,11 +7,12 @@ import {
   api,
   ApiError,
   type DeviceOption,
+  type DeviceRenderFile,
   type ExportTemplate,
   type ExportTemplateWritePayload,
-  type Paginated,
   type RBACObjectTypes,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Field,
   FormCheckbox,
@@ -25,6 +26,8 @@ import {
   type SelectOption,
 } from "@/components/forms"
 import { CodeEditor } from "@/components/code-editor"
+import { BundleFiles } from "@/components/device-config-render"
+import { FileViewer } from "@/components/file-viewer"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { useSaveObject } from "@/lib/save-object"
@@ -63,6 +66,10 @@ export function ExportTemplateForm({
   )
   const [targetPath, setTargetPath] = useState(template?.target_path ?? "")
   const [preview, setPreview] = useState<string | null>(null)
+  // A directory template's preview: one entry per file block.
+  const [previewFiles, setPreviewFiles] = useState<DeviceRenderFile[] | null>(
+    null
+  )
   const [sampleId, setSampleId] = useState<string | null>(null)
   // Client-side required-field errors, merged with the DRF field errors.
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
@@ -79,6 +86,7 @@ export function ExportTemplateForm({
     setTargetPath(template.target_path)
     setSampleId(null)
     setPreview(null)
+    setPreviewFiles(null)
     setClientErrors({})
     reset()
   }, [template, reset])
@@ -114,8 +122,7 @@ export function ExportTemplateForm({
   // Sample-object picker - only for per-object (device / VM) templates.
   const samples = useQuery({
     queryKey: ["export-template-samples", perObjectEndpoint],
-    queryFn: () =>
-      api<Paginated<DeviceOption>>(`/api/${perObjectEndpoint}/?picker=1`),
+    queryFn: () => apiAll<DeviceOption>(`/api/${perObjectEndpoint}/?picker=1`),
     enabled: isEdit && isPerObject,
     staleTime: 10 * 60_000,
   })
@@ -176,14 +183,23 @@ export function ExportTemplateForm({
   const runPreview = useMutation({
     mutationFn: () =>
       isPerObject
-        ? api<{ output: string }>(
+        ? api<{ output?: string; files?: Record<string, DeviceRenderFile> }>(
             `/api/${perObjectEndpoint}/${sampleId}/render/?template=${template!.id}`
           )
-        : api<{ output: string }>(
+        : api<{ output?: string; files?: Record<string, DeviceRenderFile> }>(
             `/api/export-templates/${template!.id}/preview/`
           ),
-    onSuccess: (r) => setPreview(r.output),
+    onSuccess: (r) => {
+      if (r.files) {
+        setPreview(null)
+        setPreviewFiles(Object.values(r.files))
+      } else {
+        setPreviewFiles(null)
+        setPreview(r.output ?? "")
+      }
+    },
     onError: (err) => {
+      setPreviewFiles(null)
       const detail =
         err instanceof ApiError &&
         err.body &&
@@ -279,7 +295,9 @@ export function ExportTemplateForm({
             label="Target path"
             mono
             placeholder="/etc/frr/frr.conf"
-            info="Where a bundle's render puts this file. Blank uses the template's name and extension."
+            info={
+              "Where a bundle's render puts this file. Blank uses the template's name and extension. Ending in / makes it a directory: each {% file \"name\" %} … {% endfile %} block writes one file there."
+            }
             value={targetPath}
             onChange={setTargetPath}
             error={fieldErrors.target_path}
@@ -329,10 +347,24 @@ export function ExportTemplateForm({
               Pick a sample object to render this template against.
             </p>
           )}
-          {preview !== null && (
-            <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
-              {preview || "(empty)"}
-            </pre>
+          {preview !== null &&
+            (preview.startsWith("⚠ ") ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 font-mono text-[12px] whitespace-pre-wrap">
+                {preview}
+              </div>
+            ) : (
+              <FileViewer
+                text={preview}
+                filename={`${template.name}.${template.file_extension || "txt"}`}
+                storageKey="template-preview"
+                label="Preview"
+              />
+            ))}
+          {previewFiles !== null && (
+            <BundleFiles
+              files={previewFiles}
+              empty="No files for this sample."
+            />
           )}
         </FormSection>
       )}

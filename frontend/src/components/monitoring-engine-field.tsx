@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { MonitoringEngine, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { MonitoringEngine } from "@/lib/api"
 import { Field, FormSelect } from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
@@ -45,7 +46,7 @@ export function MonitoringEngineField({
 
   const engines = useQuery({
     queryKey: ["engine-picker"],
-    queryFn: () => api<Paginated<MonitoringEngine>>("/api/monitoring/engines/"),
+    queryFn: () => apiAll<MonitoringEngine>("/api/monitoring/engines/"),
     staleTime: 60_000,
   })
   const binding = useQuery({

@@ -11,7 +11,7 @@ import {
   noteLayout,
   NOTE,
 } from "./geometry"
-import type { LabelBlock } from "./geometry"
+import type { CardText, LabelBlock } from "./geometry"
 import { baselineAt, measureText } from "./measure"
 import type { Measure } from "./measure"
 import { toSvg } from "./svg"
@@ -141,6 +141,16 @@ function style(names: string[], kv: Record<string, Val>): string {
 /** User text in an HTML label: escaped for HTML here, and again for XML by
  * `attrs`, so `a<b` reaches the file as `a&amp;lt;b`. */
 const h = (s: string) => htmlEscape(s).replace(/\r?\n/g, "<br>")
+
+/** A card's name as label HTML: its rows as the card wraps them, so
+ * draw.io breaks it where the card does. */
+const nameLabel = (t: CardText) =>
+  t.titleRows.map((r) => h(r.text)).join("<br>")
+
+/** The whole name, when the drawn one was cut (a card without a placed
+ * layout): the tooltip. */
+const cutName = (t: CardText, n: DiagramNode) =>
+  t.titleRows.length === 1 && t.title.text !== n.title ? n.title : undefined
 
 /** A fraction for a constraint or a relative position: 0.0001 steps. */
 function frac(n: number): string {
@@ -434,7 +444,19 @@ function page(
   // Ids: the document's own where they are free, so the file lines up with
   // Danbyte; a clash gets a `~n` suffix. Primary ids first, in document
   // order, so the same document always gets the same ids.
-  const used = new Set(["0", "1", LAYER_LLDP, LAYER_BGP])
+  // Lines that name their draw.io layer get one each, in the order they
+  // first appear (the Routing tab's layers).
+  const namedLayers = new Map<string, string>()
+  for (const l of doc.links)
+    if (l.layer && !namedLayers.has(l.layer))
+      namedLayers.set(l.layer, `layer-${namedLayers.size + 1}`)
+  const used = new Set([
+    "0",
+    "1",
+    LAYER_LLDP,
+    LAYER_BGP,
+    ...namedLayers.values(),
+  ])
   const take = (want: string) => {
     const base = want || "cell"
     let id = base
@@ -634,22 +656,35 @@ function page(
       whiteSpace: "nowrap",
       fontFamily: FONT,
       fontSize: CARD.TITLE_SIZE,
-      // With card lines after it, the name is bold in the label itself.
-      fontStyle: t.tail ? 0 : 1,
+      // With a badge or card lines after it, the name is bold in the
+      // label itself.
+      fontStyle: t.tail || n.badge ? 0 : 1,
       fontColor: PRINT.text,
     })
-    const label = t.tail
-      ? `<b>${h(t.title.text)}</b> <span style="font-weight:normal;` +
-        `font-size:${CARD.LINE_SIZE}px;color:${PRINT.muted}">` +
-        `${h(t.tail.text)}</span>`
-      : h(t.title.text)
+    const name = nameLabel(t)
+    // The role badge: a small rounded label in the role colour, inline
+    // after the name, so it wraps and moves with the caption.
+    const badge = n.badge
+      ? ` <span style="background-color:${hex6(n.badge.fill) ?? PRINT.wash};` +
+        `color:${hex6(n.badge.ink) ?? PRINT.text};border-radius:${PILL.RADIUS}px;` +
+        `padding:0 ${PILL.PAD_X - 1}px;font-weight:${PILL.WEIGHT};` +
+        `font-size:${PILL.SIZE}px">${h(n.badge.text)}</span>`
+      : ""
+    const label =
+      t.tail || badge
+        ? `<b>${name}</b>${badge}` +
+          (t.tail
+            ? ` <span style="font-weight:normal;` +
+              `font-size:${CARD.LINE_SIZE}px;color:${PRINT.muted}">` +
+              `${h(t.tail.text)}</span>`
+            : "")
+        : name
     out.push(
       `<object${attrs({
         label,
         danbyte_id: n.id,
         link: safeLink(n.link),
-        tooltip:
-          n.place?.full ?? (t.title.text !== n.title ? n.title : undefined),
+        tooltip: n.place?.full ?? cutName(t, n),
         id,
       })}><mxCell${attrs({ style: st, vertex: "1", parent: pid })}>` +
         `${geometry(rel(img, parent))}</mxCell></object>`
@@ -765,7 +800,7 @@ function page(
     // the lines under it; a card grown for its nubs keeps the space below.
     const titleTop = t.title.y - baselineAt(0, CARD.TITLE_SIZE, CARD.TITLE_LH)
     const label =
-      `<b>${h(t.title.text)}</b>` +
+      `<b>${nameLabel(t)}</b>` +
       (t.lines.length
         ? `<br><span style="font-size:${CARD.LINE_SIZE}px">` +
           `${t.lines.map((l) => h(l.text)).join("<br>")}</span>`
@@ -793,8 +828,7 @@ function page(
         danbyte_id: n.id,
         link: safeLink(n.link),
         // A photo drawn as its card: its caption, when that was cut.
-        tooltip:
-          n.place?.full ?? (t.title.text !== n.title ? n.title : undefined),
+        tooltip: n.place?.full ?? cutName(t, n),
         id,
       })}><mxCell${attrs({ style: st, vertex: "1", parent: pid })}>` +
         `${geometry(rel(n, parent))}</mxCell></object>`
@@ -923,8 +957,11 @@ function page(
       ...kind,
       rounded: kind.rounded ?? 0,
       html: 1,
-      endArrow: "none",
-      startArrow: "none",
+      // An application flow's direction (#163); every other line has none.
+      endArrow: l.arrow === "end" || l.arrow === "both" ? "block" : "none",
+      endFill: l.arrow === "end" || l.arrow === "both" ? 1 : undefined,
+      startArrow: l.arrow === "both" ? "block" : "none",
+      startFill: l.arrow === "both" ? 1 : undefined,
       strokeColor: hex6(l.stroke) ?? PRINT.subtle,
       strokeWidth: Math.max(0.25, l.width || 1),
       dashed: dash ? 1 : undefined,
@@ -1137,9 +1174,15 @@ function page(
   const early = (n: DiagramNode) => drawsImage(n, opts.photos)
   for (const n of doc.nodes)
     if (!nodeParent.get(n) && early(n)) node(n, null, "1")
-  const onLayer = (sem: DiagramLink["sem"]) =>
-    sem === "ghost" ? LAYER_LLDP : sem === "bgp" ? LAYER_BGP : "1"
-  for (const l of doc.links) if (onLayer(l.sem) === "1") link(l, "1")
+  const onLayer = (l: DiagramLink) =>
+    l.layer
+      ? namedLayers.get(l.layer)!
+      : l.sem === "ghost"
+        ? LAYER_LLDP
+        : l.sem === "bgp"
+          ? LAYER_BGP
+          : "1"
+  for (const l of doc.links) if (onLayer(l) === "1") link(l, "1")
   for (const j of doc.junctions ?? []) junction(j)
   for (const n of doc.nodes)
     if (!nodeParent.get(n) && !early(n)) node(n, null, "1")
@@ -1147,8 +1190,9 @@ function page(
   for (const [layer, name] of [
     [LAYER_LLDP, "LLDP"],
     [LAYER_BGP, "BGP sessions"],
+    ...[...namedLayers].map(([n, id]) => [id, n] as const),
   ] as const) {
-    const links = doc.links.filter((l) => onLayer(l.sem) === layer)
+    const links = doc.links.filter((l) => onLayer(l) === layer)
     if (!links.length) continue
     out.push(`<mxCell${attrs({ id: layer, value: name, parent: "0" })}/>`)
     for (const l of links) link(l, layer)

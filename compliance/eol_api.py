@@ -6,20 +6,24 @@ Deployment-wide (``can_manage_deployment``):
 * ``POST /api/eol/refresh/``         fetch now (background job)
 * ``POST /api/eol/import/``          offline: upload the catalog JSON
 
-Per tenant, on the platform permissions:
+Per tenant, on the platform (or, for the catalog, application) permissions:
 
 * ``GET /api/eol/products/``                     search the cached catalog
-                                                 (``?q=``, ``?platform=`` adds
+                                                 (``?q=``, ``?platform=`` or
+                                                 ``?application=`` adds
                                                  suggestions)
 * ``GET /api/eol/products/<source>/<name>/``     one product's cycles
 * ``GET/PUT/DELETE /api/eol/platforms/<id>/``    a platform's mapping
 
-Every tenant endpoint answers 404 while the feature is off.
+The catalog a tenant reads is every source's products plus its own custom
+products (``source="custom"``, ``compliance.eol_custom``) - never another
+tenant's. Every tenant endpoint answers 404 while the feature is off.
 """
 from __future__ import annotations
 
 from datetime import timedelta
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -33,7 +37,7 @@ from auth_api import rbac
 from auth_api.permissions import can_manage_deployment
 
 from . import eol
-from .eol_sources import SOURCES, EolSourceError
+from .eol_sources import CUSTOM, SOURCES, EolSourceError
 from .models import EolMapping, EolProduct, EolSettings
 
 _OFF = {"detail": "End-of-life data is off."}
@@ -55,7 +59,7 @@ def _settings_dict(row: EolSettings, *, full: bool) -> dict:
         "last_refresh_status": row.last_refresh_status,
         "last_refresh_error": row.last_refresh_error,
         "last_refresh_via": row.last_refresh_via,
-        "products": EolProduct.objects.count(),
+        "products": EolProduct.objects.filter(tenant__isnull=True).count(),
         "mappings": EolMapping.objects.count(),
         "can_manage": True,
     })
@@ -205,16 +209,20 @@ def eol_import(request):
 # ─── tenant side ─────────────────────────────────────────────────────────────
 
 
-def _tenant_gate(request, action: str):
-    """(tenant, None) or (None, error response)."""
+def _tenant_gate(request, action: str, slugs=("platform",)):
+    """(tenant, None) or (None, error response). ``slugs``: a grant on any
+    of them will do - the catalog serves platforms and applications."""
     if not eol.load_config().enabled:
         return None, Response(_OFF, status=404)
     tenant = _get_active_tenant(request)
     if tenant is None:
         return None, Response({"detail": "No active tenant selected."}, status=403)
-    if not rbac.has_action(request.user, tenant, "platform", action):
-        return None, Response({"detail": f"platform.{action} required."}, status=403)
+    if not any(rbac.has_action(request.user, tenant, s, action) for s in slugs):
+        return None, Response({"detail": f"{slugs[0]}.{action} required."}, status=403)
     return tenant, None
+
+
+_CATALOG_READERS = ("platform", "application")
 
 
 def _platform(request, tenant, platform_id, action: str = "view"):
@@ -227,7 +235,7 @@ def _platform(request, tenant, platform_id, action: str = "view"):
 
 def _product_row(p: EolProduct) -> dict:
     return {"source": p.source, "name": p.name, "label": p.label,
-            "category": p.category}
+            "category": p.category, "custom": p.source == CUSTOM}
 
 
 @extend_schema(
@@ -239,12 +247,14 @@ def _product_row(p: EolProduct) -> dict:
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def eol_products(request):
-    tenant, err = _tenant_gate(request, "view")
+    tenant, err = _tenant_gate(request, "view", _CATALOG_READERS)
     if err:
         return err
     from django.db.models import Q
 
-    qs = EolProduct.objects.all().only("source", "name", "label", "category")
+    # The sources' catalog and the tenant's own custom products, never
+    # another tenant's.
+    qs = eol.products_for(tenant.pk).only("source", "name", "label", "category")
     source = request.query_params.get("source")
     if source:
         qs = qs.filter(source=source)
@@ -263,9 +273,25 @@ def eol_products(request):
         platform = _platform(request, tenant, pid)
         if platform is None:
             return Response({"detail": "Not found."}, status=404)
-        catalog = EolProduct.objects.only(
+        catalog = eol.products_for(tenant.pk).only(
             "source", "name", "label", "aliases", "releases")
         out["suggestions"] = eol.suggest_products(platform, catalog)
+    aid = request.query_params.get("application")
+    if aid:
+        from api.models import Application
+
+        try:
+            app = rbac.restrict_queryset(
+                Application.objects.filter(tenant=tenant).select_related("manufacturer"),
+                request.user, tenant, "application", "view",
+            ).filter(pk=aid).first()
+        except (ValueError, DjangoValidationError):
+            app = None
+        if app is None:
+            return Response({"detail": "Not found."}, status=404)
+        catalog = eol.products_for(tenant.pk).only(
+            "source", "name", "label", "aliases", "releases")
+        out["suggestions"] = eol.suggest_products(app, catalog)
     return Response(out)
 
 
@@ -278,10 +304,10 @@ def eol_products(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def eol_product(request, source, name):
-    _tenant, err = _tenant_gate(request, "view")
+    tenant, err = _tenant_gate(request, "view", _CATALOG_READERS)
     if err:
         return err
-    p = EolProduct.objects.filter(source=source, name=name).first()
+    p = eol.find_product(source, name, tenant.pk)
     if p is None:
         return Response({"detail": "Not found."}, status=404)
     return Response({**_product_row(p), "releases": p.releases})
@@ -323,7 +349,7 @@ def eol_platform_mapping(request, platform_id):
     product_name = str(data.get("product") or "").strip()
     cycle = str(data.get("cycle") or "").strip()
     errors = {}
-    if source not in SOURCES:
+    if not eol.is_source(source):
         errors["source"] = "Unknown source."
     if not product_name:
         errors["product"] = "Pick a product."
@@ -331,7 +357,7 @@ def eol_platform_mapping(request, platform_id):
         errors["cycle"] = "Pick a cycle."
     if errors:
         return Response(errors, status=400)
-    product = EolProduct.objects.filter(source=source, name=product_name).first()
+    product = eol.find_product(source, product_name, tenant.pk)
     if product is None:
         return Response({"product": "Not in the catalog - refresh or import it."},
                         status=400)

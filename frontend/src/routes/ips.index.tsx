@@ -18,6 +18,7 @@ import {
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
 import { IpBulkBar } from "@/components/ip-bulk-bar"
+import { reportExport, useObjectReport } from "@/components/object-report"
 import { useUrlTableFilters } from "@/components/table-filters"
 
 export const Route = createFileRoute("/ips/")({
@@ -88,6 +89,24 @@ function IpsPage() {
     activeCount,
     columns: wiredColumns,
   } = useUrlTableFilters(columns, allRows)
+  // The PDF report of the rows the list shows now.
+  const report = useObjectReport("ipaddress")
+  const reportItem = reportExport(
+    report.openReport,
+    () => {
+      const filters: Record<string, string> = {}
+      if (q) filters.search = q
+      if (status) filters.status = status
+      if (role) filters.role = role
+      if (scope) filters.scope = scope
+      return {
+        ids: filteredRows.map((r) => r.id),
+        filters,
+        scope: "filtered",
+      }
+    },
+    filteredRows.length === 0
+  )
 
   return (
     <>
@@ -105,7 +124,7 @@ function IpsPage() {
               value={sla.frame}
               onChange={sla.setFrame}
             />
-            <TableActions ioType="ipaddress" />
+            <TableActions ioType="ipaddress" extraExports={[reportItem]} />
             {canAdd && (
               <Button size="sm" asChild>
                 <Link to="/ips/new">Add IP</Link>
@@ -138,6 +157,7 @@ function IpsPage() {
       </ListPageShell>
       {/* Bulk bar at root so the table can unmount without losing the
           selection mid-action (see /prefixes). */}
+      {report.dialog}
       <IpBulkBar
         selected={selectedRows}
         onCleared={() => setSelectedRows([])}

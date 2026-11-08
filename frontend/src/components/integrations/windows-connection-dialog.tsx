@@ -2,7 +2,8 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type Paginated, type WindowsConnection } from "@/lib/api"
+import { api, type WindowsConnection } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -53,8 +54,7 @@ export function WindowsConnectionDialog({
   const [vrfMode, setVrfMode] = useState(connection?.vrf_mode ?? "pinned")
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
 

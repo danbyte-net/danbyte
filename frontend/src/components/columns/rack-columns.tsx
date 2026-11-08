@@ -9,9 +9,17 @@ import { CapacityBar } from "@/components/cells/capacity-bar"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { PortsFigure, portsRatio } from "@/components/cells/ports-figure"
-import { PowerFigure } from "@/components/cells/power-figure"
+import { CoolingFigure, PowerFigure } from "@/components/cells/power-figure"
+import { coolingLabel } from "@/components/cells/cooling-cell"
 import { portsUsed } from "@/lib/rack-port-state"
-import { capacityRatio, rackPowerRatio } from "@/lib/rack-capacity"
+import {
+  capacityRatio,
+  formatWatts,
+  hasCoolingData,
+  rackCoolingDemand,
+  rackCoolingRatio,
+  rackPowerRatio,
+} from "@/lib/rack-capacity"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { SiteCell, siteColumn } from "@/components/cells/site-cell"
 import type { SiteVariant } from "@/components/cells/site-cell"
@@ -31,9 +39,9 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 //
 // "height"/"devices"/"utilisation" are the list page's capacity trio;
 // "width"/"used" are the compact pair the embedded pane shows instead. Both
-// live here so either surface can ask for what it needs. "power", "ports"
-// and "panel_ports" are offered hidden in the Columns menu (the ports need
-// the rows fetched with `?include=ports`); a table about capacity - the
+// live here so either surface can ask for what it needs. "power", "cooling",
+// "ports" and "panel_ports" are offered hidden in the Columns menu (the ports
+// need the rows fetched with `?include=ports`); a table about capacity - the
 // floor plan's rack table - shows them with `show`.
 
 export type RackColumnId =
@@ -48,6 +56,7 @@ export type RackColumnId =
   | "utilisation"
   | "used"
   | "power"
+  | "cooling"
   | "ports"
   | "panel_ports"
   | "tags"
@@ -66,6 +75,7 @@ const CANONICAL_ORDER: RackColumnId[] = [
   "utilisation",
   "used",
   "power",
+  "cooling",
   "ports",
   "panel_ports",
   "tags",
@@ -78,9 +88,9 @@ export interface RackColumnOpts<T extends Rack = Rack> {
   omit?: RackColumnId[]
   /** Keep only these columns (canonical order still applies). */
   include?: RackColumnId[]
-  /** Show these where the factory offers them hidden ("power", "ports",
-   * "panel_ports") - for a table about capacity. A saved layout still
-   * wins. */
+  /** Show these where the factory offers them hidden ("power", "cooling",
+   * "ports", "panel_ports") - for a table about capacity. A saved layout
+   * still wins. */
   show?: RackColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
@@ -287,6 +297,38 @@ export function buildRackColumns<T extends Rack = Rack>(
       accessorFn: (r) => rackPowerRatio(r.power) ?? -1,
       cell: ({ row }) => <PowerFigure power={row.original.power} bar />,
       meta: { label: "Power", defaultHidden: hidden("power") },
+    }),
+    // Heat load over cooling capacity (#434), by load like Power; the rail
+    // filters by what the rack's cooling takes.
+    cooling: () => ({
+      id: "cooling",
+      header: ({ column }) => <SortHeader column={column} label="Cooling" />,
+      accessorFn: (r) => (r.cooling ? (rackCoolingRatio(r.cooling) ?? -1) : -1),
+      cell: ({ row }) => <CoolingFigure cooling={row.original.cooling} bar />,
+      meta: {
+        label: "Cooling",
+        defaultHidden: hidden("cooling"),
+        field: ["cooling", "cooling_free_w"],
+        export: {
+          value: (r: T) => {
+            const c = r.cooling
+            if (!c || !hasCoolingData(c)) return ""
+            const heat = formatWatts(rackCoolingDemand(c).watts)
+            return c.available_w > 0
+              ? `${heat} / ${formatWatts(c.available_w)}`
+              : heat
+          },
+        },
+        facet: {
+          kind: "enum",
+          label: "Cooling",
+          get: (r: T) => r.cooling_capability || "__none__",
+          formatValue: (v) => ({
+            label: v === "__none__" ? "Not recorded" : coolingLabel(v),
+          }),
+          hideWhenSingle: true,
+        },
+      },
     }),
     ports: () => portsColumn("ports", "Ports", (r) => r.ports),
     panel_ports: () =>

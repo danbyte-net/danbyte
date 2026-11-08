@@ -5,17 +5,20 @@ import { RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   DeviceRole,
   FloorTileTypeOption,
   FloorplanPopoverSettings,
-  Paginated,
+  TenantSettings,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
+import { FormText } from "@/components/forms"
 import {
   FieldListEditor,
   FieldScopeHeading,
@@ -23,6 +26,7 @@ import {
   useCustomFieldMeta,
 } from "@/components/settings/field-list-editor"
 import type { FieldMeta } from "@/components/settings/field-list-editor"
+import { PanelLayoutsCard } from "@/components/settings/panel-layouts-card"
 import {
   SettingsCard,
   SettingsHeader,
@@ -53,6 +57,7 @@ const FIELD_META: Partial<Record<string, FieldMeta>> = {
     hint: "Racks: used U + a bar · cabinets: devices, rails",
   },
   power: { label: "Power", hint: "Racks: demand vs supply" },
+  cooling: { label: "Cooling", hint: "Racks: heat vs cooling capacity" },
   ports: { label: "Ports", hint: "Racks: ports and panel ports in use" },
   weight: { label: "Weight", hint: "Racks: total vs maximum load" },
   device_count: {
@@ -106,6 +111,7 @@ const GROUPS: { title: string; keys: string[] }[] = [
     keys: [
       "utilization",
       "power",
+      "cooling",
       "ports",
       "weight",
       "device_count",
@@ -163,11 +169,11 @@ function FloorplanSettingsPage() {
   const tileTypes = useQuery({
     queryKey: ["floor-tile-types-picker"],
     queryFn: () =>
-      api<Paginated<FloorTileTypeOption>>("/api/floor-tile-types/?picker=1"),
+      apiAll<FloorTileTypeOption>("/api/floor-tile-types/?picker=1"),
   })
   const roles = useQuery({
     queryKey: ["device-roles"],
-    queryFn: () => api<Paginated<DeviceRole>>("/api/device-roles/"),
+    queryFn: () => apiAll<DeviceRole>("/api/device-roles/"),
   })
   // Custom fields are the tenant's own - never enumerated server-side, so the
   // options come from their definitions and ride the generic cf_<key> convention.
@@ -220,8 +226,7 @@ function FloorplanSettingsPage() {
       </p>
     )
   if (q.isError) return <QueryError error={q.error} />
-  if (!q.data || fields === null || overrides === null)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!q.data || fields === null || overrides === null) return <Loading />
 
   // When this tenant inherits, the whole editor is a read-only preview of what
   // it's inheriting.
@@ -436,7 +441,121 @@ function FloorplanSettingsPage() {
           </div>
         </div>
       </SettingsCard>
+
+      <PanelLayoutsCard />
+
+      <CableLengthsCard />
     </div>
+  )
+}
+
+const LENGTH_KEYS = [
+  "cable_slack_pct",
+  "cable_service_loop_mm",
+  "cable_length_step_mm",
+  "cable_standalone_height_mm",
+] as const
+type LengthKey = (typeof LENGTH_KEYS)[number]
+
+/** How a route on a plan becomes a cable length - this tenant's rules
+ * (core.effective_settings.cable_length_rules). */
+function CableLengthsCard() {
+  const qc = useQueryClient()
+  const q = useQuery({
+    queryKey: ["tenant-settings"],
+    queryFn: () => api<TenantSettings>("/api/tenant-settings/"),
+  })
+  const [form, setForm] = useState<Record<LengthKey, string> | null>(null)
+  useEffect(() => {
+    if (q.data)
+      setForm(
+        Object.fromEntries(
+          LENGTH_KEYS.map((k) => [k, String(q.data[k])])
+        ) as Record<LengthKey, string>
+      )
+  }, [q.data])
+  const save = useMutation({
+    mutationFn: (patch: Partial<TenantSettings>) =>
+      api<TenantSettings>("/api/tenant-settings/", {
+        method: "PUT",
+        body: JSON.stringify(patch),
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(["tenant-settings"], data)
+      qc.invalidateQueries({ queryKey: ["floor-plan-cable-plan"] })
+      toast.success("Cable lengths saved")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  if (q.isError) return <QueryError error={q.error} />
+  if (!q.data || !form) return <Loading />
+  const server = q.data
+  const dirty = LENGTH_KEYS.some((k) => Number(form[k]) !== server[k])
+  const field = (
+    key: LengthKey,
+    label: string,
+    hint: string,
+    info: string,
+    max: number
+  ) => (
+    <FormText
+      label={label}
+      hint={hint}
+      info={info}
+      type="number"
+      min={0}
+      max={max}
+      value={form[key]}
+      onChange={(v) => setForm({ ...form, [key]: v })}
+    />
+  )
+  return (
+    <SettingsCard
+      title="Cable lengths"
+      description="How a cable's route on a plan becomes its length."
+      layout="plain"
+      onSave={() =>
+        save.mutate(
+          Object.fromEntries(
+            LENGTH_KEYS.map((k) => [k, Number(form[k]) || 0])
+          ) as Partial<TenantSettings>
+        )
+      }
+      dirty={dirty}
+      saving={save.isPending}
+      saveLabel="Save cable lengths"
+    >
+      <div className="grid gap-4 sm:max-w-xl sm:grid-cols-2">
+        {field(
+          "cable_slack_pct",
+          "Slack",
+          "%",
+          "Added to the route for dressing and termination.",
+          100
+        )}
+        {field(
+          "cable_service_loop_mm",
+          "Service loop",
+          "mm per end",
+          "Left coiled at each end.",
+          20000
+        )}
+        {field(
+          "cable_length_step_mm",
+          "Round up to",
+          "mm",
+          "Lengths round up to a multiple of this. 0 rounds to the millimetre.",
+          10000
+        )}
+        {field(
+          "cable_standalone_height_mm",
+          "Standalone port height",
+          "mm",
+          "Where the ports of a device on its own tile, or in a cabinet, sit above the floor. A racked device's come from its rack unit.",
+          20000
+        )}
+      </div>
+    </SettingsCard>
   )
 }
 
@@ -451,7 +570,8 @@ function inheritedSummary(
   return (
     <span>
       {labels.length ? labels.join(" · ") : "Just the tile name"}
-      {types > 0 && ` · ${types} type ${types === 1 ? "override" : "overrides"}`}
+      {types > 0 &&
+        ` · ${types} type ${types === 1 ? "override" : "overrides"}`}
     </span>
   )
 }

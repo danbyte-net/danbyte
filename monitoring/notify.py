@@ -62,11 +62,33 @@ def _retry_after(headers) -> int | None:
     return max(0, int((when - timezone.now()).total_seconds()))
 
 
+class ReceiverUnreachable(ConnectionError):
+    """No answer from the receiver; the message has the URL masked."""
+
+
+def _redact_url(text: str, url: str) -> str:
+    """``text`` with the URL, its path and query, and any userinfo masked."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url or "")
+    tail = parts.path + (f"?{parts.query}" if parts.query else "")
+    for piece in (url, tail if tail not in ("", "/") else "",
+                  parts.password or "", parts.username or ""):
+        if piece:
+            text = text.replace(piece, "***")
+    return text
+
+
 def _post(url: str, **kwargs):
-    """``safe_post`` that treats a non-2xx answer as a failure (#358). A
-    connection error already raises. The URL stays out of the message: a
-    Slack, Teams or Discord webhook URL is itself the credential."""
-    resp = safe_post(url, **kwargs)
+    """``safe_post`` that treats a non-2xx answer as a failure (#358). The
+    URL stays out of every message: a Slack, Teams or Discord webhook URL is
+    itself the credential, and a connection error quotes the path."""
+    try:
+        resp = safe_post(url, **kwargs)
+    except Exception as exc:  # noqa: BLE001 - redact before the text travels
+        raise ReceiverUnreachable(
+            f"The receiver could not be reached: {_redact_url(str(exc), url)}"
+        ) from None
     if not 200 <= resp.status_code < 300:
         raise DeliveryError(
             f"The receiver answered HTTP {resp.status_code}.",
@@ -200,7 +222,7 @@ def _telegram_send(channel, text: str, timeout, proxies) -> None:
 def _send_webhook(channel, events: list[dict]) -> None:
     import requests
 
-    url = (channel.config or {}).get("url")
+    url = channel.transport_config().get("url")
     if not url:
         return
     timeout = getattr(settings, "MONITORING_WEBHOOK_TIMEOUT", 5)
@@ -713,7 +735,7 @@ def notify_event(
     for ch in channels:
         try:
             if ch.kind == "webhook":
-                url = (ch.config or {}).get("url")
+                url = ch.transport_config().get("url")
                 if url:
                     import requests
 
@@ -747,7 +769,7 @@ def notify_plain(channel, subject: str, text: str = "", payload: dict | None = N
     backups and restores use it. ``payload`` rides along on webhooks and sets
     ``severity`` / ``dedup_key`` for PagerDuty. Best-effort: never raises."""
     dep = _deployment()
-    cfg = channel.config or {}
+    cfg = channel.transport_config()
     kind = channel.kind
     timeout = _timeout(dep)
     proxies = _proxies(dep)
@@ -1094,7 +1116,7 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
     import requests
 
     dep = _deployment()
-    cfg = channel.config or {}
+    cfg = channel.transport_config()
     text = _alert_summary(alert, event, ip)
     kind = channel.kind
     timeout = _timeout(dep)
@@ -1313,7 +1335,7 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
         _send_each_with_retry(channel, alerts, event)
         return
 
-    cfg = channel.config or {}
+    cfg = channel.transport_config()
     text = _group_summary(alerts, event)
     url = _alert_url(dep)
     linked = f"{text}\n{url}" if url else text

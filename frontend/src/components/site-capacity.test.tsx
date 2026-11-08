@@ -103,9 +103,24 @@ const TOTALS = {
     pdu_rating: 1,
     no_supply: 1,
   },
+  cooling: {
+    available_w: 20_000,
+    heat_allocated_w: 6_100,
+    heat_maximum_w: 6_100,
+    budget: 2,
+    no_supply: 1,
+    mismatched: 1,
+  },
   ports: ports(6, 30),
   panel_ports: ports(20, 24),
 }
+const heat = (available_w: number, heat_allocated_w: number) => ({
+  available_w,
+  heat_allocated_w,
+  heat_maximum_w: heat_allocated_w,
+  supply: available_w > 0 ? ("budget" as const) : null,
+  mismatched: 0,
+})
 
 const CAPACITY: SiteCapacity = {
   site: { id: "s1", name: "Lab" },
@@ -120,17 +135,22 @@ const CAPACITY: SiteCapacity = {
       grid_height: 8,
       totals: TOTALS,
       racks: [
-        // Space 2/10 good, power 30 % good.
-        rack("r1", 2, feed(4_000, 1_200)),
-        // Space 9/10 warn, power over its feed.
-        rack("r2", 9, feed(2_000, 4_900)),
-        // Space 7/10 good, no supply: no data on power.
-        rack("r3", 7, {
-          available_w: 0,
-          allocated_w: 0,
-          maximum_w: 0,
-          supply: null,
-        }),
+        // Space 2/10 good, power 30 % good, cooling 12 % good.
+        rack("r1", 2, feed(4_000, 1_200), { cooling: heat(10_000, 1_200) }),
+        // Space 9/10 warn, power over its feed, cooling 98 % critical.
+        rack("r2", 9, feed(2_000, 4_900), { cooling: heat(5_000, 4_900) }),
+        // Space 7/10 good, no supply and no capacity: no data on either.
+        rack(
+          "r3",
+          7,
+          {
+            available_w: 0,
+            allocated_w: 0,
+            maximum_w: 0,
+            supply: null,
+          },
+          { cooling: heat(0, 0) }
+        ),
       ],
       tiles: [
         { rack_id: "r1", x: 1, y: 1, w: 1, h: 1, orientation: 0 },
@@ -232,5 +252,20 @@ describe("SiteCapacityTab", () => {
       ["r2", "critical"],
       ["r3", "none"],
     ])
+    fireEvent.click(screen.getByRole("button", { name: "Cooling" }))
+    expect(levels(container)).toEqual([
+      ["r1", "good"],
+      ["r2", "critical"],
+      ["r3", "none"],
+    ])
+  })
+
+  it("adds the racks' heat up against their cooling capacity (#434)", async () => {
+    mount()
+    await screen.findByText("Hall C")
+    expect(screen.getAllByText("6.1 kW / 20 kW").length).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText("No capacity: 1 · Mismatched: 1").length
+    ).toBeGreaterThan(0)
   })
 })

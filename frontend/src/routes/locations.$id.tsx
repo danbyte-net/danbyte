@@ -5,17 +5,17 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Network, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import {
-  api,
-  type FloorPlan,
-  type Location,
-  type Prefix,
-  type Paginated,
-} from "@/lib/api"
+import { api, type FloorPlan, type Location, type Prefix } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { TileBadge } from "@/components/floorplan/tile-badge"
+import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  locationColor,
+  locationIcon,
+} from "@/components/columns/location-columns"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
@@ -30,9 +30,11 @@ import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import {
   EmbeddedCabinetTable,
   EmbeddedRackTable,
+  EmbeddedRoomTable,
 } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { AreaPlanTab, useAreaPlan } from "@/components/floorplan/area-plan-tab"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/locations/$id")({
@@ -63,26 +65,31 @@ function Body({ location: l }: { location: Location }) {
   const goBack = useCallback(() => nav({ to: "/locations" }), [nav])
   const prefixes = useQuery({
     queryKey: ["location-prefixes", l.id],
-    queryFn: () => api<Paginated<Prefix>>(`/api/prefixes/?location=${l.id}`),
+    queryFn: () => apiAll<Prefix>(`/api/prefixes/?location=${l.id}`),
   })
   const floorPlans = useQuery({
     queryKey: ["floor-plans", { location: l.id }],
-    queryFn: () =>
-      api<Paginated<FloorPlan>>(`/api/floor-plans/?location=${l.id}`),
+    queryFn: () => apiAll<FloorPlan>(`/api/floor-plans/?location=${l.id}`),
   })
   const floorPlan = floorPlans.data?.results[0]
   const rows = prefixes.data?.results ?? []
   const columns = useMemo<ColumnDef<Prefix>[]>(() => buildColumns(), [])
   const [tab, setTab] = useUrlTab<
     | "overview"
+    | "rooms"
     | "devices"
     | "racks"
     | "cabinets"
     | "prefixes"
+    | "plan"
     | "documents"
     | "journal"
     | "history"
   >("overview")
+  // The Floor plan tab, while the location is drawn on a floor the reader
+  // sees.
+  const plan = useAreaPlan("locations", l.id)
+  const hasPlan = (plan.data?.areas.length ?? 0) > 0
 
   return (
     <DetailShell
@@ -99,7 +106,7 @@ function Body({ location: l }: { location: Location }) {
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link
-              to="/topology"
+              to="/topology/map"
               search={{ group: "location" as const, location: l.id }}
             >
               <Network className="h-3.5 w-3.5" /> Topology
@@ -142,25 +149,46 @@ function Body({ location: l }: { location: Location }) {
       hero={
         <DetailHero
           title={
-            l.color || l.icon ? (
+            locationColor(l) || locationIcon(l) ? (
               <span className="inline-flex items-center gap-2">
-                <TileBadge color={l.color} icon={l.icon} className="h-6 w-6" />
+                <TileBadge
+                  color={locationColor(l)}
+                  icon={locationIcon(l)}
+                  className="h-6 w-6"
+                />
                 {l.name}
               </span>
             ) : (
               l.name
             )
           }
-          badges={<StatusBadge status={l.status} />}
+          badges={
+            <>
+              {l.location_type && (
+                <Link
+                  to="/location-types/$id"
+                  params={{ id: l.location_type.id }}
+                >
+                  <ColorBadge
+                    name={l.location_type.name}
+                    color={l.location_type.color || undefined}
+                  />
+                </Link>
+              )}
+              <StatusBadge status={l.status} />
+            </>
+          }
           description={l.description}
         />
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "rooms", label: "Rooms", count: l.room_count },
         { value: "devices", label: "Devices", count: l.device_count },
         { value: "racks", label: "Racks", count: l.rack_count },
         { value: "cabinets", label: "Cabinets", count: l.cabinet_count },
         { value: "prefixes", label: "Prefix ranges", count: rows.length },
+        ...(hasPlan ? [{ value: "plan" as const, label: "Floor plan" }] : []),
         { value: "documents", label: "Documents", count: l.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -170,6 +198,27 @@ function Body({ location: l }: { location: Location }) {
     >
       <DetailTab value="overview">
         <LocationOverview location={l} humanIds={humanIds} />
+      </DetailTab>
+      <DetailTab value="rooms">
+        <div className="space-y-3">
+          {canDo("room", "add") && (
+            <div className="flex justify-end">
+              <Button size="sm" asChild>
+                <Link
+                  to="/rooms/new"
+                  search={{ site: l.site?.id ?? undefined, location: l.id }}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add room
+                </Link>
+              </Button>
+            </div>
+          )}
+          <EmbeddedRoomTable
+            filter={{ location: l.id }}
+            omit={["site", "location"]}
+            emptyText="No rooms in this location yet."
+          />
+        </div>
       </DetailTab>
       <DetailTab value="devices">
         <EmbeddedDeviceTable
@@ -234,6 +283,11 @@ function Body({ location: l }: { location: Location }) {
           )}
         </div>
       </DetailTab>
+      {hasPlan && (
+        <DetailTab value="plan">
+          <AreaPlanTab owner="locations" id={l.id} />
+        </DetailTab>
+      )}
       <DetailTab value="documents">
         <ObjectDocuments objectType="api.location" objectId={l.id} />
       </DetailTab>
@@ -334,6 +388,24 @@ function LocationOverview({
       ) : (
         dash
       ),
+    },
+    {
+      label: "Type",
+      value: l.location_type ? (
+        <Link to="/location-types/$id" params={{ id: l.location_type.id }}>
+          <ColorBadge
+            name={l.location_type.name}
+            color={l.location_type.color || undefined}
+          />
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Code",
+      value: l.code ? <span className="font-mono">{l.code}</span> : dash,
+      copy: l.code || undefined,
     },
     { label: "Status", value: <StatusBadge status={l.status} /> },
   ]

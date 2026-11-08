@@ -65,9 +65,10 @@ const cardsOf = (nodes: ReturnType<typeof build>["nodes"]) =>
 
 const fabric: TopologyGraph = {
   ...fabricGraph,
-  nodes: fabricGraph.nodes.map(
-    (n): TopoNode => ({ ...n, data: { ...n.data, card: undefined } })
-  ),
+  nodes: fabricGraph.nodes.map((n): TopoNode => ({
+    ...n,
+    data: { ...n.data, card: undefined },
+  })),
 }
 
 /** Maps, and the least gap between two cables' parallel runs on each. On
@@ -314,11 +315,9 @@ describe("Bendy lines", () => {
   }
   const [[a, b]] = linkEnds(data, fw, srv, false)
   const lead = leadStart(srv, port)!
-  const w = (text: string) => endTextWidth(text, approxMeasure)
-  const runs = [
-    nubRun(true, false, [w("ethernet1/1")]),
-    nubRun(true, true, [w("Ethernet 1")]),
-  ] as const
+  // The labels follow the curve: it runs straight out of the photo
+  // port's lead only, whatever they say.
+  const runs = [nubRun(true, false, []), nubRun(true, true, [])] as const
   /** The line drawn while the server is dragged: the unplanned route
    * through the ends as they stand, then the photo port's lead. */
   const dragged = [...linkRoute("bendy", a, b, { runs }).pts, lead]
@@ -358,9 +357,20 @@ describe("Bendy lines", () => {
     const line = curvedPolyline(pts)
     return line.some((p, i) => i > 0 && segHitsRect(line[i - 1], p, box))
   }
-  // What it used to settle on: control points held to half the gap.
+  // What it used to settle on: control points held to half the gap, the
+  // curve straight past its labels.
   const gap = b.y - a.y
-  const held = [...bendyLine(a, b, runs[0], runs[1], [gap / 2, gap / 2]), lead]
+  const w = (text: string) => endTextWidth(text, approxMeasure)
+  const held = [
+    ...bendyLine(
+      a,
+      b,
+      nubRun(true, false, [w("ethernet1/1")]),
+      nubRun(true, true, [w("Ethernet 1")]),
+      [gap / 2, gap / 2]
+    ),
+    lead,
+  ]
   // Cards near the curve: touching the free curve's control polygon (not
   // the held one's, which kept clear of them), clear of the curve.
   const lenovo: [string, Rect] = ["lenovo", { x: 48, y: 214, w: 72, h: 46 }]
@@ -370,7 +380,7 @@ describe("Bendy lines", () => {
     const got = plan([lenovo, palo])
     expect(got.line).toBeUndefined()
     expect(got.pts).toEqual(dragged)
-    // Both port names on their straight runs.
+    // Both port names on the curve.
     expect(got.a).toBeTruthy()
     expect(got.b).toBeTruthy()
     // The cards touch the free curve's control polygon - a clearance

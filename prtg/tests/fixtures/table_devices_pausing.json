@@ -1,0 +1,1 @@
+{"prtg-version":"26.3.124.1727","treesize":1,"devices":[{"objid":2095,"objid_raw":2095,"name":"gw 10.0.0.0","name_raw":"gw 10.0.0.0","host":"10.0.0.1","host_raw":"10.0.0.1","status":"Up  (paused for 158 s)","status_raw":3,"message":"<div class=\"status\">OK<div class=\"moreicon\"></div></div>","message_raw":"OK","active":true,"active_raw":-1}]}

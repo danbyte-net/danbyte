@@ -108,40 +108,84 @@ export function linkOverride(
   return next.line || next.flip ? next : null
 }
 
+/** Where a link's Default line comes from, as its panel says it:
+ * "Bendy (from leaf-3a)", "Elbow (from band Leaf)". */
+export function lineSourceText(
+  line: LineType,
+  kind: "device" | "band",
+  name: string
+): string {
+  const look = LINE_LOOKS.find((l) => l.value === line)?.label ?? line
+  return `${look} (from ${kind === "band" ? "band " : ""}${name})`
+}
+
 /** A Diagram link's own line in the view - or the view's (Default) - and
- * the side a cyclical arc bulges to. */
+ * the side a cyclical arc bulges to. On Default, where an end's device or
+ * band chose the line, it says which (`nameOf` names it). */
 export function LinkLineRow({
   link,
   override,
   viewLine,
+  nameOf,
   onChange,
 }: {
   link: DiagramLinkRef
   override: TopologyLinkOverride | undefined
   viewLine: LineType
+  nameOf?: (kind: "device" | "band", id: string) => string | undefined
   onChange: (value: TopologyLinkOverride) => void
 }) {
-  const line = override?.line ?? viewLine
-  // The view's Cyclical arcs only the links it has to; the link's own
+  const inherited = override?.line ? undefined : link.inherited
+  const line = override?.line ?? inherited?.line ?? viewLine
+  // A Default Cyclical arcs only the links it has to; the link's own
   // always does.
   const arced =
     line === "cyclical" && (!!link.arc || override?.line === "cyclical")
   const side = override?.flip ?? link.arc ?? -1
   // No heading of its own: the panel's "Line" section heads it.
   return (
-    <div className="flex items-center gap-1">
-      <LineTabs<LineType | "default">
-        inherit
-        value={override?.line ?? "default"}
-        onChange={(v) =>
-          onChange({ ...override, line: v === "default" ? undefined : v })
-        }
-      />
-      {arced && (
-        <FlipArc
-          onFlip={() => onChange({ ...override, flip: side > 0 ? -1 : 1 })}
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1">
+        <LineTabs<LineType | "default">
+          inherit
+          value={override?.line ?? "default"}
+          onChange={(v) =>
+            onChange({ ...override, line: v === "default" ? undefined : v })
+          }
         />
+        {arced && (
+          <FlipArc
+            onFlip={() => onChange({ ...override, flip: side > 0 ? -1 : 1 })}
+          />
+        )}
+      </div>
+      {inherited && (
+        <p className="text-xs break-words text-muted-foreground">
+          {lineSourceText(
+            inherited.line,
+            inherited.kind,
+            nameOf?.(inherited.kind, inherited.id) ??
+              (inherited.kind === "band" ? "a band" : "a device")
+          )}
+        </p>
       )}
     </div>
+  )
+}
+
+/** A device's or band's own line: Default (unset) or a line type. */
+export function OwnLineTabs({
+  value,
+  onChange,
+}: {
+  value: LineType | undefined
+  onChange: (value: LineType | undefined) => void
+}) {
+  return (
+    <LineTabs<LineType | "default">
+      inherit
+      value={value ?? "default"}
+      onChange={(v) => onChange(v === "default" ? undefined : v)}
+    />
   )
 }

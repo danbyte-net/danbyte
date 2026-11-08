@@ -5,6 +5,7 @@ import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Paginated,
   ZabbixConnection,
@@ -60,7 +61,7 @@ export function ZabbixProvisionRules({
   const rules = useQuery({
     queryKey: ["zabbix-template-rules", connection.id],
     queryFn: () =>
-      api<Paginated<ZabbixProvisionRule>>(
+      apiAll<ZabbixProvisionRule>(
         `/api/zabbix/template-rules/?connection=${connection.id}`
       ),
   })

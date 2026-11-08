@@ -29,7 +29,10 @@ function ShippedStatePill({ state }: { state: CheckStatus }) {
   return (
     <span
       className="inline-flex h-5 items-center rounded-[5px] px-2 text-xs font-medium ring-1 ring-black/10 ring-inset dark:ring-white/10"
-      style={{ backgroundColor: STATUS_COLOR[state], color: STATUS_TEXT[state] }}
+      style={{
+        backgroundColor: STATUS_COLOR[state],
+        color: STATUS_TEXT[state],
+      }}
     >
       {STATUS_LABEL[state]}
     </span>
@@ -66,6 +69,7 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
     status?.suppresses_alerts ?? false
   )
   const [isClosed, setIsClosed] = useState(status?.is_closed ?? false)
+  const [isPlanned, setIsPlanned] = useState(status?.is_planned ?? false)
   const [monitoringState, setMonitoringState] = useState(
     status?.monitoring_state ?? ""
   )
@@ -82,6 +86,7 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
     setRequiresNote(status.requires_note)
     setSuppressesAlerts(status.suppresses_alerts)
     setIsClosed(status.is_closed)
+    setIsPlanned(status.is_planned ?? false)
     setMonitoringState(status.monitoring_state)
     reset()
   }, [status, reset])
@@ -114,6 +119,7 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
         requires_note: requiresNote,
         suppresses_alerts: suppressesAlerts,
         is_closed: isClosed,
+        is_planned: isPlanned,
         monitoring_state: monitoringState,
       }
       return saveObject<Status>({
@@ -266,6 +272,12 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
           hint="ends the event and its silence"
           checked={isClosed}
           onChange={setIsClosed}
+        />
+        <FormCheckbox
+          label="Planned"
+          hint="not built yet - cables draw as planned runs"
+          checked={isPlanned}
+          onChange={setIsPlanned}
         />
       </FormSection>
       <FormFooter

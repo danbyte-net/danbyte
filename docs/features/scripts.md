@@ -51,6 +51,32 @@ refused before the script starts, not halfway through.
 
 Scheduled runs use the parameters saved on the Schedule tab.
 
+### As a deploy target
+
+A script can be the runner behind an
+[automation target](iac-runner.md#danbyte-scripts-as-deploy-targets): a
+device's **Deploy** button then starts it with the deployed ids. For that
+it must declare a parameter named `device_ids`; a target refuses a script
+without one. A deploy also sets `event` (`manual`, `bulk`, `auto`, `drift`,
+`provision`) and `object_type` (`device`, or `virtualmachine` for a
+provision), plus the target's extra vars. A dry-run deploy adds
+`dry_run: true`. As a step of a [deploy pipeline](deploy-pipelines.md) it
+also gets `pipeline_run_id`, `step`, `dry_run` and `steps`, the earlier
+steps with their status and output download links.
+
+From a deploy, `device_ids` is always a list of id strings. Pressing
+**Run** by hand passes whatever the Run dialog sends, so a script used both
+ways should accept either:
+
+```python
+ids = run.param("device_ids") or []
+if isinstance(ids, str):
+    ids = [ids]
+```
+
+The deploy run takes its final status from the script run: exit code 0 is
+`succeeded`, anything else (an error, a timeout, a stop) is `failed`.
+
 ## What a script may do
 
 Every run gets a **run token**: an API key minted for that run only, as the
@@ -227,9 +253,27 @@ name is kept, so TLS still checks it. With an `https`
 |---|---|
 | `script: view` | See the scripts shared with them |
 | `script: add` / `change` / `delete` | Author and manage scripts |
-| `script: run` | Run one, and stop a run |
-| `script: trust` | Mark a script trusted, edit one without clearing that, and edit or schedule scripts that run as their owner |
+| `script: run` | Run one, and stop a run; also needed to set it on, or deploy through, a script deploy target |
+| `script: trust` | Mark a script trusted, edit one without clearing that, edit or schedule scripts that run as their owner, and set or deploy through a trusted script on a deploy target |
 | `scripts.publish` | Publish a script to everyone in the tenant |
+
+## Bulk changes
+
+Tick rows in the script list - with `script: change` or `delete` - to reveal the
+bulk bar. Every action reaches only the scripts you can see, as the list does:
+
+- **Enable** and **Disable** switch every selected script on or off.
+- **Export** downloads the selected scripts as CSV, Excel or JSON. Export and
+  import, here and from **Import / Export**, read only the scripts you can see:
+  a private script of someone else's never leaves in a file, and an import does
+  not match it.
+- **Edit** sets **Enabled** or the **Description**. The code, who it runs as,
+  its sharing and its schedule stay per script, under the rules above.
+- **Delete** first shows what would happen - with the runs that go along - then
+  deletes the scripts.
+
+`POST /api/scripts/bulk-update/` needs `script: change`;
+`POST /api/scripts/bulk-delete/` needs `script: delete`.
 
 ## From the shell
 

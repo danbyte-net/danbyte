@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowDown, ArrowUp, X } from "lucide-react"
+import { AlertTriangle, ArrowDown, ArrowUp, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type { CableRouting, TrayRef } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { FormCombobox } from "@/components/forms"
+import { Loading } from "@/components/loading"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -55,6 +56,9 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
     setMode(routing.data.mode)
     setChosen(routing.data.trays)
   }, [routing.data])
+  // The last save's verdict: only the PUT says whether the trays named
+  // connect the ends. Cleared when the draft changes.
+  const [unrouted, setUnrouted] = useState<string | null>(null)
 
   const save = useMutation({
     mutationFn: (trayIds: string[]) =>
@@ -67,6 +71,16 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
       qc.invalidateQueries({ queryKey: ["cable", cableId] })
       // The room and the flat canvas both draw from this.
       qc.invalidateQueries({ queryKey: ["floor-plan-cable-paths"] })
+      if (r.reachable === false) {
+        setUnrouted(r.detail ?? "The trays don't connect the ends.")
+        toast.warning("Not routed", { description: r.detail })
+        return
+      }
+      setUnrouted(null)
+      if (r.reachable == null && r.detail) {
+        toast.message("Trays assigned", { description: r.detail })
+        return
+      }
       toast.success(
         r.mode === "trays"
           ? `Routed via ${r.trays.map((t) => t.name).join(" → ")}`
@@ -93,12 +107,17 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
     (mode !== saved.mode ||
       chosen.map((t) => t.id).join() !== saved.trays.map((t) => t.id).join())
 
+  const edit = (next: TrayRef[]) => {
+    setChosen(next)
+    setUnrouted(null)
+  }
+
   const move = (i: number, by: number) => {
     const next = [...chosen]
     const j = i + by
     if (j < 0 || j >= next.length) return
     ;[next[i], next[j]] = [next[j], next[i]]
-    setChosen(next)
+    edit(next)
   }
 
   return (
@@ -112,7 +131,7 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
             value={mode}
             onValueChange={(m) => {
               setMode(m)
-              if (m === "point-to-point") setChosen([])
+              if (m === "point-to-point") edit([])
             }}
             items={[
               { value: "point-to-point", label: "Point-to-point" },
@@ -123,13 +142,24 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
       </div>
 
       {routing.isLoading ? (
-        <p className="mt-3 text-sm text-muted-foreground">Loading routing…</p>
+        <Loading className="mt-3" />
       ) : mode === "point-to-point" ? (
         <p className="mt-3 text-sm text-muted-foreground">
           Drawn as a direct A↔B run - this cable follows no tray.
         </p>
       ) : (
         <div className="mt-3 space-y-2">
+          {unrouted && !dirty && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-medium">
+                  Not routed – trays don't connect the ends
+                </p>
+                <p>{unrouted}</p>
+              </div>
+            </div>
+          )}
           {chosen.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No trays picked yet. Add them in the order the cable travels.
@@ -175,7 +205,7 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
                         variant="ghost"
                         className="h-6 w-6 text-destructive hover:text-destructive"
                         onClick={() =>
-                          setChosen(chosen.filter((c) => c.id !== t.id))
+                          edit(chosen.filter((c) => c.id !== t.id))
                         }
                         title="Remove from the run"
                       >
@@ -194,7 +224,7 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
               value={null}
               onChange={(id) => {
                 const t = unused.find((x) => x.id === id)
-                if (t) setChosen([...chosen, t])
+                if (t) edit([...chosen, t])
               }}
               options={unused.map((t) => ({
                 value: t.id,
@@ -218,7 +248,7 @@ export function CableRoutingCard({ cableId }: { cableId: string }) {
             disabled={save.isPending}
             onClick={() => save.mutate(chosen.map((t) => t.id))}
           >
-            {save.isPending ? "Saving..." : "Save routing"}
+            {save.isPending ? "Saving…" : "Save routing"}
           </Button>
           <Button
             size="sm"

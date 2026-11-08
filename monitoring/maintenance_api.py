@@ -14,7 +14,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from api.serializers import StatusSerializerMixin
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
+from api.serializers import StatusSerializerMixin, TenantScopedModelSerializer
 from api.viewsets import TenantScopedViewSet
 
 from .models import (
@@ -24,7 +25,7 @@ from .models import (
 )
 
 
-class EventImpactSerializer(serializers.ModelSerializer):
+class EventImpactSerializer(TenantScopedModelSerializer):
     class Meta:
         model = EventImpact
         fields = [
@@ -53,7 +54,7 @@ class EventImpactSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MaintenanceEventSerializer(StatusSerializerMixin, serializers.ModelSerializer):
+class MaintenanceEventSerializer(StatusSerializerMixin, TenantScopedModelSerializer):
     """Status is a row from the tenant's /statuses catalog - nested on read,
     ``status_id`` on write, exactly like every other statusable model."""
 
@@ -107,13 +108,24 @@ class MaintenanceEventSerializer(StatusSerializerMixin, serializers.ModelSeriali
         return attrs
 
 
-class MaintenanceEventViewSet(TenantScopedViewSet):
+class MaintenanceEventViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = (
         MaintenanceEvent.objects.select_related("provider", "status")
         .prefetch_related("impacts")
         .order_by("-starts_at")
     )
     serializer_class = MaintenanceEventSerializer
+    # The window, kind and impacts belong to one event: not bulk edits. A
+    # status runs through the serializer's checks for each row, as a PATCH.
+    bulk_edit = BulkEditSpec(fields=("status_id", "description"), tags=False)
+
+    def after_bulk_update(self, pks, updates):
+        """A new status may start or retire the window's alert silence, as
+        a single edit's ``perform_update`` does."""
+        if "status_id" not in updates:
+            return
+        for event in MaintenanceEvent.objects.filter(pk__in=pks).select_related("status"):
+            event.sync_silence()
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -153,10 +165,19 @@ class MaintenanceEventViewSet(TenantScopedViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(
-            tenant=self._tenant_or_403(), created_by=self.request.user
-        )
-        serializer.instance.sync_silence()
+        # ``impacts`` may come along on a create - the derived impact of a
+        # power or cooling source's Affected tab (#434) - and is written
+        # exactly as ``ingest`` writes a parser's, in the same transaction.
+        data = self.request.data
+        impacts = data.get("impacts") if isinstance(data, dict) else None
+        if impacts is not None and not isinstance(impacts, list):
+            raise ValidationError({"impacts": "A list of impacts."})
+        tenant = self._tenant_or_403()
+        with transaction.atomic():
+            event = serializer.save(tenant=tenant, created_by=self.request.user)
+            if impacts:
+                _write_impacts(self.request, tenant, event, impacts)
+        event.sync_silence()
 
     def perform_update(self, serializer):
         super().perform_update(serializer)
@@ -237,30 +258,8 @@ class MaintenanceEventViewSet(TenantScopedViewSet):
                 **({} if existing else {"created_by": request.user}),
             )
             if impacts is not None:
-                from audit.api import _can_view_object, _object_site_id
-                from auth_api.object_types import label_for
-
                 event.impacts.all().delete()
-                for row in impacts:
-                    label = label_for(str(row.get("object_type", "")))
-                    oid = row.get("object_id")
-                    if label is None or not oid:
-                        raise ValidationError(
-                            {"impacts": "Each impact needs object_type and object_id."}
-                        )
-                    if not _can_view_object(request, label, str(oid)):
-                        raise PermissionDenied(
-                            "Impact on an object this token cannot view."
-                        )
-                    EventImpact.objects.create(
-                        tenant=tenant,
-                        event=event,
-                        object_type=label,
-                        object_id=oid,
-                        object_site_id=_object_site_id(label, str(oid)),
-                        level=row.get("level", "outage"),
-                        note=str(row.get("note", ""))[:255],
-                    )
+                _write_impacts(request, tenant, event, impacts)
             event.sync_silence()
 
         return Response(
@@ -308,6 +307,39 @@ class EventImpactViewSet(TenantScopedViewSet):
         event = instance.event
         super().perform_destroy(instance)
         event.sync_silence()
+
+
+def _write_impacts(request, tenant, event, impacts) -> None:
+    """Add ``impacts`` (``[{object_type, object_id, level?, note?}]``) to
+    ``event`` - each object first passing the caller's own view RBAC. Shared
+    by ``ingest`` and a create that brings its impacts along."""
+    from audit.api import _can_view_object, _object_site_id
+    from auth_api.object_types import label_for
+
+    levels = {v for v, _ in EventImpact._meta.get_field("level").choices or ()}
+    for row in impacts:
+        if not isinstance(row, dict):
+            raise ValidationError({"impacts": "Each impact is an object."})
+        label = label_for(str(row.get("object_type", "")))
+        oid = row.get("object_id")
+        if label is None or not oid:
+            raise ValidationError(
+                {"impacts": "Each impact needs object_type and object_id."}
+            )
+        level = row.get("level", "outage")
+        if levels and level not in levels:
+            raise ValidationError({"impacts": f"Unknown impact level {level!r}."})
+        if not _can_view_object(request, label, str(oid)):
+            raise PermissionDenied("Impact on an object this token cannot view.")
+        EventImpact.objects.create(
+            tenant=tenant,
+            event=event,
+            object_type=label,
+            object_id=oid,
+            object_site_id=_object_site_id(label, str(oid)),
+            level=level,
+            note=str(row.get("note", ""))[:255],
+        )
 
 
 def _looks_like_uuid(value) -> bool:

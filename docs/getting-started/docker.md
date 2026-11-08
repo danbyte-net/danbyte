@@ -73,13 +73,17 @@ matching lines in the compose file to have `bootstrap` do it):
 | `workers`  | app (`runtime`)      | `rqworker-pool` (`RQ_WORKERS` processes; ICMP-capable) |
 | `scheduler`| app (`runtime`)      | the periodic beat - the container's systemd timers |
 | `frontend` | node (`frontend`)    | the SPA server (`vite preview`) - SSR build      |
-| `web`      | nginx (`web`)        | proxies the SPA + `/api` `/ws`, serves `/static` `/media`; HTTP :80 + HTTPS :443 |
+| `web`      | nginx (`web`)        | proxies the SPA + `/api` `/ws`, serves `/assets` `/static` `/media`; HTTP :80 + HTTPS :443 |
 
 WebSockets run as a **separate daphne process**, never channels-in-`runserver` -
 putting ASGI in front of all HTTP wedges plain requests. The frontend is a
-TanStack Start **SSR** build, so `web` proxies `/` to the `frontend` node server
-rather than serving files. Collected static and uploaded media live on shared
-volumes the backend writes and nginx serves.
+TanStack Start **SSR** build, so `web` proxies the pages to the `frontend` node
+server. The build's hashed files under `/assets/` are copied into the `web`
+image from the same build and served by nginx, cached for a year as
+`immutable` and sent as the `.gz` the build writes. Build `web` and `frontend`
+together (`docker compose build` does); an asset the `web` image lacks still
+comes from the `frontend` server, uncached. Collected static and uploaded media
+live on shared volumes the backend writes and nginx serves.
 
 ### The scheduler
 
@@ -98,7 +102,7 @@ What it runs, at the same cadence as the timers:
 | every minute | dispatch due checks, SNMP drift, Outpost work, alert escalation |
 | every 5 min | materialise check assignments, discover subnets |
 | every 15/30 min | prefix utilisation, hardware health |
-| daily | ACME renewal, retention, stale-IP cleanup, link check, certificate expiry, digest |
+| daily | ACME renewal, retention, stale-IP cleanup, flow requirement sweep, link check, certificate expiry, digest |
 
 `manage.py run_scheduler --list` prints the table. Auto-upgrade is the one timer
 a container does **not** run: the image is the unit of upgrade, so you deploy a
@@ -200,6 +204,12 @@ bug.
 (`HTTPS_PORT`, default 8443) with a **self-signed** cert baked into the image -
 so browsers that force HTTPS still connect (one-time cert warning). Put a real
 TLS terminator in front for production and set `DANBYTE_HTTPS=True`.
+
+The documentation is built into the `web` image (`zensical build` in the
+Dockerfile's `docs` stage) and served as static files at **`/docs/`** on the
+same ports, e.g. `http://localhost:8080/docs/`. The in-app Docs links point
+there; there is no separate docs container. Rebuilding `web` picks up docs
+changes.
 
 ## Environment
 

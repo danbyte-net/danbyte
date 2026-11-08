@@ -5,14 +5,16 @@ import { Play } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, Script } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Script } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
-import { RowActions } from "@/components/row-actions"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { BulkFlagActions } from "@/components/bulk-flag-actions"
 import { buildScriptColumns } from "@/components/columns/script-columns"
 import {
   ScriptCreateDialog,
@@ -25,6 +27,9 @@ export const Route = createFileRoute("/scripts/")({
   component: ScriptsPage,
 })
 
+const ENDPOINT = "/api/scripts/"
+const NOUN: [string, string] = ["script", "scripts"]
+
 function ScriptsPage() {
   const { canDo } = useMe()
   const qc = useQueryClient()
@@ -36,7 +41,7 @@ function ScriptsPage() {
   const query = useQuery({
     queryKey: ["scripts", q],
     queryFn: () =>
-      api<Paginated<Script>>(
+      apiAll<Script>(
         `/api/scripts/?${new URLSearchParams(q ? { search: q } : {})}`
       ),
   })
@@ -56,43 +61,40 @@ function ScriptsPage() {
     onError: (e) => apiErrorToast(e),
   })
 
-  const columns = useMemo(() => {
-    const base = buildScriptColumns()
-    return [
-      ...base,
-      {
-        id: "actions",
-        header: "",
-        enableHiding: false,
-        cell: ({ row }: { row: { original: Script } }) => (
-          <RowActions
-            editTo="/scripts/$id"
-            editParams={{ id: row.original.id }}
-            onDelete={
-              objCan(row.original, "delete", canDo("script", "delete"))
-                ? () => setDeleting(row.original)
-                : undefined
-            }
-            extra={
-              row.original.permissions?.run && row.original.enabled ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                  title="Run now"
-                  disabled={runNow.isPending}
-                  onClick={() => runNow.mutate(row.original)}
-                >
-                  <Play className="h-3.5 w-3.5" />
-                  <span className="sr-only">Run now</span>
-                </Button>
-              ) : null
-            }
-          />
-        ),
-      },
-    ]
-  }, [canDo, runNow])
+  const canEdit = canDo("script", "change")
+  const canDelete = canDo("script", "delete")
+  const selectable = canEdit || canDelete
+  const [selected, setSelected] = useState<Script[]>([])
+  const clear = () => setSelected([])
+  const runScript = runNow.mutate
+  const running = runNow.isPending
+  const columns = useMemo(
+    () =>
+      buildScriptColumns({
+        selection: selectable,
+        actions: {
+          editTo: "/scripts/$id",
+          editParams: (s) => ({ id: s.id }),
+          onDelete: setDeleting,
+          canDelete: (s) => objCan(s, "delete", canDelete),
+          extra: (s) =>
+            s.permissions?.run && s.enabled ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                title="Run now"
+                disabled={running}
+                onClick={() => runScript(s)}
+              >
+                <Play className="h-3.5 w-3.5" />
+                <span className="sr-only">Run now</span>
+              </Button>
+            ) : null,
+        },
+      }),
+    [canDelete, selectable, runScript, running]
+  )
 
   const {
     rail,
@@ -133,8 +135,32 @@ function ScriptsPage() {
           columns={wired}
           flexColumn="description"
           tableId="scripts"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint={ENDPOINT}
+        noun={NOUN}
+        invalidate={[["scripts"]]}
+        onCleared={clear}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="script"
+        actions={
+          canEdit && (
+            <BulkFlagActions
+              endpoint={ENDPOINT}
+              field="enabled"
+              ids={selected.map((s) => s.id)}
+              noun={NOUN}
+              invalidate={[["scripts"]]}
+              onDone={clear}
+            />
+          )
+        }
+      />
       {creating && <ScriptCreateDialog onClose={() => setCreating(false)} />}
       <ScriptDeleteDialog
         item={deleting}

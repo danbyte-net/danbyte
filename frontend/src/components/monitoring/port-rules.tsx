@@ -4,7 +4,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
@@ -67,8 +68,7 @@ export function PortRulesList() {
   const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["port-utilization-rules"],
-    queryFn: () =>
-      api<Paginated<PortRule>>("/api/monitoring/port-utilization-rules/"),
+    queryFn: () => apiAll<PortRule>("/api/monitoring/port-utilization-rules/"),
   })
   const [editing, setEditing] = useState<PortRule | null | "new">(null)
   const rows = q.data?.results ?? []
@@ -230,17 +230,13 @@ function PortRuleForm({
   const types = useQuery({
     queryKey: ["device-types-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/device-types/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/device-types/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/device-roles/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/device-roles/?picker=1"),
     staleTime: 5 * 60_000,
   })
 

@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type Site } from "@/lib/api"
+import { type Site } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildSiteColumns } from "@/components/columns/site-columns"
@@ -33,7 +34,7 @@ function SitesPage() {
   const query = useQuery({
     queryKey: ["sites", q],
     queryFn: () =>
-      api<Paginated<Site>>(
+      apiAll<Site>(
         `/api/sites/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

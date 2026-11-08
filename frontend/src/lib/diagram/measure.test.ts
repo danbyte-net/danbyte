@@ -7,7 +7,51 @@ import {
   canvasWidth,
   fit,
   measureText,
+  wrapText,
 } from "./measure"
+import type { Measure } from "./measure"
+
+describe("wrapText", () => {
+  // Every character half its font size wide: 5 px at size 10.
+  const mono: Measure = (t, size) => (Array.from(t).length * size) / 2
+  const wrap = (t: string, maxW: number) => wrapText(t, maxW, 10, 700, mono)
+
+  it("keeps a text that fits on one row", () => {
+    expect(wrap("leaf-01", 100)).toEqual(["leaf-01"])
+    expect(wrap("  ", 100)).toEqual([])
+  })
+
+  it("breaks at spaces, every row within the width", () => {
+    const rows = wrap("Sede Ceas de Medicina Interna", 60)
+    expect(rows).toEqual(["Sede Ceas de", "Medicina", "Interna"])
+    for (const r of rows) expect(mono(r, 10)).toBeLessThanOrEqual(60)
+  })
+
+  it("breaks after separators in a name without spaces", () => {
+    expect(wrap("core-sw01.dc1.example.com", 60)).toEqual([
+      "core-sw01.",
+      "dc1.example.",
+      "com",
+    ])
+  })
+
+  it("splits a part wider than a row by letters, never with an ellipsis", () => {
+    const rows = wrap("x".repeat(25), 50)
+    expect(rows).toEqual(["x".repeat(10), "x".repeat(10), "x".repeat(5)])
+    expect(rows.join("")).toBe("x".repeat(25))
+    expect(rows.some((r) => r.includes("…"))).toBe(false)
+  })
+
+  it("measures with the measure it is given", () => {
+    const name = "Sede Ceas de Medicina Interna Bloco Norte"
+    const maxW = 120
+    const rows = wrapText(name, maxW, 12, 700, approxMeasure)
+    expect(rows.length).toBeGreaterThan(1)
+    for (const r of rows)
+      expect(approxMeasure(r, 12, 700)).toBeLessThanOrEqual(maxW)
+    expect(rows.join(" ")).toBe(name)
+  })
+})
 
 // Card sizes come from these widths, so they must be deterministic where
 // there is no canvas (tests, SSR) and never clip Inter.

@@ -20,6 +20,25 @@ _via: contextvars.ContextVar = contextvars.ContextVar("audit_via", default="")
 _suspended: contextvars.ContextVar = contextvars.ContextVar(
     "audit_suspended", default=False
 )
+# Why the writes in a block happen, when they derive from another change
+# ("Requirement 'WMS to Broker': install added on wms-07"). Read by every
+# change-log entry written inside :func:`cause`.
+_cause: contextvars.ContextVar = contextvars.ContextVar("audit_cause", default="")
+
+
+@contextlib.contextmanager
+def cause(text: str):
+    """Record ``text`` as the cause of every change-log entry written in the
+    block. Nested blocks replace it for their duration."""
+    token = _cause.set((text or "")[:255])
+    try:
+        yield
+    finally:
+        _cause.reset(token)
+
+
+def current_cause() -> str:
+    return _cause.get()
 
 
 @contextlib.contextmanager

@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Circuit, type Paginated } from "@/lib/api"
+import { type Circuit } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
@@ -35,7 +36,7 @@ function CircuitsPage() {
   const query = useQuery({
     queryKey: ["circuits", q],
     queryFn: () =>
-      api<Paginated<Circuit>>(
+      apiAll<Circuit>(
         `/api/circuits/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

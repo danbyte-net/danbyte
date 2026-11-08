@@ -24,7 +24,7 @@ from django.apps import apps
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
-           "view_credits", "set_default", "view_config", "view_cost"]
+           "view_credits", "set_default", "view_config", "view_cost", "provision"]
 
 # Types an "all object types" ("*") grant does NOT reach. Adding or changing
 # these IS administration - accounts, group membership and the grants
@@ -61,13 +61,17 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     "ipsecprofile": ["reveal"],
     # A routing keychain holds the BGP / OSPF / IS-IS key.
     "routingkeychain": ["reveal"],
+    # An SSH RPKI cache's private key.
+    "rpkicache": ["reveal"],
     # An FHRP group's authentication key (#383).
     "fhrpgroup": ["reveal"],
     # Read the device's running configuration from Oxidized (#35). A config
     # holds communities, hashes and keys, so device.view never implies it.
     "device": ["connect", "view_config"],
     # The same for a virtual router modelled as a VM (#384).
-    "virtualmachine": ["view_config"],
+    # Send an intended VM to an automation runner to be built. Danbyte
+    # never calls a hypervisor's write API; the runner does the build.
+    "virtualmachine": ["view_config", "provision"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
     # An agreement's service credits are money; seeing them is its own grant.
@@ -96,6 +100,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # SITE_PATHS["sitesettings"] = "site".
     ("core.SiteSettings", "Site settings", "Organization"),
     ("api.Location", "Locations", "Organization"),
+    ("api.LocationType", "Location types", "Organization"),
+    ("api.AreaType", "Area types", "Organization"),
+    ("api.Room", "Rooms", "Organization"),
     ("api.Contact", "Contacts", "Organization"),
     ("api.ContactGroup", "Contact groups", "Organization"),
     ("api.ContactRole", "Contact roles", "Organization"),
@@ -106,9 +113,11 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.CircuitType", "Circuit types", "Circuits"),
     ("api.Circuit", "Circuits", "Circuits"),
     ("api.CircuitTermination", "Circuit terminations", "Circuits"),
-    # ─── Power ──────────────────────────────────────────────────────
-    ("api.PowerPanel", "Power panels", "Power"),
-    ("api.PowerFeed", "Power feeds", "Power"),
+    # ─── Power & cooling ────────────────────────────────────────────
+    ("api.PowerPanel", "Power panels", "Power & cooling"),
+    ("api.PowerFeed", "Power feeds", "Power & cooling"),
+    ("api.CoolingSource", "Cooling sources", "Power & cooling"),
+    ("api.CoolingFeed", "Cooling feeds", "Power & cooling"),
     # ─── Wireless ───────────────────────────────────────────────────
     ("api.WirelessLANGroup", "Wireless LAN groups", "Wireless"),
     ("api.WirelessLAN", "Wireless LANs", "Wireless"),
@@ -146,12 +155,16 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("routing.RoutingPolicyRule", "Routing policy rules", "Routing"),
     ("routing.RoutingKeychain", "Routing keychains", "Routing"),
     ("routing.BFDProfile", "BFD profiles", "Routing"),
+    ("routing.RPKICache", "RPKI caches", "Routing"),
+    ("routing.ROA", "ROAs", "Routing"),
     ("routing.StaticRoute", "Static routes", "Routing"),
+    ("routing.PolicyRule", "Policy rules", "Routing"),
     ("routing.BGPInstance", "BGP instances", "Routing"),
     ("routing.BGPAddressFamily", "BGP address families", "Routing"),
     ("routing.Redistribution", "Redistributions", "Routing"),
     ("routing.BGPPeerGroup", "BGP peer groups", "Routing"),
     ("routing.BGPSession", "BGP sessions", "Routing"),
+    ("routing.BGPNeighborAF", "BGP neighbour address families", "Routing"),
     ("routing.OSPFArea", "OSPF areas", "Routing"),
     ("routing.OSPFInstance", "OSPF instances", "Routing"),
     ("routing.OSPFInterface", "OSPF interfaces", "Routing"),
@@ -162,6 +175,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("routing.VTEP", "VTEPs", "Routing"),
     ("routing.VTEPMembership", "VTEP memberships", "Routing"),
     ("routing.EthernetSegment", "Ethernet segments", "Routing"),
+    ("routing.EthernetSegmentMember", "Ethernet segment members", "Routing"),
     ("routing.LDPInstance", "LDP instances", "Routing"),
     ("zabbix.ZabbixConnection", "Zabbix connections", "Monitoring"),
     ("zabbix.ZabbixHostLink", "Zabbix host links", "Monitoring"),
@@ -169,6 +183,20 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("zabbix.ZabbixProvisionRule", "Zabbix provisioning rules", "Monitoring"),
     ("zabbix.ZabbixMaintenance", "Zabbix maintenance windows", "Monitoring"),
     ("zabbix.ZabbixAdoptionRule", "Zabbix adoption rules", "Monitoring"),
+    ("prtg.PrtgConnection", "PRTG connections", "Monitoring"),
+    ("prtg.PrtgDeviceLink", "PRTG device links", "Monitoring"),
+    ("prtg.PrtgSensor", "PRTG sensors", "Monitoring"),
+    ("prtg.PrtgChange", "PRTG pending changes", "Monitoring"),
+    ("prtg.PrtgAdoptionRule", "PRTG adoption rules", "Monitoring"),
+    ("prtg.PrtgHostFacts", "PRTG system information", "Monitoring"),
+    ("prtg.PrtgSensorPin", "PRTG sensor pins", "Monitoring"),
+    ("prtg.PrtgSensorOverride", "PRTG sensor overrides", "Monitoring"),
+    ("prtg.PrtgPolicy", "PRTG policies", "Monitoring"),
+    ("prtg.PrtgRetireRule", "PRTG retirement rules", "Monitoring"),
+    ("prtg.PrtgSensorProfile", "PRTG sensor profiles", "Monitoring"),
+    ("prtg.PrtgSensorDefinition", "PRTG sensor definitions", "Monitoring"),
+    ("prtg.PrtgCredential", "PRTG credentials", "Monitoring"),
+    ("prtg.PrtgGroupLink", "PRTG layout groups", "Monitoring"),
     ("oxidized.OxidizedConnection", "Oxidized connections", "Integrations"),
     ("oxidized.OxidizedNodeLink", "Oxidized node links", "Integrations"),
     ("api.Service", "Services", "IPAM"),
@@ -180,6 +208,21 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.DeviceRole", "Device roles", "DCIM"),
     ("api.PlatformGroup", "Platform groups", "DCIM"),
     ("api.Platform", "Platforms", "DCIM"),
+    # Applications and installed software (#436).
+    ("api.Application", "Applications", "DCIM"),
+    ("api.InstalledSoftware", "Installed software", "DCIM"),
+    ("api.ApplicationGroup", "Application groups", "DCIM"),
+    ("api.ApplicationGroupMember", "Application group members", "DCIM"),
+    ("api.ApplicationGroupAssignment", "Application group assignments", "DCIM"),
+    # Device profiles: a use case given to devices and VMs in one step.
+    ("profiles.DeviceProfile", "Device profiles", "DCIM"),
+    ("profiles.DeviceProfileAssignment", "Device profile assignments", "DCIM"),
+    # Application flows (#163).
+    ("api.ApplicationFlow", "Application flows", "DCIM"),
+    # Flows with variable ends ("the hosts of an application"); the resolver
+    # documents them as generated flows. A tenant-wide catalog; the
+    # exclusions are part of their requirement.
+    ("api.ApplicationFlowRequirement", "Application flow requirements", "DCIM"),
     ("api.Manufacturer", "Manufacturers", "DCIM"),
     # Support & warranty coverage (#421).
     ("api.SupportContract", "Support contracts", "DCIM"),
@@ -199,11 +242,15 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.ConsoleServerPort", "Console server ports", "DCIM"),
     ("api.PowerPort", "Power ports", "DCIM"),
     ("api.PowerOutlet", "Power outlets", "DCIM"),
+    ("api.CoolingIntake", "Cooling intakes", "DCIM"),
+    ("api.CoolingOutflow", "Cooling outflows", "DCIM"),
     ("api.InterfaceTemplate", "Interface templates", "DCIM"),
     ("api.ConsolePortTemplate", "Console port templates", "DCIM"),
     ("api.ConsoleServerPortTemplate", "Console server port templates", "DCIM"),
     ("api.PowerPortTemplate", "Power port templates", "DCIM"),
     ("api.PowerOutletTemplate", "Power outlet templates", "DCIM"),
+    ("api.CoolingIntakeTemplate", "Cooling intake templates", "DCIM"),
+    ("api.CoolingOutflowTemplate", "Cooling outflow templates", "DCIM"),
     ("api.RearPortTemplate", "Rear port templates", "DCIM"),
     ("api.FrontPortTemplate", "Front port templates", "DCIM"),
     ("api.Cable", "Cables", "DCIM"),
@@ -211,12 +258,17 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.PortReservation", "Port reservations", "DCIM"),
     ("api.VirtualChassis", "Virtual chassis", "DCIM"),
     ("api.FloorPlan", "Floor plans", "DCIM"),
+    ("api.FloorPlanStack", "Floor plan stacks", "DCIM"),
     ("api.FloorPlanTile", "Floor-plan tiles", "DCIM"),
     ("api.FloorPlanDrawing", "Floor-plan drawings", "DCIM"),
     ("api.FloorPlanTray", "Floor-plan cable trays", "DCIM"),
     ("api.FloorPlanRaisedFloorArea", "Floor-plan raised floors", "DCIM"),
     ("api.FloorPlanWall", "Floor-plan walls", "DCIM"),
+    ("api.FloorPlanArea", "Floor-plan areas", "DCIM"),
+    ("api.FloorPlanLabel", "Floor-plan labels", "DCIM"),
+    ("api.FloorPlanCablePath", "Floor-plan cable paths", "DCIM"),
     ("api.SiteMarker", "Site-map markers", "DCIM"),
+    ("api.SiteMapOutline", "Site-map outlines", "DCIM"),
     ("api.TopologyView", "Topology views", "DCIM"),
     ("api.AuxPort", "Aux ports", "DCIM"),
     ("api.Antenna", "Antennas", "DCIM"),
@@ -282,8 +334,18 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("monitoring.MonitoringProfile", "Monitoring profiles", "Monitoring"),
     ("monitoring.MonitoringDenySubnet", "Monitoring deny subnets", "Monitoring"),
     ("compliance.ComplianceRule", "Compliance rules", "Governance"),
+    # Acknowledge, snooze and reopen a rule's violations. Its own grant: rule
+    # editing never implies triage, nor triage rule editing. Tenant-wide - a
+    # row names its object generically, and the triage endpoint checks that
+    # the caller may view each object (see site_paths.SITE_PATHS).
+    ("compliance.ComplianceTriage", "Compliance triage", "Governance"),
+    # A tenant's own end-of-life products and their cycles, for what the
+    # public catalog lacks. Tenant-wide like applications and platforms; the
+    # sources' catalog rows (tenant NULL) are not reachable through it.
+    ("compliance.EolProduct", "End-of-life products", "Governance"),
     # ─── Customize ──────────────────────────────────────────────────
     ("api.Status", "Statuses", "Customize"),
+    ("api.SensitivityLabel", "Sensitivity labels", "Customize"),
     # CustomField + CustomFieldGroup live in the `customization` app, not `api` -
     # the old "api.CustomField" path silently failed to resolve (LookupError →
     # skipped), leaving custom-field management RBAC-uncontrolled.
@@ -305,6 +367,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.Webhook", "Webhooks", "Integrations"),
     ("integrations.AutomationTarget", "Automation targets", "Integrations"),
     ("integrations.DeployRun", "Config deploy runs", "Integrations"),
+    ("integrations.DeployPipeline", "Deploy pipelines", "Integrations"),
+    ("integrations.DeployPipelineRun", "Deploy pipeline runs", "Integrations"),
     ("integrations.DeviceConfigSnapshot", "Device config snapshots", "Integrations"),
     ("integrations.DeviceConfigState", "Device config state", "Integrations"),
     ("integrations.WindowsServerConnection", "Windows server connections", "Integrations"),

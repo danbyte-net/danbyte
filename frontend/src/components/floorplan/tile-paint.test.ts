@@ -242,6 +242,75 @@ describe("rack figures", () => {
     expect(metricRatio(f, "ports")).toBe(36 / 48)
     expect(rackFigures(null, null)).toBeNull()
   })
+
+  it("take cooling from the live poll over the plan's row (#434)", () => {
+    const cooling = (available_w: number, heat_allocated_w: number) => ({
+      available_w,
+      heat_allocated_w,
+      heat_maximum_w: heat_allocated_w,
+      supply: available_w > 0 ? ("budget" as const) : null,
+      mismatched: 0,
+    })
+    const row = { used_units: 1, u_height: 42, cooling: cooling(10_000, 1_000) }
+    const live = {
+      kind: "rack" as const,
+      used_units: 1,
+      u_height: 42,
+      power: { available_w: 0, allocated_w: 0, maximum_w: 0 },
+      cooling: cooling(10_000, 9_000),
+      total_weight_kg: 0,
+      max_weight_kg: null,
+      device_count: 1,
+      check: null,
+    }
+    expect(
+      metricRatio(rackFigures(row as unknown as Rack, live)!, "cooling")
+    ).toBe(0.9)
+    expect(
+      metricRatio(rackFigures(row as unknown as Rack, null)!, "cooling")
+    ).toBe(0.1)
+    // No capacity, or no figure at all: nothing to measure.
+    expect(metricRatio(fig({ cooling: cooling(0, 900) }), "cooling")).toBeNull()
+    expect(metricRatio(fig(), "cooling")).toBeNull()
+  })
+})
+
+describe("Color by cooling (#434)", () => {
+  const cooling = (available_w: number, heat_allocated_w: number) => ({
+    available_w,
+    heat_allocated_w,
+    heat_maximum_w: 0,
+    supply: available_w > 0 ? ("budget" as const) : null,
+    mismatched: 0,
+  })
+
+  it("fills a rack with its heat's share of the capacity and writes it", () => {
+    const paint = tilePaint({
+      tile: tile(),
+      colorBy: "cooling",
+      rack: fig({ cooling: cooling(10_000, 9_000) }),
+    })
+    expect(paint.fill).toBe(CAPACITY_HEX.warn)
+    expect(paint.figure).toEqual({
+      ratio: 0.9,
+      color: CAPACITY_HEX.warn,
+      text: "90%",
+      always: true,
+    })
+  })
+
+  it("greys a rack with no capacity, and says so", () => {
+    const paint = tilePaint({
+      tile: tile(),
+      colorBy: "cooling",
+      rack: fig({ cooling: cooling(0, 4_000) }),
+    })
+    expect(paint.fill).toBe(CAPACITY_NONE_HEX)
+    expect(paint.figure?.text).toBe("No data")
+    expect(rackTint("cooling", fig({ cooling: cooling(1_000, 1_200) }))).toBe(
+      CAPACITY_HEX.critical
+    )
+  })
 })
 
 describe("3D tints", () => {

@@ -33,6 +33,11 @@ def worst_status(statuses) -> str | None:
     return worst
 
 
+def status_rank(status) -> int:
+    """How bad a status is - higher is worse, the order ``worst_status`` uses."""
+    return _SEVERITY.get(status, 1)
+
+
 def status_counts(statuses) -> dict:
     """A ``{status: count}`` breakdown (only present statuses)."""
     return dict(Counter(statuses))

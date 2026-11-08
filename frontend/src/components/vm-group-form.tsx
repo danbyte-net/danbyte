@@ -2,9 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
-  Paginated,
   VirtualMachineGroup,
   VirtualMachineGroupWritePayload,
 } from "@/lib/api"
@@ -80,7 +79,7 @@ export function VmGroupForm({
 
   const clusters = useQuery({
     queryKey: ["clusters-picker"],
-    queryFn: () => api<Paginated<MiniNamed>>("/api/clusters/?picker=1"),
+    queryFn: () => apiAll<MiniNamed>("/api/clusters/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

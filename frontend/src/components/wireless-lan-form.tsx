@@ -3,8 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
-  type Paginated,
   type Status,
   type VLANOption,
   type WirelessAuthCipher,
@@ -14,6 +12,7 @@ import {
   type WirelessLANWritePayload,
   type WirelessPmf,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CIPHER_LABEL,
   PMF_LABEL,
@@ -109,22 +108,18 @@ export function WirelessLANForm({
   const groups = useQuery({
     queryKey: ["wireless-lan-groups-picker"],
     queryFn: () =>
-      api<Paginated<WirelessLANGroupOption>>(
-        "/api/wireless-lan-groups/?picker=1"
-      ),
+      apiAll<WirelessLANGroupOption>("/api/wireless-lan-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
+    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "wirelesslan"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=wirelesslan&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=wirelesslan&picker=1"),
     staleTime: 5 * 60_000,
   })
 

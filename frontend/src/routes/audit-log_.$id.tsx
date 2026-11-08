@@ -5,7 +5,8 @@ import { useQuery } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { ChangeAction, ChangeLogEntry, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ChangeAction, ChangeLogEntry } from "@/lib/api"
 import { VIA_LABEL } from "@/lib/audit-source"
 import { objectDetailRoute, objectListRoute } from "@/lib/object-routes"
 import { Badge } from "@/components/ui/badge"
@@ -52,7 +53,7 @@ function ChangeLogDetail() {
     enabled: !!e,
     queryKey: ["changelog", e?.object_type, e?.object_id],
     queryFn: () =>
-      api<Paginated<ChangeLogEntry>>(
+      apiAll<ChangeLogEntry>(
         `/api/changelog/?object_type=${e!.object_type}&object_id=${e!.object_id}`
       ),
   })

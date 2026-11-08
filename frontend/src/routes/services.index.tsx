@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type Service } from "@/lib/api"
+import { type Service } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { DataTable } from "@/components/data-table"
 import { buildServiceColumns } from "@/components/columns/service-columns"
 import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
@@ -28,7 +29,7 @@ function ServicesPage() {
   const query = useQuery({
     queryKey: ["services-list", q],
     queryFn: () =>
-      api<Paginated<Service>>(
+      apiAll<Service>(
         `/api/services/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

@@ -188,7 +188,6 @@ export default function CabinetScene({
                 target: start.target,
                 maxDistance: dist * 3,
                 minDistance: 0.12,
-                roomDiag: size,
                 requestRef: flyToRef,
                 keyboard: false,
                 dollyThrough: false,

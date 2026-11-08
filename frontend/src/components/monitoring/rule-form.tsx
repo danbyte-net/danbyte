@@ -7,10 +7,10 @@ import {
   type AlertRule,
   type AlertSeverity,
   type CheckStatus,
-  type Paginated,
   type Prefix,
   type TagOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -79,12 +79,12 @@ export function RuleForm({
 
   const tagsQ = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   const prefixesQ = useQuery({
     queryKey: ["prefixes-picker"],
-    queryFn: () => api<Paginated<Prefix>>("/api/prefixes/"),
+    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
     staleTime: 5 * 60_000,
   })
 

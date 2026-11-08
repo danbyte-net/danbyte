@@ -9,8 +9,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import type { ExtraExport } from "@/components/table-io"
 
 const FMTS: [IOFormat, string][] = [
   ["csv", "CSV (.csv)"],
@@ -22,9 +24,18 @@ const FMTS: [IOFormat, string][] = [
  * "Export selected" for a bulk-action bar - round-trip export of just the
  * selected rows. The ids are POSTed, not put in a link: "Select all N" makes
  * a selection of thousands one click away, far past what a URL can hold.
- * Drop into any bulk bar with the rows' object slug + ids.
+ * Drop into any bulk bar with the rows' object slug + ids; `extraExports`
+ * (the PDF report) are listed under the formats.
  */
-export function BulkExport({ ioType, ids }: { ioType: string; ids: string[] }) {
+export function BulkExport({
+  ioType,
+  ids,
+  extraExports = [],
+}: {
+  ioType: string
+  ids: string[]
+  extraExports?: ExtraExport[]
+}) {
   const [busy, setBusy] = useState(false)
   if (ids.length === 0) return null
   const run = async (fmt: IOFormat) => {
@@ -50,6 +61,16 @@ export function BulkExport({ ioType, ids }: { ioType: string; ids: string[] }) {
         {FMTS.map(([fmt, label]) => (
           <DropdownMenuItem key={fmt} onSelect={() => void run(fmt)}>
             {label}
+          </DropdownMenuItem>
+        ))}
+        {extraExports.length > 0 && <DropdownMenuSeparator />}
+        {extraExports.map((x) => (
+          <DropdownMenuItem
+            key={x.key}
+            disabled={x.disabled}
+            onSelect={x.onSelect}
+          >
+            {x.label}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

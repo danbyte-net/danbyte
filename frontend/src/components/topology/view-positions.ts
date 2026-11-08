@@ -1,4 +1,4 @@
-import type { TopologyViewSaved } from "@/lib/api"
+import type { TopologyLineType, TopologyViewSaved } from "@/lib/api"
 import type { NodeStyle } from "@/components/topology/topology-canvas"
 
 /**
@@ -12,20 +12,24 @@ import type { NodeStyle } from "@/components/topology/topology-canvas"
  * spacing that was tuned for chips.
  */
 export type PosMap = Record<string, [number, number]>
-export type PosByStyle = Partial<Record<NodeStyle, PosMap>>
+/** The styles that keep an arrangement: the canvas's, and the Routing
+ * tab's (its own canvas, cards placed by their centres). */
+export type MapStyle = NodeStyle | "routing"
+export type PosByStyle = Partial<Record<MapStyle, PosMap>>
 
 /** The styles that own an arrangement (Logical is a rail diagram, not a
  * canvas, so it has none). Mirrors the backend's validation list. */
-export const POSITION_STYLES: NodeStyle[] = [
+export const POSITION_STYLES: MapStyle[] = [
   "stencil",
   "hierarchy",
   "flat",
   "diagram",
+  "routing",
 ]
 
 /** Old stores held one flat map for every style; read it as the style it was
  * most likely arranged in, so nobody loses an arrangement to the split. */
-export function migratePositions(raw: unknown, style: NodeStyle): PosByStyle {
+export function migratePositions(raw: unknown, style: MapStyle): PosByStyle {
   if (!raw || typeof raw !== "object") return {}
   const obj = raw as Record<string, unknown>
   const isNew = POSITION_STYLES.some((k) => k in obj)
@@ -47,8 +51,8 @@ export function viewPositions(
   const style = styleOf(
     (v.state.filters as { viewStyle?: unknown } | undefined)?.viewStyle
   )
-  return v.state.positions && POSITION_STYLES.includes(style as NodeStyle)
-    ? { [style as NodeStyle]: v.state.positions }
+  return v.state.positions && POSITION_STYLES.includes(style as MapStyle)
+    ? { [style as MapStyle]: v.state.positions }
     : {}
 }
 
@@ -94,13 +98,48 @@ export interface Zone {
    * bottom (`v`) or left and right (`h`). Absent: whichever faces the far
    * end (Auto). */
   exits?: BandExits
+  /** A row: at most this many cards on a line before it wraps (1-200;
+   * `BAND_PER_ROW_MAX` keeps them all on one line). Absent: Auto - wrap
+   * past 12 cards or a line too wide. */
+  per_row?: number
+  /** A row: where its cards line up across its width, each line on its
+   * own when it wraps. Absent: Auto - each line centred. */
+  align?: BandAlign
+  /** A row: the line its cards' cables take where neither the link nor
+   * an end's device sets one (diagram/line-source.ts). Absent: Default. */
+  line?: TopologyLineType
+  /** The Routing tab: the AS this box frames. An AS box carries the cards
+   * inside it when it moves; Arrange ▸ By AS finds it again by it. */
+  asn?: number
+}
+
+/** The most cards a row may set on one line: "All on one line". */
+export const BAND_PER_ROW_MAX = 200
+
+/** A saved `per_row` the map can use: a whole number from 1 to
+ * BAND_PER_ROW_MAX, else undefined (Auto). */
+export function bandPerRow(v: unknown): number | undefined {
+  return typeof v === "number" &&
+    Number.isInteger(v) &&
+    v >= 1 &&
+    v <= BAND_PER_ROW_MAX
+    ? v
+    : undefined
+}
+
+/** Where a row's cards line up across its width. */
+export type BandAlign = "left" | "center" | "right"
+
+/** A saved `align` the map can use, else undefined (Auto). */
+export function bandAlign(v: unknown): BandAlign | undefined {
+  return v === "left" || v === "center" || v === "right" ? v : undefined
 }
 
 /** Which sides a row's cables to other bands leave by: top and bottom, or
  * left and right. */
 export type BandExits = "v" | "h"
 
-export type ZonesByStyle = Partial<Record<NodeStyle, Zone[]>>
+export type ZonesByStyle = Partial<Record<MapStyle, Zone[]>>
 
 /** The zone and band quick swatches - a tint each, meaning nothing on its
  * own. Danbyte's full preset grid sits behind them (More colors). */

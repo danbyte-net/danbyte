@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, Download } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
 import { Markdown } from "@/components/markdown"
 import { ServicesSection } from "@/components/settings/services-section"
 import { SiteCertificateCard } from "@/components/settings/site-certificate-card"
@@ -60,6 +61,7 @@ function UpdatesSettingsPage() {
     queryKey: ["system-updates"],
     queryFn: () => api<SystemUpdates>("/api/system/updates/"),
     enabled: canManage,
+    refetchInterval: (query) => (query.state.data?.checking ? 5_000 : false),
   })
   const settings = useQuery({
     queryKey: ["deployment-email"],
@@ -229,7 +231,9 @@ function UpdatesSettingsPage() {
               Update available
             </Badge>
           ) : (
-            d && !d.error && <Badge variant="secondary">Up to date</Badge>
+            d &&
+            !d.error &&
+            !d.checking && <Badge variant="secondary">Up to date</Badge>
           )
         }
       >
@@ -259,7 +263,10 @@ function UpdatesSettingsPage() {
               app process (web and workers). Until then, writes can fail in
               confusing ways.
             </p>
-            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+            <pre
+              tabIndex={0}
+              className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed"
+            >
               {info.data.migration_drift.slice(0, 8).join("\n")}
               {info.data.migration_drift.length > 8
                 ? `\n… and ${info.data.migration_drift.length - 8} more`
@@ -282,7 +289,10 @@ function UpdatesSettingsPage() {
               service user, <code>manage.py migrate</code>, then restart every
               app process (web and workers).
             </p>
-            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+            <pre
+              tabIndex={0}
+              className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed"
+            >
               {info.data.pending_migrations.slice(0, 8).join("\n")}
               {info.data.pending_migrations.length > 8
                 ? `\n… and ${info.data.pending_migrations.length - 8} more`
@@ -301,7 +311,10 @@ function UpdatesSettingsPage() {
               recreate itself, so the in-app upgrade is disabled here. Upgrade
               from the host:
             </p>
-            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+            <pre
+              tabIndex={0}
+              className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed"
+            >
               {`git -C /opt/danbyte fetch --tags
 git -C /opt/danbyte checkout <version>
 docker compose -f docker-compose.prod.yml build
@@ -526,6 +539,7 @@ docker compose -f docker-compose.prod.yml up -d`}
             </p>
             <input
               type="file"
+              aria-label="Release bundle"
               accept=".tar.gz,.tgz,application/gzip"
               disabled={uploadUpgrade.isPending || upgrading || selfUpgradeOff}
               onChange={(e) => {
@@ -544,7 +558,11 @@ docker compose -f docker-compose.prod.yml up -d`}
           {/* Releases + changelog */}
           <SettingsCard title="Releases" layout="plain">
             {updates.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <Loading />
+            ) : d?.checking ? (
+              <p className="text-sm text-muted-foreground">
+                Checking for releases…
+              </p>
             ) : !d?.releases.length ? (
               <p className="text-sm text-muted-foreground">
                 No releases found in the repo yet.
@@ -635,7 +653,19 @@ docker compose -f docker-compose.prod.yml up -d`}
             This install
           </p>
           {/* System info - Postgres/Django/etc, loads instantly. */}
-          <SettingsCard title="This install" layout="plain">
+          <SettingsCard
+            title="This install"
+            layout="plain"
+            footer={
+              sys?.sbom_available && (
+                <Button size="sm" variant="outline" asChild>
+                  <a href="/api/system/sbom/" download>
+                    <Download className="size-3.5" /> Download SBOM
+                  </a>
+                </Button>
+              )
+            }
+          >
             <dl className="grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[13px]">
               {(
                 [
@@ -768,7 +798,10 @@ docker compose -f docker-compose.prod.yml up -d`}
                 <summary className="cursor-pointer text-muted-foreground">
                   Output of the failed step
                 </summary>
-                <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap">
+                <pre
+                  tabIndex={0}
+                  className="mt-1 max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap"
+                >
                   {st.error_tail}
                 </pre>
               </details>
@@ -969,7 +1002,10 @@ function UpgradeNoteRow({
         </ul>
       )}
       {note.snippet && (
-        <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
+        <pre
+          tabIndex={0}
+          className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs"
+        >
           {note.snippet}
         </pre>
       )}
@@ -1017,7 +1053,10 @@ function ByHand({ parts }: { parts: UpgradeNote[] }) {
             <div key={p.id} className="space-y-1">
               <div className="text-xs font-medium">{p.title}</div>
               <p className="text-xs text-muted-foreground">{p.body}</p>
-              <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
+              <pre
+                tabIndex={0}
+                className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs"
+              >
                 {p.snippet}
               </pre>
             </div>

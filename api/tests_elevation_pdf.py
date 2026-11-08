@@ -410,7 +410,8 @@ class SheetTests(SimpleTestCase):
         return hashlib.sha256(norm.replace(__version__, "VERSION").encode()).hexdigest()
 
     def test_the_topology_sheet_is_as_it_was(self):
-        # Hashes of the page the topology drew before the renderer was shared.
+        # Hashes of the page the topology drew before the renderer was shared
+        # (updated for weight 800 and when sizes moved inline for the report framework).
         html = tx._sheet_html(
             tx.plan_sheet(640, 480, "a3", "landscape"),
             title="DC1 <fabric>",
@@ -420,7 +421,7 @@ class SheetTests(SimpleTestCase):
             title_block=True,
         )
         self.assertEqual(
-            self._pinned(html), "1753dd55698b2b4c6a33742d5dacff403de361f2cfb67ec483d7447ce93b57a5"
+            self._pinned(html), "bdaadf610c6e6d79a2dfee8458e4c82625644016481379657b37217103b17a81"
         )
         html = tx._sheet_html(
             tx.plan_sheet(300, 900, "a4", "portrait", title_block=False),
@@ -431,7 +432,7 @@ class SheetTests(SimpleTestCase):
             title_block=False,
         )
         self.assertEqual(
-            self._pinned(html), "7eac1164f9833b2f27ad18e7c13c240989f84698e55a1b61e85467d6ba321397"
+            self._pinned(html), "d17c61f572dc7439ceb6eabd6e32fc45a6d18d51e252ac6e33f89c974e708eca"
         )
 
     def test_a_subtitle_is_escaped(self):

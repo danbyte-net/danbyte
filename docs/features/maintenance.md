@@ -27,6 +27,17 @@ kinds share the same record:
 | **ETR** | Outages only: the estimated time to restore, while the real end is unknown. |
 | **Raw email** | The original notification, kept verbatim next to what was parsed out of it. |
 
+Tick rows in the **Maintenance** list - with the `change` or `delete` grant -
+to reveal the bulk bar:
+
+- **Export** downloads the selected events as CSV, Excel or JSON.
+- **Edit** sets the **Status** or the **Description** on every selected event.
+  A status is checked for each event as its own edit checks it, and starts or
+  retires the event's alert silence the same way. The window, kind and impacts
+  stay per event.
+- **Delete** first shows what would happen, then deletes the events and the
+  silences they drove.
+
 ## Statuses come from the catalog
 
 Event statuses are **user-editable rows** in the shared Statuses catalog
@@ -55,7 +66,23 @@ enhanced site separation keeps working after the fact.
 **Mark impact** takes a type and a level, then a picker with checkboxes: tick
 several objects and **Add** marks them all at that level. Objects already
 marked are left out of the list. A refused object leaves the others marked,
-and the toast says how many went through.
+and the toast says how many went through. Power panels and feeds and cooling
+sources and feeds are types you can mark too.
+
+### From a source or feed
+
+Work on a power panel or feed, or a cooling source or feed, takes down what
+it supplies. Its **Affected** tab ([Power](power.md#affected),
+[Cooling](cooling.md#affected)) works that out - the feeds, the racks they
+deliver to and the devices in them - and **Plan maintenance** opens a new
+event with them as its impacts: the source and its feeds as *Outage*, each
+rack and device *Outage* when nothing else feeds its rack, *Reduced
+redundancy* when something does. The form shows what will be marked and lets
+you drop it before saving; afterwards the impacts are edited as any others.
+
+In the API a create takes the same `impacts` list `ingest` takes - what
+`affected/` answers - and writes them in the same transaction: an object you
+may not view refuses the whole create.
 
 ## Alert suppression
 
@@ -75,8 +102,9 @@ it **owns a silence**:
 
 ## On the objects it touches
 
-A device or circuit named in an open event shows a **Planned maintenance &
-outages** panel at the top of its Overview - the reverse of the event's impact
+A device, circuit, power panel or feed, or cooling source or feed named in
+an open event shows a **Planned maintenance & outages** panel at the top of
+its Overview - the reverse of the event's impact
 list, so "is there a window on this box?" is answered where the operator
 already is. The panel disappears when nothing is planned.
 
@@ -144,9 +172,11 @@ a systemd timer; unparsed mail is left unread for the next pass.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET/POST /api/monitoring/maintenance-events/` | List and create. Filters: `kind`, `status` (id or slug), `provider`, `open=1`, `active_at=<iso>`, `object_type=&object_id=` (events touching that object) |
+| `GET/POST /api/monitoring/maintenance-events/` | List and create - a create may carry `impacts`, as `ingest` does. Filters: `kind`, `status` (id or slug), `provider`, `open=1`, `active_at=<iso>`, `object_type=&object_id=` (events touching that object) |
 | `PATCH/DELETE …/{id}/` | Update (resyncs the silence) / delete (retires it) |
 | `POST …/ingest/` | Upsert from an external parser (above) |
+| `POST …/bulk-update/` | `maintenanceevent.change`; `{ids, fields}` with `status_id`, `description` (resyncs each silence) |
+| `POST …/bulk-delete/` | `maintenanceevent.delete`; `{ids, dry_run}` (retires each silence) |
 | `GET/POST /api/monitoring/event-impacts/` | Impacts; `?event=` or `?object_type=&object_id=` for the reverse "what maintenance touches this circuit?" |
 | `GET /api/planning/calendar.ics` | The iCal feed |
 

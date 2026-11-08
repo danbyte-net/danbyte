@@ -200,7 +200,8 @@ class RealNotesTests(APITestCase):
         command = un.host_sync_command()
         # the root steps of the release that runs, from its bundle
         self.assertEqual(command.splitlines()[-1], "sudo ./install.sh --host-only")
-        self.assertIn(f"in the unpacked bundle of {__version__}", command)
+        self.assertIn(f"/releases/download/v{__version__}/danbyte-{__version__}-linux-x86_64.tar.gz\n", command)
+        self.assertIn(f"sha256sum -c danbyte-{__version__}-linux-x86_64.tar.gz.sha256", command)
         note = next(n for n in un.NOTES if n.id == "0.16.12-logrotate")
         self.assertTrue(note.as_dict()["snippet"].startswith(f"{command}\n# or by hand:\n"))
         wildcard = next(n for n in un.NOTES if n.id == "0.17.0-wildcard-access")

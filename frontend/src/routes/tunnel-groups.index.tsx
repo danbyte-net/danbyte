@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type TunnelGroup, type Paginated } from "@/lib/api"
+import { type TunnelGroup } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
@@ -30,7 +31,7 @@ function TunnelGroupsPage() {
 
   const query = useQuery({
     queryKey: ["tunnel-groups"],
-    queryFn: () => api<Paginated<TunnelGroup>>("/api/tunnel-groups/"),
+    queryFn: () => apiAll<TunnelGroup>("/api/tunnel-groups/"),
   })
 
   const allRows = query.data?.results ?? []

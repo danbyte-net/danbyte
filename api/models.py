@@ -5,18 +5,26 @@ import uuid
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.contrib.postgres.indexes import GinIndex
-from django.db.models.functions import Upper
+from django.contrib.postgres.indexes import GinIndex, GistIndex, OpClass
+from django.db.models.functions import Cast, Upper
 from django.db import models, transaction
 from django.utils import timezone
 
 from .dcim_choices import (
+    AIRFLOW_CHOICES,
     ANTENNA_BAND_CHOICES,
     ANTENNA_POLARIZATION_CHOICES,
     ANTENNA_TYPE_CHOICES,
     AUX_PORT_TYPE_CHOICES,
     CABLE_TYPE_CHOICES,
     CONSOLE_PORT_TYPE_CHOICES,
+    COOLING_CAPABILITY_CHOICES,
+    COOLING_CONNECTOR_CHOICES,
+    COOLING_DEFAULT,
+    COOLING_FEED_TYPE_CHOICES,
+    COOLING_FLUID_CHOICES,
+    COOLING_METHOD_CHOICES,
+    COOLING_SOURCE_TYPE_CHOICES,
     INTERFACE_TYPE_CHOICES,
     POWER_OUTLET_TYPE_CHOICES,
     POWER_PORT_TYPE_CHOICES,
@@ -24,8 +32,13 @@ from .dcim_choices import (
     VIRTUAL_INTERFACE_TYPES,
 )
 from .fields import HostAddressField, split_host_mask
+from .config_context import validate_context_object
 from .natural import natural
+from .software_versions import validate_version_pattern
+from .package_ids import validate_cpe, validate_purl
+from .spdx import validate_license_expression
 from .speed import normalize_speed
+from .pve_vnet import validate_pve_vnet
 from core.models import (
     CustomFieldsMixin,
     Organization,
@@ -410,17 +423,6 @@ class Manufacturer(NumIdMixin, TimestampedModel, TaggableMixin):
         return self.name
 
 
-# Shared by DeviceType (hardware default) and Device (per-box override).
-AIRFLOW_CHOICES = [
-    ("front-to-rear", "Front to rear"),
-    ("rear-to-front", "Rear to front"),
-    ("left-to-right", "Left to right"),
-    ("right-to-left", "Right to left"),
-    ("passive", "Passive"),
-    ("mixed", "Mixed"),
-]
-
-
 class LifecycleMixin(models.Model):
     """Vendor lifecycle window for a catalog item (hardware type, OS
     platform). All dates are user-entered - nothing ships pre-filled - and
@@ -478,8 +480,59 @@ class LifecycleMixin(models.Model):
 TOPOLOGY_PHOTO_SIZE_CHOICES = [("rack", "Rack width"), ("own", "Own size")]
 
 
+def device_model_path(instance, filename):
+    """``device-models/<random>.glb``: a 3D model never sits in a public
+    media folder (api.media_views serves nothing from here) and a replaced
+    model never reuses the old one's URL."""
+    return f"device-models/{uuid.uuid4().hex}.glb"
+
+
+#: How the 3D room sizes an uploaded model: fitted to the hardware's size
+#: (the type's width, height and depth where known, else the rack box), or at
+#: its own size in metres.
+MODEL_3D_FIT_CHOICES = [("auto", "Fit to size"), ("native", "Own size")]
+#: The model's up axis: glTF is Y-up, many CAD exports are Z-up.
+MODEL_3D_UP_CHOICES = [("y", "Y up"), ("z", "Z up")]
+#: Which way the model's front faces once it stands upright.
+MODEL_3D_FRONT_CHOICES = [("+z", "+Z"), ("-z", "-Z"), ("+x", "+X"), ("-x", "-X")]
+
+
+class Model3DMixin(models.Model):
+    """An optional uploaded 3D model (binary glTF) and how to place it. On a
+    device type it draws every device of the type in the 3D room; on a
+    device it overrides the type's."""
+
+    model_3d = models.FileField(
+        upload_to=device_model_path, blank=True, null=True, max_length=255,
+        help_text="3D model (binary glTF, .glb) drawn in the 3D room.",
+    )
+    model_3d_fit = models.CharField(
+        max_length=8, choices=MODEL_3D_FIT_CHOICES, default="auto", db_default="auto",
+        help_text="Fit the model to the hardware's size, or use its own size in metres.",
+    )
+    model_3d_up = models.CharField(
+        max_length=2, choices=MODEL_3D_UP_CHOICES, default="y", db_default="y",
+        help_text="The model's up axis.",
+    )
+    model_3d_front = models.CharField(
+        max_length=2, choices=MODEL_3D_FRONT_CHOICES, default="+z", db_default="+z",
+        help_text="The axis the model's front faces.",
+    )
+    # Ports mapped onto the model (api.model_ports): {bounds, ports: [{kind,
+    # name, p, n}]}, positions 0..1 in the upright bounding box. On a device
+    # null inherits its type's mapping while it draws the type's model.
+    model_ports = models.JSONField(
+        null=True, blank=True, default=None,
+        help_text="Port positions on the 3D model, normalised to its upright "
+        "bounding box. Null = none mapped (a device inherits its type's).",
+    )
+
+    class Meta:
+        abstract = True
+
+
 class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
-                 LifecycleMixin):
+                 LifecycleMixin, Model3DMixin):
     """User-defined device type / template (e.g. ``Dell R650``, ``Cisco C9300``).
 
     DeviceType is the *template* - manufacturer + model + part number + slot
@@ -523,6 +576,11 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
         help_text="How wide the topology Diagram draws photos of this type. "
                   "Blank inherits.",
     )
+    icon = models.CharField(
+        max_length=48, blank=True, default="", db_default="",
+        help_text="Lucide icon name (e.g. router, server, cctv) for devices of "
+                  "this type on maps and floor plans. Blank uses the role's.",
+    )
     front_image = models.ImageField(
         upload_to="device-type-images/", blank=True, null=True,
         help_text="Front rack-face image, rendered in rack elevations.",
@@ -552,6 +610,19 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
     airflow = models.CharField(
         max_length=50, choices=AIRFLOW_CHOICES, blank=True, default="",
         help_text="Default cooling airflow direction for this hardware.",
+    )
+    # How the hardware is cooled, and the heat it gives off where that is
+    # not its allocated draw (#434). A device without its own method takes
+    # this one; nothing set anywhere is air.
+    cooling_method = models.CharField(
+        max_length=16, choices=COOLING_METHOD_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How this hardware is cooled. Blank reads as air.",
+    )
+    heat_output_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Heat this hardware gives off, in watts, where that is not "
+        "its allocated draw. Blank counts its draw.",
     )
     WEIGHT_UNIT_CHOICES = [
         ("kg", "kg"), ("g", "g"), ("lb", "lb"), ("oz", "oz"),
@@ -817,6 +888,56 @@ class PowerOutletTemplate(_ComponentTemplate):
         unique_together = ("device_type", "name")
         ordering = [natural("name")]
 
+class _CoolingTemplateFields(_ComponentTemplate):
+    """What a cooling intake or outflow template carries (#434): the hose's
+    connector, its bore and the flow it is rated for."""
+
+    connector = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=COOLING_CONNECTOR_CHOICES,
+    )
+    diameter_mm = models.PositiveSmallIntegerField(null=True, blank=True)
+    max_flow_lpm = models.DecimalField(
+        max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0)], help_text="Litres per minute.",
+    )
+    description = models.CharField(max_length=255, blank=True, default="", db_default="")
+
+    class Meta:
+        abstract = True
+
+
+class CoolingIntakeTemplate(_CoolingTemplateFields):
+    """Where coolant enters hardware of this type (#434)."""
+
+    device_type = models.ForeignKey(
+        DeviceType, on_delete=models.CASCADE,
+        related_name="cooling_intake_templates",
+    )
+
+    class Meta:
+        unique_together = ("device_type", "name")
+        ordering = [natural("name")]
+
+
+class CoolingOutflowTemplate(_CoolingTemplateFields):
+    """Where coolant leaves hardware of this type (#434) - a CDU's
+    secondary ports. ``intake_template`` names the intake that feeds it."""
+
+    device_type = models.ForeignKey(
+        DeviceType, on_delete=models.CASCADE,
+        related_name="cooling_outflow_templates",
+    )
+    intake_template = models.ForeignKey(
+        CoolingIntakeTemplate, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="outflow_templates",
+        help_text="The intake on this type that feeds the outflow (same type).",
+    )
+
+    class Meta:
+        unique_together = ("device_type", "name")
+        ordering = [natural("name")]
+
 
 class RearPortTemplate(_ComponentTemplate):
     device_type = models.ForeignKey(
@@ -982,6 +1103,13 @@ class ModuleType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
         help_text="Saved faceplate layout for this module (FaceplateDoc v1); "
         "null → automatic layout. Composed into the host device's render at "
         "the bay it's installed in.",
+    )
+    # How the module is cooled (#434): its host device's rack must take it
+    # (#469, api.cooling.module_placement_error).
+    cooling_method = models.CharField(
+        max_length=16, choices=COOLING_METHOD_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How this module is cooled.",
     )
 
     class Meta:
@@ -1182,6 +1310,38 @@ def materialize_device_components(device) -> dict[str, int]:
     ]
     PowerOutlet.objects.bulk_create(made)
     created["power_outlets"] = len(made)
+
+    # Cooling intakes before outflows: an outflow names its intake by name.
+    have = _names(device.cooling_intakes)
+    made = [
+        CoolingIntake(
+            device=device, name=n, connector=t.connector,
+            diameter_mm=t.diameter_mm, max_flow_lpm=t.max_flow_lpm,
+            description=t.description,
+        )
+        for t in dt.cooling_intake_templates.all()
+        if (n := render_component_name(t.name, pos)) not in have
+    ]
+    CoolingIntake.objects.bulk_create(made)
+    created["cooling_intakes"] = len(made)
+
+    intakes_by_name = {i.name: i for i in device.cooling_intakes.all()}
+    have = _names(device.cooling_outflows)
+    made = [
+        CoolingOutflow(
+            device=device, name=n, connector=t.connector,
+            diameter_mm=t.diameter_mm, max_flow_lpm=t.max_flow_lpm,
+            intake=(
+                intakes_by_name.get(render_component_name(t.intake_template.name, pos))
+                if t.intake_template_id else None
+            ),
+            description=t.description,
+        )
+        for t in dt.cooling_outflow_templates.select_related("intake_template")
+        if (n := render_component_name(t.name, pos)) not in have
+    ]
+    CoolingOutflow.objects.bulk_create(made)
+    created["cooling_outflows"] = len(made)
 
     # Rear ports before front ports (front ports map onto rear positions).
     have = _names(device.rear_ports)
@@ -1490,6 +1650,8 @@ _SYNC_KINDS = [
     ("console_server_ports", "console_server_port_templates", True),
     ("power_ports", "power_port_templates", True),
     ("power_outlets", "power_outlet_templates", True),
+    ("cooling_intakes", "cooling_intake_templates", True),
+    ("cooling_outflows", "cooling_outflow_templates", True),
     ("rear_ports", "rear_port_templates", True),
     ("front_ports", "front_port_templates", True),
     ("aux_ports", "aux_port_templates", True),
@@ -1562,10 +1724,10 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
         # Dependents before their targets: front ports FK rear ports, outlets
         # FK inlets - remove the referencing side first to avoid FK errors.
         order = [
-            "front_ports", "power_outlets", "services", "interfaces",
-            "console_ports", "console_server_ports", "aux_ports",
+            "front_ports", "power_outlets", "cooling_outflows", "services",
+            "interfaces", "console_ports", "console_server_ports", "aux_ports",
             "antennas", "inventory_items", "device_bays", "module_bays",
-            "rear_ports", "power_ports",
+            "rear_ports", "power_ports", "cooling_intakes",
         ]
         for dev_rel in order:
             names = diff.get(dev_rel, {}).get("extra", [])
@@ -1578,11 +1740,12 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
     return {"added": {k: v for k, v in added.items() if v}, "removed": removed}
 
 
-# Dimension fields a rack inherits from its type - the ones the rack form
-# pre-fills, and therefore the ones that can drift from the model.
+# Fields a rack inherits from its type - its dimensions and budgets, the ones
+# the rack form pre-fills, and therefore the ones that can drift from the model.
 _RACK_TYPE_DIMS = (
     "width", "u_height", "starting_unit", "desc_units",
     "outer_width_mm", "outer_depth_mm", "max_weight", "max_weight_unit",
+    "max_power_w", "cooling_capability", "cooling_capacity_w",
 )
 
 
@@ -2060,6 +2223,19 @@ def _seat_default_modules(device, pos) -> int:
     }
     if not wanted:
         return 0
+    # A default the device's rack cannot cool is left out (#469), as an
+    # operator's install of it would be refused.
+    from .cooling import cooling_rack, refused
+
+    rack = cooling_rack(device)
+    bad = refused(rack.cooling_capability) if rack is not None else []
+    if bad:
+        uncooled = set(
+            ModuleType.objects.filter(
+                pk__in=set(wanted.values()), cooling_method__in=bad
+            ).values_list("pk", flat=True)
+        )
+        wanted = {n: t for n, t in wanted.items() if t not in uncooled}
     count = 0
     bays = device.module_bays.filter(name__in=wanted).select_related("module")
     for bay in bays:
@@ -2078,7 +2254,29 @@ def _seat_default_modules(device, pos) -> int:
     return count
 
 
-class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+
+# Where a device's or VM's software_version came from (#451). A manual or
+# imported value is the operator's: no automatic source overwrites it.
+SOFTWARE_VERSION_SOURCES = (
+    ("manual", "Manual"),
+    ("snmp", "SNMP"),
+    ("virtualization", "Virtualization"),
+    ("oxidized", "Oxidized"),
+    ("import", "Import"),
+)
+
+
+#: Whether PRTG should monitor a device or VM, decided on the object itself.
+#: ``inherit`` follows the PRTG policies and the connection's "register all";
+#: ``always`` and ``never`` overrule both (never wins over everything).
+PRTG_SYNC_CHOICES = [
+    ("inherit", "Follow policies"),
+    ("always", "Monitor in PRTG"),
+    ("never", "Exclude from PRTG"),
+]
+
+
+class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Model3DMixin):
     """A physical device.
 
     IPs are linked back to a Device via the ``IPAddress.assigned_device``
@@ -2171,6 +2369,16 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     serial_number = models.CharField(max_length=255, blank=True)
     asset_tag = models.CharField(max_length=128, blank=True)
+    # The software version running (#395), compared with the platform's
+    # target_version. Typed by hand or filled by an integration; seen_at is
+    # set only by an integration, so a hand-typed value is never overwritten.
+    # The source says which one wrote it (#451).
+    software_version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    software_version_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
+    software_version_source = models.CharField(
+        max_length=16, choices=SOFTWARE_VERSION_SOURCES, blank=True, default="",
+        db_default="", editable=False,
+    )
     # Hardware warranty of this unit, for coverage without a support contract
     # (#421). The last covered day; blank = no warranty on record.
     warranty_end = models.DateField(
@@ -2208,6 +2416,11 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="devices",
         help_text="Physical location within the site (building / floor / room).",
     )
+    # The room it stands in, inside its location; never set from placement.
+    room = models.ForeignKey(
+        "Room", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="devices",
+    )
     cluster = models.ForeignKey(
         "Cluster", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="devices",
@@ -2234,13 +2447,41 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="Config template for this device. Falls back to the "
                   "role's, then the platform's, when unset.",
     )
+    # Per-device config-context data, merged over every matching
+    # ConfigContext (api.config_context) so it wins on conflicting keys.
+    local_context_data = models.JSONField(
+        null=True, blank=True, default=None,
+        validators=[validate_context_object],
+        help_text="Config-context data for this device only, merged last over "
+                  "every matching config context.",
+    )
     # ── Physical attributes ──────────────────────────────────────────────
-    # Kept as a class attribute for backwards references; the list itself is
-    # module-level (shared with DeviceType).
+    # Kept as a class attribute for backwards references; the list itself
+    # lives in api.dcim_choices (shared with DeviceType and the importer).
     AIRFLOW_CHOICES = AIRFLOW_CHOICES
     airflow = models.CharField(
         max_length=50, choices=AIRFLOW_CHOICES, blank=True, default="",
         help_text="Direction of cooling airflow through the chassis.",
+    )
+    # Blank inherits the type's (effective_cooling_method, #434).
+    cooling_method = models.CharField(
+        max_length=16, choices=COOLING_METHOD_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How this device is cooled. Blank inherits its type's.",
+    )
+    # This unit's own body size, over its type's (DeviceType.width_mm…):
+    # what a floor-plan tile and the 3D room size it by. Blank inherits.
+    width_mm = models.DecimalField(
+        "width (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    height_mm = models.DecimalField(
+        "height (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    depth_mm = models.DecimalField(
+        "depth (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
     )
     # Port labels on this device's faceplate renders: inherit the deployment
     # setting, or force them shown / hidden here (a patch panel wants them,
@@ -2265,6 +2506,11 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="How wide the topology Diagram draws this device's photo. "
                   "Blank inherits.",
     )
+    icon = models.CharField(
+        max_length=48, blank=True, default="", db_default="",
+        help_text="Lucide icon name for this device on maps and floor plans. "
+                  "Blank uses its type's, then its role's.",
+    )
     # ── Geolocation ──────────────────────────────────────────────────────
     latitude = models.DecimalField(
         max_digits=9, decimal_places=6, null=True, blank=True,
@@ -2285,6 +2531,13 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         blank=True, default="",
         help_text="Long-form notes (separate from the short description).",
     )
+    #: PRTG registration for this device (see ``PRTG_SYNC_CHOICES``).
+    prtg_sync = models.CharField(
+        max_length=8, choices=PRTG_SYNC_CHOICES, default="inherit", db_default="inherit",
+    )
+    #: What PRTG polls instead of the primary address: an IP or a DNS name.
+    #: Used when Danbyte creates the PRTG device and when it matches one.
+    prtg_host = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
         unique_together = ("tenant", "name")
@@ -2292,6 +2545,11 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         indexes = [
             models.Index(fields=["tenant", "name"]),
             models.Index(fields=["tenant", "device_type"]),
+            # The dashboard's newest devices, read in index order.
+            models.Index(fields=["tenant", "-created_at"], name="device_tenant_created_idx"),
+            # The list's natural name order within a tenant: a page reads its
+            # rows in index order instead of sorting the whole tenant (#480).
+            models.Index("tenant", natural("name"), name="device_tenant_natname_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -2321,8 +2579,69 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         untouched, so clearing the override falls back to the hardware's."""
         return self.airflow or (self.device_type.airflow if self.device_type else "")
 
+    @property
+    def effective_cooling_method(self) -> str:
+        """The device's own cooling method when set, else its type's, else
+        air (#434) - what rack placement checks against the rack's
+        capability. Derived like ``effective_airflow``."""
+        return (
+            self.cooling_method
+            or (self.device_type.cooling_method if self.device_type else "")
+            or COOLING_DEFAULT
+        )
+
+    def _effective_mm(self, field: str):
+        own = getattr(self, field)
+        if own is not None:
+            return own
+        return getattr(self.device_type, field) if self.device_type_id else None
+
+    @property
+    def effective_width_mm(self):
+        """Its own width, else its type's, else None."""
+        return self._effective_mm("width_mm")
+
+    @property
+    def effective_height_mm(self):
+        """Its own height, else its type's, else None."""
+        return self._effective_mm("height_mm")
+
+    @property
+    def effective_depth_mm(self):
+        """Its own depth, else its type's, else None."""
+        return self._effective_mm("depth_mm")
+
+    @property
+    def size_mm(self) -> dict | None:
+        """The effective body size as floats - ``{width_mm, height_mm,
+        depth_mm}``, each None where unknown - or None when nothing is
+        known. What floor-plan tiles and the 3D room size the device by."""
+        out = {
+            f: (float(v) if v is not None else None)
+            for f in ("width_mm", "height_mm", "depth_mm")
+            for v in (self._effective_mm(f),)
+        }
+        return out if any(v is not None for v in out.values()) else None
+
+    @property
+    def own_icon(self) -> str:
+        """Its own icon, else its type's: what wins over a floor tile's type
+        and the role."""
+        return self.icon or (self.device_type.icon if self.device_type_id else "")
+
+    @property
+    def display_icon(self) -> str:
+        """The icon this device draws with: its own, else its type's, else
+        its role's; "" leaves the default (by kind) to the client."""
+        return self.own_icon or (self.role.icon if self.role_id else "")
+
     def __str__(self) -> str:
         return self.name
+
+    def clean(self):
+        from .rooms import clean_room
+
+        clean_room(self)
 
 
 class ImageAttachment(TimestampedModel):
@@ -2744,6 +3063,12 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "address outside every range is refused. For a provider handing out a "
         "slice of a subnet that isn't yours.",
     )
+    auto_gateway = models.BooleanField(
+        default=True, db_default=True,
+        help_text="Let the site's gateway policy create a gateway address in "
+        "this prefix when it is created. Off for loopback blocks, point-to-point "
+        "links and other prefixes that have no gateway.",
+    )
     auto_discover = models.BooleanField(
         default=False,
         help_text="Opt in to periodic ICMP discovery - responders not yet "
@@ -2768,6 +3093,14 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["tenant", "site"]),
             models.Index(fields=["tenant", "vrf"]),
+            # Containment (``cidr::inet <<= x``, ``>>=``): the aggregate
+            # list's coverage, contained_in, the space map and search (#484).
+            # The expression is the queries' ``cidr::inet`` cast exactly
+            # (OpClass is an index wrapper - see ApiConfig.ready).
+            GistIndex(
+                OpClass(Cast("cidr", models.GenericIPAddressField()), name="inet_ops"),
+                name="prefix_cidr_inet_gist",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -3136,6 +3469,9 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             # The list's default order within a tenant: a page reads 50 rows
             # in index order instead of sorting the whole tenant (#339).
             models.Index(fields=["tenant", "ip_address"], name="ip_tenant_addr_idx"),
+            # The dashboard's newest addresses: eight rows from the index,
+            # not a sort of every address in the tenant.
+            models.Index(fields=["tenant", "-created_at"], name="ip_tenant_created_idx"),
             models.Index(
                 "tenant", Upper("dns_name"), name="ip_tenant_dns_upper_idx"
             ),
@@ -3354,6 +3690,12 @@ class Status(_LabeledChoice):
                    "outage event leaves the open list, the calendar's open "
                    "count, and releases its silence."),
     )
+    is_planned = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text=("Marks the status as planned work, not yet built - a cable "
+                   "in it draws as a planned run (long dash) on floor plans."),
+    )
     excludes_capacity = models.BooleanField(
         default=False,
         help_text=("Ports carrying this status don't count as capacity in "
@@ -3412,6 +3754,61 @@ class Status(_LabeledChoice):
                 raise ValidationError(
                     {"monitoring_state": f"Unknown check state: {self.monitoring_state}"}
                 )
+
+
+class SensitivityLabel(NumIdMixin, TimestampedModel):
+    """A sensitivity label (Public, Internal, Confidential…): an editable
+    tenant catalog a PDF report can be marked with, shown on its cover and in
+    every page's header and footer. Coloured like a status, with an optional
+    Lucide icon. ``is_default`` names the label a new report starts with; at
+    most one per tenant. A small starter set is seeded once per tenant
+    (``api/sensitivity.py``); every row is the tenant's to edit or delete."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="sensitivity_labels"
+    )
+    name = models.CharField(max_length=64)
+    slug = models.SlugField(max_length=80)
+    color = models.CharField(max_length=7, blank=True, default="")
+    icon = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. shield, lock, eye-off).",
+    )
+    description = models.TextField(blank=True, default="")
+    weight = models.PositiveIntegerField(
+        default=100,
+        db_default=100,
+        help_text="Lower weights sort first in dropdowns and lists.",
+    )
+    is_default = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="New reports start with this label. At most one per tenant.",
+    )
+
+    class Meta:
+        ordering = ["weight", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_sensitivitylabel_tenant_slug"
+            ),
+            models.UniqueConstraint(
+                fields=["tenant"],
+                condition=models.Q(is_default=True),
+                name="uniq_sensitivitylabel_tenant_default",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def text_color(self) -> str:
+        """Black or white text on the label's colour, as statuses pick it."""
+        return _LabeledChoice.text_color.fget(self)
 
 
 class Zone(_LabeledChoice, CustomFieldsMixin, TaggableMixin):
@@ -3641,6 +4038,67 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         null=True, blank=True,
         help_text="Members that must be up for the bundle to count as up.",
     )
+    # Linux bond settings (``bond-mode``, ``bond-xmit-hash-policy``,
+    # ``bond-miimon``), on the aggregate only. 802.3ad is LACP; every other
+    # mode is a static bundle.
+    LAG_MODE_CHOICES = [
+        ("balance-rr", "balance-rr"),
+        ("active-backup", "active-backup"),
+        ("balance-xor", "balance-xor"),
+        ("broadcast", "broadcast"),
+        ("802.3ad", "802.3ad (LACP)"),
+        ("balance-tlb", "balance-tlb"),
+        ("balance-alb", "balance-alb"),
+    ]
+    LAG_HASH_POLICY_CHOICES = [
+        ("layer2", "layer2"),
+        ("layer2+3", "layer2+3"),
+        ("layer3+4", "layer3+4"),
+        ("encap2+3", "encap2+3"),
+        ("encap3+4", "encap3+4"),
+        ("vlan+srcmac", "vlan+srcmac"),
+    ]
+    lag_mode = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=LAG_MODE_CHOICES,
+    )
+    lag_hash_policy = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=LAG_HASH_POLICY_CHOICES,
+    )
+    lag_miimon = models.PositiveIntegerField(
+        null=True, blank=True, help_text="MII link-monitor interval, in ms.",
+    )
+    # ─── MACsec (802.1AE, keyed by MKA) ──────────────────────────────────
+    # The CKN/CAK live in a routing keychain's secret, never on the row: the
+    # same contract as the BGP / OSPF / IS-IS keychain references. The
+    # cipher, keychain and replay window only mean something while enabled
+    # and are cleared on save otherwise.
+    MACSEC_CIPHER_CHOICES = [
+        ("gcm-aes-128", "GCM-AES-128"),
+        ("gcm-aes-256", "GCM-AES-256"),
+        ("gcm-aes-xpn-128", "GCM-AES-XPN-128"),
+        ("gcm-aes-xpn-256", "GCM-AES-XPN-256"),
+    ]
+    macsec_enabled = models.BooleanField(
+        default=False, db_default=False, verbose_name="MACsec",
+        help_text="802.1AE link encryption on this port, keyed by MKA.",
+    )
+    macsec_cipher = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=MACSEC_CIPHER_CHOICES, verbose_name="MACsec cipher",
+        help_text="Cipher suite; blank uses the device's default.",
+    )
+    macsec_keychain = models.ForeignKey(
+        "routing.RoutingKeychain", on_delete=models.SET_NULL, null=True,
+        blank=True, related_name="macsec_interfaces",
+        verbose_name="MACsec keychain",
+        help_text="Keychain holding the MKA CAK. The key never passes through "
+        "the interface.",
+    )
+    macsec_replay_window = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="MACsec replay window",
+        help_text="Replay protection window, in packets; 0 is strict ordering.",
+    )
 
     class Meta:
         unique_together = ("device", "name")
@@ -3653,9 +4111,20 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         # same shape - and port utilization agrees with the faceplate.
         if self.type in VIRTUAL_INTERFACE_TYPES:
             self.virtual = True
+        if self.type != "lag":
+            self.lag_mode = ""
+            self.lag_hash_policy = ""
+            self.lag_miimon = None
+        elif self.lag_mode == "802.3ad":
+            # 802.3ad is LACP: set it rather than refuse.
+            self.lag_protocol = "lacp"
         if self.lag_protocol != "lacp":
             self.lacp_mode = ""
             self.lacp_rate = ""
+        if not self.macsec_enabled:
+            self.macsec_cipher = ""
+            self.macsec_keychain = None
+            self.macsec_replay_window = None
         # A bare kbps number (what a switch scraper sends) reads as "1G".
         self.speed = normalize_speed(self.speed)
         super().save(*args, **kwargs)
@@ -4286,6 +4755,15 @@ class Cable(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     length_unit = models.CharField(
         max_length=2, choices=LENGTH_UNITS, default="m", blank=True
     )
+    # Where ``length`` came from: "" is a length a person entered (or
+    # imported), "computed" one a floor-plan route worked out. A route only
+    # fills a blank or computed length unless asked to replace it, and an
+    # edit of the length through the API or a form makes it "" again.
+    LENGTH_SOURCES = [("", "Entered"), ("computed", "Computed")]
+    length_source = models.CharField(
+        max_length=16, choices=LENGTH_SOURCES, blank=True, default="",
+        db_default="",
+    )
     color = models.CharField(
         max_length=7, blank=True, default="",
         help_text="Optional 7-char hex - the physical cable's color.",
@@ -4305,6 +4783,14 @@ class Cable(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # {"7": {"label": "Cust-A pri", "status": "in-use"}}. Colours are DERIVED
     # from position + the tenant's palette, never stored. No entry = un-annotated.
     strands = models.JSONField(default=dict, blank=True)
+    #: The Proxmox SDN VNet this cable is, for a cable between two VM-backed
+    #: devices: at most 8 characters, a lowercase letter then letters and
+    #: digits. Read by a source's network plan; Danbyte never creates it.
+    pve_vnet = models.CharField(
+        max_length=8, blank=True, default="", db_default="",
+        validators=[validate_pve_vnet],
+        help_text="Proxmox SDN VNet id, e.g. c0042.",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -4942,6 +5428,16 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
     disk_gb = models.PositiveIntegerField(
         null=True, blank=True, help_text="Disk in GB."
     )
+    # The software version running (#395), compared with the platform's
+    # target_version. Typed by hand or filled by an integration; seen_at is
+    # set only by an integration, so a hand-typed value is never overwritten.
+    # The source says which one wrote it (#451).
+    software_version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    software_version_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
+    software_version_source = models.CharField(
+        max_length=16, choices=SOFTWARE_VERSION_SOURCES, blank=True, default="",
+        db_default="", editable=False,
+    )
     primary_ip = models.ForeignKey(
         IPAddress,
         on_delete=models.SET_NULL,
@@ -4950,14 +5446,61 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
         related_name="primary_ip_for_vms",
     )
     description = models.TextField(blank=True)
+    #: PRTG registration for this VM (see ``PRTG_SYNC_CHOICES``).
+    prtg_sync = models.CharField(
+        max_length=8, choices=PRTG_SYNC_CHOICES, default="inherit", db_default="inherit",
+    )
+    #: What PRTG polls instead of the primary address (see Device.prtg_host).
+    prtg_host = models.CharField(max_length=255, blank=True, default="", db_default="")
+
+    # ─── Intent: the VM as Danbyte wants it built ────────────────────────
+    #: Danbyte holds the intent for this VM. Virtualization sync then diffs
+    #: the hypervisor against it and queues drift, but never overwrites these
+    #: fields, never deletes the VM and never prunes its NICs or disks - see
+    #: integrations/virt_sync.py. A rebuild script reads it from the API.
+    intended = models.BooleanField(default=False, db_default=False)
+    #: The Device this VM *is* (a virtual router modelled as a Device), as
+    #: opposed to ``device``, the host it runs on. Same tenant, never the
+    #: VM's own host; one VM per device.
+    represents_device = models.OneToOneField(
+        Device, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="backing_vm",
+    )
+    #: The hypervisor id to build it with (Proxmox VMID). Unique per cluster.
+    vmid = models.PositiveIntegerField(null=True, blank=True)
+    #: ``host``, ``x86-64-v2-AES``, … - passed to the runner as written.
+    cpu_type = models.CharField(max_length=64, blank=True, default="", db_default="")
+    #: Optional; ``vcpus`` stays the total.
+    sockets = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: A template VMID or name, or a cloud-image volume. Free text: the
+    #: runner interprets it.
+    image = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: Default storage for disks that name none.
+    storage = models.CharField(max_length=128, blank=True, default="", db_default="")
+    #: The long tail (machine, bios, agent, onboot). Passed through, never
+    #: diffed.
+    hypervisor_options = models.JSONField(default=dict, blank=True, db_default={})
+    # Per-VM config-context data, merged last (see Device.local_context_data).
+    local_context_data = models.JSONField(
+        null=True, blank=True, default=None,
+        validators=[validate_context_object],
+        help_text="Config-context data for this virtual machine only, merged "
+                  "last over every matching config context.",
+    )
 
     class Meta:
         ordering = ["name"]
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "name"], name="uniq_vm_tenant_name"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["cluster", "vmid"], condition=models.Q(vmid__isnull=False),
+                name="uniq_vm_cluster_vmid",
+            ),
         ]
+        # The list's natural name order within a tenant, as on devices (#480).
+        indexes = [models.Index("tenant", natural("name"), name="vm_tenant_natname_idx")]
 
     def __str__(self) -> str:
         return self.name
@@ -5010,6 +5553,20 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     def save(self, *args, **kwargs):
         self.speed = normalize_speed(self.speed)
         super().save(*args, **kwargs)
+    # ─── Build: how the hypervisor attaches the NIC ──────────────────────
+    MODEL_CHOICES = [
+        ("virtio", "VirtIO"), ("e1000", "E1000"), ("e1000e", "E1000E"),
+        ("vmxnet3", "VMXNET3"), ("rtl8139", "RTL8139"),
+    ]
+    #: Proxmox ``netN``: the NIC's slot. Unique per VM when set.
+    index = models.PositiveSmallIntegerField(null=True, blank=True)
+    model = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=MODEL_CHOICES,
+    )
+    #: The SDN VNet or Linux bridge. Free text: VirtNetwork rows are sync-owned.
+    bridge = models.CharField(max_length=128, blank=True, default="", db_default="")
+    #: The hypervisor firewall flag; null = not stated.
+    firewall = models.BooleanField(null=True, blank=True)
     #: Created by a hypervisor sync, mirroring VirtualDisk.created_disk. Without
     #: it the sync cannot tell its own rows from the operator's, so it could
     #: never remove a stale NIC without risking one somebody added by hand.
@@ -5047,7 +5604,11 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         constraints = [
             models.UniqueConstraint(
                 fields=["vm", "name"], name="uniq_vminterface_vm_name"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["vm", "index"], condition=models.Q(index__isnull=False),
+                name="uniq_vminterface_vm_index",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -5109,6 +5670,7 @@ class VirtualSwitch(TimestampedModel):
         ("linux-bridge", "Linux bridge"),
         ("ovs", "Open vSwitch"),
         ("bond", "Bond"),
+        ("sdn-zone", "SDN zone"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -5315,6 +5877,10 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="racks",
         help_text="Physical location within the site (building / floor / room).",
     )
+    room = models.ForeignKey(
+        "Room", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="racks",
+    )
     width = models.PositiveSmallIntegerField(
         choices=WIDTH_CHOICES, default=19, help_text="Rail-to-rail width, inches."
     )
@@ -5334,6 +5900,20 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         null=True, blank=True,
         help_text="Power budget in watts. When set, demand is measured "
         "against it instead of the feeds.",
+    )
+    # What the rack's cooling takes and how much heat it removes (#434): the
+    # capability decides which hardware may be placed in it (api.cooling),
+    # the capacity is what its heat load is measured against
+    # (api.capacity.rack_cooling).
+    cooling_capability = models.CharField(
+        max_length=16, choices=COOLING_CAPABILITY_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="What the rack's cooling takes. Blank: not recorded, so "
+        "nothing is checked.",
+    )
+    cooling_capacity_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Heat the rack's cooling removes, in watts.",
     )
     u_height = models.PositiveSmallIntegerField(
         default=42, help_text="Height in rack units (U)."
@@ -5369,6 +5949,11 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+    def clean(self):
+        from .rooms import clean_room
+
+        clean_room(self)
 
 
 class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
@@ -5417,6 +6002,21 @@ class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
     max_weight_unit = models.CharField(
         max_length=8, choices=DeviceType.WEIGHT_UNIT_CHOICES,
         blank=True, default="",
+    )
+    # The power budget and cooling a rack of this model starts with
+    # (Rack.max_power_w, Rack.cooling_capability, Rack.cooling_capacity_w).
+    max_power_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Power budget in watts a rack of this model starts with.",
+    )
+    cooling_capability = models.CharField(
+        max_length=16, choices=COOLING_CAPABILITY_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="What the cooling of this model takes.",
+    )
+    cooling_capacity_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Heat the cooling of this model removes, in watts.",
     )
     description = models.TextField(blank=True)
 
@@ -5590,6 +6190,10 @@ class Cabinet(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "Location", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="cabinets",
     )
+    room = models.ForeignKey(
+        "Room", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinets",
+    )
     role = models.ForeignKey(
         CabinetRole, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="cabinets",
@@ -5634,6 +6238,11 @@ class Cabinet(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+    def clean(self):
+        from .rooms import clean_room
+
+        clean_room(self)
 
 
 DIN_PROFILE_CHOICES = [("ts35", "TS 35"), ("ts15", "TS 15"), ("g32", "G 32")]
@@ -5817,6 +6426,28 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
         related_name="+",
         help_text="Default config template for devices on this platform.",
     )
+    # The version operators want running (#395); devices and VMs on this
+    # platform whose software_version differs are off target.
+    target_version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    # A regex that reads the running version out of SNMP sysDescr (#451),
+    # tried before the built-in extractors.
+    version_pattern = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        validators=[validate_version_pattern],
+    )
+    #: The OS's SPDX licence expression, for the SBOM (``api.sbom``).
+    license = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        validators=[validate_license_expression],
+    )
+    #: Package URL and CPE 2.3 templates for the SBOM ({version},
+    #: {os_version}; ``api.package_ids``); blank = none.
+    purl_template = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_purl],
+    )
+    cpe_template = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_cpe],
+    )
     description = models.TextField(blank=True)
 
     class Meta:
@@ -5829,6 +6460,316 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+
+# ─── Applications and installed software (#436) ─────────────────────────────
+
+
+class Application(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """Software a tenant runs - PostgreSQL, nginx, a Java runtime, an in-house
+    app. A catalog like Platform; ``parent`` nests entries into a domain →
+    process → application tree. The optional end-of-life product names the
+    catalog entry; each install's version picks the cycle."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="applications"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128)
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="children",
+    )
+    manufacturer = models.ForeignKey(
+        Manufacturer, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="applications",
+    )
+    #: The end-of-life source and product (``compliance.eol_sources``);
+    #: blank = not mapped. The cycles come from the installs' versions.
+    eol_source = models.CharField(max_length=32, blank=True, default="", db_default="")
+    eol_product = models.CharField(max_length=128, blank=True, default="", db_default="")
+    #: The SPDX licence expression every install inherits unless it sets its
+    #: own (``InstalledSoftware.license``); blank = unknown.
+    license = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        validators=[validate_license_expression],
+    )
+    #: Package URL and CPE 2.3 templates for the SBOM ({version},
+    #: {os_version}; ``api.package_ids``); blank = none.
+    purl_template = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_purl],
+    )
+    cpe_template = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_cpe],
+    )
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_application_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def path_names(self) -> list[str]:
+        """The names from the root down to this application."""
+        names, node, seen = [], self, set()
+        while node is not None and node.pk not in seen:
+            seen.add(node.pk)
+            names.append(node.name)
+            node = node.parent
+        return names[::-1]
+
+
+class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """One application at one version on one device or virtual machine.
+
+    ``cycle`` is the end-of-life release cycle of the version: derived from
+    the application's product on save unless someone set it
+    (``cycle_manual``). ``eol_mapping`` is the shared (application, cycle)
+    mapping the Lifecycle page and the ``eol_status`` check read.
+    ``source`` and ``last_seen`` are kept for discovery."""
+
+    SOURCE_CHOICES = [
+        ("manual", "Manual"),
+        ("import", "Import"),
+        ("discovery", "Discovery"),
+        ("group", "Group"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="installed_software"
+    )
+    application = models.ForeignKey(
+        Application, on_delete=models.PROTECT, related_name="installs"
+    )
+    device = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="installed_software",
+    )
+    virtual_machine = models.ForeignKey(
+        "VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="installed_software",
+    )
+    version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    cycle = models.CharField(max_length=64, blank=True, default="", db_default="")
+    cycle_manual = models.BooleanField(default=False, db_default=False)
+    service = models.ForeignKey(
+        "Service", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="installed_software",
+    )
+    #: Dates someone entered; each wins over the mapping's.
+    release_date = models.DateField(null=True, blank=True)
+    end_of_support = models.DateField(null=True, blank=True)
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default="manual",
+                              db_default="manual")
+    last_seen = models.DateTimeField(null=True, blank=True)
+    eol_mapping = models.ForeignKey(
+        "compliance.EolMapping", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="installs", editable=False,
+    )
+    #: The application group whose assignment made this install
+    #: (``source="group"``); cleared when the install stays after the group
+    #: goes (``api.applications.release_installs``).
+    group = models.ForeignKey(
+        "ApplicationGroup", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="installs",
+    )
+    #: An SPDX licence expression for this install only (a dual-licensed
+    #: product under its commercial licence); blank = the application's.
+    license = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        validators=[validate_license_expression],
+    )
+    #: This install's own package URL and CPE, over the application's
+    #: templates; blank = the application's.
+    purl = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_purl],
+    )
+    cpe = models.CharField(
+        max_length=255, blank=True, default="", db_default="", validators=[validate_cpe],
+    )
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["application__name", "version"]
+        verbose_name_plural = "installed software"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, virtual_machine__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                ),
+                name="installedsoftware_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "device", "virtual_machine", "version"],
+                name="uniq_installedsoftware_app_parent_version",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.application} {self.version}".strip()
+
+    @property
+    def parent(self):
+        return self.device if self.device_id else self.virtual_machine
+
+    @property
+    def effective_license(self) -> str:
+        """The install's own licence, else its application's."""
+        return self.license or self.application.license
+
+    def _package_id(self, own: str, template: str, render) -> str:
+        parent = self.parent
+        os_version = getattr(parent, "software_version", "") or ""
+        return render(own or template, version=self.version, os_version=os_version)
+
+    @property
+    def effective_purl(self) -> str:
+        """The install's package URL, else its application's template
+        filled in; "" when none resolves (``api.package_ids``)."""
+        from .package_ids import render_purl
+
+        return self._package_id(self.purl, self.application.purl_template, render_purl)
+
+    @property
+    def effective_cpe(self) -> str:
+        """The install's CPE, else its application's template filled in."""
+        from .package_ids import render_cpe
+
+        return self._package_id(self.cpe, self.application.cpe_template, render_cpe)
+
+    def save(self, *args, **kwargs):
+        """Derive the cycle and point at the (application, cycle) mapping;
+        a mapping no install uses any more goes."""
+        from .applications import drop_unused_mappings, sync_install
+
+        with transaction.atomic():
+            before = None
+            if not self._state.adding:
+                before = (
+                    type(self).objects.filter(pk=self.pk)
+                    .values_list("eol_mapping_id", flat=True).first()
+                )
+            sync_install(self)
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = {
+                    *kwargs["update_fields"], "cycle", "eol_mapping"}
+            super().save(*args, **kwargs)
+            if before and before != self.eol_mapping_id:
+                drop_unused_mappings([before])
+
+
+class ApplicationGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A named set of applications - "RDS", "SCADA" - assigned to a device
+    or VM in one step. Assigning it records one install per member
+    (``api.applications.assign_group``); the inventory export names the
+    groups so automation can set the host up. A tenant catalog like
+    Application."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="application_groups"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128)
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_applicationgroup_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class ApplicationGroupMember(models.Model):
+    """One application of a group, with the version its installs start at
+    and its place in the group's order."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="+"
+    )
+    group = models.ForeignKey(
+        ApplicationGroup, on_delete=models.CASCADE, related_name="members"
+    )
+    application = models.ForeignKey(
+        Application, on_delete=models.CASCADE, related_name="group_memberships"
+    )
+    version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    position = models.PositiveIntegerField(default=0, db_default=0)
+
+    class Meta:
+        ordering = ["position", "application__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "application"], name="uniq_applicationgroupmember"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.group} - {self.application}"
+
+
+class ApplicationGroupAssignment(models.Model):
+    """An application group on exactly one device or virtual machine. A plain
+    row - no tags, no custom fields - so it follows its host's site without
+    being a rack-move subject."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="+"
+    )
+    group = models.ForeignKey(
+        ApplicationGroup, on_delete=models.CASCADE, related_name="assignments"
+    )
+    device = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="application_group_assignments",
+    )
+    virtual_machine = models.ForeignKey(
+        "VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="application_group_assignments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["group__name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, virtual_machine__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                ),
+                name="applicationgroupassignment_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=["group", "device", "virtual_machine"],
+                name="uniq_applicationgroupassignment",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        host = self.device if self.device_id else self.virtual_machine
+        return f"{self.group} on {host}"
+
+    @property
+    def parent(self):
+        return self.device if self.device_id else self.virtual_machine
 
 
 class ProtocolPortsMixin(models.Model):
@@ -5937,6 +6878,11 @@ class ServiceTemplate(ProtocolPortsMixin, NumIdMixin, TimestampedModel, CustomFi
         max_length=4, choices=PROTOCOL_CHOICES, default="tcp"
     )
     ports = models.JSONField(default=list, help_text="List of port numbers.")
+    # The software behind the service (#436).
+    application = models.ForeignKey(
+        "Application", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="service_templates",
+    )
     description = models.TextField(blank=True)
 
     class Meta:
@@ -6031,6 +6977,12 @@ class NATRule(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="nat_source",
     )
+    #: The egress port a rule applies on - "masquerade on mgmt0". On the
+    #: rule's device.
+    out_interface = models.ForeignKey(
+        "Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_rules_out",
+    )
 
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
@@ -6043,6 +6995,329 @@ class NATRule(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+
+# ─── Application flows (#163) ────────────────────────────────────────────────
+
+
+def _flow_one_end(side: str) -> models.Q:
+    """Exactly one of the side's address, range, prefix or "any" is set."""
+    ip, rng, pfx, any_ = (f"{side}_ip", f"{side}_range", f"{side}_prefix", f"{side}_any")
+    return (
+        models.Q(**{f"{ip}__isnull": False, f"{rng}__isnull": True,
+                    f"{pfx}__isnull": True, any_: False})
+        | models.Q(**{f"{ip}__isnull": True, f"{rng}__isnull": False,
+                      f"{pfx}__isnull": True, any_: False})
+        | models.Q(**{f"{ip}__isnull": True, f"{rng}__isnull": True,
+                      f"{pfx}__isnull": False, any_: False})
+        | models.Q(**{f"{ip}__isnull": True, f"{rng}__isnull": True,
+                      f"{pfx}__isnull": True, any_: True})
+    )
+
+
+class ApplicationFlow(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """Traffic an application needs: from one end to another, on a protocol
+    and ports (#163). Documentation, like a NAT rule - nothing is pushed.
+
+    Each end is exactly one of an address, a range, a prefix, or "any".
+    Deleting the address, range or prefix an end names deletes the flow: a
+    flow with a missing end describes nothing. ``service`` is the
+    destination's service, when one is recorded."""
+
+    PROTOCOL_CHOICES = NATRule.PROTOCOL_CHOICES
+    DIRECTION_CHOICES = [
+        ("one-way", "One way"),
+        ("both", "Both ways"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="application_flows"
+    )
+    application = models.ForeignKey(
+        Application, on_delete=models.PROTECT, related_name="flows"
+    )
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="", db_default="")
+
+    source_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_from",
+    )
+    source_range = models.ForeignKey(
+        "IPRange", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_from",
+    )
+    source_prefix = models.ForeignKey(
+        "Prefix", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_from",
+    )
+    source_any = models.BooleanField(default=False, db_default=False)
+
+    destination_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_to",
+    )
+    destination_range = models.ForeignKey(
+        "IPRange", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_to",
+    )
+    destination_prefix = models.ForeignKey(
+        "Prefix", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_to",
+    )
+    destination_any = models.BooleanField(default=False, db_default=False)
+
+    protocol = models.CharField(
+        max_length=8, choices=PROTOCOL_CHOICES, default="tcp", db_default="tcp"
+    )
+    #: Ports and inclusive ranges, comma-separated: "443", "80, 443",
+    #: "8000-8100". Blank for ICMP and "any", or for every port.
+    ports = models.CharField(max_length=128, blank=True, default="", db_default="")
+    direction = models.CharField(
+        max_length=8, choices=DIRECTION_CHOICES, default="one-way", db_default="one-way"
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="application_flows",
+    )
+    service = models.ForeignKey(
+        "Service", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="application_flows",
+    )
+
+    # ── generated by a requirement ─────────────────────────────────────
+    #: The requirement that made the row (``api.flow_requirements``). Null
+    #: on a hand-made flow, and on one detached or kept after its
+    #: requirement stopped applying.
+    requirement = models.ForeignKey(
+        "ApplicationFlowRequirement", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="flows",
+    )
+    generated = models.BooleanField(default=False, db_default=False)
+    #: The name was made by a requirement and names the hosts at its ends.
+    #: It outlives a detach or release, so the name stays masked for a
+    #: reader who may not view an end (``api.flow_names``); renaming the
+    #: flow clears it.
+    name_generated = models.BooleanField(default=False, db_default=False)
+    #: Which pair of ends the row stands for, deterministic per requirement:
+    #: ``<source end>|<destination end>``.
+    binding_key = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: The installs that put each host end there.
+    source_install = models.ForeignKey(
+        "InstalledSoftware", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="flows_from",
+    )
+    destination_install = models.ForeignKey(
+        "InstalledSoftware", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="flows_to",
+    )
+    #: Fields someone changed on a generated row; the resolver leaves them.
+    overridden_fields = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+
+    class Meta:
+        ordering = ["application__name", "name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=_flow_one_end("source"), name="applicationflow_one_source",
+            ),
+            models.CheckConstraint(
+                condition=_flow_one_end("destination"),
+                name="applicationflow_one_destination",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "name"], name="uniq_applicationflow_app_name",
+            ),
+            models.UniqueConstraint(
+                fields=["requirement", "binding_key"],
+                condition=models.Q(requirement__isnull=False),
+                name="uniq_applicationflow_requirement_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "requirement"], name="appflow_tenant_req_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def end(self, side: str):
+        """``(kind, object)`` of one end - ``("ip", IPAddress)`` or
+        ``("any", None)``. ``side`` is ``source`` or ``destination``."""
+        for kind in ("ip", "range", "prefix"):
+            if getattr(self, f"{side}_{kind}_id"):
+                return kind, getattr(self, f"{side}_{kind}")
+        return "any", None
+
+
+def _requirement_one_end(side: str) -> models.Q:
+    """The side's kind names exactly the reference it uses: ``ip`` an
+    address, ``app`` an application, and so on; ``self`` and ``any`` none."""
+    refs = {"ip": f"{side}_ip", "range": f"{side}_range", "prefix": f"{side}_prefix",
+            "app": f"{side}_application"}
+    q = models.Q()
+    for kind in ("self", "app", "ip", "range", "prefix", "any"):
+        cond = models.Q(**{f"{side}_kind": kind})
+        for k, field in refs.items():
+            cond &= models.Q(**{f"{field}__isnull": k != kind})
+        q |= cond
+    return q
+
+
+class ApplicationFlowRequirement(TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A flow an application needs, with ends that may be "the hosts of an
+    application" instead of fixed addresses. The resolver
+    (``api.flow_requirements``) documents it as one ``ApplicationFlow`` per
+    pair of addresses, and keeps those rows in step as installs and
+    addresses change. A tenant-wide catalog like ``Application``."""
+
+    END_KINDS = [
+        ("self", "This application"),
+        ("app", "Hosts of an application"),
+        ("ip", "Address"),
+        ("range", "Range"),
+        ("prefix", "Prefix"),
+        ("any", "Any"),
+    ]
+    HOST_KINDS = ("self", "app")
+    ADDRESS_CHOICES = [
+        ("primary", "Primary address"),
+        ("service", "Service address"),
+        ("role", "Addresses with a role"),
+        ("all", "Every address"),
+    ]
+    FAMILY_CHOICES = [("any", "Any"), ("ipv4", "IPv4"), ("ipv6", "IPv6")]
+    PAIRING_CHOICES = [("all", "Every host"), ("same_site", "Same site")]
+    STATE_CHOICES = [
+        ("pending", "Pending"),
+        ("resolved", "Resolved"),
+        ("partial", "Partial"),
+        ("unresolved", "Unresolved"),
+        ("idle", "Idle"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="application_flow_requirements"
+    )
+    application = models.ForeignKey(
+        Application, on_delete=models.PROTECT, related_name="flow_requirements"
+    )
+    name = models.CharField(max_length=96)
+    description = models.TextField(blank=True, default="", db_default="")
+
+    source_kind = models.CharField(max_length=8, choices=END_KINDS, default="self")
+    source_application = models.ForeignKey(
+        Application, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="required_as_source",
+    )
+    source_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.CASCADE, null=True, blank=True, related_name="+",
+    )
+    source_range = models.ForeignKey(
+        "IPRange", on_delete=models.CASCADE, null=True, blank=True, related_name="+",
+    )
+    source_prefix = models.ForeignKey(
+        "Prefix", on_delete=models.CASCADE, null=True, blank=True, related_name="+",
+    )
+    source_address = models.CharField(
+        max_length=8, choices=ADDRESS_CHOICES, blank=True, default="",
+    )
+    source_address_role = models.ForeignKey(
+        "IPRole", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+
+    destination_kind = models.CharField(max_length=8, choices=END_KINDS, default="app")
+    destination_application = models.ForeignKey(
+        Application, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="required_as_destination",
+    )
+    destination_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.CASCADE, null=True, blank=True, related_name="+",
+    )
+    destination_range = models.ForeignKey(
+        "IPRange", on_delete=models.CASCADE, null=True, blank=True, related_name="+",
+    )
+    destination_prefix = models.ForeignKey(
+        "Prefix", on_delete=models.CASCADE, null=True, blank=True, related_name="+",
+    )
+    destination_address = models.CharField(
+        max_length=8, choices=ADDRESS_CHOICES, blank=True, default="",
+    )
+    destination_address_role = models.ForeignKey(
+        "IPRole", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+
+    family = models.CharField(max_length=4, choices=FAMILY_CHOICES, default="any")
+    pairing = models.CharField(max_length=9, choices=PAIRING_CHOICES, default="all")
+    protocol = models.CharField(
+        max_length=8, choices=ApplicationFlow.PROTOCOL_CHOICES, default="tcp",
+    )
+    ports = models.CharField(max_length=128, blank=True, default="")
+    direction = models.CharField(
+        max_length=8, choices=ApplicationFlow.DIRECTION_CHOICES, default="one-way",
+    )
+    #: The status the generated flows carry (the application flow statuses).
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+
+    # Written by the resolver only.
+    state = models.CharField(max_length=10, choices=STATE_CHOICES, default="pending")
+    state_detail = models.CharField(max_length=255, blank=True, default="")
+    generated_count = models.PositiveIntegerField(default=0)
+    gap_count = models.PositiveIntegerField(default=0)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["application__name", "name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=_requirement_one_end("source"),
+                name="appflowrequirement_one_source",
+            ),
+            models.CheckConstraint(
+                condition=_requirement_one_end("destination"),
+                name="appflowrequirement_one_destination",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "name"], name="uniq_appflowrequirement_app_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class ApplicationFlowRequirementExclusion(models.Model):
+    """A pair of ends someone removed from a requirement on purpose - by
+    deleting or detaching its generated flow. The resolver skips it until
+    the exclusion goes (Restore)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    requirement = models.ForeignKey(
+        ApplicationFlowRequirement, on_delete=models.CASCADE, related_name="exclusions",
+    )
+    binding_key = models.CharField(max_length=255)
+    label = models.CharField(max_length=255, blank=True, default="")
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["requirement", "binding_key"], name="uniq_appflowreq_exclusion",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.label or self.binding_key
 
 
 class DeviceTypeService(ProtocolPortsMixin, _ComponentTemplate):
@@ -7232,6 +8507,184 @@ class PowerFeed(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.name
 
 
+# ─── Cooling ─────────────────────────────────────────────────────────────────
+class CoolingSource(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A cooling unit or plant within a site - a chiller, a CRAH, an in-row
+    unit - the source that cooling feeds run from (#434). Mirrors
+    :class:`PowerPanel`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cooling_sources"
+    )
+    site = models.ForeignKey(
+        Site, on_delete=models.PROTECT, related_name="cooling_sources"
+    )
+    location = models.ForeignKey(
+        "Location", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cooling_sources",
+        help_text="Where in the site the unit is (building / floor / room).",
+    )
+    name = models.CharField(max_length=128)
+    type = models.CharField(
+        max_length=16, choices=COOLING_SOURCE_TYPE_CHOICES, default="other"
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="cooling_sources",
+    )
+    fluid = models.CharField(
+        max_length=16, choices=COOLING_FLUID_CHOICES, blank=True, default=""
+    )
+    rated_capacity_w = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Heat the unit removes, in watts."
+    )
+    redundancy_group = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Units that back each other up share a group (N+1, A/B).",
+    )
+    device = models.ForeignKey(
+        Device, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cooling_sources",
+        help_text="The device that monitors or is the unit.",
+    )
+    comments = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "site", "name"],
+                name="uniq_coolingsource_tenant_site_name",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class CoolingFeed(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A cooling loop from a source to a rack - one feed is the loop's supply
+    and return. Carries the loop's capacity and a utilisation ceiling, like a
+    :class:`PowerFeed`; its site is its source's."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cooling_feeds"
+    )
+    source = models.ForeignKey(
+        CoolingSource, on_delete=models.PROTECT, related_name="cooling_feeds"
+    )
+    rack = models.ForeignKey(
+        Rack, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cooling_feeds",
+    )
+    name = models.CharField(max_length=128)
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="cooling_feeds",
+    )
+    type = models.CharField(
+        max_length=16, choices=COOLING_FEED_TYPE_CHOICES, default="primary"
+    )
+    rated_capacity_w = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Heat the loop carries away, in watts."
+    )
+    flow_rate_lpm = models.DecimalField(
+        max_digits=6, decimal_places=1, null=True, blank=True,
+        help_text="Litres per minute.",
+    )
+    supply_temp_c = models.DecimalField(
+        max_digits=4, decimal_places=1, null=True, blank=True, help_text="°C."
+    )
+    return_temp_c = models.DecimalField(
+        max_digits=4, decimal_places=1, null=True, blank=True, help_text="°C."
+    )
+    connector = models.CharField(max_length=64, blank=True, default="")
+    max_utilization = models.PositiveSmallIntegerField(
+        default=80, validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Share of the rated capacity a rack may load, as a percent.",
+    )
+    comments = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "source", "name"],
+                name="uniq_coolingfeed_tenant_source_name",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+class _CoolingComponent(TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """What a device's cooling intake and outflow share (#434). A hose is a
+    reference between them, not a cable: the cable model stays for signal
+    and power. Tenant scope inherited via device."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=64)
+    label = models.CharField(max_length=64, blank=True, default="", db_default="")
+    connector = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=COOLING_CONNECTOR_CHOICES,
+    )
+    diameter_mm = models.PositiveSmallIntegerField(null=True, blank=True)
+    max_flow_lpm = models.DecimalField(
+        max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0)], help_text="Litres per minute.",
+    )
+    description = models.CharField(max_length=255, blank=True, default="", db_default="")
+
+    class Meta:
+        abstract = True
+
+    def __str__(self) -> str:
+        return f"{self.device.name}:{self.name}"
+
+
+class CoolingIntake(_CoolingComponent):
+    """Where coolant enters a device (#434). Fed by a cooling feed, or by an
+    outflow on another device (a CDU) - one or the other, never both."""
+
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name="cooling_intakes"
+    )
+    cooling_feed = models.ForeignKey(
+        CoolingFeed, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="intakes",
+    )
+    outflow = models.ForeignKey(
+        "CoolingOutflow", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="intakes",
+        help_text="An outflow on another device - a CDU - that feeds this intake.",
+    )
+
+    class Meta:
+        unique_together = ("device", "name")
+        ordering = [natural("name")]
+
+
+class CoolingOutflow(_CoolingComponent):
+    """Where coolant leaves a device (#434) - a CDU's secondary ports.
+    ``intake`` names the intake on the same device that feeds it."""
+
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name="cooling_outflows"
+    )
+    intake = models.ForeignKey(
+        CoolingIntake, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="outflows",
+        help_text="The intake on this device that feeds the outflow.",
+    )
+
+    class Meta:
+        unique_together = ("device", "name")
+        ordering = [natural("name")]
+
+
 # ─── Wireless ────────────────────────────────────────────────────────────────
 class WirelessLANGroup(NumIdMixin, TimestampedModel):
     """An organisational grouping of wireless LANs (a campus, a tenant-zone…).
@@ -7492,6 +8945,36 @@ class TunnelTermination(TimestampedModel):
         related_name="tunnel_terminations",
         help_text="The underlay / public IP this tunnel end rides on.",
     )
+    # ── WireGuard: meaningful on a ``wireguard`` tunnel only. The private key
+    # never enters Danbyte; ``private_key_ref`` names where it lives (a
+    # ``<keychain:NAME>`` placeholder or a path on the box).
+    listen_port = models.PositiveIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+    public_key = models.CharField(max_length=44, blank=True, default="", db_default="")
+    private_key_ref = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+    )
+    #: The addresses behind this end, as CIDRs. Every other end prints them
+    #: in its peer block for this end (WireGuard's own meaning).
+    allowed_ips = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    #: The port the far end dials to reach this end, when NAT makes it differ
+    #: from ``listen_port``. Null = ``listen_port``.
+    endpoint_port = models.PositiveIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+    persistent_keepalive = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+    )
+
+    WIREGUARD_FIELDS = (
+        "listen_port", "public_key", "private_key_ref", "allowed_ips",
+        "endpoint_port", "persistent_keepalive",
+    )
 
     class Meta:
         ordering = ["created_at"]
@@ -7511,6 +8994,40 @@ class TunnelTermination(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.tunnel.name}: {self.point}"
+
+    def has_wireguard(self) -> bool:
+        return bool(
+            self.listen_port or self.public_key or self.private_key_ref
+            or self.allowed_ips or self.endpoint_port or self.persistent_keepalive
+        )
+
+    def clean(self):
+        """WireGuard values: only on a WireGuard tunnel, keys in their shape,
+        and never a private key in ``private_key_ref``."""
+        from django.core.exceptions import ValidationError
+
+        from .wireguard import (
+            normalize_allowed_ips,
+            validate_private_key_ref,
+            validate_public_key,
+        )
+
+        self.public_key = (self.public_key or "").strip()
+        self.private_key_ref = (self.private_key_ref or "").strip()
+        self.allowed_ips = normalize_allowed_ips(self.allowed_ips)
+        if self.has_wireguard() and self.tunnel_id and (
+            self.tunnel.encapsulation != "wireguard"
+        ):
+            raise ValidationError(
+                {"public_key": "WireGuard settings need a WireGuard tunnel."}
+            )
+        if self.public_key:
+            validate_public_key(self.public_key)
+        if self.private_key_ref:
+            validate_private_key_ref(
+                self.private_key_ref,
+                tenant_id=self.tunnel.tenant_id if self.tunnel_id else None,
+            )
 
 
 class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
@@ -7696,6 +9213,38 @@ class Region(NumIdMixin, TimestampedModel):
             node = node.parent
 
 
+class LocationType(NumIdMixin, TimestampedModel):
+    """What kind of place a location is ("Building", "Floor", "Hall",
+    "Manhole"…). An editable tenant catalog - nothing is seeded; behaviour
+    never keys off a type, it only names and colours locations."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="location_types"
+    )
+    name = models.CharField(max_length=64)
+    slug = models.SlugField(max_length=64)
+    color = models.CharField(max_length=7, blank=True, default="")
+    icon = models.CharField(
+        max_length=48,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. building, layers, door-closed).",
+    )
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_locationtype_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Location(NumIdMixin, TimestampedModel):
     """A physical location *within a site* - a self-nesting tree (e.g.
     Building A → Floor 2 → Room 210). Racks/devices can hang off these."""
@@ -7727,6 +9276,14 @@ class Location(NumIdMixin, TimestampedModel):
         help_text="Lucide icon name (e.g. building, layers, door-closed).",
     )
     description = models.TextField(blank=True, default="")
+    location_type = models.ForeignKey(
+        LocationType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="locations",
+    )
+    code = models.CharField(
+        max_length=32, blank=True, default="", db_default="",
+        help_text="Short code the location is known by (e.g. A1, B2).",
+    )
 
     class Meta:
         ordering = [natural("site__name"), natural("name")]
@@ -7739,6 +9296,20 @@ class Location(NumIdMixin, TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def display_color(self) -> str:
+        """The colour a location is drawn in: its own, else its type's."""
+        if self.color:
+            return self.color
+        return self.location_type.color if self.location_type_id else ""
+
+    @property
+    def display_icon(self) -> str:
+        """The icon a location is drawn with: its own, else its type's."""
+        if self.icon:
+            return self.icon
+        return self.location_type.icon if self.location_type_id else ""
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -7756,11 +9327,62 @@ class Location(NumIdMixin, TimestampedModel):
             node = node.parent
 
 
+class Room(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A room inside a location (Region → Site → Location → Room). Devices,
+    racks and cabinets name the room they stand in; the room's site is its
+    location's. Locations nested as rooms before this existed stay as they
+    are."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="rooms"
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.PROTECT, related_name="rooms"
+    )
+    name = models.CharField(max_length=128)
+    # Derived from the name when left blank (the API suffixes a clash).
+    slug = models.SlugField(max_length=128, blank=True)
+    code = models.CharField(
+        max_length=32, blank=True, default="", db_default="",
+        help_text="The room's number or code on the door (e.g. 210, B1-07).",
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="rooms",
+    )
+    color = models.CharField(max_length=7, blank=True, default="", db_default="")
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = [natural("location__name"), natural("name")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "location", "slug"],
+                name="uniq_room_tenant_location_slug",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "location", "name"],
+                name="uniq_room_tenant_location_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def clean(self):
+        if not self.slug:
+            from django.utils.text import slugify
+
+            self.slug = slugify(self.name)[:128]
+
+
 # ─── Config Contexts (layered JSON merged onto devices/VMs) ──────────────────
 class ConfigContext(NumIdMixin, TimestampedModel):
     """A named blob of JSON data that is merged onto devices/VMs whose
     attributes match this context's criteria. Higher ``weight`` wins on
-    conflicting keys. Empty criteria for a dimension = matches everything."""
+    conflicting keys. Empty criteria for a dimension = matches everything.
+    A device/VM's own ``local_context_data`` is merged after every context."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -7786,6 +9408,11 @@ class ConfigContext(NumIdMixin, TimestampedModel):
     )
     platforms = models.ManyToManyField(
         "Platform", blank=True, related_name="config_contexts"
+    )
+    # The context's tenant's own tags only (never deployment-global ones);
+    # a device/VM matches when it carries any of them.
+    tags = models.ManyToManyField(
+        "core.Tag", blank=True, related_name="config_contexts"
     )
 
     class Meta:
@@ -7824,7 +9451,8 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     as_attachment = models.BooleanField(default=True)
     #: Where the rendered file lands on the device (``/etc/frr/frr.conf``).
     #: What a bundle keys its files by; blank falls back to the template's
-    #: name and extension.
+    #: name and extension. Ending in ``/`` makes it a directory: the template
+    #: writes one file per ``{% file "name" %}`` block, each at ``<dir><name>``.
     target_path = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
@@ -7839,6 +9467,11 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     def bundle_path(self) -> str:
         """The path this file is keyed by in a bundle render."""
         return self.target_path or f"{self.name}.{self.file_extension or 'txt'}"
+
+    @property
+    def is_directory(self) -> bool:
+        """A target path ending in ``/``: this template renders several files."""
+        return (self.target_path or "").endswith("/")
 
     def __str__(self) -> str:
         return self.name
@@ -8043,24 +9676,137 @@ class FloorTileType(NumIdMixin, TimestampedModel):
         return self.name
 
 
+#: The most cells a floor plan's grid has a side: 1.2 km at the default
+#: 600 mm cell, a site at 1 m cells. Drawing and routing scale with what is
+#: on a plan, not with its cells (docs/features/floor-plans.md).
+FLOOR_PLAN_MAX_GRID = 2048
+
+
+class FloorPlanStack(TimestampedModel, TaggableMixin):
+    """A floor plan as an operator sees it: one building or hall and its
+    floors, in order. Each floor is a ``FloorPlan`` (the canvas); the stack
+    only groups and orders them. Shown in the UI as "Floor plan"."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="floor_plan_stacks"
+    )
+    # The site the floor plan maps. Every floor plan has one; its location
+    # is optional - a site-wide floor plan (a campus map with many buildings)
+    # has none. A set location belongs to this site. Required by the API and
+    # set by save(); nullable in the database only so a process still on the
+    # previous release can insert during an upgrade (api 0231).
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, null=True, related_name="floor_plan_stacks"
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="floor_plan_stacks",
+    )
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="", db_default="")
+    # Aligned floors (building levels): the floors share one footprint and
+    # coordinate frame (each nudged by its ``align_*`` offset), sit at real
+    # heights (``elevation_mm``, else computed from the floors below) and
+    # render together as one building in 3D. Off: floors are independent
+    # canvases, as they always were.
+    aligned = models.BooleanField(default=False, db_default=False)
+
+    class Meta:
+        ordering = [natural("name")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "location", "name"],
+                name="uniq_floorplanstack_tenant_location_name",
+            ),
+            # Site-wide floor plans: unique by name per site.
+            models.UniqueConstraint(
+                fields=["tenant", "site", "name"],
+                condition=models.Q(location__isnull=True),
+                name="uniq_floorplanstack_tenant_site_name_sitewide",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def save(self, *args, **kwargs):
+        # Callers that name only a location (older scripts, imports) get its
+        # site.
+        if self.site_id is None and self.location_id is not None:
+            self.site_id = self.location.site_id
+        super().save(*args, **kwargs)
+
+
+def _map_upload_to(instance, filename: str) -> str:
+    """Map snapshots live in ``floor-plans/maps/`` under a random name: a
+    new render never reuses a cached URL."""
+    ext = os.path.splitext(filename)[1].lower()[:8] or ".png"
+    return f"floor-plans/maps/{uuid.uuid4().hex}{ext}"
+
+
+class FloorPlanMap(TimestampedModel):
+    """A Site map snapshot under one or more floors: the base layer
+    (api/floor_plan_layers.py). The floors of one building (the levels of an
+    aligned floor plan) share one row, so the picture is stored once and
+    belongs to the building, not to whichever level is the ground; a
+    single floor has its own. ``bbox`` is the box rendered, the box of the
+    geo anchor of every floor that shows it. The floor's own picture or CAD
+    drawing is drawn over it."""
+
+    BASEMAPS = [("map", "Map"), ("sat", "Satellite")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="floor_plan_maps"
+    )
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, related_name="floor_plan_maps"
+    )
+    image = models.ImageField(upload_to=_map_upload_to, max_length=255)
+    # [south, west, north, east] in degrees.
+    bbox = models.JSONField(null=True, blank=True)
+    zoom = models.PositiveSmallIntegerField(null=True, blank=True)
+    basemap = models.CharField(max_length=8, choices=BASEMAPS, default="map")
+    attribution = models.CharField(max_length=512, blank=True, default="")
+    captured_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-captured_at"]
+
+    def __str__(self) -> str:
+        return f"Map of {self.site}" if self.site_id else "Map"
+
+
 class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """The physical layout of a Location (a room/floor): a grid of placed
-    tiles, optionally over an uploaded blueprint image."""
+    """One floor of a floor plan: the physical layout of a Location as a grid
+    of placed tiles, optionally over an uploaded blueprint image. ``stack``
+    is the floor plan it is a floor of; ``name`` is the floor's own name
+    ("B1", "Ground", "2")."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="floor_plans"
     )
+    # Always its floor plan's (stack's) site. ``location`` is null on a
+    # site-wide floor: its area links, pickers and placement span the site.
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, null=True, related_name="floor_plans"
+    )
     location = models.ForeignKey(
-        Location, on_delete=models.CASCADE, related_name="floor_plans"
+        Location, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="floor_plans",
     )
     name = models.CharField(max_length=128)
     grid_width = models.PositiveSmallIntegerField(
-        default=24, validators=[MinValueValidator(1), MaxValueValidator(512)]
+        default=24,
+        validators=[MinValueValidator(1), MaxValueValidator(FLOOR_PLAN_MAX_GRID)],
     )
     grid_height = models.PositiveSmallIntegerField(
-        default=16, validators=[MinValueValidator(1), MaxValueValidator(512)]
+        default=16,
+        validators=[MinValueValidator(1), MaxValueValidator(FLOOR_PLAN_MAX_GRID)],
     )
+
     background_image = models.ImageField(
         upload_to="floor-plans/",
         blank=True,
@@ -8087,18 +9833,160 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # same trick as TopologyView.state, so it evolves without migrations.
     state = models.JSONField(default=dict, blank=True)
     description = models.TextField(blank=True, default="")
+    # The floor plan this is a floor of. RESTRICT: a stack goes only with its
+    # floors (the stack endpoint deletes them first; a location or tenant
+    # delete takes both). Null only for a plan outside any stack.
+    stack = models.ForeignKey(
+        FloorPlanStack, on_delete=models.RESTRICT, null=True, blank=True,
+        related_name="floors",
+    )
+    # Sort key inside the stack, lowest first (negative for basements is fine).
+    floor_order = models.SmallIntegerField(default=0, db_default=0)
+    # Height of the floor (its finished floor level) above the site's
+    # reference level. Null on a floor of an aligned stack: computed from the
+    # floors below (api/floor_stacks.stack_elevations).
+    elevation_mm = models.IntegerField(null=True, blank=True)
+    # The slab under this floor: a storey is the floor below's ceiling plus
+    # this floor's slab.
+    slab_mm = models.PositiveSmallIntegerField(
+        default=300, db_default=300, validators=[MaxValueValidator(5000)],
+    )
+    # On an aligned stack: this floor's offset against the stack's frame, in
+    # its own cells (dx, dy) and degrees (rotation about the grid's centre).
+    align_dx = models.FloatField(default=0, db_default=0)
+    align_dy = models.FloatField(default=0, db_default=0)
+    align_rot = models.FloatField(default=0, db_default=0)
+    # "grid": tiles on whole cells at quarter turns, never stacked (the plan
+    # as it always was). "free": any position, size and angle, objects may
+    # overlap. Back to grid only through snap-all.
+    LAYOUT_MODES = [("grid", "Grid"), ("free", "Free")]
+    layout_mode = models.CharField(
+        max_length=8, choices=LAYOUT_MODES, default="grid", db_default="grid"
+    )
+    # Snapshots (api/floor_plan_snapshots.py). "plan": a canvas holding its
+    # own objects. "view": a live view of ``crop`` of ``source`` - it holds
+    # nothing; its contents are the source's objects inside the crop, and an
+    # edit made through it is an edit of those. A copy is a "plan" whose
+    # ``source`` is provenance only. The API refuses to delete a plan that
+    # views still show; SET_NULL covers the cascades that bypass it.
+    KINDS = [("plan", "Plan"), ("view", "View")]
+    kind = models.CharField(max_length=8, choices=KINDS, default="plan", db_default="plan")
+    source = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="snapshots",
+    )
+    # {"x", "y", "w", "h"} in whole cells of the source.
+    crop = models.JSONField(null=True, blank=True)
+    snapshot_at = models.DateTimeField(null=True, blank=True)
+    # A live view made from a room, location or area drawn on its source
+    # follows it: its crop is the area's bounding box in whole cells plus
+    # ``source_margin`` cells, worked out on every read. Deleting the area
+    # freezes ``crop`` where it last was (floor_plan_snapshots).
+    source_area = models.ForeignKey(
+        "FloorPlanArea", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="views",
+    )
+    source_margin = models.PositiveSmallIntegerField(default=0, db_default=0)
+    # The geo anchor of a plan made from the Site map
+    # (api/floor_plan_geo.py): the box of the map its grid spans,
+    # [south, west, north, east] in degrees, linear in Web Mercator across
+    # the grid; the metres one cell is there; the basemap and tile zoom of
+    # the background rendered for it, and when that was captured (null: no
+    # map background). Null ``geo_bbox``: a plan with no tie to the map.
+    geo_bbox = models.JSONField(null=True, blank=True)
+    geo_mpc = models.FloatField(null=True, blank=True)
+    geo_zoom = models.PositiveSmallIntegerField(null=True, blank=True)
+    geo_basemap = models.CharField(
+        max_length=8, blank=True, default="", db_default="",
+        choices=[("", "None"), ("map", "Map"), ("sat", "Satellite")],
+    )
+    geo_captured_at = models.DateTimeField(null=True, blank=True)
+    # Two background layers, drawn in this order: the base map (a Site map
+    # snapshot, shared by the levels of one building) and the floor's own
+    # picture (``background_image``) or CAD drawing over it. ``map_shown``
+    # null is the default: shown, except on a basement (a level below
+    # ground of an aligned floor plan); True or False is set by hand.
+    base_map = models.ForeignKey(
+        FloorPlanMap, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="floors",
+    )
+    map_opacity = models.PositiveSmallIntegerField(
+        default=60, db_default=60, validators=[MaxValueValidator(100)],
+        help_text="Percent.",
+    )
+    map_shown = models.BooleanField(null=True, blank=True)
+    background_shown = models.BooleanField(default=True, db_default=True)
 
     class Meta:
         ordering = ["name"]
         constraints = [
+            # A floor name is unique inside its floor plan, so two buildings
+            # under one location can each have a "1".
+            models.UniqueConstraint(
+                fields=["stack", "name"],
+                condition=models.Q(stack__isnull=False),
+                name="uniq_floorplan_stack_name",
+            ),
             models.UniqueConstraint(
                 fields=["tenant", "location", "name"],
-                name="uniq_floorplan_tenant_location_name",
-            )
+                condition=models.Q(stack__isnull=True),
+                name="uniq_floorplan_unstacked_location_name",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "site", "name"],
+                condition=models.Q(stack__isnull=True, location__isnull=True),
+                name="uniq_floorplan_unstacked_site_name",
+            ),
         ]
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        # The site follows the stack, else the location (callers that name
+        # only a location keep working).
+        if self.site_id is None:
+            if self.stack_id is not None:
+                self.site_id = self.stack.site_id
+            elif self.location_id is not None:
+                self.site_id = self.location.site_id
+        # Every new plan is a floor of some floor plan: one created without a
+        # stack (an import, an older script) gets a stack of its own, named
+        # after it.
+        if self._state.adding and self.stack_id is None and self.tenant_id \
+                and self.site_id:
+            self.stack = FloorPlanStack.objects.create(
+                tenant_id=self.tenant_id, site_id=self.site_id,
+                location_id=self.location_id,
+                name=unique_stack_name(
+                    self.tenant_id, self.location_id, self.name, site_id=self.site_id
+                ),
+            )
+        super().save(*args, **kwargs)
+
+
+def unique_stack_name(tenant_id, location_id, base: str, exclude=None, *,
+                      site_id=None) -> str:
+    """``base``, or ``base 2``, ``base 3``… - the first name no floor plan
+    (stack) at that location has yet; with no location, no site-wide floor
+    plan of ``site_id``."""
+    maxlen = FloorPlanStack._meta.get_field("name").max_length
+    base = (base or "Floor plan")[:maxlen]
+    if location_id is not None:
+        taken = FloorPlanStack.objects.filter(tenant_id=tenant_id, location_id=location_id)
+    else:
+        taken = FloorPlanStack.objects.filter(
+            tenant_id=tenant_id, site_id=site_id, location__isnull=True
+        )
+    if exclude is not None:
+        taken = taken.exclude(pk=exclude)
+    names = set(taken.values_list("name", flat=True))
+    name, n = base, 2
+    while name in names:
+        suffix = f" {n}"
+        name = base[: maxlen - len(suffix)] + suffix
+        n += 1
+    return name
 
 
 def _cad_upload_to(instance, filename: str) -> str:
@@ -8166,6 +10054,9 @@ class FloorPlanDrawing(TimestampedModel):
     # Server renders with a set of layers left out, by key (the large-drawing
     # path): {key: {"status", "file", "bytes", "elements", "error", ...}}.
     variants = models.JSONField(default=dict, blank=True)
+    # {"min_x", "min_y", "max_x", "max_y"} in drawing units: a snapshot's copy
+    # renders only this part of the file (cad_engine --clip).
+    clip = models.JSONField(null=True, blank=True)
     processed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -8214,7 +10105,6 @@ class FloorPlanTile(TimestampedModel):
         ("reserved", "Reserved"),
         ("decommissioning", "Decommissioning"),
     ]
-    ORIENTATION_CHOICES = [(0, "0°"), (90, "90°"), (180, "180°"), (270, "270°")]
     # link_kind → FK field name; exactly the reference-kind approach the
     # topology map + CableSerializer use.
     LINK_FIELDS = {
@@ -8223,6 +10113,7 @@ class FloorPlanTile(TimestampedModel):
         "device": "device",
         "powerpanel": "power_panel",
         "powerfeed": "power_feed",
+        "coolingsource": "cooling_source",
         "floorplan": "linked_floor_plan",
     }
 
@@ -8230,13 +10121,14 @@ class FloorPlanTile(TimestampedModel):
     floor_plan = models.ForeignKey(
         FloorPlan, on_delete=models.CASCADE, related_name="tiles"
     )
-    x = models.PositiveSmallIntegerField()
-    y = models.PositiveSmallIntegerField()
-    width = models.PositiveSmallIntegerField(
-        default=1, validators=[MinValueValidator(1), MaxValueValidator(512)]
+    # Cell units. Whole cells on a grid plan; any value on a free one.
+    x = models.FloatField(validators=[MinValueValidator(0)])
+    y = models.FloatField(validators=[MinValueValidator(0)])
+    width = models.FloatField(
+        default=1, validators=[MinValueValidator(0.01), MaxValueValidator(512)]
     )
-    height = models.PositiveSmallIntegerField(
-        default=1, validators=[MinValueValidator(1), MaxValueValidator(512)]
+    height = models.FloatField(
+        default=1, validators=[MinValueValidator(0.01), MaxValueValidator(512)]
     )
     tile_type = models.ForeignKey(
         FloorTileType,
@@ -8252,8 +10144,9 @@ class FloorPlanTile(TimestampedModel):
         blank=True,
         related_name="floor_tiles",
     )
+    # Degrees. Quarter turns on a grid plan; any whole degree on a free one.
     orientation = models.PositiveSmallIntegerField(
-        choices=ORIENTATION_CHOICES, default=0
+        default=0, validators=[MaxValueValidator(359)]
     )
     label = models.CharField(max_length=64, blank=True, default="")
     color = models.CharField(max_length=7, blank=True, default="")
@@ -8296,6 +10189,13 @@ class FloorPlanTile(TimestampedModel):
         blank=True,
         related_name="floor_tiles",
     )
+    cooling_source = models.ForeignKey(
+        CoolingSource,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="floor_tiles",
+    )
     linked_floor_plan = models.ForeignKey(
         FloorPlan,
         on_delete=models.SET_NULL,
@@ -8327,17 +10227,51 @@ class FloorPlanTile(TimestampedModel):
         help_text="Pan-tilt-zoom: coverage renders as a full 360° ring "
                   "(radius = reach) instead of a fixed cone.",
     )
+    DISPLAY_CHOICES = [("icon", "Icon"), ("photo", "Photo")]
+    # How a device or rack tile draws: its coloured box, or its photo (the
+    # object's first image, else its device type's front image). A tile
+    # without a photo draws as an icon whatever this says.
+    display = models.CharField(
+        max_length=8, choices=DISPLAY_CHOICES, default="icon", db_default="icon"
+    )
+    # Stacking order on a free plan, where tiles may overlap.
+    z = models.SmallIntegerField(default=0, db_default=0)
+    # A riser: where cables leave this floor for another (a shaft, a sleeve
+    # through the slab). It pairs with one riser tile on another floor of
+    # the site - ``riser_to`` on either side names the other - and a cable
+    # with an end on each floor is routed to it on both (api/cable_routing).
+    riser = models.BooleanField(default=False, db_default=False)
+    riser_to = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="riser_from",
+    )
+    # The vertical run between the two floors. Blank: from the floors'
+    # elevations, else their ceiling heights (cable_routing.riser_vertical_mm).
+    riser_height_mm = models.PositiveIntegerField(
+        null=True, blank=True, validators=[MaxValueValidator(200000)],
+    )
 
     class Meta:
         ordering = ["y", "x"]
         indexes = [models.Index(fields=["floor_plan"])]
         constraints = [
             models.CheckConstraint(
-                name="floorplantile_exactly_one_type",
-                # Exactly one of tile_type / role_type.
+                name="floorplantile_type_or_link",
+                # Exactly one of tile_type / role_type - or neither on a tile
+                # linked to an object, which draws from that object.
                 check=(
                     models.Q(tile_type__isnull=False, role_type__isnull=True)
                     | models.Q(tile_type__isnull=True, role_type__isnull=False)
+                    | models.Q(
+                        models.Q(tile_type__isnull=True, role_type__isnull=True),
+                        models.Q(rack__isnull=False)
+                        | models.Q(cabinet__isnull=False)
+                        | models.Q(device__isnull=False)
+                        | models.Q(power_panel__isnull=False)
+                        | models.Q(power_feed__isnull=False)
+                        | models.Q(cooling_source__isnull=False)
+                        | models.Q(linked_floor_plan__isnull=False),
+                    )
                 ),
             ),
             models.CheckConstraint(
@@ -8350,9 +10284,11 @@ class FloorPlanTile(TimestampedModel):
                             f"{f}__isnull": True
                             for f in [
                                 "rack",
+                                "cabinet",
                                 "device",
                                 "power_panel",
                                 "power_feed",
+                                "cooling_source",
                                 "linked_floor_plan",
                             ]
                         }
@@ -8369,6 +10305,7 @@ class FloorPlanTile(TimestampedModel):
                                         "device",
                                         "power_panel",
                                         "power_feed",
+                                        "cooling_source",
                                         "linked_floor_plan",
                                     ]
                                     if other != set_field
@@ -8381,6 +10318,7 @@ class FloorPlanTile(TimestampedModel):
                             "device",
                             "power_panel",
                             "power_feed",
+                            "cooling_source",
                             "linked_floor_plan",
                         ]
                     ],
@@ -8509,6 +10447,10 @@ class FloorPlanTray(TimestampedModel):
         Cable, blank=True, related_name="trays",
         help_text="The physical cables routed through this tray.",
     )
+    capacity = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="How many cables the run holds. Blank: no limit is known.",
+    )
 
     class Meta:
         ordering = ["name"]
@@ -8519,10 +10461,13 @@ class FloorPlanTray(TimestampedModel):
 
 
 class FloorPlanRaisedFloorArea(TimestampedModel):
-    """A raised-floor region of a plan: a rectangle of grid cells standing on
-    pedestals with a cable plenum underneath. Rooms are rarely uniformly
-    raised - the DC pad is, the adjoining corridor isn't - so the raised
-    floor is per-area, and an L-shaped pad is simply two rectangles.
+    """A raised-floor region of a plan standing on pedestals with a cable
+    plenum underneath: a rectangle of grid cells, or - when ``points`` is
+    set - a polygon in cell units (a hall turned on the plan, an L-shaped
+    pad). Rooms are rarely uniformly raised - the DC pad is, the adjoining
+    corridor isn't - so the raised floor is per-area. A polygon's
+    ``x``/``y``/``width``/``height`` are the whole cells it covers, kept for
+    readers that only need a box.
 
     The plenum depth drives two things: how deep underfloor trays/cables sit
     (in the 3D room and in route-length estimation's vertical-drop term), and
@@ -8547,6 +10492,9 @@ class FloorPlanRaisedFloorArea(TimestampedModel):
         help_text="Void depth under the finished floor - how far below 0 the "
         "structural slab sits here.",
     )
+    # [[x, y], ...] in cell units, rounded to 0.001 cell; empty = the
+    # rectangle above.
+    points = models.JSONField(default=list, blank=True, db_default=[])
     label = models.CharField(max_length=64, blank=True, default="")
     color = models.CharField(max_length=7, blank=True, default="")
 
@@ -8559,9 +10507,14 @@ class FloorPlanRaisedFloorArea(TimestampedModel):
 
 
 class FloorPlanWall(TimestampedModel):
-    """A wall drawn on a floor plan: a polyline on the same half-cell lattice
-    trays use, so a wall can run along the boundary BETWEEN two tiles or down
-    the centreline OF a tile. ``openings`` are door/passage spans along the
+    """A wall drawn on a floor plan: a polyline in cell units. Drawn by hand
+    its points sit on the half-cell lattice trays use, so a wall can run
+    along the boundary BETWEEN two tiles or down the centreline OF a tile;
+    a wall made from an area's outline follows that outline exactly (any
+    point within the grid, to 0.001 cell). ``source_area`` is the area it
+    was made from while the two stay linked: the area carries its walls
+    when it moves, and the editor offers to rebuild them when it is
+    reshaped. ``openings`` are door/passage spans along the
     polyline's segments; v1 doors are pure geometry (no per-door metadata),
     so they live as JSON on the wall - one PATCH keeps wall + doors atomic,
     exactly how a tray keeps its whole geometry in ``points``.
@@ -8574,18 +10527,33 @@ class FloorPlanWall(TimestampedModel):
         FloorPlan, on_delete=models.CASCADE, related_name="walls"
     )
     label = models.CharField(max_length=64, blank=True, default="")
-    # [[x, y], …] in cell units snapped to the half-cell lattice.
+    # [[x, y], …] in cell units, rounded to 0.001 cell.
     points = models.JSONField(default=list)
+    source_area = models.ForeignKey(
+        "FloorPlanArea", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="linked_walls",
+        help_text="The area this wall was made from, while linked to it.",
+    )
     height_mm = models.PositiveSmallIntegerField(
         null=True, blank=True,
         validators=[MinValueValidator(200), MaxValueValidator(20000)],
         help_text="Blank = full height (the plan's ceiling).",
     )
+    thickness_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(20), MaxValueValidator(2000)],
+        help_text="Blank = the standard 100 mm.",
+    )
     color = models.CharField(max_length=7, blank=True, default="")
-    # [{"seg": int, "from": float, "to": float, "height_mm": int|null}, …] -
-    # spans along segment ``seg`` measured in cell units from its start
-    # vertex; null height renders a standard 2100 mm door.
+    # [{"seg": int, "from": float, "to": float, "height_mm": int|null,
+    #   "hinge"?: "start"|"end", "side"?: "left"|"right"}, …] - spans along
+    # segment ``seg`` measured in cell units from its start vertex; null
+    # height renders a standard 2100 mm door. ``hinge`` and ``side`` give a
+    # door its leaf and swing; without them it is a plain opening.
     openings = models.JSONField(default=list, blank=True)
+    # An outer wall of the building: what "Copy outer walls" takes to a new
+    # level and what outlines the slab in the 3D building.
+    exterior = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         ordering = ["label"]
@@ -8593,6 +10561,265 @@ class FloorPlanWall(TimestampedModel):
 
     def __str__(self) -> str:
         return self.label or f"wall ({len(self.points or [])} pts)"
+
+
+class AreaType(NumIdMixin, TimestampedModel):
+    """What a plain floor-plan area is ("Parking", "Fence", "Road",
+    "Gate"…): an editable tenant catalog with a colour, a fill pattern and
+    an icon. Nothing is seeded; behaviour never keys off a type, it only
+    names and draws the areas. A type applies to areas linked to neither a
+    room nor a location - those wear their room's or location's colour."""
+
+    PATTERNS = [
+        ("solid", "Solid"),
+        ("hatched", "Hatched"),
+        ("crosshatched", "Cross-hatched"),
+        ("dotted", "Dotted"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="area_types"
+    )
+    name = models.CharField(max_length=64)
+    slug = models.SlugField(max_length=64)
+    color = models.CharField(max_length=7, blank=True, default="")
+    pattern = models.CharField(max_length=16, choices=PATTERNS, default="solid")
+    icon = models.CharField(
+        max_length=48,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. car, fence, trees).",
+    )
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_areatype_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class FloorPlanArea(TimestampedModel):
+    """A room, a location or a plain area drawn on one floor: a rectangle
+    (turned about its centre) or a polygon, in cell units. Its colour is the
+    linked room's or location's, else its own, else its area type's (plain
+    areas only). Drawn under the tiles, over the background and zone tiles;
+    areas may overlap (a cage in a hall)."""
+
+    SHAPES = [("rect", "Rectangle"), ("polygon", "Polygon")]
+    BORDERS = [("solid", "Solid"), ("dashed", "Dashed"), ("none", "None")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    floor_plan = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, related_name="areas"
+    )
+    shape = models.CharField(max_length=8, choices=SHAPES, default="rect")
+    # The rectangle's box (top-left, unturned); a polygon's bounding box.
+    x = models.FloatField(default=0)
+    y = models.FloatField(default=0)
+    width = models.FloatField(default=1)
+    height = models.FloatField(default=1)
+    rotation = models.FloatField(
+        default=0, help_text="Degrees about the centre (rectangles only)."
+    )
+    # [[x, y], ...] in cell units (polygons only).
+    points = models.JSONField(default=list, blank=True)
+    room = models.ForeignKey(
+        Room, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="floor_plan_areas",
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="floor_plan_areas",
+    )
+    label = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Shown in place of the linked room's or location's name.",
+    )
+    # What a plain area is (parking, fence…); never set while a room or a
+    # location is linked - those wear the linked object's colour.
+    area_type = models.ForeignKey(
+        AreaType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="areas",
+    )
+    color = models.CharField(max_length=7, blank=True, default="")
+    fill_opacity = models.PositiveSmallIntegerField(
+        default=15, validators=[MaxValueValidator(100)], help_text="Percent."
+    )
+    border = models.CharField(max_length=8, choices=BORDERS, default="solid")
+    show_name = models.BooleanField(default=True)
+    z = models.SmallIntegerField(default=0, help_text="Draw order among areas.")
+    locked = models.BooleanField(default=False)
+    # The floor plan a click on the area opens in View (any floor, snapshot
+    # or live view the writer may view); a reader who may not view it reads
+    # null and ``opens_hidden``.
+    opens = models.ForeignKey(
+        FloorPlan, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="opened_by_areas",
+    )
+
+    class Meta:
+        ordering = ["z", "created_at"]
+        indexes = [models.Index(fields=["floor_plan"])]
+        constraints = [
+            models.CheckConstraint(
+                name="floorplanarea_room_or_location",
+                check=models.Q(room__isnull=True) | models.Q(location__isnull=True),
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.label or (str(self.room) if self.room_id else "") or (
+            str(self.location) if self.location_id else ""
+        ) or (self.area_type.name if self.area_type_id else "") or "Area"
+
+
+class FloorPlanLabel(TimestampedModel):
+    """Free text on a floor ("North side", "Loading dock"). Its size is the
+    text height on the floor in millimetres, so it scales with the plan."""
+
+    WEIGHTS = [("normal", "Normal"), ("bold", "Bold")]
+    ALIGNS = [("left", "Left"), ("center", "Center"), ("right", "Right")]
+    # Palette tokens the client maps to theme colours; blank = the ink.
+    COLORS = [
+        ("", "Default"), ("muted", "Muted"), ("red", "Red"), ("amber", "Amber"),
+        ("green", "Green"), ("blue", "Blue"), ("violet", "Violet"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    floor_plan = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, related_name="labels"
+    )
+    text = models.TextField()
+    x = models.FloatField(default=0)
+    y = models.FloatField(default=0)
+    # Null = sized to the text.
+    width = models.FloatField(null=True, blank=True)
+    height = models.FloatField(null=True, blank=True)
+    rotation = models.FloatField(default=0)
+    font_mm = models.PositiveSmallIntegerField(
+        default=300, validators=[MinValueValidator(20), MaxValueValidator(5000)],
+        help_text="Text height on the floor, in millimetres.",
+    )
+    weight = models.CharField(max_length=8, choices=WEIGHTS, default="normal")
+    align = models.CharField(max_length=8, choices=ALIGNS, default="left")
+    color = models.CharField(max_length=16, choices=COLORS, blank=True, default="")
+    plate = models.BooleanField(default=False)
+    # The plate's fill, from the same palette; blank = the theme's
+    # background. The text reads over it unless its own colour is set.
+    plate_color = models.CharField(
+        max_length=16, choices=COLORS, blank=True, default="", db_default=""
+    )
+    z = models.SmallIntegerField(default=0)
+    locked = models.BooleanField(default=False)
+    # The floor plan a click on the label opens in View (see FloorPlanArea).
+    opens = models.ForeignKey(
+        FloorPlan, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="opened_by_labels",
+    )
+    # A back label: the id of the area or label (on another plan) whose
+    # Back button made it. It opens that shape's plan; turning the button
+    # off deletes it. Copies and clones drop it.
+    pair_id = models.UUIDField(null=True, blank=True, db_index=True)
+    # Shown only in this live view of the plan: a back label made for a
+    # view lives on the view's source inside its crop, but is the view's
+    # own button, so neither the source nor its other views draw it.
+    shown_in = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="view_only_labels",
+    )
+
+    class Meta:
+        ordering = ["z", "created_at"]
+        indexes = [models.Index(fields=["floor_plan"])]
+
+    def __str__(self) -> str:
+        return (self.text or "").splitlines()[0][:64] if self.text else "Label"
+
+
+class FloorPlanCablePath(TimestampedModel):
+    """Where one cable runs on one floor plan: its stored, documented route.
+
+    One row per cable per plan. ``legs`` holds the geometry in the plan's
+    cell units, one leg per far tile (a breakout cable has several)::
+
+        [{"from": {"end": "A", "tile": id, "device": id, "at": [x, y]},
+          "to":   {"end": "B", "tile": id, "device": id, "at": [x, y]},
+          "points": [[x, y], ...],                  # the centreline
+          "trays": [{"id": id, "entry": [x, y], "exit": [x, y],
+                     "elevation_mm": 2700}, ...],   # in travel order
+          "waypoints": [[x, y], ...]}]              # free points, untrayed
+
+    ``from``/``to`` record the tile each end was routed from and its centre
+    then: a tile moved since, or a device now in another rack, makes the
+    path out of date. ``stale`` is also set when a tray it rides changes.
+    The length breakdown is in millimetres; ``length_mm`` is the total the
+    tenant's length rules give (slack, service loops, round-up step).
+
+    Scoped through its plan: ``tenant`` is the plan's (and the cable's).
+    Tray membership (``FloorPlanTray.cables``) stays the record of what is
+    in a tray; ``api/cable_routing.py`` keeps the two in step."""
+
+    KIND_CHOICES = [
+        ("trays", "Through trays"),
+        ("manual", "Manual"),
+        ("direct", "Direct"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    floor_plan = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, related_name="cable_paths"
+    )
+    cable = models.ForeignKey(
+        Cable, on_delete=models.CASCADE, related_name="floor_plan_paths"
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default="trays")
+    legs = models.JSONField(default=list, blank=True)
+    # Tray ids in the order the cable travels them, every leg together.
+    tray_order = models.JSONField(default=list, blank=True)
+    # The tiles the ends were routed from - what a tile's move or removal
+    # looks its paths up by.
+    tile_ids = models.JSONField(default=list, blank=True)
+    run_mm = models.PositiveIntegerField(default=0)
+    drop_a_mm = models.PositiveIntegerField(default=0)
+    drop_b_mm = models.PositiveIntegerField(default=0)
+    # Level changes between trays, and the service loops.
+    extra_mm = models.PositiveIntegerField(default=0)
+    slack_mm = models.PositiveIntegerField(default=0)
+    length_mm = models.PositiveIntegerField(default=0)
+    computed_at = models.DateTimeField(null=True, blank=True)
+    stale = models.BooleanField(default=False, db_default=False)
+    # A cable between floors: this floor's part runs from its end here to
+    # ``riser`` (a riser tile of this plan), and the far floor's row to the
+    # riser paired with it. ``riser_mm`` is the vertical run between them;
+    # both rows carry the cable's whole length, slack and service loops.
+    riser = models.ForeignKey(
+        FloorPlanTile, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="riser_paths",
+    )
+    riser_mm = models.PositiveIntegerField(default=0, db_default=0)
+
+    class Meta:
+        ordering = ["floor_plan", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["floor_plan", "cable"], name="floorplancablepath_one_per_plan"
+            ),
+        ]
+        indexes = [models.Index(fields=["cable"])]
+
+    def __str__(self) -> str:
+        try:
+            return f"{self.cable} on {self.floor_plan.name}"[:255]
+        except Exception:  # noqa: BLE001 - a row mid-cascade
+            return f"Cable path {self.pk}"
 
 
 class CableRoute(TimestampedModel):
@@ -8625,6 +10852,69 @@ class CableRoute(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class SiteMapOutline(TimestampedModel):
+    """A building (or any location) drawn on the geographic Site map: a
+    polygon of [lat, lng] points, usually linked to the Location it outlines.
+    Its colour is its own override, else the location type's, else the
+    location's; its label its own, else the location's code, else its name."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="site_map_outlines"
+    )
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, related_name="map_outlines"
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="map_outlines",
+    )
+    # [[lat, lng], …] decimal degrees, 6 dp; 3 to 500 points, a simple ring.
+    points = models.JSONField(default=list)
+    label = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Shown in place of the location's code or name.",
+    )
+    color = models.CharField(max_length=7, blank=True, default="")
+    z = models.SmallIntegerField(default=0, help_text="Draw order among outlines.")
+    locked = models.BooleanField(default=False)
+    # The floor plan "Open floor plan" opens, in place of the location's
+    # first floor.
+    opens = models.ForeignKey(
+        "FloorPlan", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="opened_by_outlines",
+    )
+
+    class Meta:
+        ordering = ["z", "created_at"]
+        indexes = [models.Index(fields=["tenant", "site"])]
+
+    def __str__(self) -> str:
+        return self.display_label or "Outline"
+
+    @property
+    def display_color(self) -> str:
+        """Its own colour, else its location type's, else its location's."""
+        if self.color:
+            return self.color
+        loc = self.location if self.location_id else None
+        if loc is None:
+            return ""
+        if loc.location_type_id and loc.location_type.color:
+            return loc.location_type.color
+        return loc.color or ""
+
+    @property
+    def display_label(self) -> str:
+        """Its own label, else its location's code, else its name."""
+        if self.label:
+            return self.label
+        loc = self.location if self.location_id else None
+        if loc is None:
+            return ""
+        return loc.code or loc.name
 
 
 class SearchEntry(models.Model):
@@ -8686,3 +10976,61 @@ class SearchEntry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.object_type}:{self.title}"
+
+
+class PanelLayout(TimestampedModel):
+    """What a floor plan's detail panel shows for a device, rack or cabinet:
+    an ordered list of sections and fields (``api.panel_layouts``).
+
+    A layout applies to one scope: a device type, device role or device
+    profile; a rack type or rack role; a cabinet type or cabinet role; or
+    ``default`` - the tenant's own default for that kind. The most specific
+    match wins (type, then role, then profile, then the default); with no
+    row at all the panel uses the built-in default in code. ``scope_id``
+    names the scoped object (null for ``default``).
+
+    ``items`` is ``[{"section": "Label"} | {"field": "key"}, ...]`` - a
+    field key is a built-in attribute, a computed block (``monitoring``,
+    ``ports``, ``ips``, ``cables``, ``devices``) or ``cf:<custom field
+    key>``.
+
+    ``callout`` is the at most three field keys a callout on the 2D plan
+    adds under the object's name when its plain name will not sit cleanly
+    by its tile (``api.panel_layouts.CALLOUT_FIELDS``)."""
+
+    KIND_CHOICES = [("device", "Device"), ("rack", "Rack"), ("cabinet", "Cabinet")]
+    SCOPE_CHOICES = [
+        ("default", "Default"),
+        ("device_type", "Device type"),
+        ("device_role", "Device role"),
+        ("profile", "Device profile"),
+        ("rack_type", "Rack type"),
+        ("rack_role", "Rack role"),
+        ("cabinet_type", "Cabinet type"),
+        ("cabinet_role", "Cabinet role"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="panel_layouts"
+    )
+    object_kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    scope = models.CharField(max_length=16, choices=SCOPE_CHOICES, default="default")
+    scope_id = models.UUIDField(null=True, blank=True)
+    items = models.JSONField(default=list, blank=True)
+    callout = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField())
+    )
+
+    class Meta:
+        ordering = ["object_kind", "scope", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "object_kind", "scope", "scope_id"],
+                name="uniq_panellayout_tenant_kind_scope",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_object_kind_display()} panel · {self.get_scope_display()}"

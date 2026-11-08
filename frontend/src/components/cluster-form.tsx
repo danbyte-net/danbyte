@@ -3,13 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Cluster,
-  type ClusterWritePayload,
-  type Paginated,
-  type Status,
-} from "@/lib/api"
+import { type Cluster, type ClusterWritePayload, type Status } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCheckbox,
   FormCombobox,
@@ -85,19 +80,19 @@ export function ClusterForm({ cluster, onSaved, onCancel }: ClusterFormProps) {
 
   const types = useQuery({
     queryKey: ["cluster-types-picker"],
-    queryFn: () => api<Paginated<MiniNamed>>("/api/cluster-types/?picker=1"),
+    queryFn: () => apiAll<MiniNamed>("/api/cluster-types/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const groups = useQuery({
     queryKey: ["cluster-groups-picker"],
-    queryFn: () => api<Paginated<MiniNamed>>("/api/cluster-groups/?picker=1"),
+    queryFn: () => apiAll<MiniNamed>("/api/cluster-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const sites = useSiteOptions()
   const statuses = useQuery({
     queryKey: ["statuses", "cluster"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=cluster&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=cluster&picker=1"),
     staleTime: 5 * 60_000,
   })
 

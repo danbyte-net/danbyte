@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   InterfaceOption,
   L2VPN,
@@ -37,7 +38,7 @@ function useDeviceInterfaces(deviceId: string) {
   return useQuery({
     queryKey: ["interfaces-picker", deviceId],
     queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${deviceId}`),
+      apiAll<InterfaceOption>(`/api/interfaces/?device=${deviceId}`),
   })
 }
 
@@ -101,8 +102,7 @@ export function VTEPForm({
   const ips = useDeviceIps(device.id)
   const statuses = useQuery({
     queryKey: ["statuses", "vtep"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=vtep&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=vtep&picker=1"),
     staleTime: 5 * 60_000,
   })
   useEffect(() => {
@@ -250,6 +250,17 @@ export function VTEPMembershipForm({
   const [rd, setRd] = useState(item?.rd ?? "")
   const [ingress, setIngress] = useState(item?.ingress_replication ?? true)
   const [mcast, setMcast] = useState(item?.mcast_group ?? "")
+  const [ifaceId, setIfaceId] = useState<string | null>(
+    item?.interface?.id ?? null
+  )
+  const netdevs = useQuery({
+    queryKey: ["interfaces-picker", vtep.device.id, "vxlan"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        `/api/interfaces/?device=${vtep.device.id}&type=vxlan&page_size=500`
+      ),
+    staleTime: 60_000,
+  })
   const l2vpns = useQuery({
     queryKey: ["l2vpns-picker", "vxlan"],
     queryFn: () => api<Paginated<L2VPN>>("/api/l2vpns/?vxlan=1&page_size=500"),
@@ -283,6 +294,7 @@ export function VTEPMembershipForm({
           rd: rd.trim(),
           ingress_replication: ingress,
           mcast_group: mcast.trim(),
+          interface_id: ifaceId,
         })
       }}
       className="@container grid gap-4"
@@ -346,6 +358,21 @@ export function VTEPMembershipForm({
             error={fieldErrors.mcast_group}
           />
         </div>
+        <FormCombobox
+          label="Interface"
+          value={ifaceId}
+          onChange={setIfaceId}
+          options={(netdevs.data?.results ?? []).map((i) => ({
+            value: i.id,
+            label: i.name,
+          }))}
+          noneLabel="None"
+          placeholder="None"
+          searchPlaceholder="Search interfaces…"
+          emptyText="No VXLAN interfaces on this device."
+          info="The leaf's vxlan netdev for this VNI, when it is an interface of type VXLAN. The VNI stays on the L2VPN."
+          error={fieldErrors.interface_id ?? fieldErrors.interface}
+        />
         <FormCheckbox
           label="Ingress replication"
           checked={ingress}
@@ -407,9 +434,7 @@ export function LDPInstanceForm({
   const statuses = useQuery({
     queryKey: ["statuses", "routinginstance"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=routinginstance&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=routinginstance&picker=1"),
     staleTime: 5 * 60_000,
   })
   useEffect(() => {

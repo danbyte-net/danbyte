@@ -170,6 +170,14 @@ class SerializerHidingIsDeclaredTests(APITestCase):
         "HolidayCalendarSerializer",   # normalises legacy day strings
         "OuiPrefixSerializer",         # prefix in display form
         "SlaIncidentFollowUpSerializer",  # flat dict, same fields for all
+        # Drops the channel secrets for everyone alike and answers *_set
+        # flags instead; nothing is hidden per user.
+        "NotificationChannelSerializer",
+        # Adds each cycle's computed status, the same for everyone.
+        "EolCustomProductSerializer",
+        # A live view reads its source's grid, scale and background, the
+        # same for everyone.
+        "FloorPlanSerializer",
     }
 
     def test_every_override_is_accounted_for(self):

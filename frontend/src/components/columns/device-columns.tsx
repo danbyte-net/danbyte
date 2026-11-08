@@ -2,7 +2,13 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 import { UtilCell } from "@/components/cells/util-cell"
 
-import type { BulkStatusEntry, ComplianceViolation, Device } from "@/lib/api"
+import type {
+  BulkStatusEntry,
+  ComplianceViolation,
+  Device,
+  PrtgDeviceState,
+} from "@/lib/api"
+import { deviceTypeLabel } from "@/lib/device-type-label"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import {
   monitoringBucket,
@@ -14,6 +20,7 @@ import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
 import type { SlaColumnOpts } from "@/components/columns/sla-column"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
+import { prtgColumn } from "@/components/columns/prtg-columns"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import {
   DeviceDriftMarker,
@@ -26,16 +33,26 @@ import {
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { LifecycleFlag } from "@/components/cells/lifecycle-cell"
+import { NamedIcon } from "@/components/dynamic-icon"
+import {
+  LifecycleFlag,
+  lifecycleNextColumn,
+} from "@/components/cells/lifecycle-cell"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import {
+  softwareTargetColumn,
+  softwareVersionColumn,
+} from "@/components/cells/software-version-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
 import { coverageColumn } from "@/components/cells/coverage-cell"
 import { cabinetColumn } from "@/components/cells/cabinet-cell"
+import { coolingMethodColumn } from "@/components/cells/cooling-cell"
 import { rackColumn } from "@/components/cells/rack-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
+import { deviceProfilesColumn } from "@/components/columns/device-profile-columns"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of devices". Every surface that lists
@@ -57,21 +74,27 @@ export type DeviceColumnId =
   | "platform"
   | "eol"
   | "coverage"
+  | "lifecycle_next"
   | "type"
   | "manufacturer"
+  | "cooling"
   | "site"
   | "rack"
   | "cabinet"
   | "serial"
+  | "software_version"
+  | "software_target"
   | "ips"
   | "ports"
   | "monitoring"
+  | "prtg"
   | "sla"
   | "availability"
   | "primary_ip"
   | "secondary_ip"
   | "oob_ip"
   | "description"
+  | "profiles"
   | "tags"
   | "updated"
 
@@ -83,21 +106,27 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "platform",
   "eol",
   "coverage",
+  "lifecycle_next",
   "type",
   "manufacturer",
+  "cooling",
   "site",
   "rack",
   "cabinet",
   "serial",
+  "software_version",
+  "software_target",
   "ips",
   "ports",
   "monitoring",
+  "prtg",
   "sla",
   "availability",
   "primary_ip",
   "secondary_ip",
   "oob_ip",
   "description",
+  "profiles",
   "tags",
   "updated",
 ]
@@ -123,6 +152,9 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   planned?: Map<string, PlannedTargetRow>
   /** Monitoring status per device id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** PRTG roll-up per device id, from `usePrtgDeviceStates()` - enables the
+   * "PRTG" column (hidden until ticked). */
+  prtg?: Record<string, PrtgDeviceState>
   /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
   sla?: SlaColumnOpts
   /** Port utilization % per device id (null = has ports table entry but no
@@ -165,6 +197,7 @@ export function buildDeviceColumns<T extends Device = Device>(
   // Monitoring column only where the page fetched bulk status.
   if (!opts.humanIds) omit.add("numid")
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.prtg) omit.add("prtg")
   if (!opts.sla) {
     omit.add("sla")
     omit.add("availability")
@@ -267,6 +300,7 @@ export function buildDeviceColumns<T extends Device = Device>(
             <ColorBadge
               name={row.original.role.name}
               color={row.original.role.color || undefined}
+              icon={<NamedIcon name={row.original.role.icon} />}
             />
           </Link>
         ) : (
@@ -308,6 +342,9 @@ export function buildDeviceColumns<T extends Device = Device>(
     eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
     // Support & warranty coverage (#421), derived server-side per row.
     coverage: () => coverageColumn<T>({ get: (r) => r.coverage }),
+    // The soonest of hardware, OS and coverage (#436); hidden by default.
+    lifecycle_next: () =>
+      lifecycleNextColumn<T>({ get: (r) => r.lifecycle_next }),
     type: () => ({
       id: "type",
       accessorFn: (r) => r.device_type?.name ?? "",
@@ -320,7 +357,7 @@ export function buildDeviceColumns<T extends Device = Device>(
               params={{ id: row.original.device_type.id }}
               className="link"
             >
-              {row.original.device_type.name}
+              {deviceTypeLabel(row.original.device_type)}
             </Link>
             <LifecycleFlag state={row.original.device_type.lifecycle_state} />
           </span>
@@ -372,6 +409,12 @@ export function buildDeviceColumns<T extends Device = Device>(
         },
       },
     }),
+    // The effective method (#434): its own, else its type's, else air.
+    cooling: () =>
+      coolingMethodColumn<T>({
+        get: (r) => r.effective_cooling_method,
+        field: ["cooling_method", "effective_cooling_method"],
+      }),
     site: () => siteColumn<T>({ get: (r) => r.site }),
     rack: () => placement(rackColumn<T>({ get: (r) => r.rack }), "Rack"),
     cabinet: () =>
@@ -389,6 +432,13 @@ export function buildDeviceColumns<T extends Device = Device>(
           dash
         ),
     }),
+    software_version: () =>
+      softwareVersionColumn<T>({ get: (r) => r.software_version }),
+    software_target: () =>
+      softwareTargetColumn<T>({
+        target: (r) => (r.platform ?? r.effective_platform)?.target_version,
+        version: (r) => r.software_version,
+      }),
     ports: () => ({
       id: "ports",
       accessorFn: (d) => opts.portUtil?.get(d.id) ?? -1,
@@ -443,6 +493,7 @@ export function buildDeviceColumns<T extends Device = Device>(
         facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]),
       },
     }),
+    prtg: () => prtgColumn<T>(opts.prtg!),
     sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
     availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     primary_ip: () =>
@@ -460,6 +511,7 @@ export function buildDeviceColumns<T extends Device = Device>(
         </span>
       ),
     }),
+    profiles: () => deviceProfilesColumn<T>(),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

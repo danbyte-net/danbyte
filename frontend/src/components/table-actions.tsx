@@ -1,4 +1,5 @@
 import { TableIO } from "@/components/table-io"
+import type { ExtraExport } from "@/components/table-io"
 
 /**
  * Header action cluster for list pages - sits next to the "Add …" button.
@@ -10,6 +11,7 @@ export function TableActions({
   name,
   selectedIds,
   exportFilter,
+  extraExports,
 }: {
   ioType: string
   name?: string
@@ -17,6 +19,8 @@ export function TableActions({
   selectedIds?: string[]
   /** Narrow the export by model field, e.g. `{ prefix: id }`. */
   exportFilter?: Record<string, string>
+  /** Further exports in the menu, e.g. the SBOM. */
+  extraExports?: ExtraExport[]
 }) {
   return (
     <TableIO
@@ -24,6 +28,7 @@ export function TableActions({
       name={name}
       selectedIds={selectedIds}
       exportFilter={exportFilter}
+      extraExports={extraExports}
       prominent
     />
   )

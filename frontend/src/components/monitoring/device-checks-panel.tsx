@@ -16,6 +16,9 @@ import { ExcludedPill } from "./excluded-pill"
 import { NotifyMeButton } from "./notify-me-button"
 import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
+import { StateFilterNote, matchesState } from "./monitoring-bar"
+import { PrtgMonitoringRow } from "@/components/prtg/monitoring-row"
+import type { PrtgSync } from "@/lib/api"
 
 /**
  * A device's Monitoring tab: the roll-up across its addresses with seven days
@@ -24,7 +27,19 @@ import { ZabbixHostPanel } from "./zabbix-host-panel"
  * addresses, so the rows link there; what Zabbix says about the host sits
  * beside Danbyte's own status, never folded into it.
  */
-export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
+export function DeviceChecksPanel({
+  deviceId,
+  prtgSync,
+  state,
+  onState,
+}: {
+  deviceId: string
+  /** The device's PRTG setting, for the PRTG row's Exclude chip. */
+  prtgSync?: PrtgSync
+  /** The monitoring bar's filter (`?state=`): `problem` or one state. */
+  state?: string
+  onState?: (state: string | null) => void
+}) {
   const qc = useQueryClient()
   const checks = useQuery({
     queryKey: ["device-checks", deviceId],
@@ -74,11 +89,18 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
         {/* A host Zabbix watches is worth showing even before Danbyte
             monitors any of its addresses itself. */}
         <ZabbixHostPanel scope={{ device: deviceId }} />
+        <DevicePrtgRow deviceId={deviceId} prtgSync={prtgSync} />
       </div>
     )
 
   const tl = timeline.data
   const stripFor = (ipId: string) => tl?.ips.find((i) => i.id === ipId)?.rollup
+  // The bar's filter: only the addresses with a check in that state.
+  const shownIps = state
+    ? data.ips.filter(
+        (ip) => !ip.excluded && matchesState(state, ip.status, ip.counts)
+      )
+    : data.ips
 
   return (
     <div className="space-y-6">
@@ -121,8 +143,14 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
           </>
         }
       >
+        <StateFilterNote state={state} onClear={() => onState?.(null)} />
         <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-          {data.ips.map((ip) => {
+          {shownIps.length === 0 && (
+            <p className="px-3 py-2 text-[13px] text-muted-foreground">
+              No address matches.
+            </p>
+          )}
+          {shownIps.map((ip) => {
             const segs = stripFor(ip.id)
             return (
               <div
@@ -170,7 +198,34 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
       </Section>
 
       <ZabbixHostPanel scope={{ device: deviceId }} />
+      <DevicePrtgRow deviceId={deviceId} prtgSync={prtgSync} />
       <HistoryPanel scope={{ device: deviceId }} />
     </div>
+  )
+}
+
+/** The PRTG row, linking to the device's Sensors tab. */
+function DevicePrtgRow({
+  deviceId,
+  prtgSync,
+}: {
+  deviceId: string
+  prtgSync?: PrtgSync
+}) {
+  return (
+    <PrtgMonitoringRow
+      parent={{ device: deviceId }}
+      prtgSync={prtgSync}
+      sensorsLink={(children, state) => (
+        <Link
+          to="/devices/$id"
+          params={{ id: deviceId }}
+          search={{ tab: "sensors", state }}
+          className="inline-flex"
+        >
+          {children}
+        </Link>
+      )}
+    />
   )
 }

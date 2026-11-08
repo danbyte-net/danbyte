@@ -1,10 +1,18 @@
-import type { ImagePortMarker, ImagePorts } from "@/lib/api"
+import type { ImagePortMarker, ImagePorts, ModelPortsDoc } from "@/lib/api"
 import {
   normalizePortName,
   OPENING_MM,
   PANEL_MM,
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
+
+import { raisedContains } from "../floorplan/raised-floor-shape"
+import {
+  planAngleToRotY,
+  poseContains,
+  poseLocal,
+  tilePose,
+} from "../floorplan/tile-pose"
 
 /**
  * World-space conventions for the 3D room view.
@@ -97,6 +105,10 @@ export interface SceneTile {
   label: string
   kind: "rack" | "cabinet" | "device" | "other"
   color: string
+  /** The resolved icon: the device's own or its type's, the tile's type,
+   * then the role; "" takes the default by kind. Optional for older
+   * cached payloads. */
+  icon?: string
   is_zone: boolean
   rack: SceneRack | null
   /** The linked cabinet. Optional so older cached payloads stay valid. */
@@ -104,11 +116,44 @@ export interface SceneTile {
   /** The linked device's name - labels device tiles like the 2D canvas does
    * (tile label wins, then this). */
   device_name?: string
+  /** Linked to an object the reader may not view: a plain box named
+   * Hidden, no rack or cabinet. */
+  hidden?: boolean
   /** The tile type's / role's name - labels unlinked planning tiles. */
   type_name?: string
   /** Zone tiles of a perforated type draw as grate floor in 3D. Optional so
    * older cached payloads stay type-valid. */
   perforated?: boolean
+  /** The linked device when it stands straight on the floor (not in a rack
+   * or cabinet) and the reader may view it: drawn as its rack-unit box or
+   * its uploaded 3D model. Optional for older cached payloads. */
+  device?: SceneFloorDevice | null
+  /** A riser, and the risers it reaches on other floors the reader may
+   * view (by hand, or at the same place of an aligned floor plan). */
+  riser?: boolean
+  riser_to?: { id: string; floor_plan: string }[]
+}
+
+/** An uploaded 3D model as the room draws it (api.model_3d.effective). */
+export interface SceneModel {
+  url: string
+  /** Whose model it is: the device's own, or its type's. */
+  source: "device" | "type"
+  fit: "auto" | "native"
+  up: "y" | "z"
+  front: "+z" | "-z" | "+x" | "-x"
+}
+
+/** A device placed on the floor: the racked shape plus the type's body
+ * size and the model drawn for it. */
+export interface SceneFloorDevice extends SceneDevice {
+  width_mm: number | null
+  height_mm: number | null
+  depth_mm: number | null
+  model: SceneModel | null
+  /** The ports mapped onto that model (lib/model-ports). Optional for
+   * older cached payloads. */
+  model_ports?: ModelPortsDoc | null
 }
 
 export interface SceneTray {
@@ -119,18 +164,34 @@ export interface SceneTray {
   level: "overhead" | "underfloor" | "floor"
   elevation_mm: number | null
   points: [number, number][]
+  /** The cables in it the reader may view. */
   cable_count: number
+  /** The others, which it names nothing of. */
+  hidden_cable_count?: number
 }
 
 export interface SceneRaisedFloor {
   id: string
+  /** The whole cells it covers. */
   x: number
   y: number
   w: number
   h: number
+  /** A polygon outline in cell units; absent or empty: the rectangle. */
+  points?: [number, number][]
   plenum_mm: number
   label: string
   color: string
+}
+
+/** A scene raised floor in the editor's shape (width/height), for the
+ * shared outline helpers. */
+export function sceneRaised(a: SceneRaisedFloor) {
+  return {
+    ...a,
+    width: a.w,
+    height: a.h,
+  }
 }
 
 export interface SceneWallOpening {
@@ -146,8 +207,12 @@ export interface SceneWall {
   points: [number, number][]
   /** null = full height (the plan's ceiling). */
   height_mm: number | null
+  /** null = WALL_THICKNESS_M. */
+  thickness_mm?: number | null
   color: string
   openings: SceneWallOpening[]
+  /** An outer wall: the building's slab follows these. */
+  exterior?: boolean
 }
 
 export interface ScenePayload {
@@ -160,6 +225,23 @@ export interface ScenePayload {
     ceiling_mm: number
     background_image: string | null
     background_opacity: number
+    /** The floor layer is shown (false: the room draws no picture or CAD
+     * drawing on its floor). */
+    background_shown?: boolean
+    /** The base map, on the ground level (or a floor that is no level)
+     * only; null elsewhere. */
+    base_map?: string | null
+    map_opacity?: number
+    /** The base map's kind: "map" (street, muted with the background) or
+     * "sat" (satellite, never muted). */
+    basemap?: string | null
+    /** Building levels: the floor's elevation (set, else computed on an
+     * aligned floor plan; null otherwise), slab and align offset. */
+    elevation_mm?: number | null
+    slab_mm?: number
+    align_dx?: number
+    align_dy?: number
+    align_rot?: number
   }
   tiles: SceneTile[]
   trays: SceneTray[]
@@ -218,6 +300,73 @@ export function cellToWorld(
   return [x * c, y * c]
 }
 
+/**
+ * Where a tile stands in the room - the 3D twin of the 2D canvas's tile
+ * transform (floorplan/tile-pose.ts), so the two can never disagree.
+ *
+ * - `footprint`: the stored rectangle (m), drawn axis-aligned and turned by
+ *   `residualRotY` - for symmetric boxes (zones, planning ghosts).
+ * - `local`: the size facing 0° (width along the front, depth front to back),
+ *   turned by `rotY` (the whole facing) - for anything with a front.
+ *
+ * Both turn about the tile's centre, as the canvas does.
+ */
+export function tileWorldPose(
+  plan: ScenePayload["plan"],
+  tile: Pick<SceneTile, "x" | "y" | "w" | "h" | "orientation">
+): {
+  centre: [number, number]
+  footprint: { w: number; d: number }
+  local: { w: number; d: number }
+  rotY: number
+  residualRotY: number
+} {
+  const p = tilePose(tile)
+  const c = cellM(plan)
+  return {
+    centre: cellToWorld(plan, p.cx, p.cy),
+    footprint: { w: p.w * c, d: p.h * c },
+    local: { w: p.local.w * c, d: p.local.h * c },
+    rotY: planAngleToRotY(p.orientation),
+    residualRotY: planAngleToRotY(p.residual),
+  }
+}
+
+type TileRect = Pick<SceneTile, "x" | "y" | "w" | "h" | "orientation">
+
+/** Whether a tile stands in a zone: their rectangles overlap on a plan
+ * where neither is turned; else the tile's centre lies on the zone as drawn
+ * (a turned aisle's bounding box would swallow the neighbouring rows). */
+export function tileStandsIn(t: TileRect, zone: TileRect): boolean {
+  const tp = tilePose(t)
+  const zp = tilePose(zone)
+  if (!tp.residual && !zp.residual)
+    return (
+      t.x < zone.x + zone.w &&
+      zone.x < t.x + t.w &&
+      t.y < zone.y + zone.h &&
+      zone.y < t.y + t.h
+    )
+  return poseContains(zp, [tp.cx, tp.cy])
+}
+
+/** Which of the anchor's two lines a tile stands on: the same row (`sameY`,
+ * along the anchor's stored width) or column (`sameX`). On a turned free
+ * plan the lines run along the anchor's own turned axes. */
+export function rowAxes(
+  anchor: TileRect
+): (t: TileRect) => { sameX: boolean; sameY: boolean } {
+  const ap = tilePose(anchor)
+  return (t) => {
+    const tp = tilePose(t)
+    if (!ap.residual && !tp.residual)
+      return { sameX: t.x === anchor.x, sameY: t.y === anchor.y }
+    const [lx, ly] = poseLocal(ap, [tp.cx, tp.cy])
+    const tol = 0.25
+    return { sameX: Math.abs(lx) < tol, sameY: Math.abs(ly) < tol }
+  }
+}
+
 /** The plenum depth (mm, positive) under a tray run: the deepest raised-floor
  * area any of its points sits in, else the 300 fallback - the twin of
  * api/pathfinding.py's underfloor_plenum_mm, so 3D depth and route-length
@@ -229,8 +378,8 @@ export function underfloorMM(
   let best = 0
   for (const [px, py] of points) {
     for (const a of areas ?? []) {
-      if (a.x <= px && px <= a.x + a.w && a.y <= py && py <= a.y + a.h)
-        if (a.plenum_mm > best) best = a.plenum_mm
+      if (a.plenum_mm > best && raisedContains(sceneRaised(a), [px, py]))
+        best = a.plenum_mm
     }
   }
   return best || -UNDERFLOOR_MM
@@ -626,7 +775,7 @@ export function airflowGlyphPlacements(
 
 // ─── Walls ───────────────────────────────────────────────────────────────────
 
-/** Wall thickness (m) - a frontend constant until someone needs it as data. */
+/** A wall's thickness (m) when it has none of its own. */
 export const WALL_THICKNESS_M = 0.1
 /** An opening with no height renders a standard door. */
 export const DOOR_DEFAULT_MM = 2100
@@ -710,8 +859,10 @@ export function rackViewpoint(
   heightM: number,
   side: "front" | "rear"
 ): { target: [number, number, number]; position: [number, number, number] } {
-  const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
-  const rotY = (-tile.orientation * Math.PI) / 180
+  const {
+    centre: [cx, cz],
+    rotY,
+  } = tileWorldPose(plan, tile)
   // Local −Z is the rack's front; +Z its rear. Rotate about Y by rotY.
   const sign = side === "front" ? -1 : 1
   const dist = Math.max(heightM * 1.3, 2.2)
@@ -747,8 +898,10 @@ export function deviceViewpoint(
     mountedRear: boolean
   }
 ): { target: [number, number, number]; position: [number, number, number] } {
-  const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
-  const rotY = (-tile.orientation * Math.PI) / 180
+  const {
+    centre: [cx, cz],
+    rotY,
+  } = tileWorldPose(plan, tile)
   const sign = box.mountedRear ? 1 : -1
   // Close enough to read port labels, far enough that a 10U chassis fits -
   // measured from the rack's centre line, as tuned on 1 m racks, where a 1U
@@ -1310,4 +1463,138 @@ export function webglSupported(): boolean {
   } catch {
     return false
   }
+}
+
+// ─── Devices placed on the floor ─────────────────────────────────────────────
+
+/** A 19" panel, and one rack unit (mm). */
+export const RACK_PANEL_MM = 482.6
+export const RACK_UNIT_MM = 44.45
+/** A raised floor's finished top (raised-floor-mesh's slab top). */
+export const RAISED_FLOOR_TOP_M = 0.013
+
+/**
+ * A floor-placed rack-unit device's box (m): as wide as a 19" panel (half
+ * that for half-width gear) unless the type records its width, its units
+ * tall, and the type's depth - else the depth a rack gives it (90% of the
+ * default rack depth full-depth, 45% otherwise). A device whose width,
+ * height and depth are all measured (its own, else its type's) is a box of
+ * exactly that size, rack units or not. Null for other 0U gear, which keeps
+ * its flat tile.
+ */
+export function floorDeviceBoxM(
+  dev: Pick<
+    SceneFloorDevice,
+    | "u_height"
+    | "rack_width"
+    | "is_full_depth"
+    | "width_mm"
+    | "depth_mm"
+    | "height_mm"
+  >
+): { w: number; h: number; d: number } | null {
+  if (dev.width_mm && dev.height_mm && dev.depth_mm)
+    return { w: mm(dev.width_mm), h: mm(dev.height_mm), d: mm(dev.depth_mm) }
+  if (!(dev.u_height > 0)) return null
+  const w = dev.width_mm
+    ? mm(dev.width_mm)
+    : mm(RACK_PANEL_MM) * (dev.rack_width === "half" ? 0.5 : 1)
+  const h = mm(dev.u_height * RACK_UNIT_MM)
+  const d = dev.depth_mm
+    ? mm(dev.depth_mm)
+    : RACK_DEPTH_DEFAULT_M * (dev.is_full_depth ? 0.9 : 0.45)
+  return { w, h, d }
+}
+
+/** The floor's height under a tile: a raised floor's top where its centre
+ * stands on one, else the slab. */
+export function floorTopM(scene: ScenePayload, tile: SceneTile): number {
+  const cx = tile.x + tile.w / 2
+  const cy = tile.y + tile.h / 2
+  const on = (scene.raised_floors ?? []).some((a) =>
+    raisedContains(sceneRaised(a), [cx, cy])
+  )
+  return on ? RAISED_FLOOR_TOP_M : 0
+}
+
+/** A floor-placed device's box local to its tile, in the shape
+ * `deviceBoxM` gives a racked one - so `portLocalM` and `deviceViewpoint`
+ * read it unchanged: centred on the tile, standing on the floor, front
+ * panel facing local −Z. */
+export function floorBoxAsRackBox(
+  box: { w: number; h: number; d: number },
+  floorY: number
+): ReturnType<typeof deviceBoxM> {
+  return {
+    y: floorY,
+    h: box.h,
+    dx: 0,
+    dz: 0,
+    dw: box.w,
+    dd: box.d,
+    boxH: box.h,
+    mountedRear: false,
+  }
+}
+
+/**
+ * The turn that stands a model upright with its front on the tile's front
+ * (local −Z, as a rack's): Z-up models tip −90° about X first, then a turn
+ * about Y brings the named front axis round to −Z.
+ */
+export function modelRotation(
+  up: SceneModel["up"],
+  front: SceneModel["front"]
+): [number, number, number] {
+  const rx = up === "z" ? -Math.PI / 2 : 0
+  const ry =
+    front === "+z"
+      ? Math.PI
+      : front === "+x"
+        ? Math.PI / 2
+        : front === "-x"
+          ? -Math.PI / 2
+          : 0
+  return [rx, ry, 0]
+}
+
+/** The size a model is fitted to (m), each axis only where it is known:
+ * the type's recorded width/height/depth, else the rack-unit box. */
+export function modelTargetM(
+  dev: Pick<SceneFloorDevice, "width_mm" | "height_mm" | "depth_mm">,
+  /** The tile's footprint in its own frame (m): the fallback target. */
+  footprint?: { w: number; d: number } | null
+): { w?: number; h?: number; d?: number } | null {
+  if (dev.width_mm || dev.height_mm || dev.depth_mm) {
+    return {
+      w: dev.width_mm ? mm(dev.width_mm) : undefined,
+      h: dev.height_mm ? mm(dev.height_mm) : undefined,
+      d: dev.depth_mm ? mm(dev.depth_mm) : undefined,
+    }
+  }
+  // No measured size: fill the tile it stands on. Never the rack-unit box,
+  // which would squeeze a printer or an access point into 44 mm.
+  return footprint ? { w: footprint.w, d: footprint.d } : null
+}
+
+/**
+ * The uniform scale for a model whose upright bounding box is `size`
+ * (x = width, y = height, z = depth, model units): "native" keeps its own
+ * size in metres; "auto" fits it inside the target by the tightest known
+ * axis (uniform, so nothing is squashed). No target: its own size.
+ */
+export function modelScale(
+  size: [number, number, number],
+  target: { w?: number; h?: number; d?: number } | null,
+  fit: SceneModel["fit"]
+): number {
+  if (fit === "native" || !target) return 1
+  const ratios: number[] = []
+  const add = (want: number | undefined, have: number) => {
+    if (want && have > 1e-9) ratios.push(want / have)
+  }
+  add(target.w, size[0])
+  add(target.h, size[1])
+  add(target.d, size[2])
+  return ratios.length ? Math.min(...ratios) : 1
 }

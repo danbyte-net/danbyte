@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlarmClock, X } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { Paginated, PlanningOverdueTask, PlanningTask } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { PlanningOverdueTask, PlanningTask } from "@/lib/api"
 import { useDateFormat } from "@/lib/datetime"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
@@ -17,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { buildPlanningTaskColumns } from "@/components/columns/planning-task-columns"
+import { AddTaskButton } from "./add-task"
 
 // The object side of planning: which tasks touch this device/prefix/…, and -
 // for the people doing them - which of those are past due. Both are
@@ -40,7 +42,7 @@ export function useObjectTasks(
   return useQuery({
     queryKey: ["planning-tasks", "for-object", objectType, objectId, open],
     queryFn: () =>
-      api<Paginated<PlanningTask>>(
+      apiAll<PlanningTask>(
         `/api/planning/tasks/?${targetQuery(objectType, objectId)}${open ? "&open=1" : ""}`
       ),
     enabled,
@@ -74,14 +76,19 @@ export function ObjectTasksPanel({
 
   return (
     <div className="space-y-3">
-      <SegmentedTabs<Scope>
-        value={scope}
-        onValueChange={setScope}
-        items={[
-          { value: "open", label: "Open" },
-          { value: "all", label: "All" },
-        ]}
-      />
+      <div className="flex items-center gap-2">
+        <SegmentedTabs<Scope>
+          value={scope}
+          onValueChange={setScope}
+          items={[
+            { value: "open", label: "Open" },
+            { value: "all", label: "All" },
+          ]}
+        />
+        <div className="ml-auto">
+          <AddTaskButton link={{ objectType, id: objectId }} />
+        </div>
+      </div>
       {q.isLoading ? (
         <Loading />
       ) : q.isError ? (

@@ -113,6 +113,15 @@ for _e in [
                    "/api/device-roles/", route="/device-roles/$id"),
     ReferenceModel("platform", "Platforms", "api.Platform",
                    "/api/platforms/", route="/platforms/$id"),
+    ReferenceModel("application", "Applications", "api.Application",
+                   "/api/applications/", route="/applications/$id"),
+    ReferenceModel("applicationgroup", "Application groups", "api.ApplicationGroup",
+                   "/api/application-groups/", route="/application-groups/$id"),
+    ReferenceModel("deviceprofile", "Device profiles", "profiles.DeviceProfile",
+                   "/api/device-profiles/", route="/device-profiles/$id"),
+    # A flow has no page of its own; it is read on its application's.
+    ReferenceModel("applicationflow", "Application flows", "api.ApplicationFlow",
+                   "/api/application-flows/", route=None),
     ReferenceModel("manufacturer", "Manufacturers", "api.Manufacturer",
                    "/api/manufacturers/", route="/manufacturers/$id"),
     ReferenceModel("moduletype", "Module types", "api.ModuleType",
@@ -125,6 +134,8 @@ for _e in [
                    route="/sites/$id"),
     ReferenceModel("location", "Locations", "api.Location",
                    "/api/locations/", route="/locations/$id"),
+    ReferenceModel("room", "Rooms", "api.Room", "/api/rooms/",
+                   route="/rooms/$id"),
     ReferenceModel("region", "Regions", "api.Region", "/api/regions/",
                    route="/regions/$id"),
     ReferenceModel("tenant", "Tenants", "core.Tenant", "/api/tenants/",
@@ -154,6 +165,16 @@ for _e in [
                    route="/providers/$id"),
     ReferenceModel("circuit", "Circuits", "api.Circuit", "/api/circuits/",
                    label_field="cid", route="/circuits/$id"),
+    # Power and cooling plant (#434): what maintenance on a panel or a
+    # cooling unit marks as impacted.
+    ReferenceModel("powerpanel", "Power panels", "api.PowerPanel",
+                   "/api/power-panels/", route="/power-panels/$id"),
+    ReferenceModel("powerfeed", "Power feeds", "api.PowerFeed",
+                   "/api/power-feeds/", picker=False, route="/power-feeds/$id"),
+    ReferenceModel("coolingsource", "Cooling sources", "api.CoolingSource",
+                   "/api/cooling-sources/", route="/cooling-sources/$id"),
+    ReferenceModel("coolingfeed", "Cooling feeds", "api.CoolingFeed",
+                   "/api/cooling-feeds/", picker=False, route="/cooling-feeds/$id"),
 ]:
     register_reference_model(_e)
 
@@ -220,10 +241,22 @@ def resolve_labels(slug: str, ids: list[str], tenant=None, user=None) -> list[di
                 qs = _member_labels(ref, qs, tenant, user)
                 if qs is None:
                     return []
+    rows = list(qs)
+    # A name built from related rows reads as the caller may read it - a
+    # generated flow's with an end they may not view as Hidden (#453).
+    masker = None
+    if user is not None:
+        from core.hidden_fields import name_masker
+
+        masker = name_masker(ref.model._meta.label_lower, user, tenant)
+        if masker is not None:
+            masker.prime(rows)
     out = []
-    for obj in qs:
+    for obj in rows:
         label = getattr(obj, ref.label_field, None) if ref.label_field else None
         label = label or str(obj)
+        if masker is not None and masker.masks(obj):
+            label = masker.name(obj)
         out.append({
             "id": str(obj.pk),
             "label": str(label),

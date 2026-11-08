@@ -21,7 +21,6 @@ too. One scope definition, not two that can disagree.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 
 from django.db import transaction
 from django.utils import timezone
@@ -426,9 +425,7 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
             counts["adopt"] = plan_adoption(conn, hosts, fresh)
         # A proposal nobody has looked at, for something that is no longer
         # true, is worse than no proposal.
-        ZabbixChange.objects.filter(connection=conn, ignored=False).exclude(
-            id__in=fresh
-        ).delete()
+        ZabbixChange.drop_stale(conn, fresh)
     return counts
 
 
@@ -493,12 +490,7 @@ def _needs_snmp_interface(device, host, conn) -> bool:
 
 
 def _propose(conn, device, kind, detail, fresh):
-    change, _ = ZabbixChange.objects.update_or_create(
-        connection=conn, device=device, kind=kind,
-        defaults={"tenant": conn.tenant, "detail": detail},
-    )
-    fresh.add(change.id)
-    return change
+    return ZabbixChange.propose(conn, fresh, detail, device=device, kind=kind)
 
 
 def _remember(conn, device, match, now) -> ZabbixHostLink:
@@ -525,13 +517,10 @@ def _plan_prune(conn, wanted_ids, now, fresh) -> int:
     stale = ZabbixHostLink.objects.filter(
         connection=conn, created_here=True
     ).exclude(device_id__in=wanted_ids).select_related("device")
-    grace = timedelta(days=conn.prune_after_days)
     n = 0
     for link in stale:
-        if link.unwanted_since is None:
-            link.unwanted_since = now
-            link.save(update_fields=["unwanted_since"])
-        if not conn.prune_hosts or now - link.unwanted_since < grace:
+        link.mark_unwanted(now)
+        if not conn.prune_hosts or not link.prune_due(now, conn.prune_after_days):
             continue
         n += 1
         _propose(conn, link.device, ZabbixChange.PRUNE,
@@ -689,9 +678,7 @@ def apply_pending(conn: ZabbixConnection) -> dict:
     """
     done = {"applied": 0, "failed": 0, "errors": []}
     for change in list(
-        ZabbixChange.objects.filter(connection=conn, ignored=False)
-        .exclude(kind=ZabbixChange.AMBIGUOUS)
-        .select_related("device", "connection")
+        ZabbixChange.applicable(conn).select_related("device", "connection")
     ):
         try:
             apply_change(change)

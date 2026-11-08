@@ -1,4 +1,4 @@
-import { EyeOff, Search } from "lucide-react"
+import { EyeOff, Search, X } from "lucide-react"
 
 import {
   statusLabel,
@@ -104,6 +104,7 @@ export function ObjectsPanel({
   statusCounts,
   hiddenCount,
   onShowAll,
+  onClose,
   children,
 }: {
   /** The panel is the scroller; a lazily drawn list measures against it. */
@@ -114,24 +115,47 @@ export function ObjectsPanel({
   onQueryChange: (q: string) => void
   /** Enter in the search box - a page jumps to its first hit. */
   onSearchEnter?: () => void
-  status: CheckFilter
-  onStatusChange: (status: CheckFilter) => void
-  statusCounts: Partial<Record<(typeof FILTER_STATES)[number], number>>
+  /** The monitoring filter; a map with nothing monitored (the
+   * Application map) leaves these out and draws no tabs. */
+  status?: CheckFilter
+  onStatusChange?: (status: CheckFilter) => void
+  statusCounts?: Partial<Record<(typeof FILTER_STATES)[number], number>>
   hiddenCount: number
   /** Omit where nothing can be hidden: the row never shows. */
   onShowAll?: () => void
+  /** Set where the page can close the panel. Below `md` (a phone) the
+   *  panel then floats over the map as an overlay with a close button,
+   *  so the map keeps the full width. */
+  onClose?: () => void
   children: React.ReactNode
 }) {
   return (
     <aside
       ref={ref}
-      className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3"
+      className={cn(
+        "flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3",
+        onClose &&
+          "max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-[1100] max-md:w-[min(18rem,85vw)] max-md:bg-background max-md:shadow-lg"
+      )}
     >
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
           Objects
         </p>
-        <span className="num text-[11px] text-muted-foreground">{total}</span>
+        <span className="num ml-auto text-[11px] text-muted-foreground">
+          {total}
+        </span>
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close objects"
+            className="-my-2 -mr-2 size-11 md:hidden"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        )}
       </div>
       <div className="relative mb-2">
         <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -146,12 +170,14 @@ export function ObjectsPanel({
           className="h-8 pl-7 text-[13px]"
         />
       </div>
-      <CheckFilterTabs
-        className="mb-3"
-        value={status}
-        onChange={onStatusChange}
-        counts={statusCounts}
-      />
+      {onStatusChange && (
+        <CheckFilterTabs
+          className="mb-3"
+          value={status ?? null}
+          onChange={onStatusChange}
+          counts={statusCounts ?? {}}
+        />
+      )}
       {onShowAll && hiddenCount > 0 && (
         <div className="mb-3 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
           <EyeOff className="size-3 shrink-0" />

@@ -7,9 +7,9 @@ import {
   api,
   type JournalEntry,
   type JournalKind,
-  type Paginated,
   type PlanningAssignableUser,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -59,7 +59,7 @@ export function JournalPanel({
   const q = useQuery({
     queryKey: key,
     queryFn: () =>
-      api<Paginated<JournalEntry>>(
+      apiAll<JournalEntry>(
         `/api/journal/?object_type=${objectType}&object_id=${objectId}`
       ),
     staleTime: 0,
@@ -105,7 +105,7 @@ export function JournalPanel({
         />
         <div className="mt-2 flex items-center gap-2">
           <Select value={kind} onValueChange={(v) => setKind(v as JournalKind)}>
-            <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectTrigger aria-label="Kind" className="h-8 w-36 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -213,6 +213,7 @@ function JournalRow({
       {editing ? (
         <div className="mt-2">
           <Textarea
+            aria-label="Comment"
             value={draft}
             onChange={(ev) => setDraft(ev.target.value)}
             className="min-h-20 text-[13px]"

@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
 import { FileUp, Upload } from "lucide-react"
@@ -12,6 +11,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
 import { Button } from "@/components/ui/button"
 import { buildCertificateColumns } from "@/components/columns/certificate-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { UploadCertificateDialog } from "@/components/monitoring/upload-certificate-dialog"
 import { ImportCertificatesDialog } from "@/components/monitoring/import-certificates-dialog"
@@ -37,7 +37,11 @@ function CertificatesPage() {
   const [q, setQ] = useUrlSearch()
   const [uploadOpen, setUploadOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [selected, setSelected] = useState<Certificate[]>([])
   const { canDo } = useMe()
+  const canEdit = canDo("certificate", "change")
+  const canDelete = canDo("certificate", "delete")
+  const selectable = canEdit || canDelete
 
   // Server-side search over subject / issuer / fingerprint. The list arrives
   // ordered by not_after (soonest to expire first), so the default view leads
@@ -57,9 +61,9 @@ function CertificatesPage() {
   // The rail carries the facets the factory declares - expiry urgency, key
   // algorithm and trust (self-signed vs CA-issued). The facet-source columns
   // and the render columns are the same set here.
-  const columns = useMemo<ColumnDef<Certificate>[]>(
-    () => buildCertificateColumns<Certificate>(),
-    []
+  const columns = useMemo(
+    () => buildCertificateColumns<Certificate>({ selection: selectable }),
+    [selectable]
   )
   // `?expiry=` / `?self_signed=` (a cert-health tile's link) are the facet
   // params themselves. Facet ids: "expiry" (expired|critical|warning|healthy)
@@ -119,8 +123,20 @@ function CertificatesPage() {
           columns={wiredColumns}
           flexColumn="issuer"
           tableId="certificates"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/monitoring/certificates/"
+        noun={["certificate", "certificates"]}
+        invalidate={[["certificates"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="certificate"
+      />
 
       <UploadCertificateDialog open={uploadOpen} onOpenChange={setUploadOpen} />
       <ImportCertificatesDialog

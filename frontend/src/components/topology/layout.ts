@@ -1,6 +1,7 @@
 import dagre from "@dagrejs/dagre"
 import type { Edge, Node } from "@xyflow/react"
 
+import { measureText } from "@/lib/diagram/measure"
 import { CARD } from "./diagram/card-layout"
 import { Grid } from "./diagram/spatial"
 import { HIER_MIN_W, hierBox } from "./hier-card"
@@ -845,12 +846,15 @@ export function hierHead(d: unknown): number {
 }
 
 /** As wide as its header card, and never narrower than `HIER_MIN_W`. A
- * card without a header box (a grouped map's site card) is sized to its
- * name. */
+ * card without a header box yet is sized to its measured name, up to the
+ * width past which a card's name wraps. */
 export function hierarchyWidth(d: { name?: string } & HierCardData): number {
   const box = hierBox(d)
   if (box) return Math.max(HIER_MIN_W, box.w)
-  return Math.max(HIER_MIN_W, 40 + Math.min(180, (d.name?.length ?? 0) * 6.6))
+  const nameW = Math.ceil(
+    measureText(d.name ?? "", CARD.TITLE_SIZE, CARD.TITLE_WEIGHT)
+  )
+  return Math.max(HIER_MIN_W, Math.min(CARD.NAME_MAX_W, nameW + 40))
 }
 
 /** Past this a layout is broken, not big: a saved view refuses coordinates

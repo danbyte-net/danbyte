@@ -63,6 +63,11 @@ import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns
 import { RefreshMacsButton, UplinkBadge } from "@/components/learned-macs-cell"
 import { uplinkModeOf, uplinkWhy } from "@/lib/mac-tracking"
 import type { LearnedMacColumnId } from "@/components/columns/learned-mac-columns"
+import {
+  PrtgSensorsSection,
+  usePrtgSensors,
+} from "@/components/prtg/sensors-tab"
+import { ObjectPinnedSensors } from "@/components/prtg/sensor-pins"
 
 export const Route = createFileRoute("/interfaces/$id")({
   // `?tab=macs` opens the MACs tab - an uplink's MAC count links there.
@@ -93,8 +98,22 @@ function InterfaceDetail() {
 
 function Body({ iface: i }: { iface: Interface }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "ips" | "members" | "macs" | "trace" | "journal" | "history"
+    | "overview"
+    | "ips"
+    | "members"
+    | "macs"
+    | "sensors"
+    | "trace"
+    | "journal"
+    | "history"
   >("overview")
+  // The PRTG traffic sensor measuring this port; the tab shows once there is
+  // one (none while the integration is off).
+  const prtgSensors = usePrtgSensors({ interface: i.id })
+  const sensorCount = prtgSensors.data?.length ?? 0
+  // The sensor whose panel is open on the Sensors tab; a pinned tile on the
+  // Overview opens it there.
+  const [sensor, setSensor] = useState<string | null>(null)
   const isLag = i.type === "lag"
   // MAC tracking (#284): the port's uplink state and MAC counts - the tab and
   // the Switching card read them; the tab pages through the MACs itself.
@@ -263,6 +282,9 @@ function Body({ iface: i }: { iface: Interface }) {
         ...(hasMacs
           ? [{ value: "macs", label: "MACs", count: macs.data.counts.present }]
           : []),
+        ...(sensorCount > 0
+          ? [{ value: "sensors", label: "Sensors", count: sensorCount }]
+          : []),
         { value: "trace", label: "Trace" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -271,6 +293,15 @@ function Body({ iface: i }: { iface: Interface }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
+        <div className="mb-6 empty:hidden">
+          <ObjectPinnedSensors
+            parent={{ interface: i.id }}
+            onOpen={(id) => {
+              setSensor(id)
+              setTab("sensors")
+            }}
+          />
+        </div>
         <InterfaceOverview
           iface={i}
           ips={ips.data?.results ?? []}
@@ -296,6 +327,13 @@ function Body({ iface: i }: { iface: Interface }) {
           canAddIp={canDo("ipaddress", "add")}
           canAssignIp={canDo("ipaddress", "change")}
           canChangeDevice={canDo("device", "change")}
+        />
+      </DetailTab>
+      <DetailTab value="sensors">
+        <PrtgSensorsSection
+          scope={{ interface: i.id }}
+          selected={sensor ?? undefined}
+          onSelect={setSensor}
         />
       </DetailTab>
       <DetailTab value="trace">
@@ -602,6 +640,17 @@ function InterfaceOverview({
                 { label: "LACP rate", value: i.lacp_rate || dash },
               ]
             : []),
+          { label: "Mode", value: i.lag_mode_display || dash },
+          { label: "Hash policy", value: i.lag_hash_policy_display || dash },
+          {
+            label: "MII monitor",
+            value:
+              i.lag_miimon != null ? (
+                <span className="num">{i.lag_miimon} ms</span>
+              ) : (
+                dash
+              ),
+          },
           {
             label: "Min links",
             value:
@@ -687,6 +736,42 @@ function InterfaceOverview({
         ]
       : null
 
+  // The keychain by name only - its key is never on the interface.
+  const macsec: KvRow[] = [
+    { label: "MACsec", value: i.macsec_enabled ? "On" : "Off" },
+    ...(i.macsec_enabled
+      ? [
+          {
+            label: "Cipher",
+            value: i.macsec_cipher_display || "Device default",
+          },
+          {
+            label: "Keychain",
+            value: i.macsec_keychain ? (
+              <Link
+                to="/routing-keychains/$id"
+                params={{ id: i.macsec_keychain.id }}
+                className="link"
+              >
+                {i.macsec_keychain.name}
+              </Link>
+            ) : (
+              dash
+            ),
+          },
+          {
+            label: "Replay window",
+            value:
+              i.macsec_replay_window != null ? (
+                <span className="num">{i.macsec_replay_window}</span>
+              ) : (
+                "Device default"
+              ),
+          },
+        ]
+      : []),
+  ]
+
   return (
     <div className="space-y-6">
       <InterfaceDriftAlert deviceId={i.device.id} interfaceId={i.id} />
@@ -695,6 +780,7 @@ function InterfaceOverview({
           <KvCard title="Interface" rows={attributes} />
           {bundle && <KvCard title="Bundle" rows={bundle} />}
           <KvCard title="Switching" rows={switching} />
+          <KvCard title="MACsec" rows={macsec} />
           <KvCard title="Relationships" rows={relationships} />
           <InterfaceRoutingCard
             interfaceId={i.id}

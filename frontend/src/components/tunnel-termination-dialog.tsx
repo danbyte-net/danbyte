@@ -11,6 +11,7 @@ import {
   type TunnelTerminationWritePayload,
   type VMInterface,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,9 @@ import { Button } from "@/components/ui/button"
 import {
   Field,
   FormCombobox,
+  FormSection,
   FormSelect,
+  FormText,
   useFieldErrors,
 } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
@@ -44,20 +47,30 @@ type EndpointKind = "device" | "vm"
  * `/api/tunnel-terminations/` (or PATCHes the row when `termination` is set)
  * and invalidates the tunnel detail query.
  */
+/** "" ⇄ null for an optional number input. */
+function numOrNull(v: string): number | null {
+  const n = Number(v)
+  return v.trim() === "" || Number.isNaN(n) ? null : n
+}
+
 export function TunnelTerminationDialog({
   tunnelId,
+  encapsulation,
   termination,
   open,
   onOpenChange,
 }: {
   tunnelId: string
+  /** The tunnel's encapsulation: WireGuard fields show for `wireguard` only. */
+  encapsulation?: string
   /** When set, the dialog edits this termination instead of creating one. */
   termination?: TunnelTermination | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   const qc = useQueryClient()
-  const { handleApiError, reset } = useFieldErrors()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const isWireguard = encapsulation === "wireguard"
   const saveObject = useSaveObject()
 
   const [role, setRole] = useState<TunnelTerminationRole>("peer")
@@ -67,6 +80,12 @@ export function TunnelTerminationDialog({
   const [vmId, setVmId] = useState<string | null>(null)
   const [vmInterfaceId, setVmInterfaceId] = useState<string | null>(null)
   const [outsideIpId, setOutsideIpId] = useState<string | null>(null)
+  const [listenPort, setListenPort] = useState("")
+  const [publicKey, setPublicKey] = useState("")
+  const [privateKeyRef, setPrivateKeyRef] = useState("")
+  const [allowedIps, setAllowedIps] = useState("")
+  const [endpointPort, setEndpointPort] = useState("")
+  const [keepalive, setKeepalive] = useState("")
 
   // Reset the form every time the dialog opens - blank for create, prefilled
   // from the row being edited.
@@ -80,6 +99,14 @@ export function TunnelTerminationDialog({
     setVmId(t?.vm_interface?.vm.id ?? null)
     setVmInterfaceId(t?.vm_interface?.id ?? null)
     setOutsideIpId(t?.outside_ip?.id ?? null)
+    setListenPort(t?.listen_port != null ? String(t.listen_port) : "")
+    setPublicKey(t?.public_key ?? "")
+    setPrivateKeyRef(t?.private_key_ref ?? "")
+    setAllowedIps((t?.allowed_ips ?? []).join(", "))
+    setEndpointPort(t?.endpoint_port != null ? String(t.endpoint_port) : "")
+    setKeepalive(
+      t?.persistent_keepalive != null ? String(t.persistent_keepalive) : ""
+    )
     reset()
   }, [open, termination, reset])
 
@@ -94,9 +121,7 @@ export function TunnelTerminationDialog({
   const vms = useQuery({
     queryKey: ["vms-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/virtual-machines/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/virtual-machines/?picker=1"),
     enabled: open && kind === "vm",
     staleTime: 10 * 60_000,
   })
@@ -119,6 +144,19 @@ export function TunnelTerminationDialog({
         interface_id: kind === "device" ? interfaceId : null,
         vm_interface_id: kind === "vm" ? vmInterfaceId : null,
         outside_ip_id: outsideIpId,
+        ...(isWireguard
+          ? {
+              listen_port: numOrNull(listenPort),
+              public_key: publicKey.trim(),
+              private_key_ref: privateKeyRef.trim(),
+              allowed_ips: allowedIps
+                .split(/[\s,]+/)
+                .map((x) => x.trim())
+                .filter(Boolean),
+              endpoint_port: numOrNull(endpointPort),
+              persistent_keepalive: numOrNull(keepalive),
+            }
+          : {}),
       }
       return saveObject<TunnelTermination>({
         objectType: "api.tunneltermination",
@@ -261,6 +299,68 @@ export function TunnelTerminationDialog({
             onChange={setOutsideIpId}
             noneLabel="No outside IP"
           />
+
+          {isWireguard && (
+            <FormSection title="WireGuard">
+              <div className="grid grid-cols-3 gap-3">
+                <FormText
+                  label="Listen port"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={listenPort}
+                  onChange={setListenPort}
+                  error={fieldErrors.listen_port}
+                />
+                <FormText
+                  label="Endpoint port"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={endpointPort}
+                  onChange={setEndpointPort}
+                  placeholder={listenPort || undefined}
+                  info="The port the far end dials to reach this end, when NAT makes it differ from the listen port. Empty uses the listen port."
+                  error={fieldErrors.endpoint_port}
+                />
+                <FormText
+                  label="Keepalive"
+                  type="number"
+                  min={0}
+                  value={keepalive}
+                  onChange={setKeepalive}
+                  info="Persistent keepalive, in seconds. Empty or 0 is off."
+                  error={fieldErrors.persistent_keepalive}
+                />
+              </div>
+              <FormText
+                label="Public key"
+                mono
+                value={publicKey}
+                onChange={setPublicKey}
+                info="The far ends print it in their peer block. The router can write it back after it generates its key."
+                error={fieldErrors.public_key}
+              />
+              <FormText
+                label="Private key reference"
+                mono
+                value={privateKeyRef}
+                onChange={setPrivateKeyRef}
+                placeholder="/etc/wireguard/private.key"
+                info="Where the key lives, never the key: a <keychain:NAME> placeholder or an absolute path on the box. A pasted key is refused."
+                error={fieldErrors.private_key_ref}
+              />
+              <FormText
+                label="Allowed IPs"
+                mono
+                value={allowedIps}
+                onChange={setAllowedIps}
+                placeholder="10.0.0.0/24, 10.255.0.1/32"
+                info="The addresses behind this end. Every other end routes them to this end in its peer block."
+                error={fieldErrors.allowed_ips}
+              />
+            </FormSection>
+          )}
 
           <div className="mt-2 flex items-center justify-end gap-2">
             <Button

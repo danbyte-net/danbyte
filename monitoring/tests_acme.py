@@ -213,6 +213,42 @@ class RegisterAccountTests(TestCase):
         self.assertIn("account_key", data)
         self.assertIn("BEGIN PRIVATE KEY", data["account_key"])
 
+    def _registered(self):
+        from .secret_store import require_secret_store
+
+        store = require_secret_store()
+        self.issuer.account_uri = "https://ca/acct/9"
+        self.issuer.account_ref = f"issuer/{self.issuer.id}/account"
+        self.issuer.save()
+        store.put(self.tenant.id, self.issuer.account_ref, {"account_key": "pem"})
+        return store, self.issuer.account_ref
+
+    def _api(self):
+        from rest_framework.test import APIClient
+
+        c = APIClient()
+        c.force_login(User.objects.create_superuser("root", "r@a.c", "pw"))
+        session = c.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        return c
+
+    def test_deleting_the_issuer_removes_its_account_key(self):
+        store, ref = self._registered()
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self._api().delete(f"/api/monitoring/issuers/{self.issuer.id}/")
+        self.assertEqual(r.status_code, 204, r.content)
+        self.assertIsNone(store.get(self.tenant.id, ref))
+
+    def test_bulk_delete_removes_the_account_key(self):
+        store, ref = self._registered()
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self._api().post("/api/monitoring/issuers/bulk-delete/",
+                                 {"ids": [str(self.issuer.id)]}, format="json")
+        self.assertIn(r.status_code, (200, 204), r.content)
+        self.assertFalse(Issuer.objects.filter(pk=self.issuer.pk).exists())
+        self.assertIsNone(store.get(self.tenant.id, ref))
+
 
 class DnsPublisherTests(TestCase):
     def setUp(self):

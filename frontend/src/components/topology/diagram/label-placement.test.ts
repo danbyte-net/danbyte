@@ -7,8 +7,11 @@ import { aarhusGraph, aarhusPositions } from "../__fixtures__/aarhus-graph"
 import { boxOf } from "../__fixtures__/route-checks"
 import { buildDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
+import type { PortPlace } from "@/lib/diagram/geometry"
 import {
   chipCentre,
+  crossesSteeply,
+  curveBoxes,
   inlineBox,
   LabelScene,
   placeInline,
@@ -71,8 +74,19 @@ const build = (graph: TopologyGraph, o: Partial<DiagramOptions>) =>
 interface Placed {
   what: string
   box: TurnedBox
+  /** An end label on a curve: the pieces along it it takes. */
+  boxes?: TurnedBox[]
+  /** An end label on a bendy line: it reads over a cable crossing it. */
+  curve?: boolean
   /** An end label: the line it sits on. */
   on?: string
+}
+
+/** A curve as points every 8px or so (at least 48 pieces): a long one's
+ * chords stray from it further than a label may. */
+const sampled = (r: { length: number; at: (t: number) => Pt }) => {
+  const n = Math.max(48, Math.ceil(r.length / 8))
+  return Array.from({ length: n + 1 }, (_, k) => r.at(k / n))
 }
 
 /** Every label a build placed, as boxes, and every drawn line. */
@@ -86,18 +100,17 @@ function scene(b: ReturnType<typeof build>) {
     routes.forEach((r, i) =>
       lines.push({
         edge: `${e.id}#${i}`,
-        pts:
-          d.line === "bendy" || d.line === "cyclical"
-            ? Array.from({ length: 49 }, (_, k) => r.at(k / 48))
-            : r.pts,
+        pts: d.line === "bendy" || d.line === "cyclical" ? sampled(r) : r.pts,
       })
     )
     d.plan.forEach((p, i) => {
       const on = `${e.id}#${i}`
-      const add = (text: string, place: Pt & { rotate: number }) =>
+      const add = (text: string, place: PortPlace) =>
         labels.push({
           what: `${text}@${on}`,
           box: inlineBox(place, measure(text, LABEL.END_SIZE, 400)),
+          ...(place.path ? { boxes: curveBoxes(place.path) } : {}),
+          ...((p.line ?? d.line) === "bendy" ? { curve: true } : {}),
           on,
         })
       for (const end of ["a", "b"] as const) {
@@ -156,12 +169,15 @@ function faults(b: ReturnType<typeof build>): string[] {
     hw: x.hw - 0.5,
     hh: x.hh - 0.5,
   })
+  const pieces = (l: Placed) => (l.boxes ?? [l.box]).map(tight)
+  const overlap = (x: Placed, y: Placed) =>
+    pieces(x).some((p) => pieces(y).some((q) => boxesOverlap(p, q)))
   for (let i = 0; i < labels.length; i++) {
     for (let j = i + 1; j < labels.length; j++)
-      if (boxesOverlap(tight(labels[i].box), tight(labels[j].box)))
+      if (overlap(labels[i], labels[j]))
         out.push(`${labels[i].what} over ${labels[j].what}`)
     for (const c of cards)
-      if (boxesOverlap(tight(labels[i].box), c.box))
+      if (pieces(labels[i]).some((p) => boxesOverlap(p, c.box)))
         out.push(`${labels[i].what} on ${c.id}`)
   }
   for (const l of labels) {
@@ -173,7 +189,14 @@ function faults(b: ReturnType<typeof build>): string[] {
     for (const line of lines) {
       if (line.edge === l.on) continue
       for (let k = 1; k < line.pts.length; k++)
-        if (segHitsBox(line.pts[k - 1], line.pts[k], tight(l.box))) {
+        if (
+          pieces(l).some(
+            (p) =>
+              segHitsBox(line.pts[k - 1], line.pts[k], p) &&
+              // On a curve a label reads over a cable crossing it.
+              !(l.curve && crossesSteeply(line.pts[k - 1], line.pts[k], p))
+          )
+        ) {
           out.push(`${l.what} on ${line.edge}`)
           break
         }
@@ -379,6 +402,28 @@ describe("end labels on their line", () => {
       9
     )
     expect(out.reach).toBeCloseTo(ip.x + 30 + LABEL.GAP, 9)
+  })
+
+  it("drops the last addresses before all of them when they do not all fit", () => {
+    // 100 px to the middle: room for one 40 px address, not two.
+    const route = [
+      [
+        { x: 0, y: 0 },
+        { x: 200, y: 0 },
+      ],
+    ]
+    const all = lines(route)
+    expect(placeInline([all.ask(0, [40, 40])], all.sc).get("c0")).toBeNull()
+    const cut = lines(route)
+    const out = placeInline([cut.ask(0, [40, 40], { least: 1 })], cut.sc)
+    expect(out.get("c0")!.at).toHaveLength(1)
+    // With room, the whole run.
+    const wide = lines(route)
+    const whole = placeInline(
+      [wide.ask(0, [20, 20], { least: 1 })],
+      wide.sc
+    ).get("c0")!
+    expect(whole.at).toHaveLength(2)
   })
 
   it("keeps a port name to the run out of its nub", () => {

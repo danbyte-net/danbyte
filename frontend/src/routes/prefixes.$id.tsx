@@ -11,11 +11,11 @@ import {
   api,
   type IPAddress,
   type IPListResponse,
-  type Paginated,
   type Prefix,
   type SpaceMap as SpaceMapData,
   type SubnetDetailRow,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useCurrentHref } from "@/lib/return-to"
 import { CopyButton, KvCard, dash, type KvRow } from "@/components/kv-card"
 import {
@@ -49,6 +49,7 @@ import {
   useDnsEnabled,
 } from "@/components/integrations/dns-records-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
+import { ObjectReportButton } from "@/components/object-report"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import {
   formatCustomValue,
@@ -80,6 +81,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
 
 export const Route = createFileRoute("/prefixes/$id")({
   component: PrefixDetail,
@@ -124,6 +126,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
     | "monitoring"
     | "dns"
     | "static-routes"
+    | "flows"
     | "journal"
     | "history"
   >("overview")
@@ -239,6 +242,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         <>
           <AutoDiscoverButton prefixId={p.id} initial={p.auto_discover} />
           <PrefixScanGroup prefixId={p.id} />
+          <ObjectReportButton kind="prefix" id={p.id} name={p.cidr} />
           {canEditPrefix && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/prefixes/$id/edit" params={{ id: p.id }}>
@@ -349,6 +353,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           label: "Static routes",
           count: p.static_route_count,
         },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -436,6 +443,10 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           omit={["prefix"]}
           emptyText="No static route has this prefix as its destination."
         />
+      </DetailTab>
+
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "prefix", id: p.id }} />
       </DetailTab>
 
       <DetailTab value="journal">
@@ -760,7 +771,7 @@ function NextAvailableTable({
 function usePrefixAncestors(prefix: Prefix): Prefix[] {
   const query = useQuery({
     queryKey: ["prefixes", "all"],
-    queryFn: () => api<Paginated<Prefix>>("/api/prefixes/?page_size=2000"),
+    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
     staleTime: 30_000,
   })
   return useMemo(() => {
@@ -900,7 +911,7 @@ function ChildPrefixesPane({
 }) {
   const query = useQuery({
     queryKey: ["prefixes", "all"],
-    queryFn: () => api<Paginated<Prefix>>("/api/prefixes/?page_size=2000"),
+    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
   })
   const cfQuery = useCustomFieldDefs("prefix")
 

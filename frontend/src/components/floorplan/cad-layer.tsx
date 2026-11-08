@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
@@ -456,7 +463,11 @@ export function CadLayer({
   theme?: CadTheme
 }) {
   const host = useRef<SVGGElement>(null)
+  const clipId = useId()
   const size = drawing.size
+  // A snapshot's part of a drawing keeps the shapes straddling its edge
+  // whole: clip them to its frame.
+  const clipped = !!drawing.clip
   const imageUrl = useThemedCadImage(
     source.mode === "image" ? source.imageUrl : null,
     theme
@@ -498,15 +509,22 @@ export function CadLayer({
       opacity={placement.opacity / 100}
       pointerEvents="none"
     >
-      {source.mode === "image" && imageUrl && (
-        <image
-          href={imageUrl}
-          width={size.width}
-          height={size.height}
-          preserveAspectRatio="none"
-        />
+      {clipped && (
+        <clipPath id={clipId}>
+          <rect width={size.width} height={size.height} />
+        </clipPath>
       )}
-      <g ref={host} />
+      <g clipPath={clipped ? `url(#${clipId})` : undefined}>
+        {source.mode === "image" && imageUrl && (
+          <image
+            href={imageUrl}
+            width={size.width}
+            height={size.height}
+            preserveAspectRatio="none"
+          />
+        )}
+        <g ref={host} />
+      </g>
     </g>
   )
 }

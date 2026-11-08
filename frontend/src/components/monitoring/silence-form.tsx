@@ -10,6 +10,7 @@ import {
   type Silence,
   type TagOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -71,12 +72,12 @@ export function SilenceForm({
 
   const tagsQ = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   const prefixesQ = useQuery({
     queryKey: ["prefixes-picker"],
-    queryFn: () => api<Paginated<Prefix>>("/api/prefixes/"),
+    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
     staleTime: 5 * 60_000,
   })
   const ipsQ = useQuery({

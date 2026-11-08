@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { CabinetType, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { CabinetType } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildCabinetTypeColumns } from "@/components/columns/cabinet-type-columns"
@@ -30,7 +30,7 @@ function CabinetTypesPage() {
   const query = useQuery({
     queryKey: ["cabinet-types", q],
     queryFn: () =>
-      api<Paginated<CabinetType>>(
+      apiAll<CabinetType>(
         `/api/cabinet-types/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

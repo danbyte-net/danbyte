@@ -55,6 +55,7 @@ export function ListPageShell({
   savedViews,
   query,
   page,
+  summary,
   children,
 }: {
   title: string
@@ -90,6 +91,9 @@ export function ListPageShell({
    * reads "N of M", a notice says the list is cut off, and the facet rail and
    * the table's Download say they cover the loaded rows (#412). */
   page?: { count?: number; results?: unknown[] }
+  /** A row above the table once data is ready - e.g. count chips that apply
+   * a facet (the Lifecycle page's windows). */
+  summary?: ReactNode
   /** The table (and any dialogs/bulk bars) - rendered once data is ready. */
   children: ReactNode
 }) {
@@ -156,7 +160,14 @@ export function ListPageShell({
               {actions}
             </div>
           </header>
-          <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
+          {/* Focusable, so a keyboard can scroll it when the content has
+              no links or buttons of its own (#470). */}
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label={title}
+            className="min-h-0 flex-1 overflow-auto p-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring lg:p-6"
+          >
             {query?.isLoading ? (
               <Loading />
             ) : query?.isError ? (
@@ -173,6 +184,7 @@ export function ListPageShell({
                     {listCapNotice(cap)}
                   </p>
                 )}
+                {summary && <div className="mb-3">{summary}</div>}
                 {children}
               </>
             )}

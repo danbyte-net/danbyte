@@ -1,7 +1,9 @@
+import { useCallback, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type VirtualMachine } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { PrtgDeleteResult, VirtualMachine } from "@/lib/api"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +15,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  KEEP_IN_PRTG,
+  PrtgDeleteOption,
+  prtgDeleteQuery,
+  prtgDeleteToast,
+} from "@/components/prtg/delete-option"
+import type { PrtgDeleteChoice } from "@/components/prtg/delete-option"
 
 export interface VmDeleteDialogProps {
   vm: VirtualMachine | null
@@ -26,11 +35,22 @@ export function VmDeleteDialog({
   onDeleted,
 }: VmDeleteDialogProps) {
   const qc = useQueryClient()
+  const [prtg, setPrtg] = useState<PrtgDeleteChoice>(KEEP_IN_PRTG)
+  const [prtgReady, setPrtgReady] = useState(true)
+  const onPrtg = useCallback((c: PrtgDeleteChoice, ready: boolean) => {
+    setPrtg(c)
+    setPrtgReady(ready)
+  }, [])
   const m = useMutation({
     mutationFn: () =>
-      api<void>(`/api/virtual-machines/${vm!.id}/`, { method: "DELETE" }),
-    onSuccess: () => {
+      api<{ prtg?: PrtgDeleteResult[] } | undefined>(
+        `/api/virtual-machines/${vm!.id}/${prtgDeleteQuery(prtg)}`,
+        { method: "DELETE" }
+      ),
+    onSuccess: (res) => {
       toast.success(`Deleted ${vm!.name}`)
+      prtgDeleteToast(res?.prtg)
+      qc.invalidateQueries({ queryKey: ["prtg-links"] })
       qc.invalidateQueries({ queryKey: ["virtual-machines"] })
       qc.invalidateQueries({ queryKey: ["virtual-machines-picker"] })
       onOpenChange(false)
@@ -50,11 +70,16 @@ export function VmDeleteDialog({
             This action can't be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
+        <PrtgDeleteOption
+          key={vm?.id}
+          parent={vm ? { virtual_machine: vm.id } : null}
+          onChange={onPrtg}
+        />
         <AlertDialogFooter>
           <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
             variant="destructive"
-            disabled={m.isPending}
+            disabled={m.isPending || !prtgReady}
             onClick={(e) => {
               e.preventDefault()
               m.mutate()

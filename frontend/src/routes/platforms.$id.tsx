@@ -20,6 +20,7 @@ import { LifecycleCard } from "@/components/lifecycle-card"
 import { EolCard } from "@/components/eol-card"
 import { EolBadge } from "@/components/cells/eol-cell"
 import { Loading } from "@/components/loading"
+import { dash } from "@/components/cells/dash"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/platforms/$id")({
@@ -65,6 +66,42 @@ function Body({ platform: p }: { platform: Platform }) {
     {
       label: "Virtual machines",
       value: <span className="num">{p.vm_count}</span>,
+    },
+    {
+      label: "Target version",
+      value: p.target_version ? (
+        <span className="font-mono">{p.target_version}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Version pattern",
+      value: p.version_pattern ? (
+        <span className="font-mono break-all">{p.version_pattern}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "License",
+      value: p.license ? <span className="font-mono">{p.license}</span> : dash,
+    },
+    {
+      label: "Package URL",
+      value: p.purl_template ? (
+        <span className="font-mono break-all">{p.purl_template}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "CPE",
+      value: p.cpe_template ? (
+        <span className="font-mono break-all">{p.cpe_template}</span>
+      ) : (
+        dash
+      ),
     },
   ]
 

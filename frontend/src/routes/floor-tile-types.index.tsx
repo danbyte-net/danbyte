@@ -5,7 +5,8 @@ import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { FloorTileType, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { FloorTileType } from "@/lib/api"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +43,7 @@ function FloorTileTypesPage() {
   const query = useQuery({
     queryKey: ["floor-tile-types", q],
     queryFn: () =>
-      api<Paginated<FloorTileType>>(
+      apiAll<FloorTileType>(
         `/api/floor-tile-types/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

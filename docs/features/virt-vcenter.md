@@ -94,6 +94,10 @@ Per-source switches widen what a source imports:
   minted in a catalog you curate. All of it is blank-fill - anything you have
   already set is left alone, and a host that reports no serial (nested ESXi,
   for instance) simply keeps an empty one.
+  The host's bare ESXi version (`8.0.3`) goes into its **software version**
+  for the [software target](lifecycle.md#software-target), and follows the
+  host on later syncs - unless you typed a version yourself, which the sync
+  never overwrites.
 
     This is the one thing that needs the **vSphere SOAP** API: the REST API
     returns four fields per host and has no host-detail endpoint at all, so

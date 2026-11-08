@@ -3,7 +3,8 @@ import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Region, type Paginated } from "@/lib/api"
+import { type Region } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { nestByParent } from "@/lib/nest"
 import { SITE_VIEW_KEYS } from "@/lib/site-cache"
 import { useMe } from "@/lib/use-me"
@@ -28,7 +29,7 @@ function RegionsPage() {
 
   const query = useQuery({
     queryKey: ["regions"],
-    queryFn: () => api<Paginated<Region>>("/api/regions/"),
+    queryFn: () => apiAll<Region>("/api/regions/"),
   })
 
   const allRows = query.data?.results ?? []

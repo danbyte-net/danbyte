@@ -52,14 +52,54 @@ ergonomics on top:
     A row the viewer *may* read never names a related row they can't: an IP
     address shows its prefix, device, interface, switch and VM as empty when
     those belong to another site - in the API, the spreadsheet export and the
-    context line of a search hit.
+    context line of a search hit. The same holds for an application flow
+    whose other end is another site's address, range or prefix: that end
+    reads *Hidden* (no address, DNS name, device or VM) in tables, the
+    Application map, the flow diagram and its PDF, and a flow search does
+    not match on it. A flow an
+    [application requirement](../features/application-flows.md#requirements)
+    generated is an ordinary flow with the same rule, and its name reads
+    *Hidden* where it names the hidden host - in the API, its picker, the
+    export, templates, search, custom-field labels, the change log and the
+    requirement's excluded pairs and journal - also once the flow is
+    detached or released, until someone renames it. A pair's
+    `binding_key`, which names its address and host by id, reads `null`
+    there. A support coverage entry in the change log names its device
+    as *Hidden* once the device is at a site the reader can't view. The
+    requirement itself is a
+    tenant-wide catalog the site roles read, its fixed ends hidden the same
+    way, and its list of hosts without an address counts the hosts the
+    reader can't view without naming them. A cooling intake connected to another site's feed or
+    CDU outflow shows its upstream as *Hidden*, an outflow the intakes it
+    serves on another site the same way, and a device's cooling path blanks
+    the hops the reader can't open. A floor-plan tile linked to another
+    site's device, rack, cabinet, panel, feed, cooling source or plan keeps
+    its place but reads *Hidden* in the editor, the 3D room, the exports
+    and the API, and can't be opened; a site-map marker's device the reader
+    can't view is left out of the marker, and the map's cable lines and
+    links carry only the cables they may view
+    ([floor plans](../features/floor-plans.md#tenancy-permissions-audit),
+    [site map](../features/site-map.md#permissions)).
 
     Counts on catalog objects count only what the reader may view: a
     platform's devices and virtual machines, a device type's or role's
     devices, a manufacturer's device and module types, a rack or cabinet
-    role's racks, a status's usage, a region's sites, and the like. The
-    number on a tab matches the table under it, and says nothing about other
-    sites.
+    role's racks, a status's usage, a region's sites, and the like. So do a
+    tag's usage, a contact's or contact role's assignments, a custom-field
+    group's fields, the circuits on a provider network, a cluster's or VM
+    group's virtual machines, a location's devices, racks, cabinets and
+    rooms, a room's devices, racks and cabinets, a
+    cabinet's devices, a floor plan's tiles, an L2VPN's VTEPs, a module
+    type's interface templates, and the sub-groups of regions, platform
+    groups and contact groups. A tenant's sites, prefixes, VLANs and IP
+    addresses count the same way, each tenant by the grants held in it, and
+    a tenant group counts only the tenants the reader can open. A prefix's
+    child prefixes, IP addresses, static routes and DNS records count only
+    the ones the reader may view; its utilisation still measures every
+    address in it. A VRF's prefixes, VLANs and IP addresses, a shared
+    VLAN's prefixes, the VRFs importing or exporting a route target and an
+    L2VPN's terminations count the same way. The number on a tab matches the table under it, and says
+    nothing about other sites.
 
 ## Which rows belong to a site
 
@@ -83,6 +123,8 @@ off:
   interfaces, their instance's device or VM; VTEP memberships, their VTEP's
   device;
 - **virtual disks, virtual switches** - their VM's, their cluster's;
+- **power feeds, cooling feeds** - their power panel's, their cooling
+  source's;
 - **DNS records and drift, certificate bindings** - their IP address's;
 - **config snapshots and state, BMC endpoints, port-utilization rules, Zabbix
   host links and pending changes, virtualization changes** - their device's
@@ -157,7 +199,15 @@ platforms, rack and cabinet types, and the like - read tenant-wide either way.
     tenant's tag names. Tags now belong to the tenant that created them; a
     migration assigned existing tags to the tenant(s) using them (cloning a
     tag that several tenants shared). Old, never-used tags remain visible to
-    all tenants but only a superuser can edit or delete them.
+    all tenants but only a superuser can edit or delete them; pickers mark
+    them with a `global` chip.
+
+    A tag name exists once among what a tenant sees - its tags, its sites'
+    local tags and the global ones (case ignored) - so a site-local tag can't
+    reuse a tenant-wide or global tag's name. Older same-name pairs are
+    resolved with **Merge into…** on the Tags list, which only merges into a
+    tag of the same site, a tenant-wide tag or a global one
+    ([details](../features/tags-and-custom-fields.md#unique-names)).
 
 ## Rollout notes
 

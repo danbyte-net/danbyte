@@ -19,13 +19,12 @@ from django.db.models.expressions import RawSQL
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods, require_POST
 
 from api.forms import IPAddressForm, PrefixForm
 from api.form_helpers import initial_from_get, save_and_add_more_redirect
 from api.models import VRF, IPAddress, IPRole, Status, Prefix, Site, VLAN
-from core.models import Organization, Tag, Tenant
+from core.models import Organization, Tenant
 from auth_api.permissions import require_perm
 from auth_api.user_prefs import get_page_size
 
@@ -989,30 +988,18 @@ def _gateway_address_for(network, policy):
     return None
 
 
-def _set_tags_from_string(obj, raw, *, create_missing=True):
-    """Parse a comma-separated tag string and apply to ``obj``."""
-    names = [n.strip() for n in (raw or "").split(",") if n.strip()]
-    if not names:
-        obj.tags.clear()
-        return
-    tags = []
-    for name in names:
-        t, _ = Tag.objects.get_or_create(
-            name=name, defaults={"slug": slugify(name)}
-        ) if create_missing else (Tag.objects.filter(name=name).first(), False)
-        if t is not None:
-            tags.append(t)
-    obj.tags.set(tags)
-
-
 def _autospawn_gateway(prefix, *, request=None):
     """If the prefix's site has a gateway_policy, create an IPAddress with
     role='gateway' at that address and copy it onto ``prefix.gateway``.
 
     No-op for IPv6 (we don't want to register specific /64 gateways from
-    policy alone) or when policy is 'none'.
+    policy alone), when policy is 'none', for a container (it holds other
+    prefixes, not hosts) and when the prefix has ``auto_gateway`` off
+    (loopback blocks, /31 links).
     """
-    if prefix.site is None:
+    if prefix.site is None or not prefix.auto_gateway:
+        return None
+    if prefix.status_id and prefix.status.slug == "container":
         return None
     policy = prefix.site.gateway_policy
     if policy in (None, "", "none"):

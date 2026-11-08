@@ -4,7 +4,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from api.models import DeviceRole, DeviceType, Site
-from api.serializers import TenantScopedPrimaryKeyRelatedField
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 
 from .models import (
     ZabbixAdoptionRule,
@@ -17,7 +17,7 @@ from .models import (
 from .severity import DEFAULT_MAP, MAPPABLE, SEVERITIES, clean_map
 
 
-class ZabbixConnectionSerializer(serializers.ModelSerializer):
+class ZabbixConnectionSerializer(TenantScopedModelSerializer):
     """The token is write-only. The API says whether one is set, never what."""
 
     token = serializers.CharField(

@@ -5,6 +5,7 @@ import { Plus, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   ContactAssignment,
   ContactMini,
@@ -62,13 +63,12 @@ export function ContactsPanel({
   })
   const contacts = useQuery({
     queryKey: ["contacts-picker"],
-    queryFn: () => api<Paginated<ContactMini>>("/api/contacts/?picker=1"),
+    queryFn: () => apiAll<ContactMini>("/api/contacts/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["contact-roles-picker"],
-    queryFn: () =>
-      api<Paginated<ContactRoleOption>>("/api/contact-roles/?picker=1"),
+    queryFn: () => apiAll<ContactRoleOption>("/api/contact-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
 
@@ -197,6 +197,7 @@ export function ContactsPanel({
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-50 flex-1">
             <Combobox
+              aria-label="Contact"
               value={contactId}
               onChange={setContactId}
               options={contactOptions}
@@ -206,6 +207,7 @@ export function ContactsPanel({
           </div>
           <div className="w-36">
             <Combobox
+              aria-label="Role"
               value={roleId}
               onChange={setRoleId}
               options={(roles.data?.results ?? []).map((r) => ({
@@ -222,7 +224,7 @@ export function ContactsPanel({
             value={priority}
             onValueChange={(v) => setPriority(v as ContactPriority)}
           >
-            <SelectTrigger className="h-9 w-32">
+            <SelectTrigger aria-label="Priority" className="h-9 w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

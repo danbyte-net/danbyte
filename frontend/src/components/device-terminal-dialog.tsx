@@ -11,8 +11,8 @@ import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 
-import { api } from "@/lib/api"
-import type { Device, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Device } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -54,7 +54,7 @@ export function DeviceTerminalDialog({
   const credsQ = useQuery({
     queryKey: ["device-credentials", device.id, "ssh"],
     queryFn: () =>
-      api<Paginated<SshCredentialRow>>(
+      apiAll<SshCredentialRow>(
         `/api/monitoring/device-credentials/?device=${device.id}`
       ),
     enabled: open,
@@ -119,8 +119,7 @@ export function DeviceTerminalDialog({
         cursorBlink: true,
         fontSize: 13,
         scrollback: 5000,
-        fontFamily:
-          "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
         // Full 16-colour ANSI palette so coloured output (ls --color, vim,
         // htop, prompts) renders properly; xterm handles 256-colour/truecolor
         // on top of this automatically.
@@ -208,7 +207,9 @@ export function DeviceTerminalDialog({
       }
       ws.onclose = () => {
         // A close before we ever went "open" with no explicit error frame.
-        setPhase((p) => (p === "connecting" ? "error" : p === "open" ? "closed" : p))
+        setPhase((p) =>
+          p === "connecting" ? "error" : p === "open" ? "closed" : p
+        )
       }
       term.onData((data) => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -224,7 +225,8 @@ export function DeviceTerminalDialog({
     [authMode, credentialId, myUsername, myPassword, device.id, teardown]
   )
 
-  const showTerminal = phase === "connecting" || phase === "open" || phase === "closed"
+  const showTerminal =
+    phase === "connecting" || phase === "open" || phase === "closed"
 
   // Keep the PTY sized to the on-screen terminal: refit whenever the host box
   // changes size (dialog open, maximize toggle, window resize). fit() computes
@@ -269,7 +271,7 @@ export function DeviceTerminalDialog({
               type="button"
               onClick={() => setMaximized((m) => !m)}
               // Sits left of the built-in close (X) button.
-              className="absolute right-11 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100"
+              className="absolute top-4 right-11 rounded-sm opacity-70 transition-opacity hover:opacity-100"
               title={maximized ? "Restore" : "Maximize"}
             >
               {maximized ? (
@@ -331,6 +333,7 @@ export function DeviceTerminalDialog({
                   </p>
                 ) : (
                   <Combobox
+                    aria-label="Credential"
                     value={credentialId || null}
                     onChange={(v) => setCredentialId(v ?? "")}
                     options={sshCreds.map((c) => ({
@@ -348,6 +351,7 @@ export function DeviceTerminalDialog({
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Username</label>
                   <Input
+                    aria-label="Username"
                     value={myUsername}
                     onChange={(e) => setMyUsername(e.target.value)}
                     autoComplete="off"
@@ -356,6 +360,7 @@ export function DeviceTerminalDialog({
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Password</label>
                   <Input
+                    aria-label="Password"
                     type="password"
                     value={myPassword}
                     onChange={(e) => setMyPassword(e.target.value)}

@@ -11,13 +11,15 @@ import type { Edge, EdgeProps, InternalNode } from "@xyflow/react"
 import {
   PORT_H,
   endTextWidth,
+  glyphsAlong,
   inlinePlaces,
   inlineSpan,
+  pathThrough,
 } from "@/lib/diagram/geometry"
 import type { PortPlace } from "@/lib/diagram/geometry"
 import { baselineAt, measureText } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
-import { anchorPoint, leadStart, linkEnds } from "./anchors"
+import { anchorPoint, leadAroundNub, leadStart, linkEnds } from "./anchors"
 import { chipCentre } from "./label-placement"
 import {
   linkRoute,
@@ -27,7 +29,15 @@ import {
   staleBend,
 } from "./link-geometry"
 import { nubRun } from "./plan"
-import type { Anchor, DiagramEdgeData, End, Pt, Rect, Route } from "./types"
+import type {
+  Anchor,
+  DiagramCardData,
+  DiagramEdgeData,
+  End,
+  Pt,
+  Rect,
+  Route,
+} from "./types"
 
 // A Diagram link: one line per cable between two cards, drawn from the
 // shared plan (plan.ts) so the screen and every export agree.
@@ -75,7 +85,7 @@ const portName = (a: Anchor | undefined) =>
 const width = (text: string) => endTextWidth(text, measureText)
 
 /** An end label on its line: the gap the line breaks for, then the text,
- * turned to read upright. A faded link fades the text only: the gap stays
+ * turned to read upright - or, on a curve, both bent along it. A faded link fades the text only: the gap stays
  * solid, so the line still breaks round it. */
 function EndLabel({
   place,
@@ -86,6 +96,19 @@ function EndLabel({
   text: string
   fade?: CSSProperties
 }) {
+  if (place.path) {
+    // On a curve: the gap along it, the glyphs one by one along it.
+    const g = glyphsAlong(place.path, text, measureText)
+    const list = (xs: number[]) => xs.map(r1).join(" ")
+    return (
+      <g>
+        <path d={pathThrough(place.path)} strokeWidth={PORT_H} />
+        <text x={list(g.x)} y={list(g.y)} rotate={list(g.rotate)} style={fade}>
+          {text}
+        </text>
+      </g>
+    )
+  }
   const x = r1(place.x)
   const y = r1(place.y)
   const w = inlineSpan(width(text))
@@ -116,10 +139,10 @@ function EndLabel({
 const leadLength = (lead: Pt, e: End) => Math.hypot(e.x - lead.x, e.y - lead.y)
 
 /** One end of an unplanned cable: its labels (port name, then
- * addresses) and their widths, the straight run they need (`nubRun`,
- * measured here: a bendy line keeps its plan's instead, measured as the
- * plan was), and the photo lead its line starts with - only where that
- * lead runs straight into the end as it stands. */
+ * addresses) and their widths, the straight run a curve leaves it with
+ * (`nubRun`: a photo port's lead only, never its labels' room), and the
+ * photo lead its line starts with - only where that lead runs straight
+ * into the end as it stands. */
 function unplannedEnd(
   data: DiagramEdgeData,
   i: number,
@@ -148,9 +171,10 @@ function unplannedEnd(
     )
   }
   const lead = from && behind(from) ? from : null
-  // A Detailed nub or a photo port: its labels run straight out of it.
+  // A Detailed nub or a photo port: a curve leaves it square, whatever
+  // its labels - they follow the curve.
   const nub = anchor?.k === "point" || (!data.simple && anchor?.k === "side")
-  return { texts, ws, run: nubRun(nub, !!from, ws), lead }
+  return { texts, ws, run: nubRun(nub, !!from, []), lead }
 }
 
 interface Drawn {
@@ -167,9 +191,13 @@ export const LinkEdge = memo(function LinkEdge({
   data,
   style,
   labelStyle,
+  markerStart,
+  markerEnd,
 }: EdgeProps<LinkEdgeType>) {
-  const s = boxOf(useInternalNode(source))
-  const t = boxOf(useInternalNode(target))
+  const sNode = useInternalNode(source)
+  const tNode = useInternalNode(target)
+  const s = boxOf(sNode)
+  const t = boxOf(tNode)
   if (!s || !t || !data) return null
   const plan = planOf(data, s, t)
   const cables: Drawn[] = plan
@@ -177,8 +205,7 @@ export const LinkEdge = memo(function LinkEdge({
         const ends = data.labels.ends?.[i]
         const side = (end: "a" | "b") => {
           const anchor = (end === "a" ? data.a[i] : data.b[i]) as
-            | Anchor
-            | undefined
+            Anchor | undefined
           const port = portName(anchor)
           const at = p[end]
           const ips = ends?.[end] ?? []
@@ -244,18 +271,27 @@ export const LinkEdge = memo(function LinkEdge({
   )
   const fade =
     labelStyle?.opacity != null ? { opacity: labelStyle.opacity } : undefined
-  // Photo ports: from the port to where the line leaves the photo.
+  // Photo ports: from the port to where the line leaves the photo -
+  // round the nub on the image's bottom edge, which stays on top.
   const leads: [Pt, Pt][] = []
   const n = Math.min(data.a.length, data.b.length)
   for (let i = 0; i < n; i++)
-    for (const [box, anchor] of [
-      [s, data.a[i]],
-      [t, data.b[i]],
+    for (const [box, anchor, node] of [
+      [s, data.a[i], sNode],
+      [t, data.b[i], tNode],
     ] as const) {
       const from = leadStart(box, anchor)
       if (!from) continue
       const to = anchorPoint(box, anchor)
-      if (from.x !== to.x || from.y !== to.y) leads.push([from, to])
+      if (from.x === to.x && from.y === to.y) continue
+      // A photo's node: where its image ends, over its caption.
+      const imgH = (node?.data as DiagramCardData | undefined)?.diagram.photo
+        ?.imgH
+      leads.push(
+        ...(imgH === undefined
+          ? [[from, to] as [Pt, Pt]]
+          : leadAroundNub(from, to, box.y + imgH))
+      )
     }
   return (
     <>
@@ -284,6 +320,10 @@ export const LinkEdge = memo(function LinkEdge({
           id={i === 0 ? id : undefined}
           path={c.route.d}
           style={style}
+          // Arrowheads, where an edge asks for them (an application flow's
+          // direction); the topology's cables carry none.
+          markerStart={markerStart}
+          markerEnd={markerEnd}
           interactionWidth={12}
         />
       ))}

@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from api.models import VRF, Location, Site
 from api.serializers import (
     StatusMiniSerializer,
+    TenantScopedModelSerializer,
     TenantScopedPrimaryKeyRelatedField,
 )
 from api.viewsets import TenantScopedViewSet
@@ -65,7 +66,8 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
     class Meta:
         model = VirtNetwork
         fields = ["id", "name", "ext_key", "vlan", "vswitch", "vswitch_name",
-                  "vrf", "vrf_id", "vms", "last_seen_at"]
+                  "vrf", "vrf_id", "vms", "sdn_zone", "sdn_alias", "sdn_tag",
+                  "last_seen_at"]
         # Everything else mirrors the hypervisor; the VRF is Danbyte's call.
         read_only_fields = [f for f in fields if f != "vrf_id"]
 
@@ -268,7 +270,7 @@ class VirtChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return Response({"ok": True})
 
 
-class VirtPlacementRuleSerializer(serializers.ModelSerializer):
+class VirtPlacementRuleSerializer(TenantScopedModelSerializer):
     """A rule mapping the hypervisor's own structure to a Site."""
 
     scope_display = serializers.CharField(

@@ -26,11 +26,11 @@ import uuid
 from functools import lru_cache
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db.models import F, Q, UniqueConstraint
+from django.db.models import UniqueConstraint
 
 from auth_api.object_types import model_for, registry_payload, slug_for_model
 from core.models import CustomFieldsMixin, TaggableMixin, Tag
-from core.tags import TAGS, tags_of
+from core.tags import TAGS, find_visible_tag, tags_of
 
 from .bulk_import import (
     _SKIP,
@@ -414,6 +414,18 @@ class ModelIOHandler:
         return key if refs[cache_key] == rel.pk else str(rel.pk)
 
     # ── export ────────────────────────────────────────────────────────────
+    def tenant_rows(self, tenant):
+        """The type's rows in ``tenant``, before RBAC - what an export starts
+        from. Its own ``tenant`` column, unless the type reaches its tenant
+        another way (a synced DHCP scope through its server connection)."""
+        return self.model._default_manager.filter(tenant=tenant)
+
+    def visible_rows(self, qs, user):
+        """``qs`` narrowed to the rows ``user`` sees through the API, for a
+        type whose list narrows past RBAC (a script shared with some users
+        only). Export and import read and match only these. Default: all."""
+        return qs
+
     def export_queryset(self, qs):
         if _is_taggable(self.model):
             qs = qs.prefetch_related(TAGS)
@@ -466,6 +478,12 @@ class ModelIOHandler:
             row["custom_fields"] = json.dumps(cf) if cf else ""
         for name in hidden:
             row.pop(name, None)
+        # A value the API shows masked (a generated flow's name with an end
+        # the user may not view as Hidden) is the file's value too.
+        if visibility is not None:
+            for name, value in visibility.masked_fields(obj).items():
+                if name in row:
+                    row[name] = "" if value is None else str(value)
         return {c: row.get(c, "") for c in (columns or self.column_names())}
 
     # ── import ────────────────────────────────────────────────────────────
@@ -533,6 +551,14 @@ class ModelIOHandler:
             )
         return matches[0] if matches else None
 
+    def new_object(self, tenant):
+        """The unsaved row a create starts from: the tenant set, plus
+        whatever the type's API sets on create that no column carries."""
+        obj = self.model()
+        if _is_tenant_scoped(self.model):
+            obj.tenant = tenant
+        return obj
+
     def apply(self, existing, row, tenant, user=None, request=None):
         """Build/mutate + validate (no save). Returns
         ``(obj, action, changes, tag_names)``. ``tag_names`` is ``None`` when the
@@ -548,9 +574,7 @@ class ModelIOHandler:
         kept on the object, and :meth:`commit` saves through the viewset's
         own create/update hooks (#364, #365)."""
         if existing is None:
-            obj = self.model()
-            if _is_tenant_scoped(self.model):
-                obj.tenant = tenant
+            obj = self.new_object(tenant)
             action = "create"
             old = {}
             old_cf = {}
@@ -587,6 +611,14 @@ class ModelIOHandler:
         for name, val in resolved.items():
             check_status_offered(self._fields[name], val, existing)
             setattr(obj, name, val)
+        if existing is not None and request is not None:
+            # A cell that repeats the value the export showed masked (a
+            # generated flow's name) leaves the stored value as it is.
+            visibility = self.field_visibility(request)
+            if visibility is not None:
+                for name, shown in visibility.masked_fields(existing).items():
+                    if name in old and getattr(obj, name, None) == shown:
+                        setattr(obj, name, old[name])
 
         if _has_custom_fields(self.model) and "custom_fields" in row:
             self._apply_custom_fields(obj, existing, row.get("custom_fields"), tenant)
@@ -601,6 +633,7 @@ class ModelIOHandler:
         if _has_custom_fields(self.model) and (obj.custom_fields or {}) != old_cf:
             touched.add("custom_fields")
         self._api_validate(obj, existing, touched, request)
+        _mark_imported_version(obj, touched)
 
         tag_names = None
         if _is_taggable(self.model) and "tags" in row:
@@ -719,12 +752,9 @@ class ModelIOHandler:
             tenant = getattr(obj, "tenant", None)
             tags = []
             for name in tag_names:
-                t = (
-                    Tag.objects.filter(name=name)
-                    .filter(Q(tenant=tenant) | Q(tenant__isnull=True))
-                    .order_by(F("tenant").asc(nulls_last=True))
-                    .first()
-                )
+                # Trimmed, case ignored: "Prod" reuses "prod" (one name per
+                # what a tenant sees).
+                t = find_visible_tag(name, tenant)
                 if t is None:
                     t = Tag(name=name, tenant=tenant)
                     t.save()
@@ -738,6 +768,20 @@ class ModelIOHandler:
             for f in self._fields.values()
             if f.name != "custom_fields"
         }
+
+
+def _mark_imported_version(obj, touched) -> None:
+    """A software version a file sets is the import's (#451): no automatic
+    source overwrites it, and the source says where it came from."""
+    if "software_version" not in touched or not hasattr(obj, "software_version_source"):
+        return
+    source = "import" if obj.software_version else ""
+    obj.software_version_source = source
+    obj.software_version_seen_at = None
+    write = getattr(obj, "_io_write", None)
+    if write is not None:
+        write[0].validated_data["software_version_source"] = source
+        write[0].validated_data["software_version_seen_at"] = None
 
 
 def _flat(err) -> list[str]:
@@ -845,6 +889,23 @@ class DeviceIOHandler(ModelIOHandler):
         return obj
 
 
+class InstalledSoftwareIOHandler(ModelIOHandler):
+    """Installed software (#436): a row an import creates is marked
+    ``source=import`` unless the file says otherwise."""
+
+    def apply(self, existing, row, tenant, user=None, request=None):
+        if existing is None and not str(row.get("source") or "").strip():
+            row = {**row, "source": "import"}
+        return super().apply(existing, row, tenant, user, request)
+
+
+class ExportOnlyIOHandler(ModelIOHandler):
+    """A type whose writes have side effects only its API performs."""
+
+    def importable(self) -> bool:
+        return False
+
+
 # ── registry ──────────────────────────────────────────────────────────────
 
 _REGISTRY: dict[str, ModelIOHandler] = {}
@@ -940,3 +1001,42 @@ def register_builtins() -> None:
         SupportCoverage, natural_key=["contract", "device"],
         fk_keys={"contract": "contract_number", "device": "name"},
     ))
+    # Applications and installed software (#436): an application by its
+    # slug, an install by application, device or VM name and version.
+    from .models import Application, InstalledSoftware
+
+    register_io(_handler(
+        Application, natural_key=["slug"],
+        fk_keys={"parent": "slug", "manufacturer": "name"},
+    ))
+    register_io(_handler(
+        InstalledSoftware, InstalledSoftwareIOHandler,
+        natural_key=["application", "device", "virtual_machine", "version"],
+        fk_keys={"application": "slug", "device": "name", "virtual_machine": "name",
+                 "service": "name", "group": "slug"},
+    ))
+    # Application groups (#436): a group by its slug. Assignments export
+    # only: assigning records installs, which only the API does.
+    from .models import ApplicationGroup, ApplicationGroupAssignment
+
+    register_io(_handler(ApplicationGroup, natural_key=["slug"]))
+    register_io(_handler(
+        ApplicationGroupAssignment, ExportOnlyIOHandler,
+        natural_key=["group", "device", "virtual_machine"],
+        fk_keys={"group": "slug", "device": "name", "virtual_machine": "name"},
+    ))
+    # Application flows (#163): matched by application slug and flow name;
+    # each end by address, CIDR or (ranges) id.
+    from .models import ApplicationFlow
+
+    register_io(_handler(
+        ApplicationFlow, natural_key=["application", "name"],
+        fk_keys={"application": "slug", "service": "name",
+                 "source_ip": "ip_address", "destination_ip": "ip_address",
+                 "source_prefix": "cidr", "destination_prefix": "cidr"},
+    ))
+    # Rooms (floor plans P1b): a room by its name in its location. The slug
+    # is derived, so a row without one never lands on another room there.
+    from .models import Room
+
+    register_io(_handler(Room, natural_key=["location", "name"], fk_keys={"location": "name"}))

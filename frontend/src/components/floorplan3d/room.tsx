@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from "react"
 import * as THREE from "three"
 
+import { useTheme } from "@/components/theme-provider"
+import { mutesBasemap, muteRgb } from "@/components/floorplan/background-look"
+
+import { gridFade, roomLook } from "./room-look"
+
 import {
   cellToWorld,
+  tileWorldPose,
   cellM,
   mm,
   type ScenePayload,
@@ -39,13 +45,75 @@ function grateTexture(): THREE.CanvasTexture {
  * deliberately inert: a first version made them clickable (isolate), and
  * every empty-floor click inside a zone hid the room instead of
  * deselecting - isolation lives on the rack HUD now. */
+/** How many cells apart the 3D grid's lines are: one per cell up to 120
+ * cells a side, then the smallest step that keeps it near 120 lines. */
+export function gridStep(
+  cellsWide: number,
+  cellsDeep: number,
+  maxLines = 120
+): number {
+  return Math.max(1, Math.ceil(Math.max(cellsWide, cellsDeep) / maxLines))
+}
+
+/** Grid lines that fade out with their distance from the camera (`near`
+ * whole, `far` gone), so the grid is a soft guide where you look and never
+ * a dense hatch across the whole slab. One draw, no per-frame work: the
+ * shader reads the camera's position itself. */
+function gridMaterial(
+  color: string,
+  opacity: number,
+  near: number,
+  far: number
+) {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      color: { value: new THREE.Color(color) },
+      opacity: { value: opacity },
+      near: { value: near },
+      far: { value: far },
+    },
+    vertexShader: `
+      varying vec3 vWorld;
+      void main() {
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vWorld = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: `
+      uniform vec3 color;
+      uniform float opacity;
+      uniform float near;
+      uniform float far;
+      varying vec3 vWorld;
+      void main() {
+        float d = distance(vWorld, cameraPosition);
+        float a = opacity * (1.0 - smoothstep(near, far, d));
+        if (a < 0.004) discard;
+        gl_FragColor = vec4(color, a);
+        #include <colorspace_fragment>
+      }`,
+  })
+}
+
 export function Room({
   scene,
   xray = false,
   ceiling = false,
   drawingFloor = null,
+  muted = true,
+  slab = true,
 }: {
   scene: ScenePayload
+  /** The background image muted, as Display > Muted background draws it
+   * on the 2D plan. */
+  muted?: boolean
+  /** Draw the slab over the whole grid. Off on a building's level, where
+   * the level's own outline (building.tsx `Slab`) is its floor: a level
+   * framed on a site-sized map would otherwise float a slab the size of
+   * the map over the ground. */
+  slab?: boolean
   xray?: boolean
   /** The plan's CAD drawing rasterised for the floor (cad-layer.tsx
    * `useCadFloorImage`), with its placement. Takes the blueprint's place:
@@ -58,13 +126,24 @@ export function Room({
 }) {
   const { plan } = scene
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
+  const dark = useTheme().theme === "dark"
+  const look = roomLook(dark)
+  const fade = gridFade(cellM(plan))
+  const gridMat = useMemo(
+    () => gridMaterial(look.grid, look.gridOpacity, fade.near, fade.far),
+    [look.grid, look.gridOpacity, fade.near, fade.far]
+  )
+  useEffect(() => () => gridMat.dispose(), [gridMat])
 
   const grid = useMemo(() => {
     const pts: number[] = []
     const c = cellM(plan)
-    for (let x = 0; x <= plan.grid_width; x++)
+    // Every cell near the camera (the lines fade out with distance); a
+    // huge plan still skips some, to keep the line count sane.
+    const step = gridStep(plan.grid_width, plan.grid_height, 1000)
+    for (let x = 0; x <= plan.grid_width; x += step)
       pts.push(x * c, 0, 0, x * c, 0, d)
-    for (let y = 0; y <= plan.grid_height; y++)
+    for (let y = 0; y <= plan.grid_height; y += step)
       pts.push(0, 0, y * c, w, 0, y * c)
     const g = new THREE.BufferGeometry()
     g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3))
@@ -72,41 +151,81 @@ export function Room({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan.grid_width, plan.grid_height, plan.cell_mm])
 
+  // The slab's edge: a fine line round the floor, so the model reads as a
+  // plate on the page rather than fading into it.
+  const rim = useMemo(
+    () =>
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(w, 0, 0),
+        new THREE.Vector3(w, 0, d),
+        new THREE.Vector3(0, 0, d),
+      ]),
+    [w, d]
+  )
+  useEffect(() => () => rim.dispose(), [rim])
+
   return (
     <group>
+      <lineLoop geometry={rim} position={[0, 0.003, 0]} raycast={() => null}>
+        <lineBasicMaterial color={look.wallEdge} transparent opacity={0.8} />
+      </lineLoop>
       {/* Floor slab - ghosted in x-ray so the plenum reads from above. */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[w / 2, -0.01, d / 2]}
-        receiveShadow
-      >
-        <planeGeometry args={[w, d]} />
-        {/* Keyed single material with explicit mode props - a same-type
+      {slab && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[w / 2, -0.01, d / 2]}
+          receiveShadow
+        >
+          <planeGeometry args={[w, d]} />
+          {/* Keyed single material with explicit mode props - a same-type
             solid/ghost ternary is diffed in place and r3f resets removed
             props to 0 (transparent=0 breaks three's strict checks; see
             WallMesh). */}
-        <meshStandardMaterial
-          key={xray ? "ghost" : "solid"}
-          color="#27272a"
-          roughness={0.95}
-          transparent={xray}
-          opacity={xray ? 0.35 : 1}
-          depthWrite={!xray}
+          <meshStandardMaterial
+            key={xray ? "ghost" : "solid"}
+            color={look.slab}
+            roughness={0.95}
+            transparent={xray}
+            opacity={xray ? 0.35 : 1}
+            depthWrite={!xray}
+          />
+        </mesh>
+      )}
+      {/* Two layers
+: the base map (on the ground level only - the server
+          leaves it out elsewhere), then the floor drawing over it. */}
+      {plan.base_map && (
+        <Blueprint
+          url={plan.base_map}
+          w={w}
+          d={d}
+          opacity={(plan.map_opacity ?? 60) / 100}
+          muted={muted && mutesBasemap(plan.basemap)}
+          dark={dark}
+          under
         />
-      </mesh>
-      {drawingFloor && <DrawingFloorMesh floor={drawingFloor} />}
+      )}
+      {drawingFloor && plan.background_shown !== false && (
+        <DrawingFloorMesh floor={drawingFloor} />
+      )}
       {!drawingFloor && plan.background_image && (
         <Blueprint
           url={plan.background_image}
           w={w}
           d={d}
           opacity={plan.background_opacity / 100}
+          muted={muted}
+          dark={dark}
         />
       )}
-      {/* Grid lines a hair above the slab */}
-      <lineSegments geometry={grid} position={[0, 0.002, 0]}>
-        <lineBasicMaterial color="#3f3f46" transparent opacity={0.5} />
-      </lineSegments>
+      {/* Grid lines a hair above the slab, fading with distance */}
+      <lineSegments
+        geometry={grid}
+        material={gridMat}
+        position={[0, 0.002, 0]}
+        raycast={() => null}
+      />
       {/* Zone tiles → translucent floor patches */}
       {scene.tiles
         .filter((t) => t.is_zone)
@@ -144,8 +263,10 @@ function ZonePatch({
   plan: ScenePayload["plan"]
   tile: SceneTile
 }) {
-  const [x, z] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
-  const [w, d] = cellToWorld(plan, tile.w, tile.h)
+  // Turned by its residual about its centre, as the 2D canvas draws it.
+  const pose = tileWorldPose(plan, tile)
+  const [x, z] = pose.centre
+  const { w, d } = pose.footprint
   // Perforated zones draw the grate pattern at one repeat per 600 mm tile -
   // the cold-aisle supply floor, legible without a heat map.
   const grate = useMemo(() => {
@@ -162,7 +283,10 @@ function ZonePatch({
   // 0.015 sits ABOVE a raised-floor slab top (0.012): a cold aisle drawn on
   // a raised pad must tint the pad, not vanish inside it.
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.015, z]}>
+    <mesh
+      rotation={[-Math.PI / 2, 0, pose.residualRotY]}
+      position={[x, 0.015, z]}
+    >
       <planeGeometry args={[w, d]} />
       {grate ? (
         <meshBasicMaterial
@@ -236,19 +360,27 @@ function DrawingFloorMesh({ floor }: { floor: DrawingFloor }) {
   )
 }
 
-/** The uploaded blueprint, textured onto the floor. Loaded manually (not
- * useLoader) so a missing/broken image degrades to the plain slab instead of
- * suspending forever. */
-function Blueprint({
+/** The uploaded blueprint (or the base map, `under` it), textured onto
+ * the floor. Loaded manually (not useLoader) so a missing/broken image
+ * degrades to the plain slab instead of suspending forever. */
+export function Blueprint({
   url,
   w,
   d,
   opacity,
+  muted,
+  dark,
+  under = false,
 }: {
   url: string
   w: number
   d: number
   opacity: number
+  muted: boolean
+  dark: boolean
+  /** The base map: drawn first, a hair lower, so the floor drawing lies
+   * over it. */
+  under?: boolean
 }) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
   useEffect(() => {
@@ -259,19 +391,72 @@ function Blueprint({
         t.dispose()
         return
       }
-      t.colorSpace = THREE.SRGBColorSpace
-      setTexture(t)
+      const img = t.image as HTMLImageElement | undefined
+      const canvas = muted && img ? mutedCanvas(img, dark) : null
+      let out: THREE.Texture = t
+      if (canvas) {
+        t.dispose()
+        out = new THREE.CanvasTexture(canvas)
+      }
+      out.colorSpace = THREE.SRGBColorSpace
+      out.anisotropy = 8
+      setTexture(out)
     })
     return () => {
       disposed = true
     }
-  }, [url])
+  }, [url, muted, dark])
   useEffect(() => () => texture?.dispose(), [texture])
   if (!texture) return null
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[w / 2, 0.001, d / 2]}>
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[w / 2, under ? 0.0005 : 0.001, d / 2]}
+      renderOrder={under ? -1 : 0}
+    >
       <planeGeometry args={[w, d]} />
-      <meshBasicMaterial map={texture} transparent opacity={opacity} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        opacity={opacity}
+        // The picture's own colours, not tone-mapped into a grey wash.
+        toneMapped={false}
+        // A picture on the floor: it never hides what lies on it.
+        depthWrite={false}
+        polygonOffset
+        polygonOffsetFactor={under ? -0.5 : -1}
+        polygonOffsetUnits={under ? -1 : -2}
+      />
     </mesh>
   )
+}
+
+/** The longest side a muted floor picture keeps (px): a site map can be
+ * huge, and the floor never needs more. */
+const MUTED_MAX_PX = 4096
+
+/** The picture through the 2D plan's muted look, pixel by pixel
+ * (background-look.tsx `muteRgb`), on a canvas. Null where a canvas has
+ * no 2D context (a test's DOM). */
+function mutedCanvas(
+  img: HTMLImageElement | ImageBitmap,
+  dark: boolean
+): HTMLCanvasElement | null {
+  const scale = Math.min(1, MUTED_MAX_PX / Math.max(img.width, img.height))
+  const c = document.createElement("canvas")
+  c.width = Math.max(1, Math.round(img.width * scale))
+  c.height = Math.max(1, Math.round(img.height * scale))
+  const ctx = c.getContext("2d", { willReadFrequently: true })
+  if (!ctx) return null
+  ctx.drawImage(img, 0, 0, c.width, c.height)
+  const data = ctx.getImageData(0, 0, c.width, c.height)
+  const px = data.data
+  for (let i = 0; i < px.length; i += 4) {
+    const [r, g, b] = muteRgb(px[i], px[i + 1], px[i + 2], dark)
+    px[i] = r
+    px[i + 1] = g
+    px[i + 2] = b
+  }
+  ctx.putImageData(data, 0, 0)
+  return c
 }

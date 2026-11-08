@@ -9,6 +9,7 @@ import {
   POPOVER_FIELDS,
   TilePopover,
   fieldsForTile,
+  formatCells,
 } from "./tile-popover"
 
 // A cabinet tile's popover: the cabinet it links to, and - where a rack's
@@ -19,7 +20,7 @@ const { apiMock } = vi.hoisted(() => ({
 }))
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  api: apiMock,
+  api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
 }))
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -199,6 +200,37 @@ describe("TilePopover on a rack tile", () => {
     ).toBe("critical")
   })
 
+  it("reads cooling as heat over capacity (#434), off by default", () => {
+    expect(POPOVER_FIELDS.cooling.label).toBe("Cooling")
+    expect(DEFAULT_POPOVER_FIELDS).not.toContain("cooling")
+    const live = (cooling: {
+      available_w: number
+      heat_allocated_w: number
+      heat_maximum_w: number
+    }) => ({
+      ...rackLive({ available_w: 0, allocated_w: 0, maximum_w: 0 }),
+      cooling: {
+        ...cooling,
+        supply: cooling.available_w > 0 ? ("budget" as const) : null,
+        mismatched: 0,
+      },
+    })
+    const rows = open(
+      rackTile,
+      ["cooling"],
+      live({ available_w: 10_000, heat_allocated_w: 3_200, heat_maximum_w: 0 })
+    )
+    expect(rows.Cooling.textContent).toBe("3.2 kW / 10 kW")
+    cleanup()
+    // Nothing to say: no row.
+    const none = open(
+      rackTile,
+      ["name", "cooling"],
+      live({ available_w: 0, heat_allocated_w: 0, heat_maximum_w: 0 })
+    )
+    expect(none.Cooling).toBeUndefined()
+  })
+
   it("says No feed, and skips a rack with no power at all", () => {
     const rows = open(
       rackTile,
@@ -272,5 +304,69 @@ describe("TilePopover on a rack tile", () => {
     cleanup()
     // A cabinet tile has no rack to read.
     expect(open(tile(), ["name", "ports"]).Ports).toBeUndefined()
+  })
+})
+
+describe("TilePopover on a cooling source tile (#434)", () => {
+  const sourceTile = tile({
+    link_kind: "coolingsource",
+    linked: {
+      kind: "coolingsource",
+      id: "cs1",
+      name: "CRAH-1",
+      route: "/cooling-sources/cs1",
+    },
+  })
+
+  it("reads the source's load where a rack reads its units", () => {
+    expect(fieldsForTile(["name", "utilization"], sourceTile)).toEqual([
+      "name",
+      "source_load",
+    ])
+  })
+
+  it("shows heat against the source's rating, from its detail", async () => {
+    apiMock.mockImplementation((path: string) =>
+      path === "/api/cooling-sources/cs1/"
+        ? Promise.resolve({
+            id: "cs1",
+            type_display: "CRAH",
+            capacity: {
+              available_w: 10_000,
+              heat_allocated_w: 9_600,
+              heat_maximum_w: 0,
+              racks: 2,
+            },
+          })
+        : new Promise(() => undefined)
+    )
+    open(sourceTile, DEFAULT_POPOVER_FIELDS)
+    const figure = await screen.findByText("9.6 kW / 10 kW")
+    expect(screen.getByText("CRAH")).toBeTruthy()
+    // 96 %: past the critical line, on the racks' shared scale.
+    expect(
+      figure.parentElement
+        ?.querySelector("[data-level]")
+        ?.getAttribute("data-level")
+    ).toBe("critical")
+  })
+})
+
+describe("formatCells", () => {
+  it("rounds a free plan's fractions to two decimals", () => {
+    expect(formatCells(586.1320000000001)).toBe("586.13")
+    expect(formatCells(1.5)).toBe("1.5")
+    expect(formatCells(4)).toBe("4")
+    expect(formatCells(0.005)).toBe("0.01")
+    expect(formatCells(-0.001)).toBe("0")
+  })
+
+  it("writes a tile's position and size that way", () => {
+    const rows = open(tile({ x: 586.1320000000001, y: 12.3456 }), [
+      "position",
+      "size",
+    ])
+    expect(rows.Position.textContent).toBe("586.13, 12.35")
+    expect(rows.Size.textContent).toBe("1×1")
   })
 })

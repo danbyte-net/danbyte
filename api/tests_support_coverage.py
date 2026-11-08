@@ -500,6 +500,20 @@ class CoverageRbacTests(_Base):
         self.assertEqual(summary["ending"], [])
         self.assertEqual(summary["total"], 2)
 
+    def test_coverage_start_only_from_a_contract_the_caller_sees(self):
+        # The bar's start is the governing contract's start (#436): a hidden
+        # contract's dates stay hidden, its end still governs the status.
+        self.c.start_date = days(-300)
+        self.c.save()
+        SupportCoverage.objects.create(tenant=self.tenant, contract=self.c, device=self.a)
+        self.grant(["device"], ["view"])
+        self._login(self.user)
+        body = self.client.get(f"/api/devices/{self.a.id}/coverage/").json()
+        self.assertEqual((body["start"], body["end"]), (None, str(days(30))))
+        self.grant(["supportcontract"], ["view"])
+        body = self.client.get(f"/api/devices/{self.a.id}/coverage/").json()
+        self.assertEqual(body["start"], str(days(-300)))
+
 
 # ─── device card, flags and the dashboard summary ────────────────────────────
 
@@ -531,6 +545,29 @@ class DeviceCardTests(_Base):
         d = self.device("d")
         self.contract("C", end=days(20), devices=[d])
         self.assertEqual(self.client.get(f"/api/devices/{d.id}/coverage/").json()["flags"], [])
+
+    def test_coverage_start_is_the_governing_contracts(self):
+        """The coverage bar runs from the start of the contract that sets the
+        end (#436); a warranty that reaches further has no start."""
+        d = self.device("d", warranty_end=days(100))
+        self.contract("SHORT", start_date=days(-50), end=days(20), devices=[d])
+        self.contract("LONG", start_date=days(-200), end=days(300), devices=[d])
+        body = self.client.get(f"/api/devices/{d.id}/coverage/").json()
+        self.assertEqual((body["start"], body["end"]), (str(days(-200)), str(days(300))))
+
+        w = self.device("w", warranty_end=days(400))
+        self.contract("UNDER", start_date=days(-10), end=days(30), devices=[w])
+        body = self.client.get(f"/api/devices/{w.id}/coverage/").json()
+        self.assertEqual((body["start"], body["end"]), (None, str(days(400))))
+
+        o = self.device("o", warranty_end=days(400))
+        self.contract("OPEN", start_date=days(-5), devices=[o])
+        body = self.client.get(f"/api/devices/{o.id}/coverage/").json()
+        self.assertEqual((body["status"], body["start"], body["end"]),
+                         ("covered", str(days(-5)), None))
+        self.assertEqual(cov.governed_by(None, None), None)
+        self.assertEqual(cov.governed_by(days(5), days(5)), "contract")
+        self.assertEqual(cov.governed_by(days(4), days(5)), "warranty")
 
     def test_summary_counts_filters_and_ending(self):
         cisco = DeviceType.objects.create(tenant=self.tenant, manufacturer=self.mfr, name="C")
@@ -754,6 +791,94 @@ class ImportExportTests(_Base):
         self.assertEqual((rows[0]["contract"], rows[0]["device"]), ("CV-9", "edge-01"))
 
 
+class CoverageHistoryMaskTests(_Base):
+    """A coverage entry's title names its device. Logged while the device
+    was at Site A, it stays readable there after the device moves to Site B:
+    a Site A viewer reads the device as Hidden in it (#453)."""
+
+    separation = False
+
+    def setUp(self):
+        from auth_api.api import assemble_site_role
+        from core.models import DeploymentSettings
+
+        dep = DeploymentSettings.load()
+        dep.enhanced_site_separation = self.separation
+        dep.save(update_fields=["enhanced_site_separation", "updated_at"])
+        super().setUp()
+        self.dev = self.device("edge-b", site=self.site_a)
+        self.c = self.contract("CV-7", end=days(90), devices=[self.dev])
+        self.cov = SupportCoverage.objects.get(contract=self.c, device=self.dev)
+        self.dev.site = self.site_b
+        self.dev.save()
+
+        def user(name, sites):
+            u = User.objects.create_user(name, password="x")
+            UserProfile.objects.create(user=u).tenants.add(self.tenant)
+            assemble_site_role(self.tenant, "viewer", sites, user_ids=[u.id])
+            return u
+
+        self.viewer = user("cov-viewer-a", [self.site_a])
+        self.both = user("cov-viewer-ab", [self.site_a, self.site_b])
+        self._login(self.viewer)
+
+    def history(self):
+        return self.rows(f"/api/changelog/?object_type=api.supportcoverage"
+                         f"&object_id={self.cov.pk}")
+
+    def test_entry_names_the_device_hidden(self):
+        rows = self.history()
+        self.assertTrue(rows)
+        self.assertEqual({r["object_repr"] for r in rows}, {"Coverage of Hidden"})
+        r = self.client.get(f"/api/changelog/{rows[0]['id']}/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertNotIn("edge-b", r.content.decode())
+        listed = self.rows("/api/changelog/?object_type=api.supportcoverage")
+        self.assertNotIn("edge-b", str(listed))
+
+    def test_search_does_not_match_the_hidden_device(self):
+        found = self.rows("/api/changelog/?search=edge-b")
+        self.assertFalse([x for x in found if x["object_type"] == "api.supportcoverage"])
+        found = self.rows("/api/changelog/?search=Coverage of")
+        self.assertIn(str(self.cov.pk), {x["object_id"] for x in found})
+        self._login(self.both)
+        found = self.rows("/api/changelog/?search=edge-b")
+        self.assertIn(str(self.cov.pk), {x["object_id"] for x in found})
+
+    def test_reader_of_both_sites_and_superuser_read_the_device(self):
+        for u in (self.both, self.admin):
+            self._login(u)
+            self.assertEqual({r["object_repr"] for r in self.history()}, {"Coverage of edge-b"})
+
+    def test_stored_history_is_not_rewritten(self):
+        self.history()
+        entry = ChangeLogEntry.objects.get(object_id=str(self.cov.pk))
+        self.assertEqual(entry.object_repr, "Coverage of edge-b")
+
+    def test_older_title_drops_a_hidden_contract(self):
+        # Titles from before #421's rename read "contract → device".
+        ChangeLogEntry.objects.filter(object_id=str(self.cov.pk)).update(
+            object_repr="CV-7 → edge-b")
+        self.assertEqual({r["object_repr"] for r in self.history()}, {"Coverage of Hidden"})
+        # A reader of every device but no contract reads the device alone.
+        reader = User.objects.create_user("cov-devices", password="x")
+        UserProfile.objects.create(user=reader).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="g", object_types=["supportcoverage", "device"], actions=["view"])
+        perm.users.add(reader)
+        perm.tenants.add(self.tenant)
+        self._login(reader)
+        self.assertEqual({r["object_repr"] for r in self.history()}, {"Coverage of edge-b"})
+        self.assertFalse([x for x in self.rows("/api/changelog/?search=CV-7")
+                          if x["object_type"] == "api.supportcoverage"])
+        self._login(self.admin)
+        self.assertEqual({r["object_repr"] for r in self.history()}, {"CV-7 → edge-b"})
+
+
+class CoverageHistoryMaskSeparationTests(CoverageHistoryMaskTests):
+    separation = True
+
+
 class SiteRoleUpgradeTests(TestCase):
     """auth_api 0030 gives site roles built before #421 the coverage type,
     and their catalog reads the contracts."""
@@ -769,7 +894,8 @@ class SiteRoleUpgradeTests(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         tenant = Tenant.objects.create(org=org, name="T", slug="t")
         site = Site.objects.create(tenant=tenant, name="A")
-        old_types = sorted(set(site_role_types()) - {"supportcoverage"})
+        # The roles as 0030 found them: no type a later migration added.
+        old_types = sorted((set(site_role_types()) & mig.KNOWN) - {"supportcoverage"})
 
         def grant(name, types, actions):
             perm = ObjectPermission.objects.create(

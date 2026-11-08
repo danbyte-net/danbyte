@@ -1,9 +1,19 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest"
 
-import type { FloorPlanTile, FloorPlanWall } from "@/lib/api"
+import type {
+  FloorPlanCablePath,
+  FloorPlanTile,
+  FloorPlanTray,
+  FloorPlanWall,
+} from "@/lib/api"
 
-import { PAPER_INK, planSvg } from "./plan-svg"
+import { CableRouteCache } from "./cable-draw"
+import { PAPER_INK, planPaperScale, planSvg } from "./plan-svg"
+import type { PlanSvgCables } from "./plan-svg"
+import type { AreaShape } from "./shapes"
+import { AREA_INK_SHARE } from "./shapes"
+import { mix } from "@/lib/diagram/theme"
 
 // The plan as the PDF export posts it: plan pixels, light colours written
 // out (no theme classes, no currentColor), and only what the PDF sanitiser
@@ -101,13 +111,415 @@ describe("planSvg", () => {
       color: "",
       cables: [],
     } as unknown as Parameters<typeof planSvg>[0]["trays"] extends
-      | (infer U)[]
-      | undefined
+      (infer U)[] | undefined
       ? U
       : never
     expect(planSvg({ plan, tiles: [], trays: [tray] })).toContain("Tray A")
     expect(
       planSvg({ plan, tiles: [], trays: [tray], showTrays: false })
     ).not.toContain("Tray A")
+  })
+
+  it("draws rooms under the tiles and labels over them, in paper ink", () => {
+    const svg = planSvg({
+      plan,
+      tiles: [tile({ label: "R1" })],
+      shapes: [
+        {
+          kind: "label",
+          id: "l1",
+          text: "North side\nA-feed",
+          x: 1,
+          y: 1,
+          width: null,
+          height: null,
+          rotation: 0,
+          font_mm: 300,
+          weight: "bold",
+          align: "left",
+          color: "blue",
+          plate: true,
+          z: 0,
+          locked: false,
+          created_at: "",
+          updated_at: "",
+        },
+        {
+          kind: "area",
+          id: "a1",
+          shape: "rect",
+          x: 1,
+          y: 1,
+          width: 4,
+          height: 3,
+          rotation: 30,
+          points: [],
+          room: { id: "r1", name: "Room 210", code: "210", color: "#0ea5e9" },
+          location: null,
+          label: "",
+          color: "",
+          fill_opacity: 15,
+          border: "dashed",
+          show_name: true,
+          z: 0,
+          locked: false,
+          created_at: "",
+          updated_at: "",
+        },
+      ],
+    })
+    const order = ["Room 210", "R1", "North side"].map((s) => svg.indexOf(s))
+    expect(order.every((i) => i > 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    const doc = parse(svg)
+    const area = doc.querySelector('rect[stroke-dasharray="8 5"]')!
+    expect(area.getAttribute("fill")).toBe("#0ea5e9")
+    expect(area.parentElement!.getAttribute("transform")).toBe(
+      "rotate(30,120,100)"
+    )
+    const lines = [...doc.querySelectorAll("text")].filter(
+      (t) => t.getAttribute("fill") === "#2563eb"
+    )
+    expect(lines.map((t) => t.textContent)).toEqual(["North side", "A-feed"])
+    // 300 mm on a 600 mm cell: half a cell of 40 px.
+    expect(lines[0].getAttribute("font-size")).toBe("20")
+    expect(svg).not.toContain("class=")
+  })
+})
+
+describe("planSvg cables", () => {
+  const rack = (id: string, x: number) =>
+    tile({ id, x, y: 3, width: 1, height: 1 })
+  const tiles = [rack("r1", 1), rack("r2", 9)]
+  const tray = {
+    id: "t1",
+    name: "T1",
+    kind: "",
+    color: "",
+    points: [
+      [0, 2],
+      [12, 2],
+    ],
+    level: "overhead",
+    elevation_mm: null,
+    cables: [],
+    hidden_cable_count: 0,
+  } as unknown as FloorPlanTray
+  const planned = {
+    id: "s1",
+    name: "Planned",
+    color: "f59e0b",
+    text_color: "#000",
+    is_planned: true,
+  }
+  const cable = (id: string, patch: Partial<FloorPlanCablePath> = {}) =>
+    ({
+      id,
+      label: `C-${id}`,
+      color: "",
+      type: "",
+      a_tiles: ["r1"],
+      b_tiles: ["r2"],
+      a_points: [],
+      b_points: [],
+      tray_ids: ["t1"],
+      ...patch,
+    }) as FloorPlanCablePath
+  const paths = [cable("1"), cable("2"), cable("3", { status: planned })]
+  const routes = new CableRouteCache().routes(paths, {
+    trays: [tray],
+    tiles,
+    ceilingMm: 3000,
+  })
+  const draw = (mmPerPx: number, patch: Partial<PlanSvgCables> = {}) =>
+    parse(
+      planSvg({
+        plan,
+        tiles,
+        trays: [tray],
+        cables: {
+          paths,
+          routes,
+          colorBy: "status",
+          bundle: true,
+          labels: true,
+          mmPerPx,
+          ...patch,
+        },
+      })
+    ).querySelector("[data-layer=cables]")!
+
+  it("fits the plan to the paper as the server does", () => {
+    // A3 landscape: 400 × 251 mm for a 960 × 640 px plan.
+    expect(planPaperScale(plan)).toBeCloseTo(251 / 640, 6)
+    expect(
+      planPaperScale(plan, { size: "a4", orientation: "portrait" })
+    ).toBeCloseTo(190 / 960, 6)
+  })
+
+  const labelTexts = (g: Element) =>
+    [...g.ownerDocument.querySelectorAll("[data-layer=plan-labels] text")].map(
+      (t) => t.textContent
+    )
+
+  it("bundles the shared tray with its count at a small paper scale", () => {
+    const g = draw(0.05) // 2 mm a cell: about 1:300
+    const texts = labelTexts(g)
+    expect(texts).toContain("3 cables")
+    expect(texts).not.toContain("C-1")
+  })
+
+  it("draws lanes, labels and the planned dash up close", () => {
+    const g = draw(0.5) // 20 mm a cell
+    const texts = labelTexts(g)
+    expect(texts).not.toContain("3 cables")
+    // Along the run like a road name, the length muted after it.
+    expect(texts.some((t) => t?.startsWith("C-1 · "))).toBe(true)
+    const dashed = [...g.querySelectorAll("path")].filter((p) =>
+      p.getAttribute("stroke-dasharray")
+    )
+    expect(dashed.length).toBeGreaterThan(0)
+    expect(dashed[0].getAttribute("stroke")).toBe("#f59e0b")
+    // No status: the paper's muted ink, never a theme variable.
+    expect(g.innerHTML).toContain("#71717a")
+    expect(g.innerHTML).not.toContain("var(")
+  })
+
+  it("draws a traced run as a heavier stroke, nothing animated", () => {
+    const plain = draw(0.5)
+    const traced = draw(0.5, { highlight: ["1"] })
+    const widest = (g: Element) =>
+      Math.max(
+        ...[...g.querySelectorAll("path")].map((p) =>
+          Number(p.getAttribute("stroke-width"))
+        )
+      )
+    expect(widest(traced)).toBeGreaterThan(widest(plain))
+    expect(traced.querySelector("animate")).toBeNull()
+  })
+
+  it("dashes inferred runs on a schedule's pages, sized for the paper", () => {
+    const inferred = [cable("9", { tray_ids: [] })]
+    const r = new CableRouteCache().routes(inferred, {
+      trays: [],
+      tiles,
+      ceilingMm: 3000,
+    })
+    const at = (mmPerPx: number) =>
+      parse(
+        planSvg({
+          plan,
+          tiles,
+          cables: {
+            paths: inferred,
+            routes: r,
+            colorBy: "status",
+            bundle: true,
+            labels: false,
+            mmPerPx,
+          },
+          fitContent: {
+            paper: { size: "a4", orientation: "landscape" },
+            mmPerPx,
+            box: { x: 0, y: 0, w: 480, h: 240 },
+          },
+        })
+      ).querySelector("[data-layer=cables] path[stroke-dasharray]")!
+    const path = at(3 / 40)
+    expect(path.getAttribute("stroke-dasharray")).toBeTruthy()
+    // The same paper width at another scale: twice the plan px at half.
+    const width = (p: Element) => Number(p.getAttribute("stroke-width"))
+    expect(width(at(1.5 / 40))).toBeCloseTo(width(path) * 2, 5)
+  })
+
+  it("leaves the cables out when the links are off", () => {
+    const svg = planSvg({ plan, tiles, trays: [tray] })
+    expect(svg).not.toContain('data-layer="cables"')
+  })
+})
+
+describe("planSvg area types", () => {
+  const typed = (patch: Partial<AreaShape> = {}): AreaShape => ({
+    kind: "area",
+    id: "a1",
+    shape: "rect",
+    x: 1,
+    y: 1,
+    width: 4,
+    height: 3,
+    rotation: 0,
+    points: [],
+    room: null,
+    location: null,
+    area_type: {
+      id: "t1",
+      name: "Parking",
+      color: "#2563eb",
+      pattern: "crosshatched",
+      icon: "car",
+    },
+    label: "",
+    color: "",
+    fill_opacity: 15,
+    border: "solid",
+    show_name: true,
+    z: 0,
+    locked: false,
+    created_at: "",
+    updated_at: "",
+    ...patch,
+  })
+
+  it("draws the type's colour, its pattern clipped to the area, and its icon", () => {
+    const svg = planSvg({ plan, tiles: [], shapes: [typed()] })
+    const doc = parse(svg)
+    const rect = doc.querySelector('rect[fill="#2563eb"]')!
+    expect(rect.getAttribute("fill-opacity")).toBe("0.15")
+    // Lines and a clip path - the sanitiser drops <pattern>.
+    expect(doc.querySelector("pattern")).toBeNull()
+    const clip = doc.querySelector("clipPath")!
+    expect(clip.getAttribute("id")).toBe("ap-a1")
+    const strokes = doc.querySelector('g[clip-path="url(#ap-a1)"]')!
+    expect(strokes.getAttribute("stroke")).toBe("#2563eb")
+    expect(strokes.querySelectorAll(":scope > g")).toHaveLength(2)
+    expect(strokes.querySelectorAll("line").length).toBeGreaterThan(4)
+    // The icon before the name, in the name's ink - the area's colour
+    // toward the paper's ink - without theme classes.
+    const icon = doc.querySelector("svg svg")!
+    expect(icon.getAttribute("stroke")).toBe(
+      mix("#2563eb", PAPER_INK, AREA_INK_SHARE)
+    )
+    expect(svg).not.toContain("class=")
+    // The name on a white halo over the pattern.
+    const names = [...doc.querySelectorAll("text")].filter(
+      (t) => t.textContent === "Parking"
+    )
+    expect(names.map((t) => t.getAttribute("stroke"))).toEqual([
+      "#ffffff",
+      null,
+    ])
+  })
+
+  it("lets the area's own colour win, and draws solid types plainly", () => {
+    const own = planSvg({
+      plan,
+      tiles: [],
+      shapes: [typed({ color: "#f97316" })],
+    })
+    expect(own).toContain('stroke="#f97316"')
+    const solid = planSvg({
+      plan,
+      tiles: [],
+      shapes: [
+        typed({
+          area_type: {
+            id: "t2",
+            name: "Lawn",
+            color: "#22c55e",
+            pattern: "solid",
+            icon: "",
+          },
+        }),
+      ],
+    })
+    expect(solid).not.toContain("clipPath")
+    // The name on its halo, as over any light fill.
+    expect(parse(solid).querySelectorAll("text")).toHaveLength(2)
+  })
+
+  it("ignores a type on a linked area", () => {
+    const svg = planSvg({
+      plan,
+      tiles: [],
+      shapes: [
+        typed({
+          room: { id: "r1", name: "Room 210", code: "", color: "#0ea5e9" },
+        }),
+      ],
+    })
+    expect(svg).not.toContain("clipPath")
+    expect(svg).toContain("Room 210")
+    expect(svg).not.toContain("#2563eb")
+  })
+})
+
+describe("a drawing framed to its content", () => {
+  const big = { grid_width: 512, grid_height: 266, cell_mm: 1187 }
+  const hatched = {
+    kind: "area",
+    id: "h1",
+    shape: "rect",
+    x: 100,
+    y: 50,
+    width: 40,
+    height: 30,
+    rotation: 0,
+    points: [],
+    room: null,
+    location: null,
+    area_type: {
+      id: "t",
+      name: "Hazard",
+      color: "#dc2626",
+      pattern: "hatched",
+      icon: "",
+    },
+    label: "",
+    color: "",
+    fill_opacity: 30,
+    border: "solid",
+    show_name: false,
+    z: 0,
+    locked: false,
+    created_at: "",
+    updated_at: "",
+  } as unknown as AreaShape
+  const draw = (fit: boolean) =>
+    planSvg({
+      plan: big as never,
+      tiles: [],
+      shapes: [hatched],
+      fitContent: fit
+        ? { paper: { size: "a4", orientation: "landscape" } }
+        : undefined,
+    })
+
+  it("frames the view box round what is drawn, with a margin", () => {
+    const vb = /viewBox="([^"]+)"/.exec(draw(true))![1].split(" ").map(Number)
+    // 40 x 30 cells plus 2 cells each side, at the export's cell size.
+    const cell = vb[2] / 44
+    expect(vb[3] / cell).toBeCloseTo(34)
+    expect(vb[0] / cell).toBeCloseTo(98)
+    expect(/viewBox="0 0 /.test(draw(false))).toBe(true)
+  })
+
+  it("spaces the hatch for the paper, so it does not turn to a moire", () => {
+    const lines = (svg: string) => (svg.match(/<line /g) ?? []).length
+    expect(lines(draw(true))).toBeLessThan(lines(draw(false)))
+  })
+
+  it("draws a close-up framed to its box at its own paper scale", () => {
+    const far = tile({ id: "far", x: 400, y: 200, label: "FAR" })
+    const near = tile({ id: "near", x: 110, y: 60, label: "NEAR" })
+    const box = { x: 90 * 40, y: 40 * 40, w: 80 * 40, h: 40 * 40 }
+    const closeup = (mmPerPx: number) =>
+      planSvg({
+        plan: big as never,
+        tiles: [near, far],
+        shapes: [hatched],
+        fitContent: {
+          paper: { size: "a4", orientation: "landscape" },
+          mmPerPx,
+          box,
+        },
+      })
+    const svg = closeup(3 / 40)
+    expect(/viewBox="([^"]+)"/.exec(svg)![1]).toBe("3600 1600 3200 1600")
+    // Only what reaches the box is drawn.
+    expect(svg).toContain("NEAR")
+    expect(svg).not.toContain("FAR")
+    // Larger on paper: the hatch keeps its plan spacing, more lines.
+    const lines = (s: string) => (s.match(/<line /g) ?? []).length
+    expect(lines(closeup(6 / 40))).toBeGreaterThan(lines(closeup(1 / 40)))
   })
 })

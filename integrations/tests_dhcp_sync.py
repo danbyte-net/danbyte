@@ -290,6 +290,65 @@ class DhcpSyncTests(TestCase):
             IPAddress.objects.get(ip_address="10.77.0.61").mac_address, ""
         )
 
+    def test_long_description_and_client_id_sync(self):
+        """#463: 85-character descriptions and ClientIds failed the whole sync
+        with "value too long for type character varying(64)"."""
+        client_id = "-".join(["ab"] * 28) + "-c"  # 85 characters
+        description = "d" * 85
+        self.assertEqual(len(client_id), 85)
+        res = {
+            "scope_id": "10.77.0.0", "ip": "10.77.0.62", "mac": client_id,
+            "Name": "n" * 300, "Description": description,
+        }
+        lease = {
+            "scope_id": "10.77.0.0", "ip": "10.77.0.153", "mac": client_id,
+            "HostName": "h" * 300, "state": "Active", "expires": None,
+        }
+        self.sync(payload())
+        DhcpScope.objects.update(lease_sync=True)
+        counts = self.sync(payload(
+            reservations=payload()["reservations"] + [res], leases=[lease],
+        ))
+
+        self.conn.refresh_from_db()
+        self.assertEqual(self.conn.last_sync_status, "ok")
+        self.assertEqual(counts["reservations"], 2)
+        self.assertEqual(counts["leases"], 1)
+        row = DhcpReservation.objects.get(ip="10.77.0.62")
+        self.assertEqual(row.mac, client_id)
+        self.assertEqual(row.description, description)
+        self.assertEqual(row.name, "n" * 255)  # clipped, not fatal
+        held = DhcpLease.objects.get(ip="10.77.0.153")
+        self.assertEqual(held.mac, client_id)
+        self.assertEqual(held.hostname, "h" * 255)
+
+    def test_client_id_wider_than_the_column_is_clipped(self):
+        res = {
+            "scope_id": "10.77.0.0", "ip": "10.77.0.63", "mac": "a" * 2000,
+            "Name": "x", "Description": "",
+        }
+        self.sync(payload(reservations=[res]))
+        mac = DhcpReservation.objects.get(ip="10.77.0.63").mac
+        self.assertEqual(
+            len(mac), DhcpReservation._meta.get_field("mac").max_length
+        )
+
+    def test_one_bad_row_does_not_abort_the_sync(self):
+        """A row the database refuses is skipped and reported; the rest land."""
+        bad = {
+            "scope_id": "10.77.0.0", "ip": "not-an-ip", "mac": "",
+            "Name": "bad", "Description": "",
+        }
+        counts = self.sync(payload(reservations=payload()["reservations"] + [bad]))
+
+        self.assertEqual(counts["reservations"], 1)
+        self.assertTrue(DhcpReservation.objects.filter(ip="10.77.0.60").exists())
+        self.conn.refresh_from_db()
+        self.assertEqual(self.conn.last_sync_status, "ok")
+        self.assertTrue(any(
+            "not-an-ip" in note for note in self.conn.last_sync_skipped
+        ))
+
     def test_lease_never_deletes_operator_ip(self):
         self.sync(payload())
         scope = DhcpScope.objects.get()

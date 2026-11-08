@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 
 import { LEGEND_PILL } from "@/components/map-legend"
 import { StatusBadge } from "@/components/status-badge"
-import { api, type Paginated, type Status } from "@/lib/api"
+import { type Status } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   AIRFLOW_HEX,
   bayHex,
@@ -166,9 +167,7 @@ export function HardwareStatusKey({
   const statuses = useQuery({
     queryKey: ["statuses", "inventoryitem"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=inventoryitem&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=inventoryitem&picker=1"),
     staleTime: 5 * 60_000,
   })
   const rows = (statuses.data?.results ?? [])

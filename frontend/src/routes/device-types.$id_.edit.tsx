@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 
 import { api, type DeviceType } from "@/lib/api"
+import { deviceTypeLabel } from "@/lib/device-type-label"
 import { DeviceTypeForm } from "@/components/device-type-form"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
@@ -24,11 +25,15 @@ function EditDeviceTypePage() {
       crumbs={[
         { label: "Device types", to: "/device-types" },
         q.data
-          ? { label: q.data.name, to: "/device-types/$id", params: { id } }
+          ? {
+              label: deviceTypeLabel(q.data),
+              to: "/device-types/$id",
+              params: { id },
+            }
           : { label: "…" },
         { label: "Edit" },
       ]}
-      title={q.data ? `Edit ${q.data.name}` : "Edit device type"}
+      title={q.data ? `Edit ${deviceTypeLabel(q.data)}` : "Edit device type"}
     >
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.isError && <QueryError error={q.error} />}

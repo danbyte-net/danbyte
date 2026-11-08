@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
@@ -9,15 +9,16 @@ import {
   type BulkStatusEntry,
   type BulkStatusResponse,
   type Device,
-  type Paginated,
 } from "@/lib/api"
+import { useServerList } from "@/lib/server-list"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useDriftMap } from "@/components/monitoring/device-drift-badge"
+import { usePrtgDeviceStates } from "@/components/columns/prtg-columns"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { useEolSettings } from "@/components/cells/eol-cell"
-import { useUrlTableFilters } from "@/components/table-filters"
+import { wireFacetColumns } from "@/components/table-filters"
 import {
   AvailabilityFramePicker,
   useSlaStatus,
@@ -25,8 +26,15 @@ import {
 import { ListPageShell } from "@/components/list-page-shell"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceBulkBar } from "@/components/device-bulk-bar"
+import { useCanApplyProfiles } from "@/components/device-profile-bulk"
 import { useMe, objCan } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
+import { useSbomExport } from "@/components/sbom-export"
+import { reportExport, useObjectReport } from "@/components/object-report"
+
+/** Ids per port-utilization request: 100 UUIDs keep the URL under the
+ * request-line limit. Must match `PORT_UTIL_MAX_IDS` in api/viewsets.py. */
+const PORT_UTIL_MAX_IDS = 100
 
 export const Route = createFileRoute("/devices/")({
   // Typed deep-link params, e.g. the "Devices by status / type / site /
@@ -41,6 +49,9 @@ export const Route = createFileRoute("/devices/")({
     site?: string
     manufacturer?: string
     coverage?: string
+    platform?: string
+    role?: string
+    software_version?: string
   } => {
     const out: {
       type?: string
@@ -48,6 +59,9 @@ export const Route = createFileRoute("/devices/")({
       site?: string
       manufacturer?: string
       coverage?: string
+      platform?: string
+      role?: string
+      software_version?: string
     } = {}
     if (typeof search.type === "string") out.type = search.type
     if (typeof search.status === "string") out.status = search.status
@@ -56,6 +70,11 @@ export const Route = createFileRoute("/devices/")({
       out.manufacturer = search.manufacturer
     // Support coverage status (#421), from the Support coverage widget.
     if (typeof search.coverage === "string") out.coverage = search.coverage
+    // Lifecycle → Versions (#451): a platform and version's devices.
+    if (typeof search.platform === "string") out.platform = search.platform
+    if (typeof search.role === "string") out.role = search.role
+    if (typeof search.software_version === "string")
+      out.software_version = search.software_version
     return out
   },
   component: DevicesPage,
@@ -63,10 +82,29 @@ export const Route = createFileRoute("/devices/")({
 
 // Stable empty fallback so `columns` (which depends on `monitoring`) doesn't get
 // a fresh object identity every render while the status query is loading - that
-// would rebuild the columns each render, give `filteredRows` a new identity, and
-// retrigger DataTable's selection effect in a loop (devices pass
-// onSelectedRowsChange for bulk deploy).
+// would rebuild the columns each render and retrigger DataTable's selection
+// effect in a loop (devices pass onSelectedRowsChange for bulk deploy).
 const EMPTY_MON: Record<string, BulkStatusEntry> = {}
+
+/** The rail's facets, counted and filtered by the server over every device
+ * (api/list_specs.py). Monitoring, SLA and PRTG come from other requests for
+ * the page's rows, so they stay out of the rail and their headers don't
+ * sort. */
+const DEVICE_FACETS = [
+  "status",
+  "role",
+  "platform",
+  "eol",
+  "coverage",
+  "type",
+  "manufacturer",
+  "cooling",
+  "site",
+  "software_version",
+  "software_target",
+  "ips",
+  "tags",
+]
 
 function DevicesPage() {
   const [q, setQ] = useUrlSearch()
@@ -80,20 +118,27 @@ function DevicesPage() {
   // Bulk deploy hands devices to an automation target - gate on being able to
   // see targets (the backend re-checks on the target itself).
   const canDeploy = canDo("automationtarget", "view")
+  const canProfiles = useCanApplyProfiles()
+  const { enabled: eolOn } = useEolSettings()
 
-  const query = useQuery({
-    queryKey: ["devices", q],
-    queryFn: () =>
-      api<Paginated<Device>>(
-        `/api/devices/?${new URLSearchParams({ search: q }).toString()}`
-      ),
+  // The rail's facets, from the factory's own columns (no row data needed).
+  const facetColumns = useMemo(
+    () => buildDeviceColumns<Device>({ eol: eolOn }),
+    [eolOn]
+  )
+  // One page at a time from the server (#482).
+  const list = useServerList<Device>({
+    endpoint: "/api/devices/",
+    queryKey: "devices",
+    columns: facetColumns,
+    facets: DEVICE_FACETS,
   })
-  const allRows = query.data?.results ?? []
+  const { query, rows } = list
 
-  // Monitoring roll-up status for the fetched devices (separate query so the
+  // Monitoring roll-up status for the page's devices (separate query so the
   // api app stays decoupled from the monitoring app). Each device rolls up
   // across its assigned IPs' checks. Merged into the table as a status column.
-  const deviceIds = useMemo(() => allRows.map((r) => r.id), [allRows])
+  const deviceIds = useMemo(() => rows.map((r) => r.id), [rows])
   const monQuery = useQuery({
     queryKey: ["device-mon-status", deviceIds],
     // POST - a page of UUIDs makes a URL longer than proxy request-line
@@ -107,18 +152,30 @@ function DevicesPage() {
   })
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
   const sla = useSlaStatus("device", deviceIds)
+  const prtg = usePrtgDeviceStates()
 
   const handleDelete = useCallback((d: Device) => setDeleting(d), [])
   const driftMap = useDriftMap()
   const plannedMap = usePlannedChangeMap()
-  // One roll-up request feeds the whole table's "Ports" bars.
+  // The "Ports" bars for the rows on screen only (#488): the whole roll-up
+  // was ~1.5 MB on a big tenant. A page past the id limit (a long or grouped
+  // page) asks for the lot, as before.
+  const [pageIds, setPageIds] = useState<string[]>([])
+  const onPageRowsChange = useCallback(
+    (rows: Device[]) => setPageIds(rows.map((r) => r.id).sort()),
+    []
+  )
   const portUtilQuery = useQuery({
-    queryKey: ["port-utilization-rollup"],
+    queryKey: ["port-utilization-rollup", pageIds],
     queryFn: () =>
       api<{ results: { id: string; pct: number }[] }>(
-        "/api/devices/port-utilization/"
+        pageIds.length <= PORT_UTIL_MAX_IDS
+          ? `/api/devices/port-utilization/?ids=${pageIds.join(",")}`
+          : "/api/devices/port-utilization/"
       ),
+    enabled: pageIds.length > 0,
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
   })
   const portUtil = useMemo(
     () =>
@@ -127,52 +184,70 @@ function DevicesPage() {
       ),
     [portUtilQuery.data]
   )
-  const { enabled: eolOn } = useEolSettings()
+  const { selectedValues, toggleValue } = list
   const columns = useMemo<ColumnDef<Device>[]>(
     () =>
-      buildDeviceColumns<Device>({
-        selection: true,
-        humanIds,
-        eol: eolOn,
-        violations: true,
-        drift: driftMap,
-        planned: plannedMap,
-        monitoring,
-        sla: { entries: sla.entries, frame: sla.frame },
-        portUtil,
-        actions: {
-          editTo: "/devices/$id/edit",
-          editParams: (d) => ({ id: d.id }),
-          canEdit: (d) => objCan(d, "change", canEdit),
-          onDelete: handleDelete,
-          canDelete: (d) => objCan(d, "delete", canDelete),
-        },
-      }),
+      wireFacetColumns(
+        buildDeviceColumns<Device>({
+          selection: true,
+          humanIds,
+          eol: eolOn,
+          violations: true,
+          drift: driftMap,
+          planned: plannedMap,
+          monitoring,
+          prtg,
+          sla: { entries: sla.entries, frame: sla.frame },
+          portUtil,
+          actions: {
+            editTo: "/devices/$id/edit",
+            editParams: (d) => ({ id: d.id }),
+            canEdit: (d) => objCan(d, "change", canEdit),
+            onDelete: handleDelete,
+            canDelete: (d) => objCan(d, "delete", canDelete),
+          },
+        }),
+        selectedValues,
+        toggleValue
+      ),
     [
       handleDelete,
       canEdit,
       canDelete,
       monitoring,
+      prtg,
       humanIds,
       eolOn,
       portUtil,
       sla.entries,
       sla.frame,
+      selectedValues,
+      toggleValue,
     ]
   )
-  const {
-    rail,
-    filteredRows,
-    snapshot,
-    restore,
-    activeCount,
-    columns: wiredColumns,
-  } = useUrlTableFilters(columns, allRows)
+  const { rail, snapshot, restore, activeCount, allIds, search, total } = list
+  // The SBOM covers every device the list's filters match, on any page.
+  const sbomFilter = useCallback(
+    async () => ({ device: await allIds() }),
+    [allIds]
+  )
+  const sbom = useSbomExport(sbomFilter, total === 0)
+  // The PDF report of the devices the list's filters match.
+  const report = useObjectReport("device")
+  const reportItem = reportExport(
+    report.openReport,
+    async () => ({
+      ids: await allIds(),
+      filters: search ? { search } : undefined,
+      scope: "filtered",
+    }),
+    total === 0
+  )
 
   return (
     <ListPageShell
       title="Devices"
-      count={query.data ? filteredRows.length : undefined}
+      count={query.data ? total : undefined}
       rail={rail}
       savedViews={{
         objectType: "device",
@@ -186,7 +261,7 @@ function DevicesPage() {
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
-          <TableActions ioType="device" />
+          <TableActions ioType="device" extraExports={[sbom, reportItem]} />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/devices/new">Add device</Link>
@@ -195,11 +270,11 @@ function DevicesPage() {
         </>
       }
       query={query}
-      page={query.data}
     >
       <DataTable
-        data={filteredRows}
-        columns={wiredColumns}
+        data={rows}
+        columns={columns}
+        {...list.tableProps}
         flexColumn="description"
         tableId="devices"
         initialColumnVisibility={{
@@ -207,14 +282,25 @@ function DevicesPage() {
           secondary_ip: false,
           oob_ip: false,
         }}
-        onSelectedRowsChange={canDeploy ? setSelected : undefined}
+        onSelectedRowsChange={
+          canDeploy || canDelete || canProfiles ? setSelected : undefined
+        }
+        selectedRows={selected}
+        onPageRowsChange={onPageRowsChange}
       />
+      {report.dialog}
       <DeviceDeleteDialog
         device={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
-      {canDeploy && (
-        <DeviceBulkBar selected={selected} onCleared={() => setSelected([])} />
+      {(canDeploy || canDelete || canProfiles) && (
+        <DeviceBulkBar
+          selected={selected}
+          onCleared={() => setSelected([])}
+          canDeploy={canDeploy}
+          canDelete={canDelete}
+          profiles={canProfiles}
+        />
       )}
     </ListPageShell>
   )

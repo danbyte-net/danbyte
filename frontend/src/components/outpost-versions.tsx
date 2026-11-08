@@ -4,7 +4,8 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { OutpostAvailable, OutpostRelease, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { OutpostAvailable, OutpostRelease } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,8 +46,7 @@ export function OutpostVersions() {
   const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["outpost-releases"],
-    queryFn: () =>
-      api<Paginated<OutpostRelease>>("/api/monitoring/outpost-releases/"),
+    queryFn: () => apiAll<OutpostRelease>("/api/monitoring/outpost-releases/"),
   })
   const releases = q.data?.results ?? []
   const invalidate = () =>
@@ -240,7 +240,11 @@ export function OutpostVersions() {
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/20 p-3">
           <span className="text-[13px] font-medium">From your repo</span>
           <Select value={pickedTag} onValueChange={setPickedTag}>
-            <SelectTrigger size="sm" className="h-8 w-48 shrink-0 text-[13px]">
+            <SelectTrigger
+              aria-label="Version"
+              size="sm"
+              className="h-8 w-48 shrink-0 text-[13px]"
+            >
               <SelectValue placeholder="Select a version…" />
             </SelectTrigger>
             <SelectContent>
@@ -296,6 +300,7 @@ export function OutpostVersions() {
             className="h-8 text-sm"
           />
           <input
+            aria-label="Package file"
             type="file"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="w-full text-xs file:mr-2 file:rounded file:border file:border-border file:bg-muted file:px-2 file:py-1 file:text-xs"

@@ -32,7 +32,9 @@ const { apiMock, url } = vi.hoisted(() => {
     url: query,
   }
 })
-vi.mock("@/lib/api", () => ({ api: apiMock }))
+vi.mock("@/lib/api", async () => ({
+  api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
+}))
 vi.mock("@/lib/use-me", () => ({
   useMe: () => ({
     canManage: true,

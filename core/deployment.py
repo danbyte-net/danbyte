@@ -495,6 +495,9 @@ DEVICE_FIELD_VISIBILITY_DEFAULTS = {
     "location": True,
     "cluster": False,
     "airflow": False,
+    # A device's own cooling method (#434). Off by default like airflow: the
+    # type's method is what most estates set, and racks check it either way.
+    "cooling_method": False,
     # The site map is a first-class surface - coordinates default to visible
     # so a device can be placed without a settings hunt. (Deployments that
     # stored an explicit False keep their choice; stored values win.)
@@ -528,6 +531,7 @@ FLOORPLAN_POPOVER_FIELDS = [
     # ── live state (already polled; no fetch) ──
     "utilization",
     "power",
+    "cooling",
     "weight",
     "device_count",
     "rail_count",
@@ -605,10 +609,11 @@ TOPOLOGY_CARD_MAX_SCOPES = 500
 
 
 class DeviceFieldVisibilitySerializer(serializers.Serializer):
-    """Exposes the 6 optional device-field visibility booleans.
+    """Exposes the optional device-field visibility booleans
+    (``DEVICE_FIELD_VISIBILITY_DEFAULTS``).
 
     On read, stored values are merged over the documented defaults. On write,
-    only the 6 known keys are persisted back to ``device_field_visibility``;
+    only the known keys are persisted back to ``device_field_visibility``;
     unknown keys are ignored.
     """
 
@@ -616,6 +621,7 @@ class DeviceFieldVisibilitySerializer(serializers.Serializer):
     location = serializers.BooleanField(required=False)
     cluster = serializers.BooleanField(required=False)
     airflow = serializers.BooleanField(required=False)
+    cooling_method = serializers.BooleanField(required=False)
     latitude = serializers.BooleanField(required=False)
     longitude = serializers.BooleanField(required=False)
 
@@ -1151,6 +1157,50 @@ def system_info(request):
 
 
 @extend_schema(
+    summary="Download Danbyte's own SBOM (CycloneDX 1.6 JSON)",
+    tags=["deployment"],
+    request=None,
+    responses={
+        (200, "application/vnd.cyclonedx+json"): OpenApiResponse(
+            response=OpenApiTypes.BINARY,
+            description="The SBOM this release shipped with, as an attachment.",
+        ),
+        404: OpenApiResponse(description="This install has no SBOM (a source checkout)."),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def system_sbom(request):
+    """Danbyte's own software bill of materials: every Python and npm package
+    this release runs on, with version, licence and supplier. The release
+    bundle and the container image ship it; it is served as shipped, never
+    generated here, so it describes the build rather than a modified tree.
+    Same gate as ``system_info``: exact versions are useful reconnaissance."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from django.http import FileResponse
+
+    from danbyte import __version__
+
+    from .version import sbom_path
+
+    path = sbom_path()
+    try:
+        fh = path.open("rb")
+    except OSError:
+        return Response(
+            {"detail": "This install has no SBOM. Release bundles and container "
+             "images ship one; on a source checkout run `make sbom`."},
+            status=404,
+        )
+    resp = FileResponse(fh, as_attachment=True, filename=f"danbyte-{__version__}.cdx.json",
+                        content_type="application/vnd.cyclonedx+json")
+    resp["Cache-Control"] = "no-store"
+    resp["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@extend_schema(
     summary="Available release versions and whether an update exists",
     tags=["deployment"],
     request=None,
@@ -1194,17 +1244,20 @@ def upgrade_notes_ack(request):
 @permission_classes([IsAuthenticated])
 def system_updates(request):
     """Current version + the release repo's versions (with changelog), and
-    whether a newer one exists. Read-only; ``users.manage`` only."""
+    whether a newer one exists. Read-only; ``users.manage`` only.
+
+    Answers from the cached release list only (#478, ``core.update_check``):
+    a cold cache answers ``checking`` and enqueues one background refresh, so
+    a page load never waits on the release repo."""
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
 
-    from .github import list_releases
+    from . import update_check
     from .version import DEFAULT_RELEASE_REPO, compare_versions, is_newer, system_version
 
     cur = system_version()
     dep = DeploymentSettings.load()
     repo = dep.release_repo_url or DEFAULT_RELEASE_REPO
-    token = (dep.secrets or {}).get("release_repo_token", "")
     # Airgapped: never reach the release repo. Report the current version only;
     # bundles are uploaded and applied manually.
     if dep.disable_update_check:
@@ -1213,30 +1266,32 @@ def system_updates(request):
             "update_available": False, "disabled": True,
             "badge_hidden": dep.hide_update_badge,
         })
-    try:
-        releases = list_releases(repo, token)
-    except Exception as e:  # noqa: BLE001 - surface a friendly reason
-        from core.errors import NETWORK_ERRORS, public_error
-
+    entry = update_check.cached(dep)
+    if entry is None:
+        update_check.request_refresh(dep)
         return Response({
             "current": cur, "repo_url": repo, "releases": [],
-            "update_available": False,
-            "error": public_error(e, "The release list could not be read.",
-                                  expected=NETWORK_ERRORS),
+            "update_available": False, "checking": True,
+            "badge_hidden": dep.hide_update_badge,
         })
+    releases = [dict(r) for r in entry.get("releases", [])]
     if dep.update_channel == "stable":
         releases = [r for r in releases if not r["prerelease"]]
     for r in releases:
         # Same release, pre-release suffix included: 0.17.0-dev1 is not 0.17.0.
         r["is_current"] = compare_versions(r["tag"], cur["version"]) == 0
     update_available = any(is_newer(r["tag"], cur["version"]) for r in releases)
-    return Response({
+    out = {
         "current": cur,
         "repo_url": repo,
         "releases": releases,
         "update_available": update_available,
         "badge_hidden": dep.hide_update_badge,
-    })
+        "checked_at": entry.get("checked_at"),
+    }
+    if entry.get("error"):
+        out["error"] = entry["error"]
+    return Response(out)
 
 
 @extend_schema(

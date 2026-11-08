@@ -1,0 +1,2135 @@
+import { useNavigate } from "@tanstack/react-router"
+import { toPng } from "html-to-image"
+import { Sheet } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
+
+import type {
+  CablePlanRequest,
+  FloorPlanConflict,
+  FloorPlanCrop,
+  FloorPlanPlaceable,
+  FloorPlanTile,
+} from "@/lib/api"
+import { Loading } from "@/components/loading"
+import { QueryError } from "@/components/query-error"
+import { DrawingExportMenu } from "@/components/drawing-export-menu"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import type { PaperChoice } from "@/lib/diagram/sheet"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { HiddenChip } from "@/components/hidden-chip"
+import { hiddenCount } from "@/components/hidden-objects"
+import { useTheme } from "@/components/theme-provider"
+import { rememberFloor } from "@/lib/floor-plan-stacks"
+import { usePageTitle } from "@/lib/page-title"
+import { useMe } from "@/lib/use-me"
+
+import { AreaPanel } from "./area-panel"
+import { BackgroundControls } from "./background-controls"
+import { useCadCalibration } from "./cad-calibrate"
+import { useCadFloorImage, useCadSource } from "./cad-layer"
+import { ColorByLegend, colorByLegendEntries } from "./color-by-legend"
+import {
+  cableCounts,
+  cableLegend,
+  cableLegendEntries,
+  cableStubs,
+  hasSharedRuns,
+  stubPlaceIds,
+  typePalette,
+} from "./cable-draw"
+import type { CableRoute } from "./cable-draw"
+import { CableLegend } from "./cable-legend"
+import { PlanLegend } from "./plan-legend"
+import { CableScheduleDialog } from "./cable-schedule"
+import { ReportDialog } from "./report-dialog"
+import type { DrawSheet } from "./report-dialog"
+import {
+  areaBox,
+  calloutsMarkup,
+  clampBox,
+  drawLevel,
+  gridBox,
+  reportAreas,
+  reportScale,
+  withOverlay,
+} from "./report"
+import {
+  applyNewCables,
+  applyRoutes,
+  draftCablePorts,
+  draftPlanInput,
+  withDraftRoutes,
+} from "./cable-draft"
+import { ConnectCablesPanel, connectable } from "./connect-cables"
+import type { ConnectApply, ConnectSource } from "./connect-cables"
+import { AreaLegend, areaLegendEntries, areaTypesInUse } from "./area-legend"
+import { DocumentRoutesPanel } from "./document-routes-panel"
+import { CELL } from "./floor-canvas"
+import type { FloorCanvasApi, FloorCanvasProps } from "./floor-canvas"
+import {
+  readFloorHidden,
+  visibleShapes,
+  visibleTiles as pickVisibleTiles,
+} from "./hidden"
+import { ObjectsSidebar } from "./objects-sidebar"
+import { BackLabelDeleteDialog } from "./opens-field"
+import { PlanCanvas } from "./plan-canvas"
+import { PlanDialogs } from "./plan-dialogs"
+import { PlanHeader } from "./plan-header"
+import { LevelPanel } from "./level-panel"
+import type { LevelMode, OnionSide } from "./level-panel"
+import { neighbours } from "./levels"
+import { onionSkin } from "./onion-layer"
+import { useScene } from "@/components/floorplan3d/use-scene"
+import {
+  AreaWallsDeleteDialog,
+  UpdateWallsCard,
+  WallLinkCard,
+} from "./linked-walls"
+import { PlanInspector } from "./plan-inspector"
+import { PlanRail } from "./plan-rail"
+import { PlanScene3D } from "./plan-scene-3d"
+import { CoverageLegend, useCameraViews } from "./camera-layer"
+import { coverage, coverageRegions } from "./camera-view"
+import { planPaperScale, planSvg } from "./plan-svg"
+import type { PlanBox } from "./plan-svg"
+import { PlanToolbar } from "./plan-toolbar"
+import { PlacePicker, UnplacedList } from "./place-picker"
+import { asPhotos, nearScope, placedOnFloor, roomPrompts } from "./placement"
+import type { NearScope } from "./placement"
+import {
+  AssignRoomsDialog,
+  ConflictDialog,
+  PlanEmptyState,
+  SelectionToolbar,
+  useSetRooms,
+} from "./placement-panels"
+import type { RoomPromptState } from "./placement-panels"
+import {
+  AfterPlacingCard,
+  PlaceCablesPanel,
+  placeCablesRequest,
+  RerouteCard,
+  rerouteRequest,
+  routableRows,
+  usePlacedCables,
+} from "./place-cables"
+import { staleRouteIds } from "./cable-reroute"
+import { useMoveReroute } from "./use-move-reroute"
+import type { AfterPlace, PlaceCablesApply } from "./place-cables"
+import type { AreaShape, PlanShape, Pt } from "./shapes"
+import { RackTablePanel } from "./rack-table-panel"
+import { areaName, shapeBounds } from "./shapes"
+import { SnapAllDialog } from "./snap-all-dialog"
+import { edgeIds, isLiveView } from "./snapshot"
+import { SnapshotDialog } from "./snapshot-dialogs"
+import { tileOpen } from "./tile-open"
+import { DEFAULT_POPOVER_FIELDS, useTilePopover } from "./tile-popover"
+import { ToolRail } from "./tool-rail"
+import { useCableRoutes } from "./use-cable-routes"
+import { useCadDrawing } from "./use-cad-drawing"
+import { useEditMode } from "./use-edit-mode"
+import { useEditorKeys } from "./use-editor-keys"
+import { useFloorPlanData } from "./use-floor-plan-data"
+import { useLeaveGuard } from "./use-leave-guard"
+import { popoverShowsPorts, usePlanCapacity } from "./use-plan-capacity"
+import { TOOL_MODE, usePlanEditState } from "./use-plan-edit-state"
+import type { EditorTool } from "./use-plan-edit-state"
+import { usePlanMutations } from "./use-plan-mutations"
+import { usePlanViewPrefs } from "./use-plan-view-prefs"
+import { useShapeEdits } from "./use-shape-edits"
+import { useOutlineDetect } from "./outline-tool"
+import { useStructureEdits } from "./use-structure-edits"
+import { areaOutline, structureLists, syncOffer } from "./structure"
+import { StructureToolbar } from "./structure-toolbar"
+import { isTemp, tempId, useTileEdits } from "./use-tile-edits"
+import { shownLink } from "./shown-link"
+import { CableDetailPanel } from "./cable-detail-panel"
+import { ObjectDetailPanel } from "./object-detail-panel"
+import { applyPick } from "./plan-search"
+import type { PlanHit } from "./plan-search"
+
+/** The floor-plan page's search params (validated by the route). */
+export interface FloorPlanSearch {
+  /** A cable's route highlighted and fitted on arrival. */
+  trace?: string
+  /** "3d" opens straight into the 3D room. */
+  viz?: "3d"
+  /** A tile selected and zoomed onto on arrival ("Show on floor plan"). */
+  tile?: string
+  /** A room, location or area opened and zoomed onto on arrival (a room's
+   * Floor plan tab, "Open in floor plan"). */
+  area?: string
+}
+
+/** The floor-plan editor: header, bar, mode rail, the 2D canvas or the 3D
+ * room, the inspector or Objects panel, the rack table, and the dialogs. */
+export function FloorPlanEditor({
+  id,
+  search,
+}: {
+  id: string
+  search: FloorPlanSearch
+}) {
+  const nav = useNavigate()
+  const { canDo, humanIds } = useMe()
+  const { theme } = useTheme()
+  const canEdit = canDo("floorplan", "change")
+  // View by default; Edit (E) for those who may change the plan.
+  const { editing, setEdit } = useEditMode(canEdit)
+
+  const data = useFloorPlanData(id)
+  const { planQuery, plan, tileTypes, roles, liveState, popoverCfg } = data
+  const { cablePaths } = data
+  // Trays crossing at different heights do not join (cable-route.ts).
+  const ceilingMm = plan?.ceiling_mm
+  usePageTitle(
+    plan ? (plan.stack ? `${plan.stack.name} · ${plan.name}` : plan.name) : null
+  )
+  // The floor plan reopens on this floor in this browser.
+  const stackId = plan?.stack?.id
+  useEffect(() => {
+    if (stackId) rememberFloor(stackId, id)
+  }, [stackId, id])
+  const {
+    trace: traceParam,
+    viz: vizParam,
+    tile: tileParam,
+    area: areaParam,
+  } = search
+  const view3d = vizParam === "3d"
+
+  // Building levels: an aligned floor plan's level picker, the 2D onion
+  // skin and the 3D level mode. Kept across floors - the editor stays
+  // mounted when the level changes.
+  const stackData = data.stack.data
+  const aligned = !!stackData?.aligned && plan?.kind !== "view"
+  const [onion, setOnion] = useState<OnionSide>("off")
+  const [levelMode, setLevelMode] = useState<LevelMode>("all")
+  const [explode, setExplode] = useState(0)
+  const levelNb = useMemo(
+    () => (stackData ? neighbours(stackData.floors, id) : null),
+    [stackData, id]
+  )
+  const onionFloor =
+    aligned && !view3d && onion !== "off" && levelNb
+      ? onion === "below"
+        ? levelNb.below
+        : levelNb.above
+      : null
+  const onionScene = useScene(onionFloor?.id ?? "", { enabled: !!onionFloor })
+  const onionLayer = useMemo(() => {
+    const me = stackData?.floors.find((f) => f.id === id)
+    if (!onionFloor || !me || !onionScene.data) return null
+    return onionSkin(onionScene.data, onionFloor, me)
+  }, [onionFloor, onionScene.data, stackData, id])
+  const goLevel = (to: string, tile?: string) =>
+    nav({
+      to: "/floorplans/$id",
+      params: { id: to },
+      search: {
+        ...(view3d ? { viz: "3d" as const } : {}),
+        ...(tile ? { tile } : {}),
+      },
+    })
+
+  const ed = usePlanEditState(
+    id,
+    data.serverTiles,
+    data.serverShapes,
+    data.serverStructure
+  )
+  // Walls, trays and raised floors as the draft holds them.
+  const {
+    walls,
+    trays: draftTrays,
+    raised: areas,
+  } = useMemo(() => structureLists(ed.structure), [ed.structure])
+  // A tray's cables are written at once, outside the draft: shown as the
+  // server has them, unless the draft changed them (a join).
+  const trays = useMemo(() => {
+    const server = new Map(data.trays.map((t) => [t.id, t]))
+    return draftTrays.map((t) => {
+      const srv = server.get(t.id)
+      if (!srv || ed.dirtyIds.has(t.id)) return t
+      return {
+        ...t,
+        cables: srv.cables,
+        hidden_cable_count: srv.hidden_cable_count,
+      }
+    })
+  }, [draftTrays, data.trays, ed.dirtyIds])
+  const { tiles, isDirty, selectedId, setSelectedId } = ed
+  // An area opened while viewing (its room in the map panel).
+  const [openArea, setOpenArea] = useState<string | null>(null)
+  // The detail panel: a cable (traced while it is open) or a device or
+  // rack tile - a racked device clicked in 3D names its device.
+  const [detail, setDetail] = useState<
+    | { kind: "cable"; id: string }
+    | { kind: "tile"; id: string; deviceId?: string }
+    | null
+  >(null)
+  // A tray the cable panel lit, cleared with the panel.
+  const [panelTray, setPanelTray] = useState<string | null>(null)
+  // What the 3D room flies to next: a cable's run or a tile.
+  const [focus3d, setFocus3d] = useState<{
+    kind: "cable" | "tile"
+    id: string
+    n: number
+  } | null>(null)
+  const [snapOpen, setSnapOpen] = useState(false)
+  // The Snapshot tool's rectangle, or the area "Snapshot this room…" was
+  // asked of, while its dialog is open.
+  const [snapshotCrop, setSnapshotCrop] = useState<FloorPlanCrop | null>(null)
+  const [snapshotArea, setSnapshotArea] = useState<string | null>(null)
+  // The saved areas a snapshot may be taken of (an unsaved one is not on
+  // the server yet).
+  const savedAreas = useMemo(
+    () => (data.serverShapes ?? []).filter((s) => s.kind === "area"),
+    [data.serverShapes]
+  )
+  const snapshotShape = canDo("floorplan", "add")
+    ? (shapeId: string) => {
+        if (savedAreas.some((a) => a.id === shapeId)) setSnapshotArea(shapeId)
+        else toast.info("Save the plan first.")
+      }
+    : undefined
+  // A live view: the source's objects, its edge ones locked here.
+  const liveView = isLiveView(plan)
+  const lockedIds = useMemo(
+    () => edgeIds(data.contentsQuery.data),
+    [data.contentsQuery.data]
+  )
+  const [leaveEditOpen, setLeaveEditOpen] = useState(false)
+  // Placing: the picker with the room near the pointer when it opened, the
+  // bulk room assignment, and the "Set room to X?" prompt after a drop.
+  const [placeOpen, setPlaceOpen] = useState(false)
+  // The Place picker kept to these objects: the far ends of the cables
+  // with one end here (the cable legend's count).
+  const [placeOnly, setPlaceOnly] = useState<string[] | null>(null)
+  const [near, setNear] = useState<NearScope | null>(null)
+  const [assignOpen, setAssignOpen] = useState(false)
+  // Document routes: the panel, and the routes it previews on the plan.
+  const [docRoutesOpen, setDocRoutesOpen] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [cablePreviews, setCablePreviews] = useState<
+    ReadonlyMap<string, CableRoute> | undefined
+  >(undefined)
+  // After a drop: the "After placing" card (the room, the cables), and
+  // the Route cables panel with the trays being picked on the plan.
+  const [afterPlace, setAfterPlace] = useState<AfterPlace | null>(null)
+  const [placeCablesOpen, setPlaceCablesOpen] = useState(false)
+  const [trayPick, setTrayPick] = useState<FloorCanvasProps["trayPick"]>()
+  // Connect to…: new cables from these objects, and the objects being
+  // picked on the plan as their targets.
+  const [connect, setConnect] = useState<ConnectSource[] | null>(null)
+  const [tilePick, setTilePick] = useState<FloorCanvasProps["tilePick"]>()
+  // Update routes: the panel re-routing cables against the draft - after a
+  // move (`rev`: the move's step, which Apply joins), from a route's
+  // popover or for every out-of-date route (`rev` null: a step of its own).
+  const [reroute, setReroute] = useState<{
+    base: CablePlanRequest
+    title: string
+    rev: number | null
+  } | null>(null)
+  const setRooms = useSetRooms(id)
+  // Tile popover: hover-preview (delayed) + click-to-pin.
+  const popover = useTilePopover()
+  // Resolve the row list for the tile in hand: a tile type with its own list
+  // wins, otherwise it INHERITS the global one (absence = inherit, so the two
+  // can never drift apart).
+  const popoverFields = useMemo(() => {
+    const cfg = popoverCfg.data
+    if (!cfg) return DEFAULT_POPOVER_FIELDS
+    const slug = popover.target?.tile.tile_type?.slug
+    return (slug && cfg.tile_overrides[slug]) || cfg.fields
+  }, [popoverCfg.data, popover.target])
+  const canvasApi = useRef<FloorCanvasApi | null>(null)
+  const exportRef = useRef<HTMLDivElement>(null)
+
+  const leaveGuard = useLeaveGuard(isDirty, ed.isDirtyRef)
+  const { uploadBackground, patchPlan } = usePlanMutations(id)
+  const prefs = usePlanViewPrefs({ id, plan, canEdit, patchPlan })
+  const { hidden, setHiddenPref, colorBy, showRacks, showObjects } = prefs
+  const edits = useTileEdits({ id, plan, ed })
+  const structure = useStructureEdits({
+    id,
+    plan,
+    ed,
+    onVersion: edits.rebaseVersion,
+  })
+  const rawShapeEdits = useShapeEdits({ plan, ed })
+  // Deleting an area or label with a Back button asks about its label on
+  // the other plan first; an area with linked walls asks about them.
+  const [backDelete, setBackDelete] = useState<PlanShape | null>(null)
+  const [wallsDelete, setWallsDelete] = useState<PlanShape | null>(null)
+  const deleteShapeNow = (s: PlanShape) => {
+    if (s.back_label) setBackDelete(s)
+    else rawShapeEdits.deleteShape(s.id)
+  }
+  const shapeEdits = {
+    ...rawShapeEdits,
+    // An area moved carries its linked walls, in the same step.
+    changeShape: (shapeId: string, patch: Partial<PlanShape>) => {
+      structure.followArea(shapeId, patch)
+      rawShapeEdits.changeShape(shapeId, patch)
+    },
+    deleteShape: (shapeId: string) => {
+      const s = ed.shapes.find((x) => x.id === shapeId)
+      if (!s) return
+      if (s.kind === "area" && structure.linkedTo(s.id).length)
+        setWallsDelete(s)
+      else deleteShapeNow(s)
+    },
+  }
+  // "Update walls" / "Update area": offered while a linked area, or one of
+  // its walls, is selected and the two no longer agree - until dismissed
+  // for that outline and those walls.
+  const [fitDismissed, setFitDismissed] = useState<string | null>(null)
+  const fitArea = (() => {
+    const wall = ed.structure.find(
+      (r) => r.id === ed.selectedWallId && r.part === "wall"
+    )
+    const areaId =
+      wall?.part === "wall" && wall.source_area
+        ? wall.source_area
+        : ed.selectedShapeId
+    const s = ed.shapes.find((x) => x.id === areaId)
+    if (s?.kind !== "area") return null
+    const offer = syncOffer({
+      wallsOff: structure.wallsOffOutline(s.id),
+      fromWalls: structure.areaFromWalls(s.id),
+      from: areaId === ed.selectedShapeId ? "area" : "wall",
+      locked: s.locked,
+    })
+    if (!offer) return null
+    const walls = structure.linkedTo(s.id).map((w) => w.points)
+    const key = `${s.id}:${s.x},${s.y},${s.width},${s.height},${s.rotation},${JSON.stringify(s.points)}:${JSON.stringify(walls)}`
+    return key === fitDismissed ? null : { area: s, key, offer }
+  })()
+  // "Place device here…": where the picker's next pick lands.
+  const placePoint = useRef<Pt | null>(null)
+
+  const shownTiles = useMemo(
+    () => pickVisibleTiles(tiles, hidden),
+    [tiles, hidden]
+  )
+  // The plan's trays with the runs the draft keeps as new ones, and its
+  // cables with the routes the draft applied - drawn until Save.
+  const cableDraft = ed.draft.cables
+  const planTrays = useMemo(
+    () => (cableDraft.trays.length ? [...trays, ...cableDraft.trays] : trays),
+    [trays, cableDraft.trays]
+  )
+  const drawnCablePaths = useMemo(
+    () => withDraftRoutes(cablePaths, cableDraft),
+    [cablePaths, cableDraft]
+  )
+  // A finished move of tiles or trays stored routes use: "Update N routes?"
+  const {
+    prompt: reroutePrompt,
+    setPrompt: setReroutePrompt,
+    skipNext: skipReroutePrompt,
+  } = useMoveReroute({
+    draft: ed.draft,
+    cablePaths: drawnCablePaths,
+    enabled: editing && !view3d,
+  })
+  // Every cable's route on the tiles shown, once per change of the plan's
+  // contents: the canvas, the trace and the PDF all draw these.
+  const cableRoutes = useCableRoutes(
+    drawnCablePaths,
+    planTrays,
+    shownTiles,
+    ceilingMm,
+    areas
+  )
+  // The cables with one end on this plan: stubs out of their tiles.
+  const stubs = useMemo(
+    () =>
+      plan
+        ? cableStubs(drawnCablePaths, cableRoutes, shownTiles, [
+            plan.grid_width / 2,
+            plan.grid_height / 2,
+          ])
+        : [],
+    [plan, drawnCablePaths, cableRoutes, shownTiles]
+  )
+  const cableTally = useMemo(
+    () => cableCounts(drawnCablePaths, cableRoutes, stubs),
+    [drawnCablePaths, cableRoutes, stubs]
+  )
+  // The cables drawn - runs and stubs - and their key, while the links
+  // are on.
+  const shownCables = useMemo(() => {
+    const stubbed = new Set(stubs.map((st) => st.id))
+    return drawnCablePaths.filter(
+      (cp) => cableRoutes.has(cp.id) || stubbed.has(cp.id)
+    )
+  }, [drawnCablePaths, cableRoutes, stubs])
+  const cableKey = useMemo(
+    () =>
+      prefs.showCableLinks && drawnCablePaths.length
+        ? cableLegend(
+            shownCables,
+            prefs.cableColorBy,
+            typePalette(cablePaths),
+            { bundles: prefs.bundleCables && hasSharedRuns(cableRoutes) }
+          )
+        : null,
+    [
+      prefs.showCableLinks,
+      prefs.cableColorBy,
+      prefs.bundleCables,
+      shownCables,
+      drawnCablePaths.length,
+      cablePaths,
+      cableRoutes,
+    ]
+  )
+  // Display > Photos: each tile with a photo drawn as it, its own saved
+  // `display` untouched (the edits keep reading `tiles`).
+  const drawnTiles = useMemo(
+    () => (prefs.showPhotos ? asPhotos(shownTiles) : shownTiles),
+    [shownTiles, prefs.showPhotos]
+  )
+  const shownShapes = useMemo(
+    () => visibleShapes(ed.shapes, hidden),
+    [ed.shapes, hidden]
+  )
+  // The area types the shown plain areas wear: the plan's Areas legend.
+  const areaTypes = useMemo(() => areaTypesInUse(shownShapes), [shownShapes])
+  // The cameras' views against the walls (camera-view.ts): the 3D room's
+  // fans, the PDF's, and the coverage figures - the floor's in the legend
+  // under Display > Camera coverage, an area's in its panel.
+  const camViews = useCameraViews(shownTiles, walls, {
+    cellMm: plan?.cell_mm ?? 0,
+    racksBlock: prefs.fovRacksBlock,
+    enabled: !!plan,
+  })
+  const floorCoverage = useMemo(() => {
+    if (!plan || !prefs.showCoverage || !camViews.length) return null
+    const r = coverageRegions(shownShapes, plan)
+    return coverage(
+      camViews.map((v) => v.polygon),
+      r.outlines
+    ).total
+  }, [plan, prefs.showCoverage, camViews, shownShapes])
+  const coverageAreaId = editing ? ed.selectedShapeId : openArea
+  const areaCoverage = useMemo(() => {
+    const a = shownShapes.find((s) => s.id === coverageAreaId)
+    if (!a || a.kind !== "area" || !camViews.length) return null
+    return coverage(
+      camViews.map((v) => v.polygon),
+      [areaOutline(a)]
+    ).regions[0]
+  }, [coverageAreaId, shownShapes, camViews])
+
+  /** Pick a tool: its canvas mode, nothing selected or half drawn. */
+  const selectTool = useCallback(
+    (tool: EditorTool) => {
+      ed.setTool(tool)
+      ed.setMode(TOOL_MODE[tool])
+      setSelectedId(null)
+      ed.setSelectedShapeId(null)
+      ed.setSelectedTrayId(null)
+      ed.setArmed(null)
+      ed.setDrawPoints(null)
+      ed.setSelectedAreaId(null)
+      ed.setAreaArmed(false)
+      ed.setMultiSel(new Set())
+      ed.setSelectedWallId(null)
+      ed.setSelectedDoor(null)
+      ed.setDoorArmed(false)
+      ed.setStructSel(new Set())
+      ed.setAreaSel(new Set())
+      // Leaving the trays must exit tray-edit - otherwise Layout stays
+      // frozen (tiles unselectable, cables hidden).
+      ed.setTrayEditMode(false)
+    },
+    [ed]
+  )
+  /** View or Edit. Leaving Edit with unsaved edits asks first. */
+  const changeEditing = useCallback(
+    (on: boolean) => {
+      if (!on && isDirty) {
+        setLeaveEditOpen(true)
+        return
+      }
+      if (!on) selectTool("select")
+      setOpenArea(null)
+      setEdit(on)
+    },
+    [isDirty, selectTool, setEdit]
+  )
+  const toggleFree = () => {
+    if (!plan) return
+    if (plan.layout_mode === "free") setSnapOpen(true)
+    else
+      patchPlan.mutate(
+        { layout_mode: "free" },
+        { onSuccess: () => toast.success("Free placement on") }
+      )
+  }
+  const hiddenTileIds = useMemo(
+    () =>
+      new Set(tiles.filter((t) => !shownTiles.includes(t)).map((t) => t.id)),
+    [tiles, shownTiles]
+  )
+  // A tile that just went off the plan cannot stay selected - the keyboard
+  // nudge and delete act on the selection, and nobody should edit what they
+  // cannot see.
+  useEffect(() => {
+    if (selectedId && hiddenTileIds.has(selectedId)) setSelectedId(null)
+  }, [selectedId, hiddenTileIds])
+
+  const capacity = usePlanCapacity({
+    planId: id,
+    tiles: shownTiles,
+    live: liveState.data ?? null,
+    colorBy,
+    wantPorts: popoverShowsPorts(popoverCfg.data),
+  })
+  // The plan's CAD drawing: placement saved as it changes (an editor) or
+  // kept on screen (a viewer's layer choices), drawn under the grid.
+  // A view's drawing is its source's: layer choices stay on screen.
+  const cad = useCadDrawing(plan, canEdit && !liveView)
+  // Detect outline: a click on a building or room proposes its polygon.
+  const outline = useOutlineDetect({ plan, cad, ed, shapeEdits, structure })
+  const cadSource = useCadSource(id, cad.drawing, cad.placement)
+  const cadPxPerMm = CELL / (plan?.cell_mm || 600)
+  const calibration = useCadCalibration(
+    id,
+    cad.drawing,
+    cad.placement,
+    cadPxPerMm
+  )
+  const cadFloorUrl = useCadFloorImage(
+    cad.drawing,
+    cadSource,
+    cad.placement,
+    view3d && cad.drawing?.status === "ready"
+  )
+  const racksOpen = colorBy !== "type" && showRacks && capacity.hasRacks
+  // The table takes the plan's lower part: fit the plan to the room left
+  // when it opens or closes - unless the page arrived focused on a tile or
+  // a trace, which keeps its framing.
+  useEffect(() => {
+    if (tileParam || traceParam || areaParam) return
+    const frame = requestAnimationFrame(() => canvasApi.current?.fit())
+    return () => cancelAnimationFrame(frame)
+  }, [racksOpen, tileParam, traceParam, areaParam])
+
+  // ?area=<id> → open it (its room in the map panel) and frame it, once the
+  // areas have landed.
+  const areaFocusedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!areaParam || areaFocusedRef.current === areaParam || !plan) return
+    const a = ed.shapes.find((s) => s.id === areaParam)
+    if (!a) return
+    areaFocusedRef.current = areaParam
+    setOpenArea(a.id)
+    const b = shapeBounds(a, plan.cell_mm)
+    requestAnimationFrame(() =>
+      canvasApi.current?.focusPoints([
+        [b.minX, b.minY],
+        [b.maxX, b.maxY],
+      ])
+    )
+  }, [areaParam, ed.shapes, plan])
+
+  // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
+  // "trace on map" link from a cable/rack lands on the run without any clicks.
+  // ?tile=<id> → select it and zoom in on it, once the tiles have landed.
+  const focusedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!tileParam || focusedRef.current === tileParam) return
+    const tile = tiles.find((t) => t.id === tileParam)
+    if (!tile) return
+    focusedRef.current = tileParam
+    setSelectedId(tile.id)
+    // In 3D (a click on another level of the building): fly to it.
+    if (view3d)
+      setFocus3d((f) => ({ kind: "tile", id: tile.id, n: (f?.n ?? 0) + 1 }))
+    else requestAnimationFrame(() => canvasApi.current?.focusTile(tile, 2.5))
+  }, [tileParam, tiles, view3d])
+
+  const tracedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!traceParam || tracedRef.current === traceParam) return
+    const cp = cablePaths.find((c) => c.id === traceParam)
+    if (!cp) return // paths not loaded yet - the effect re-runs when they land
+    tracedRef.current = traceParam
+    prefs.setShowLinksLocal(true)
+    ed.setHighlightCableIds([traceParam])
+    setDetail({ kind: "cable", id: traceParam })
+    const route = cableRoutes.get(cp.id)?.points ?? []
+    if (route.length >= 2)
+      requestAnimationFrame(() => canvasApi.current?.focusPoints(route))
+  }, [traceParam, cablePaths, cableRoutes])
+
+  /** Place rows at a cell point: linked tiles, no type needed. A drop into
+   * another room's area asks "Set room to X?" - never sets it itself. */
+  const placeAt = useCallback(
+    (rows: FloorPlanPlaceable[], at: Pt, move = false) => {
+      if (ed.mode !== "layout") selectTool("select")
+      // After placing asks about the cables of what was dropped.
+      skipReroutePrompt()
+      const placed = edits.placeRows(rows, at, { move })
+      setPlaceOpen(false)
+      setPlaceCablesOpen(false)
+      const objects: AfterPlace["objects"] = []
+      for (const t of placed) {
+        const l = shownLink(t.linked)
+        if (
+          l &&
+          (l.kind === "device" || l.kind === "rack" || l.kind === "cabinet")
+        )
+          objects.push({ kind: l.kind, id: l.id, name: l.name })
+      }
+      // The draft as it is with them placed: what their cables route on.
+      const after = new Map(ed.tiles.map((t) => [t.id, t]))
+      for (const t of placed) after.set(t.id, t)
+      const dirty = new Set(ed.dirtyIds)
+      for (const t of placed) dirty.add(t.id)
+      setAfterPlace({
+        objects,
+        input: draftPlanInput({
+          tiles: [...after.values()],
+          dirtyIds: dirty,
+          deletedIds: ed.deletedIds,
+          cd: ed.draft.cables,
+          isTemp,
+          trays: draftTrays,
+        }),
+        room: roomPrompts(placed, ed.shapes)[0] ?? null,
+      })
+    },
+    [ed, edits, selectTool, draftTrays, skipReroutePrompt]
+  )
+  const placeAtCentre = useCallback(
+    (rows: FloorPlanPlaceable[]) => {
+      if (!plan) return
+      const at = canvasApi.current?.centerCell?.() ?? [
+        plan.grid_width / 2,
+        plan.grid_height / 2,
+      ]
+      placeAt(rows, at)
+    },
+    [plan, placeAt]
+  )
+  // The objects on this floor as the editor holds it - the unsaved draft
+  // included - for the picker's "On this floor" and the Not placed list.
+  const onFloor = useMemo(() => placedOnFloor(tiles), [tiles])
+  const openPlace = useCallback(
+    (at: Pt | null = null) => {
+      const api = canvasApi.current
+      placePoint.current = at
+      setNear(
+        nearScope(
+          ed.shapes,
+          at ?? api?.pointerCell?.() ?? null,
+          api?.centerCell?.() ?? null
+        )
+      )
+      setPlaceOpen(true)
+    },
+    [ed.shapes]
+  )
+  /** The Place picker's pick: at the right-clicked point, else the middle. */
+  const placePicked = useCallback(
+    (rows: FloorPlanPlaceable[]) => {
+      const at = placePoint.current
+      placePoint.current = null
+      if (at) placeAt(rows, at)
+      else placeAtCentre(rows)
+    },
+    [placeAt, placeAtCentre]
+  )
+  /** A shape's Back button label changed on the server (not an edit). */
+  const setBackLabel = useCallback(
+    (shapeId: string, ref: PlanShape["back_label"]) =>
+      ed.setShapes((prev) =>
+        prev.map((x) => (x.id === shapeId ? { ...x, back_label: ref } : x))
+      ),
+    [ed]
+  )
+  const applyRoom = (prompt: RoomPromptState) =>
+    setRooms.mutate(prompt, {
+      onSuccess: () => {
+        setAfterPlace((a) => (a ? { ...a, room: null } : a))
+        // The placed tiles show the room they now name.
+        const ids = new Set(prompt.objects.map((o) => o.id))
+        ed.setTiles((prev) =>
+          prev.map((t) =>
+            t.linked?.id && ids.has(t.linked.id)
+              ? { ...t, linked: { ...t.linked, room: prompt.room } }
+              : t
+          )
+        )
+      },
+    })
+  // The cables of what was just placed that may be routed: the card's
+  // count, read once per drop (the panel reads its own).
+  const placedCables = usePlacedCables(
+    id,
+    afterPlace && editing && !placeCablesOpen
+      ? placeCablesRequest(afterPlace)
+      : null
+  )
+  const routableCount = placedCables.data
+    ? routableRows(placedCables.data.cables).length
+    : 0
+  /** Apply the Route cables panel: its ticked routes (and the runs kept
+   * as trays) into the draft, one undo step; Save writes them. */
+  const applyPlacedCables = ({
+    rows,
+    ticks,
+    suggestions,
+  }: PlaceCablesApply) => {
+    ed.draft.setCables((cd) =>
+      applyRoutes(cd, { rows, ticks, suggestions, trays, newId: tempId })
+    )
+    setPlaceCablesOpen(false)
+    setAfterPlace(null)
+  }
+  /** Open Update routes for `cableIds`, against the draft as it is now. */
+  const openReroute = (
+    cableIds: readonly string[],
+    rev: number | null,
+    title = "Update routes"
+  ) => {
+    if (!cableIds.length) return
+    setPlaceCablesOpen(false)
+    setDocRoutesOpen(false)
+    setReroute({
+      base: rerouteRequest(
+        cableIds.slice(0, 256),
+        draftPlanInput({
+          tiles: ed.tiles,
+          dirtyIds: ed.dirtyIds,
+          deletedIds: ed.deletedIds,
+          cd: ed.draft.cables,
+          isTemp,
+          trays: draftTrays,
+        })
+      ),
+      title,
+      rev,
+    })
+  }
+  // Every route drawn out of date: More → Update out-of-date routes…
+  const staleIds = useMemo(() => staleRouteIds(cableRoutes), [cableRoutes])
+  /** Apply Update routes: the ticked routes into the draft - folded into
+   * the move's step when it came from one, so one undo takes back both. */
+  const applyReroute = ({ rows, ticks, suggestions }: PlaceCablesApply) => {
+    const apply = (cd: typeof ed.draft.cables) =>
+      applyRoutes(cd, { rows, ticks, suggestions, trays, newId: tempId })
+    if (reroute?.rev != null)
+      ed.draft.amend((d) => ({ ...d, cables: apply(d.cables) }), reroute.rev)
+    else ed.draft.setCables(apply)
+    setReroute(null)
+    setReroutePrompt(null)
+  }
+  // Connect to…: planned only by those who may add cables.
+  const canConnect = editing && canDo("cable", "add")
+  /** Open Connect to… from these placed objects. */
+  const openConnect = (sources: ConnectSource[]) => {
+    if (!sources.length) return
+    setPlaceCablesOpen(false)
+    setDocRoutesOpen(false)
+    setReroute(null)
+    setConnect(sources)
+  }
+  const connectFromTile = (tile: FloorPlanTile) => {
+    const o = connectable(tile)
+    if (o) openConnect([{ ...o, tileId: tile.id }])
+  }
+  const connectInput = useMemo(
+    () =>
+      connect
+        ? draftPlanInput({
+            tiles: ed.tiles,
+            dirtyIds: ed.dirtyIds,
+            deletedIds: ed.deletedIds,
+            cd: ed.draft.cables,
+            isTemp,
+            trays: draftTrays,
+          })
+        : {},
+    // The draft as it was when the panel opened.
+    [connect]
+  )
+  const connectTaken = useMemo(
+    () => draftCablePorts(ed.draft.cables),
+    [ed.draft.cables]
+  )
+  /** Apply Connect to…: the new cables and their routes into the draft,
+   * one undo step; Save makes them. */
+  const applyConnect = (a: ConnectApply) => {
+    ed.draft.setCables((cd) =>
+      applyNewCables(cd, { ...a, trays, newId: tempId })
+    )
+    setConnect(null)
+    setAfterPlace(null)
+    toast.info(
+      a.pairs.length === 1
+        ? "1 cable added - Save makes it"
+        : `${a.pairs.length} cables added - Save makes them`
+    )
+  }
+  // Undoing (or redoing past) the move closes its panel.
+  useEffect(() => {
+    if (reroute?.rev != null && reroutePrompt?.rev !== reroute.rev)
+      setReroute(null)
+  }, [reroutePrompt, reroute])
+  // A snap to the grid moves tiles on the server: once the plan is back,
+  // offer to route what it left out of date.
+  const askStale = useRef(false)
+  useEffect(() => {
+    if (!askStale.current || !editing) return
+    if (!staleIds.length) return
+    askStale.current = false
+    setReroutePrompt({ cableIds: staleIds, rev: null })
+  }, [staleIds, editing])
+  const conflictName = (c: FloorPlanConflict) => {
+    if (c.kind === "cable_path" || c.kind === "cable")
+      return ed.draft.cables.routes[c.id]?.label ?? "Cable"
+    const local =
+      c.kind === "tile"
+        ? tiles.find((t) => t.id === c.id)
+        : (ed.shapes.find((sh) => sh.id === c.id) ??
+          ed.structure.find((r) => r.id === c.id))
+    const row = (local ?? c.current) as unknown as Record<
+      string,
+      unknown
+    > | null
+    if (!row) return c.kind
+    const linked = row.linked as { name?: string } | null | undefined
+    return (
+      (row.label as string) ||
+      (c.kind === "tray" ? (row.name as string) : "") ||
+      linked?.name ||
+      (row.text as string) ||
+      ((row.room as { name?: string } | null)?.name ?? "") ||
+      (
+        { wall: "Wall", tray: "Tray", raised_floor: "Raised floor" } as Record<
+          string,
+          string
+        >
+      )[c.kind] ||
+      c.kind
+    )
+  }
+
+  const { stepHistory } = useEditorKeys({
+    // P in View, for those who may edit: into Edit, then the picker.
+    onPlaceKey: () => openPlace(),
+    canEdit: editing,
+    canToggleEdit: canEdit,
+    onToggleEdit: changeEditing,
+    selectTool,
+    shapeEdits,
+    canvasApi,
+    view3d,
+    traceParam,
+    tracedRef,
+    plan,
+    ed,
+    edits,
+    structure,
+    prefs,
+    hiddenTileIds,
+    closePopover: popover.close,
+  })
+
+  /** The plan as an SVG for paper: the Export PDF (cables as the Display
+   * menu says), and the cable schedule's first page (`withCables`: the
+   * routes always drawn; `closeup`: one of its close-ups, framed to the
+   * box at the scale the server laid out). */
+  const exportSvg = (
+    paper?: PaperChoice,
+    withCables: boolean = prefs.showCableLinks,
+    fitContent = false,
+    closeup?: { box: PlanBox; mmPerPx: number },
+    /** A report sheet framed to `closeup`: its cables' stubs drawn too. */
+    sheet = false,
+    /** Its own callouts and row names; false when the screen's are laid
+     * over it (a view's sheet). */
+    ownCallouts = true
+  ) =>
+    plan
+      ? planSvg({
+          plan,
+          tiles: shownTiles,
+          walls,
+          trays,
+          areas,
+          shapes: shownShapes,
+          colorBy,
+          figures: capacity.figures,
+          liveState: liveState.data ?? null,
+          showZoneLabels: prefs.showZoneLabels,
+          showTrays: prefs.showTrays,
+          // Readable on paper as on screen, at the sheet's scale.
+          objectSize: prefs.objectSize,
+          iconTiles: prefs.iconTiles,
+          callouts: ownCallouts && prefs.callouts === "auto",
+          cameras: prefs.showFov
+            ? { racksBlock: prefs.fovRacksBlock }
+            : undefined,
+          mmPerPx: planPaperScale(plan, paper),
+          cables: withCables
+            ? {
+                paths: shownCables,
+                routes: cableRoutes,
+                colorBy: prefs.cableColorBy,
+                bundle: prefs.bundleCables,
+                labels: prefs.showCableLabels,
+                highlight: ed.highlightCableIds,
+                mmPerPx: planPaperScale(plan, paper),
+                // The overview only: a close-up frames its own runs.
+                stubs: closeup && !sheet ? undefined : stubs,
+              }
+            : undefined,
+          fitContent: fitContent && paper ? { paper, ...closeup } : undefined,
+        })
+      : ""
+
+  /** The legends of a sheet of this floor, as the PDF's footer reads them. */
+  const sheetLegends = () => ({
+    legend: capacity.hasRacks
+      ? colorByLegendEntries(
+          colorBy,
+          capacity.legend.figures,
+          capacity.legend.alarm
+        )
+      : null,
+    cable_legend:
+      cableKey && shownCables.length ? cableLegendEntries(cableKey) : null,
+    area_legend: areaLegendEntries(shownShapes),
+  })
+
+  /** A report sheet (report-dialog.tsx): this floor framed to the scope's
+   * box at the sheet's scale - the view with the screen's callouts - or
+   * another level of the building, drawn from its own rows. */
+  const drawReportSheet: DrawSheet = async ({ scope, paper, floor, area }) => {
+    if (!plan) return null
+    if (floor && floor !== plan.id)
+      return drawLevel(floor, paper, {
+        showCableLinks: prefs.showCableLinks,
+        cableColorBy: prefs.cableColorBy,
+        bundleCables: prefs.bundleCables,
+        showCableLabels: prefs.showCableLabels,
+        showZoneLabels: prefs.showZoneLabels,
+        showTrays: prefs.showTrays,
+        objectSize: prefs.objectSize,
+        iconTiles: prefs.iconTiles,
+        showFov: prefs.showFov,
+        fovRacksBlock: prefs.fovRacksBlock,
+        callouts: prefs.callouts === "auto",
+      })
+    let box = gridBox(plan)
+    let overlay = ""
+    if (scope === "view") {
+      const screen = canvasApi.current?.screen?.()
+      const shown = screen ? clampBox(screen.box, plan) : null
+      if (!screen || !shown) return null
+      box = shown
+      overlay = calloutsMarkup(screen.callouts, screen.k)
+    } else if (scope === "area") {
+      const s = ed.shapes.find((x) => x.id === area)
+      if (s?.kind === "area") box = areaBox(s, plan)
+    }
+    const svg = exportSvg(
+      paper,
+      prefs.showCableLinks,
+      true,
+      { box, mmPerPx: reportScale(box, paper) },
+      true,
+      scope !== "view"
+    )
+    return { floor: plan.id, svg: withOverlay(svg, overlay), ...sheetLegends() }
+  }
+
+  const exportPng = async () => {
+    if (!exportRef.current || !plan) return
+    const url = await toPng(exportRef.current, {
+      backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
+      pixelRatio: 2,
+      // The legend's Hide button and a folded legend's chip stay on screen.
+      filter: (node) =>
+        !(node instanceof HTMLElement && node.dataset.exportSkip !== undefined),
+    })
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${plan.name}.png`
+    a.click()
+  }
+
+  const openTile = (tile: FloorPlanTile) => {
+    const how = tileOpen(tile)
+    if (how.kind === "plan") {
+      nav({ to: "/floorplans/$id", params: { id: how.id } })
+      return
+    }
+    // Rack/device tiles open the detail panel (a click while viewing, a
+    // double-click or the menu while editing); its Paths / Contents open
+    // the end-to-end trace sheet.
+    if (how.kind === "panel") {
+      openTilePanel(tile)
+      return
+    }
+    // Power, cooling, unlinked and Hidden tiles: selected, their popover
+    // pinned - it names the object, its figures and links to its page.
+    setSelectedId(tile.id)
+    pinTile(tile)
+  }
+
+  /** Pin a tile's popover: at the pointer while it is over the tile, else
+   * at `at` (where a focus just put it), else where the tile stands. */
+  function pinTile(tile: FloorPlanTile, at?: { x: number; y: number } | null) {
+    if (view3d) return
+    popover.pinTile(
+      tile,
+      at ?? canvasApi.current?.tilePoint?.(tile) ?? undefined
+    )
+  }
+
+  /** Open the detail panel on a device or rack tile (`deviceId`: one of a
+   * rack's devices). */
+  function openTilePanel(tile: FloorPlanTile, deviceId?: string) {
+    popover.close()
+    ed.setCabinetTileId(null)
+    setOpenArea(null)
+    if (detail?.kind === "cable") ed.setHighlightCableIds([])
+    setDetail({ kind: "tile", id: tile.id, deviceId })
+  }
+
+  /** Open the cable panel and trace the cable; `fit` frames its route. */
+  function openCable(cableId: string, fit = false) {
+    popover.close()
+    ed.setCabinetTileId(null)
+    setOpenArea(null)
+    prefs.setShowLinksLocal(true)
+    ed.setHighlightCableIds([cableId])
+    setDetail({ kind: "cable", id: cableId })
+    if (!fit) return
+    if (view3d) {
+      setFocus3d((f) => ({ kind: "cable", id: cableId, n: (f?.n ?? 0) + 1 }))
+      return
+    }
+    const pts = cableRoutes.get(cableId)?.points ?? []
+    if (pts.length >= 2)
+      requestAnimationFrame(() => canvasApi.current?.focusPoints(pts))
+  }
+
+  /** Close the detail panel: a cable's trace and the tray it lit go too. */
+  function closeDetail() {
+    if (detail?.kind === "cable") ed.setHighlightCableIds([])
+    if (panelTray && ed.selectedTrayId === panelTray) ed.setSelectedTrayId(null)
+    setPanelTray(null)
+    setDetail(null)
+  }
+
+  /** Light a tray (the cable panel's tray list, Find). */
+  function highlightTray(trayId: string, frame = false) {
+    ed.setSelectedTrayId(trayId)
+    setPanelTray(trayId)
+    const tray = planTrays.find((t) => t.id === trayId)
+    if (frame && tray && tray.points.length >= 2 && !view3d)
+      canvasApi.current?.focusPoints(tray.points)
+  }
+
+  /** Bring a tile into view: zoomed to on the plan, flown to in 3D. */
+  function showTile(tile: FloorPlanTile) {
+    if (view3d) {
+      setFocus3d((f) => ({ kind: "tile", id: tile.id, n: (f?.n ?? 0) + 1 }))
+      return
+    }
+    if (editing) setSelectedId(tile.id)
+    canvasApi.current?.focusTile(tile)
+  }
+
+  /** A pick from "Find on plan…". */
+  function pickHit(h: PlanHit) {
+    applyPick(
+      h,
+      {
+        openCable,
+        highlightTray: (tid) => highlightTray(tid, true),
+        showArea: (s) => {
+          if (editing) {
+            if (ed.mode !== "layout") selectTool("select")
+            shapeEdits.select(s.id)
+          } else {
+            closeDetail()
+            setOpenArea(s.id)
+          }
+          if (view3d) return
+          const b = shapeBounds(s, plan!.cell_mm)
+          canvasApi.current?.focusPoints([
+            [b.minX, b.minY],
+            [b.maxX, b.maxY],
+          ])
+        },
+        showTile: (tile) => {
+          if (view3d) {
+            setFocus3d((f) => ({
+              kind: "tile",
+              id: tile.id,
+              n: (f?.n ?? 0) + 1,
+            }))
+            return
+          }
+          setSelectedId(tile.id)
+          canvasApi.current?.focusTile(tile)
+        },
+        openTilePanel: (tile) => openTilePanel(tile),
+        // showTile has just centred it: the popover anchors there.
+        pinTile: (tile) => {
+          if (!view3d) pinTile(tile, canvasApi.current?.focusTile(tile))
+        },
+      },
+      { editing }
+    )
+  }
+
+  // From a device's paths in the deep-view: close the sheet and highlight one
+  // cable, or a whole run (all its cables), on the plan - no Cables mode.
+  const traceCablesOnMap = useCallback(
+    (cableIds: string[]) => {
+      ed.setDeepTile(null)
+      ed.setCabinetTileId(null)
+      prefs.setShowLinksLocal(true)
+      ed.setHighlightCableIds(cableIds)
+      const pts = cableIds.flatMap((cid) => cableRoutes.get(cid)?.points ?? [])
+      if (pts.length >= 2)
+        requestAnimationFrame(() => canvasApi.current?.focusPoints(pts))
+      else if (cableIds.length)
+        toast.info("That run isn't routed through a tray on this plan yet.")
+    },
+    [cableRoutes]
+  )
+
+  if (planQuery.isLoading) return <Loading />
+  if (planQuery.isError) return <QueryError error={planQuery.error} />
+  if (!plan) return null
+
+  // The key to the Color by, in the corner of the 2D plan - inside its
+  // export area - and of the 3D room. The 2D plan adds its cables' key.
+  const rackLegend = colorBy !== "type" && capacity.hasRacks && (
+    <ColorByLegend
+      colorBy={colorBy}
+      figures={capacity.legend.figures}
+      alarm={capacity.legend.alarm}
+    />
+  )
+  const colorLegend = rackLegend && (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+      {rackLegend}
+    </div>
+  )
+  const farIds = stubPlaceIds(stubs)
+  // The 2D plan's keys - Color by, cables, area types - as one card that
+  // folds to a chip (plan-legend.tsx), never three boxes stacked.
+  const planLegend = (rackLegend ||
+    cableKey ||
+    areaTypes.length > 0 ||
+    floorCoverage != null) && (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+      <PlanLegend>
+        {rackLegend && (
+          <ColorByLegend
+            bare
+            colorBy={colorBy}
+            figures={capacity.legend.figures}
+            alarm={capacity.legend.alarm}
+          />
+        )}
+        {cableKey && (
+          <CableLegend
+            bare
+            legend={cableKey}
+            counts={cableTally}
+            onPlaceFar={
+              editing && !view3d && farIds.length
+                ? () => {
+                    setPlaceOnly(farIds)
+                    openPlace()
+                  }
+                : undefined
+            }
+          />
+        )}
+        {areaTypes.length > 0 && <AreaLegend bare types={areaTypes} />}
+        {floorCoverage != null && <CoverageLegend share={floorCoverage} />}
+      </PlanLegend>
+    </div>
+  )
+
+  // The background image's controls: a popover off the header on a wide
+  // screen, a dialog from More on a narrow one.
+  const backgroundControls = (
+    <BackgroundControls
+      plan={plan}
+      cad={cad}
+      uploadBackground={uploadBackground}
+      patchPlan={patchPlan}
+      onImageOverDrawing={ed.setPendingImage}
+    />
+  )
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* ── Header: which plan, which floor, which mode ──────────────── */}
+      <PlanHeader
+        plan={plan}
+        stack={data.stack.data}
+        isDirty={isDirty}
+        canEdit={canEdit}
+        canAdd={canDo("floorplan", "add")}
+        view3d={view3d}
+        editing={editing}
+        onEditingChange={changeEditing}
+      />
+
+      {/* ── Second bar: find and view on the left, the panel, display and
+          file actions on the right. */}
+      <PlanToolbar
+        plan={plan}
+        mode={ed.mode}
+        view3d={view3d}
+        canEdit={editing}
+        searchIn={{
+          tiles: shownTiles,
+          cables: shownCables,
+          trays: planTrays,
+          shapes: shownShapes,
+        }}
+        search={ed.search}
+        onSearchChange={ed.setSearch}
+        onPickHit={pickHit}
+        onFit={() => canvasApi.current?.fit()}
+        showGrid={ed.showGrid}
+        onShowGridChange={ed.setShowGrid}
+        prefs={prefs}
+        hasRacks={capacity.hasRacks}
+        drawingOpen={ed.drawingOpen}
+        onToggleDrawing={() => ed.setDrawingOpen((o) => !o)}
+        backgroundControls={liveView ? undefined : backgroundControls}
+        exportMenu={
+          <DrawingExportMenu
+            name={plan.name}
+            extraItems={
+              <DropdownMenuItem onSelect={() => setScheduleOpen(true)}>
+                <Sheet /> Cable schedule…
+              </DropdownMenuItem>
+            }
+            build={async ({ paper }) => ({
+              svg: exportSvg(paper),
+              missing: 0,
+            })}
+            pdfUrl={`/api/floor-plans/${plan.id}/export/pdf/`}
+            paperKey="floorplan:export"
+            defaultPaper={{ size: "a3", orientation: "landscape" }}
+            snapshot={view3d ? undefined : exportPng}
+            svg={false}
+            pdfExtra={sheetLegends}
+            pdfItem={{
+              label: "Export…",
+              onSelect: () => setReportOpen(true),
+            }}
+          />
+        }
+        onOpenSettings={() => ed.setSettingsOpen(true)}
+        onOpenBackground={() => ed.setBackgroundOpen(true)}
+        onDocumentRoutes={
+          editing && !view3d && cablePaths.length
+            ? () => {
+                setPlaceCablesOpen(false)
+                setReroute(null)
+                setDocRoutesOpen(true)
+              }
+            : undefined
+        }
+        onUpdateStale={
+          editing && !view3d && staleIds.length
+            ? () => openReroute(staleIds, null, "Update out-of-date routes")
+            : undefined
+        }
+        canUndo={ed.draft.canUndo}
+        canRedo={ed.draft.canRedo}
+        onUndo={() => stepHistory("undo")}
+        onRedo={() => stepHistory("redo")}
+        isDirty={isDirty}
+        saving={edits.save.isPending}
+        onSave={() => edits.save.mutate()}
+        placeSlot={
+          editing && !view3d ? (
+            <PlacePicker
+              plan={plan}
+              onFloor={onFloor}
+              open={placeOpen}
+              onOpenChange={(o) => {
+                if (o) openPlace()
+                else {
+                  placePoint.current = null
+                  setPlaceOpen(false)
+                  setPlaceOnly(null)
+                }
+              }}
+              only={placeOnly}
+              onClearOnly={() => setPlaceOnly(null)}
+              near={near}
+              onPlace={placePicked}
+              onPlaceAt={(rows, at) => placeAt(rows, at)}
+              onShow={(tileId) => {
+                const tile = tiles.find((t) => t.id === tileId)
+                if (!tile) return
+                if (ed.mode !== "layout") selectTool("select")
+                setSelectedId(tile.id)
+                canvasApi.current?.focusTile(tile)
+              }}
+              onAssignRooms={() => setAssignOpen(true)}
+            />
+          ) : undefined
+        }
+      />
+
+      {/* ── Body: palette rail · canvas · inspector ─────────────────── */}
+      <div className="flex min-h-0 flex-1">
+        {editing && !view3d && (
+          <ToolRail
+            tool={ed.tool}
+            onToolChange={selectTool}
+            free={plan.layout_mode === "free"}
+            onToggleFree={toggleFree}
+            canToggleFree={!liveView}
+          />
+        )}
+        {editing && !view3d && (
+          <PlanRail
+            plan={plan}
+            ed={ed}
+            trays={trays}
+            walls={walls}
+            areas={areas}
+            tileTypes={tileTypes.data?.results}
+            roles={roles.data?.results}
+            onDeleteRow={structure.deleteRow}
+          />
+        )}
+
+        <div className="relative min-w-0 flex-1">
+          {data.contentsQuery.isError && (
+            <div className="p-4">
+              <QueryError error={data.contentsQuery.error} />
+            </div>
+          )}
+          {view3d && (
+            <PlanScene3D
+              plan={plan}
+              cameraViews={prefs.showFov ? camViews : undefined}
+              liveState={liveState.data ?? null}
+              hiddenTileIds={hiddenTileIds}
+              traceCableId={
+                detail?.kind === "cable" ? detail.id : (traceParam ?? null)
+              }
+              onOpenCable={(cid) => {
+                if (cid) return openCable(cid)
+                ed.setHighlightCableIds([])
+                closeDetail()
+              }}
+              onOpenDevice={(tileId, deviceId) => {
+                const tile = tiles.find((t) => t.id === tileId)
+                if (!tile) return
+                const k = shownLink(tile.linked)?.kind
+                if (k === "device") openTilePanel(tile)
+                else if ((k === "rack" || k === "cabinet") && deviceId)
+                  openTilePanel(tile, deviceId)
+              }}
+              focusTarget={focus3d}
+              prefs={prefs}
+              capacity={capacity}
+              rackFocus={ed.rackFocus3d}
+              cad={cad}
+              cadFloorUrl={cadFloorUrl}
+              colorLegend={colorLegend}
+              areas={shownShapes}
+              showHint={ed.show3dHint}
+              onDismissHint={() => ed.setShow3dHint(false)}
+              building={
+                aligned
+                  ? {
+                      stack: stackData,
+                      mode: levelMode,
+                      explode,
+                      onGoLevel: (to, tile) => void goLevel(to, tile),
+                    }
+                  : null
+              }
+            />
+          )}
+          {aligned && (
+            <LevelPanel
+              stack={stackData}
+              currentId={id}
+              onGo={(to) => void goLevel(to)}
+              view3d={view3d}
+              onion={onion}
+              onOnion={setOnion}
+              mode={levelMode}
+              onMode={setLevelMode}
+              explode={explode}
+              onExplode={setExplode}
+            />
+          )}
+          {!view3d && (
+            <PlanCanvas
+              plan={plan}
+              shownTiles={drawnTiles}
+              shownShapes={shownShapes}
+              shapeEdits={shapeEdits}
+              canEdit={editing}
+              onOpenShape={(s) => {
+                // An Opens link goes to its plan, as a floor-plan tile does.
+                if (s.opens) {
+                  void nav({
+                    to: "/floorplans/$id",
+                    params: { id: s.opens.id },
+                  })
+                  return
+                }
+                if (s.kind === "area") setOpenArea(s.id)
+              }}
+              emptyActions={
+                editing
+                  ? {
+                      placeAt: (at) => openPlace(at),
+                      drawAreaAt: (at) => {
+                        // What a click with the Room tool draws: a 3 × 3
+                        // area at the point, selected to resize and link.
+                        if (ed.mode !== "layout") selectTool("select")
+                        const size = 3
+                        const snap = (v: number, max: number) =>
+                          Math.max(
+                            0,
+                            Math.min(
+                              plan.layout_mode === "free"
+                                ? Math.round(v * 4) / 4
+                                : Math.floor(v),
+                              max - Math.min(size, max)
+                            )
+                          )
+                        shapeEdits.createArea({
+                          shape: "rect",
+                          x: snap(at[0], plan.grid_width),
+                          y: snap(at[1], plan.grid_height),
+                          width: Math.min(size, plan.grid_width),
+                          height: Math.min(size, plan.grid_height),
+                        })
+                      },
+                      addLabelAt: (at) => {
+                        if (ed.mode !== "layout") selectTool("select")
+                        shapeEdits.createLabel({ x: at[0], y: at[1] })
+                      },
+                      detectAt: outline.modes.length
+                        ? (at) => {
+                            if (ed.tool !== "outline") selectTool("outline")
+                            void outline.pickAt(at)
+                          }
+                        : undefined,
+                    }
+                  : canEdit
+                    ? { editHere: () => changeEditing(true) }
+                    : undefined
+              }
+              ed={ed}
+              edits={edits}
+              structure={structure}
+              outline={editing ? outline : undefined}
+              onion={onionLayer}
+              prefs={prefs}
+              liveState={liveState.data ?? null}
+              trays={planTrays}
+              walls={walls}
+              areas={areas}
+              cablePaths={drawnCablePaths}
+              cableRoutes={cableRoutes}
+              cableStubs={stubs}
+              cablePreviews={
+                docRoutesOpen || placeCablesOpen || reroute || connect
+                  ? cablePreviews
+                  : undefined
+              }
+              trayPick={placeCablesOpen || reroute ? trayPick : undefined}
+              tilePick={connect ? tilePick : undefined}
+              onConnectTile={canConnect ? connectFromTile : undefined}
+              onRerouteCable={
+                editing ? (cid) => openReroute([cid], null) : undefined
+              }
+              onOpenCable={(cid) => {
+                if (cid) return openCable(cid)
+                ed.setHighlightCableIds([])
+                closeDetail()
+              }}
+              tileTypes={tileTypes.data?.results ?? []}
+              roles={roles.data?.results ?? []}
+              popover={popover}
+              popoverFields={popoverFields}
+              capacity={capacity}
+              racksOpen={racksOpen}
+              colorLegend={planLegend}
+              canvasApi={canvasApi}
+              exportRef={exportRef}
+              cad={cad}
+              cadSource={cadSource}
+              cadPxPerMm={cadPxPerMm}
+              calibration={calibration}
+              theme={theme}
+              openTile={openTile}
+              onDropRows={
+                editing ? (rows, at) => placeAt(rows, at, true) : undefined
+              }
+              onSnapshotRect={
+                editing && ed.tool === "snapshot"
+                  ? (r) => setSnapshotCrop(r)
+                  : undefined
+              }
+              lockedIds={liveView ? lockedIds : undefined}
+              onSnapshotShape={editing ? snapshotShape : undefined}
+              selectionToolbar={
+                editing ? (
+                  <SelectionToolbar
+                    plan={plan}
+                    tile={
+                      selectedId
+                        ? (tiles.find((t) => t.id === selectedId) ?? null)
+                        : null
+                    }
+                    shape={
+                      ed.shapes.find((sh) => sh.id === ed.selectedShapeId) ??
+                      null
+                    }
+                    shapes={ed.shapes}
+                    onTileDisplay={edits.setTileDisplay}
+                    onRestackTile={edits.restackTile}
+                    onDeleteTile={edits.deleteTile}
+                    onSetRoom={applyRoom}
+                    onChangeShape={shapeEdits.changeShape}
+                    onRestackShape={shapeEdits.restack}
+                    onDeleteShape={shapeEdits.deleteShape}
+                    onSnapshotShape={snapshotShape}
+                    onShapeBackLabel={setBackLabel}
+                    onWallsAround={
+                      liveView ? undefined : structure.wallsAroundAreas
+                    }
+                    onRaisedFromArea={
+                      liveView ? undefined : structure.raisedFromArea
+                    }
+                    areaPicks={[...ed.areaSel]}
+                    onConnect={canConnect ? connectFromTile : undefined}
+                  />
+                ) : undefined
+              }
+              structureToolbar={
+                editing ? (
+                  <StructureToolbar
+                    row={
+                      ed.structure.find(
+                        (r) =>
+                          r.id ===
+                          (ed.selectedDoor?.wallId ??
+                            (ed.mode === "structure"
+                              ? (ed.selectedWallId ?? ed.selectedAreaId)
+                              : ed.selectedTrayId))
+                      ) ?? null
+                    }
+                    door={ed.selectedDoor?.index ?? null}
+                    picked={ed.structure.filter((r) => ed.structSel.has(r.id))}
+                    doorArmed={ed.doorArmed || ed.tool === "door"}
+                    onArmDoor={() => ed.setDoorArmed((v) => !v)}
+                    onFlipDoor={(i) =>
+                      ed.selectedDoor &&
+                      structure.flipDoor(ed.selectedDoor.wallId, i)
+                    }
+                    onDeleteDoor={(i) =>
+                      ed.selectedDoor &&
+                      structure.deleteDoor(ed.selectedDoor.wallId, i)
+                    }
+                    onJoin={structure.join}
+                    onDelete={structure.deleteRow}
+                  />
+                ) : undefined
+              }
+              overlays={
+                editing ? (
+                  <>
+                    {structure.linkChoice &&
+                      walls.some((w) =>
+                        structure.linkChoice!.pairs.some(
+                          (p) => p.wallId === w.id
+                        )
+                      ) && (
+                        <WallLinkCard
+                          name={structure.linkChoice.name}
+                          count={structure.linkChoice.pairs.length}
+                          linked={walls.some(
+                            (w) =>
+                              !!w.source_area &&
+                              structure.linkChoice!.pairs.some(
+                                (p) => p.wallId === w.id
+                              )
+                          )}
+                          onLinked={structure.setLinked}
+                          onDismiss={() => structure.setLinkChoice(null)}
+                        />
+                      )}
+                    {!structure.linkChoice && fitArea && (
+                      <UpdateWallsCard
+                        name={areaName(fitArea.area) || "Area"}
+                        offer={fitArea.offer}
+                        onUpdateArea={() =>
+                          structure.updateAreaFromWalls(fitArea.area.id)
+                        }
+                        drops={
+                          structure.updateDrops?.areaId === fitArea.area.id
+                            ? structure.updateDrops.doors
+                            : null
+                        }
+                        onUpdate={() =>
+                          structure.updateLinkedWalls(fitArea.area.id)
+                        }
+                        onConfirmDrops={() =>
+                          structure.updateLinkedWalls(fitArea.area.id, true)
+                        }
+                        onCancelDrops={() => structure.setUpdateDrops(null)}
+                        onDismiss={() => setFitDismissed(fitArea.key)}
+                      />
+                    )}
+                    {afterPlace && !placeCablesOpen && !connect && (
+                      <AfterPlacingCard
+                        room={afterPlace.room}
+                        roomBusy={setRooms.isPending}
+                        onSetRoom={() =>
+                          afterPlace.room && applyRoom(afterPlace.room)
+                        }
+                        cables={routableCount}
+                        onRouteCables={() => {
+                          setDocRoutesOpen(false)
+                          setReroute(null)
+                          setPlaceCablesOpen(true)
+                        }}
+                        onConnect={
+                          canConnect && afterPlace.objects.length
+                            ? () =>
+                                openConnect(
+                                  afterPlace.objects.flatMap((o) => {
+                                    const t = tiles.find(
+                                      (x) => x.linked?.id === o.id
+                                    )
+                                    return t ? [{ ...o, tileId: t.id }] : []
+                                  })
+                                )
+                            : undefined
+                        }
+                        onDismiss={() => setAfterPlace(null)}
+                      />
+                    )}
+                    {!afterPlace && !reroute && reroutePrompt && (
+                      <RerouteCard
+                        count={reroutePrompt.cableIds.length}
+                        onReview={() =>
+                          openReroute(reroutePrompt.cableIds, reroutePrompt.rev)
+                        }
+                        onDismiss={() => setReroutePrompt(null)}
+                      />
+                    )}
+                    {data.contentsQuery.isSuccess &&
+                      tiles.length === 0 &&
+                      ed.shapes.length === 0 &&
+                      ed.tool === "select" && (
+                        <PlanEmptyState
+                          onDrawRoom={() => selectTool("rect")}
+                          onPlace={() => openPlace()}
+                        />
+                      )}
+                  </>
+                ) : undefined
+              }
+            />
+          )}
+          {editing && !view3d && placeCablesOpen && afterPlace && (
+            <PlaceCablesPanel
+              planId={id}
+              after={afterPlace}
+              tiles={tiles}
+              trays={planTrays}
+              onPreviews={setCablePreviews}
+              onTrayPick={setTrayPick}
+              onApply={applyPlacedCables}
+              onClose={() => setPlaceCablesOpen(false)}
+            />
+          )}
+          {editing && !view3d && reroute && (
+            <PlaceCablesPanel
+              key={JSON.stringify(reroute.base.cable_ids)}
+              planId={id}
+              base={reroute.base}
+              title={reroute.title}
+              tiles={tiles}
+              trays={planTrays}
+              onPreviews={setCablePreviews}
+              onTrayPick={setTrayPick}
+              onApply={applyReroute}
+              onClose={() => setReroute(null)}
+            />
+          )}
+          {editing && !view3d && connect && (
+            <ConnectCablesPanel
+              key={connect.map((s) => s.tileId).join()}
+              planId={id}
+              sources={connect}
+              tiles={tiles}
+              shapes={ed.shapes}
+              trays={planTrays}
+              input={connectInput}
+              taken={connectTaken}
+              onTilePick={setTilePick}
+              onPreviews={setCablePreviews}
+              onApply={applyConnect}
+              onClose={() => setConnect(null)}
+            />
+          )}
+          {editing && !view3d && docRoutesOpen && (
+            <DocumentRoutesPanel
+              planId={id}
+              tiles={shownTiles}
+              trays={trays}
+              onPreviews={setCablePreviews}
+              onClose={() => setDocRoutesOpen(false)}
+            />
+          )}
+          {!editing &&
+            !view3d &&
+            (() => {
+              const a = ed.shapes.find((s) => s.id === openArea)
+              return a?.kind === "area" ? (
+                <AreaPanel
+                  area={a}
+                  coverage={areaCoverage}
+                  onClose={() => setOpenArea(null)}
+                />
+              ) : null
+            })()}
+          {/* The detail panel - out of the way of the edit panels that
+              take the same corner. */}
+          {!(placeCablesOpen || reroute || connect || docRoutesOpen) &&
+            (() => {
+              if (detail?.kind === "cable")
+                return (
+                  <CableDetailPanel
+                    key={detail.id}
+                    planId={id}
+                    cableId={detail.id}
+                    cablePath={drawnCablePaths.find((c) => c.id === detail.id)}
+                    route={cableRoutes.get(detail.id)}
+                    trays={planTrays}
+                    cellMm={plan.cell_mm}
+                    onClose={closeDetail}
+                    onShowTile={(tileId) => {
+                      const tile = tiles.find((t) => t.id === tileId)
+                      if (tile) showTile(tile)
+                    }}
+                    onHighlightTray={(tid) => highlightTray(tid, true)}
+                    onEditRoute={
+                      editing && !view3d
+                        ? (cid) => openReroute([cid], null)
+                        : undefined
+                    }
+                  />
+                )
+              const tile =
+                detail?.kind === "tile"
+                  ? tiles.find((t) => t.id === detail.id)
+                  : undefined
+              if (!tile || !detail || detail.kind !== "tile") return null
+              return (
+                <ObjectDetailPanel
+                  key={`${tile.id}:${detail.deviceId ?? ""}`}
+                  planId={id}
+                  tile={tile}
+                  deviceId={detail.deviceId}
+                  cablePaths={drawnCablePaths}
+                  onClose={closeDetail}
+                  onPickCable={(cid) => openCable(cid, true)}
+                  roomIn3d={view3d}
+                  onOpen3d={
+                    view3d
+                      ? undefined
+                      : () => {
+                          setFocus3d((f) => ({
+                            kind: "tile",
+                            id: tile.id,
+                            n: (f?.n ?? 0) + 1,
+                          }))
+                          void nav({
+                            to: "/floorplans/$id",
+                            params: { id },
+                            search: { viz: "3d" },
+                          })
+                        }
+                  }
+                  onContents={() => {
+                    // A cabinet's plate and paths are its own panel.
+                    if (detail.deviceId)
+                      ed.setDeepTile({
+                        ...tile,
+                        linked: {
+                          kind: "device",
+                          id: detail.deviceId,
+                          name: "",
+                          route: `/devices/${detail.deviceId}`,
+                        },
+                      })
+                    else if (tile.linked?.kind === "cabinet") {
+                      closeDetail()
+                      ed.setCabinetTileId(tile.id)
+                    } else ed.setDeepTile(tile)
+                  }}
+                />
+              )
+            })()}
+        </div>
+
+        {editing && !view3d && (
+          <PlanInspector
+            plan={plan}
+            ed={ed}
+            edits={edits}
+            structure={structure}
+            prefs={prefs}
+            shapeEdits={shapeEdits}
+            trays={trays}
+            walls={walls}
+            areas={areas}
+            tileTypes={tileTypes.data?.results ?? []}
+            roles={roles.data?.results ?? []}
+            openTile={openTile}
+            coverage={areaCoverage}
+            onShowTrayCables={(tid, at) =>
+              canvasApi.current?.showTrayCables?.(tid, at)
+            }
+            onSelectWalls={(ids) => {
+              selectTool("structure")
+              ed.setSelectedWallId(ids[0] ?? null)
+              if (ids.length > 1) ed.setStructSel(new Set(ids))
+            }}
+          />
+        )}
+        {/* Outermost right aside, so it coexists with whichever inspector is
+            open rather than fighting it for the gutter. */}
+        {!showObjects && (
+          <HiddenChip
+            count={hiddenCount(hidden)}
+            onShowAll={() => setHiddenPref(readFloorHidden(undefined))}
+          />
+        )}
+        {showObjects && (
+          <ObjectsSidebar
+            tiles={tiles}
+            liveState={liveState.data ?? null}
+            selectedId={selectedId}
+            onPick={(tile) => {
+              if (hiddenTileIds.has(tile.id)) return
+              setSelectedId(tile.id)
+              const at = canvasApi.current?.focusTile(tile)
+              // Viewing, a tile without a panel opens its popover there, as
+              // a click on it does (power, cooling…).
+              if (!editing && tileOpen(tile).kind === "popover")
+                pinTile(tile, at)
+            }}
+            hidden={hidden}
+            onHiddenChange={setHiddenPref}
+            // While the rack table is open it lists the racks.
+            omitRacks={racksOpen}
+            unplaced={
+              editing && !view3d ? (
+                <UnplacedList
+                  planId={id}
+                  onFloor={onFloor}
+                  onPlace={placeAtCentre}
+                />
+              ) : undefined
+            }
+            shapes={ed.shapes}
+            cellMm={plan.cell_mm}
+            selectedShapeId={editing ? ed.selectedShapeId : openArea}
+            onPickShape={(s) => {
+              const off =
+                s.kind === "area"
+                  ? hidden.areas.includes(s.id)
+                  : hidden.labels.includes(s.id)
+              if (off) return
+              if (editing) {
+                if (ed.mode !== "layout") selectTool("select")
+                shapeEdits.select(s.id)
+              } else if (s.kind === "area") setOpenArea(s.id)
+              const b = shapeBounds(s, plan.cell_mm)
+              canvasApi.current?.focusPoints([
+                [b.minX, b.minY],
+                [b.maxX, b.maxY],
+              ])
+            }}
+          />
+        )}
+      </div>
+
+      {/* The plan's racks while it is coloured by them: under the plan,
+          the width of the page, its height dragged from its top edge. */}
+      {racksOpen && (
+        <RackTablePanel
+          racks={capacity.rows}
+          loading={capacity.query.isLoading}
+          error={capacity.query.error}
+          humanIds={humanIds}
+          onHover={(r) => capacity.setPointRackId(r?.id ?? null)}
+          onFocus={(r) => {
+            const tile = shownTiles.find((t) => t.id === r.tileIds[0])
+            if (!tile) return
+            if (view3d) {
+              ed.setRackFocus3d((cur) => ({
+                tileId: tile.id,
+                n: (cur?.n ?? 0) + 1,
+              }))
+              return
+            }
+            setSelectedId(tile.id)
+            canvasApi.current?.focusTile(tile, 2)
+          }}
+          onMatchChange={capacity.setMatch}
+          onClose={() => prefs.setViewPref("show_racks", false)}
+        />
+      )}
+
+      <PlanDialogs
+        plan={plan}
+        ed={ed}
+        cad={cad}
+        uploadBackground={uploadBackground}
+        createTray={structure.createTray}
+        traceCablesOnMap={traceCablesOnMap}
+        backgroundControls={backgroundControls}
+        leaveGuard={leaveGuard}
+      />
+      <AssignRoomsDialog
+        planId={id}
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+      />
+      <ConflictDialog
+        conflicts={edits.conflicts}
+        nameOf={conflictName}
+        saving={edits.save.isPending}
+        onResolve={edits.resolveConflicts}
+        onCancel={edits.dismissConflicts}
+      />
+      <SnapshotDialog
+        plan={plan}
+        crop={snapshotCrop}
+        areaId={snapshotArea}
+        areas={savedAreas}
+        onOpenChange={(o) => {
+          if (o) return
+          setSnapshotCrop(null)
+          setSnapshotArea(null)
+        }}
+        onCreated={(made) => {
+          selectTool("select")
+          void nav({ to: "/floorplans/$id", params: { id: made.id } })
+        }}
+      />
+      <AreaWallsDeleteDialog
+        name={wallsDelete ? areaName(wallsDelete as AreaShape) || "Area" : ""}
+        count={wallsDelete ? structure.linkedTo(wallsDelete.id).length : 0}
+        open={!!wallsDelete}
+        onOpenChange={(o) => !o && setWallsDelete(null)}
+        onDelete={(choice) => {
+          if (!wallsDelete) return
+          structure.settleAreaWalls(wallsDelete.id, choice)
+          deleteShapeNow(wallsDelete)
+          setWallsDelete(null)
+        }}
+      />
+      <BackLabelDeleteDialog
+        plan={plan}
+        shape={backDelete}
+        onClose={() => setBackDelete(null)}
+        onDelete={rawShapeEdits.deleteShape}
+      />
+      <ReportDialog
+        planId={plan.id}
+        name={plan.stack ? `${plan.stack.name} ${plan.name}` : plan.name}
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        areas={reportAreas(ed.shapes, isTemp)}
+        levels={
+          stackData && plan.stack
+            ? stackData.floors.map((f) => ({ id: f.id, name: f.name }))
+            : null
+        }
+        screenBox={
+          view3d
+            ? undefined
+            : () => {
+                const s = canvasApi.current?.screen?.()
+                return s ? clampBox(s.box, plan) : null
+              }
+        }
+        hiddenTiles={[...hiddenTileIds].filter((t) => !isTemp(t))}
+        draw={drawReportSheet}
+      />
+      <CableScheduleDialog
+        planId={plan.id}
+        planName={plan.name}
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        // Built from the plan's data, not the 2D canvas, so it works from
+        // the 3D view too.
+        planSvg={async (paper, closeup) =>
+          exportSvg(paper, true, true, closeup) || null
+        }
+      />
+      <SnapAllDialog
+        planId={plan.id}
+        open={snapOpen}
+        onOpenChange={setSnapOpen}
+        isDirty={isDirty}
+        onMoved={() => {
+          askStale.current = true
+        }}
+      />
+      <ConfirmDialog
+        open={leaveEditOpen}
+        onOpenChange={setLeaveEditOpen}
+        title="Leave Edit?"
+        description="This plan has unsaved changes. Leaving Edit discards them."
+        confirmLabel="Discard"
+        destructive
+        onConfirm={() => {
+          ed.draft.load(
+            data.serverTiles ?? [],
+            data.serverShapes ?? [],
+            data.serverStructure ?? []
+          )
+          setLeaveEditOpen(false)
+          selectTool("select")
+          setEdit(false)
+        }}
+      />
+    </div>
+  )
+}

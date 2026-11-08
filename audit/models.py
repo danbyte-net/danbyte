@@ -23,6 +23,9 @@ class ChangeAction(models.TextChoices):
     # terminal). Not a data mutation, but a high-trust access event that must
     # leave a trail - who connected to which device, and when.
     CONNECT = "connect", "Connected"
+    # A provision of an intended VM was sent to an automation runner. Danbyte
+    # changes nothing itself; the trail says who asked for the build.
+    PROVISION = "provision", "Provision requested"
 
 
 class ChangeLogEntry(models.Model):
@@ -46,7 +49,7 @@ class ChangeLogEntry(models.Model):
     # Denormalised so the trail survives the user being deleted.
     user_name = models.CharField(max_length=255, blank=True, default="")
 
-    action = models.CharField(max_length=8, choices=ChangeAction.choices)
+    action = models.CharField(max_length=16, choices=ChangeAction.choices)
     object_type = models.CharField(
         max_length=64, help_text="Model label, e.g. api.prefix."
     )
@@ -79,6 +82,9 @@ class ChangeLogEntry(models.Model):
         default="",
         choices=[("ui", "UI"), ("api", "API"), ("chat", "Assistant"), ("system", "System")],
     )
+    # Why a derived write happened, when the code making it says so: "Requirement
+    # 'WMS to Broker': install added on wms-07". Blank for ordinary edits.
+    cause = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
         ordering = ["-timestamp"]

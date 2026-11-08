@@ -1,11 +1,17 @@
 import { layerRules } from "@/lib/diagram/geometry"
 import { approxMeasure } from "@/lib/diagram/measure"
 import { BAND as PRINT_BAND } from "@/lib/diagram/theme"
-import { isZoneColor, ZONE_COLORS } from "../view-positions"
-import type { BandExits, Zone } from "../view-positions"
+import {
+  bandAlign,
+  bandPerRow,
+  isZoneColor,
+  ZONE_COLORS,
+} from "../view-positions"
+import type { BandAlign, BandExits, Zone } from "../view-positions"
 import { resolveLevels } from "../levels-param"
 import type { Centre, RowSlot, RowsAt } from "./placement"
-import type { Pt, Rect, Side } from "./types"
+import type { LineType, Pt, Rect, Side } from "./types"
+import { lineTypeOf } from "./line-source"
 
 // Layer bands on the Diagram: labelled rows stacked top to bottom ("Spine",
 // "Leaf", "Compute"), and side bands beside them spanning several rows
@@ -228,6 +234,12 @@ export function normalizeRegions(raw: unknown): Region[] {
       if (o.layout === "stack" || o.layout === "row") region.layout = o.layout
       if (region.orient === "h" && (o.exits === "v" || o.exits === "h"))
         region.exits = o.exits
+      const perRow = bandPerRow(o.per_row)
+      if (region.orient === "h" && perRow !== undefined) region.per_row = perRow
+      const align = bandAlign(o.align)
+      if (region.orient === "h" && align) region.align = align
+      const line = lineTypeOf(o.line)
+      if (region.orient === "h" && line) region.line = line
     } else if (o.kind === "zone") region.kind = "zone"
     out.push(region)
   }
@@ -523,6 +535,32 @@ export function bandExits(
   return out
 }
 
+/** Each row's line, by row id: the rows that set one (line-source.ts).
+ * Apart from the rows' geometry, like `bandExits`. */
+export function bandLines(
+  regions: readonly Region[] | undefined
+): Record<string, LineType> {
+  const out: Record<string, LineType> = {}
+  for (const r of regions ?? []) if (isRow(r) && r.line) out[r.id] = r.line
+  return out
+}
+
+/** A row's line (undefined: Default). Only the row changes: its cards
+ * stay where they are. */
+export function setBandLine<T extends Region>(
+  regions: readonly T[],
+  id: string,
+  line: LineType | undefined
+): T[] {
+  const row = regions.find((r) => r.id === id)
+  if (!row || !isRow(row) || row.line === line) return [...regions]
+  return regions.map((r) => {
+    if (r.id !== id) return r
+    const { line: _was, ...rest } = r
+    return (line ? { ...rest, line } : rest) as T
+  })
+}
+
 /** The sides a row's `exits` lets its cables to other bands leave by. */
 export const EXIT_SIDES: Record<BandExits, ReadonlySet<Side>> = {
   v: new Set<Side>(["T", "B"]),
@@ -797,18 +835,23 @@ function spacingOf(room: LabelRoom | null | undefined): Spacing {
 }
 
 /** A row's cards in lines: wrapped past MAX_PER_LINE cards or MAX_LINE_W
- * px of cards. */
-function linesOf(cards: ArrangeCard[], sp: Spacing): ArrangeCard[][] {
+ * px of cards (Auto), or - the row's `per_row` - past exactly that many
+ * cards, however wide. */
+function linesOf(
+  cards: ArrangeCard[],
+  sp: Spacing,
+  perRow?: number
+): ArrangeCard[][] {
   const lines: ArrangeCard[][] = []
   let cur: ArrangeCard[] = []
   let w = 0
   for (const c of cards) {
     const last = cur.at(-1)
     const add = (last ? sp.gapX(last.id, c.id) : 0) + c.box.w
-    if (
-      cur.length &&
-      (cur.length >= BAND.MAX_PER_LINE || w + add > BAND.MAX_LINE_W)
-    ) {
+    const full = perRow
+      ? cur.length >= perRow
+      : cur.length >= BAND.MAX_PER_LINE || w + add > BAND.MAX_LINE_W
+    if (cur.length && full) {
       lines.push(cur)
       cur = []
       w = 0
@@ -878,7 +921,9 @@ function layOut(
   cards: readonly ArrangeCard[],
   axis: "x" | "y",
   layers: { by: BandBy; ids: readonly string[] } | null,
-  sp: Spacing
+  sp: Spacing,
+  /** The row's cards per line; undefined: Auto. */
+  perRow?: number
 ): Laid {
   const blocks: { label: string; cards: ArrangeCard[] }[] = []
   if (layers) {
@@ -901,7 +946,7 @@ function layOut(
     }
   } else blocks.push({ label: "", cards: [...cards] })
   const subs = blocks.map((b) => {
-    const lines = linesOf(standing(b.cards, axis), sp)
+    const lines = linesOf(standing(b.cards, axis), sp, perRow)
     return {
       label: b.label,
       lines,
@@ -966,14 +1011,15 @@ function padFor(l: Laid, i: number, rowOf: ReadonlyMap<string, number>): Laid {
   }
 }
 
-/** A laid-out row's cards placed: its lines centred across `w` from
- * `left`, the first from `top` down. */
+/** A laid-out row's cards placed: each line across `w` from `left` as
+ * the row's `align` says (Auto: centred), the first from `top` down. */
 function placeLaid(
   l: Laid,
   left: number,
   w: number,
   top: number,
-  into: Record<string, Centre>
+  into: Record<string, Centre>,
+  align?: BandAlign
 ): void {
   const { sp } = l
   let y = top
@@ -982,7 +1028,13 @@ function placeLaid(
     b.lines.forEach((line, j) => {
       if (j) y += sp.lineGap
       const lh = lineHeight(line)
-      let x = left + (w - lineWidth(line, sp)) / 2
+      const free = w - lineWidth(line, sp)
+      let x =
+        align === "left"
+          ? left
+          : align === "right"
+            ? left + free
+            : left + free / 2
       line.forEach((c, k) => {
         if (k) x += sp.gapX(line[k - 1].id, c.id)
         into[c.id] = [Math.round(x + c.box.w / 2), Math.round(y + lh / 2)]
@@ -1082,7 +1134,16 @@ export function arrangeBands(input: ArrangeInput): {
   groups.forEach((g, i) => g.cards.forEach((c) => rowOf.set(c.id, i)))
   const laid = groups.map((g, i) => {
     const layers = g.kept ? layersOf(g.kept, input) : null
-    return { g, layers, l: padFor(layOut(g.cards, axis, layers, sp), i, rowOf) }
+    // A row's cards per line stay through a re-run.
+    const perRow = (g.kept ?? matched.get(g))?.per_row
+    // And their alignment.
+    const align = (g.kept ?? matched.get(g))?.align
+    return {
+      g,
+      layers,
+      l: padFor(layOut(g.cards, axis, layers, sp, perRow), i, rowOf),
+      align,
+    }
   })
   const contentW = Math.max(0, ...laid.map(({ l }) => l.w))
   // Room for a stacked row's sub-labels, both sides: every row of the
@@ -1093,7 +1154,7 @@ export function arrangeBands(input: ArrangeInput): {
   const positions: Record<string, Centre> = {}
   const rows: Region[] = []
   let y = y0
-  for (const { g, layers, l } of laid) {
+  for (const { g, layers, l, align } of laid) {
     const h = rowHeight(l)
     const box = { x: x0, y: Math.round(y), w, h: Math.round(h) }
     if (g.kept) {
@@ -1115,11 +1176,21 @@ export function arrangeBands(input: ArrangeInput): {
         label: old && renamed(old, input) ? old.label : g.label,
         color: old?.color ?? null,
         ...(old?.exits ? { exits: old.exits } : {}),
+        ...(old?.per_row ? { per_row: old.per_row } : {}),
+        ...(old?.align ? { align: old.align } : {}),
+        ...(old?.line ? { line: old.line } : {}),
         ...box,
         rule: { by: input.by, ids: [...g.ids].sort() },
       })
     }
-    placeLaid(l, x0 + pad, contentW, y + BAND.TITLE + l.padTop, positions)
+    placeLaid(
+      l,
+      x0 + pad,
+      contentW,
+      y + BAND.TITLE + l.padTop,
+      positions,
+      align
+    )
     y += h + sp.rowGap
   }
 
@@ -1641,11 +1712,22 @@ function reflow(
       bottom === null ? (w0?.y ?? r.y) : bottom + Math.max(0, gapAbove(id))
     const cards = assign.get(id)
     if (cards) {
-      const l = padFor(layOut(cards, "y", layersOf(r, input), sp), k, rowOf)
+      const l = padFor(
+        layOut(cards, "y", layersOf(r, input), sp, r.per_row),
+        k,
+        rowOf
+      )
       const pad = Math.max(BAND.PAD_X, l.gutter)
       const w = Math.round(Math.max(r.w, l.w + 2 * pad))
       const h = cards.length ? Math.round(rowHeight(l)) : r.h
-      placeLaid(l, r.x + pad, w - 2 * pad, top + BAND.TITLE + l.padTop, moves)
+      placeLaid(
+        l,
+        r.x + pad,
+        w - 2 * pad,
+        top + BAND.TITLE + l.padTop,
+        moves,
+        r.align
+      )
       if (w > r.w) widened.push({ x: r.x, w: r.w, to: w })
       rows.set(id, { ...r, y: Math.round(top), w, h })
       bottom = top + h
@@ -1773,6 +1855,45 @@ export function setLayout(
   const row = regions.find((r) => r.id === id)
   if (!row || !isRow(row) || row.layout === layout) return noEdit(regions)
   const after = regions.map((r) => (r.id === id ? { ...r, layout } : r))
+  const rowOf = rowOfCards(regions, cards)
+  const mine = cards.filter((c) => rowOf.get(c.id) === id)
+  return reflowAll(regions, after, new Map([[id, mine]]), input)
+}
+
+/** A row's cards per line (`per_row`; undefined: Auto), its cards laid
+ * out again that way where it stands - the rows under it move with their
+ * cards when it grows or shrinks. */
+export function setPerRow(
+  input: LayersInput & { id: string; perRow: number | undefined }
+): BandEdit {
+  const { regions, cards, id } = input
+  const row = regions.find((r) => r.id === id)
+  const perRow = bandPerRow(input.perRow)
+  if (!row || !isRow(row) || row.per_row === perRow) return noEdit(regions)
+  const after = regions.map((r) => {
+    if (r.id !== id) return r
+    const { per_row: _was, ...rest } = r
+    return perRow === undefined ? rest : { ...rest, per_row: perRow }
+  })
+  const rowOf = rowOfCards(regions, cards)
+  const mine = cards.filter((c) => rowOf.get(c.id) === id)
+  return reflowAll(regions, after, new Map([[id, mine]]), input)
+}
+
+/** Where a row's cards line up across its width (`align`; undefined:
+ * Auto, centred), its cards laid out again that way where it stands. */
+export function setAlign(
+  input: LayersInput & { id: string; align: BandAlign | undefined }
+): BandEdit {
+  const { regions, cards, id } = input
+  const row = regions.find((r) => r.id === id)
+  const align = bandAlign(input.align)
+  if (!row || !isRow(row) || row.align === align) return noEdit(regions)
+  const after = regions.map((r) => {
+    if (r.id !== id) return r
+    const { align: _was, ...rest } = r
+    return align === undefined ? rest : { ...rest, align }
+  })
   const rowOf = rowOfCards(regions, cards)
   const mine = cards.filter((c) => rowOf.get(c.id) === id)
   return reflowAll(regions, after, new Map([[id, mine]]), input)

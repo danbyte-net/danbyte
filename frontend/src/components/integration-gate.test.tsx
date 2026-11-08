@@ -57,6 +57,7 @@ describe("integrationKeysFor", () => {
   it.each([
     ["/zabbix", ["zabbix"]],
     ["/oxidized", ["oxidized"]],
+    ["/prtg", ["prtg"]],
     ["/dhcp-leases", ["dhcp"]],
     ["/windows-servers", ["dhcp", "dns"]],
     ["/windows-servers/5f1c", ["dhcp", "dns"]],
@@ -78,6 +79,7 @@ describe("integrationKeysFor", () => {
 describe("integrationOffTitle", () => {
   it("names one or several", () => {
     expect(integrationOffTitle(["zabbix"])).toBe("Zabbix is off.")
+    expect(integrationOffTitle(["prtg"])).toBe("PRTG is off.")
     expect(integrationOffTitle(["dhcp", "dns"])).toBe(
       "DHCP sync and DNS sync are off."
     )

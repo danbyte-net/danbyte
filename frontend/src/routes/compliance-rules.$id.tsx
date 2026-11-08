@@ -3,7 +3,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { BookOpenText, Pencil, RefreshCw, Trash2 } from "lucide-react"
+import {
+  BookOpenText,
+  ListFilter,
+  Pencil,
+  RefreshCw,
+  Trash2,
+} from "lucide-react"
 
 import {
   api,
@@ -21,6 +27,8 @@ import {
 import { KvCard, dash, mono } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Markdown } from "@/components/markdown"
+import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -28,12 +36,16 @@ import { useEolSettings } from "@/components/cells/eol-cell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
+import { ObjectLink, RuleResult } from "@/components/columns/compliance-columns"
+import { DeleteRule } from "@/components/compliance/delete-rule-dialog"
 import {
-  DeleteRule,
-  OBJ_ROUTE,
-  SEV_VARIANT,
+  OBJECT_TYPE_LABEL,
+  SeverityBadge,
   ruleSummary,
-} from "@/routes/compliance"
+} from "@/components/compliance/compliance-shared"
+import { ExpressionView } from "@/components/compliance/expression-view"
+import { useComplianceFields } from "@/components/compliance/rule-form"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 
 export const Route = createFileRoute("/compliance-rules/$id")({
   component: RuleDetailPage,
@@ -56,8 +68,7 @@ function RuleDetailPage() {
     queryKey: ["compliance-rule", id],
     queryFn: () => api<ComplianceRule>(`/api/compliance-rules/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -74,10 +85,12 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
   const canEdit = canDo("compliancerule", "change")
   const canDelete = canDo("compliancerule", "delete")
   const [deleting, setDeleting] = useState<ComplianceRule | null>(null)
-  const [tab, setTab] = useUrlTab<
-    "overview" | "affected" | "journal" | "history"
+  const [rawTab, setTab] = useUrlTab<
+    "overview" | "results" | "affected" | "journal" | "history"
   >("overview")
-  // Fetched up front so the Affected objects tab wears its count; the panel
+  // `affected` was the Results tab's old name; old links still land on it.
+  const tab = rawTab === "affected" ? "results" : rawTab
+  // Fetched up front so the Results tab wears its count; the panel
   // reads the same query rather than running the engine a second time.
   const violations = useRuleViolations(r.id)
 
@@ -113,11 +126,27 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
           title={r.name}
           badges={
             <>
-              <Badge variant={SEV_VARIANT[r.severity]} className="capitalize">
-                {r.severity}
-              </Badge>
-              {!r.enabled && <Badge variant="outline">Disabled</Badge>}
+              <SeverityBadge severity={r.severity} />
+              {violations.data ? (
+                <RuleResult
+                  rule={violations.data.result ?? undefined}
+                  enabled={r.enabled}
+                />
+              ) : (
+                !r.enabled && <Badge variant="outline">Disabled</Badge>
+              )}
             </>
+          }
+          subtitle={
+            <span className="text-xs text-muted-foreground">
+              {r.object_type_label} · {ruleSummary(r)}
+              {violations.data?.evaluated_at && (
+                <>
+                  {" "}
+                  · evaluated <TimeCell iso={violations.data.evaluated_at} />
+                </>
+              )}
+            </span>
           }
           description={r.description}
         />
@@ -125,8 +154,8 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       tabs={[
         { value: "overview", label: "Overview" },
         {
-          value: "affected",
-          label: "Affected objects",
+          value: "results",
+          label: "Results",
           count: violations.data?.total,
         },
         { value: "journal", label: "Journal" },
@@ -136,9 +165,9 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <RuleOverview rule={r} />
+        <RuleOverview rule={r} error={violations.data?.result?.error} />
       </DetailTab>
-      <DetailTab value="affected">
+      <DetailTab value="results">
         {r.remediation && (
           <div className="mb-4 rounded-lg border border-border bg-card px-4 py-3">
             <h2 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-foreground uppercase">
@@ -150,8 +179,9 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
         )}
         <AffectedObjects
           violations={violations}
+          ruleId={r.id}
           ruleName={r.name}
-          objectType={r.object_type}
+          objectTypes={r.object_types.length ? r.object_types : [r.object_type]}
           enabled={r.enabled}
         />
       </DetailTab>
@@ -176,28 +206,75 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
 
 /** Rule attributes that used to crowd the header, grouped into tables. Only the
  * name, severity and enabled state stay up top. */
-function RuleOverview({ rule: r }: { rule: ComplianceRule }) {
+function RuleOverview({
+  rule: r,
+  error,
+}: {
+  rule: ComplianceRule
+  error?: string | null
+}) {
+  const types = r.object_types.length ? r.object_types : [r.object_type]
+  const fields = useComplianceFields(types).data?.fields ?? []
   const rule: KvRow[] = [
-    { label: "Applies to", value: r.object_type_label },
     { label: "Enabled", value: r.enabled ? "Yes" : "No" },
     {
       label: "Severity",
+      value: <SeverityBadge severity={r.severity} />,
+    },
+    ...(error
+      ? [
+          {
+            label: "Broken",
+            value: <span className="text-destructive">{error}</span>,
+          },
+        ]
+      : []),
+  ]
+
+  const appliesTo: KvRow[] = [
+    {
+      label: "Object types",
+      value: types.map((t) => OBJECT_TYPE_LABEL[t] ?? t).join(", "),
+    },
+    {
+      label: "Scope",
       value: (
-        <Badge variant={SEV_VARIANT[r.severity]} className="capitalize">
-          {r.severity}
-        </Badge>
+        <ExpressionView
+          expr={r.scope}
+          refs={r.refs}
+          fields={fields}
+          empty="Every object"
+        />
       ),
     },
   ]
 
-  const check: KvRow[] = [
-    { label: "Check type", value: r.check_type_display || r.check_type },
-    { label: "Condition", value: mono(ruleSummary(r)) },
-    { label: "Field", value: mono(r.field) },
-    { label: "Pattern", value: mono(r.pattern) },
-    { label: "Tag", value: r.tag || dash },
-    { label: "Custom field", value: mono(r.cf_key) },
-  ]
+  const check: KvRow[] =
+    r.check_type === "expression"
+      ? [
+          { label: "Check type", value: r.check_type_display || r.check_type },
+          {
+            label: "Must match",
+            value: (
+              <ExpressionView
+                expr={r.condition}
+                refs={r.refs}
+                fields={fields}
+              />
+            ),
+          },
+        ]
+      : [
+          { label: "Check type", value: r.check_type_display || r.check_type },
+          {
+            label: "Condition",
+            value: mono(ruleSummary({ ...r, scope: null })),
+          },
+          { label: "Field", value: mono(r.field) },
+          { label: "Pattern", value: mono(r.pattern) },
+          { label: "Tag", value: r.tag || dash },
+          { label: "Custom field", value: mono(r.cf_key) },
+        ]
 
   const record: KvRow[] = [
     { label: "Created", value: <TimeCell iso={r.created_at} /> },
@@ -207,6 +284,7 @@ function RuleOverview({ rule: r }: { rule: ComplianceRule }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Rule" rows={rule} />
+      <KvCard title="Applies to" rows={appliesTo} />
       <KvCard title="Check" rows={check} />
       <KvCard title="Record" rows={record} />
     </div>
@@ -228,15 +306,22 @@ function useRuleViolations(ruleId: string) {
 
 function AffectedObjects({
   violations: q,
+  ruleId,
   ruleName,
-  objectType,
+  objectTypes,
   enabled,
 }: {
   violations: ReturnType<typeof useRuleViolations>
+  ruleId: string
   ruleName: string
-  objectType: string
+  objectTypes: string[]
   enabled: boolean
 }) {
+  // One table per object type, picked by segmented tabs on a rule of
+  // several; each wears its own type's columns.
+  const [picked, setPicked] = useState(objectTypes[0])
+  const objectType = objectTypes.includes(picked) ? picked : objectTypes[0]
+  const byType = q.data?.result?.by_type
   // The genuine per-type table (prefix/IP/device/…) when we have a factory for
   // this object type; otherwise a generic object + type fallback.
   const { enabled: eolOn } = useEolSettings()
@@ -251,22 +336,13 @@ function AffectedObjects({
         id: "object",
         accessorKey: "object_repr",
         header: ({ column }) => <SortHeader column={column} label="Object" />,
-        cell: ({ row }) => {
-          const route = OBJ_ROUTE[row.original.object_type]
-          return route ? (
-            <Link
-              to={route}
-              params={{ id: row.original.object_id }}
-              className="link font-mono font-medium"
-            >
-              {row.original.object_repr}
-            </Link>
-          ) : (
-            <span className="font-mono font-medium">
-              {row.original.object_repr}
-            </span>
-          )
-        },
+        cell: ({ row }) => (
+          <ObjectLink
+            objectType={row.original.object_type}
+            id={row.original.object_id}
+            label={row.original.object_repr}
+          />
+        ),
       },
       {
         id: "type",
@@ -288,39 +364,60 @@ function AffectedObjects({
     <div>
       <div className="mb-3 flex items-center gap-2">
         <h2 className="text-[11px] font-semibold tracking-wide text-foreground uppercase">
-          Affected objects
+          Violating objects
         </h2>
         {q.data && (
           <Badge variant={total > 0 ? "destructive" : "success"}>{total}</Badge>
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          className="ml-auto"
-          onClick={() => q.refetch()}
-          disabled={q.isFetching}
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`}
-          />
-          Re-evaluate
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          {total > 0 && (
+            <Button size="sm" variant="outline" asChild>
+              <Link
+                to="/compliance"
+                search={{ tab: "violations", rule: ruleId }}
+              >
+                <ListFilter className="h-3.5 w-3.5" />
+                Triage
+              </Link>
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => q.refetch()}
+            disabled={q.isFetching}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {q.isFetching ? "Evaluating…" : "Re-evaluate"}
+          </Button>
+        </div>
       </div>
 
       {q.isError && <QueryError error={q.error} />}
-      {q.isLoading && (
-        <p className="text-sm text-muted-foreground">Evaluating…</p>
-      )}
+      {q.isLoading && <Loading />}
       {q.data && total === 0 && (
-        <div className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-          {enabled
-            ? "Nothing fails this rule. 🎉"
-            : "This rule is disabled - it isn't evaluated."}
-        </div>
+        <EmptyState
+          title={
+            enabled ? "Nothing fails this rule." : "This rule is disabled."
+          }
+        />
+      )}
+      {q.data && total > 0 && objectTypes.length > 1 && (
+        <SegmentedTabs
+          className="mb-3"
+          items={objectTypes.map((t) => ({
+            value: t,
+            label: OBJECT_TYPE_LABEL[t] ?? t,
+            count: byType?.[t] ?? null,
+          }))}
+          value={objectType}
+          onValueChange={setPicked}
+        />
       )}
       {q.data && total > 0 && realColumns ? (
         <DataTable
-          data={q.data.objects}
+          key={objectType}
+          data={q.data.objects_by_type?.[objectType] ?? q.data.objects}
           columns={realColumns}
           flexColumn={AFFECTED_FLEX_COLUMN}
           tableId={`compliance-affected-${objectType}`}
@@ -334,7 +431,7 @@ function AffectedObjects({
         />
       ) : q.data && total > 0 ? (
         <DataTable
-          data={q.data.violations}
+          data={q.data.violations.filter((v) => v.object_type === objectType)}
           columns={fallbackColumns}
           flexColumn="object"
           exportTitle={ruleName}

@@ -11,8 +11,9 @@ import math
 import os
 import re
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils.text import slugify
 from rest_framework.exceptions import APIException
 from rest_framework.fields import empty
@@ -23,13 +24,18 @@ from rest_framework import serializers
 from core.hidden_fields import PermissionHiddenFieldsMixin, hidden_related_spec
 from core.models import Tag, Tenant, TenantGroup
 from core.tags import tags_of
+from .listed import ListedManySerializer, listed
+from .list_table import TableSerializerMixin
 from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
+from routing.models import RoutingKeychain
+from . import raised_floor_geometry as rfg
+from .rooms import reconcile_room
 from .models import (
-    Antenna, AntennaTemplate,
+    Antenna, AntennaTemplate, Application,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
-    CABINET_SIZE_FIELDS, DIN_PROFILE_CHOICES, Cabinet, CabinetRole, CabinetType, DinRail,
+    CABINET_SIZE_FIELDS, DIN_PROFILE_CHOICES, FLOOR_PLAN_MAX_GRID, Cabinet, CabinetRole, CabinetType, DinRail,
     DinRailTemplate,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
@@ -41,8 +47,10 @@ from .models import (
     ImageAttachment,
     Document, DocumentCategory,
     FiberSettings,
-    FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
-    FloorPlanWall, FloorTileType, FrontPort,
+    FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanStack, FloorPlanTile,
+    FloorPlanTray,
+    AreaType, FloorPlanArea, FloorPlanLabel, FloorPlanWall, FloorTileType, FrontPort,
+    SensitivityLabel,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
@@ -52,9 +60,12 @@ from .models import (
     NATRule,
     NumIdMixin, Platform, PlatformGroup, PortReservation,
     release_reservations_for, retire_port_placeholders, weight_kg,
-    ConfigBundle, ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
+    ConfigBundle, ConfigContext, CoolingFeed, CoolingSource, ExportTemplate, Location,
+    LocationType,
+    CoolingIntake, CoolingIntakeTemplate, CoolingOutflow, CoolingOutflowTemplate,
+    PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
-    Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
+    Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType, Room,
     RackTypeAccessory, RearPort,
     RearPortTemplate, Region, RIR, RouteTarget, Service, ServiceTemplate,
     SiteMarker,
@@ -66,7 +77,15 @@ from .models import (
     L2VPN, L2VPNTermination, VirtualChassis,
     materialize_device_components,
 )
-from .capacity import rack_power, used_units
+from .capacity import (
+    cooling_feed_capacity,
+    cooling_feed_flow,
+    cooling_source_capacity,
+    rack_cooling,
+    rack_power,
+    used_units,
+)
+from .detail_counts import annotated
 # The far-end helpers moved to api.port_state (#248); re-exported here for
 # the imports that predate the move.
 from .port_state import (
@@ -74,15 +93,41 @@ from .port_state import (
     FAR_END_PREFETCH as FAR_END_PREFETCH,
     far_end as far_end,
     module_interfaces,
+    scoped_far_end,
     termination_component as termination_component,
+    visible_device_ids,
 )
-from .visible_counts import related_count
+from .visible_counts import path_count, related_count, tagged_count, tenant_count, view_filter
 
 
 def _visible_count(serializer, obj, rel_name: str) -> int:
     """Count of ``obj``'s ``rel_name`` rows the reader may view (#438): the
     number the related list shows them, not every site's rows."""
     return related_count(serializer.context.get("request"), obj, rel_name)
+
+
+def _device_profiles(serializer, obj) -> list[dict]:
+    """A device's or VM's device profiles in order, each with its assignment
+    state - the list column and the Overview's Profiles card. Served from the
+    viewset's prefetch; empty for a reader who may not view assignments."""
+    ctx = serializer.context
+    if "_device_profiles_ok" not in ctx:
+        request = ctx.get("request")
+        ok = False
+        if request is not None:
+            from api.views import _get_active_tenant
+            from auth_api import rbac
+
+            ok = rbac.has_action(request.user, _get_active_tenant(request),
+                                 "deviceprofileassignment", "view")
+        ctx["_device_profiles_ok"] = ok
+    if not ctx["_device_profiles_ok"]:
+        return []
+    return [
+        {"id": str(a.profile_id), "assignment_id": str(a.pk), "name": a.profile.name,
+         "slug": a.profile.slug, "color": a.profile.color, "state": a.state}
+        for a in listed(obj, "device_profile_assignments")
+    ]
 
 
 def detail_only(default=None):
@@ -94,14 +139,23 @@ def detail_only(default=None):
     page must not pay a query per row for. The ``detail_only`` flag on the
     wrapper is what ``api.list_fields`` reads to keep such a field out of the
     list-column catalog, where it would only ever read 0 or empty.
+
+    Off the list, a ``<field>_annotated`` value on the row wins over the
+    getter: the detail reads annotate their tab counts (api.detail_counts),
+    so the getter's own query only runs for a row read without them.
     """
 
     def decorate(fn):
+        attr = f"{fn.__name__.removeprefix('get_')}_annotated"
+
         @functools.wraps(fn)
         def wrapper(self, obj):
             view = self.context.get("view")
             if view is not None and getattr(view, "action", None) == "list":
                 return copy.copy(default)
+            value = getattr(obj, attr, None)
+            if value is not None:
+                return value
             return fn(self, obj)
 
         wrapper.detail_only = True
@@ -182,6 +236,8 @@ class NumIdModelSerializer(serializers.ModelSerializer):
     # numeric suffix instead; Locations do, since a campus site can hold a
     # "Rack room" in each building.
     slug_autofill_unique = False
+    # The fields a suffixed slug is unique within, where the model has them.
+    slug_autofill_scope = ("tenant", "site")
 
     def _fill_blank_slug(self, attrs):
         """Derive a slug from the name when the caller left it blank. A
@@ -205,7 +261,7 @@ class NumIdModelSerializer(serializers.ModelSerializer):
         )
         base = slugify(source)[:100] or "item"
         scope = {}
-        for field in ("tenant", "site"):
+        for field in self.slug_autofill_scope:
             if any(f.name == field for f in model._meta.concrete_fields):
                 value = attrs.get(field) or getattr(self.instance, field, None)
                 if value is None and field == "tenant":
@@ -283,14 +339,31 @@ _NULLABLE_TENANT_MODELS = {"Tag"}
 _PARENT_TENANT_PATH = {
     "Interface": "device__tenant",
     "VMInterface": "vm__tenant",
+    "VirtualDisk": "vm__tenant",
     "FrontPort": "device__tenant",
     "RearPort": "device__tenant",
     "ConsolePort": "device__tenant",
     "ConsoleServerPort": "device__tenant",
     "PowerPort": "device__tenant",
     "PowerOutlet": "device__tenant",
+    "CoolingIntake": "device__tenant",
+    "CoolingOutflow": "device__tenant",
+    "CoolingIntakeTemplate": "device_type__tenant",
     "AuxPort": "device__tenant",
     "DinRail": "cabinet__tenant",
+    "FloorPlanArea": "floor_plan__tenant",
+}
+
+# Models whose ownership is not one lookup path: the Q a row of the tenant
+# matches. A synced DHCP scope or DNS zone rides its connection's tenant (its
+# own tenant column stays NULL); a local one carries the tenant itself.
+def _bimodal_tenant_q(tenant):
+    return Q(connection__tenant=tenant) | Q(connection__isnull=True, tenant=tenant)
+
+
+_TENANT_Q = {
+    "DhcpScope": _bimodal_tenant_q,
+    "DnsZone": _bimodal_tenant_q,
 }
 
 
@@ -327,14 +400,24 @@ class TenantScopedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
         tenant = _get_active_tenant(request)
         if tenant is None:
             return qs.none()
-        if model.__name__ in _NULLABLE_TENANT_MODELS:
+        if model.__name__ in _TENANT_Q:
+            scoped = qs.filter(_TENANT_Q[model.__name__](tenant))
+        elif model.__name__ in _NULLABLE_TENANT_MODELS:
             # Legacy/deployment-global rows (tenant NULL) stay referenceable.
-            from django.db.models import Q
-
             scoped = qs.filter(Q(**{path: tenant}) | Q(**{f"{path}__isnull": True}))
         else:
             scoped = qs.filter(**{path: tenant})
         return _site_fence(scoped, request, tenant)
+
+
+class TenantScopedModelSerializer(serializers.ModelSerializer):
+    """A ``ModelSerializer`` whose generated relation fields are
+    :class:`TenantScopedPrimaryKeyRelatedField`, so every FK/M2M taken from
+    ``Meta.fields`` resolves only inside the active tenant (and, under site
+    separation, the caller's sites). A foreign or unknown id is a 400 on that
+    field. Explicitly declared relation fields still pick their own class."""
+
+    serializer_related_field = TenantScopedPrimaryKeyRelatedField
 
 
 def _site_fence(qs, request, tenant):
@@ -355,8 +438,6 @@ def _site_fence(qs, request, tenant):
     editable = request._rbac_editable_sites
     if editable is None:
         return qs  # edits any site → no fence
-    from django.db.models import Q
-
     from api.models import Site
     from auth_api.site_paths import CATALOG_SITE_PATHS, SITE_PATHS
 
@@ -557,6 +638,28 @@ class TaggableSerializerMixin:
         return instance
 
 
+def resolve_tag_ids(request, value, field: str = "tag_ids") -> list:
+    """Tag ids from a raw payload resolved to the Tag rows the request may use.
+
+    For the hand-written write paths (bulk create, bulk update) that skip a
+    serializer: the same ``TenantScopedPrimaryKeyRelatedField`` the
+    ``tag_ids`` field uses, so the same rules apply - ids only, the active
+    tenant's tags plus the global ones, site-local tags fenced for site-scoped
+    users - and the same 400 field errors. Never creates a tag: the tag
+    manager would take a string as a new tag's name."""
+    from rest_framework.exceptions import ValidationError
+
+    class _Tags(serializers.Serializer):
+        tag_ids = TenantScopedPrimaryKeyRelatedField(
+            queryset=Tag.objects.all(), many=True, allow_empty=True,
+        )
+
+    ser = _Tags(data={"tag_ids": value}, context={"request": request})
+    if not ser.is_valid():
+        raise ValidationError({field: ser.errors["tag_ids"]})
+    return ser.validated_data["tag_ids"]
+
+
 class CustomFieldsSerializerMixin:
     """Field-level validation of ``custom_fields`` against the active tenant's
     custom-field definitions. Subclasses set ``cf_model`` to the model slug
@@ -603,7 +706,16 @@ class TenantGroupSerializer(serializers.ModelSerializer):
 
     def get_tenant_count(self, obj) -> int:
         n = getattr(obj, "tenant_n", None)
-        return n if n is not None else obj.tenants.count()
+        if n is not None:
+            return n
+        # The tenants the Tenants list shows the reader (#448).
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if request is None or getattr(user, "is_superuser", False):
+            return obj.tenants.count()
+        from auth_api.permissions import user_tenants
+
+        return obj.tenants.filter(pk__in=user_tenants(user).values("pk")).count()
 
     def get_child_count(self, obj) -> int:
         n = getattr(obj, "child_n", None)
@@ -643,21 +755,22 @@ class TenantSerializer(NumIdModelSerializer):
     ip_count = serializers.SerializerMethodField()
 
     # The list annotates the four counts (``*_n``); a single tenant counts.
+    # Either way only the rows the reader may view in that tenant (#448).
+    def _count(self, obj, annotated: str, rel_name: str) -> int:
+        n = getattr(obj, annotated, None)
+        return n if n is not None else tenant_count(self.context.get("request"), obj, rel_name)
+
     def get_site_count(self, obj) -> int:
-        n = getattr(obj, "site_n", None)
-        return n if n is not None else obj.sites.count()
+        return self._count(obj, "site_n", "sites")
 
     def get_prefix_count(self, obj) -> int:
-        n = getattr(obj, "prefix_n", None)
-        return n if n is not None else obj.prefixes.count()
+        return self._count(obj, "prefix_n", "prefixes")
 
     def get_vlan_count(self, obj) -> int:
-        n = getattr(obj, "vlan_n", None)
-        return n if n is not None else obj.vlans.count()
+        return self._count(obj, "vlan_n", "vlans")
 
     def get_ip_count(self, obj) -> int:
-        n = getattr(obj, "ip_n", None)
-        return n if n is not None else obj.ip_addresses.count()
+        return self._count(obj, "ip_n", "ip_addresses")
 
     class Meta:
         model = Tenant
@@ -700,24 +813,53 @@ class TagSerializer(NumIdModelSerializer):
 
 
 class TagManageSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, NumIdModelSerializer):
-    """Read+write Tag for the Tags management page. Adds ``usage_count``.
+    """Read+write Tag for the Tags management page. Adds ``usage_count``, the
+    tagged objects the reader may view (#438).
 
-    The list viewset annotates ``usage_count_annotated`` (one GROUP BY) so the
+    The list viewset annotates ``usage_count_annotated`` (one subquery) so the
     method field is cheap there; on a single create/update response it falls
     back to a single COUNT.
     """
 
     usage_count = serializers.SerializerMethodField()
+    is_global = serializers.BooleanField(read_only=True)
 
     def get_usage_count(self, obj) -> int:
         v = getattr(obj, "usage_count_annotated", None)
-        return v if v is not None else obj.tagged_items.count()
+        return v if v is not None else tagged_count(self.context.get("request"), obj)
+
+    def validate(self, attrs):
+        """A name may exist once among the tags a tenant sees: its own (site-
+        local ones included) and the deployment-global ones; a global tag's
+        name, once across every tenant. Trimmed, case ignored."""
+        attrs = super().validate(attrs)
+        if "name" in attrs:
+            attrs["name"] = (attrs["name"] or "").strip()
+            from core.tags import tag_clash_message, tag_name_clash
+
+            if self.instance is not None:
+                tenant = self.instance.tenant
+            else:
+                from api.views import _get_active_tenant
+
+                request = self.context.get("request")
+                tenant = _get_active_tenant(request) if request is not None else None
+            # No active tenant on a create: the view refuses it anyway, and a
+            # NULL tenant here would wrongly mean "global".
+            clash = None if (self.instance is None and tenant is None) else tag_name_clash(
+                attrs["name"], tenant=tenant,
+                exclude_pk=getattr(self.instance, "pk", None),
+            )
+            if clash is not None:
+                raise serializers.ValidationError({"name": tag_clash_message(clash)})
+        return attrs
 
     class Meta:
         model = Tag
         fields = [
-            "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "color", "text_color", "usage_count"]
-        read_only_fields = ["id", "slug", "text_color", "usage_count"]
+            "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "color",
+            "text_color", "usage_count", "is_global"]
+        read_only_fields = ["id", "slug", "text_color", "usage_count", "is_global"]
 
 
 class SiteMiniSerializer(NumIdModelSerializer):
@@ -844,8 +986,9 @@ class VLANSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Taggabl
     )
 
     def get_prefix_count(self, obj) -> int:
+        # The prefixes the reader may view (#448).
         n = getattr(obj, "prefix_n", None)
-        return n if n is not None else obj.prefixes.count()
+        return n if n is not None else _visible_count(self, obj, "prefixes")
 
     @detail_only(0)
     def get_l2vpn_count(self, obj) -> int:
@@ -1136,11 +1279,20 @@ class RouteTargetSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixi
         write_only=True, required=False, many=True,
     )
 
+    def _vrfs(self, obj, rel: str) -> list:
+        """The VRFs importing or exporting the target that the reader may
+        view (#448): the viewset prefetches only those; a lone instance
+        reads them."""
+        if rel in getattr(obj, "_prefetched_objects_cache", {}):
+            return list(getattr(obj, rel).all())
+        f = view_filter(self.context.get("request"), VRF)
+        return [] if f is None else list(getattr(obj, rel).filter(f))
+
     def get_import_vrf_count(self, obj) -> int:
-        return obj.importing_vrfs.count()
+        return len(self._vrfs(obj, "importing_vrfs"))
 
     def get_export_vrf_count(self, obj) -> int:
-        return obj.exporting_vrfs.count()
+        return len(self._vrfs(obj, "exporting_vrfs"))
 
     def get_vrf_count(self, obj) -> int:
         # Distinct VRFs importing OR exporting this target - the VRFs tab's
@@ -1148,8 +1300,8 @@ class RouteTargetSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixi
         # above can't simply be summed. Read through the viewset's prefetch
         # so the list costs no extra query per row.
         return len(
-            {v.pk for v in obj.importing_vrfs.all()}
-            | {v.pk for v in obj.exporting_vrfs.all()}
+            {v.pk for v in self._vrfs(obj, "importing_vrfs")}
+            | {v.pk for v in self._vrfs(obj, "exporting_vrfs")}
         )
 
     class Meta:
@@ -1192,18 +1344,19 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
     )
 
     # The list viewset annotates these once per page (#196); a lone instance
-    # (create/update responses) falls back to a live count.
+    # (create/update responses) falls back to a live count. Either way only
+    # the rows the reader may view: a VRF spans sites (#448).
     def get_prefix_count(self, obj) -> int:
         n = getattr(obj, "prefix_n", None)
-        return n if n is not None else obj.prefixes.count()
+        return n if n is not None else _visible_count(self, obj, "prefixes")
 
     def get_vlan_count(self, obj) -> int:
         n = getattr(obj, "vlan_n", None)
-        return n if n is not None else obj.vlans.count()
+        return n if n is not None else _visible_count(self, obj, "vlans")
 
     def get_ip_count(self, obj) -> int:
         n = getattr(obj, "ip_n", None)
-        return n if n is not None else obj.ip_addresses.count()
+        return n if n is not None else _visible_count(self, obj, "ip_addresses")
 
     # The routing tab counts are for the VRF's own page; the list never
     # renders them and they are a query per row.
@@ -1231,10 +1384,11 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-def prefix_descendant_counts(prefixes) -> dict:
+def prefix_descendant_counts(prefixes, request=None) -> dict:
     """``{prefix id: number of other prefixes inside it}`` for ``prefixes``,
     counted within the same tenant and VRF - what Postgres ``cidr::inet <<=``
-    gives, ids other than the prefix's own.
+    gives, ids other than the prefix's own. With a ``request``, only the
+    prefixes its reader may view count (#448); without one, all do.
 
     One query over the tenants' prefixes and a sorted pass per (tenant, VRF,
     family), instead of a correlated scan per row: the scan made a page cost
@@ -1249,13 +1403,17 @@ def prefix_descendant_counts(prefixes) -> dict:
     keys = {(p.tenant_id, p.vrf_id) for p in rows}
     if not keys:
         return {}
+    visible = view_filter(request, Prefix)
+    if visible is None:
+        return {p.id: 0 for p in rows}
     vrf_ids = {v for _, v in keys if v is not None}
     vrf_q = Q(vrf_id__in=vrf_ids)
     if any(v is None for _, v in keys):
         vrf_q |= Q(vrf_id__isnull=True)
     buckets = defaultdict(list)
     for pid, tenant_id, vrf_id, cidr in (
-        Prefix.objects.filter(vrf_q, tenant_id__in={t for t, _ in keys})
+        Prefix.objects.filter(visible)
+        .filter(vrf_q, tenant_id__in={t for t, _ in keys})
         .order_by()
         .values_list("id", "tenant_id", "vrf_id", "cidr")
     ):
@@ -1332,7 +1490,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         # Detail only, like the DNS count.
         if not isinstance(self.instance, Prefix):
             return 0
-        return obj.static_routes.count()
+        return _visible_count(self, obj, "static_routes")
 
     def validate_cidr(self, value):
         """A prefix must be real CIDR - the model field is a plain CharField,
@@ -1381,8 +1539,17 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return obj.utilisation_with(getattr(obj, "ip_n", None))
 
     def get_ip_count(self, obj) -> int:
+        # The addresses the reader may view (#448). ``ip_n`` - every address,
+        # the fill - is that number only for a reader no scope narrows.
+        n = getattr(obj, "ip_visible_n", None)
+        if n is not None:
+            return n
         n = getattr(obj, "ip_n", None)
-        return n if n is not None else obj.ip_addresses.count()
+        if n is not None:
+            f = view_filter(self.context.get("request"), IPAddress)
+            if f is not None and not f:  # Q(): every address
+                return n
+        return _visible_count(self, obj, "ip_addresses")
 
     def get_child_count(self, obj) -> int:
         return self._descendant_count(obj)
@@ -1429,7 +1596,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             return 0
         from integrations.models import DnsRecord
 
-        return DnsRecord.objects.filter(ip_address__prefix=obj).count()
+        return path_count(self.context.get("request"), DnsRecord, "ip_address__prefix", obj.pk)
 
     def _descendant_count(self, obj) -> int:
         # Counted once for every row the serializer renders - the list's page
@@ -1443,7 +1610,9 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             )
             if not any(r is obj for r in rows):
                 rows = [obj]
-            cache = {**(cache or {}), **prefix_descendant_counts(rows)}
+            # Only the prefixes the reader may view count (#448).
+            counts = prefix_descendant_counts(rows, self.context.get("request"))
+            cache = {**(cache or {}), **counts}
             self.root._descendant_cache = cache
         return cache.get(obj.id, 0)
 
@@ -1597,7 +1766,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "site", "vlan", "vlan_vrf_mismatch", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
-            "allocate_from_ranges", "allocation",
+            "allocate_from_ranges", "allocation", "auto_gateway",
             "monitoring_engine",
             "tags",
             "custom_fields",
@@ -1625,7 +1794,12 @@ class VLANPickerSerializer(VLANMiniSerializer):
 
 
 class TagPickerSerializer(TagSerializer):
-    pass
+    # ``is_global``: deployment-global (no tenant) - pickers mark it so a
+    # global tag and a tenant tag of the same name stay distinguishable.
+    is_global = serializers.BooleanField(read_only=True)
+
+    class Meta(TagSerializer.Meta):
+        fields = [*TagSerializer.Meta.fields, "is_global"]
 
 
 class RouteTargetPickerSerializer(RouteTargetMiniSerializer):
@@ -1675,6 +1849,32 @@ class _HiddenRelatedListSerializer(serializers.ListSerializer):
         rows = list(rows)
         self.child.prime_related(rows)
         return super().to_representation(rows)
+
+
+class _AddressCountListSerializer(serializers.ListSerializer):
+    """A device or VM page's ``ip_count`` in one query for the page (#455),
+    instead of a correlated count per row (see ``api.ip_usage``). A response
+    that leaves the field out does not count."""
+
+    kind = ""
+
+    def to_representation(self, data):
+        from django.db.models.manager import BaseManager
+
+        from .ip_usage import attach_address_counts
+
+        rows = list(data.all() if isinstance(data, BaseManager) else data)
+        if "ip_count" in self.child.fields:
+            attach_address_counts(self.kind, rows)
+        return super().to_representation(rows)
+
+
+class _DeviceListSerializer(_AddressCountListSerializer):
+    kind = "device"
+
+
+class _VMListSerializer(_AddressCountListSerializer):
+    kind = "vm"
 
 
 class HiddenRelatedFieldsMixin(PermissionHiddenFieldsMixin):
@@ -2095,6 +2295,7 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
     _USAGE_RELS = [
         "ips", "devices", "prefixes", "ip_ranges", "racks", "cabinets", "clusters",
         "virtual_machines", "cables", "circuits", "power_feeds",
+        "cooling_sources", "cooling_feeds",
         "wireless_lans", "tunnels", "locations", "maintenance_events", "vlans",
     ]
 
@@ -2147,7 +2348,7 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
             "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "color", "text_color", "description",
                   "weight", "available_to", "default_for",
                   "is_available", "requires_note",
-                  "suppresses_alerts", "is_closed", "monitoring_state",
+                  "suppresses_alerts", "is_closed", "is_planned", "monitoring_state",
                   "usage_count", "ip_count", "created_at", "updated_at"]
         read_only_fields = ["id", "text_color", "usage_count", "ip_count", "created_at",
                             "updated_at"]
@@ -2181,7 +2382,7 @@ class StatusPickerSerializer(NumIdModelSerializer):
         fields = ["id", "name", "slug", "color", "text_color",
                   "available_to", "default_for", "is_available",
                   "requires_note", "suppresses_alerts", "is_closed",
-                  "monitoring_state", "weight"]
+                  "is_planned", "monitoring_state", "weight"]
 
 
 class IPRolePickerSerializer(NumIdModelSerializer):
@@ -2379,13 +2580,96 @@ def _img_url(serializer, f):
         return None
 
 
+def _eol_config(context):
+    """The end-of-life settings, read once per request - or once per
+    serializer when there is no request (an export, a job)."""
+    from compliance.eol import config_for
+
+    context = context if context is not None else {}
+    request = context.get("request")
+    if request is not None:
+        return config_for(request)
+    cfg = context.get("_eol_config")
+    if cfg is None:
+        cfg = config_for(None)
+        context["_eol_config"] = cfg
+    return cfg
+
+
 def _eol_payload(platform, context) -> dict | None:
     """A platform's end-of-life block (#8), or None while the feature is off.
     The setting is read once per request; lists join ``eol_mapping`` so the
     rows cost no extra query."""
-    from compliance.eol import config_for, payload
+    from compliance.eol import payload
 
-    return payload(platform, config_for((context or {}).get("request")))
+    return payload(platform, _eol_config(context))
+
+
+def _platform_lifecycle(platform, context) -> dict:
+    """The OS lifecycle a nested platform carries: the entered window, its
+    state, the end-of-life block and the effective dates the OS support bar
+    reads (entered wins, else the mapping while the feature is on)."""
+    from compliance.eol import effective_payload, payload
+
+    cfg = _eol_config(context)
+    return {
+        "release_date": platform.release_date,
+        "end_of_support": platform.end_of_support,
+        "lifecycle_state": platform.lifecycle_state,
+        # The version operators want running (#395); "" = no target.
+        "target_version": platform.target_version,
+        # End-of-life data (#8): null while the feature is off.
+        "eol": payload(platform, cfg),
+        **effective_payload(platform, cfg),
+    }
+
+
+#: The ``lifecycle_next`` shape on device and VM rows.
+LIFECYCLE_NEXT_SCHEMA = inline_serializer("LifecycleNext", {
+    "source": serializers.ChoiceField(choices=["hardware", "os", "coverage", "software"]),
+    "end": serializers.DateField(),
+    "start": serializers.DateField(allow_null=True),
+}, allow_null=True)
+
+
+def _lifecycle_next(serializer, obj, *, device: bool) -> dict | None:
+    """The soonest dated end across an object's lifecycle sources (#436) - a
+    device's type's end of support, its platform's effective end of life and
+    its coverage end; a VM's platform - for the lists' Next end of life
+    column. Read from the joins and the coverage annotation the list already
+    has, so a page costs no extra query. A tie goes to the hardware, then the
+    OS. Coverage carries no start: the governing contract is not read here."""
+    from compliance.eol import effective_of
+
+    found = []
+    dt = obj.device_type if device else None
+    if dt is not None and dt.end_of_support:
+        found.append((dt.end_of_support, 0, "hardware", dt.release_date))
+    p = obj.platform
+    if p is not None:
+        e = effective_of(p, _eol_config(serializer.context))
+        if e.end:
+            found.append((e.end, 1, "os", e.start))
+    if device:
+        from .support_coverage import OPEN_ENDED, device_end
+
+        view = serializer.context.get("view")
+        if getattr(view, "action", None) in ("create", "update", "partial_update"):
+            # A write response: the row was read before the save.
+            obj.__dict__.pop("coverage_end_annotated", None)
+        end = device_end(obj)
+        if end is not None and end != OPEN_ENDED:
+            found.append((end, 2, "coverage", None))
+    # Installed software (#436): the list's annotation, entered dates alone
+    # while end-of-life data is off. A row without it (a write) skips it.
+    sw = getattr(obj, "software_end_any" if _eol_config(serializer.context).enabled
+                 else "software_end_entered", None)
+    if sw is not None:
+        found.append((sw, 3, "software", None))
+    if not found:
+        return None
+    end, _rank, source, start = min(found, key=lambda f: (f[0], f[1]))
+    return {"source": source, "end": end, "start": start}
 
 
 # User-entered vendor lifecycle window + the derived state - shared by
@@ -2427,17 +2711,38 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
 
     class Meta:
         model = DeviceType
-        fields = ["id", "name", "manufacturer", "manufacturer_id",
+        fields = ["id", "name", "manufacturer", "manufacturer_id", "icon",
                   "u_height", "rack_width", "is_full_depth",
-                  "width_mm", "height_mm", "din_profiles", "din_rail_mm",
+                  "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
                   "front_image", "rear_image", "front_cal",
                   "release_date", "end_of_support", "lifecycle_state"]
         extra_kwargs = {f: {"coerce_to_string": False}
-                        for f in ("width_mm", "height_mm", "din_rail_mm")}
+                        for f in ("width_mm", "height_mm", "depth_mm", "din_rail_mm")}
+
+
+class DeviceTypeTableSerializer(NumIdModelSerializer):
+    """A device's type in the device table's slim row (#487): what the Type
+    and Manufacturer columns print - not the images, calibration and sizes
+    the rack and 3D views read."""
+
+    lifecycle_state = serializers.ReadOnlyField()
+    manufacturer = serializers.SerializerMethodField()
+    manufacturer_id = serializers.ReadOnlyField()
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_manufacturer(self, obj) -> str | None:
+        return obj.manufacturer.name if obj.manufacturer_id else None
+
+    class Meta:
+        model = DeviceType
+        fields = ["id", "name", "manufacturer", "manufacturer_id", "icon", "lifecycle_state"]
 
 
 class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "devicetype"
+    # The 3D model's placement settings are render plumbing, not columns.
+    list_columns_exclude = ("model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
+                            "model_ports")
     manufacturer = ManufacturerMiniSerializer(read_only=True)
     manufacturer_id = TenantScopedPrimaryKeyRelatedField(
         source="manufacturer", queryset=Manufacturer.objects.all(),
@@ -2460,6 +2765,14 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     document_count = serializers.SerializerMethodField()
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
+    # The 3D model's download URL (never its stored path); set through the
+    # ``model/`` action.
+    model_3d = serializers.SerializerMethodField()
+
+    def get_model_3d(self, obj) -> str | None:
+        from .model_3d import type_url
+
+        return type_url(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
@@ -2491,6 +2804,8 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         ("console-server-port", "console_server_port_templates"),
         ("power-port", "power_port_templates"),
         ("power-outlet", "power_outlet_templates"),
+        ("cooling-intake", "cooling_intake_templates"),
+        ("cooling-outflow", "cooling_outflow_templates"),
         ("rear-port", "rear_port_templates"),
         ("front-port", "front_port_templates"),
         ("device-bay", "device_bay_templates"),
@@ -2520,6 +2835,8 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
             + obj.console_server_port_templates.count()
             + obj.power_port_templates.count()
             + obj.power_outlet_templates.count()
+            + obj.cooling_intake_templates.count()
+            + obj.cooling_outflow_templates.count()
             + obj.front_port_templates.count()
             + obj.rear_port_templates.count()
             + obj.aux_port_templates.count()
@@ -2631,6 +2948,21 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
 
         return validate_image_ports_doc(value)
 
+    # Ports mapped onto the 3D model (api.model_ports); the editor saves
+    # through the model-ports/ action, which checks the version.
+    def validate_model_ports(self, value):
+        from .model_ports import validate_model_ports_doc
+
+        return validate_model_ports_doc(value)
+
+    def update(self, instance, validated_data):
+        from .model_ports import carry_type_frame, frame_of
+
+        old = frame_of(instance)
+        instance = super().update(instance, validated_data)
+        carry_type_frame(instance, old)
+        return instance
+
     lifecycle_state = serializers.ReadOnlyField()
     width_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
                                         max_value=5000, coerce_to_string=False,
@@ -2655,6 +2987,9 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         from . import din
 
         attrs = super().validate(attrs)
+        from .model_ports import follow_frame_change
+
+        follow_frame_change(self.instance, attrs)
 
         def get(f):
             return attrs.get(f, getattr(self.instance, f, None))
@@ -2693,10 +3028,13 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "part_number", "platform", "platform_id",
                   "u_height", "rack_width", "description",
                   "front_image", "rear_image", "faceplate", "image_ports",
-                  "topology_photo_size",
-                  "is_full_depth", "airflow", "weight", "weight_unit",
+                  "topology_photo_size", "icon",
+                  "is_full_depth", "airflow", "cooling_method", "heat_output_w",
+                  "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
                   "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
+                  "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
+                  "model_ports",
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
                   "tags", "tag_ids", "device_count", "component_count", "component_counts",
@@ -2704,7 +3042,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "component_count",
                   "sensor_count", "document_count",
-                  "front_image", "rear_image",
+                  "front_image", "rear_image", "model_3d",
                             "lifecycle_state", "created_at", "updated_at"]
 
 
@@ -2895,18 +3233,75 @@ class TopologyCardField(serializers.JSONField):
         return topology_card_list(value)
 
 
-class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+_HOSTNAME = re.compile(
+    r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$",
+    re.I,
+)
+
+
+def clean_prtg_host(value: str) -> str:
+    """The PRTG host override: an IP address or a DNS name, or blank."""
+    value = (value or "").strip().rstrip(".")
+    if not value:
+        return ""
+    try:
+        return str(ipaddress.ip_address(value.strip("[]")))
+    except ValueError:
+        pass
+    if not _HOSTNAME.match(value):
+        raise serializers.ValidationError("An IP address or a DNS name.")
+    return value.lower()
+
+
+def _local_context_data(value):
+    """A device's/VM's own context data: a JSON object, or null for none (an
+    empty object is stored as null)."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("Local context data must be a JSON object.")
+    return value or None
+
+
+class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "device"
     # Render settings and write-back plumbing: real fields, but not columns
     # anyone reads a device list for (see api.list_fields).
     list_columns_exclude = (
         "vc_renamed_interfaces", "image_ports", "port_labels", "topology_card",
         "topology_photo_size",
+        "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front", "model_3d_effective",
+        "model_ports", "local_context_data",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
+        # Its own column, Next end of life (device-columns.tsx).
+        "lifecycle_next",
+        # Set in the form; the PRTG column shows what PRTG has.
+        "prtg_sync", "prtg_plan", "prtg_host",
+        # Its own column, Profiles (device-columns.tsx).
+        "device_profiles",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
+    # The slim table row's type (api.list_table, #487).
+    table_nested = {"device_type": lambda: DeviceTypeTableSerializer(read_only=True)}
+    # The device's own 3D model (a URL, never its stored path), and what the
+    # 3D room draws for it - its own, else its type's.
+    model_3d = serializers.SerializerMethodField()
+    model_3d_effective = serializers.SerializerMethodField()
+
+    def get_model_3d(self, obj) -> str | None:
+        from .model_3d import version_of
+
+        if not obj.model_3d:
+            return None
+        return f"/api/devices/{obj.pk}/model/?v={version_of(obj.model_3d)}"
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_model_3d_effective(self, obj):
+        from .model_3d import effective
+
+        return effective(obj)
     site = SiteRegionMiniSerializer(read_only=True)
     primary_ip = serializers.SerializerMethodField()
     secondary_ip = serializers.SerializerMethodField()
@@ -2916,6 +3311,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     hardware_count = serializers.SerializerMethodField()
     console_count = serializers.SerializerMethodField()
     power_count = serializers.SerializerMethodField()
+    cooling_count = serializers.SerializerMethodField()
     front_port_count = serializers.SerializerMethodField()
     rear_port_count = serializers.SerializerMethodField()
     service_count = serializers.SerializerMethodField()
@@ -2924,9 +3320,14 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     certificate_count = serializers.SerializerMethodField()
     contact_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
+    install_count = serializers.SerializerMethodField()
+    # Device profiles in order, with their state.
+    device_profiles = serializers.SerializerMethodField()
     # Support & warranty coverage (#421): {status, end, contracts}, from the
     # list queryset's annotations - no query per row.
     coverage = serializers.SerializerMethodField()
+    # The soonest end across hardware, OS and coverage (#436).
+    lifecycle_next = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -2936,6 +3337,22 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     effective_platform = serializers.SerializerMethodField()
     # Model property: the device's own airflow, else its type's default.
     effective_airflow = serializers.CharField(read_only=True)
+    # Model property: the device's own cooling method, else its type's, else
+    # air (#434).
+    effective_cooling_method = serializers.CharField(read_only=True)
+    # The body size: its own (blank inherits), and its own else its type's.
+    width_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                        max_value=5000, coerce_to_string=False,
+                                        required=False, allow_null=True)
+    height_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                         max_value=5000, coerce_to_string=False,
+                                         required=False, allow_null=True)
+    depth_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                        max_value=5000, coerce_to_string=False,
+                                        required=False, allow_null=True)
+    effective_width_mm = serializers.FloatField(read_only=True)
+    effective_height_mm = serializers.FloatField(read_only=True)
+    effective_depth_mm = serializers.FloatField(read_only=True)
     location = serializers.SerializerMethodField()
     cluster = serializers.SerializerMethodField()
 
@@ -2991,6 +3408,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     )
     location_id = TenantScopedPrimaryKeyRelatedField(
         source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    room = serializers.SerializerMethodField()
+    room_id = TenantScopedPrimaryKeyRelatedField(
+        source="room", queryset=Room.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
     cluster_id = TenantScopedPrimaryKeyRelatedField(
@@ -3071,11 +3493,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         # Carries the OS lifecycle window so device pages can render the
         # "OS support" bar without a second fetch.
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
-                "release_date": p.release_date,
-                "end_of_support": p.end_of_support,
-                "lifecycle_state": p.lifecycle_state,
-                # End-of-life data (#8): null while the feature is off.
-                "eol": _eol_payload(p, self.context)}
+                **_platform_lifecycle(p, self.context)}
 
     @extend_schema_field(inline_serializer("DeviceCoverageBrief", {
         "status": serializers.ChoiceField(choices=["covered", "expiring", "expired", "none"]),
@@ -3089,17 +3507,26 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         fresh = getattr(view, "action", None) in ("create", "update", "partial_update")
         return device_payload(obj, self.context.get("request"), fresh=fresh)
 
+    @extend_schema_field(LIFECYCLE_NEXT_SCHEMA)
+    def get_lifecycle_next(self, obj):
+        return _lifecycle_next(self, obj, device=True)
+
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
         # The device's own platform wins; otherwise fall back to its type's
         # default. Read-only and derived - the stored field is untouched.
         p = obj.platform or (obj.device_type.platform if obj.device_type else None)
-        return {"id": str(p.id), "name": p.name} if p else None
+        return ({"id": str(p.id), "name": p.name, "target_version": p.target_version}
+                if p else None)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
         loc = obj.location
         return {"id": str(loc.id), "name": loc.name} if loc else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_room(self, obj):
+        return room_ref(obj.room)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cluster(self, obj):
@@ -3116,6 +3543,27 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             if "vc_position" not in getattr(v, "fields", ())
         ]
 
+    prtg_plan = serializers.SerializerMethodField()
+
+    def validate_prtg_host(self, value):
+        return clean_prtg_host(value)
+
+    def validate_name(self, value):
+        # A new name never keeps range brackets: "sw-[1-4]" is four devices,
+        # made by POST bulk-create/ (api.name_range).
+        from .name_range import NAME_RANGE_RE
+
+        if self.instance is None and NAME_RANGE_RE.search(value or ""):
+            raise serializers.ValidationError(
+                "A name range creates several devices: post it to bulk-create.")
+        return value
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_prtg_plan(self, obj):
+        # Set by the viewset when a save changed prtg_sync: what the PRTG
+        # plan made of it (prtg.provision.plan_after_save); null otherwise.
+        return getattr(obj, "_prtg_plan", None)
+
     @extend_schema_field(serializers.ListField())
     def get_vc_renamed_interfaces(self, obj):
         # Set by DeviceViewSet.perform_update when a stack-membership change
@@ -3130,10 +3578,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         vc = obj.virtual_chassis
         if vc is None:
             return None
+        members = annotated(obj, "vc_member_count")
         return {
             "id": str(vc.id), "name": vc.name,
             "is_master": vc.master_id == obj.pk,
-            "member_count": vc.members.count(),
+            "member_count": members if members is not None else vc.members.count(),
         }
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -3153,6 +3602,12 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     def validate(self, attrs):
         attrs = super().validate(attrs)
         self._reject_nested_relation_inputs()
+        from .model_ports import follow_frame_change
+        from .software_target import mark_manual
+
+        follow_frame_change(self.instance, attrs)
+
+        mark_manual(attrs, self.instance)
 
         vc = attrs.get(
             "virtual_chassis", getattr(self.instance, "virtual_chassis", None)
@@ -3189,6 +3644,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                 )
 
         inst = self.instance
+        # The room first: a room alone gives the device its location.
+        reconcile_room(attrs, inst, self.context.get("request"))
 
         def changed(*fields):
             # A create sets everything; an update counts a field only when it
@@ -3222,6 +3679,51 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             rack = rack_units.lock_rack(rack)
         if site_changed:
             self._validate_site(attrs, rack)
+        if rack is not None and changed("rack", "device_type", "cooling_method"):
+            # The rack's cooling takes the device (#434). Judged when the
+            # placement, the type or the device's own method changes, so a
+            # rack made stricter later keeps its devices editable.
+            from .cooling import placement_error
+
+            message = placement_error(
+                rack, eff_type, attrs.get("cooling_method", getattr(inst, "cooling_method", "")),
+            )
+            if message:
+                field = (
+                    "rack_id" if changed("rack")
+                    else "device_type_id" if changed("device_type")
+                    else "cooling_method"
+                )
+                raise serializers.ValidationError({field: message})
+        if rack is not None and inst is not None and changed("rack"):
+            # What the device carries comes into the rack with it (#469):
+            # its modules, and the blades in its bays with no rack of their
+            # own, judged as their own placement would be.
+            from .cooling import contents_error
+
+            message = contents_error(rack, inst)
+            if message:
+                raise serializers.ValidationError({"rack_id": message})
+        if rack is None and inst is not None and changed("rack", "device_type", "cooling_method"):
+            # A blade with no rack of its own is judged by its chassis' rack
+            # (#469), with its modules, when it is re-typed or re-marked there.
+            from .cooling import chassis_rack, installed_error
+
+            parent_rack = chassis_rack(inst)
+            if parent_rack is not None:
+                probe = Device(
+                    pk=inst.pk, device_type=eff_type,
+                    cooling_method=attrs.get("cooling_method", inst.cooling_method),
+                )
+                probe._state.adding = False
+                message = installed_error(parent_rack, probe)
+                if message:
+                    field = (
+                        "device_type_id" if changed("device_type")
+                        else "cooling_method" if changed("cooling_method")
+                        else "rack_id"
+                    )
+                    raise serializers.ValidationError({field: message})
         position = attrs.get("position", getattr(self.instance, "position", None))
         face = attrs.get("face", getattr(self.instance, "face", ""))
         dt = attrs.get("device_type", getattr(self.instance, "device_type", None))
@@ -3343,6 +3845,14 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
 
         return validate_image_ports_doc(value)
 
+    def validate_model_ports(self, value):
+        from .model_ports import validate_model_ports_doc
+
+        return validate_model_ports_doc(value)
+
+    def validate_local_context_data(self, value):
+        return _local_context_data(value)
+
     def _validate_cabinet(self, attrs) -> None:
         """A device in a DIN-rail cabinet (#277): never in a rack as well, at
         the cabinet's site, and on one of its rails at an offset where its
@@ -3401,11 +3911,26 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         v = getattr(obj, "interface_count_annotated", None)
         return v if v is not None else obj.interfaces.count()
 
+    def get_install_count(self, obj) -> int:
+        """Installed software rows (#436), for the Software tab. Served from
+        the viewset's annotation; a query only where the row came without it."""
+        v = getattr(obj, "install_count_annotated", None)
+        return v if v is not None else obj.installed_software.count()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device_profiles(self, obj) -> list:
+        return _device_profiles(self, obj)
+
     def get_ip_count(self, obj) -> int:
         # The list renders this, so it can't be skipped; served from a queryset
         # annotation when present (DeviceViewSet), else a direct count.
+        # Every address the device uses (api/ip_usage.py), as its IPs tab.
         annotated = getattr(obj, "ip_count_annotated", None)
-        return annotated if annotated is not None else obj.ip_addresses.count()
+        if annotated is not None:
+            return annotated
+        from .ip_usage import addresses_of
+
+        return addresses_of("device", obj).count()
 
     # The @detail_only per-tab counts are only for the device detail page;
     # the list doesn't render them, so it skips their queries (no N+1).
@@ -3435,6 +3960,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     @detail_only(0)
     def get_power_count(self, obj) -> int:
         return obj.power_ports.count() + obj.power_outlets.count()
+
+    @detail_only(0)
+    def get_cooling_count(self, obj) -> int:
+        return obj.cooling_intakes.count() + obj.cooling_outflows.count()
 
     @detail_only(0)
     def get_service_count(self, obj) -> int:
@@ -3493,8 +4022,28 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             object_type="api.device", object_id=obj.id
         ).count()
 
+    # The VM this device runs as (a virtual router), when the caller may
+    # view it. Detail only: a list would pay a lookup per row.
+    backing_vm = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_backing_vm(self, obj):
+        # Joined on the detail read (_device_rows counts=True); a query
+        # otherwise.
+        try:
+            vm = obj.backing_vm
+        except VirtualMachine.DoesNotExist:
+            return None
+        from .visible_ips import visible_children
+
+        if not visible_children([vm], self.context, "virtualmachine", "tenant"):
+            return None
+        return {"id": str(vm.id), "name": vm.name, "intended": vm.intended}
+
     class Meta:
         model = Device
+        list_serializer_class = _DeviceListSerializer
         fields = ["id", "numid", "name", "device_type", "device_type_id", "site", "site_id",
                   "role", "role_id", "platform", "platform_id",
                   "effective_platform",
@@ -3502,28 +4051,38 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "mount", "mount_offset_mm", "mount_span_u",
                   "u_height", "rack_width",
                   "cabinet", "cabinet_id", "din_rail", "din_rail_id", "din_offset_mm",
-                  "location", "location_id", "cluster", "cluster_id",
+                  "location", "location_id", "room", "room_id", "cluster", "cluster_id",
                   "virtual_chassis", "virtual_chassis_id",
                   "vc_position", "vc_priority", "vc_renamed_interfaces",
                   "image_ports",
-                  "config_template", "config_template_id",
+                  "config_template", "config_template_id", "local_context_data",
                   "status", "status_id",  "serial_number", "asset_tag",
-                  "warranty_end", "coverage",
+                  "software_version", "software_version_seen_at",
+                  "software_version_source",
+                  "warranty_end", "coverage", "lifecycle_next",
                   "description", "comments", "airflow", "effective_airflow",
-                  "port_labels", "topology_card", "topology_photo_size",
+                  "cooling_method", "effective_cooling_method",
+                  "width_mm", "height_mm", "depth_mm",
+                  "effective_width_mm", "effective_height_mm", "effective_depth_mm",
+                  "port_labels", "topology_card", "topology_photo_size", "icon",
+                  "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
+                  "model_3d_effective", "model_ports",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
                   "primary_ip", "primary_ip_id",
                   "secondary_ip", "secondary_ip_id",
                   "oob_ip", "oob_ip_id",
-                  "tags", "tag_ids", "custom_fields",
+                  "tags", "tag_ids", "custom_fields", "prtg_sync", "prtg_plan", "prtg_host",
                   "interface_count", "ip_count",
-                  "hardware_count", "console_count", "power_count",
+                  "hardware_count", "console_count", "power_count", "cooling_count",
                   "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
-                  "contact_count", "document_count", "permissions",
-                  "created_at", "updated_at"]
+                  "contact_count", "document_count", "install_count", "device_profiles",
+                  "backing_vm",
+                  "permissions", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
+                            "model_3d", "model_3d_effective",
+                            "software_version_seen_at", "software_version_source",
                             "created_at", "updated_at"]
 
 
@@ -3601,10 +4160,25 @@ def _choice_label(obj, field: str):
     return labels.get(value, value)
 
 
+class ChoiceLabelField(serializers.CharField):
+    """A model field's choice label, read-only - ``get_<field>_display()``
+    as :func:`_choice_label` reads it. A ``source="get_<field>_display"``
+    field paid DRF's per-row ``inspect.signature`` of the bound method plus
+    Django's rebuild of the choices on every row of a list (#447)."""
+
+    def __init__(self, field: str, **kwargs):
+        self.choice_field = field
+        kwargs["read_only"] = True
+        super().__init__(source="*", **kwargs)
+
+    def to_representation(self, instance):
+        return _choice_label(instance, self.choice_field)
+
+
 def _point_cable(point, context=None):
     # ≤1 due to the per-port unique rule. Read the prefetch directly: .first()
     # clones and re-slices the queryset on every row of a component list.
-    t = next(iter(point.terminations.all()), None)
+    t = next(iter(listed(point, "terminations")), None)
     if t is None:
         return None
     if context is None:
@@ -3617,12 +4191,26 @@ def _point_cable(point, context=None):
     return ser.to_representation(t.cable)
 
 
-def _point_far_end(point):
-    return far_end(next(iter(point.terminations.all()), None))
+def _point_far_end(point, context=None):
+    """The far end of ``point``'s cable, named only when the caller may view
+    its device (#473). The visible device ids are read once per request and
+    kept in the serializer context."""
+    term = next(iter(listed(point, "terminations")), None)
+    request = (context or {}).get("request")
+    user = getattr(request, "user", None)
+    if user is None:
+        return far_end(term)
+    if "_peer_visible_devices" not in context:
+        from api.views import _get_active_tenant
+
+        context["_peer_visible_devices"] = visible_device_ids(
+            user, _get_active_tenant(request)
+        )
+    return scoped_far_end(term, context["_peer_visible_devices"])
 
 
 def _point_reservation(point):
-    r = next(iter(point.reservations.all()), None)  # ≤1 (per-port unique rule)
+    r = next(iter(listed(point, "reservations")), None)  # ≤1 (per-port unique rule)
     if r is None:
         return None
     return {
@@ -3633,7 +4221,7 @@ def _point_reservation(point):
     }
 
 
-class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class InterfaceSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "interface"
 
     def update(self, instance, validated_data):
@@ -3649,9 +4237,9 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     # device's own (#333). Set by module install only.
     module_id = serializers.UUIDField(read_only=True, allow_null=True)
     vlan = VLANMiniSerializer(read_only=True)
-    tagged_vlans = VLANMiniSerializer(many=True, read_only=True)
+    tagged_vlans = ListedManySerializer(child=VLANMiniSerializer(), read_only=True)
     vrf = VRFMiniSerializer(read_only=True)
-    mode_display = serializers.CharField(source="get_mode_display", read_only=True)
+    mode_display = ChoiceLabelField("mode")
     mac_addresses = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     cable = serializers.SerializerMethodField()
@@ -3662,7 +4250,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         return [
             {"id": str(m.id), "mac_address": m.mac_address,
              "is_primary": m.mac_address == primary}
-            for m in obj.mac_addresses.all()
+            for m in listed(obj, "mac_addresses")
         ]
     cable_count = serializers.SerializerMethodField()
     parent = serializers.SerializerMethodField()
@@ -3670,9 +4258,9 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     lag = serializers.SerializerMethodField()
     bridge = serializers.SerializerMethodField()
     lag_member_count = serializers.SerializerMethodField()
-    lag_protocol_display = serializers.CharField(
-        source="get_lag_protocol_display", read_only=True
-    )
+    lag_protocol_display = ChoiceLabelField("lag_protocol")
+    lag_mode_display = ChoiceLabelField("lag_mode")
+    lag_hash_policy_display = ChoiceLabelField("lag_hash_policy")
     # Lenient (CharField, not the model's ChoiceField) so legacy/custom values
     # round-trip; the UI offers the standard dropdown via dcim_choices.
     type = serializers.CharField(required=False, allow_blank=True)
@@ -3709,6 +4297,20 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    # The keychain by id and name only - the key never passes through here.
+    macsec_keychain = serializers.SerializerMethodField()
+    macsec_keychain_id = TenantScopedPrimaryKeyRelatedField(
+        source="macsec_keychain", queryset=RoutingKeychain.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    macsec_cipher_display = ChoiceLabelField("macsec_cipher")
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_macsec_keychain(self, obj):
+        k = obj.macsec_keychain
+        if k is None:
+            return None
+        return {"id": str(k.id), "name": k.name, "algorithm": k.algorithm}
 
     ip_addresses = serializers.SerializerMethodField()
     tunnel_terminations = serializers.SerializerMethodField()
@@ -3736,7 +4338,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_link_peer(self, obj):
-        return _point_far_end(obj)
+        return _point_far_end(obj, self.context)
 
     reservation = serializers.SerializerMethodField()
 
@@ -3745,7 +4347,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         return _point_reservation(obj)
 
     def get_cable_count(self, obj) -> int:
-        return obj.terminations.count()
+        return len(listed(obj, "terminations"))
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_parent(self, obj):
@@ -3759,6 +4361,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         if d:
             d["lag_protocol"] = obj.lag.lag_protocol
             d["lacp_mode"] = obj.lag.lacp_mode
+            d["lag_mode"] = obj.lag.lag_mode
+            d["lag_hash_policy"] = obj.lag.lag_hash_policy
         return d
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -3767,10 +4371,10 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     def get_child_count(self, obj) -> int:
         # Prefetched via `children` on the viewset querysets - no N+1.
-        return len(obj.children.all())
+        return len(listed(obj, "children"))
 
     def get_lag_member_count(self, obj) -> int:
-        return len(obj.lag_members.all())
+        return len(listed(obj, "lag_members"))
 
     def get_type_display(self, obj) -> str:
         return _choice_label(obj, "type")
@@ -3799,9 +4403,18 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
             {"id": str(t.id), "role": t.role,
              "role_display": t.get_role_display(),
              "tunnel": {"id": str(t.tunnel_id), "name": t.tunnel.name}}
-            for t in obj.tunnel_terminations.all()
+            for t in listed(obj, "tunnel_terminations")
             if t.tunnel.tenant_id == obj.device.tenant_id
         ]
+
+    def to_internal_value(self, data):
+        # "static" is how a bond without negotiation is often called; it is
+        # stored as the blank protocol, the one spelling filters and
+        # templates use.
+        if hasattr(data, "get") and str(data.get("lag_protocol", "")).lower() == "static":
+            data = data.copy()
+            data["lag_protocol"] = ""
+        return super().to_internal_value(data)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -3884,7 +4497,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                          "changing its type."}
             )
         if eff_type != "lag":
-            for f in ("lag_protocol", "lacp_mode", "lacp_rate", "lag_min_links"):
+            for f in ("lag_protocol", "lacp_mode", "lacp_rate", "lag_min_links",
+                      "lag_mode", "lag_hash_policy", "lag_miimon"):
                 if attrs.get(f):
                     raise serializers.ValidationError(
                         {f: "Only an interface of type LAG has bundle settings."}
@@ -3896,6 +4510,15 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         protocol = attrs.get(
             "lag_protocol", getattr(self.instance, "lag_protocol", "") or ""
         )
+        mode = attrs.get("lag_mode", getattr(self.instance, "lag_mode", "") or "")
+        if mode == "802.3ad":
+            # 802.3ad is LACP: set it rather than refuse.
+            protocol = attrs["lag_protocol"] = "lacp"
+        elif mode and protocol == "lacp":
+            raise serializers.ValidationError(
+                {"lag_mode": "LACP runs in 802.3ad mode. Pick 802.3ad, or clear "
+                             "the protocol for a static bond."}
+            )
         if protocol != "lacp":
             attrs["lacp_mode"] = ""
             attrs["lacp_rate"] = ""
@@ -3907,6 +4530,22 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
             raise serializers.ValidationError(
                 {"never_uplink": "A port can't be both always and never an uplink."}
             )
+        # MACsec: the cipher, keychain and replay window only mean something
+        # while it is on. Setting one on a port with MACsec off is refused;
+        # turning it off clears them (Interface.save does the same).
+        if not attrs.get(
+            "macsec_enabled", getattr(self.instance, "macsec_enabled", False)
+        ):
+            for f, key in (("macsec_cipher", "macsec_cipher"),
+                           ("macsec_keychain", "macsec_keychain_id"),
+                           ("macsec_replay_window", "macsec_replay_window")):
+                if attrs.get(f) not in (None, ""):
+                    raise serializers.ValidationError(
+                        {key: "Turn MACsec on to set this."}
+                    )
+            attrs["macsec_cipher"] = ""
+            attrs["macsec_keychain"] = None
+            attrs["macsec_replay_window"] = None
         return attrs
 
     class Meta:
@@ -3928,7 +4567,10 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",
                   "lag_protocol", "lag_protocol_display", "lacp_mode", "lacp_rate",
-                  "lag_min_links",
+                  "lag_min_links", "lag_mode", "lag_mode_display", "lag_hash_policy",
+                  "lag_hash_policy_display", "lag_miimon",
+                  "macsec_enabled", "macsec_cipher", "macsec_cipher_display",
+                  "macsec_keychain", "macsec_keychain_id", "macsec_replay_window",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "tunnel_terminations", "created_at", "updated_at"]
 
@@ -4409,7 +5051,7 @@ class AntennaSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
 
     cf_model = "antenna"
     device = serializers.SerializerMethodField()
-    device_id = serializers.PrimaryKeyRelatedField(
+    device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
     )
     tags = TagSerializer(many=True, read_only=True)
@@ -4509,7 +5151,7 @@ class TopologyViewSerializer(NumIdModelSerializer):
     # The map's cards are sized differently in each view style, so a view
     # keeps one arrangement per style. Each is bounded like the single map
     # this grew out of.
-    POSITION_STYLES = ("stencil", "hierarchy", "flat", "diagram")
+    POSITION_STYLES = ("stencil", "hierarchy", "flat", "diagram", "routing")
 
     # ── Diagram-tab keys ─────────────────────────────────────────────────
     # Only these (added in 0.17) are checked in depth; the older keys keep
@@ -4525,6 +5167,11 @@ class TopologyViewSerializer(NumIdModelSerializer):
     MAX_BAND_RULE_IDS = 100
     #: A row of several layers: a sub-row per layer, or one mixed row.
     BAND_LAYOUTS = ("stack", "row")
+    # How a band lines up its cards across its width; absent = Auto.
+    BAND_ALIGNS = ("left", "center", "right")
+    # A band's cards per row: 1 up to this (a view holds at most 200 zones'
+    # worth of cards on a line); absent is Auto.
+    MAX_BAND_PER_ROW = 200
     DIAGRAM_MODES = ("simple", "detailed")
     DIAGRAM_FACES = ("card", "photo")
     #: Where cables meet a photo: on its ports, or spread along its edge.
@@ -4533,7 +5180,7 @@ class TopologyViewSerializer(NumIdModelSerializer):
     LINK_LABELS = ("subnet", "ip", "port")
     #: Per-link overrides, keyed by the sorted device pair.
     MAX_LINKS = 20_000
-    #: Per-card overrides, keyed by device id.
+    #: Per-card overrides (face, anchor, line), keyed by device id.
     MAX_NODE_OVERRIDES = 10_000
     MAX_NOTES = 500
     MAX_NOTE_TEXT = 200
@@ -4683,6 +5330,28 @@ class TopologyViewSerializer(NumIdModelSerializer):
                     )
                 color = color.lower()
                 region["color"] = color if self.REGION_COLOR_RE.match(color) else None
+            # Cards per row: a count, or absent (None) for Auto.
+            per_row = region.get("per_row")
+            if per_row is not None and (
+                isinstance(per_row, bool)
+                or not isinstance(per_row, int)
+                or not 1 <= per_row <= self.MAX_BAND_PER_ROW
+            ):
+                raise serializers.ValidationError(
+                    f"{where}.per_row must be a whole number from 1 to "
+                    f"{self.MAX_BAND_PER_ROW}, or absent for Auto"
+                )
+            # Card alignment: left, center or right, or absent for Auto.
+            align = region.get("align")
+            if align is not None and (
+                not isinstance(align, str) or align not in self.BAND_ALIGNS
+            ):
+                raise serializers.ValidationError(
+                    f"{where}.align must be one of {', '.join(self.BAND_ALIGNS)}, "
+                    "or absent for Auto"
+                )
+            # The line its cards' cables take: a line type, or absent.
+            self._choice(region.get("line"), self.LINE_TYPES, f"{where}.line")
             rule = region.get("rule")
             if rule is None:
                 continue
@@ -4777,6 +5446,9 @@ class TopologyViewSerializer(NumIdModelSerializer):
             self._choice(
                 override.get("anchor"), self.PHOTO_ANCHORS, f"nodes.{key}.anchor"
             )
+            self._choice(
+                override.get("line"), self.LINE_TYPES, f"nodes.{key}.line"
+            )
 
     def _notes(self, notes):
         if not isinstance(notes, list) or len(notes) > self.MAX_NOTES:
@@ -4849,6 +5521,34 @@ class TopologyViewSummarySerializer(NumIdModelSerializer):
         read_only_fields = fields
 
 
+class TopologyViewListSerializer(NumIdModelSerializer):
+    """A saved view as the Topology page lists it (``?summary=1``): no
+    ``state``; who made it and who changed it last, from the change log
+    (blank when the log has no entry); and whether it is the tenant's
+    default view."""
+
+    created_by = serializers.SerializerMethodField()
+    updated_by = serializers.SerializerMethodField()
+    is_default = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TopologyView
+        fields = [
+            "id", "numid", "name", "created_at", "updated_at",
+            "created_by", "updated_by", "is_default",
+        ]
+        read_only_fields = fields
+
+    def get_created_by(self, obj) -> str:
+        return getattr(obj, "created_by_name", None) or ""
+
+    def get_updated_by(self, obj) -> str:
+        return getattr(obj, "updated_by_name", None) or ""
+
+    def get_is_default(self, obj) -> bool:
+        return str(obj.pk) == self.context.get("default_view")
+
+
 class TopologyDefaultViewSerializer(serializers.Serializer):
     """The saved view a bare ``/topology`` opens for the tenant; null = No
     view. The body of ``/api/topology-views/default/`` both ways."""
@@ -4880,7 +5580,7 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
     # The list annotates both counts (#444); a bare instance counts.
     def get_interface_template_count(self, obj) -> int:
         v = getattr(obj, "interface_template_count_annotated", None)
-        return v if v is not None else obj.interface_templates.count()
+        return v if v is not None else _visible_count(self, obj, "interface_templates")
 
     def get_module_count(self, obj) -> int:
         v = getattr(obj, "module_count_annotated", None)
@@ -4889,7 +5589,8 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
     class Meta:
         model = ModuleType
         fields = ["id", "name", "manufacturer", "manufacturer_id",
-                  "part_number", "description", "faceplate", "custom_fields",
+                  "part_number", "description", "faceplate", "cooling_method",
+                  "custom_fields",
                   "tags", "tag_ids", "interface_template_count",
                   "module_count", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
@@ -4897,7 +5598,7 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
 
 class ModuleInterfaceTemplateSerializer(serializers.ModelSerializer):
     type = serializers.CharField(required=False, allow_blank=True)
-    module_type_id = serializers.PrimaryKeyRelatedField(
+    module_type_id = TenantScopedPrimaryKeyRelatedField(
         source="module_type", queryset=ModuleType.objects.all(),
         write_only=True,
     )
@@ -5013,6 +5714,18 @@ class DeviceBaySerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
                      f"“{child.name}” is a parent chassis - only child-class "
                      "devices install into bays."}
                 )
+            inst = self.instance
+            installing = inst is None or (
+                child.pk != inst.installed_device_id or parent.pk != inst.device_id
+            )
+            if installing and child.rack_id is None and parent.rack_id is not None:
+                # The parent's rack cools a blade with no rack of its own
+                # (#469): its cooling, and its modules', must suit that rack.
+                from .cooling import installed_error
+
+                message = installed_error(parent.rack, child)
+                if message:
+                    raise serializers.ValidationError({"installed_device_id": message})
         return attrs
 
     cf_model = "devicebay"
@@ -5126,6 +5839,19 @@ class ModuleSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, Num
                 {"module_bay_id": f"Bay “{bay.name}” already has a module - "
                                   "remove it first."}
             )
+        inst = self.instance
+        mtype = attrs.get("module_type") or (inst.module_type if inst else None)
+        type_changed = inst is None or (mtype is not None and mtype.pk != inst.module_type_id)
+        device_changed = inst is not None and device is not None and device.pk != inst.device_id
+        if device is not None and (type_changed or device_changed):
+            # The rack that cools the module's device takes the module type's
+            # cooling (#469): the device's own rack, else its chassis'.
+            from .cooling import cooling_rack, module_placement_error
+
+            message = module_placement_error(cooling_rack(device), mtype)
+            if message:
+                field = "module_type_id" if type_changed else "device_id"
+                raise serializers.ValidationError({field: message})
         return attrs
 
     cf_model = "module"
@@ -5182,6 +5908,258 @@ class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
         model = PowerOutletTemplate
         fields = _ComponentTemplateSerializer.Meta.fields + [
             "power_port_template", "power_port_template_id", "feed_leg",
+        ]
+
+
+# ─── Cooling intakes and outflows (#434) ───────────────────────────────────
+# Hoses are references, not cables: an intake names the feed or the other
+# device's outflow it takes coolant from, an outflow the intake on its own
+# device that feeds it. Nothing here is cable-terminable.
+
+_COOLING_COMPONENT_FIELDS = ["connector", "connector_display", "diameter_mm", "max_flow_lpm"]
+
+
+def _cooling_ref(obj, with_device=False):
+    if obj is None:
+        return None
+    out = {"id": str(obj.pk), "name": obj.name}
+    if with_device:
+        out["device"] = {"id": str(obj.device_id), "name": obj.device.name}
+    return out
+
+
+class _CoolingComponentSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
+                                  serializers.ModelSerializer):
+    device = DeviceMiniSerializer(read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    connector_display = serializers.CharField(
+        source="get_connector_display", read_only=True
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    def _val(self, attrs, field):
+        if field in attrs:
+            return attrs[field]
+        return getattr(self.instance, field, None) if self.instance else None
+
+
+class CoolingIntakeSerializer(HiddenRelatedFieldsMixin, _CoolingComponentSerializer):
+    """Where coolant enters a device: fed by a ``cooling_feed`` or by an
+    ``outflow`` on another device (a CDU) - at most one of the two.
+
+    A feed or outflow the caller may not view - another site's - reads
+    ``null``, as does a feed's source they may not view, and
+    ``upstream_hidden`` says the intake is connected to something hidden
+    (#453, as #413 for addresses)."""
+
+    cf_model = "coolingintake"
+    hidden_related = hidden_related_spec("api.coolingintake")
+    upstream_hidden = serializers.SerializerMethodField()
+    cooling_feed = serializers.SerializerMethodField()
+    cooling_feed_id = TenantScopedPrimaryKeyRelatedField(
+        source="cooling_feed", queryset=CoolingFeed.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    outflow = serializers.SerializerMethodField()
+    outflow_id = TenantScopedPrimaryKeyRelatedField(
+        source="outflow", queryset=CoolingOutflow.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    def prime_related(self, rows) -> None:
+        super().prime_related(rows)
+        viewable = self._viewable()
+        if not viewable:
+            return
+        viewable.prime("coolingsource", {
+            obj.cooling_feed.source_id for obj in rows if obj.cooling_feed_id
+        })
+        viewable.prime("device", {obj.outflow.device_id for obj in rows if obj.outflow_id})
+
+    def hidden_fields(self, obj) -> set[str]:
+        out = super().hidden_fields(obj)
+        viewable = self._viewable()
+        # The outflow names its device: a device the caller may not view
+        # hides it too.
+        if viewable and obj.outflow_id and not viewable.may_view(
+            "device", obj.outflow.device_id
+        ):
+            out.add("outflow")
+        return out
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_upstream_hidden(self, obj) -> bool:
+        return bool({"cooling_feed", "outflow"} & self.hidden_fields(obj))
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_cooling_feed(self, obj):
+        f = obj.cooling_feed
+        if f is None:
+            return None
+        viewable = self._viewable()
+        source = (
+            {"id": str(f.source_id), "name": f.source.name}
+            if not viewable or viewable.may_view("coolingsource", f.source_id) else None
+        )
+        return {"id": str(f.pk), "name": f.name, "source": source}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_outflow(self, obj):
+        return _cooling_ref(obj.outflow, with_device=True)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        feed = self._val(attrs, "cooling_feed")
+        outflow = self._val(attrs, "outflow")
+        device = self._val(attrs, "device")
+        if feed is not None and outflow is not None:
+            # Whichever was just set names the clash.
+            field = "outflow_id" if attrs.get("outflow") is not None else "cooling_feed_id"
+            raise serializers.ValidationError(
+                {field: "An intake takes coolant from a feed or an outflow, not both."}
+            )
+        if outflow is not None and device is not None and outflow.device_id == device.pk:
+            raise serializers.ValidationError(
+                {"outflow_id": "Pick an outflow on another device."}
+            )
+        return attrs
+
+    class Meta:
+        model = CoolingIntake
+        fields = ["id", "device", "device_id", "name", "label",
+                  *_COOLING_COMPONENT_FIELDS,
+                  "cooling_feed", "cooling_feed_id", "outflow", "outflow_id",
+                  "upstream_hidden",
+                  "description", "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "upstream_hidden", "created_at", "updated_at"]
+        list_serializer_class = _HiddenRelatedListSerializer
+
+
+#: An intake an outflow serves that the caller may not view (#453).
+HIDDEN_SERVED = {"id": None, "name": None, "device": None, "hidden": True}
+
+
+class CoolingOutflowSerializer(HiddenRelatedFieldsMixin, _CoolingComponentSerializer):
+    """Where coolant leaves a device; ``intake`` is the intake on the same
+    device that feeds it, ``served`` the intakes on other devices it feeds -
+    one the caller may not view (another site's) reads
+    ``{"hidden": true}`` and names nothing (#453)."""
+
+    cf_model = "coolingoutflow"
+    intake = serializers.SerializerMethodField()
+    intake_id = TenantScopedPrimaryKeyRelatedField(
+        source="intake", queryset=CoolingIntake.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    served = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_intake(self, obj):
+        return _cooling_ref(obj.intake)
+
+    def prime_related(self, rows) -> None:
+        viewable = self._viewable()
+        if not viewable:
+            return
+        intakes = [i for obj in rows for i in obj.intakes.all()]
+        viewable.prime("coolingintake", {i.pk for i in intakes})
+        viewable.prime("device", {i.device_id for i in intakes})
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_served(self, obj):
+        viewable = self._viewable()
+        return [
+            _cooling_ref(i, with_device=True)
+            if not viewable or (viewable.may_view("coolingintake", i.pk)
+                                and viewable.may_view("device", i.device_id))
+            else dict(HIDDEN_SERVED)
+            for i in obj.intakes.all()
+        ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        intake = self._val(attrs, "intake")
+        device = self._val(attrs, "device")
+        if intake is not None and device is not None and intake.device_id != device.pk:
+            raise serializers.ValidationError(
+                {"intake_id": "Pick an intake on the same device."}
+            )
+        return attrs
+
+    class Meta:
+        model = CoolingOutflow
+        fields = ["id", "device", "device_id", "name", "label",
+                  *_COOLING_COMPONENT_FIELDS,
+                  "intake", "intake_id", "served",
+                  "description", "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "served", "created_at", "updated_at"]
+        list_serializer_class = _HiddenRelatedListSerializer
+
+
+class CoolingComponentMiniSerializer(serializers.Serializer):
+    """``?picker=1`` on the intake and outflow lists: id, name, device."""
+
+    id = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    device = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device(self, obj):
+        return {"id": str(obj.device_id), "name": obj.device.name}
+
+
+class _CoolingTemplateSerializer(_ComponentTemplateSerializer):
+    type = None
+    connector_display = serializers.CharField(
+        source="get_connector_display", read_only=True
+    )
+
+    class Meta(_ComponentTemplateSerializer.Meta):
+        fields = [
+            f for f in _ComponentTemplateSerializer.Meta.fields if f != "type"
+        ] + _COOLING_COMPONENT_FIELDS
+
+
+class CoolingIntakeTemplateSerializer(_CoolingTemplateSerializer):
+    class Meta(_CoolingTemplateSerializer.Meta):
+        model = CoolingIntakeTemplate
+
+
+class CoolingOutflowTemplateSerializer(_CoolingTemplateSerializer):
+    intake_template = serializers.SerializerMethodField()
+    intake_template_id = TenantScopedPrimaryKeyRelatedField(
+        source="intake_template", queryset=CoolingIntakeTemplate.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_intake_template(self, obj):
+        return _cooling_ref(obj.intake_template)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        it = attrs.get("intake_template")
+        dt = attrs.get("device_type") or (
+            self.instance.device_type if self.instance else None
+        )
+        if it is not None and dt is not None and it.device_type_id != dt.id:
+            raise serializers.ValidationError(
+                {"intake_template_id": "Pick an intake template on the same device type."}
+            )
+        return attrs
+
+    class Meta(_CoolingTemplateSerializer.Meta):
+        model = CoolingOutflowTemplate
+        fields = _CoolingTemplateSerializer.Meta.fields + [
+            "intake_template", "intake_template_id",
         ]
 
 
@@ -5255,7 +6233,7 @@ class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
         ]
 
 
-class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     """Read+write cable with A/B termination sets (1:1, breakout 1:N, M:N).
 
     Read: ``a_terminations`` / ``b_terminations`` (lists of
@@ -5269,7 +6247,7 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
     tags = TagSerializer(many=True, read_only=True)
     # Lenient so legacy free-form values round-trip; UI offers the dropdown.
     type = serializers.CharField(required=False, allow_blank=True)
-    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    type_display = ChoiceLabelField("type")
 
     _POINT_HELP = (
         'end of the cable, as [{"kind": "interface", "id": "<uuid>"}]. kind is one of '
@@ -5493,6 +6471,13 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         validated_data.pop("a", None)
         validated_data.pop("b", None)
         tags = validated_data.pop("tags", None)
+        # A length edited here is a length a person entered: a floor-plan
+        # route no longer replaces it on its own.
+        if ("length" in validated_data and validated_data["length"] != instance.length) or (
+            "length_unit" in validated_data
+            and validated_data["length_unit"] != instance.length_unit
+        ):
+            instance.length_source = ""
         for k, v in validated_data.items():
             setattr(instance, k, v)
         instance.save()
@@ -5515,11 +6500,12 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
     class Meta:
         model = Cable
         fields = ["id", "numid", "label", "type", "type_display", "status", "status_id",
-                  "length", "length_unit", "color", "description",
-                  "fiber_count", "strands", "is_fiber",
+                  "length", "length_unit", "length_source", "color", "description",
+                  "fiber_count", "strands", "is_fiber", "pve_vnet",
                   "a_terminations", "b_terminations", "a", "b",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "is_fiber", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "is_fiber", "length_source",
+                            "created_at", "updated_at"]
 
 
 # ─── Custom field definitions ──────────────────────────────────────────────
@@ -5609,7 +6595,7 @@ class CustomFieldGroupSerializer(
 
     def get_field_count(self, obj) -> int:
         v = getattr(obj, "field_count_annotated", None)
-        return v if v is not None else obj.fields.count()
+        return v if v is not None else _visible_count(self, obj, "fields")
 
     class Meta:
         model = CustomFieldGroup
@@ -5800,7 +6786,10 @@ class ClusterSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdMod
     vm_count = serializers.SerializerMethodField()
 
     def get_vm_count(self, obj) -> int:
-        return getattr(obj, "vm_count_annotated", 0) or 0
+        # The VMs the reader may view (#438); a lone instance (a create or
+        # update response) counts them.
+        n = getattr(obj, "vm_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "virtual_machines")
 
     class Meta:
         model = Cluster
@@ -5827,16 +6816,34 @@ class VirtualMachineMiniSerializer(NumIdModelSerializer):
 
 
 class VirtualDiskSerializer(serializers.ModelSerializer):
-    """A VM's virtual disk. Read+write so operators can edit an adopted VM's
-    disks; sync fills sync-created rows."""
+    """A VM's virtual disk (``/api/virtual-disks/``, and nested on the VM).
+    Operators author disks for an intended VM here; sync fills and prunes only
+    the rows it created itself."""
 
+    vm = VirtualMachineMiniSerializer(read_only=True)
     vm_id = TenantScopedPrimaryKeyRelatedField(
         source="vm", queryset=VirtualMachine.objects.all(), write_only=True
     )
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        vm = attrs.get("vm", getattr(self.instance, "vm", None))
+        key = attrs.get("key", getattr(self.instance, "key", ""))
+        if vm is not None and key:
+            clash = VirtualDisk.objects.filter(vm=vm, key=key)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"key": f"{vm.name} already has a disk {key}."}
+                )
+        if self.instance is not None and "vm" in attrs and attrs["vm"].pk != self.instance.vm_id:
+            raise serializers.ValidationError({"vm_id": "A disk cannot move to another VM."})
+        return attrs
+
     class Meta:
         model = VirtualDisk
-        fields = ["id", "vm_id", "key", "name", "size_gb", "storage",
+        fields = ["id", "vm", "vm_id", "key", "name", "size_gb", "storage",
                   "controller", "disk_format", "created_disk", "description",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_disk", "created_at", "updated_at"]
@@ -5913,7 +6920,7 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
 
     def get_vm_count(self, obj) -> int:
         v = getattr(obj, "vm_count_annotated", None)
-        return v if v is not None else obj.virtual_machines.count()
+        return v if v is not None else _visible_count(self, obj, "virtual_machines")
 
     def validate(self, attrs):
         """Name the clash on the field, rather than letting the database
@@ -5954,9 +6961,27 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
                             "created_at", "updated_at"]
 
 
-class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFieldsSerializerMixin,
+                               TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "virtualmachine"
+    # Its own column, Next end of life (vm-columns.tsx).
+    list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host",
+                            "device_profiles", "local_context_data")
     cluster = ClusterMiniSerializer(read_only=True)
-    disks = VirtualDiskSerializer(many=True, read_only=True)
+    #: What the PRTG plan made of a save that changed prtg_sync; else null.
+    prtg_plan = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_prtg_plan(self, obj):
+        return getattr(obj, "_prtg_plan", None)
+
+    def validate_prtg_host(self, value):
+        return clean_prtg_host(value)
+
+    def validate_local_context_data(self, value):
+        return _local_context_data(value)
+
+    disks = ListedManySerializer(child=VirtualDiskSerializer(), read_only=True)
     # Detail-only tab counters (like the device page). Zero on list responses so
     # a table of VMs doesn't fire a COUNT per row.
     interface_count = serializers.SerializerMethodField()
@@ -5964,6 +6989,30 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     service_count = serializers.SerializerMethodField()
     certificate_count = serializers.SerializerMethodField()
     routing_count = serializers.SerializerMethodField()
+    install_count = serializers.SerializerMethodField()
+    ip_count = serializers.SerializerMethodField()
+    # Device profiles in order, with their state.
+    device_profiles = serializers.SerializerMethodField()
+
+    def get_install_count(self, obj) -> int:
+        """Installed software rows (#436), for the Software tab. Served from
+        the viewset's annotation; a query only where the row came without it."""
+        v = getattr(obj, "install_count_annotated", None)
+        return v if v is not None else obj.installed_software.count()
+
+    def get_ip_count(self, obj) -> int:
+        """Every address the VM uses (api/ip_usage.py), for its IPs tab. Served
+        from the viewset's annotation; a query only without it."""
+        v = getattr(obj, "ip_count_annotated", None)
+        if v is not None:
+            return v
+        from .ip_usage import addresses_of
+
+        return addresses_of("vm", obj).count()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device_profiles(self, obj) -> list:
+        return _device_profiles(self, obj)
 
     @detail_only(0)
     def get_routing_count(self, obj) -> int:
@@ -6044,8 +7093,18 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         p = obj.platform
         if not p:
             return None
+        # The OS lifecycle rides along for the overview's OS support bar,
+        # as on the device's nested platform.
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
-                "eol": _eol_payload(p, self.context)}
+                **_platform_lifecycle(p, self.context)}
+
+    # The platform's effective end of life, for the Next end of life
+    # column (#436) - the soonest end once VMs have more sources.
+    lifecycle_next = serializers.SerializerMethodField()
+
+    @extend_schema_field(LIFECYCLE_NEXT_SCHEMA)
+    def get_lifecycle_next(self, obj):
+        return _lifecycle_next(self, obj, device=False)
 
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
@@ -6058,12 +7117,85 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     synced_from_id = serializers.CharField(read_only=True, default=None)
     #: Unresolved differences between Danbyte and the hypervisor.
     drift_count = serializers.IntegerField(read_only=True, default=0)
+    #: When the hypervisor stopped reporting the guest that backs this VM;
+    #: null while it is present (or never synced). An intended VM keeps its
+    #: tracking row, so this is how its page says "not running anywhere".
+    missing_since = serializers.DateTimeField(read_only=True, default=None)
+
+    # The Device this VM is (a virtual router), as opposed to ``device``, the
+    # host it runs on. Shown only when the caller may view that device.
+    represents_device = serializers.SerializerMethodField()
+    represents_device_id = TenantScopedPrimaryKeyRelatedField(
+        source="represents_device", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_represents_device(self, obj):
+        if obj.represents_device_id is None:
+            return None
+        from .visible_ips import visible_children
+
+        rows = visible_children([obj.represents_device], self.context, "device", "tenant")
+        if not rows:
+            return None
+        d = rows[0]
+        return {"id": str(d.id), "name": d.name}
+
+    def validate_hypervisor_options(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("An object of option names and values.")
+        return value
+
+    def get_validators(self):
+        # The conditional cluster+VMID constraint is checked in
+        # _validate_intent, which names the field and the VM holding it.
+        return [v for v in super().get_validators()
+                if "vmid" not in (getattr(v, "fields", None) or ())]
+
+    def _validate_intent(self, attrs):
+        """The build fields' own rules: the represented device is not the
+        host, is taken by one VM at most, and a VMID is unique per cluster."""
+        def cur(name):
+            return attrs[name] if name in attrs else getattr(self.instance, name, None)
+
+        rep = cur("represents_device")
+        if rep is not None:
+            host = cur("device")
+            if host is not None and host.pk == rep.pk:
+                raise serializers.ValidationError(
+                    {"represents_device_id": "A VM cannot be the device it runs on."}
+                )
+            taken = VirtualMachine.objects.filter(represents_device=rep)
+            if self.instance is not None:
+                taken = taken.exclude(pk=self.instance.pk)
+            other = taken.first()
+            if other is not None:
+                raise serializers.ValidationError(
+                    {"represents_device_id": f"{rep.name} is already backed by {other.name}."}
+                )
+        vmid, cluster = cur("vmid"), cur("cluster")
+        if vmid is not None and cluster is not None:
+            clash = VirtualMachine.objects.filter(cluster=cluster, vmid=vmid)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            other = clash.first()
+            if other is not None:
+                raise serializers.ValidationError(
+                    {"vmid": f"{other.name} already has VMID {vmid} on {cluster.name}."}
+                )
 
     def validate(self, attrs):
         """A VM group sits below one cluster, so a VM can only join a group on
         the cluster it runs on. Moving the VM to another cluster without
         naming a group drops the old one rather than refusing the move."""
         attrs = super().validate(attrs)
+        self._validate_intent(attrs)
+        from .software_target import mark_manual
+
+        mark_manual(attrs, self.instance)
         cluster = attrs.get("cluster", getattr(self.instance, "cluster", None))
         if "group" in attrs:
             group = attrs["group"]
@@ -6080,20 +7212,29 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
 
     class Meta:
         model = VirtualMachine
+        list_serializer_class = _VMListSerializer
         fields = ["id", "name", "cluster", "cluster_id", "group", "group_id",
-                  "role", "role_id", "platform", "platform_id",
+                  "role", "role_id", "platform", "platform_id", "lifecycle_next",
                   "device", "device_id",
                   "site", "site_id", "status", "status_id",
                   "power_state", "power_state_at",
                   "synced_from", "synced_from_id", "drift_count",
                   "vcpus", "memory_mb", "disk_gb", "disks",
+                  "intended", "represents_device", "represents_device_id",
+                  "vmid", "cpu_type", "sockets", "image", "storage",
+                  "hypervisor_options", "missing_since", "local_context_data",
+                  "software_version", "software_version_seen_at",
+                  "software_version_source",
                   "interface_count", "disk_count", "service_count",
-                  "certificate_count", "routing_count",
-                  "primary_ip", "primary_ip_id", "description",
-                  "tags", "tag_ids", "custom_fields",
+                  "certificate_count", "routing_count", "install_count",
+                  "ip_count",
+                  "device_profiles", "primary_ip", "primary_ip_id", "description",
+                  "tags", "tag_ids", "custom_fields", "prtg_sync", "prtg_plan", "prtg_host",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "power_state", "power_state_at",
                             "synced_from", "synced_from_id", "drift_count",
+                            "missing_since",
+                            "software_version_seen_at", "software_version_source",
                             "created_at", "updated_at"]
 
 
@@ -6122,8 +7263,26 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
             else None
         )
 
+    def get_validators(self):
+        # The conditional vm+index constraint is checked in validate, which
+        # names the field and the NIC holding the slot.
+        return [v for v in super().get_validators()
+                if "index" not in (getattr(v, "fields", None) or ())]
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        # The hypervisor slot (netN) is one NIC's per VM.
+        index = attrs["index"] if "index" in attrs else getattr(self.instance, "index", None)
+        if index is not None:
+            vm = attrs.get("vm", getattr(self.instance, "vm", None))
+            clash = VMInterface.objects.filter(vm=vm, index=index)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            other = clash.first() if vm is not None else None
+            if other is not None:
+                raise serializers.ValidationError(
+                    {"index": f"{other.name} already uses index {index}."}
+                )
         # Nesting stays inside one VM and never loops: wg0 over eth0 is the
         # point; eth0 over wg0 over eth0 is a render-breaking cycle.
         parent = attrs.get("parent", getattr(self.instance, "parent", None))
@@ -6195,6 +7354,7 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     class Meta:
         model = VMInterface
         fields = ["id", "vm", "vm_id", "name", "enabled", "kind",
+                  "index", "model", "bridge", "firewall",
                   "parent", "parent_id", "mac_address", "snmp_name",
                   "sync_ignore_ips",
                   "mtu", "speed", "description", "ip_addresses",
@@ -6284,7 +7444,8 @@ class RackTypeMiniSerializer(NumIdModelSerializer):
         model = RackType
         fields = ["id", "name", "manufacturer", "width", "u_height",
                   "starting_unit", "desc_units", "outer_width_mm",
-                  "outer_depth_mm", "max_weight", "max_weight_unit"]
+                  "outer_depth_mm", "max_weight", "max_weight_unit",
+                  "max_power_w", "cooling_capability", "cooling_capacity_w"]
 
 
 class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
@@ -6310,7 +7471,8 @@ class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "name", "manufacturer", "manufacturer_id",
                   "width", "u_height", "starting_unit", "desc_units",
                   "outer_width_mm", "outer_depth_mm",
-                  "max_weight", "max_weight_unit", "description",
+                  "max_weight", "max_weight_unit", "max_power_w",
+                  "cooling_capability", "cooling_capacity_w", "description",
                   "accessories", "rack_count",
                   "tags", "tag_ids", "created_at", "updated_at"]
         read_only_fields = ["id", "accessories", "rack_count",
@@ -6346,10 +7508,13 @@ class RackMiniSerializer(NumIdModelSerializer):
 
 
 class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
-    # The power roll-up and the two port rows are sets of figures the rack
-    # page draws, not one value a column can show; max_weight_kg repeats Max
-    # weight in kg for the load bar (see api.list_fields).
-    list_columns_exclude = ("power", "max_weight_kg", "ports", "panel_ports")
+    # The power and cooling roll-ups and the two port rows are sets of
+    # figures the rack page draws, not one value a column can show;
+    # max_weight_kg repeats Max weight in kg for the load bar (see
+    # api.list_fields).
+    list_columns_exclude = (
+        "power", "cooling", "max_weight_kg", "ports", "panel_ports",
+    )
     site = SiteRegionMiniSerializer(read_only=True)
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True
@@ -6375,6 +7540,11 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         source="location", queryset=Location.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    room = serializers.SerializerMethodField()
+    room_id = TenantScopedPrimaryKeyRelatedField(
+        source="room", queryset=Room.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
@@ -6389,8 +7559,13 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         l = obj.location
         return {"id": str(l.id), "name": l.name} if l else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_room(self, obj):
+        return room_ref(obj.room)
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        reconcile_room(attrs, self.instance, self.context.get("request"))
         # A rack's location must live in the rack's site.
         location = attrs.get("location", getattr(self.instance, "location", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
@@ -6537,6 +7712,25 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         (api.capacity.rack_power)."""
         return rack_power(obj)
 
+    cooling = serializers.SerializerMethodField()
+    cooling_free_w = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_cooling(self, obj):
+        """Heat load against the rack's cooling capacity, and the devices its
+        capability does not take (api.capacity.rack_cooling, #434)."""
+        return rack_cooling(obj)
+
+    def get_cooling_free_w(self, obj) -> int | None:
+        """Capacity less the allocated heat, in watts; null without a
+        capacity - from the same figure as ``cooling``, so the two never
+        disagree. ``?cooling_free_w_gte=`` filters the list on its SQL twin
+        (api.capacity.cooling_free_annotation)."""
+        figure = rack_cooling(obj)
+        if figure["supply"] is None:
+            return None
+        return figure["available_w"] - figure["heat_allocated_w"]
+
     # ``?include=ports`` (#247): the viewset splits the page's counted ports
     # in one go (api.capacity.rack_port_split) and hands them in as the
     # ``rack_ports`` context; without it both read null.
@@ -6564,11 +7758,13 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         model = Rack
         fields = ["id", "numid", "name", "facility_id", "site", "site_id", "role",
                   "role_id", "rack_type", "rack_type_id", "create_accessories",
-                  "status", "status_id", "location", "location_id",
+                  "status", "status_id", "location", "location_id", "room", "room_id",
                   "width", "u_height",
                   "outer_width_mm", "outer_depth_mm",
                   "max_weight", "max_weight_unit", "max_power_w",
+                  "cooling_capability", "cooling_capacity_w",
                   "total_weight_kg", "max_weight_kg", "power",
+                  "cooling", "cooling_free_w",
                   "starting_unit", "desc_units", "description",
                   "device_count", "used_units", "ports", "panel_ports", "document_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
@@ -6777,6 +7973,11 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
         source="location", queryset=Location.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    room = serializers.SerializerMethodField()
+    room_id = TenantScopedPrimaryKeyRelatedField(
+        source="room", queryset=Room.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     role = CabinetRoleMiniSerializer(read_only=True)
     role_id = TenantScopedPrimaryKeyRelatedField(
         source="role", queryset=CabinetRole.objects.all(),
@@ -6801,6 +8002,10 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
         loc = obj.location
         return {"id": str(loc.id), "name": loc.name} if loc else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_room(self, obj):
+        return room_ref(obj.room)
+
     def get_document_count(self, obj) -> int:
         n = getattr(obj, "document_n", None)
         if n is not None:
@@ -6809,10 +8014,11 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
 
     def get_device_count(self, obj) -> int:
         n = getattr(obj, "device_n", None)
-        return n if n is not None else obj.devices.count()
+        return n if n is not None else _visible_count(self, obj, "devices")
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        reconcile_room(attrs, self.instance, self.context.get("request"))
         location = attrs.get("location", getattr(self.instance, "location", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
         if location is not None and site is not None and location.site_id != site.id:
@@ -6900,7 +8106,7 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
     class Meta:
         model = Cabinet
         fields = ["id", "name", "facility_id", "site", "site_id",
-                  "location", "location_id", "role", "role_id",
+                  "location", "location_id", "room", "room_id", "role", "role_id",
                   "cabinet_type", "cabinet_type_id", "status", "status_id",
                   *CABINET_SIZE_FIELDS, "rails", "description", "document_count",
                   "device_count",
@@ -6921,7 +8127,7 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
 class DeviceRoleMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = DeviceRole
-        fields = ["id", "name", "slug", "color", "is_patch_panel", "has_fov"]
+        fields = ["id", "name", "slug", "color", "icon", "is_patch_panel", "has_fov"]
 
 
 class DeviceRoleSerializer(TaggableSerializerMixin, CustomFieldsSerializerMixin, NumIdModelSerializer):
@@ -6987,7 +8193,7 @@ class PlatformGroupSerializer(NumIdModelSerializer):
 
     def get_child_count(self, obj) -> int:
         v = getattr(obj, "child_count_annotated", None)
-        return v if v is not None else obj.children.count()
+        return v if v is not None else _visible_count(self, obj, "children")
 
     def validate_parent_id(self, value):
         if value and self.instance:
@@ -7059,18 +8265,44 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     lifecycle_state = serializers.ReadOnlyField()
     eol = serializers.SerializerMethodField()
+    # The dates the OS lifecycle bar reads: entered wins, else the
+    # end-of-life mapping while the feature is on (and which one it was).
+    effective_release = serializers.SerializerMethodField()
+    effective_end = serializers.SerializerMethodField()
+    effective_source = serializers.SerializerMethodField()
+    # The OS lifecycle column already draws them.
+    list_columns_exclude = ("effective_release", "effective_end", "effective_source")
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_eol(self, obj):
         return _eol_payload(obj, self.context)
 
+    def _effective(self, obj):
+        from compliance.eol import effective_of
+
+        return effective_of(obj, _eol_config(self.context))
+
+    @extend_schema_field(OpenApiTypes.DATE)
+    def get_effective_release(self, obj):
+        return self._effective(obj).start
+
+    @extend_schema_field(OpenApiTypes.DATE)
+    def get_effective_end(self, obj):
+        return self._effective(obj).end
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_effective_source(self, obj) -> str | None:
+        return self._effective(obj).source
+
     class Meta:
         model = Platform
         fields = ["id", "name", "slug", "group", "group_id",
                   "manufacturer", "manufacturer_id",
-                  "config_template", "config_template_id",
+                  "config_template", "config_template_id", "target_version",
+                  "version_pattern", "license", "purl_template", "cpe_template",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
-                  "eol", "device_count", "vm_count", "created_at", "updated_at"]
+                  "eol", "effective_release", "effective_end", "effective_source",
+                  "device_count", "vm_count", "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "vm_count", "lifecycle_state", "eol",
                             "created_at", "updated_at"]
 
@@ -7261,11 +8493,21 @@ class NATRuleSerializer(
         source="source_prefix", queryset=Prefix.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    out_interface = serializers.SerializerMethodField()
+    out_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="out_interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_out_interface(self, obj):
+        i = obj.out_interface if obj.out_interface_id else None
+        return {"id": str(i.id), "name": i.name} if i is not None else None
 
     def validate_external_ports(self, value):
         return _clean_port_spec(value, "external_ports")
@@ -7276,6 +8518,14 @@ class NATRuleSerializer(
     def validate(self, attrs):
         attrs = super().validate(attrs)
         get = lambda f: attrs.get(f, getattr(self.instance, f, None))  # noqa: E731
+
+        out = get("out_interface")
+        if out is not None:
+            device = get("device")
+            if device is None or out.device_id != device.id:
+                raise serializers.ValidationError(
+                    {"out_interface_id": "Pick a port on the rule's device."}
+                )
 
         proto = get("protocol")
         ext, internal = get("external_ports") or "", get("internal_ports") or ""
@@ -7308,6 +8558,7 @@ class NATRuleSerializer(
                   "internal_ip", "internal_ip_id", "internal_ports",
                   "source_ip", "source_ip_id",
                   "source_prefix", "source_prefix_id",
+                  "out_interface", "out_interface_id",
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
@@ -7336,11 +8587,22 @@ class ServiceTemplateSerializer(CustomFieldsSerializerMixin, ProtocolPortsSerial
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    # The software behind the service (#436).
+    application = serializers.SerializerMethodField()
+    application_id = TenantScopedPrimaryKeyRelatedField(
+        source="application", queryset=Application.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_application(self, obj):
+        a = obj.application
+        return {"id": str(a.id), "name": a.name} if a else None
 
     class Meta:
         model = ServiceTemplate
         fields = ["id", "name", "slug", "protocol", "protocol_display", "ports",
-                  "protocol_ports",
+                  "protocol_ports", "application", "application_id",
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
@@ -7825,7 +9087,7 @@ class ContactGroupSerializer(NumIdModelSerializer):
 
     def get_child_count(self, obj) -> int:
         v = getattr(obj, "child_count_annotated", None)
-        return v if v is not None else obj.children.count()
+        return v if v is not None else _visible_count(self, obj, "children")
 
     def validate_parent_id(self, value):
         if value and self.instance:
@@ -7858,7 +9120,7 @@ class ContactRoleSerializer(NumIdModelSerializer):
 
     def get_assignment_count(self, obj) -> int:
         v = getattr(obj, "assignment_count_annotated", None)
-        return v if v is not None else obj.assignments.count()
+        return v if v is not None else _visible_count(self, obj, "assignments")
 
     class Meta:
         model = ContactRole
@@ -7965,7 +9227,7 @@ class ContactSerializer(
 
     def get_assignment_count(self, obj) -> int:
         v = getattr(obj, "assignment_count_annotated", None)
-        return v if v is not None else obj.assignments.count()
+        return v if v is not None else _visible_count(self, obj, "assignments")
 
     class Meta:
         model = Contact
@@ -8106,8 +9368,12 @@ class ProviderNetworkSerializer(
     )
 
     def get_circuit_count(self, obj) -> int:
-        v = getattr(obj, "termination_count_annotated", None)
-        return v if v is not None else obj.circuit_terminations.count()
+        # The circuits the reader may view that terminate on the network.
+        v = getattr(obj, "circuit_count_annotated", None)
+        if v is not None:
+            return v
+        request = self.context.get("request")
+        return path_count(request, Circuit, "terminations__provider_network", obj.pk)
 
     class Meta:
         model = ProviderNetwork
@@ -8167,7 +9433,7 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
         far = t.cable.terminations.exclude(id=t.id).first()
         return _termination_repr(far) if far is not None else None
 
-    circuit_id = serializers.PrimaryKeyRelatedField(
+    circuit_id = TenantScopedPrimaryKeyRelatedField(
         source="circuit", queryset=Circuit.objects.all(), write_only=True,
     )
     site_id = TenantScopedPrimaryKeyRelatedField(
@@ -8382,6 +9648,167 @@ class PowerFeedSerializer(StatusSerializerMixin,
                             "created_at", "updated_at"]
 
 
+# ─── Cooling ─────────────────────────────────────────────────────────────────
+class CoolingSourceMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = CoolingSource
+        fields = ["id", "name"]
+
+
+class CoolingFeedMiniSerializer(NumIdModelSerializer):
+    """``?picker=1`` on the feed list: id, name and source."""
+
+    source = CoolingSourceMiniSerializer(read_only=True)
+
+    class Meta:
+        model = CoolingFeed
+        fields = ["id", "name", "source"]
+
+
+class CoolingSourceSerializer(StatusSerializerMixin,
+    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+):
+    """A cooling unit (#434) - shaped like ``PowerPanelSerializer``, with
+    the unit's own status, rating and ``capacity``: the heat of the racks
+    its feeds reach against its rating (api.capacity.cooling_source_capacity)."""
+
+    cf_model = "coolingsource"
+    site = SiteMiniSerializer(read_only=True)
+    tags = TagSerializer(many=True, read_only=True)
+    feed_count = serializers.SerializerMethodField()
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    fluid_display = serializers.CharField(source="get_fluid_display", read_only=True)
+    capacity = serializers.SerializerMethodField()
+
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True,
+    )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    device = serializers.SerializerMethodField()
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    def get_feed_count(self, obj) -> int:
+        v = getattr(obj, "feed_count_annotated", None)
+        return v if v is not None else obj.cooling_feeds.count()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        return {"id": str(loc.id), "name": loc.name} if loc else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device(self, obj):
+        d = obj.device
+        return {"id": str(d.id), "name": d.name} if d else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_capacity(self, obj):
+        return cooling_source_capacity(obj)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # As a power panel's: the location must be in the source's site,
+        # judged only when either changes (#389).
+        location = attrs.get("location", getattr(self.instance, "location", None))
+        site = attrs.get("site", getattr(self.instance, "site", None))
+        if (
+            location is not None and site is not None and location.site_id != site.id
+            and _changes(self.instance, attrs, "location", "site")
+        ):
+            raise serializers.ValidationError(
+                {"location_id": "Pick a location within the source's site."}
+            )
+        return attrs
+
+    class Meta:
+        model = CoolingSource
+        fields = ["id", "name", "site", "site_id", "location", "location_id",
+                  "type", "type_display", "status", "status_id",
+                  "fluid", "fluid_display", "rated_capacity_w", "redundancy_group",
+                  "device", "device_id", "comments", "feed_count", "capacity",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "type_display", "fluid_display", "feed_count",
+                            "capacity", "created_at", "updated_at"]
+
+
+class CoolingFeedSerializer(StatusSerializerMixin,
+    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+):
+    """A cooling loop from a source to a rack (#434) - shaped like
+    ``PowerFeedSerializer``. ``capacity`` is the rack's heat against what the
+    feed delivers (api.capacity.cooling_feed_capacity)."""
+
+    cf_model = "coolingfeed"
+    source = CoolingSourceMiniSerializer(read_only=True)
+    site = serializers.SerializerMethodField()
+    rack = RackMiniSerializer(read_only=True)
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    tags = TagSerializer(many=True, read_only=True)
+    capacity = serializers.SerializerMethodField()
+    flow = serializers.SerializerMethodField()
+
+    source_id = TenantScopedPrimaryKeyRelatedField(
+        source="source", queryset=CoolingSource.objects.all(), write_only=True,
+    )
+    rack_id = TenantScopedPrimaryKeyRelatedField(
+        source="rack", queryset=Rack.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        site = obj.source.site if obj.source_id else None
+        return {"id": str(site.id), "name": site.name} if site else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_capacity(self, obj):
+        return cooling_feed_capacity(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_flow(self, obj):
+        return cooling_feed_flow(obj)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # A loop runs inside its source's site: a rack elsewhere is refused
+        # when either end changes, so a feed whose rack moved still saves.
+        source = attrs.get("source", getattr(self.instance, "source", None))
+        rack = attrs.get("rack", getattr(self.instance, "rack", None))
+        if (
+            source is not None and rack is not None and rack.site_id != source.site_id
+            and _changes(self.instance, attrs, "source", "rack")
+        ):
+            raise serializers.ValidationError(
+                {"rack_id": "Pick a rack within the source's site."}
+            )
+        return attrs
+
+    class Meta:
+        model = CoolingFeed
+        fields = ["id", "name", "source", "source_id", "site", "rack", "rack_id",
+                  "status", "status_id", "type", "type_display",
+                  "rated_capacity_w", "flow_rate_lpm", "supply_temp_c", "return_temp_c",
+                  "connector", "max_utilization", "comments", "capacity", "flow",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "site", "type_display", "capacity", "flow",
+                            "created_at", "updated_at"]
+
+
 # ─── Wireless ────────────────────────────────────────────────────────────────
 class WirelessLANGroupMiniSerializer(NumIdModelSerializer):
     class Meta:
@@ -8561,14 +9988,14 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
     outside_ip = serializers.SerializerMethodField()
     role_display = serializers.CharField(source="get_role_display", read_only=True)
 
-    tunnel_id = serializers.PrimaryKeyRelatedField(
+    tunnel_id = TenantScopedPrimaryKeyRelatedField(
         source="tunnel", queryset=Tunnel.objects.all(), write_only=True,
     )
-    interface_id = serializers.PrimaryKeyRelatedField(
+    interface_id = TenantScopedPrimaryKeyRelatedField(
         source="interface", queryset=Interface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
-    vm_interface_id = serializers.PrimaryKeyRelatedField(
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="vm_interface", queryset=VMInterface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
@@ -8602,6 +10029,20 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         ip = outside_ip(obj, self.context, obj.tunnel.tenant_id)
         return {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
 
+    allowed_ips = serializers.JSONField(required=False)
+    peers = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only([])
+    def get_peers(self, obj):
+        """The far end(s) this end talks to, as a render sees them. Only on
+        a WireGuard tunnel's detail - a list does not pay for it."""
+        from .wireguard import peer_dict, peer_terminations
+
+        if obj.tunnel.encapsulation != "wireguard":
+            return []
+        return [peer_dict(o) for o in peer_terminations(obj, list(obj.tunnel.terminations.all()))]
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
@@ -8612,6 +10053,36 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "A termination binds exactly one of an interface or a VM interface."
             )
+        probe = TunnelTermination(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in TunnelTermination._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in TunnelTermination._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        try:
+            probe.clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(
+                exc.message_dict if hasattr(exc, "message_dict") else exc.messages
+            ) from exc
+        for f in ("public_key", "private_key_ref", "allowed_ips"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        # One key, one end: unique among the tenant's terminations. A lookup in
+        # the tenant, not a global constraint, so it never says whether a key
+        # exists in another tenant.
+        if probe.public_key and probe.tunnel_id:
+            clash = TunnelTermination.objects.filter(
+                tunnel__tenant_id=probe.tunnel.tenant_id, public_key=probe.public_key,
+            )
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"public_key": "Another tunnel end already has this key."}
+                )
         return attrs
 
     class Meta:
@@ -8619,6 +10090,8 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         fields = ["id", "tunnel_id", "role", "role_display",
                   "interface", "interface_id", "vm_interface",
                   "vm_interface_id", "outside_ip", "outside_ip_id",
+                  "listen_port", "public_key", "private_key_ref", "allowed_ips",
+                  "endpoint_port", "persistent_keepalive", "peers",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -8679,7 +10152,7 @@ class RegionSerializer(NumIdModelSerializer):
 
     def get_child_count(self, obj) -> int:
         v = getattr(obj, "child_count_annotated", None)
-        return v if v is not None else obj.children.count()
+        return v if v is not None else _visible_count(self, obj, "children")
 
     def validate_parent_id(self, value):
         if value and self.instance and value.pk == self.instance.pk:
@@ -8713,10 +10186,142 @@ class RegionSerializer(NumIdModelSerializer):
                             "created_at", "updated_at"]
 
 
+class LocationTypeMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = LocationType
+        fields = ["id", "name", "slug", "color", "icon"]
+
+
+class LocationTypeSerializer(NumIdModelSerializer):
+    """A location type: the editable catalog that names and colours what kind
+    of place a location is (#buildings). Nothing is seeded."""
+
+    slug = serializers.SlugField(required=False, allow_blank=True)
+    location_count = serializers.SerializerMethodField()
+
+    def get_location_count(self, obj) -> int:
+        v = getattr(obj, "location_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "locations")
+
+    def validate_color(self, value):
+        return hex_color_or_blank(value)
+
+    class Meta:
+        model = LocationType
+        fields = ["id", "name", "slug", "color", "icon", "description",
+                  "location_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "location_count", "created_at", "updated_at"]
+
+
+def hex_color_or_blank(value: str) -> str:
+    """A ``#rrggbb`` colour in lower case, or blank for "none"."""
+    import re
+
+    if value and not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        raise serializers.ValidationError(
+            "Enter a 7-char hex colour like #10b981, or leave it empty."
+        )
+    return (value or "").lower()
+
+
+def location_type_ref(t) -> dict | None:
+    """How a location names its type: id, name, colour and icon."""
+    if t is None:
+        return None
+    return {"id": str(t.id), "name": t.name, "color": t.color, "icon": t.icon}
+
+
+class AreaTypeMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = AreaType
+        fields = ["id", "name", "slug", "color", "pattern", "icon"]
+
+
+class AreaTypeSerializer(NumIdModelSerializer):
+    """An area type: the editable catalog that names, colours and patterns
+    plain floor-plan areas (parking, fence, road…). Nothing is seeded."""
+
+    slug = serializers.SlugField(required=False, allow_blank=True)
+    area_count = serializers.SerializerMethodField()
+
+    def get_area_count(self, obj) -> int:
+        v = getattr(obj, "area_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "areas")
+
+    def validate_color(self, value):
+        return hex_color_or_blank(value)
+
+    class Meta:
+        model = AreaType
+        fields = ["id", "name", "slug", "color", "pattern", "icon", "description",
+                  "area_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "area_count", "created_at", "updated_at"]
+
+
+class SensitivityLabelMiniSerializer(NumIdModelSerializer):
+    """A label for the report dialog's picker (``?picker=1``)."""
+
+    text_color = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = SensitivityLabel
+        fields = ["id", "name", "slug", "color", "text_color", "icon", "is_default"]
+
+
+class SensitivityLabelSerializer(ObjectPermsSerializerMixin, NumIdModelSerializer):
+    """A sensitivity label: the editable catalog PDF reports are marked
+    with (api/sensitivity.py). Setting ``is_default`` takes it from the
+    tenant's other labels (the viewset)."""
+
+    text_color = serializers.CharField(read_only=True)
+    slug = serializers.SlugField(required=False, allow_blank=True)
+
+    def validate_color(self, value):
+        return hex_color_or_blank(value)
+
+    def validate_icon(self, value):
+        value = (value or "").strip()
+        if value and not re.fullmatch(r"[a-z0-9-]{1,64}", value):
+            raise serializers.ValidationError("A Lucide icon name, like shield or lock.")
+        return value
+
+    class Meta:
+        model = SensitivityLabel
+        fields = ["id", "name", "slug", "color", "text_color", "icon", "description",
+                  "weight", "is_default", "permissions", "created_at", "updated_at"]
+        read_only_fields = ["id", "text_color", "permissions", "created_at", "updated_at"]
+
+
+def area_type_ref(t) -> dict | None:
+    """How an area names its type: id, name, colour, pattern and icon."""
+    if t is None:
+        return None
+    return {"id": str(t.id), "name": t.name, "color": t.color, "pattern": t.pattern,
+            "icon": t.icon}
+
+
 class LocationMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = Location
         fields = ["id", "name", "slug"]
+
+
+class LocationPickerSerializer(NumIdModelSerializer):
+    """A location in a picker (``?picker=1``). ``color`` and ``icon`` are
+    what it is drawn with: its own, else its type's."""
+
+    color = serializers.CharField(source="display_color", read_only=True)
+    icon = serializers.CharField(source="display_icon", read_only=True)
+    location_type = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location_type(self, obj):
+        return location_type_ref(obj.location_type) if obj.location_type_id else None
+
+    class Meta:
+        model = Location
+        fields = ["id", "name", "slug", "code", "color", "icon", "location_type",
+                  "site_id", "parent_id"]
 
 
 class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
@@ -8727,10 +10332,16 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
     site = SiteMiniSerializer(read_only=True)
     parent = LocationMiniSerializer(read_only=True)
+    location_type = serializers.SerializerMethodField()
+    location_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="location_type", queryset=LocationType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     child_count = serializers.SerializerMethodField()
     device_count = serializers.SerializerMethodField()
     rack_count = serializers.SerializerMethodField()
     cabinet_count = serializers.SerializerMethodField()
+    room_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
 
     site_id = TenantScopedPrimaryKeyRelatedField(
@@ -8741,20 +10352,28 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location_type(self, obj):
+        return location_type_ref(obj.location_type) if obj.location_type_id else None
+
     def get_child_count(self, obj) -> int:
         return obj.children.count()
 
     def get_device_count(self, obj) -> int:
         v = getattr(obj, "device_count_annotated", None)
-        return v if v is not None else obj.devices.count()
+        return v if v is not None else _visible_count(self, obj, "devices")
 
     def get_rack_count(self, obj) -> int:
         v = getattr(obj, "rack_count_annotated", None)
-        return v if v is not None else obj.racks.count()
+        return v if v is not None else _visible_count(self, obj, "racks")
 
     def get_cabinet_count(self, obj) -> int:
         v = getattr(obj, "cabinet_count_annotated", None)
-        return v if v is not None else obj.cabinets.count()
+        return v if v is not None else _visible_count(self, obj, "cabinets")
+
+    def get_room_count(self, obj) -> int:
+        v = getattr(obj, "room_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "rooms")
 
     def get_document_count(self, obj) -> int:
         return Document.objects.filter(
@@ -8778,13 +10397,118 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = Location
-        fields = ["id", "name", "slug", "site", "site_id", "parent", "parent_id",
+        fields = ["id", "name", "slug", "code", "site", "site_id", "parent", "parent_id",
+                  "location_type", "location_type_id",
                   "status", "status_id", "color", "icon", "description",
                   "child_count",
-                  "device_count", "rack_count", "cabinet_count", "document_count",
+                  "device_count", "rack_count", "cabinet_count", "room_count",
+                  "document_count",
                   "created_at", "updated_at"]
         read_only_fields = ["id",  "child_count", "document_count",
                             "created_at", "updated_at"]
+
+
+# ─── Rooms (Region → Site → Location → Room) ─────────────────────────────────
+class RoomMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = Room
+        fields = ["id", "name", "slug", "code", "color", "location_id"]
+
+
+def room_ref(room) -> dict | None:
+    """How a device, rack or cabinet names its room: id, name, code and
+    colour, for the ColorBadge."""
+    if room is None:
+        return None
+    return {"id": str(room.id), "name": room.name, "code": room.code, "color": room.color}
+
+
+class RoomSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
+                     TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "room"
+    # Two buildings can each hold a "Room 210": the slug is unique per
+    # location, suffixed only on a clash there.
+    slug_autofill_unique = True
+    slug_autofill_scope = ("tenant", "location")
+
+    slug = serializers.SlugField(required=False, allow_blank=True)
+    location = serializers.SerializerMethodField()
+    site = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(), write_only=True,
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    device_count = serializers.SerializerMethodField()
+    rack_count = serializers.SerializerMethodField()
+    cabinet_count = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        return {"id": str(loc.id), "name": loc.name, "color": loc.display_color,
+                "icon": loc.display_icon}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        site = obj.location.site
+        return {"id": str(site.id), "name": site.name}
+
+    def get_device_count(self, obj) -> int:
+        v = getattr(obj, "device_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "devices")
+
+    def get_rack_count(self, obj) -> int:
+        v = getattr(obj, "rack_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "racks")
+
+    def get_cabinet_count(self, obj) -> int:
+        v = getattr(obj, "cabinet_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "cabinets")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inst = self.instance
+        location = attrs.get("location", getattr(inst, "location", None))
+        name = attrs.get("name", getattr(inst, "name", None))
+        if location is not None and name:
+            clash = Room.objects.filter(location=location, name=name)
+            if inst is not None:
+                clash = clash.exclude(pk=inst.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"name": f"{location.name} already has a room with this name."}
+                )
+        slug = attrs.get("slug")
+        if location is not None and slug:
+            clash = Room.objects.filter(location=location, slug=slug)
+            if inst is not None:
+                clash = clash.exclude(pk=inst.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"slug": f"{location.name} already has a room with this slug."}
+                )
+        if inst is not None and "location" in attrs and attrs["location"].pk != inst.location_id:
+            # What stands in it is in its location: it moves out first.
+            if inst.devices.exists() or inst.racks.exists() or inst.cabinets.exists():
+                raise serializers.ValidationError({"location_id": (
+                    "Devices, racks or cabinets are in this room - move them out first."
+                )})
+        return attrs
+
+    class Meta:
+        model = Room
+        fields = ["id", "name", "slug", "code", "location", "location_id", "site",
+                  "status", "status_id", "color", "description",
+                  "device_count", "rack_count", "cabinet_count",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+        # Name and slug per location are checked in validate(), with a
+        # message that names the clash; the constraints still guard the table.
+        validators = []
 
 
 # ─── Config Contexts ─────────────────────────────────────────────────────────
@@ -8810,6 +10534,12 @@ class ConfigContextSerializer(NumIdModelSerializer):
         source="platforms", queryset=Platform.objects.all(),
         many=True, write_only=True, required=False,
     )
+    # Match on any of these tags (the device's/VM's own tags).
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.filter(tenant__isnull=False),
+        many=True, write_only=True, required=False,
+    )
 
     @extend_schema_field(serializers.ListField())
     def get_device_roles(self, obj):
@@ -8824,11 +10554,29 @@ class ConfigContextSerializer(NumIdModelSerializer):
             raise serializers.ValidationError("Data must be a JSON object.")
         return value
 
+    def validate_tag_ids(self, value):
+        """The context's own tenant's tags only: never a deployment-global tag
+        (it is not the tenant's to match on) nor another tenant's."""
+        from api.views import _get_active_tenant
+
+        if self.instance is not None:
+            tenant_id = self.instance.tenant_id
+        else:
+            request = self.context.get("request")
+            tenant = _get_active_tenant(request) if request else None
+            tenant_id = tenant.pk if tenant else None
+        bad = [t.name for t in value if t.tenant_id is None or t.tenant_id != tenant_id]
+        if bad:
+            raise serializers.ValidationError(
+                f"Not a tag of this tenant: {', '.join(sorted(bad))}.")
+        return value
+
     class Meta:
         model = ConfigContext
         fields = ["id", "name", "weight", "is_active", "description", "data",
                   "regions", "region_ids", "sites", "site_ids",
                   "device_roles", "device_role_ids", "platforms", "platform_ids",
+                  "tags", "tag_ids",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -8836,6 +10584,7 @@ class ConfigContextSerializer(NumIdModelSerializer):
 # ─── Export templates ────────────────────────────────────────────────────────
 class ExportTemplateSerializer(NumIdModelSerializer):
     object_type_label = serializers.SerializerMethodField()
+    is_directory = serializers.BooleanField(read_only=True)
 
     def get_object_type_label(self, obj) -> str:
         from auth_api.object_types import _registry
@@ -8876,20 +10625,59 @@ class ExportTemplateSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(f"Template syntax error: {exc}")
         return value
 
+    def validate(self, attrs):
+        """A target path ending in ``/`` is a directory: the template writes
+        one file per ``{% file %}`` block. Only a device template has one, a
+        directory never steps out with ``..``, and a file block needs one."""
+        from jinja2 import TemplateError
+
+        from .export_templates import _env
+
+        attrs = super().validate(attrs)
+        inst = self.instance
+        target = attrs.get("target_path", inst.target_path if inst else "") or ""
+        object_type = attrs.get("object_type", inst.object_type if inst else "")
+        code = attrs.get("template_code", inst.template_code if inst else "") or ""
+        if target.endswith("/"):
+            if object_type != "device":
+                raise serializers.ValidationError(
+                    {"target_path": "Only a device template renders a directory of files."}
+                )
+            if ".." in target.split("/") or any(
+                ord(c) < 32 or ord(c) == 127 for c in target
+            ):
+                raise serializers.ValidationError(
+                    {"target_path": "A directory cannot contain .. or control characters."}
+                )
+        else:
+            env = _env()
+            try:
+                env.from_string(code)
+            except TemplateError:
+                return attrs  # validate_template_code has said so
+            if env.file_blocks:
+                raise serializers.ValidationError(
+                    {"target_path": "A template with file blocks needs a target path "
+                                    "ending in / (the directory they land in)."}
+                )
+        return attrs
+
     class Meta:
         model = ExportTemplate
         fields = ["id", "name", "object_type", "object_type_label", "description",
                   "template_code", "mime_type", "file_extension", "as_attachment",
-                  "target_path", "bundle_path",
+                  "target_path", "bundle_path", "is_directory",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "object_type_label", "bundle_path",
+        read_only_fields = ["id", "object_type_label", "bundle_path", "is_directory",
                             "created_at", "updated_at"]
 
 
 class ExportTemplateMiniSerializer(NumIdModelSerializer):
+    is_directory = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = ExportTemplate
-        fields = ["id", "name", "object_type", "target_path", "bundle_path"]
+        fields = ["id", "name", "object_type", "target_path", "bundle_path", "is_directory"]
 
 
 class ConfigBundleSerializer(NumIdModelSerializer):
@@ -8925,6 +10713,10 @@ class ConfigBundleSerializer(NumIdModelSerializer):
         attrs = super().validate(attrs)
         paths: dict[str, str] = {}
         for t in attrs.get("templates", []):
+            # Directory templates may share a directory (.link and .network
+            # files side by side); a name clash there shows at render time.
+            if t.is_directory:
+                continue
             if t.bundle_path in paths:
                 raise serializers.ValidationError(
                     {"template_ids": f"{paths[t.bundle_path]} and {t.name} both land "
@@ -9134,11 +10926,11 @@ class L2VPNTerminationSerializer(serializers.ModelSerializer):
         source="vlan", queryset=VLAN.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
-    interface_id = serializers.PrimaryKeyRelatedField(
+    interface_id = TenantScopedPrimaryKeyRelatedField(
         source="interface", queryset=Interface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
-    vm_interface_id = serializers.PrimaryKeyRelatedField(
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="vm_interface", queryset=VMInterface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
@@ -9239,11 +11031,13 @@ class L2VPNSerializer(StatusSerializerMixin,
     vtep_count = serializers.SerializerMethodField()
 
     def get_termination_count(self, obj) -> int:
-        return obj.terminations.count()
+        # The ends the reader may view, as ``terminations`` lists (#448).
+        n = getattr(obj, "termination_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "terminations")
 
     def get_vtep_count(self, obj) -> int:
         annotated = getattr(obj, "vtep_count_annotated", None)
-        return annotated if annotated is not None else obj.vtep_memberships.count()
+        return annotated if annotated is not None else _visible_count(self, obj, "vtep_memberships")
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -9296,8 +11090,36 @@ class SiteMarkerSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_device(self, obj):
-        d = obj.device
-        return {"id": str(d.id), "name": d.name} if d else None
+        """The marker's device; one the reader may not view reads
+        ``{id: null, name: "Hidden", hidden: true}`` (#453)."""
+        if obj.device_id is None:
+            return None
+        viewable = self._viewable_devices(obj)
+        if viewable is not None and not viewable.may_view("device", obj.device_id):
+            return {"id": None, "name": "Hidden", "hidden": True}
+        return {"id": str(obj.device_id), "name": obj.device.name}
+
+    def _viewable_devices(self, obj):
+        """A ``ViewableRows`` for the request, primed once with the devices
+        of every row a list serialises; None without a request or for a
+        superuser."""
+        if not hasattr(self, "_marker_devices"):
+            request = self.context.get("request") if self.context else None
+            user = getattr(request, "user", None)
+            self._marker_devices = None
+            if user is not None and not getattr(user, "is_superuser", False):
+                from api.views import _get_active_tenant
+                from auth_api import rbac
+
+                self._marker_devices = rbac.ViewableRows(user, _get_active_tenant(request))
+                parent = getattr(self, "parent", None)
+                rows = (
+                    parent.instance
+                    if isinstance(parent, serializers.ListSerializer)
+                    and isinstance(parent.instance, list) else [obj]
+                )
+                self._marker_devices.prime("device", {r.device_id for r in rows})
+        return self._marker_devices
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_type(self, obj):
@@ -9351,25 +11173,72 @@ class FloorTileTypeSerializer(NumIdModelSerializer):
 
 
 class FloorPlanMiniSerializer(NumIdModelSerializer):
+    # The floor plan a floor belongs to, so two floors named "1" in two
+    # buildings can be told apart in a picker.
+    stack_name = serializers.CharField(source="stack.name", read_only=True, default=None)
+
     class Meta:
         model = FloorPlan
-        fields = ["id", "name", "grid_width", "grid_height"]
+        fields = ["id", "name", "stack_name", "grid_width", "grid_height", "kind"]
 
 
-class FloorPlanSerializer(
-    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
-):
-    cf_model = "floorplan"
+class FloorPlanFloorSerializer(serializers.ModelSerializer):
+    """A floor as its floor plan lists it - the switcher's row. ``view_of``
+    names the plan a live view shows. ``elevation`` is the floor's height in
+    mm: its ``elevation_mm``, else on an aligned floor plan worked out from
+    the floors below (``floor_stacks.stack_elevations``); null otherwise."""
 
-    location = LocationMiniSerializer(read_only=True)
+    view_of = serializers.SerializerMethodField()
+    elevation = serializers.SerializerMethodField()
+
+    def get_elevation(self, obj) -> int | None:
+        computed = self.context.get("elevations")
+        if computed is not None and obj.pk in computed:
+            return computed[obj.pk]
+        return int(obj.elevation_mm) if obj.elevation_mm is not None else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_view_of(self, obj):
+        if obj.kind != "view":
+            return None
+        src = obj.source
+        return {"id": str(src.pk), "name": src.name} if src is not None else None
+
+    class Meta:
+        model = FloorPlan
+        fields = ["id", "numid", "name", "floor_order", "location_id", "kind", "view_of",
+                  "elevation_mm", "elevation", "ceiling_mm", "slab_mm", "grid_width",
+                  "grid_height", "cell_mm", "align_dx", "align_dy", "align_rot"]
+
+
+def _floor_plan_site(obj):
+    """A floor plan's (or a floor's) site: its own, else - for a row a
+    process on an older release wrote during an upgrade - its location's."""
+    if obj.site_id is not None:
+        return obj.site
+    return obj.location.site if obj.location_id is not None else None
+
+
+class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSerializer):
+    """A floor plan (``FloorPlanStack``): a building or hall and its floors in
+    order. ``site`` is required; ``location`` is optional - a floor plan with
+    none is site-wide. An older client that sends only ``location_id`` gets
+    that location's site. ``floors`` holds the floors the reader may view;
+    writes to floors go through the floor-plan endpoints and the stack's
+    ``floors/``, ``reorder/`` and ``merge/`` actions."""
+
+    location = LocationMiniSerializer(read_only=True, allow_null=True)
     location_id = TenantScopedPrimaryKeyRelatedField(
-        source="location", queryset=Location.objects.all(), write_only=True
+        source="location", queryset=Location.objects.all(), write_only=True,
+        required=False, allow_null=True,
     )
     site = serializers.SerializerMethodField()
-    background_image = serializers.SerializerMethodField()
-    tile_count = serializers.SerializerMethodField()
-    drawing = serializers.SerializerMethodField()
-    state = serializers.JSONField(required=False)
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True, required=False,
+    )
+    floors = serializers.SerializerMethodField()
+    floor_count = serializers.SerializerMethodField()
+    last_edited = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
@@ -9378,16 +11247,221 @@ class FloorPlanSerializer(
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
-        if obj.location_id is None:
+        site = _floor_plan_site(obj)
+        return SiteMiniSerializer(site).data if site is not None else None
+
+    def _floors(self, obj):
+        rows = getattr(obj, "visible_floors", None)
+        if rows is None:
+            rows = list(obj.floors.order_by("floor_order", "name", "pk"))
+        return rows
+
+    @extend_schema_field(FloorPlanFloorSerializer(many=True))
+    def get_floors(self, obj):
+        from .floor_stacks import ordered_floors, stack_elevations
+
+        rows = self._floors(obj)
+        elevations = None
+        if obj.aligned:
+            # From every floor, not only the ones the reader may view: a
+            # level's height does not change with who looks at it.
+            elevations = stack_elevations(ordered_floors(obj))
+        return FloorPlanFloorSerializer(
+            rows, many=True, context={"elevations": elevations}
+        ).data
+
+    def get_floor_count(self, obj) -> int:
+        return len(self._floors(obj))
+
+    def get_last_edited(self, obj) -> str | None:
+        """The newest change to the floor plan or one of its floors."""
+        times = [obj.updated_at, *(p.updated_at for p in self._floors(obj))]
+        newest = max((t for t in times if t is not None), default=None)
+        return newest.isoformat() if newest else None
+
+    def validate(self, attrs):
+        from .floor_stacks import clash_message, in_scope, name_clash
+
+        attrs = super().validate(attrs)
+        inst = self.instance
+        location = attrs.get("location", getattr(inst, "location", None))
+        old_site = _floor_plan_site(inst) if inst is not None else None
+        site = attrs.get("site", old_site)
+        if inst is not None and "site" in attrs and old_site is not None \
+                and attrs["site"].pk != old_site.pk:
+            raise serializers.ValidationError(
+                {"site_id": "A floor plan stays at its site."}
+            )
+        if site is None:
+            if location is None:
+                raise serializers.ValidationError(
+                    {"site_id": "Pick a site (and a location, or the whole site)."}
+                )
+            site = location.site
+        if location is not None and location.site_id != site.pk:
+            raise serializers.ValidationError(
+                {"location_id": f"Pick a location at {site.name}, or the whole site."}
+            )
+        attrs["site"] = site
+        name = attrs.get("name", getattr(inst, "name", None))
+        if name and name_clash(
+            site.tenant_id, site.pk, getattr(location, "pk", None), name,
+            exclude=getattr(inst, "pk", None),
+        ):
+            raise serializers.ValidationError(
+                {"name": clash_message(getattr(location, "pk", None))}
+            )
+        if inst is not None and "location" in attrs and location is not None \
+                and location.pk != inst.location_id:
+            # A floor with no location of its own (a site-wide floor) takes
+            # the floor plan's location on save; one whose location is set
+            # must already lie in it.
+            probe = FloorPlanStack(site=site, location=location)
+            if any(p.location_id is not None and not in_scope(p.location, probe)
+                   for p in inst.floors.select_related("location")):
+                raise serializers.ValidationError({
+                    "location_id": "Every floor's location must be this location "
+                                   "or inside it."
+                })
+        return attrs
+
+    def update(self, instance, validated_data):
+        with transaction.atomic():
+            stack = super().update(instance, validated_data)
+            if "location" in validated_data and stack.location_id is not None:
+                # One by one, so each floor's change is in the change log.
+                for floor in stack.floors.filter(location__isnull=True):
+                    floor.location = stack.location
+                    floor.save(update_fields=["location", "updated_at"])
+        return stack
+
+    class Meta:
+        model = FloorPlanStack
+        fields = ["id", "name", "description", "location", "location_id", "site",
+                  "site_id", "aligned", "floors", "floor_count", "last_edited", "tags",
+                  "tag_ids", "created_at", "updated_at"]
+        read_only_fields = ["id", "site", "floors", "floor_count", "last_edited",
+                            "created_at", "updated_at"]
+        # Name uniqueness (per location, or per site when site-wide) is
+        # checked in validate().
+        validators = []
+
+
+class FloorPlanSerializer(
+    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+):
+    cf_model = "floorplan"
+
+    # A floor's site is its floor plan's; its location is optional (none: a
+    # site-wide floor). ``site_id`` is needed on create only when neither a
+    # ``stack_id`` nor a ``location_id`` gives it.
+    location = LocationMiniSerializer(read_only=True, allow_null=True)
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(), write_only=True,
+        required=False, allow_null=True,
+    )
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True, required=False,
+    )
+    # The floor plan this is a floor of. Omitted on create: a new floor plan
+    # of its own, named after this plan.
+    stack = serializers.SerializerMethodField()
+    stack_id = TenantScopedPrimaryKeyRelatedField(
+        source="stack", queryset=FloorPlanStack.objects.all(), write_only=True,
+        required=False,
+    )
+    floor_order = serializers.IntegerField(
+        required=False, min_value=-32768, max_value=32767
+    )
+    site = serializers.SerializerMethodField()
+    elevation = serializers.SerializerMethodField()
+    align_dx = serializers.FloatField(required=False, min_value=-10000, max_value=10000)
+    align_dy = serializers.FloatField(required=False, min_value=-10000, max_value=10000)
+    align_rot = serializers.FloatField(required=False, min_value=-360, max_value=360)
+    background_image = serializers.SerializerMethodField()
+    tile_count = serializers.SerializerMethodField()
+    drawing = serializers.SerializerMethodField()
+    snapshot = serializers.SerializerMethodField()
+    geo = serializers.SerializerMethodField()
+    base_map = serializers.SerializerMethodField()
+    map_visible = serializers.SerializerMethodField()
+    map_levels = serializers.SerializerMethodField()
+    frame_extent = serializers.SerializerMethodField()
+    state = serializers.JSONField(required=False)
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_geo(self, obj):
+        """The plan's geo anchor (api/floor_plan_geo.py): ``bbox`` [south,
+        west, north, east], ``mpc`` (metres per cell), ``zoom``, ``basemap``
+        and ``captured_at`` of the map background. Null for a plan not tied
+        to the Site map, and for a live view."""
+        from .floor_plan_geo import geo_data
+
+        return geo_data(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_base_map(self, obj):
+        """The base layer: a Site map snapshot (api/floor_plan_layers.py),
+        shared by the levels of one building - ``{id, image, bbox, zoom,
+        basemap, attribution, captured_at, floors}`` - or null."""
+        from .floor_plan_layers import map_data
+
+        # The viewset annotates the floor count, one subquery for a list.
+        return map_data(obj, floors=getattr(obj, "base_map_floors", None))
+
+    def get_map_visible(self, obj) -> bool:
+        """Whether the base map is drawn: ``map_shown`` when set, else on
+        every floor but a basement of an aligned floor plan."""
+        from .floor_plan_layers import map_visible
+
+        return map_visible(obj)
+
+    def _frame_levels(self, obj):
+        from .floor_plan_geo import grow_levels
+
+        if getattr(obj, "kind", "plan") == "view":
             return None
-        return SiteMiniSerializer(obj.location.site).data
+        cache = self.context.setdefault("_frame_levels", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = grow_levels(obj)
+        return cache[obj.pk]
+
+    @detail_only(None)
+    def get_map_levels(self, obj) -> int | None:
+        """The floors a new frame in From site map grows, shrinks or moves
+        together: this one and, on an aligned floor plan, the levels of the
+        same grid and cell size (api/floor_plan_geo.py ``grow_levels``).
+        Null on a list."""
+        levels = self._frame_levels(obj)
+        return None if levels is None else len(levels)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_frame_extent(self, obj):
+        """``{x, y, w, h}``: the whole cells everything drawn on those
+        levels covers - the smallest frame From site map may shrink to.
+        Null when they are empty, and on a list."""
+        from .floor_plan_geo import frame_extent
+
+        levels = self._frame_levels(obj)
+        return None if levels is None else frame_extent(levels)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        site = _floor_plan_site(obj)
+        return SiteMiniSerializer(site).data if site is not None else None
 
     def get_background_image(self, obj) -> str | None:
         return _img_url(self, obj.background_image)
 
     def get_tile_count(self, obj) -> int:
         v = getattr(obj, "tile_count_annotated", None)
-        return v if v is not None else obj.tiles.count()
+        return v if v is not None else _visible_count(self, obj, "tiles")
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_drawing(self, obj):
@@ -9411,34 +11485,256 @@ class FloorPlanSerializer(
             raise serializers.ValidationError("state must be an object")
         return v
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_stack(self, obj):
+        st = obj.stack
+        return {"id": str(st.pk), "name": st.name, "aligned": st.aligned} \
+            if st is not None else None
+
+    def get_elevation(self, obj) -> int | None:
+        from .floor_stacks import floor_elevation
+
+        return floor_elevation(obj)
+
+    def _source_visible(self, src) -> bool:
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        request = self.context.get("request")
+        if request is None:
+            return True
+        tenant = _get_active_tenant(request)
+        return tenant is not None and src.tenant_id == tenant.pk and \
+            rbac.restrict_queryset(
+                FloorPlan.objects.filter(pk=src.pk), request.user, tenant, "floorplan", "view"
+            ).exists()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_snapshot(self, obj):
+        """What a snapshot was taken of: ``kind`` (``view``: a live view;
+        ``copy``: an independent copy), ``source`` (``{id, name, stack}``,
+        null when it is gone or hidden from the reader), ``crop`` (in the
+        source's cells), ``at``, and for a view ``source_grid`` (the source's
+        grid, which its background spans). A view made from a room, location
+        or area reads ``area`` (``{id, name}``, null otherwise or once the
+        area is gone), ``margin`` (cells around its box), ``mask`` (its
+        outline in the view's cells: what lies outside it is drawn dimmed)
+        and the ``crop`` it gives now. Null for a plan made otherwise."""
+        from . import floor_plan_snapshots as snaps
+
+        if obj.kind != "view" and not obj.crop:
+            return None
+        src = obj.source
+        shown = src is not None and self._source_visible(src)
+        out = {
+            "kind": "view" if obj.kind == "view" else "copy",
+            "source": {
+                "id": str(src.pk), "name": src.name,
+                "stack": src.stack.name if src.stack_id else "",
+            } if shown else None,
+            "crop": obj.crop,
+            "at": obj.snapshot_at.isoformat() if obj.snapshot_at else None,
+        }
+        if obj.kind == "view" and src is not None:
+            out["source_grid"] = {"width": src.grid_width, "height": src.grid_height}
+            crop = snaps.effective_crop(obj, src)
+            area = snaps.following(obj, src)
+            out["crop"] = crop.as_dict()
+            out["area"] = {"id": str(area.pk), "name": str(area)} if area and shown else None
+            out["margin"] = obj.source_margin or 0
+            out["mask"] = snaps.view_mask(obj, src, crop) if area else None
+        return out
+
+    def to_representation(self, obj):
+        """A live view is drawn with its source's grid at the crop's size,
+        scale, layout and background, and counts the source's tiles it
+        shows."""
+        data = super().to_representation(obj)
+        if obj.kind != "view" or obj.source_id is None:
+            return data
+        from . import floor_plan_snapshots as snaps
+        from .floor_plan_layers import map_data, map_visible
+
+        src, crop = snaps.resolve(obj)
+        data.update({
+            "grid_width": max(1, crop.w), "grid_height": max(1, crop.h),
+            "cell_mm": src.cell_mm, "ceiling_mm": src.ceiling_mm,
+            "layout_mode": src.layout_mode,
+            "background_image": _img_url(self, src.background_image),
+            "background_opacity": src.background_opacity,
+            "background_shown": src.background_shown,
+            "base_map": map_data(obj, source=src),
+            "map_opacity": src.map_opacity,
+            "map_shown": src.map_shown,
+            "map_visible": map_visible(src),
+            "tile_count": len(snaps.in_crop("tiles", src.tiles.all(), crop)),
+            "drawing": self._view_drawing(src, crop),
+        })
+        return data
+
+    def _view_drawing(self, src, crop):
+        from . import floor_plan_snapshots as snaps
+
+        try:
+            d = src.drawing
+        except FloorPlan.drawing.RelatedObjectDoesNotExist:
+            return None
+        if d.status == "ready" and snaps.drawing_clip(d, src.cell_mm, crop) is None:
+            return None
+        return {
+            "id": str(d.id), "status": d.status, "source_kind": d.source_kind,
+            "source_name": d.source_name, "rendered_url": None,
+            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        }
+
+    #: What a live view takes from its source.
+    VIEW_FIXED = ("grid_width", "grid_height", "cell_mm", "ceiling_mm", "layout_mode",
+                  "background_opacity", "background_shown", "map_opacity", "map_shown")
+
     def validate(self, attrs):
+        from .floor_stacks import clash_message, location_error, name_clash, name_taken
+
         attrs = super().validate(attrs)
-        # Friendly duplicate check ahead of the DB unique constraint.
-        location = attrs.get("location", getattr(self.instance, "location", None))
-        name = attrs.get("name", getattr(self.instance, "name", None))
-        if location is not None and name:
-            clash = FloorPlan.objects.filter(
-                tenant=location.tenant, location=location, name=name
+        inst = self.instance
+        if inst is not None and inst.kind == "view":
+            shown = self.to_representation(inst)
+            fixed = [k for k in self.VIEW_FIXED if k in attrs and attrs[k] != shown.get(k)]
+            if fixed:
+                src = inst.source.name if inst.source_id else "its source"
+                raise serializers.ValidationError({
+                    k: f"A view takes this from {src}. Change it there." for k in fixed
+                })
+            for k in self.VIEW_FIXED:
+                attrs.pop(k, None)
+        stack = attrs.get("stack", getattr(inst, "stack", None))
+        old_site = _floor_plan_site(inst) if inst is not None else None
+        if inst is None and "location" not in attrs and stack is not None:
+            # A new floor of a floor plan takes its location (none for a
+            # site-wide floor plan).
+            attrs["location"] = stack.location
+        location = attrs.get("location", getattr(inst, "location", None))
+        site = attrs.get("site", old_site)
+        if inst is not None and "site" in attrs and old_site is not None \
+                and attrs["site"].pk != old_site.pk:
+            raise serializers.ValidationError(
+                {"site_id": "A floor plan stays at its site."}
             )
-            if self.instance is not None:
-                clash = clash.exclude(pk=self.instance.pk)
+        if site is None:
+            if stack is not None:
+                site = _floor_plan_site(stack)
+            elif location is not None:
+                site = location.site
+            else:
+                raise serializers.ValidationError(
+                    {"site_id": "Pick a site (and a location, or the whole site)."}
+                )
+        if stack is not None and _floor_plan_site(stack).pk != site.pk:
+            raise serializers.ValidationError(
+                {"stack_id": f"Pick a floor plan at {site.name}."}
+            )
+        if location is not None and location.site_id != site.pk:
+            raise serializers.ValidationError(
+                {"location_id": f"Pick a location at {site.name}, or the whole site."}
+            )
+        attrs["site"] = site
+        name = attrs.get("name", getattr(inst, "name", None))
+        if (
+            inst is not None
+            and attrs.get("layout_mode") == "grid"
+            and inst.layout_mode != "grid"
+            and any(not tile_on_grid(t) for t in inst.tiles.all())
+        ):
+            raise serializers.ValidationError(
+                {"layout_mode": "Use Snap all to bring the tiles back onto the grid."}
+            )
+        if stack is not None:
+            err = location_error(location, stack)
+            if err:
+                key = "stack_id" if "stack" in attrs else "location_id"
+                raise serializers.ValidationError({key: err})
+            if name and name_taken(stack, name, exclude=getattr(inst, "pk", None)):
+                raise serializers.ValidationError(
+                    {"name": "This floor plan already has a floor with that name."}
+                )
+        elif inst is None and name:
+            # A new floor plan of its own: its name is the stack's too.
+            loc_id = getattr(location, "pk", None)
+            if name_clash(site.tenant_id, site.pk, loc_id, name):
+                raise serializers.ValidationError({"name": clash_message(loc_id)})
+        elif inst is not None and name:
+            clash = FloorPlan.objects.filter(
+                tenant_id=site.tenant_id, site=site, location=location, name=name,
+                stack__isnull=True,
+            ).exclude(pk=inst.pk)
             if clash.exists():
                 raise serializers.ValidationError(
                     {"name": "This location already has a plan with that name."}
                 )
         return attrs
 
+    def create(self, validated_data):
+        from .floor_stacks import next_order
+
+        stack = validated_data.get("stack")
+        if stack is None:
+            validated_data["stack"] = FloorPlanStack.objects.create(
+                tenant=validated_data["tenant"], site=validated_data["site"],
+                location=validated_data.get("location"),
+                name=validated_data["name"],
+                description=validated_data.get("description", ""),
+            )
+            validated_data.setdefault("floor_order", 0)
+        else:
+            validated_data.setdefault("floor_order", next_order(stack))
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        from .floor_stacks import drop_if_empty, next_order
+
+        old = instance.stack
+        new = validated_data.get("stack", old)
+        moved = new is not None and (old is None or new.pk != old.pk)
+        if moved and "floor_order" not in validated_data:
+            validated_data["floor_order"] = next_order(new, exclude=instance.pk)
+        old_w, old_h = instance.grid_width, instance.grid_height
+        new_w = validated_data.get("grid_width", old_w)
+        new_h = validated_data.get("grid_height", old_h)
+        if (new_w, new_h) != (old_w, old_h) and instance.kind == "plan" \
+                and instance.geo_bbox:
+            # The geo anchor follows the grid, so the map keeps its scale
+            # (api/floor_plan_geo.py resize_anchor).
+            from .floor_plan_geo import resize_anchor
+
+            with transaction.atomic():
+                instance.grid_width, instance.grid_height = new_w, new_h
+                resize_anchor(instance, old_w, old_h)
+                instance = super().update(instance, validated_data)
+        else:
+            instance = super().update(instance, validated_data)
+        if moved:
+            drop_if_empty(old)
+        return instance
+
     class Meta:
         model = FloorPlan
-        fields = ["id", "numid", "name", "location", "location_id", "site",
+        fields = ["id", "numid", "name", "location", "location_id", "site", "site_id",
+                  "stack", "stack_id", "floor_order", "elevation_mm", "elevation",
+                  "slab_mm", "align_dx", "align_dy", "align_rot",
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
-                  "background_image",
-                  "background_opacity", "state", "description", "tile_count",
-                  "drawing",
+                  "layout_mode", "background_image",
+                  "background_opacity", "background_shown", "base_map", "map_opacity",
+                  "map_shown", "map_visible", "map_levels", "frame_extent", "state", "description",
+                  "tile_count", "drawing", "kind", "snapshot", "geo",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "site", "background_image",
-                            "tile_count", "drawing", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "site", "elevation", "background_image",
+                            "base_map", "map_visible", "map_levels", "frame_extent",
+                            "tile_count", "drawing", "kind", "snapshot", "geo",
+                            "created_at", "updated_at"]
+        # The floor-name constraints are checked in validate(); DRF's own
+        # validator for the conditional (stack, name) one would make
+        # stack_id required.
+        validators = []
 
 
 class FloorPlanDrawingSerializer(serializers.Serializer):
@@ -9478,6 +11774,7 @@ class FloorPlanDrawingSerializer(serializers.Serializer):
             "bounds_mm": cad_render.placed_box_mm(d),
             "transform_mm": cad_render.transform_mm(d),
             "fit": cad_render.fit(d, cell) if d.extents else None,
+            "clip": d.clip,
             "processed_at": d.processed_at.isoformat() if d.processed_at else None,
             "created_at": d.created_at.isoformat() if d.created_at else None,
             "updated_at": d.updated_at.isoformat() if d.updated_at else None,
@@ -9551,11 +11848,79 @@ class FloorPlanDrawingCalibrationSerializer(serializers.Serializer):
         return attrs
 
 
+def tile_on_grid(t) -> bool:
+    """Whether a tile sits as a grid plan needs it: whole cells, a quarter
+    turn."""
+    return all(float(v).is_integer() for v in (t.x, t.y, t.width, t.height)) \
+        and t.orientation % 90 == 0
+
+
+def _plan_of(serializer, attrs):
+    """The floor plan a child row is (or will be) on: the bulk endpoints'
+    plan (passed in the context; it wins), else the payload's, else the
+    row's."""
+    return (
+        serializer.context.get("floor_plan")
+        or attrs.get("floor_plan")
+        or (serializer.instance.floor_plan if serializer.instance is not None else None)
+    )
+
+
+def _r3(v: float) -> float:
+    return round(float(v), 3)
+
+
+class _FloorPlanTileListSerializer(serializers.ListSerializer):
+    """Many tiles: their photos, and which links the reader may view, are
+    looked up once for the whole list."""
+
+    def to_representation(self, data):
+        rows = list(data.all() if hasattr(data, "all") else data)
+        if "tile_photos" not in self.context:
+            self.context["tile_photos"] = _tile_photos_for(rows, self.context)
+        links = _tile_links_for(self.context)
+        if links is not None:
+            links.prime(rows)
+        return super().to_representation(rows)
+
+
+def _tile_links_for(context):
+    """The request's :class:`~api.floor_plan_placement.TileLinks`, made once
+    per serialisation; None without a request (an internal read names every
+    link)."""
+    if "tile_links" not in context:
+        from api.views import _get_active_tenant
+
+        from .floor_plan_placement import TileLinks
+
+        request = context.get("request")
+        context["tile_links"] = (
+            None if request is None
+            else TileLinks(request.user, _get_active_tenant(request))
+        )
+    return context["tile_links"]
+
+
+def _tile_photos_for(tiles, context) -> dict:
+    from api.views import _get_active_tenant
+
+    from .floor_plan_placement import tile_photos
+
+    request = context.get("request")
+    tenant = _get_active_tenant(request) if request is not None else None
+    if tenant is None:
+        return {}
+    return tile_photos(tiles, request.user, tenant)
+
+
 class FloorPlanTileSerializer(NumIdModelSerializer):
     """A placed tile. The link is written as ``link_kind`` + ``link_id``
-    (resolved to the right FK, tenant-checked - the CableSerializer
-    reference-kind approach) and read back as a compact ``linked`` object
-    ``{kind, id, name, route}`` for the canvas to render + deep-link."""
+    (resolved to the right FK, tenant-checked, and to an object the writer
+    may view - the CableSerializer reference-kind approach) and read back as
+    a compact ``linked`` object ``{kind, id, name, route}`` for the canvas to
+    render + deep-link. A link the reader may not view reads
+    ``{kind, id: null, name: "Hidden", hidden: true}`` (#453); a write that
+    sends the tile's ``link_kind`` with no ``link_id`` keeps its link."""
 
     _LINK_MODELS = {
         "rack": Rack,
@@ -9563,21 +11928,22 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         "device": Device,
         "powerpanel": PowerPanel,
         "powerfeed": PowerFeed,
+        "coolingsource": CoolingSource,
         "floorplan": FloorPlan,
     }
     _LINK_ROUTES = {
         "rack": "/racks/{id}",
         "cabinet": "/cabinets/{id}",
         "device": "/devices/{id}",
-        # Panels/feeds have no detail page - their edit page is the deep-link.
-        "powerpanel": "/power-panels/{id}/edit",
-        "powerfeed": "/power-feeds/{id}/edit",
+        "powerpanel": "/power-panels/{id}",
+        "powerfeed": "/power-feeds/{id}",
+        "coolingsource": "/cooling-sources/{id}",
         "floorplan": "/floorplans/{id}",
     }
 
     floor_plan = FloorPlanMiniSerializer(read_only=True)
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
     tile_type = FloorTileTypeMiniSerializer(read_only=True)
@@ -9595,37 +11961,121 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         write_only=True, required=False, allow_null=True, allow_blank=True
     )
     linked = serializers.SerializerMethodField()
+    photo = serializers.SerializerMethodField()
+    riser_to_id = serializers.CharField(
+        write_only=True, required=False, allow_null=True, allow_blank=True,
+        help_text="The riser tile on another floor of the site this riser pairs with.",
+    )
+    riser_pair = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_riser_pair(self, obj):
+        """The riser this one pairs with: ``{id, label, floor_plan: {id,
+        name}}``, or ``{id: null, hidden: true}`` on a floor the reader may
+        not view; null when unpaired."""
+        if not obj.riser:
+            return None
+        from .cable_routing import riser_partner
+
+        pair = riser_partner(obj)
+        if pair is None:
+            return None
+        request = self.context.get("request")
+        if request is not None and not request.user.is_superuser:
+            from api.views import _get_active_tenant
+            from auth_api import rbac
+
+            seen = self.context.setdefault("riser_plans_seen", {})
+            plan = pair.floor_plan
+            if plan.pk not in seen:
+                tenant = _get_active_tenant(request)
+                seen[plan.pk] = rbac.can_act_on(request.user, tenant, "floorplan", "view", plan)
+            if not seen[plan.pk]:
+                return {"id": None, "label": "Hidden", "floor_plan": None, "hidden": True}
+        return {
+            "id": str(pair.pk),
+            "label": pair.label or "Riser",
+            "floor_plan": {"id": str(pair.floor_plan_id), "name": pair.floor_plan.name},
+        }
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_linked(self, obj):
         field = FloorPlanTile.LINK_FIELDS.get(obj.link_kind)
-        target = getattr(obj, field) if field else None
-        if target is None:
+        if not field or getattr(obj, f"{field}_id") is None:
             return None
-        return {
+        links = _tile_links_for(self.context)
+        if links is not None and links.hidden(obj):
+            # An object the reader may not view (#453): the tile keeps its
+            # place and names nothing of it - no id, name, route, room or role.
+            from .floor_plan_placement import hidden_link
+
+            return hidden_link(obj.link_kind)
+        target = getattr(obj, field)
+        out = {
             "kind": obj.link_kind,
             "id": str(target.pk),
             "name": str(target),
             "route": self._LINK_ROUTES[obj.link_kind].format(id=target.pk),
         }
+        # The room a device, rack or cabinet names - the editor compares it
+        # with the room drawn where the tile stands.
+        if obj.link_kind in ("device", "rack", "cabinet"):
+            out["room"] = room_ref(target.room)
+            # Its role as it is now: a tile with no type of its own draws in
+            # the role's colour and icon, and follows the role as it changes.
+            role = target.role
+            out["role"] = None if role is None else {
+                "id": str(role.pk), "name": role.name, "color": role.color,
+                "icon": getattr(role, "icon", "") or "",
+            }
+            # A device's own icon, else its type's: it wins over the tile's
+            # type and the role (linked.role.icon); "" when neither has one.
+            out["icon"] = target.own_icon if obj.link_kind == "device" else ""
+            # A device's measured size (its own, else its type's): what the
+            # editor's "Fit to size" resizes the tile to.
+            if obj.link_kind == "device":
+                out["size_mm"] = target.size_mm
+        return out
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_photo(self, obj):
+        """The photo a device or rack tile can show (``display: photo``):
+        ``{url, aspect, source, width_mm}`` or null."""
+        if not (obj.device_id or obj.rack_id):
+            return None
+        photos = self.context.get("tile_photos")
+        if photos is None:
+            photos = _tile_photos_for([obj], self.context)
+        return photos.get(obj.pk)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         from api.views import _get_active_tenant
 
-        # Exactly one of tile_type / role_type (matches the DB constraint,
-        # but with a friendly message).
         tile_type = attrs.get(
             "tile_type", getattr(self.instance, "tile_type", None)
         )
         role_type = attrs.get(
             "role_type", getattr(self.instance, "role_type", None)
         )
-        if (tile_type is None) == (role_type is None):
+        if tile_type is not None and role_type is not None:
             raise serializers.ValidationError(
                 {"tile_type_id": "Set exactly one of tile_type_id / role_type_id."}
             )
+        self._check_geometry(attrs)
+        self._check_riser(attrs)
 
+        # A tile's own kind sent with no id keeps its link: the editor saves
+        # a tile whose object the writer may not view that way (#453).
+        if (
+            self.instance is not None
+            and not attrs.get("link_id")
+            and attrs.get("link_kind")
+            and attrs["link_kind"] == self.instance.link_kind
+            and self.instance.linked_object is not None
+        ):
+            attrs.pop("link_id", None)
+            attrs.pop("link_kind")
         # Resolve the link when the payload touches it.
         if "link_kind" in attrs or "link_id" in attrs:
             kind = attrs.get("link_kind") or ""
@@ -9654,6 +12104,16 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                     raise serializers.ValidationError(
                         {"link_id": "Pick an object in the current tenant."}
                     )
+                # An object the writer may not view answers as unknown - but
+                # the tile's own link stays, as it is.
+                current = getattr(self.instance, FloorPlanTile.LINK_FIELDS[kind] + "_id", None)
+                if request is not None and obj.pk != current:
+                    from auth_api import rbac
+
+                    if not rbac.can_act_on(request.user, tenant, kind, "view", obj):
+                        raise serializers.ValidationError(
+                            {"link_id": f"Unknown {kind} {link_id}."}
+                        )
                 plan = attrs.get(
                     "floor_plan", getattr(self.instance, "floor_plan", None)
                 )
@@ -9661,9 +12121,129 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                     raise serializers.ValidationError(
                         {"link_id": "A tile can't link to its own floor plan."}
                     )
+                self._check_once_per_floor(kind, obj, attrs)
                 attrs[FloorPlanTile.LINK_FIELDS[kind]] = obj
                 attrs["link_kind"] = kind
+        # Exactly one of tile_type / role_type - or neither on a linked tile,
+        # which draws from its object (the DB constraint, with a message).
+        if tile_type is None and role_type is None:
+            linked = any(
+                attrs.get(f, getattr(self.instance, f, None)) is not None
+                for f in FloorPlanTile.LINK_FIELDS.values()
+            )
+            if not linked:
+                raise serializers.ValidationError(
+                    {"tile_type_id": "Pick a tile type or role, or link the tile to an object."}
+                )
         return attrs
+
+    def _check_riser(self, attrs):
+        """A riser pairs with one riser tile on another floor of the same
+        site (``riser_to_id``; blank unpairs). Not a riser: no pair. The
+        other riser must be one the writer may view and not paired with a
+        third. With no ``riser_to_id`` the pair stays as it is."""
+        import uuid as _uuid
+
+        riser = attrs.get("riser", getattr(self.instance, "riser", False))
+        me = self.instance.pk if self.instance is not None else None
+        if "riser_to_id" not in attrs:
+            if not riser and self.instance is not None and self.instance.riser:
+                attrs["riser_to"] = None
+                self._riser_touched = True
+            return
+        raw = attrs.pop("riser_to_id") or ""
+        self._riser_touched = True
+        if not riser or not raw:
+            attrs["riser_to"] = None
+            return
+        unknown = serializers.ValidationError({"riser_to_id": f"Unknown riser {raw}."})
+        try:
+            key = _uuid.UUID(str(raw))
+        except ValueError:
+            raise unknown from None
+        target = FloorPlanTile.objects.select_related("floor_plan").filter(pk=key).first()
+        plan = _plan_of(self, attrs)
+        request = self.context.get("request")
+        from api.views import _get_active_tenant
+
+        tenant = _get_active_tenant(request) if request is not None else None
+        if target is None or plan is None or (
+            tenant is not None and target.floor_plan.tenant_id != tenant.id
+        ) or target.floor_plan.tenant_id != plan.tenant_id:
+            raise unknown
+        if request is not None:
+            from auth_api import rbac
+
+            if not rbac.can_act_on(request.user, tenant, "floorplan", "view", target.floor_plan):
+                raise unknown
+        if target.floor_plan_id == plan.pk:
+            raise serializers.ValidationError(
+                {"riser_to_id": "Pick a riser on another floor."}
+            )
+        if target.floor_plan.site_id != plan.site_id or target.floor_plan.kind != "plan":
+            raise serializers.ValidationError(
+                {"riser_to_id": "Pick a riser on a floor of the same site."}
+            )
+        if not target.riser:
+            raise serializers.ValidationError({"riser_to_id": "That tile is not a riser."})
+        taken = (target.riser_to_id is not None and target.riser_to_id != me) or (
+            FloorPlanTile.objects.filter(riser_to=target).exclude(pk=me).exists()
+        )
+        if taken:
+            raise serializers.ValidationError(
+                {"riser_to_id": f"{target.label or 'That riser'} already pairs with another."}
+            )
+        attrs["riser_to"] = target
+
+    def save(self, **kwargs):
+        obj = super().save(**kwargs)
+        if getattr(self, "_riser_touched", False):
+            # A pair is one link: a riser unpaired, or paired anew, is no
+            # longer the pair of a riser that named it.
+            FloorPlanTile.objects.filter(riser_to=obj).exclude(
+                pk=obj.riser_to_id
+            ).update(riser_to=None)
+        return obj
+
+    def _check_once_per_floor(self, kind, obj, attrs):
+        """A device, rack or cabinet stands once on a floor: a second tile
+        linked to it on the same plan is refused. A tile that already links
+        it keeps saving, so duplicates made before this rule stay editable."""
+        if kind not in ("device", "rack", "cabinet"):
+            return
+        field = FloorPlanTile.LINK_FIELDS[kind]
+        if self.instance is not None and getattr(self.instance, f"{field}_id") == obj.pk:
+            return
+        plan = _plan_of(self, attrs)
+        if plan is None:
+            return
+        others = FloorPlanTile.objects.filter(floor_plan=plan, **{field: obj})
+        if self.instance is not None:
+            others = others.exclude(pk=self.instance.pk)
+        if others.exists():
+            raise serializers.ValidationError(
+                {"link_id": f"{obj} is already on this floor."}
+            )
+
+    def _check_geometry(self, attrs):
+        """A grid plan holds whole cells at quarter turns; a free plan any
+        position, size and whole-degree angle (kept to 3 decimals)."""
+        plan = _plan_of(self, attrs)
+        free = plan is not None and plan.layout_mode == "free"
+        for key in ("x", "y", "width", "height"):
+            if key not in attrs:
+                continue
+            v = attrs[key]
+            if not math.isfinite(v):
+                raise serializers.ValidationError({key: "A finite number."})
+            if free:
+                attrs[key] = _r3(v)
+            elif not float(v).is_integer():
+                raise serializers.ValidationError({key: "Whole cells on a grid plan."})
+        if "orientation" in attrs and not free and attrs["orientation"] % 90:
+            raise serializers.ValidationError(
+                {"orientation": "A quarter turn (0, 90, 180 or 270) on a grid plan."}
+            )
 
     class Meta:
         model = FloorPlanTile
@@ -9672,9 +12252,11 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                   "orientation", "label", "color", "status",
                   "link_kind", "link_id", "linked",
                   "fov_deg", "fov_distance", "fov_direction", "fov_anchor",
-                  "fov_ptz",
+                  "fov_ptz", "display", "z", "photo",
+                  "riser", "riser_to_id", "riser_pair", "riser_height_mm",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "linked", "created_at", "updated_at"]
+        read_only_fields = ["id", "linked", "photo", "riser_pair", "created_at", "updated_at"]
+        list_serializer_class = _FloorPlanTileListSerializer
 
 
 def validate_lattice_points(v):
@@ -9690,7 +12272,7 @@ def validate_lattice_points(v):
             not isinstance(p, (list, tuple))
             or len(p) != 2
             or not all(isinstance(n, (int, float)) for n in p)
-            or not all(0 <= n <= 512 for n in p)
+            or not all(0 <= n <= FLOOR_PLAN_MAX_GRID for n in p)
         ):
             raise serializers.ValidationError(
                 "each point must be an [x, y] pair within the grid"
@@ -9698,23 +12280,102 @@ def validate_lattice_points(v):
     return [[round(p[0] * 2) / 2, round(p[1] * 2) / 2] for p in v]
 
 
-class FloorPlanTraySerializer(NumIdModelSerializer):
-    """A tray/conduit run on a plan. Cables are assigned manually in v1 -
-    the tray lists the physical cables routed through it."""
+def validate_plan_points(v):
+    """A wall's points: 2–256 [x, y] pairs inside the grid, at any place to
+    0.001 cell - so a wall made from an area's outline (a turned
+    rectangle, a polygon) follows it exactly. Drawn by hand they still land
+    on the half-cell lattice; that is the editor's snap, not a rule."""
+    if not isinstance(v, list) or not (2 <= len(v) <= 256):
+        raise serializers.ValidationError(
+            "points must be a list of 2–256 [x, y] pairs"
+        )
+    out = []
+    for p in v:
+        if (
+            not isinstance(p, (list, tuple))
+            or len(p) != 2
+            or not all(
+                isinstance(n, (int, float)) and not isinstance(n, bool)
+                and math.isfinite(n) for n in p
+            )
+            or not all(0 <= n <= FLOOR_PLAN_MAX_GRID for n in p)
+        ):
+            raise serializers.ValidationError(
+                "each point must be an [x, y] pair within the grid"
+            )
+        out.append([_r3(p[0]), _r3(p[1])])
+    return out
 
-    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
-        write_only=True, required=False,
-    )
-    points = serializers.JSONField(required=False)
-    cables = serializers.SerializerMethodField()
-    cable_ids = TenantScopedPrimaryKeyRelatedField(
-        source="cables", queryset=Cable.objects.all(),
-        write_only=True, required=False, many=True,
-    )
+
+class _ViewableCableField(TenantScopedPrimaryKeyRelatedField):
+    """A cable the writer may view - one ``/api/cables/`` would list them.
+    Any other id answers as if it did not exist."""
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        request = self.context.get("request") if self.context else None
+        user = getattr(request, "user", None)
+        if request is None or qs is None or getattr(user, "is_superuser", False):
+            return qs
+        from api.views import _get_active_tenant
+
+        from .cable_scope import restrict_cables
+
+        tenant = _get_active_tenant(request)
+        if tenant is None:
+            return qs.none()
+        return restrict_cables(qs, user, tenant, "view")
+
+
+class _CableMembersMixin:
+    """``cables`` / ``cable_ids`` of a row that lists physical cables - a
+    floor-plan tray, a site-map cable route.
+
+    Read: ``cables`` names only the cables the reader may view (the scope of
+    ``/api/cables/``); ``hidden_cable_count`` counts the others. A list asks
+    once for all its rows. Write: ``cable_ids`` is the list of cables the
+    writer can see. Cables they cannot see stay as they are, and each cable
+    added or removed needs cable ``change`` (a field error names it)."""
+
+    def _cable_reader(self):
+        """``(user, tenant)`` whose cable scope applies, or None to show
+        every cable (a superuser, or no request)."""
+        request = self.context.get("request") if self.context else None
+        user = getattr(request, "user", None)
+        if user is None or getattr(user, "is_superuser", False):
+            return None
+        from api.views import _get_active_tenant
+
+        return user, _get_active_tenant(request)
+
+    def _visible_cables(self, obj) -> set | None:
+        reader = self._cable_reader()
+        if reader is None:
+            return None
+        cache = getattr(self, "_visible_cable_cache", None)
+        if cache is None or obj.pk not in cache["rows"]:
+            from .cable_scope import viewable_cable_ids
+
+            parent = getattr(self, "parent", None)
+            rows = (
+                list(parent.instance)
+                if isinstance(parent, serializers.ListSerializer)
+                and parent.instance is not None
+                else [obj]
+            )
+            if obj not in rows:
+                rows = [obj]
+            ids = {c.pk for r in rows for c in r.cables.all()}
+            cache = {
+                "rows": {r.pk for r in rows},
+                "visible": viewable_cable_ids(*reader, ids),
+            }
+            self._visible_cable_cache = cache
+        return cache["visible"]
 
     @extend_schema_field(serializers.ListField())
     def get_cables(self, obj):
+        visible = self._visible_cables(obj)
         return [
             {
                 "id": str(c.id),
@@ -9724,7 +12385,66 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
                 "color": c.color,
             }
             for c in obj.cables.all()
+            if visible is None or c.pk in visible
         ]
+
+    def get_hidden_cable_count(self, obj) -> int:
+        visible = self._visible_cables(obj)
+        if visible is None:
+            return 0
+        return sum(1 for c in obj.cables.all() if c.pk not in visible)
+
+    def _merge_cable_ids(self, wanted):
+        """The full member list for a ``cable_ids`` write: the cables sent
+        (all viewable, see ``_ViewableCableField``) plus the members the
+        writer cannot see. Refuses a change to a cable they may not change."""
+        reader = self._cable_reader()
+        if reader is None:
+            return wanted
+        from .cable_scope import restrict_cables, viewable_cable_ids
+
+        user, tenant = reader
+        current = (
+            set(self.instance.cables.values_list("pk", flat=True))
+            if self.instance is not None else set()
+        )
+        visible = viewable_cable_ids(user, tenant, current)
+        wanted_ids = {c.pk for c in wanted}
+        touched = (wanted_ids - current) | (visible - wanted_ids)
+        if touched:
+            allowed = set(restrict_cables(
+                Cable.objects.filter(pk__in=touched, tenant=tenant), user, tenant, "change"
+            ).values_list("pk", flat=True))
+            denied = Cable.objects.filter(pk__in=touched - allowed)
+            if denied:
+                raise serializers.ValidationError({"cable_ids": [
+                    f"You may not change cable {c}." for c in sorted(denied, key=str)
+                ]})
+        return [*wanted, *(current - visible)]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if "cables" in attrs:
+            attrs["cables"] = self._merge_cable_ids(attrs["cables"])
+        return attrs
+
+
+class FloorPlanTraySerializer(_CableMembersMixin, NumIdModelSerializer):
+    """A tray/conduit run on a plan. Cables are assigned manually in v1 -
+    the tray lists the physical cables routed through it (the ones the reader
+    may view; ``hidden_cable_count`` counts the rest)."""
+
+    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
+        write_only=True, required=False,
+    )
+    points = serializers.JSONField(required=False)
+    cables = serializers.SerializerMethodField()
+    hidden_cable_count = serializers.SerializerMethodField()
+    cable_ids = _ViewableCableField(
+        source="cables", queryset=Cable.objects.all(),
+        write_only=True, required=False, many=True,
+    )
 
     def validate_points(self, v):
         # Shared with walls: same half-cell lattice, same snap.
@@ -9733,10 +12453,11 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
     class Meta:
         model = FloorPlanTray
         fields = ["id", "floor_plan_id", "name", "kind", "color", "points",
-                  "level", "elevation_mm",
-                  "description", "cables", "cable_ids",
+                  "level", "elevation_mm", "capacity",
+                  "description", "cables", "hidden_cable_count", "cable_ids",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "cables", "created_at", "updated_at"]
+        read_only_fields = ["id", "cables", "hidden_cable_count",
+                            "created_at", "updated_at"]
 
 
 class FloorPlanWallSerializer(NumIdModelSerializer):
@@ -9747,17 +12468,33 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
     v1 walls are documentation geometry; they do not constrain routing."""
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
     points = serializers.JSONField(required=False)
     openings = serializers.JSONField(required=False)
+    # The area the wall was made from, while linked (``null`` unlinks). An
+    # area of the same plan, in the writer's tenant.
+    source_area = serializers.PrimaryKeyRelatedField(read_only=True)
+    source_area_id = TenantScopedPrimaryKeyRelatedField(
+        source="source_area", queryset=FloorPlanArea.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     def validate_points(self, v):
-        return validate_lattice_points(v)
+        return validate_plan_points(v)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        area = attrs.get("source_area")
+        if area is not None:
+            plan = attrs.get("floor_plan") or (
+                self.instance.floor_plan if self.instance else None
+            ) or self.context.get("floor_plan")
+            if plan is None or area.floor_plan_id != plan.pk:
+                raise serializers.ValidationError(
+                    {"source_area_id": "An area of the wall's own plan."}
+                )
         points = attrs.get(
             "points", self.instance.points if self.instance else None
         )
@@ -9812,6 +12549,13 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
                     {"openings": "opening height must be ≥200 mm and not "
                      "taller than the wall"}
                 )
+            if o.get("hinge") not in (None, "start", "end") or o.get("side") not in (
+                None, "left", "right"
+            ):
+                raise serializers.ValidationError(
+                    {"openings": "a door's hinge is start or end, its side "
+                     "left or right"}
+                )
             spans = by_seg.setdefault(seg, [])
             if any(start < e and s < end for s, e in spans):
                 raise serializers.ValidationError(
@@ -9823,41 +12567,96 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
     class Meta:
         model = FloorPlanWall
         fields = ["id", "floor_plan_id", "label", "points", "height_mm",
-                  "color", "openings", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+                  "thickness_mm", "color", "openings", "exterior", "source_area",
+                  "source_area_id", "created_at", "updated_at"]
+        read_only_fields = ["id", "source_area", "created_at", "updated_at"]
 
 
 class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):
-    """A raised-floor rectangle on a plan. Areas may not overlap - the plenum
-    under any grid point must be unambiguous, because it drives underfloor
-    tray depth in the 3D room and the drop term in route-length estimates."""
+    """A raised floor on a plan: a whole-cell rectangle, or a polygon
+    (``points``, cell units) whose ``x``/``y``/``width``/``height`` are then
+    the cells it covers, set here. Areas may not overlap (sharing an edge is
+    fine) - the plenum under any grid point must be unambiguous, because it
+    drives underfloor tray depth in the 3D room and the drop term in
+    route-length estimates."""
+
+    #: Points one polygon may carry.
+    POINTS_MAX = 500
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
 
+    def validate_points(self, value):
+        if not value:
+            return []
+        if not isinstance(value, list) or len(value) > self.POINTS_MAX:
+            raise serializers.ValidationError(
+                f"A list of at most {self.POINTS_MAX} [x, y] points."
+            )
+        out = []
+        for p in value:
+            if not (
+                isinstance(p, (list, tuple)) and len(p) == 2
+                and all(
+                    isinstance(v, (int, float)) and not isinstance(v, bool)
+                    and math.isfinite(v) for v in p
+                )
+            ):
+                raise serializers.ValidationError("Each point is [x, y] in cells.")
+            q = [round(float(p[0]), 3), round(float(p[1]), 3)]
+            if not out or q != out[-1]:
+                out.append(q)
+        if len(out) > 1 and out[0] == out[-1]:
+            out.pop()
+        if len(out) < 3:
+            raise serializers.ValidationError("A polygon needs at least three points.")
+        if abs(rfg.area_of(out)) < 1e-3:
+            raise serializers.ValidationError("The polygon has no area.")
+        if not polygon_is_simple(out):
+            raise serializers.ValidationError("The outline must not cross itself.")
+        return out
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        plan = attrs.get("floor_plan") or (
-            self.instance.floor_plan if self.instance else None
-        )
-        if plan is None:
-            return attrs
         get = lambda k: attrs.get(  # noqa: E731 - tiny create-or-update getter
             k, getattr(self.instance, k, None) if self.instance else None
         )
+        points = get("points") or []
+        if points:
+            # The polygon is the shape; its box follows it.
+            bx, by, bw, bh = rfg.cell_box(points)
+            if bx < 0 or by < 0:
+                raise serializers.ValidationError(
+                    {"points": "The area must fit inside the plan grid."}
+                )
+            attrs.update(x=bx, y=by, width=bw, height=bh)
+        elif self.instance is None:
+            missing = {
+                k: "This field is required."
+                for k in ("x", "y", "width", "height") if k not in attrs
+            }
+            if missing:
+                raise serializers.ValidationError(missing)
+        # A plan's bulk save names the plan in the context, not the body.
+        plan = attrs.get("floor_plan") or (
+            self.instance.floor_plan if self.instance else None
+        ) or self.context.get("floor_plan")
+        if plan is None:
+            return attrs
         x, y = get("x") or 0, get("y") or 0
         w, h = get("width") or 1, get("height") or 1
         if x + w > plan.grid_width or y + h > plan.grid_height:
             raise serializers.ValidationError(
                 "The area must fit inside the plan grid."
             )
+        mine = rfg.outline_of({"points": points, "x": x, "y": y, "width": w, "height": h})
         siblings = plan.raised_floor_areas.all()
         if self.instance:
             siblings = siblings.exclude(pk=self.instance.pk)
         for s in siblings:
-            if x < s.x + s.width and s.x < x + w and y < s.y + s.height and s.y < y + h:
+            if rfg.overlaps(mine, rfg.outline_of(s)):
                 raise serializers.ValidationError(
                     f"Overlaps {s.label or 'another raised-floor area'} - "
                     "areas must not overlap so the plenum depth under any "
@@ -9867,34 +12666,379 @@ class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):
 
     class Meta:
         model = FloorPlanRaisedFloorArea
-        fields = ["id", "floor_plan_id", "x", "y", "width", "height",
+        fields = ["id", "floor_plan_id", "x", "y", "width", "height", "points",
                   "plenum_mm", "label", "color", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+        # A polygon's box is set from its points; a rectangle needs all four.
+        extra_kwargs = {k: {"required": False} for k in ("x", "y", "width", "height")}
 
 
-class CableRouteSerializer(NumIdModelSerializer):
+def _in_plan(serializer, attrs, x, y, w=0.0, h=0.0, key="x"):
+    """A box (cell units) inside its plan's grid, else a field error."""
+    plan = _plan_of(serializer, attrs)
+    if plan is None:
+        return
+    eps = 1e-6
+    if x < -eps or y < -eps or x + w > plan.grid_width + eps \
+            or y + h > plan.grid_height + eps:
+        raise serializers.ValidationError({key: "Keep it inside the plan's grid."})
+
+
+def _segments_cross(a, b, c, d) -> bool:
+    """Whether segments ab and cd properly intersect or touch (collinear
+    overlap included)."""
+    def orient(p, q, r):
+        v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return 0 if abs(v) < 1e-12 else (1 if v > 0 else -1)
+
+    def on(p, q, r):
+        return min(p[0], r[0]) - 1e-12 <= q[0] <= max(p[0], r[0]) + 1e-12 and \
+            min(p[1], r[1]) - 1e-12 <= q[1] <= max(p[1], r[1]) + 1e-12
+
+    o1, o2, o3, o4 = orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b)
+    if o1 != o2 and o3 != o4:
+        return True
+    return (o1 == 0 and on(a, c, b)) or (o2 == 0 and on(a, d, b)) or \
+        (o3 == 0 and on(c, a, d)) or (o4 == 0 and on(c, b, d))
+
+
+def polygon_is_simple(points) -> bool:
+    """No two non-adjacent edges of the closed outline meet."""
+    n = len(points)
+    edges = [(points[i], points[(i + 1) % n]) for i in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if j == i + 1 or (i == 0 and j == n - 1):
+                continue
+            if _segments_cross(*edges[i], *edges[j]):
+                return False
+    return True
+
+
+def plan_access(context, plan_id, action="view") -> bool:
+    """Whether the request's user may ``action`` the floor plan ``plan_id``
+    of the active tenant (a view: its source too, for ``change``). Cached
+    per serialisation in ``context``; True without a request."""
+    request = context.get("request") if context else None
+    if request is None:
+        return True
+    cache = context.setdefault("_plan_access", {})
+    key = (str(plan_id), action)
+    if key not in cache:
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        tenant = _get_active_tenant(request)
+        plan = rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=plan_id, tenant=tenant),
+            request.user, tenant, "floorplan", action,
+        ).only("pk", "kind", "source_id").first()
+        ok = plan is not None
+        if ok and action != "view" and plan.kind == "view" and plan.source_id:
+            ok = plan_access(context, plan.source_id, action)
+        cache[key] = ok
+    return cache[key]
+
+
+def opens_ref(context, plan) -> dict:
+    """How an area, label or outline names the floor plan it opens."""
+    return {
+        "id": str(plan.pk),
+        "name": plan.name,
+        "stack_name": plan.stack.name if plan.stack_id else None,
+        "kind": plan.kind,
+        "can_change": plan_access(context, plan.pk, "change"),
+    }
+
+
+class _OpensMixin:
+    """``opens`` / ``opens_id`` / ``opens_hidden`` of a row a click opens a
+    floor plan from - an area or label of a floor, a Site map outline.
+
+    Write: ``opens_id`` is a floor plan (any floor, snapshot or live view) of
+    the tenant the writer may view, never the row's own plan; a write that
+    leaves it out keeps it. Read: ``opens`` ``{id, name, stack_name, kind,
+    can_change}``, or null with ``opens_hidden`` when the reader may not view
+    the target."""
+
+    def get_opens(self, obj):
+        if not obj.opens_id or not plan_access(self.context, obj.opens_id):
+            return None
+        return opens_ref(self.context, obj.opens)
+
+    def get_opens_hidden(self, obj) -> bool:
+        return bool(obj.opens_id) and not plan_access(self.context, obj.opens_id)
+
+    def _check_opens(self, attrs, own_plan=None):
+        target = attrs.get("opens")
+        if target is None:
+            return
+        inst = getattr(self, "instance", None)
+        # A save that keeps the link (moving or restyling the shape) is never
+        # refused; a view's own back button lives on the view's source and
+        # opens that very plan.
+        if inst is not None and not isinstance(inst, (list, tuple)) and (
+            getattr(inst, "opens_id", None) == target.pk
+            or getattr(inst, "shown_in_id", None)
+        ):
+            return
+        if own_plan is not None and target.pk == own_plan.pk:
+            raise serializers.ValidationError(
+                {"opens_id": "Pick another plan than the one it is on."}
+            )
+        if not plan_access(self.context, target.pk):
+            raise serializers.ValidationError({"opens_id": "Pick a floor plan you can view."})
+
+
+def _back_label_ref(context, obj):
+    """The back label a shape's Back button made (on the plan it opens, or
+    that view's source), if the reader may view its plan."""
+    if not obj.opens_id:
+        return None
+    lb = (
+        FloorPlanLabel.objects.filter(pair_id=obj.pk, floor_plan__tenant_id=obj.floor_plan.tenant_id)
+        .select_related("floor_plan").first()
+    )
+    if lb is None or not plan_access(context, lb.floor_plan_id):
+        return None
+    return {"id": str(lb.pk), "floor_plan_id": str(lb.floor_plan_id),
+            "floor_plan_name": lb.floor_plan.name, "text": lb.text}
+
+
+class FloorPlanAreaSerializer(_OpensMixin, NumIdModelSerializer):
+    """A room, a location or a plain area drawn on a floor: a rectangle
+    turned about its centre, or a polygon. Linked to a room or a location of
+    the floor's location (or one inside it) - of any location of the site on
+    a site-wide floor - never both."""
+
+    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
+        write_only=True, required=False,
+    )
+    points = serializers.JSONField(required=False)
+    room = serializers.SerializerMethodField()
+    room_id = TenantScopedPrimaryKeyRelatedField(
+        source="room", queryset=Room.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    area_type = serializers.SerializerMethodField()
+    area_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="area_type", queryset=AreaType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    opens = serializers.SerializerMethodField()
+    opens_hidden = serializers.SerializerMethodField()
+    opens_id = TenantScopedPrimaryKeyRelatedField(
+        source="opens", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    back_label = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_back_label(self, obj):
+        return _back_label_ref(self.context, obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_area_type(self, obj):
+        return area_type_ref(obj.area_type) if obj.area_type_id else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_room(self, obj):
+        r = obj.room
+        if r is None:
+            return None
+        return {"id": str(r.pk), "name": r.name, "code": r.code, "color": r.color}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        if loc is None:
+            return None
+        return {"id": str(loc.pk), "name": loc.name, "color": loc.display_color}
+
+    def _visible(self, model_slug, obj) -> bool:
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        request = self.context.get("request")
+        if request is None:
+            return True
+        tenant = _get_active_tenant(request)
+        model = type(obj)
+        return rbac.restrict_queryset(
+            model.objects.filter(pk=obj.pk), request.user, tenant, model_slug, "view",
+        ).exists()
+
+    def validate(self, attrs):
+        from .floor_stacks import in_scope
+
+        attrs = super().validate(attrs)
+        inst = self.instance
+        get = lambda k, d=None: attrs.get(k, getattr(inst, k, d) if inst else d)  # noqa: E731
+        plan = _plan_of(self, attrs)
+        site_wide = plan is not None and plan.location_id is None
+        self._check_opens(attrs, plan)
+
+        room, location = get("room"), get("location")
+        if room is not None and location is not None:
+            raise serializers.ValidationError(
+                {"room_id": "Link a room or a location, not both."}
+            )
+        # A type is for plain areas: a linked one wears its room's or
+        # location's colour. Linking an area drops the type it had.
+        if room is not None or location is not None:
+            if attrs.get("area_type") is not None:
+                raise serializers.ValidationError({"area_type_id": (
+                    "A type is for a plain area; this one stands for a "
+                    + ("room." if room is not None else "location.")
+                )})
+            if inst is not None and inst.area_type_id:
+                attrs["area_type"] = None
+        if "room" in attrs and room is not None and plan is not None and (
+            not in_scope(room.location, plan) or not self._visible("room", room)
+        ):
+            raise serializers.ValidationError({"room_id": (
+                "Pick a room of this floor's site." if site_wide
+                else "Pick a room of this floor's location."
+            )})
+        if "location" in attrs and location is not None and plan is not None and (
+            not in_scope(location, plan) or not self._visible("location", location)
+        ):
+            raise serializers.ValidationError({"location_id": (
+                "Pick a location of this floor's site." if site_wide
+                else "Pick this floor's location or one inside it."
+            )})
+
+        shape = get("shape", "rect")
+        if shape == "polygon":
+            pts = get("points") or []
+            if not isinstance(pts, list) or not 3 <= len(pts) <= 200:
+                raise serializers.ValidationError(
+                    {"points": "An outline of 3 to 200 [x, y] points."}
+                )
+            clean = []
+            for p in pts:
+                if not (isinstance(p, (list, tuple)) and len(p) == 2 and all(
+                    isinstance(n, (int, float)) and not isinstance(n, bool)
+                    and math.isfinite(n) for n in p
+                )):
+                    raise serializers.ValidationError(
+                        {"points": "Each point is an [x, y] pair of numbers."}
+                    )
+                clean.append([_r3(p[0]), _r3(p[1])])
+            if not polygon_is_simple(clean):
+                raise serializers.ValidationError({"points": "The outline crosses itself."})
+            xs = [p[0] for p in clean]
+            ys = [p[1] for p in clean]
+            x, y = min(xs), min(ys)
+            w, h = max(xs) - x, max(ys) - y
+            if w <= 0 or h <= 0:
+                raise serializers.ValidationError({"points": "The outline has no area."})
+            _in_plan(self, attrs, x, y, w, h, key="points")
+            attrs.update(points=clean, x=x, y=y, width=_r3(w), height=_r3(h), rotation=0.0)
+        else:
+            vals = {}
+            for k in ("x", "y", "width", "height", "rotation"):
+                v = get(k, 0.0 if k in ("x", "y", "rotation") else 1.0)
+                if not math.isfinite(v):
+                    raise serializers.ValidationError({k: "A finite number."})
+                vals[k] = v
+            for k in ("width", "height"):
+                if vals[k] <= 0:
+                    raise serializers.ValidationError({k: "Must be more than 0."})
+            _in_plan(self, attrs, vals["x"], vals["y"], vals["width"], vals["height"])
+            attrs.update(
+                x=_r3(vals["x"]), y=_r3(vals["y"]), width=_r3(vals["width"]),
+                height=_r3(vals["height"]), rotation=_r3(vals["rotation"] % 360), points=[],
+            )
+        return attrs
+
+    class Meta:
+        model = FloorPlanArea
+        fields = ["id", "floor_plan_id", "shape", "x", "y", "width", "height",
+                  "rotation", "points", "room", "room_id", "location", "location_id",
+                  "area_type", "area_type_id",
+                  "label", "color", "fill_opacity", "border", "show_name", "z",
+                  "locked", "opens", "opens_id", "opens_hidden", "back_label",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "room", "location", "area_type", "opens",
+                            "opens_hidden", "back_label", "created_at", "updated_at"]
+
+
+class FloorPlanLabelSerializer(_OpensMixin, NumIdModelSerializer):
+    """Free text on a floor. ``font_mm`` is the text height on the floor in
+    millimetres; ``width``/``height`` null size the box to the text."""
+
+    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
+        write_only=True, required=False,
+    )
+    text = serializers.CharField(max_length=500, trim_whitespace=True)
+    opens = serializers.SerializerMethodField()
+    opens_hidden = serializers.SerializerMethodField()
+    opens_id = TenantScopedPrimaryKeyRelatedField(
+        source="opens", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    back_label = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_back_label(self, obj):
+        return _back_label_ref(self.context, obj)
+
+    def validate_text(self, v):
+        v = v.replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not v:
+            raise serializers.ValidationError("Write some text.")
+        return v
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inst = self.instance
+        get = lambda k, d=None: attrs.get(k, getattr(inst, k, d) if inst else d)  # noqa: E731
+        for k in ("x", "y", "width", "height", "rotation"):
+            v = get(k)
+            if v is None:
+                continue
+            if not math.isfinite(v):
+                raise serializers.ValidationError({k: "A finite number."})
+            if k in ("width", "height") and v <= 0:
+                raise serializers.ValidationError({k: "Must be more than 0."})
+            if k in attrs:
+                attrs[k] = _r3(v % 360 if k == "rotation" else v)
+        _in_plan(self, attrs, get("x", 0.0), get("y", 0.0))
+        self._check_opens(attrs, _plan_of(self, attrs))
+        return attrs
+
+    class Meta:
+        model = FloorPlanLabel
+        fields = ["id", "floor_plan_id", "text", "x", "y", "width", "height",
+                  "rotation", "font_mm", "weight", "align", "color", "plate", "plate_color",
+                  "z",
+                  "locked", "opens", "opens_id", "opens_hidden", "back_label",
+                  "pair_id", "created_at", "updated_at"]
+        read_only_fields = ["id", "opens", "opens_hidden", "back_label", "pair_id",
+                            "created_at", "updated_at"]
+
+
+class CableRouteSerializer(_CableMembersMixin, NumIdModelSerializer):
     """A geographic duct/aerial/trench run on the site map. Cables are
-    assigned manually in v1 - the route lists the cables that follow it."""
+    assigned manually in v1 - the route lists the cables that follow it
+    (the ones the reader may view; ``hidden_cable_count`` counts the rest)."""
 
     waypoints = serializers.JSONField(required=False)
     cables = serializers.SerializerMethodField()
-    cable_ids = TenantScopedPrimaryKeyRelatedField(
+    hidden_cable_count = serializers.SerializerMethodField()
+    cable_ids = _ViewableCableField(
         source="cables", queryset=Cable.objects.all(),
         write_only=True, required=False, many=True,
     )
-
-    @extend_schema_field(serializers.ListField())
-    def get_cables(self, obj):
-        return [
-            {
-                "id": str(c.id),
-                "numid": c.numid,
-                "label": str(c),
-                "type": c.type,
-                "color": c.color,
-            }
-            for c in obj.cables.all()
-        ]
 
     def validate_waypoints(self, v):
         if not isinstance(v, list) or not (2 <= len(v) <= 256):
@@ -9917,6 +13061,7 @@ class CableRouteSerializer(NumIdModelSerializer):
     class Meta:
         model = CableRoute
         fields = ["id", "name", "kind", "color", "waypoints",
-                  "description", "cables", "cable_ids",
+                  "description", "cables", "hidden_cable_count", "cable_ids",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "cables", "created_at", "updated_at"]
+        read_only_fields = ["id", "cables", "hidden_cable_count",
+                            "created_at", "updated_at"]

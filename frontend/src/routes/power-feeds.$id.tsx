@@ -13,12 +13,15 @@ import { TagList } from "@/components/cells/tag-list"
 import { RackCell } from "@/components/cells/rack-cell"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { PowerFeedDeleteDialog } from "@/components/power-feed-delete-dialog"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { AffectedPanel } from "@/components/feed-affected-panel"
+import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { EmbeddedCableTable } from "@/components/embedded-tables"
 
@@ -32,8 +35,7 @@ function PowerFeedDetail() {
     queryKey: ["power-feed", id],
     queryFn: () => api<PowerFeed>(`/api/power-feeds/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -55,7 +57,7 @@ function PanelLink({ panel }: { panel: { id: string; name: string } }) {
 
 function Body({ feed: f }: { feed: PowerFeed }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "terminations" | "journal" | "history"
+    "overview" | "terminations" | "affected" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const { canDo } = useMe()
@@ -112,6 +114,7 @@ function Body({ feed: f }: { feed: PowerFeed }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "terminations", label: "Terminations", count: f.cable_count },
+        { value: "affected", label: "Affected" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -119,6 +122,9 @@ function Body({ feed: f }: { feed: PowerFeed }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
+        <div className="mb-6 empty:hidden">
+          <UpcomingMaintenancePanel objectType="powerfeed" objectId={f.id} />
+        </div>
         <FeedOverview feed={f} />
       </DetailTab>
       <DetailTab value="terminations">
@@ -127,6 +133,9 @@ function Body({ feed: f }: { feed: PowerFeed }) {
           emptyText="Nothing is cabled to this feed yet."
           searchable={false}
         />
+      </DetailTab>
+      <DetailTab value="affected">
+        <AffectedPanel kind="powerfeed" id={f.id} name={f.name} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.powerfeed" objectId={f.id} />

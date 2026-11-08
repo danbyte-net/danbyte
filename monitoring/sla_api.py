@@ -29,6 +29,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from api.models import DeviceRole, DeviceType, Platform, Site
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet, _get_active_tenant
 from auth_api import rbac
 from core.hidden_fields import PermissionHiddenFieldsMixin
@@ -179,12 +180,12 @@ class HolidayCalendarViewSet(TenantScopedViewSet):
 # ─── agreements ─────────────────────────────────────────────────────────────
 
 
-class SlaAgreementSerializer(PermissionHiddenFieldsMixin, serializers.ModelSerializer):
+class SlaAgreementSerializer(PermissionHiddenFieldsMixin, TenantScopedModelSerializer):
     # The period headline is a set of figures the SLA page draws, not one
     # value a column can show (see api.list_fields).
     list_columns_exclude = ("current",)
     customer_detail = serializers.SerializerMethodField()
-    sites = serializers.PrimaryKeyRelatedField(
+    sites = TenantScopedPrimaryKeyRelatedField(
         queryset=Site.objects.all(), many=True, required=False
     )
     sites_detail = serializers.SerializerMethodField()
@@ -659,7 +660,11 @@ def _metrics_response(request, agreements, stem: str):
 class SlaAgreementViewSet(TenantScopedViewSet):
     queryset = SlaAgreement.objects.select_related(
         "customer", "holiday_calendar", "tenant", "template"
-    ).prefetch_related("sites")
+    ).prefetch_related(
+        # Both many-to-manys are serialised per row: without the channels
+        # here a list paid one query per agreement (#460).
+        "sites", "notify_channels",
+    )
     serializer_class = SlaAgreementSerializer
 
     def get_queryset(self):
@@ -974,8 +979,8 @@ class SlaAgreementViewSet(TenantScopedViewSet):
 # ─── check groups ───────────────────────────────────────────────────────────
 
 
-class SlaCheckItemSerializer(serializers.ModelSerializer):
-    template = serializers.PrimaryKeyRelatedField(queryset=CheckTemplate.objects.all())
+class SlaCheckItemSerializer(TenantScopedModelSerializer):
+    template = TenantScopedPrimaryKeyRelatedField(queryset=CheckTemplate.objects.all())
     template_name = serializers.CharField(source="template.name", read_only=True)
     template_kind = serializers.CharField(source="template.kind", read_only=True)
 
@@ -987,12 +992,12 @@ class SlaCheckItemSerializer(serializers.ModelSerializer):
 
 
 def _ref_list(model):
-    return serializers.PrimaryKeyRelatedField(
+    return TenantScopedPrimaryKeyRelatedField(
         queryset=model.objects.all(), many=True, required=False
     )
 
 
-class SlaCheckGroupSerializer(serializers.ModelSerializer):
+class SlaCheckGroupSerializer(TenantScopedModelSerializer):
     items = SlaCheckItemSerializer(many=True, required=False)
     match_sites = _ref_list(Site)
     match_roles = _ref_list(DeviceRole)
@@ -1074,7 +1079,7 @@ class SlaCheckGroupViewSet(TenantScopedViewSet):
 # ─── members ────────────────────────────────────────────────────────────────
 
 
-class SlaMemberSerializer(serializers.ModelSerializer):
+class SlaMemberSerializer(TenantScopedModelSerializer):
     object = serializers.SerializerMethodField()
     monitor_ip_detail = serializers.SerializerMethodField()
 
@@ -1274,7 +1279,7 @@ class SlaMemberViewSet(TenantScopedViewSet):
 # ─── exclusions ─────────────────────────────────────────────────────────────
 
 
-class SlaExclusionSerializer(serializers.ModelSerializer):
+class SlaExclusionSerializer(TenantScopedModelSerializer):
     created_by_name = serializers.CharField(source="created_by.username", read_only=True, default=None)
 
     class Meta:

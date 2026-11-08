@@ -1,116 +1,57 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type ConfigContext, type Paginated } from "@/lib/api"
+import type { ConfigContext } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
-import { numidColumn } from "@/components/cells/numid"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
+import { TableActions } from "@/components/table-actions"
+import { buildConfigContextColumns } from "@/components/columns/config-context-columns"
 import { ConfigContextDeleteDialog } from "@/components/config-context-delete-dialog"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useUrlSearch } from "@/lib/url-filters"
-
-function criteria(c: ConfigContext): string {
-  const parts: string[] = []
-  if (c.regions.length) parts.push(`${c.regions.length} region(s)`)
-  if (c.sites.length) parts.push(`${c.sites.length} site(s)`)
-  if (c.device_roles.length) parts.push(`${c.device_roles.length} role(s)`)
-  if (c.platforms.length) parts.push(`${c.platforms.length} platform(s)`)
-  return parts.join(" · ") || "All devices/VMs"
-}
 
 export const Route = createFileRoute("/config-contexts/")({
   component: ConfigContextsPage,
 })
 
 function ConfigContextsPage() {
-  const { canDo } = useMe()
+  const { canDo, humanIds } = useMe()
   const canAdd = canDo("configcontext", "add")
-  const { humanIds } = useMe()
+  const canEdit = canDo("configcontext", "change")
+  const canDelete = canDo("configcontext", "delete")
+  const selectable = canEdit || canDelete
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ConfigContext | null>(null)
+  const [selected, setSelected] = useState<ConfigContext[]>([])
 
   const query = useQuery({
     queryKey: ["config-contexts", q],
     queryFn: () =>
-      api<Paginated<ConfigContext>>(
+      apiAll<ConfigContext>(
         `/api/config-contexts/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
 
   const rows = query.data?.results ?? []
   const onDelete = useCallback((c: ConfigContext) => setDeleting(c), [])
-  const columns = useMemo<ColumnDef<ConfigContext>[]>(
-    () => [
-      ...(humanIds
-        ? [numidColumn<ConfigContext>({ get: (r) => r.numid })]
-        : []),
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/config-contexts/$id"
-            params={{ id: row.original.id }}
-            className="link flex items-center gap-2 font-medium"
-          >
-            {row.original.name}
-            {!row.original.is_active && (
-              <Badge variant="secondary" className="text-[10px]">
-                inactive
-              </Badge>
-            )}
-          </Link>
-        ),
-      },
-      {
-        id: "weight",
-        accessorKey: "weight",
-        header: ({ column }) => <SortHeader column={column} label="Weight" />,
-        cell: ({ row }) => (
-          <span className="num text-xs">{row.original.weight}</span>
-        ),
-      },
-      {
-        id: "criteria",
-        header: "Applies to",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {criteria(row.original)}
-          </span>
-        ),
-      },
-      {
-        id: "keys",
-        header: "Data keys",
-        cell: ({ row }) => {
-          const keys = Object.keys(row.original.data ?? {})
-          return (
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {keys.length ? keys.join(", ") : "-"}
-            </span>
-          )
+  const columns = useMemo(
+    () =>
+      buildConfigContextColumns({
+        humanIds,
+        selection: selectable,
+        actions: {
+          editTo: "/config-contexts/$id/edit",
+          editParams: (c) => ({ id: c.id }),
+          canEdit: () => canEdit,
+          onDelete,
+          canDelete: () => canDelete,
         },
-      },
-      {
-        id: "actions",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <RowActions
-            editTo="/config-contexts/$id/edit"
-            editParams={{ id: row.original.id }}
-            onDelete={() => onDelete(row.original)}
-          />
-        ),
-      },
-    ],
-    [onDelete, humanIds]
+      }),
+    [onDelete, humanIds, canEdit, canDelete, selectable]
   )
 
   return (
@@ -140,6 +81,18 @@ function ConfigContextsPage() {
         columns={columns}
         flexColumn="criteria"
         tableId="config-contexts"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/config-contexts/"
+        noun={["context", "contexts"]}
+        invalidate={[["config-contexts"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="configcontext"
       />
       <ConfigContextDeleteDialog
         item={deleting}

@@ -47,6 +47,15 @@ no built-in group holds it, because a config carries secrets), and **grant
 superuser** (on users - see below). The
 permission form only offers these on the types that use them.
 
+Some jobs on one feature are separate types so they can be granted apart.
+**Compliance triage** - acknowledging, snoozing and reopening
+[compliance violations](compliance.md#triage-acknowledge-and-snooze) - needs
+*change* on Compliance triage, not on Compliance rules: a rule editor does
+not triage, and a triager does not edit rules. *View* on Compliance triage
+shows its entries in the change log. It is tenant-wide; site limits on the
+grant do not narrow it, but a triager still acts only on objects they can
+view.
+
 ### Granting superuser without being one
 
 **grant superuser** on the *user* type lets its holder set or clear the
@@ -74,7 +83,7 @@ hand. They can't be deleted.
 | Group | What members can do |
 |---|---|
 | **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions (its grant names those types) - and see SLA service credits and contract costs (*view credits*, *view cost*). |
-| **Operator** | View, add, and change every object except users, groups and permissions - but not delete. No Admin pages or tenant settings. |
+| **Operator** | View, add, and change every object except users, groups and permissions - but not delete. Includes compliance triage. No Admin pages or tenant settings. |
 | **Read-only** | View every object except users, groups and permissions; change nothing. |
 
 An all-object grant carries only the verbs it lists. The Administrator grant
@@ -157,6 +166,10 @@ rows*.
    object types**. All object types leaves out Users, Groups and
    Permissions; with it ticked, those three are offered on their own, and
    ticking them makes the grant an administrator grant.
+   Types are grouped by area - power panels and feeds and cooling sources
+   and feeds, for one, under **Power & cooling**; cooling intakes and
+   outflows and their templates sit with the other device components under
+   **DCIM**.
 4. Tick the **actions** you're granting: view, add, change, delete.
 5. (Optional) Limit it to certain **tenants**. A tenant named here also
    **grants access to that tenant**: members of the group can switch to it
@@ -186,6 +199,42 @@ rows*.
 8. Assign the permission to **groups** and/or **users**.
 9. Save.
 
+### Many at once
+
+Tick rows on the Users, Groups or Permissions list to reveal the bulk bar. Like
+every change to access, a bulk change needs a deployment administrator: a
+grant limited to tenants is refused.
+
+| List | Bulk actions |
+|---|---|
+| **Users** | **Activate**, **Deactivate** and **Delete**. Nothing else about an account changes in bulk. |
+| **Groups** | **Delete**. |
+| **Permissions** | **Enable**, **Disable**, **Edit** (the **Enabled** switch and the **Description**) and **Delete**. What a grant reaches and who holds it stay one grant at a time. |
+
+Delete first shows what would happen and names each row it keeps, with the
+reason. Some rows never go, one at a time or many - a single delete answers
+the same reason, and a single edit refuses the same switch-off:
+
+- **Your own account** is neither deleted nor deactivated.
+- **A superuser's account** is deleted or deactivated only by a superuser, and
+  the **last active superuser** stays.
+- **Built-in groups** stay.
+- **The built-in Administrator grant** is neither deleted nor disabled.
+- **The grants and groups you manage users through** stay when the change
+  would take all of them, so nobody locks themselves out of this page.
+
+Every account deleted, activated or deactivated in bulk, every group deleted
+and every grant changed is in the [change log](change-log.md). Users and
+groups have no export.
+
+| Endpoint | |
+|---|---|
+| `POST /api/users/bulk-update/` | `{ids, fields: {is_active}}`; ids are whole numbers |
+| `POST /api/users/bulk-delete/` | `{ids, dry_run}` |
+| `POST /api/groups/bulk-delete/` | `{ids, dry_run}` |
+| `POST /api/object-permissions/bulk-update/` | `{ids, fields}` with `enabled`, `description` |
+| `POST /api/object-permissions/bulk-delete/` | `{ids, dry_run}` |
+
 ### Site roles (local IT, in one click)
 
 A common need is *local IT who runs their own site but shouldn't touch others*.
@@ -193,7 +242,8 @@ Rather than hand-build the grants, open **Admin → Access → Permissions** and
 click **Site role**:
 
 - **Site editor** - can add, edit, and delete everything **in the chosen
-  site(s)**, and can **read everything elsewhere** except users, groups and
+  site(s)** - devices, racks, locations, [rooms](../dcim/rooms.md) and the
+  rest - and can **read everything elsewhere** except users, groups and
   permissions. This is the local-IT recipe: full control of their own site,
   look-but-don't-touch everywhere else.
 - **Site viewer** - read-only access to the chosen site(s), and **nothing
@@ -203,6 +253,8 @@ Pick the role, the site(s), and the users or groups to grant it to. Danbyte
 assembles the underlying permissions for you (a site-scoped edit grant plus an
 unscoped read grant for the editor; a single site-scoped read grant for the
 viewer). You can fine-tune or delete those permissions afterwards like any other.
+Site roles built before rooms and floor plan stacks existed gain them on
+upgrade; a hand-built grant is left alone.
 
 Both roles can open the sites they cover. Neither can rename or delete a
 site - that stays with administrators. The roles leave out records synced from
@@ -220,7 +272,7 @@ their objects use.
 Both roles **read the catalogs** their site's objects point at - device types
 and roles, platforms, manufacturers, statuses, tags, custom fields, VRFs, IP
 roles, rack, cabinet and module types, cluster types, routing policies,
-support contracts (without their cost) and the like - so the pickers in **Add device** and an import by name work. They
+support contracts (without their cost), applications, application groups, device profiles and the like - so the pickers in **Add device** and an import by name work. They
 never change those catalogs: that stays with administrators, or with the site
 editor's own local entries under
 [enhanced site separation](../access/site-separation.md#local-vs-global-catalog-entries).
@@ -230,6 +282,31 @@ editor's own local entries under
     rules, VLAN groups, IP ranges, virtual chassis and other types that became
     site-scoped. Site viewers and silo site editors gain view on the catalogs
     above. A grant edited away from the role's shape is left as it is.
+
+!!! note "Upgrading to 0.19"
+    Site roles created earlier gain installed software (the Software tab on
+    their devices and VMs), application flows (`applicationflow`, the
+    flows of their sites' addresses, prefixes and ranges) and application
+    group assignments (`applicationgroupassignment`), and site viewers and
+    silo site editors gain view on applications and application groups. A grant edited away from
+    the role's shape is left as it is. They also gain the PRTG rows of their
+    sites' devices and VMs - device links (`prtgdevicelink`), sensors
+    (`prtgsensor`) and the review queue (`prtgchange`) - so the
+    [Sensors tab](prtg.md#sensors) shows to local IT - and the sensor pins
+    (`prtgsensorpin`) of the [Overview's Sensors card](prtg.md#pinned-sensors), and
+    the per-device sensor overrides (`prtgsensoroverride`) of the
+    [Coverage card](prtg.md#sensors).
+    PRTG connections stay with administrators. Last, they gain device profile
+    assignments (`deviceprofileassignment`), and site viewers and silo site
+    editors view on [device profiles](device-profiles.md#permissions)
+    (`deviceprofile`). They also gain the
+    [building outlines](site-map.md#building-outlines) of their sites
+    (`sitemapoutline`), and site viewers and silo site editors view on
+    [location types](regions-locations.md#location-types) (`locationtype`)
+    and [area types](floor-plans.md#area-types) (`areatype`). Site viewers
+    and silo site editors also view the
+    [sensitivity labels](sensitivity-labels.md#permissions)
+    (`sensitivitylabel`) their PDF reports are marked with.
 
 ### Set it up when you create the user
 
@@ -319,6 +396,12 @@ When you create a user, choose how they get their password:
 - **Email an invite** (recommended) - the person receives a one-time link to set
   their own password. You never see or handle their password.
 - **Set a password** - you type an initial password yourself.
+
+Every password you set - creating a user, editing one, the Django admin, or
+`DJANGO_SUPERUSER_PASSWORD` for `manage.py bootstrap` - must pass the same
+checks as a password set through a link: at least 8 characters, not too close
+to the username, name or email, not a common password, and not all digits.
+The API answers a weak one with a `400` and the reasons under `password`.
 
 Editing an existing user, the same option lets you **email a password-reset
 link**. It starts unticked, so saving an edit sends nothing unless you tick it.

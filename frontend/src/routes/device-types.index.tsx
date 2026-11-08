@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type DeviceType, type Paginated } from "@/lib/api"
+import { type DeviceType } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -40,7 +41,7 @@ function DeviceTypesPage() {
   const query = useQuery({
     queryKey: ["device-types", q],
     queryFn: () =>
-      api<Paginated<DeviceType>>(
+      apiAll<DeviceType>(
         `/api/device-types/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

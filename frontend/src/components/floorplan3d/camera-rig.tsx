@@ -1,25 +1,47 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import { useFrame, useThree } from "@react-three/fiber"
-import { OrbitControls } from "@react-three/drei"
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib"
 import * as THREE from "three"
 
-import { isCameraSettling, markCameraMoving } from "./camera-motion"
+import {
+  isCameraSettling,
+  markCameraMoving,
+  prefersReducedMotion,
+} from "./camera-motion"
 import {
   MIN_DISTANCE_M,
   NAV_KEYS,
   PAGE_SCROLL_KEYS,
+  advanceFly,
   dollyThroughStep,
+  flyDuration,
+  frameBox,
   nearForDistance,
   normalizeKey,
+  orbitAround,
+  panOffset,
+  panPlaneNormal,
   panVector,
   pullInTarget,
-  zoomSpeedForRoom,
+  rayPlane,
+  targetAtDepth,
+  viewDirection,
+  wheelNotches,
+  zoomTowards,
 } from "./camera-math"
+import type { Fly, Vec3 } from "./camera-math"
 
 export interface FlyToRequest {
   target: THREE.Vector3
   position: THREE.Vector3
+}
+
+/** What the scene asks of the camera from outside the canvas. */
+export interface NavApi {
+  /** Fly to frame the box from the camera's current heading, raised
+   * `elevation` radians (a pleasant three-quarter view by default). */
+  frame: (min: Vec3, max: Vec3, elevation?: number) => void
+  /** Fly back to the whole plan (`bounds`), from the opening angle. */
+  fitAll: () => void
 }
 
 /** Keyboard pan never drives the camera below (near) the slab. */
@@ -29,11 +51,21 @@ const CAMERA_MIN_Y = 0.1
 const TARGET_MIN_Y = 0.05
 
 /**
- * Cap on the per-frame dt fed to the pan math: after a tab switch or GC
- * stall the frame delta can be seconds, and one uncapped step would
+ * Cap on the per-frame dt fed to the pan and fly math: after a tab switch or
+ * GC stall the frame delta can be seconds, and one uncapped step would
  * teleport the camera across the room.
  */
 const MAX_NAV_DT = 0.1
+
+/** Pixels a press may travel and still be a click, not a drag. */
+const CLICK_SLOP_PX = 3
+
+/** A wheel burst at one cursor spot keeps its anchor this long (ms) - one
+ * raycast per burst, and the anchor stays put under the cursor. */
+const WHEEL_BURST_MS = 300
+
+/** Elevation a framed object is seen from (rad, ~35°). */
+const FRAME_ELEVATION = 0.6
 
 /** Keydown targets that own the keyboard - navigation must not steal keys. */
 const EDITABLE_SELECTOR = 'input, textarea, select, [contenteditable="true"]'
@@ -41,57 +73,509 @@ const EDITABLE_SELECTOR = 'input, textarea, select, [contenteditable="true"]'
 const isEditableTarget = (t: EventTarget | null) =>
   t instanceof Element && t.closest(EDITABLE_SELECTOR) !== null
 
-// Scratch vector reused across frames (useFrame is synchronous).
+const tuple = (v: THREE.Vector3): [number, number, number] => [v.x, v.y, v.z]
+
+// Scratch objects reused across frames and events (all synchronous).
 const _fwd = new THREE.Vector3()
+const _ndc = new THREE.Vector2()
+const _normal = new THREE.Vector3()
+
+/** What lies under a screen point: a surface of the room, the floor, or -
+ * looking at the sky - a point at the orbit's depth on the ray. */
+interface Anchor {
+  point: [number, number, number]
+  kind: "object" | "floor" | "free"
+}
+
+type Gesture =
+  | {
+      mode: "orbit"
+      id: number
+      x: number
+      y: number
+      pivot: Vec3
+    }
+  | {
+      mode: "pan"
+      id: number
+      cam0: Vec3
+      target0: Vec3
+      grab: Vec3
+      normal: Vec3
+      reach: number
+    }
+  | {
+      mode: "pinch"
+      mid: [number, number]
+      spread: number
+      grab: Vec3
+      normal: Vec3
+      reach: number
+    }
 
 /**
- * OrbitControls plus an animated fly-to: push a request into `requestRef` and
- * the rig eases the camera + orbit target there over ~0.7 s. Works with
- * `frameloop="demand"` - the rig invalidates every animation frame itself.
+ * The 3D views' navigation engine. No OrbitControls: their dolly scales
+ * the distance to a fixed target, which on a site-sized plan sits far away,
+ * so zooming in crawled and never reached what was under the cursor. Here
+ * every gesture anchors on what the pointer is over:
  *
- * Also owns keyboard navigation: arrows / WASD pan the camera AND the orbit
- * target parallel to the ground plane (forward = camera→target projected to
- * XZ), Space rises, C descends (PageUp/PageDown too), Shift sprints ×4.
- * Speed scales with the orbit distance (see `camera-math.ts`). A nav keypress
- * cancels an in-flight fly-to. Listeners live on `window` but the rig only
- * exists while the 3D view is mounted, so 2D editing never sees them.
+ * - **Wheel / pinch** zooms along the cursor ray toward the surface under
+ *   it, each notch a share of the distance to THAT point (with a floor so
+ *   the last metres never crawl), stopping short of the surface. The orbit
+ *   target re-centres at that depth. At the stop, a further wheel-in on an
+ *   object (not the floor) walks on through it, as before (`dollyThrough`).
+ * - **Left-drag** orbits about the point under the cursor at press (Alt:
+ *   about the current target). One finger on touch.
+ * - **Right- or middle-drag**, or Shift/Ctrl+left, grab-pans: the point
+ *   pressed stays under the cursor, so speed follows the distance to it.
+ *   Two fingers pinch-zoom and pan together.
+ * - **Keys** (`keyboard`): arrows / WASD glide level with the floor, Space
+ *   / C rise and descend, Shift sprints, speed scaled by the distance to the
+ *   target; 0 / Home fits the whole plan (`bounds`).
+ * - **Fly-to**: push a request into `requestRef` (or call `navRef`) and the
+ *   camera eases there; any input interrupts it, and a reduced-motion
+ *   preference lands it at once.
  *
- * A view embedded in a page (one rack, one cabinet) turns `keyboard` and
- * `dollyThrough` off: the page owns its keys, and there is no aisle to walk
- * into past the object - the wheel stops at `minDistance` instead.
+ * A drag never ends in a click - the object under the release is not
+ * selected. Everything mutates the camera in place and asks the demand
+ * frameloop for frames; nothing here renders React.
  */
 export function CameraRig({
   target,
   maxDistance,
-  roomDiag,
   requestRef,
+  navRef,
+  bounds,
   minDistance = MIN_DISTANCE_M,
   keyboard = true,
   dollyThrough = true,
 }: {
   target: [number, number, number]
   maxDistance: number
-  /** Larger room side (m) - scales the wheel so hall size doesn't change feel. */
-  roomDiag: number
   requestRef: React.MutableRefObject<FlyToRequest | null>
-  /** Closest the orbit arm may get (m). */
+  /** Filled with the framing calls - see `NavApi`. */
+  navRef?: React.MutableRefObject<NavApi | null>
+  /** The whole plan, for Fit all (0 / Home). */
+  bounds?: { min: Vec3; max: Vec3 }
+  /** Closest the camera may come to the surface it zooms at (m). */
   minDistance?: number
   /** Arrows / WASD / Space / C move the camera (listeners on `window`). */
   keyboard?: boolean
   /** A wheel-in at `minDistance` walks the camera on through the object. */
   dollyThrough?: boolean
 }) {
-  const controls = useRef<OrbitControlsImpl>(null)
   const invalidate = useThree((s) => s.invalidate)
-  const camera = useThree((s) => s.camera)
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const gl = useThree((s) => s.gl)
-  const anim = useRef<{
-    fromPos: THREE.Vector3
-    fromTarget: THREE.Vector3
-    to: FlyToRequest
-    t: number
-  } | null>(null)
+  const scene = useThree((s) => s.scene)
+  const targetRef = useRef(new THREE.Vector3(...target))
+  // The opening view's direction (target → eye): what Fit all returns to.
+  const homeDir = useRef<Vec3>([0.55, 0.6, 0.45])
+  const fly = useRef<Fly | null>(null)
+  const api = useRef<NavApi | null>(null)
   const pressed = useRef<Set<string>>(new Set())
+  // Live props for the listeners, which are bound once.
+  const opts = useRef({ maxDistance, minDistance, dollyThrough, bounds })
+  opts.current = { maxDistance, minDistance, dollyThrough, bounds }
+
+  const [tx, ty, tz] = target
+  useLayoutEffect(() => {
+    targetRef.current.set(tx, ty, tz)
+    const d = camera.position.clone().sub(targetRef.current)
+    if (d.lengthSq() > 0) homeDir.current = tuple(d.normalize())
+    camera.lookAt(targetRef.current)
+    camera.updateMatrixWorld()
+    invalidate()
+  }, [tx, ty, tz, camera, invalidate])
+
+  useEffect(() => {
+    const el = gl.domElement
+    const raycaster = new THREE.Raycaster()
+    const pointers = new Map<number, { x: number; y: number }>()
+    let gesture: Gesture | null = null
+    // Set when a press travelled: the click (and context menu) that ends
+    // it is swallowed before the scene's own handlers see it.
+    let dragged = false
+    let downAt: { x: number; y: number } | null = null
+    let wheelAnchor: (Anchor & { x: number; y: number; at: number }) | null =
+      null
+
+    const commit = () => {
+      if (camera.position.y < CAMERA_MIN_Y) camera.position.y = CAMERA_MIN_Y
+      if (targetRef.current.y < TARGET_MIN_Y) targetRef.current.y = TARGET_MIN_Y
+      camera.lookAt(targetRef.current)
+      camera.updateMatrixWorld()
+      markCameraMoving()
+      invalidate()
+    }
+
+    /** Any input takes the camera back from a fly-to. */
+    const interrupt = () => {
+      fly.current = null
+      requestRef.current = null
+    }
+
+    const toNdc = (clientX: number, clientY: number) => {
+      const r = el.getBoundingClientRect()
+      _ndc.set(
+        ((clientX - r.left) / r.width) * 2 - 1,
+        -((clientY - r.top) / r.height) * 2 + 1
+      )
+      return _ndc
+    }
+
+    const rayAt = (clientX: number, clientY: number) => {
+      camera.updateMatrixWorld()
+      raycaster.setFromCamera(toNdc(clientX, clientY), camera)
+      return raycaster.ray
+    }
+
+    const forward = (): Vec3 => tuple(camera.getWorldDirection(_fwd))
+
+    /** What the pointer is over. One raycast against the drawn meshes;
+     * the floor plane if the ray hits nothing; else the orbit's depth. */
+    const pick = (clientX: number, clientY: number): Anchor => {
+      const ray = rayAt(clientX, clientY)
+      const meshes: THREE.Object3D[] = []
+      scene.traverseVisible((o) => {
+        if (o instanceof THREE.Mesh) meshes.push(o)
+      })
+      for (const hit of raycaster.intersectObjects(meshes, false)) {
+        const mat = (hit.object as THREE.Mesh).material
+        const m = (Array.isArray(mat) ? mat[0] : mat) as
+          THREE.Material | undefined
+        if (m?.transparent && m.opacity < 0.05) continue
+        let up = false
+        if (hit.face) {
+          _normal
+            .copy(hit.face.normal)
+            .transformDirection(hit.object.matrixWorld)
+          up = _normal.y > 0.9
+        }
+        return { point: tuple(hit.point), kind: up ? "floor" : "object" }
+      }
+      const o = tuple(ray.origin)
+      const dir = tuple(ray.direction)
+      const t = rayPlane(o, dir, [0, 0, 0], [0, 1, 0])
+      if (t != null && t < opts.current.maxDistance * 2)
+        return {
+          point: [o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t],
+          kind: "floor",
+        }
+      const d = camera.position.distanceTo(targetRef.current)
+      return {
+        point: [o[0] + dir[0] * d, o[1] + dir[1] * d, o[2] + dir[2] * d],
+        kind: "free",
+      }
+    }
+
+    /** Re-centre the orbit target on the sight line at `anchor`'s depth. */
+    const retarget = (anchor: Vec3) => {
+      const t = targetAtDepth(
+        tuple(camera.position),
+        forward(),
+        anchor,
+        opts.current.minDistance
+      )
+      targetRef.current.set(t[0], t[1], t[2])
+    }
+
+    // ── Wheel ───────────────────────────────────────────────────────────
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      interrupt()
+      const notches = wheelNotches(e.deltaY, e.deltaMode, e.ctrlKey)
+      if (notches === 0) return
+      const now = performance.now()
+      let a = wheelAnchor
+      if (
+        !a ||
+        now - a.at > WHEEL_BURST_MS ||
+        Math.abs(e.clientX - a.x) > 2 ||
+        Math.abs(e.clientY - a.y) > 2
+      ) {
+        a = { ...pick(e.clientX, e.clientY), x: e.clientX, y: e.clientY, at: 0 }
+      }
+      a.at = now
+      wheelAnchor = a
+      const { minDistance: gap, maxDistance: far } = opts.current
+      const cam = tuple(camera.position)
+      const d = camera.position.distanceTo(new THREE.Vector3(...a.point))
+      if (
+        notches < 0 &&
+        opts.current.dollyThrough &&
+        a.kind === "object" &&
+        d <= gap * 1.2 + 1e-6
+      ) {
+        // Stopped at an object's face: walk on through it - the aisle
+        // behind a rack - and anchor afresh on whatever lies beyond.
+        const step = dollyThroughStep(cam, a.point, notches * 100, d, Infinity)
+        if (step) {
+          camera.position.add(new THREE.Vector3(...step))
+          targetRef.current.add(new THREE.Vector3(...step))
+        }
+        wheelAnchor = null
+        commit()
+        return
+      }
+      const next = zoomTowards(cam, a.point, notches, {
+        minGap: gap,
+        maxDist: far,
+      })
+      camera.position.set(next[0], next[1], next[2])
+      retarget(a.point)
+      commit()
+    }
+
+    // ── Pointer gestures ────────────────────────────────────────────────
+    const startOrbit = (id: number, x: number, y: number, alt: boolean) => {
+      let pivot: Vec3 = tuple(targetRef.current)
+      if (!alt) {
+        const a = pick(x, y)
+        if (a.kind !== "free") pivot = a.point
+      }
+      gesture = { mode: "orbit", id, x, y, pivot }
+    }
+
+    const startPan = (id: number, x: number, y: number) => {
+      const a = pick(x, y)
+      const cam = tuple(camera.position)
+      const dist = camera.position.distanceTo(new THREE.Vector3(...a.point))
+      gesture = {
+        mode: "pan",
+        id,
+        cam0: cam,
+        target0: tuple(targetRef.current),
+        grab: a.point,
+        normal: panPlaneNormal(forward()),
+        reach: Math.max(dist * 4, 10),
+      }
+    }
+
+    const pinchState = () => {
+      const [p, q] = [...pointers.values()]
+      return {
+        mid: [(p.x + q.x) / 2, (p.y + q.y) / 2] as [number, number],
+        spread: Math.max(1, Math.hypot(p.x - q.x, p.y - q.y)),
+      }
+    }
+
+    const startPinch = () => {
+      const { mid, spread } = pinchState()
+      const a = pick(mid[0], mid[1])
+      const dist = camera.position.distanceTo(new THREE.Vector3(...a.point))
+      gesture = {
+        mode: "pinch",
+        mid,
+        spread,
+        grab: a.point,
+        normal: panPlaneNormal(forward()),
+        reach: Math.max(dist * 4, 10),
+      }
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button > 2) return
+      // Middle-drag pans here, not the browser's autoscroll.
+      if (e.button === 1) e.preventDefault()
+      interrupt()
+      dragged = false
+      try {
+        el.setPointerCapture(e.pointerId)
+      } catch {
+        // A synthetic or already-released pointer - nothing to capture.
+      }
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (pointers.size === 1) downAt = { x: e.clientX, y: e.clientY }
+      if (pointers.size === 2) {
+        startPinch()
+        return
+      }
+      if (pointers.size > 2) return
+      const pan =
+        e.button === 1 ||
+        e.button === 2 ||
+        (e.button === 0 && (e.shiftKey || e.ctrlKey || e.metaKey))
+      if (pan) startPan(e.pointerId, e.clientX, e.clientY)
+      else startOrbit(e.pointerId, e.clientX, e.clientY, e.altKey)
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!pointers.has(e.pointerId)) return
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (
+        downAt &&
+        Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > CLICK_SLOP_PX
+      )
+        dragged = true
+      const g = gesture
+      if (!g) return
+      if (g.mode === "pinch") {
+        if (pointers.size < 2) return
+        const { mid, spread } = pinchState()
+        // Pan: keep the grabbed point under the fingers' midpoint.
+        const ray = rayAt(mid[0], mid[1])
+        const off = panOffset(
+          tuple(camera.position),
+          tuple(ray.direction),
+          g.grab,
+          g.normal,
+          g.reach
+        )
+        if (off) {
+          camera.position.add(new THREE.Vector3(...off))
+          targetRef.current.add(new THREE.Vector3(...off))
+        }
+        // Zoom: scale the distance to the grabbed point by the spread.
+        const grab = new THREE.Vector3(...g.grab)
+        const offset = camera.position.clone().sub(grab)
+        const d = offset.length()
+        const next = Math.min(
+          opts.current.maxDistance,
+          Math.max(opts.current.minDistance, (d * g.spread) / spread)
+        )
+        if (d > 0) camera.position.copy(grab).addScaledVector(offset, next / d)
+        retarget(g.grab)
+        g.mid = mid
+        g.spread = spread
+        commit()
+        return
+      }
+      if (g.id !== e.pointerId) return
+      if (g.mode === "orbit") {
+        const h = Math.max(1, el.clientHeight)
+        const yaw = (-2 * Math.PI * (e.clientX - g.x)) / h
+        const pitch = (-2 * Math.PI * (e.clientY - g.y)) / h
+        g.x = e.clientX
+        g.y = e.clientY
+        const cam = tuple(camera.position)
+        const tgt = tuple(targetRef.current)
+        let r = orbitAround(cam, tgt, g.pivot, yaw, pitch)
+        // Never under the slab: drop the tilt that would take it there.
+        if (r.cam[1] < CAMERA_MIN_Y) r = orbitAround(cam, tgt, g.pivot, yaw, 0)
+        camera.position.set(...r.cam)
+        targetRef.current.set(...r.target)
+        commit()
+        return
+      }
+      const ray = rayAt(e.clientX, e.clientY)
+      const off = panOffset(
+        g.cam0,
+        tuple(ray.direction),
+        g.grab,
+        g.normal,
+        g.reach
+      )
+      if (!off) return
+      camera.position.set(
+        g.cam0[0] + off[0],
+        g.cam0[1] + off[1],
+        g.cam0[2] + off[2]
+      )
+      targetRef.current.set(
+        g.target0[0] + off[0],
+        g.target0[1] + off[1],
+        g.target0[2] + off[2]
+      )
+      commit()
+    }
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!pointers.delete(e.pointerId)) return
+      try {
+        el.releasePointerCapture(e.pointerId)
+      } catch {
+        // Already released.
+      }
+      if (pointers.size === 0) {
+        gesture = null
+        downAt = null
+        return
+      }
+      // A finger lifted off a pinch: the other carries on orbiting from
+      // where it is, without a jump.
+      if (pointers.size === 1) {
+        const [[id, p]] = [...pointers.entries()]
+        startOrbit(id, p.x, p.y, false)
+      }
+    }
+
+    // Capture phase on the canvas: the scene's click handlers listen on
+    // the canvas's parent, so a swallowed click never reaches them.
+    const onClickCapture = (e: MouseEvent) => {
+      if (dragged) {
+        e.stopPropagation()
+        dragged = false
+      }
+    }
+    const onContextMenu = (e: MouseEvent) => {
+      // The canvas has no browser menu - right-drag is pan.
+      e.preventDefault()
+      if (dragged) e.stopPropagation()
+    }
+
+    el.style.touchAction = "none"
+    el.addEventListener("wheel", onWheel, { passive: false })
+    el.addEventListener("pointerdown", onPointerDown)
+    el.addEventListener("pointermove", onPointerMove)
+    el.addEventListener("pointerup", onPointerUp)
+    el.addEventListener("pointercancel", onPointerUp)
+    el.addEventListener("click", onClickCapture, true)
+    el.addEventListener("contextmenu", onContextMenu, true)
+    return () => {
+      el.removeEventListener("wheel", onWheel)
+      el.removeEventListener("pointerdown", onPointerDown)
+      el.removeEventListener("pointermove", onPointerMove)
+      el.removeEventListener("pointerup", onPointerUp)
+      el.removeEventListener("pointercancel", onPointerUp)
+      el.removeEventListener("click", onClickCapture, true)
+      el.removeEventListener("contextmenu", onContextMenu, true)
+    }
+  }, [gl, camera, scene, invalidate, requestRef])
+
+  // The framing calls, for keys and HUD buttons outside the canvas.
+  useEffect(() => {
+    const request = (to: { target: Vec3; position: Vec3 }) => {
+      requestRef.current = {
+        target: new THREE.Vector3(...to.target),
+        position: new THREE.Vector3(...to.position),
+      }
+      invalidate()
+    }
+    const calls: NavApi = {
+      frame(min, max, elevation = FRAME_ELEVATION) {
+        const dir = viewDirection(
+          tuple(camera.getWorldDirection(_fwd)),
+          elevation
+        )
+        request(
+          frameBox(min, max, dir, (camera.fov * Math.PI) / 180, camera.aspect, {
+            minDist: opts.current.minDistance * 4,
+          })
+        )
+      },
+      fitAll() {
+        const b = opts.current.bounds
+        if (!b) return
+        request(
+          frameBox(
+            b.min,
+            b.max,
+            homeDir.current,
+            (camera.fov * Math.PI) / 180,
+            camera.aspect,
+            { margin: 1.05 }
+          )
+        )
+      },
+    }
+    api.current = calls
+    if (navRef) navRef.current = calls
+    return () => {
+      api.current = null
+      if (navRef) navRef.current = null
+    }
+  }, [navRef, camera, invalidate, requestRef])
 
   useEffect(() => {
     if (!keyboard) return
@@ -99,31 +583,30 @@ export function CameraRig({
       // Leave browser/app shortcuts (Alt+Left history, Ctrl+A…) alone.
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (isEditableTarget(e.target)) return
+      if (e.key === "0" || e.key === "Home") {
+        if (!opts.current.bounds) return
+        e.preventDefault()
+        api.current?.fitAll()
+        return
+      }
       const key = normalizeKey(e.key)
       if (!NAV_KEYS.has(key)) return
       // Only keys whose default scrolls the page; w/a/s/d/c/Shift stay
-      // untouched (and Escape is never ours - connect/trace flows own it).
+      // untouched (and Escape is never ours - the scene's flows own it).
       if (PAGE_SCROLL_KEYS.has(key)) e.preventDefault()
-      // First nav key of a session: pull the orbit pivot to ~3 m ahead so
-      // drag-look feels first-person while walking (fly-to re-anchors it on
-      // a rack for inspection). Idempotent afterwards - key pans move camera
-      // and target together, so their distance stays put.
+      // First nav key of a session: pull the orbit target to ~3 m ahead so
+      // the walk speed and an Alt-drag fit the near view. Idempotent
+      // afterwards - key pans move camera and target together.
       if (pressed.current.size === 0) {
-        const c = controls.current
-        if (c) {
-          const pulled = pullInTarget(
-            [camera.position.x, camera.position.y, camera.position.z],
-            [c.target.x, c.target.y, c.target.z]
-          )
-          if (pulled) {
-            c.target.set(pulled[0], pulled[1], pulled[2])
-            c.update()
-          }
-        }
+        const pulled = pullInTarget(
+          tuple(camera.position),
+          tuple(targetRef.current)
+        )
+        if (pulled) targetRef.current.set(pulled[0], pulled[1], pulled[2])
       }
       pressed.current.add(key)
       // Driving the camera overrides an in-flight (or just-requested) fly-to.
-      anim.current = null
+      fly.current = null
       requestRef.current = null
       // frameloop="demand": kick the loop; useFrame keeps it alive from here.
       invalidate()
@@ -132,8 +615,6 @@ export function CameraRig({
       // No guards on release: a key that went down must always come back up,
       // even if focus moved into a field or a modifier joined mid-hold.
       pressed.current.delete(normalizeKey(e.key))
-      // The trailing frames that apply deferred LOD swaps come from the
-      // settle loop in useFrame - for every motion source, not just keys.
     }
     const onBlur = () => {
       // Alt-tab with a key held must not pan forever.
@@ -149,130 +630,83 @@ export function CameraRig({
     }
   }, [keyboard, invalidate, requestRef, camera])
 
-  // Dolly-through: OrbitControls' multiplicative dolly collapses to nothing
-  // at minDistance - the "zoom just stops" wall. At the wall, a wheel-in
-  // stops shortening the arm and instead walks camera + target forward along
-  // the sight line (orbit becomes fly - through the rack, into the aisle
-  // behind it). Capture phase on the canvas's PARENT: capture on an ancestor
-  // fires before OrbitControls' own target-phase listener, and a same-element
-  // listener would lose the registration-order race. When the walk claims the
-  // event, OrbitControls never sees it.
-  useEffect(() => {
-    const el = gl.domElement.parentElement
-    if (!el || !dollyThrough) return
-    const onWheel = (e: WheelEvent) => {
-      const c = controls.current
-      if (!c) return
-      const step = dollyThroughStep(
-        [camera.position.x, camera.position.y, camera.position.z],
-        [c.target.x, c.target.y, c.target.z],
-        e.deltaY,
-        c.getDistance()
-      )
-      if (!step) return
-      e.preventDefault()
-      e.stopPropagation()
-      camera.position.x += step[0]
-      camera.position.y += step[1]
-      camera.position.z += step[2]
-      c.target.x += step[0]
-      c.target.y += step[1]
-      c.target.z += step[2]
-      if (camera.position.y < CAMERA_MIN_Y) camera.position.y = CAMERA_MIN_Y
-      if (c.target.y < TARGET_MIN_Y) c.target.y = TARGET_MIN_Y
-      // Walking overrides an in-flight fly-to, same as a nav keypress.
-      anim.current = null
-      requestRef.current = null
-      markCameraMoving()
-      c.update()
-      invalidate()
-    }
-    el.addEventListener("wheel", onWheel, { capture: true, passive: false })
-    return () => el.removeEventListener("wheel", onWheel, { capture: true })
-  }, [dollyThrough, gl, camera, invalidate, requestRef])
-
   useFrame((state, delta) => {
-    const c = controls.current
-    if (!c) return
+    const cam = state.camera as THREE.PerspectiveCamera
+    const tgt = targetRef.current
     // Settle loop: racks defer their LOD/panel swaps while the camera moves
     // (see camera-motion.ts), and with frameloop="demand" nothing else
     // promises a frame AFTER the motion window closes. Keep frames coming
     // through the window plus its tail, so the swap-applying frame always
-    // arrives - a wheel burst or drag used to end with the room stuck coarse
-    // until the next interaction nudged it.
+    // arrives, whatever moved the camera.
     if (isCameraSettling()) invalidate()
-    // Floor clamp: maxPolarAngle now allows looking up from below the pivot,
-    // so an orbit drag could push the eye underground - catch it on any frame
-    // that renders (drag frames do, via the controls' change -> invalidate).
-    if (state.camera.position.y < CAMERA_MIN_Y) {
-      state.camera.position.y = CAMERA_MIN_Y
-      c.update()
-    }
     // Dynamic near-plane: 1 cm nose-on, 0.5 m across the hall - a fixed near
     // small enough for faceplates would shimmer the 3 mm floor overlays from
     // a distance (depth precision). Re-fit only past 20% drift so the
     // projection isn't rebuilt every frame; runs only on frames something
     // else already rendered, so it adds no invalidation source of its own.
-    const cam = state.camera as THREE.PerspectiveCamera
-    const near = nearForDistance(c.getDistance())
+    const near = nearForDistance(cam.position.distanceTo(tgt), cam.position.y)
     if (Math.abs(near - cam.near) / cam.near > 0.2) {
       cam.near = near
       cam.updateProjectionMatrix()
     }
     // Pick up a new request.
     if (requestRef.current) {
-      anim.current = {
-        fromPos: state.camera.position.clone(),
-        fromTarget: c.target.clone(),
-        to: requestRef.current,
+      const to = requestRef.current
+      requestRef.current = null
+      const travel = Math.max(
+        cam.position.distanceTo(to.position),
+        tgt.distanceTo(to.target)
+      )
+      fly.current = {
+        fromPos: tuple(cam.position),
+        fromTarget: tuple(tgt),
+        toPos: tuple(to.position),
+        toTarget: tuple(to.target),
+        duration: prefersReducedMotion() ? 0 : flyDuration(travel),
         t: 0,
       }
-      requestRef.current = null
     }
-    const a = anim.current
-    if (a) {
-      a.t = Math.min(1, a.t + delta / 0.7)
-      // easeInOutCubic
-      const k = a.t < 0.5 ? 4 * a.t ** 3 : 1 - (-2 * a.t + 2) ** 3 / 2
-      state.camera.position.lerpVectors(a.fromPos, a.to.position, k)
-      c.target.lerpVectors(a.fromTarget, a.to.target, k)
+    const f = fly.current
+    if (f) {
+      const step = advanceFly(f, Math.min(delta, MAX_NAV_DT))
+      f.t = step.t
+      cam.position.set(...step.pos)
+      tgt.set(...step.target)
+      cam.lookAt(tgt)
       markCameraMoving()
-      c.update()
-      if (a.t >= 1) anim.current = null
-      else invalidate()
+      if (step.done) fly.current = null
+      invalidate()
+      // A fly-to owns the frame while it runs (a nav keydown cancels it).
+      return
     }
-    // Keyboard pan. A fly-to owns the frame while it runs (nav keydown
-    // cancels it, so overlap only lasts until the next keydown anyway).
-    if (anim.current) return
     const keysDown = pressed.current
     if (keysDown.size === 0) return
     // Forward = camera→target projected onto the ground plane.
-    _fwd.copy(c.target).sub(state.camera.position)
+    _fwd.copy(tgt).sub(cam.position)
     _fwd.y = 0
     if (_fwd.lengthSq() < 1e-8) {
       // Looking straight down: fall back to screen-up so arrows keep meaning.
-      _fwd.set(0, 1, 0).applyQuaternion(state.camera.quaternion)
+      _fwd.set(0, 1, 0).applyQuaternion(cam.quaternion)
       _fwd.y = 0
     }
     if (_fwd.lengthSq() > 1e-8) _fwd.normalize()
     const [dx, dy, dz] = panVector(
       keysDown,
       [_fwd.x, _fwd.z],
-      state.camera.position.distanceTo(c.target),
+      cam.position.distanceTo(tgt),
       Math.min(delta, MAX_NAV_DT)
     )
     if (dx !== 0 || dy !== 0 || dz !== 0) {
-      state.camera.position.x += dx
-      state.camera.position.y += dy
-      state.camera.position.z += dz
-      c.target.x += dx
-      c.target.y += dy
-      c.target.z += dz
-      if (state.camera.position.y < CAMERA_MIN_Y)
-        state.camera.position.y = CAMERA_MIN_Y
-      if (c.target.y < TARGET_MIN_Y) c.target.y = TARGET_MIN_Y
+      cam.position.x += dx
+      cam.position.y += dy
+      cam.position.z += dz
+      tgt.x += dx
+      tgt.y += dy
+      tgt.z += dz
+      if (cam.position.y < CAMERA_MIN_Y) cam.position.y = CAMERA_MIN_Y
+      if (tgt.y < TARGET_MIN_Y) tgt.y = TARGET_MIN_Y
+      cam.lookAt(tgt)
       markCameraMoving()
-      c.update()
     }
     // Demand frameloop: keep frames coming while any nav key is held -
     // opposing keys can sum to zero, but a release must resume motion
@@ -280,31 +714,5 @@ export function CameraRig({
     invalidate()
   })
 
-  return (
-    <OrbitControls
-      ref={controls}
-      makeDefault
-      target={target}
-      // Every way OrbitControls itself moves the camera - mouse drags, its
-      // native wheel zoom - lands here. Marking motion from the change event
-      // is what actually defers the per-rack React swaps during a drag; the
-      // rig's own paths (keys, fly-to, dolly-through) mark explicitly, but
-      // drags never passed through them, so dragging still re-rendered
-      // dozens of racks per frame. Drei keeps its internal invalidate-on-
-      // change wiring alongside this handler.
-      onChange={() => markCameraMoving()}
-      // Dolly toward the pointer, not the (possibly distant) orbit target -
-      // on a hall-sized plan, plain dolly could never reach a far corner.
-      zoomToCursor
-      // The camera STOPS when the mouse stops. Drei enables damping by
-      // default, which keeps easing the orbit for a while after you let go -
-      // it reads as the room sliding out from under you, and on a hall-sized
-      // plan you overshoot whatever you were trying to look at.
-      enableDamping={false}
-      maxPolarAngle={Math.PI - 0.05}
-      minDistance={minDistance}
-      maxDistance={maxDistance}
-      zoomSpeed={zoomSpeedForRoom(roomDiag)}
-    />
-  )
+  return null
 }

@@ -95,6 +95,14 @@
   --sidebar-band: oklch(0.92 0.003 286.375);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.705 0.015 286.067);
+  /* File viewer syntax colours: keys and tags, string values and
+     addresses, numbers and literals, and a log's ok / warning words
+     (errors use --destructive). Few hues, near text weight. */
+  --syntax-key: oklch(0.5 0.134 242.749);
+  --syntax-string: oklch(0.5 0.11 155);
+  --syntax-number: oklch(0.5 0.15 305);
+  --syntax-ok: oklch(0.52 0.13 155);
+  --syntax-warn: oklch(0.56 0.14 65);
 }
 
 .dark {
@@ -135,6 +143,11 @@
   --sidebar-band: oklch(0.274 0.006 286.033);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.552 0.016 285.938);
+  --syntax-key: oklch(0.76 0.12 235);
+  --syntax-string: oklch(0.78 0.12 155);
+  --syntax-number: oklch(0.77 0.12 305);
+  --syntax-ok: oklch(0.78 0.14 155);
+  --syntax-warn: oklch(0.82 0.14 80);
 }
 
 @layer base {
@@ -196,6 +209,47 @@
      layer) always win over the static even-row tint. */
   table[data-stripes="on"] tbody tr:nth-child(even) {
     background-color: color-mix(in oklab, var(--muted) 45%, transparent);
+  }
+
+  /* Wide tables (components/table-scroll.tsx). A table container whose
+     floating proxy scrollbar is showing hides its own horizontal bar, so
+     only one shows. The frame around it draws a soft inset shadow on each
+     side that has more columns to scroll to. No transition: the hint
+     simply appears, which also suits reduced motion. */
+  [data-scroll-proxy] {
+    scrollbar-width: none;
+  }
+  [data-scroll-proxy]::-webkit-scrollbar {
+    display: none;
+  }
+  [data-scroll-left]::before,
+  [data-scroll-right]::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    z-index: 20;
+    width: 14px;
+    pointer-events: none;
+  }
+  [data-scroll-left]::before {
+    left: 0;
+    border-start-start-radius: inherit;
+    border-end-start-radius: inherit;
+    box-shadow: inset 10px 0 8px -8px
+      color-mix(in oklab, var(--foreground) 22%, transparent);
+  }
+  [data-scroll-right]::after {
+    right: 0;
+    border-start-end-radius: inherit;
+    border-end-end-radius: inherit;
+    box-shadow: inset -10px 0 8px -8px
+      color-mix(in oklab, var(--foreground) 22%, transparent);
+  }
+  @media print {
+    [data-scroll-left]::before,
+    [data-scroll-right]::after {
+      content: none;
+    }
   }
 }
 
@@ -426,6 +480,25 @@
 .sm-zl .sm-marker:hover .sm-devlabel,
 .sm-zl .sm-sel .sm-devlabel {
   display: inline;
+}
+
+/* A building outline's label, centred on the polygon (site-map outlines). */
+.sm-outline-label-wrap {
+  background: none;
+  border: 0;
+}
+.sm-outline-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--background) 88%, transparent);
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .sm-vertex {
@@ -733,6 +806,14 @@
 }
 .react-flow.dark .topo-endlabel rect {
   fill: var(--xy-background-color, var(--xy-background-color-default));
+}
+/* A label on a curve: its gap is a stroke along the curve. */
+.topo-endlabel path {
+  fill: none;
+  stroke: var(--background);
+}
+.react-flow.dark .topo-endlabel path {
+  stroke: var(--xy-background-color, var(--xy-background-color-default));
 }
 [data-ports="off"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
 [data-lod="1"] .react-flow__edge:not(.topo-hot) .topo-endlabel,

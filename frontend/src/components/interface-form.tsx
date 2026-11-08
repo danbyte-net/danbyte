@@ -12,6 +12,7 @@ import {
   type TagOption,
   type VLANOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { FormColor } from "@/components/forms/color"
 import {
   Field,
@@ -44,6 +45,8 @@ import { QuickAddDialog } from "@/components/forms/quick-add"
 import { naturalCompare } from "@/lib/natural-sort"
 import { UPLINK_OPTIONS, uplinkFields, uplinkModeOf } from "@/lib/mac-tracking"
 import type { UplinkMode } from "@/lib/mac-tracking"
+import { MACSEC_CIPHER_OPTIONS } from "@/lib/macsec"
+import { usePickList } from "@/components/routing/form-bits"
 
 type LagProtocol = Interface["lag_protocol"]
 type LacpMode = Interface["lacp_mode"]
@@ -71,7 +74,7 @@ export function InterfaceForm({
   const statuses = useQuery({
     queryKey: ["statuses", "interface"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=interface&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=interface&picker=1"),
     staleTime: 5 * 60_000,
   })
   const saveObject = useSaveObject()
@@ -138,6 +141,31 @@ export function InterfaceForm({
   const [lagMinLinks, setLagMinLinks] = useState(
     iface?.lag_min_links != null ? String(iface.lag_min_links) : ""
   )
+  const [lagMode, setLagMode] = useState(iface?.lag_mode ?? "")
+  const [lagHash, setLagHash] = useState(iface?.lag_hash_policy ?? "")
+  const [lagMiimon, setLagMiimon] = useState(
+    iface?.lag_miimon != null ? String(iface.lag_miimon) : ""
+  )
+  // MACsec: the cipher, keychain and replay window only travel while on.
+  const [macsecEnabled, setMacsecEnabled] = useState(
+    iface?.macsec_enabled ?? false
+  )
+  const [macsecCipher, setMacsecCipher] = useState<string>(
+    iface?.macsec_cipher ?? ""
+  )
+  const [macsecKeychainId, setMacsecKeychainId] = useState<string | null>(
+    iface?.macsec_keychain?.id ?? null
+  )
+  const [macsecReplay, setMacsecReplay] = useState(
+    iface?.macsec_replay_window != null
+      ? String(iface.macsec_replay_window)
+      : ""
+  )
+  const keychains = usePickList<{ id: string; name: string }>(
+    "routing-keychains",
+    "/api/routing/keychains/",
+    (k) => k.name
+  )
   const isLag = type === "lag"
   // Virtual, bridge and aggregate types have no physical port - the server
   // flags them virtual whatever the box says.
@@ -185,6 +213,17 @@ export function InterfaceForm({
     setLacpRate(iface.lacp_rate)
     setLagMinLinks(
       iface.lag_min_links != null ? String(iface.lag_min_links) : ""
+    )
+    setLagMode(iface.lag_mode ?? "")
+    setLagHash(iface.lag_hash_policy ?? "")
+    setLagMiimon(iface.lag_miimon != null ? String(iface.lag_miimon) : "")
+    setMacsecEnabled(iface.macsec_enabled)
+    setMacsecCipher(iface.macsec_cipher)
+    setMacsecKeychainId(iface.macsec_keychain?.id ?? null)
+    setMacsecReplay(
+      iface.macsec_replay_window != null
+        ? String(iface.macsec_replay_window)
+        : ""
     )
     setTagIds(iface.tags.map((t) => t.id))
     reset()
@@ -238,7 +277,7 @@ export function InterfaceForm({
     }))
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
+    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
   const taggedRows = useMemo(() => {
@@ -251,7 +290,7 @@ export function InterfaceForm({
   }, [vlans.data, deviceSiteId])
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Candidate parents / LAGs / bridges: the device's own interfaces - or,
@@ -270,7 +309,7 @@ export function InterfaceForm({
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 
@@ -319,6 +358,16 @@ export function InterfaceForm({
         lacp_mode: isLag && lagProtocol === "lacp" ? lacpMode : "",
         lacp_rate: isLag && lagProtocol === "lacp" ? lacpRate : "",
         lag_min_links: isLag && lagMinLinks.trim() ? Number(lagMinLinks) : null,
+        lag_mode: isLag ? lagMode : "",
+        lag_hash_policy: isLag ? lagHash : "",
+        lag_miimon: isLag && lagMiimon.trim() ? Number(lagMiimon) : null,
+        macsec_enabled: macsecEnabled,
+        macsec_cipher: macsecEnabled
+          ? (macsecCipher as InterfaceWritePayload["macsec_cipher"])
+          : "",
+        macsec_keychain_id: macsecEnabled ? macsecKeychainId : null,
+        macsec_replay_window:
+          macsecEnabled && macsecReplay.trim() ? Number(macsecReplay) : null,
       }
       if (isEdit)
         return saveObject<Interface>({
@@ -760,8 +809,8 @@ export function InterfaceForm({
                 label="Protocol"
                 value={lagProtocol || null}
                 onChange={(v) => setLagProtocol((v ?? "") as LagProtocol)}
-                noneLabel="Static (no protocol)"
-                placeholder="Static (no protocol)"
+                noneLabel="None (static)"
+                placeholder="None (static)"
                 searchPlaceholder="Search…"
                 emptyText="No protocols."
                 options={choices.lag_protocols}
@@ -795,8 +844,89 @@ export function InterfaceForm({
                 info="Members that must be up for the bundle to count as up."
                 error={fieldErrors.lag_min_links}
               />
+              <div className="grid grid-cols-3 gap-3">
+                <FormSelect
+                  label="Mode"
+                  value={lagMode || null}
+                  onChange={(v) => {
+                    setLagMode(v ?? "")
+                    if (v === "802.3ad") setLagProtocol("lacp" as LagProtocol)
+                  }}
+                  noneLabel="Not set"
+                  options={choices.lag_modes}
+                  info="The Linux bond mode (bond-mode). 802.3ad is LACP; the others are static bonds."
+                  error={fieldErrors.lag_mode}
+                />
+                <FormSelect
+                  label="Hash policy"
+                  value={lagHash || null}
+                  onChange={(v) => setLagHash(v ?? "")}
+                  noneLabel="Not set"
+                  options={choices.lag_hash_policies}
+                  info="bond-xmit-hash-policy: how traffic is spread over the members."
+                  error={fieldErrors.lag_hash_policy}
+                />
+                <FormText
+                  label="MII monitor"
+                  type="number"
+                  min={0}
+                  value={lagMiimon}
+                  onChange={setLagMiimon}
+                  placeholder="100"
+                  info="bond-miimon: the link check interval, in ms."
+                  error={fieldErrors.lag_miimon}
+                />
+              </div>
             </FormSection>
           )}
+
+          <FormSection title="MACsec" card>
+            <FormCheckbox
+              label="MACsec"
+              checked={macsecEnabled}
+              onChange={setMacsecEnabled}
+              info="802.1AE link encryption, keyed by MKA."
+            />
+            {macsecEnabled && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormSelect
+                    label="Cipher"
+                    value={macsecCipher || null}
+                    onChange={(v) => setMacsecCipher(v ?? "")}
+                    noneLabel="Device default"
+                    options={MACSEC_CIPHER_OPTIONS}
+                    error={fieldErrors.macsec_cipher}
+                  />
+                  <FormText
+                    label="Replay window"
+                    type="number"
+                    min={0}
+                    value={macsecReplay}
+                    onChange={setMacsecReplay}
+                    placeholder="Device default"
+                    info="Packets; 0 is strict ordering."
+                    error={fieldErrors.macsec_replay_window}
+                  />
+                </div>
+                <FormCombobox
+                  label="Keychain"
+                  value={macsecKeychainId}
+                  onChange={setMacsecKeychainId}
+                  options={keychains.map((k) => ({
+                    value: k.id,
+                    label: k.label,
+                  }))}
+                  noneLabel="None"
+                  placeholder="None"
+                  searchPlaceholder="Search keychains…"
+                  emptyText="No keychains."
+                  info="Holds the MKA CAK. The key stays in the keychain."
+                  error={fieldErrors.macsec_keychain_id}
+                />
+              </>
+            )}
+          </FormSection>
 
           <FormSection title="Nesting" card>
             <FormCheckbox

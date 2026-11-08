@@ -220,6 +220,37 @@ def coverage_warning_days(tenant) -> int:
     return COVERAGE_WARNING_DAYS_DEFAULT if days is None else int(days)
 
 
+#: The cable length rules a tenant without a settings row uses.
+CABLE_LENGTH_DEFAULTS = {
+    "slack_pct": 10,
+    "service_loop_mm": 0,
+    "step_mm": 500,
+    "standalone_height_mm": 0,
+}
+
+
+def cable_length_rules(tenant) -> dict:
+    """``{"slack_pct", "service_loop_mm", "step_mm", "standalone_height_mm"}``
+    - how a floor-plan route's length becomes a cable length. Tenant only;
+    no row means the defaults. Never creates a row."""
+    if tenant is None:
+        return dict(CABLE_LENGTH_DEFAULTS)
+    from core.models import TenantSettings
+
+    tenant_id = getattr(tenant, "pk", tenant)
+    row = (
+        TenantSettings.objects.filter(tenant_id=tenant_id)
+        .values_list(
+            "cable_slack_pct", "cable_service_loop_mm",
+            "cable_length_step_mm", "cable_standalone_height_mm",
+        )
+        .first()
+    )
+    if row is None:
+        return dict(CABLE_LENGTH_DEFAULTS)
+    return dict(zip(CABLE_LENGTH_DEFAULTS, (int(v) for v in row), strict=True))
+
+
 def effective_floorplan_row(tenant):
     """The object whose floor-plan popover config applies.
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from django.core.management.base import CommandError
 from django.core.management.commands.migrate import Command as DjangoMigrate
+from django.db import migrations
 
 from core import upgrade_migrate
 
@@ -32,5 +33,29 @@ class Command(DjangoMigrate):
     def migration_progress_callback(self, action, migration=None, fake=False):
         super().migration_progress_callback(action, migration, fake)
         alias = upgrade_migrate.flushing()
+        if alias and action == "apply_start" and not fake:
+            _flush_after_data_steps(migration, alias)
         if alias and action == "apply_success" and not fake:
             upgrade_migrate.flush_deferred(alias)
+
+
+def _flush_after_data_steps(migration, alias: str) -> None:
+    """Check the deferred constraints after each RunPython of ``migration``.
+
+    Rows a data step updates, when an earlier migration in the same
+    transaction inserted them, leave foreign-key checks pending; the index
+    Django creates at the end of the migration (an added foreign key's) is
+    then refused with "pending trigger events" (SQLSTATE 55006). Between
+    migrations in a plain migrate those checks would already have run."""
+    for op in migration.operations:
+        if isinstance(op, migrations.RunPython) and not getattr(op, "_danbyte_flush", False):
+            op.code = _then_flush(op.code, alias)
+            op._danbyte_flush = True
+
+
+def _then_flush(code, alias: str):
+    def run(apps, schema_editor):
+        code(apps, schema_editor)
+        upgrade_migrate.flush_deferred(alias)
+
+    return run

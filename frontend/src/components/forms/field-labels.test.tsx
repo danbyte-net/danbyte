@@ -288,6 +288,23 @@ describe("Field labels name their control (#428)", () => {
     expect(screen.getByLabelText("NOC")).toBeTruthy()
   })
 
+  it("a group field names the group, and nothing inside takes its id", () => {
+    render(
+      <Field label="Card lines" group hint="optional">
+        <Switch aria-label="Name only" />
+      </Field>
+    )
+    const group = screen.getByRole("group", { name: "Card lines" })
+    expect(document.querySelector("label[for]")).toBeNull()
+    const toggle = screen.getByRole("switch", { name: "Name only" })
+    expect(toggle.id).toBe("")
+    expect(toggle.getAttribute("aria-labelledby")).toBeNull()
+    expect(
+      document.getElementById(group.getAttribute("aria-describedby")!)!
+        .textContent
+    ).toBe("optional")
+  })
+
   it("an open picker's search box does not take the field's id", () => {
     render(
       <FormCombobox

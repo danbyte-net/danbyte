@@ -18,8 +18,9 @@ from drf_spectacular.utils import (
     OpenApiResponse,
     extend_schema,
     extend_schema_view,
+    inline_serializer,
 )
-from rest_framework import permissions, status as drf_status, viewsets
+from rest_framework import permissions, serializers, status as drf_status, viewsets
 from rest_framework.decorators import (
     action,
     api_view,
@@ -36,14 +37,47 @@ from core.errors import NETWORK_ERRORS, public_error
 from core.models import Organization, Tag, Tenant, TenantGroup
 from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
+from routing.models import RoutingKeychain
+from .catalog_slug import check_name_and_slug
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
+from .bulk_edit import BulkEditMixin, BulkEditSpec
+# Re-exported: these lived here before api.bulk_update.
+from .bulk_update import (  # noqa: F401
+    BulkUpdateMixin,
+    FieldWriteAllowList,
+    _bulk_status_offered,
+)
 from .bulk_validation import clean_bulk_updates
+from . import listed
+from .list_table import TableListMixin
 from .filters import apply_tag_filter
+from .floor_plan_from_map import FromMapRequestSerializer
 from .natural import natural, natural_key
-from .visible_counts import related_count_expr
+from .pagination import StandardResultsSetPagination
+from .visible_counts import (
+    path_count_expr,
+    related_count_expr,
+    tagged_count_expr,
+    tenant_count_expr,
+    view_filter,
+)
 from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
-from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, support_coverage
+from . import (
+    capacity,
+    detail_counts,
+    elevation_pdf,
+    floor_plan_pdf,
+    floor_plan_report,
+    list_specs,
+    object_report,
+    ip_usage,
+    scene_geo,
+    software_target,
+    software_versions,
+    support_coverage,
+)
+from .applications import software_end_annotations
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
     FacePortLoader,
@@ -69,11 +103,13 @@ from .models import (
     FHRPGroup, FHRPGroupAssignment,
     FiberSettings,
     rename_marker_refs,
-    FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
-    FloorPlanWall, FloorTileType, SiteMarker,
+    AreaType, FloorPlan, FloorPlanArea, FloorPlanLabel, FloorPlanRaisedFloorArea,
+    SensitivityLabel,
+    FloorPlanStack,
+    FloorPlanTile, FloorPlanTray, FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
     InterfaceTemplate, DeviceTypeService,
-    IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
+    InstalledSoftware, IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
     Module,
@@ -82,15 +118,18 @@ from .models import (
     ModuleInstallConflict, ModuleRemovalUnconfirmed, install_module,
     reinstall_module, uninstall_module,
     CableTermination, PortReservation,
+    CoolingFeed, CoolingIntake, CoolingIntakeTemplate, CoolingOutflow,
+    CoolingOutflowTemplate, CoolingSource,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
     Cabinet, CabinetRole, CabinetType,
-    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VirtualSwitch, VMInterface, VLAN, VLANGroup, VRF, Zone,
+    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualDisk, VirtualMachine, VirtualSwitch, VMInterface, VLAN, VLANGroup, VRF, Zone,
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
-    Region, Location, ConfigBundle, ConfigContext, ExportTemplate, LabelTemplate,
+    Region, Location, LocationType, Room, ConfigBundle, ConfigContext, ExportTemplate,
+    LabelTemplate,
     Document, DocumentCategory,
     materialize_device_components, resolve_config_template,
     sync_positional_interface_names,
@@ -105,10 +144,13 @@ from .serializers import (
     FiberSettingsSerializer,
     FloorPlanDrawingUnitsSerializer,
     FloorPlanMiniSerializer,
+    FloorPlanAreaSerializer,
+    FloorPlanLabelSerializer,
     FloorPlanRaisedFloorAreaSerializer,
     FloorPlanTraySerializer,
     FloorPlanWallSerializer,
     FloorPlanSerializer,
+    FloorPlanStackSerializer,
     FloorPlanTileSerializer,
     SiteMarkerSerializer,
     FloorTileTypeMiniSerializer,
@@ -138,6 +180,7 @@ from .serializers import (
     ModuleTypeMiniSerializer,
     TopologyDefaultViewSerializer,
     TopologyViewSerializer,
+    TopologyViewListSerializer,
     TopologyViewSummarySerializer,
     ModuleTypeSerializer,
     ConsolePortSerializer,
@@ -163,7 +206,15 @@ from .serializers import (
     RegionSerializer,
     RegionMiniSerializer,
     LocationSerializer,
-    LocationMiniSerializer,
+    LocationPickerSerializer,
+    LocationTypeMiniSerializer,
+    LocationTypeSerializer,
+    AreaTypeMiniSerializer,
+    AreaTypeSerializer,
+    SensitivityLabelMiniSerializer,
+    SensitivityLabelSerializer,
+    RoomSerializer,
+    RoomMiniSerializer,
     ConfigContextSerializer,
     ConfigBundleSerializer,
     ExportTemplateSerializer,
@@ -171,6 +222,15 @@ from .serializers import (
     DocumentSerializer,
     DocumentCategorySerializer,
     PowerPanelSerializer,
+    CoolingComponentMiniSerializer,
+    CoolingFeedMiniSerializer,
+    CoolingFeedSerializer,
+    CoolingIntakeSerializer,
+    CoolingIntakeTemplateSerializer,
+    CoolingOutflowSerializer,
+    CoolingOutflowTemplateSerializer,
+    CoolingSourceMiniSerializer,
+    CoolingSourceSerializer,
     PowerPanelMiniSerializer,
     PortReservationSerializer,
     PowerFeedSerializer,
@@ -185,6 +245,7 @@ from .serializers import (
     VirtualMachineSerializer,
     VirtualMachineMiniSerializer,
     VMInterfaceSerializer,
+    VirtualDiskSerializer,
     MACAddressSerializer,
     CabinetMiniSerializer,
     CabinetRoleMiniSerializer,
@@ -202,7 +263,6 @@ from .serializers import (
     DeviceRoleSerializer,
     PlatformGroupMiniSerializer,
     PlatformGroupSerializer,
-    PlatformSerializer,
     NATRuleSerializer,
     ServiceSerializer,
     ServiceTemplateSerializer,
@@ -304,20 +364,7 @@ _RENAME_PATTERN_MAX = 256
 _RENAME_MATCH_TIMEOUT = 0.2
 
 
-def _count_of(model, fk: str):
-    """``COUNT(*)`` of ``model`` rows pointing at the outer row through
-    ``fk``, as a correlated subquery (0 when none) - the shape a list page
-    annotates so a figure per row does not become a query per row."""
-    return Coalesce(
-        Subquery(
-            model.objects.filter(**{fk: OuterRef("pk")})
-            .order_by()
-            .values(fk)
-            .annotate(n=Count("pk"))
-            .values("n")
-        ),
-        0,
-    )
+_count_of = detail_counts.count_of
 
 
 def annotate_dhcp(qs):
@@ -446,6 +493,35 @@ from .views import (
 # by a user-visible name; `natural()` does the same for any other field.
 NATURAL_NAME = natural("name")
 
+# ?software_target= on the device and VM lists (#395).
+SOFTWARE_TARGET_PARAMETER = OpenApiParameter(
+    name="software_target",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    enum=["on", "off", "unknown"],
+    description=(
+        "Software version against the platform's target version: `on` (equal), "
+        "`off` (differs), `unknown` (no version recorded, or no target)."
+    ),
+)
+
+# ?software_version= / ?software_version_source= on the device and VM lists (#451).
+SOFTWARE_VERSION_PARAMETERS = [
+    OpenApiParameter(
+        name="software_version",
+        type=OpenApiTypes.STR,
+        location=OpenApiParameter.QUERY,
+        description="The running software version, exactly.",
+    ),
+    OpenApiParameter(
+        name="software_version_source",
+        type=OpenApiTypes.STR,
+        location=OpenApiParameter.QUERY,
+        enum=["manual", "snmp", "virtualization", "oxidized", "import", "none"],
+        description="Where the software version came from; `none` for no source.",
+    ),
+]
+
 # A device's map and the traces: the topology map's opt-in enrichments.
 MAP_INCLUDE_PARAMETER = OpenApiParameter(
     name="include",
@@ -472,14 +548,9 @@ def _all_n(model, rel_name: str):
     return related_count_expr(None, model, rel_name)
 
 
-class StandardPagination(PageNumberPagination):
-    # The SPA loads the full result set and paginates/filters client-side (the
-    # DataTable pager uses the user's page_size preference), so return everything
-    # by default rather than a 50-row first page that silently hid the rest.
-    # Bounded so a pathological table can't dump unlimited rows; ?page_size= wins.
-    page_size = 10000
-    page_size_query_param = "page_size"
-    max_page_size = 10000  # cap client-requested size at the default (anti-DoS)
+class StandardPagination(StandardResultsSetPagination):
+    """The project's list pagination (api/pagination.py): settings.API_PAGE_SIZE
+    rows by default, ?page_size= up to settings.API_MAX_PAGE_SIZE (#447)."""
 
 
 class TenantScopedReadViewSet(RBACViewSetMixin, viewsets.ReadOnlyModelViewSet):
@@ -721,192 +792,6 @@ class CatalogLocalityMixin:
         obj.owning_site = site
         obj.save()
         return Response(self.get_serializer(obj).data)
-
-
-class FieldWriteAllowList:
-    """Which model fields a *field-level* write path may set on this model.
-
-    Two consumers read this declaration:
-
-    * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-    * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-      edit and for planning's planned changes.
-
-    Declaring it in one place rather than inside either consumer is what stops
-    the metadata endpoint becoming a third list that can silently disagree with
-    the two that already exist.
-
-    A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-    its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-    plan may change and the fields a bulk edit offers can differ.
-
-    ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-    stay authoritative, so the existing component viewsets need no edit. Note
-    the consequence: adding ``editable_*`` to a viewset that *does* have a
-    ``bulk-update`` endpoint also makes those fields bulk-editable.
-    """
-
-    editable_str_fields: tuple = ()
-    editable_bool_fields: tuple = ()
-    editable_int_fields: tuple = ()
-    editable_fk_fields: dict = {}
-
-    bulk_str_fields: tuple = ()
-    bulk_bool_fields: tuple = ()
-    bulk_int_fields: tuple = ()          # nullable ints
-    bulk_fk_fields: dict = {}            # "vlan_id" → tenant-scoped model
-
-    @classmethod
-    def field_write_allow_list(cls) -> dict:
-        """``{"str": (...), "bool": (...), "int": (...), "fk": {...}}``."""
-        return {
-            "str": (*cls.editable_str_fields, *cls.bulk_str_fields),
-            "bool": (*cls.editable_bool_fields, *cls.bulk_bool_fields),
-            "int": (*cls.editable_int_fields, *cls.bulk_int_fields),
-            "fk": {**cls.editable_fk_fields, **cls.bulk_fk_fields},
-        }
-
-
-def _bulk_status_offered(status_id, model, key="status_id") -> None:
-    """A bulk edit may only set a status the catalog offers ``model`` - as the
-    form and the API's single edit (``serializers.offered_status``). Run it
-    after the tenant check: the status is then known to be the tenant's."""
-    from .status_registry import status_label, status_offered
-
-    if not status_id:
-        return
-    status = Status.objects.filter(pk=status_id).first()
-    if status is not None and not status_offered(status, model):
-        raise ValidationError(
-            {key: f"“{status.name}” isn't a status for {status_label(model)}."}
-        )
-
-
-class BulkUpdateMixin(FieldWriteAllowList):
-    """``bulk-update`` on its own: the field-level bulk write that
-    :class:`ComponentBulkMixin` and the routing lists (#314) share.
-
-    POST ``bulk-update`` {ids: [...], fields: {...}} - only keys present in
-    ``fields`` are touched, and only keys :meth:`bulk_update_allow_list`
-    names are accepted (an unknown key is a 400, never silently dropped).
-    Tenant-scoped FKs re-validate against the active tenant since
-    ``qs.update`` bypasses the serializer's scoped fields. Selection is scoped
-    by ``get_queryset`` (tenant + RBAC rows), so foreign ids silently fall out.
-    """
-
-    bulk_tags = False                    # add_tag_ids / remove_tag_ids
-    rbac_action_map = {"bulk_update": "change"}
-
-    def _bulk_ids(self, request):
-        return bulk_ids(request, MAX_IDS)
-
-    def bulk_update_allow_list(self) -> dict:
-        """What ``bulk-update`` accepts, as ``field_write_allow_list()``
-        shapes it. Default: the viewset's whole field-write allow-list."""
-        return self.field_write_allow_list()
-
-    def normalize_bulk_updates(self, updates: dict) -> dict:
-        """Hook for model-level invariants that ``Model.save()`` would enforce
-        but a queryset ``update()`` skips. Default: unchanged."""
-        return updates
-
-    def check_bulk_rows(self, rows: list, updates: dict) -> None:
-        """Hook for invariants that span other rows (a serializer's
-        ``validate``), checked against the selected rows before the queryset
-        ``update()``. Raise ``ValidationError`` to refuse. Default: none."""
-
-    @action(detail=False, methods=["post"], url_path="bulk-update")
-    def bulk_update(self, request):
-        ids = self._bulk_ids(request)
-        fields = request.data.get("fields") or {}
-        if not isinstance(fields, dict) or not fields:
-            raise ValidationError({"fields": "Provide at least one field to update."})
-
-        spec = self.bulk_update_allow_list()
-        allowed = {*spec["str"], *spec["bool"], *spec["int"], *spec["fk"]}
-        tag_keys = {"add_tag_ids", "remove_tag_ids"} if self.bulk_tags else set()
-        unknown = set(fields) - allowed - tag_keys
-        if unknown:
-            raise ValidationError({
-                k: f"Not bulk-editable here. Allowed: {sorted(allowed | tag_keys)}"
-                for k in sorted(unknown)
-            })
-
-        tenant = _get_active_tenant(request)
-        model = self.get_queryset().model
-        updates = {}
-        for k in spec["str"]:
-            if k in fields:
-                v = "" if fields[k] is None else str(fields[k])
-                # Choice-backed CharFields validate against the model's own
-                # choice list (flatchoices flattens the grouped ones), so a
-                # typo'd slug is a 400 rather than a silently written value.
-                # "" always passes - it's how bulk edit clears the field.
-                valid = dict(model._meta.get_field(k).flatchoices)
-                if valid and v and v not in valid:
-                    # Short lists name their options; the long ones (216 interface
-                    # types) would bury the message, so point at the endpoint.
-                    opts = sorted(valid)
-                    hint = (
-                        ", ".join(opts) if len(opts) <= 12
-                        else "see /api/dcim/choices/"
-                    )
-                    raise ValidationError(
-                        {k: f"'{v}' is not a valid choice. Options: {hint}"}
-                    )
-                updates[k] = v
-        for k in spec["bool"]:
-            if k in fields:
-                if not isinstance(fields[k], bool):
-                    raise ValidationError({k: "Must be true or false."})
-                updates[k] = fields[k]
-        for k in spec["int"]:
-            if k in fields:
-                v = fields[k]
-                if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
-                    raise ValidationError({k: "Must be an integer or null."})
-                updates[k] = v
-        for k in spec["fk"]:
-            if k in fields:
-                updates[k] = fields[k] or None
-        # Lengths, ranges, choices and tenant-scoped relations as the edit
-        # form's PATCH checks them (#350); the row rules run below.
-        checked = clean_bulk_updates(self, updates)
-        updates = checked.updates
-        for k, model in spec["fk"].items():
-            if k in fields:
-                v = fields[k]
-                if v and not model.objects.filter(pk=v, tenant=tenant).exists():
-                    raise ValidationError({k: "Not found in this tenant."})
-                if model is Status:
-                    _bulk_status_offered(v, self.get_queryset().model, k)
-                updates[k] = v or None
-
-        qs = self.get_queryset().filter(pk__in=ids)
-        with transaction.atomic():
-            _rows = list(qs)
-            updates = self.normalize_bulk_updates(updates)
-            checked.check_rows(_rows, updates)
-            self.check_bulk_rows(_rows, updates)
-            updated = qs.update(**updates) if updates else qs.count()
-            if updates:
-                log_bulk_update(_rows, updates)
-            # Marking ports connected fulfils any hold on them.
-            if updates.get("mark_connected"):
-                from .models import release_reservations_for
-
-                release_reservations_for(qs.model, [r.pk for r in _rows])
-            if self.bulk_tags:
-                apply_and_log_bulk_tags(
-                    qs,
-                    fields.get("add_tag_ids") or [],
-                    fields.get("remove_tag_ids") or [],
-                    tenant=tenant,
-                )
-            self._assert_bulk_write_in_site_scope(
-                [row.pk for row in _rows], action="change"
-            )
-        return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
 
 
 def _is_module_ownership(field) -> bool:
@@ -1236,11 +1121,30 @@ class ImageAttachmentMixin:
         return Response(ser.data)
 
 
+def _tag_params_filter(qs, params):
+    """``?tag=<slug>`` and ``?tag_id=<id>``, each repeatable: the rows that
+    carry every tag named (AND, as the device list reads ``tag``). An id
+    that is not a number is a 400."""
+    from rest_framework.exceptions import ValidationError as _VE
+
+    slugs = [t for t in params.getlist("tag") if t]
+    ids = [t for t in params.getlist("tag_id") if t]
+    if any(not i.isdigit() for i in ids):
+        raise _VE({"tag_id": "A tag id is a number."})
+    model = qs.model
+    for slug in slugs:
+        qs = qs.filter(pk__in=model.objects.filter(tags__slug=slug).values("pk"))
+    for i in ids:
+        qs = qs.filter(pk__in=model.objects.filter(tags__id=int(i)).values("pk"))
+    return qs
+
+
 class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # Mirrors what this viewset's own bulk_update action already accepts, so
     # api.editable_fields can describe prefixes without a second list. The
     # bespoke action stays the enforcer; a test asserts the two agree.
     editable_str_fields = ("description",)
+    editable_bool_fields = ("auto_gateway",)
     editable_fk_fields = {
         "status_id": Status, "vrf_id": VRF, "site_id": Site, "vlan_id": VLAN,
     }
@@ -1251,12 +1155,12 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         .all()
     )
     serializer_class = PrefixSerializer
-    rbac_action_map = {"bulk_delete": "delete"}
+    rbac_action_map = {"bulk_delete": "delete", **object_report.RBAC_ACTIONS}
     # Clone carries the routing/classification context; the CIDR is the unique
     # identifier and is left blank for the user to fill.
     clone_fields = (
         "status", "site", "vlan", "vrf", "location", "description",
-        "auto_discover", "auto_assign_site", "monitoring_engine",
+        "auto_discover", "auto_assign_site", "auto_gateway", "monitoring_engine",
     )
 
     def perform_destroy(self, instance):
@@ -1275,6 +1179,32 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         from .views import reparent_ips_out_of
 
         return Response(reparent_ips_out_of(self.get_object(), dry_run=True))
+
+    @object_report.describe_schema(object_report.PREFIX)
+    @object_report.report_schema(object_report.PREFIX)
+    @action(detail=False, methods=["get", "post"], url_path="report")
+    def report(self, request):
+        """A PDF report of these objects (api.object_report); GET says what
+        one can hold."""
+        return object_report.export(request, object_report.PREFIX)
+
+    @object_report.file_schema(object_report.PREFIX)
+    @action(detail=False, methods=["get"], url_name="report-file",
+            url_path=r"report/file/(?P<token>[A-Za-z0-9_-]+)")
+    def report_file(self, request, token=None):
+        return object_report.export_file(request, object_report.PREFIX, token)
+
+    @object_report.job_schema(object_report.PREFIX)
+    @action(detail=False, methods=["get"], url_name="report-job",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)")
+    def report_job(self, request, token=None):
+        return object_report.job_status(request, object_report.PREFIX, token)
+
+    @object_report.job_file_schema(object_report.PREFIX)
+    @action(detail=False, methods=["get"], url_name="report-job-file",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)/file")
+    def report_job_file(self, request, token=None):
+        return object_report.job_file(request, object_report.PREFIX, token)
 
     def perform_create(self, serializer):
         prefix = serializer.save(
@@ -1393,6 +1323,14 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             .select_related("status")
             .annotate(dhcp_scope_n=dhcp_scope_n, ip_n=ip_n)
         )
+        # ``ip_n`` is the prefix's fill, every address in it; the IP count
+        # links to the addresses the reader may view. A reader whose view the
+        # scope narrows gets that count as its own subquery (#448).
+        ip_view = view_filter(self.request, IPAddress)
+        if ip_view is None or ip_view:
+            qs = qs.annotate(
+                ip_visible_n=related_count_expr(self.request, Prefix, "ip_addresses")
+            )
         if not self.request:
             return qs
         search = self.request.query_params.get("search", "").strip()
@@ -1414,6 +1352,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 qs = qs.filter(Q(site_id=v) | Q(site__isnull=True))
             else:
                 qs = qs.filter(**{field: v})
+        qs = _tag_params_filter(qs, self.request.query_params)
         # `contained_in=<cidr>`: only prefixes inside that network - the
         # aggregate page's Prefixes tab (#133). Postgres `<<=` on the stored
         # text cast to inet, same cast the ordering below relies on.
@@ -1782,7 +1721,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # ── Bulk patch ──────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
-        """POST {ids: [...], fields: {status_id, vrf_id, site_id, vlan_id}} → 200.
+        """POST {ids: [...], fields: {status_id, vrf_id, site_id, vlan_id,
+        description, auto_gateway}} → 200.
 
         Only the keys present in ``fields`` are touched. Tags are handled
         as add/remove sets rather than overwriting so a bulk edit can't
@@ -1795,8 +1735,11 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             raise ValidationError({"fields": "Provide at least one field to update."})
 
         updates = _bulk_field_updates(
-            fields, ("status_id", "vrf_id", "site_id", "vlan_id", "description")
+            fields,
+            ("status_id", "vrf_id", "site_id", "vlan_id", "description", "auto_gateway"),
         )
+        if "auto_gateway" in updates and not isinstance(updates["auto_gateway"], bool):
+            raise ValidationError({"auto_gateway": "Must be true or false."})
         # The serializer's field rules (#350). Its object-level rules are the
         # CIDR's own - duplicates and overlaps - which a bulk edit never sets;
         # a VRF move onto a taken CIDR is the database's 409.
@@ -1834,6 +1777,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
             self._assert_bulk_write_in_site_scope(_rows)
 
@@ -1859,7 +1803,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         .all()
     )
     serializer_class = IPAddressSerializer
-    rbac_action_map = {"bulk_delete": "delete"}
+    rbac_action_map = {"bulk_delete": "delete", **object_report.RBAC_ACTIONS}
     # The address itself + its device/interface assignment are identity; a clone
     # keeps the classification and lands unassigned at a fresh address.
     clone_fields = (
@@ -1931,6 +1875,21 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             qs = qs.filter(assigned_interface_id=iface)
         if vm := p.get("assigned_vm"):
             qs = qs.filter(assigned_vm_id=vm)
+        # Everything a device / VM uses - assigned to it, to one of its
+        # interfaces, or in its primary/OOB/secondary slot (api/ip_usage.py).
+        for param, kind, model in (
+            ("device", "device", Device), ("virtual_machine", "vm", VirtualMachine),
+        ):
+            if ref := p.get(param):
+                try:
+                    owner = model.objects.filter(
+                        pk=ref, tenant=_get_active_tenant(self.request)
+                    ).first()
+                except (ValueError, DjangoValidationError):
+                    owner = None
+                if owner is None:
+                    return qs.none()
+                qs = qs.filter(ip_usage.addresses_q(kind, owner))
         if role := p.get("role"):
             qs = qs.filter(role_id=role)
         if status := p.get("status"):
@@ -1951,6 +1910,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 if (_classify_ip_scope(addr) or "").lower() == scope
             ]
             qs = qs.filter(pk__in=ids)
+        qs = _tag_params_filter(qs, p)
         return _apply_custom_field_scope(self.request, qs, "ipaddress")
 
     def paginate_queryset(self, queryset):
@@ -1958,6 +1918,32 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         if page is not None and getattr(self, "action", None) == "list":
             attach_dhcp_flags(page)
         return page
+
+    @object_report.describe_schema(object_report.IP)
+    @object_report.report_schema(object_report.IP)
+    @action(detail=False, methods=["get", "post"], url_path="report")
+    def report(self, request):
+        """A PDF report of these objects (api.object_report); GET says what
+        one can hold."""
+        return object_report.export(request, object_report.IP)
+
+    @object_report.file_schema(object_report.IP)
+    @action(detail=False, methods=["get"], url_name="report-file",
+            url_path=r"report/file/(?P<token>[A-Za-z0-9_-]+)")
+    def report_file(self, request, token=None):
+        return object_report.export_file(request, object_report.IP, token)
+
+    @object_report.job_schema(object_report.IP)
+    @action(detail=False, methods=["get"], url_name="report-job",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)")
+    def report_job(self, request, token=None):
+        return object_report.job_status(request, object_report.IP, token)
+
+    @object_report.job_file_schema(object_report.IP)
+    @action(detail=False, methods=["get"], url_name="report-job-file",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)/file")
+    def report_job_file(self, request, token=None):
+        return object_report.job_file(request, object_report.IP, token)
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
@@ -2006,6 +1992,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
             self._assert_bulk_write_in_site_scope(_rows)
 
@@ -2047,11 +2034,12 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         # Per-row figures come with the page: one correlated count per
-        # related table, not three COUNT queries per VRF (#196).
+        # related table, not three COUNT queries per VRF (#196). A VRF spans
+        # sites, so each counts the rows the reader may view (#448).
         qs = qs.annotate(
-            prefix_n=_count_of(Prefix, "vrf"),
-            vlan_n=_count_of(VLAN, "vrf"),
-            ip_n=_count_of(IPAddress, "vrf"),
+            prefix_n=_visible_n(self, "prefixes"),
+            vlan_n=_visible_n(self, "vlans"),
+            ip_n=_visible_n(self, "ip_addresses"),
         )
         if not self.request:
             return qs
@@ -2102,6 +2090,15 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         qs = super().get_queryset()
         if not self.request:
             return qs
+        # The VRF counts are over the VRFs the reader may view (#448), so
+        # only those are prefetched.
+        f = view_filter(self.request, VRF)
+        vrfs = VRF.objects.none() if f is None else VRF.objects.filter(f)
+        qs = qs.prefetch_related(None).prefetch_related(
+            Prefetch("importing_vrfs", queryset=vrfs),
+            Prefetch("exporting_vrfs", queryset=vrfs),
+            TAGS,
+        )
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
@@ -2178,11 +2175,13 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 "`x`, `y`, `w`, `h`, `orientation`) with `grid_width` / "
                 "`grid_height`; `unplaced`: the racks on no floor plan. A rack "
                 "carries `u_height`, `u_used`, `u_pct`, `power` (with `supply`: "
-                "`feed`, `pdu_rating` or null), `ports`, `panel_ports` and "
-                "`device_count`; `totals` add them up, with `racks`, `devices` "
-                "and, under `power`, how many racks have only their PDUs' rating "
-                "(`pdu_rating`) or no supply figure (`no_supply`). `count_virtual` "
-                "says whether virtual interfaces were counted."
+                "`feed`, `pdu_rating` or null), `cooling` (heat against its "
+                "cooling capacity), `ports`, `panel_ports` and `device_count`; "
+                "`totals` add them up, with `racks`, `devices`, under `power` "
+                "how many racks have only their PDUs' rating (`pdu_rating`) or "
+                "no supply figure (`no_supply`), and under `cooling` how many "
+                "have a cooling capacity (`budget`) or none (`no_supply`). "
+                "`count_virtual` says whether virtual interfaces were counted."
             ),
         ),
     )
@@ -2263,6 +2262,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
         return Response({"updated": updated_count}, status=drf_status.HTTP_200_OK)
 
@@ -2292,15 +2292,10 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # The prefix count as one subquery per page instead of a count per
         # row (#179). A subquery, not a join Count: the tags prefetch and a
         # joined aggregate would multiply.
+        # Only the prefixes the reader may view: a shared VLAN's prefixes
+        # may sit at other sites (#448).
         qs = super().get_queryset().annotate(
-            prefix_n=Coalesce(
-                Subquery(
-                    Prefix.objects.filter(vlan_id=OuterRef("pk"))
-                    .order_by().values("vlan_id")
-                    .annotate(c=Count("*")).values("c")[:1]
-                ),
-                0,
-            )
+            prefix_n=_visible_n(self, "prefixes")
         )
         if not self.request:
             return qs
@@ -2377,6 +2372,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
             self._assert_bulk_write_in_site_scope(_rows)
         return Response({"updated": updated_count}, status=drf_status.HTTP_200_OK)
@@ -2392,13 +2388,16 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     the tenant-scoped base + catalog mixin.
 
     ``?picker=1`` returns the light picker shape (no usage count); the default
-    list/detail shape carries a ``usage_count`` annotated in one GROUP BY.
+    list/detail shape carries a ``usage_count`` of the tagged objects the
+    reader may view, annotated in one subquery (#438).
     """
 
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = _PickerPagination
     queryset = Tag.objects.all().order_by(NATURAL_NAME)
     serializer_class = TagManageSerializer
+    # Merging deletes this tag: the row must be deletable by the caller.
+    rbac_action_map = {"merge": "delete"}
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and self.request.query_params.get("picker") == "1":
@@ -2418,7 +2417,13 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             if search:
                 qs = qs.filter(name__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         qs = restrict_for_view(self, qs)
-        return qs.annotate(usage_count_annotated=Count("tagged_items"))
+        # The usage panel lists the objects instead; it needs no count.
+        if (
+            self.action not in ("usage", "duplicates", "merge")
+            and self.get_serializer_class() is TagManageSerializer
+        ):
+            qs = qs.annotate(usage_count_annotated=tagged_count_expr(self.request))
+        return qs
 
     def _guard_legacy(self, obj):
         if obj.tenant_id is None and not self.request.user.is_superuser:
@@ -2434,6 +2439,75 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     def perform_destroy(self, instance):
         self._guard_legacy(instance)
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="duplicates")
+    def duplicates(self, request):
+        """Names used more than once among the tags this tenant sees (trimmed,
+        case ignored) - pairs left from before names were unique, to merge.
+        Returns ``{count, results:[{name, ids}]}``."""
+        from core.tags import duplicate_name_groups
+
+        qs = self.get_queryset().only("id", "name")
+        groups = duplicate_name_groups(qs)
+        return Response({
+            "count": len(groups),
+            "results": [
+                {"name": g[0].name, "ids": [t.pk for t in g]} for g in groups
+            ],
+        })
+
+    @action(detail=True, methods=["post"], url_path="merge")
+    def merge(self, request, pk=None):
+        """``{into: <id>}``: move this tag's objects onto ``into`` and delete
+        this tag. Needs delete on this tag and change on tags; ``into`` must be
+        visible here and of the same scope or wider - the same tenant (this
+        tag's site or tenant-wide) or deployment-global. A global tag merges
+        only into another global tag (superuser)."""
+        from auth_api import rbac
+        from core.tags import merge_tags
+
+        source = self.get_object()  # row-restricted for "delete" (rbac_action_map)
+        self._guard_legacy(source)
+        tenant = _get_active_tenant(request)
+        user = request.user
+        if not user.is_superuser and not rbac.has_action(user, tenant, "tag", "change"):
+            raise PermissionDenied("Merging tags needs the change permission on tags.")
+        into = (request.data or {}).get("into")
+        try:
+            into = int(into)
+        except (TypeError, ValueError):
+            raise ValidationError({"into": "A tag id."}) from None
+        visible = rbac.restrict_queryset(
+            Tag.objects.filter(Q(tenant=tenant) | Q(tenant__isnull=True)),
+            user, tenant, "tag", "view",
+        )
+        target = visible.select_related("owning_site").filter(pk=into).first()
+        if target is None:
+            raise ValidationError({"into": "Not found in this tenant."})
+        if target.pk == source.pk:
+            raise ValidationError({"into": "A tag can't be merged into itself."})
+        if target.tenant_id is not None and target.tenant_id != source.tenant_id:
+            raise ValidationError({
+                "into": "A global tag merges only into another global tag."
+                if source.tenant_id is None
+                else "Tags merge only within one tenant.",
+            })
+        if target.owning_site_id and target.owning_site_id != source.owning_site_id:
+            raise ValidationError({
+                "into": f"{target.name} is local to site {target.owning_site.name}; "
+                "merge into a tag of the same site or a tenant-wide one.",
+            })
+        result = merge_tags(source, target)
+        target = (
+            Tag.objects.filter(pk=target.pk)
+            .annotate(usage_count_annotated=tagged_count_expr(request))
+            .select_related("owning_site")
+            .first()
+        )
+        return Response({
+            **result,
+            "into": TagManageSerializer(target, context={"request": request}).data,
+        })
 
     @action(detail=True, methods=["get"], url_path="usage")
     def usage(self, request, pk=None):
@@ -2548,10 +2622,18 @@ class CustomFieldViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         _slug = ref.model._meta.model_name
         if is_registered(_slug):
             qs = rbac.restrict_queryset(qs, request.user, tenant, _slug, "view")
-        qs = apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})[:20]
+        rows = list(apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})[:20])
+        # A generated flow's name reads masked where an end is hidden (#453).
+        from core.hidden_fields import name_masker
+
+        masker = name_masker(ref.model._meta.label_lower, request.user, tenant)
+        if masker is not None:
+            masker.prime(rows)
         results = []
-        for obj in qs:
+        for obj in rows:
             label = getattr(obj, ref.label_field, None) or str(obj)
+            if masker is not None and masker.masks(obj):
+                label = masker.name(obj)
             results.append({"id": str(obj.pk), "label": str(label)})
         return Response({"results": results, "summary": scope_summary(field.scope_rules or {})})
 
@@ -2564,7 +2646,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     serializer_class = CustomFieldGroupSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().annotate(field_count_annotated=Count("fields"))
+        qs = super().get_queryset().annotate(field_count_annotated=_visible_n(self, "fields"))
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -2572,17 +2654,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         return qs.order_by("weight", NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (
-            serializer.instance.name if serializer.instance else ""
-        )
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = CustomFieldGroup.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, CustomFieldGroup)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -2617,17 +2689,27 @@ class TenantGroupViewSet(viewsets.ModelViewSet):
         if not self.request:
             return qs
         user = getattr(self.request, "user", None)
+        tenant_n = _all_n(TenantGroup, "tenants")
         if not (user and user.is_superuser):
             from auth_api.permissions import user_tenants
 
             qs = qs.filter(
                 org__in=user_tenants(user).values("org_id")
             )
+            # The tenants the Tenants list shows the reader (#448).
+            tenant_n = Coalesce(
+                Subquery(
+                    Tenant.objects.filter(
+                        group=OuterRef("pk"), pk__in=user_tenants(user).values("pk")
+                    ).order_by().values("group").annotate(c=Count("pk")).values("c")
+                ),
+                0,
+            )
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         return qs.annotate(
-            tenant_n=_all_n(TenantGroup, "tenants"),
+            tenant_n=tenant_n,
             child_n=_all_n(TenantGroup, "children"),
         )
 
@@ -2676,21 +2758,25 @@ class TenantViewSet(viewsets.ModelViewSet):
         # A user may only see/act on tenants they're granted - without this any
         # authed user could GET /api/tenants/<id>/ for any tenant's metadata.
         user = getattr(self.request, "user", None)
+        tenants = ()
         if not (user and user.is_superuser):
             from auth_api.permissions import user_tenants
 
-            qs = qs.filter(pk__in=user_tenants(user).values("pk"))
+            tenants = list(user_tenants(user))
+            qs = qs.filter(pk__in=[t.pk for t in tenants])
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         if self.get_serializer_class() is TenantSerializer:
-            # The roll-up counts, one subquery each for the page (#444).
-            qs = qs.annotate(
-                site_n=_all_n(Tenant, "sites"),
-                prefix_n=_all_n(Tenant, "prefixes"),
-                vlan_n=_all_n(Tenant, "vlans"),
-                ip_n=_all_n(Tenant, "ip_addresses"),
-            )
+            # The roll-up counts, one subquery each for the page (#444),
+            # narrowed to the rows the reader may view in each tenant (#448).
+            qs = qs.annotate(**{
+                name: tenant_count_expr(self.request, rel, tenants)
+                for name, rel in (
+                    ("site_n", "sites"), ("prefix_n", "prefixes"),
+                    ("vlan_n", "vlans"), ("ip_n", "ip_addresses"),
+                )
+            })
         return qs
 
     def perform_create(self, serializer):
@@ -2723,6 +2809,10 @@ class TenantViewSet(viewsets.ModelViewSet):
         from monitoring.connect_protocol_seeds import seed_builtin_connect_protocols
 
         seed_builtin_connect_protocols(tenant)
+        # The starter sensitivity labels reports are marked with, once.
+        from .sensitivity import seed_sensitivity_labels
+
+        seed_sensitivity_labels(tenant)
 
     @action(detail=True, methods=["post"], url_path="switch")
     def switch(self, request, pk=None):
@@ -2833,16 +2923,10 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
 
     def _prepare(self, serializer):
         tenant = self._tenant_or_403()
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        model = self.queryset.model
-        clash = model.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "A row with this name already exists."})
+        check_name_and_slug(
+            serializer, tenant, self.queryset.model,
+            message="A row with this name already exists.",
+        )
         return tenant
 
     def perform_create(self, serializer):
@@ -2948,15 +3032,7 @@ class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         )
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = Manufacturer.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "A manufacturer with this name already exists."})
+        check_name_and_slug(serializer, tenant, Manufacturer, message="A manufacturer with this name already exists.")
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -3000,6 +3076,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     # not copied (rebuilt on the new type).
     clone_fields = (
         "manufacturer", "u_height", "rack_width", "is_full_depth", "airflow",
+        "cooling_method", "heat_output_w",
         "weight", "weight_unit", "subdevice_role", "exclude_from_utilization",
         "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
         "description",
@@ -3558,6 +3635,40 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         dt.save()
         return Response(DeviceTypeSerializer(dt, context={"request": request}).data)
 
+    @extend_schema(
+        request={"multipart/form-data": {"type": "object", "properties": {
+            "file": {"type": "string", "format": "binary"},
+            "fit": {"type": "string"}, "up": {"type": "string"},
+            "front": {"type": "string"},
+        }}},
+        responses={200: OpenApiTypes.BINARY},
+    )
+    @action(detail=True, methods=["get", "post", "delete"], url_path="model",
+            parser_classes=[MultiPartParser, FormParser])
+    def model_file(self, request, pk=None):
+        """The type's 3D model (binary glTF, api.model_3d). GET downloads it
+        (``model/gltf-binary``, as an attachment); POST a multipart ``file``
+        to set or replace it, with optional ``fit`` / ``up`` / ``front``;
+        DELETE removes it. Reading needs view on the type, writing change."""
+        from . import model_3d
+
+        dt = self.get_object()
+        resp = model_3d.handle(request, dt, slugify(dt.name) or "model")
+        if resp is not None:
+            return resp
+        return Response(DeviceTypeSerializer(dt, context={"request": request}).data)
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get", "put"], url_path="model-ports")
+    def model_ports(self, request, pk=None):
+        """The ports mapped onto the type's 3D model (api.model_ports). PUT
+        ``{version, model_ports}`` saves the editor's whole mapping at once;
+        a stale version answers 409. Reading needs view on the type, writing
+        change."""
+        from . import model_ports
+
+        return model_ports.handle(request, self.get_object())
+
 
 def _region_and_descendant_ids(region_id):
     """All region ids in the subtree rooted at ``region_id`` (inclusive).
@@ -3603,10 +3714,119 @@ ASSIGNED_IP_RELATED = (
 )
 
 
-class DeviceViewSet(
-    FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet
-):
-    queryset = (
+def _prtg_state(obj) -> tuple:
+    """What a save must compare to know the PRTG plan changed."""
+    return (obj.prtg_sync or "inherit", obj.prtg_host or "")
+
+
+def _plan_prtg_on_save(obj, before: tuple) -> None:
+    """A device's or VM's PRTG setting or host changed: plan it for PRTG now
+    (and, with Apply automatically on, queue the apply) instead of at the
+    next pass. What happened rides back on the response as ``prtg_plan``."""
+    if _prtg_state(obj) == before:
+        return
+    from prtg.provision import plan_after_save
+
+    obj._prtg_plan = plan_after_save(obj)
+
+
+def _prtg_delete_args(request) -> tuple[str, bool]:
+    """``prtg`` (``keep``, ``remove``, ``pause``) and ``prtg_force`` of a
+    delete: the query string, or the bulk call's JSON body."""
+    from prtg.retire import KEEP, MODES
+
+    body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+    mode = str(request.query_params.get("prtg") or body.get("prtg") or KEEP).strip().lower()
+    if mode not in MODES:
+        raise ValidationError({"prtg": "keep, remove or pause."})
+    raw = request.query_params.get("prtg_force", body.get("prtg_force"))
+    force = str(raw).strip().lower() in ("1", "true", "yes") if raw is not None else False
+    return mode, force
+
+
+class PrtgCleanupDeleteMixin(SafeBulkDeleteMixin):
+    """Single and bulk delete of devices and VMs with ``?prtg=remove|pause``
+    (:mod:`prtg.retire`): the PRTG side runs first - inline, or queued when
+    PRTG is slow - and the Danbyte delete proceeds whatever PRTG answered.
+    A bulk dry run carries ``prtg``: what the rows have in PRTG."""
+
+    rbac_action_map = {"bulk_delete": "delete"}
+    _prtg_mode = ("keep", False)
+    _prtg_results: list = []
+
+    def _prtg_check(self, request) -> tuple[str, bool]:
+        from prtg.retire import KEEP, can_write
+
+        mode, force = _prtg_delete_args(request)
+        if mode != KEEP and not can_write(request.user, _get_active_tenant(request)):
+            raise PermissionDenied("Changing PRTG needs the change permission on PRTG device links.")
+        return mode, force
+
+    def _prtg_cleanup(self, rows) -> list:
+        from prtg.retire import KEEP, cleanup_before_delete
+
+        mode, force = self._prtg_mode
+        if mode == KEEP or not rows:
+            return []
+        return cleanup_before_delete(rows, mode, force=force, user=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        mode, force = self._prtg_check(request)
+        if mode == "keep":
+            return super().destroy(request, *args, **kwargs)
+        from django.db.models.deletion import ProtectedError
+
+        instance = self.get_object()
+        try:
+            # A delete the database refuses must not touch PRTG first.
+            self.bulk_collect_into(self.bulk_collector(), [instance])
+        except ProtectedError:
+            return super().destroy(request, *args, **kwargs)
+        self._prtg_mode = (mode, force)
+        results = self._prtg_cleanup([instance])
+        self.perform_destroy(instance)
+        return Response({"prtg": results}, status=drf_status.HTTP_200_OK)
+
+    def bulk_destroy(self, rows) -> None:
+        self._prtg_results = self._prtg_cleanup(rows)
+        super().bulk_destroy(rows)
+
+    @action(detail=False, methods=["post"], url_path="bulk-delete")
+    def bulk_delete(self, request):
+        self._prtg_mode = self._prtg_check(request)
+        self._prtg_results = []
+        response = super().bulk_delete(request)
+        data = response.data
+        if data.get("dry_run"):
+            from prtg.retire import can_write, summary
+
+            ids = bulk_ids(request, MAX_IDS)
+            tenant = _get_active_tenant(request)
+            rows = list(self.get_queryset().filter(pk__in=ids))
+            if can_write(request.user, tenant):
+                data["prtg"] = summary(rows)
+        else:
+            data["prtg_results"] = self._prtg_results
+        return response
+
+
+#: Device ids one ``/api/devices/port-utilization/?ids=`` may name: 100 UUIDs
+#: keep the URL under the request-line limit. The Devices page uses the same.
+PORT_UTIL_MAX_IDS = 100
+
+
+def _device_rows(*, one: bool = False, counts: bool = False):
+    """The device viewset's base queryset.
+
+    ``one`` reads a single device - the detail read and every one-device
+    route under it (its tabs' endpoints, a write): the address count by index
+    rather than by join (see api.ip_usage), which otherwise hashed every
+    interface in the database for each of them, and no ordering. ``counts``
+    adds the stack and every tab count (api.detail_counts), so the device
+    page's payload is one query plus its prefetches, not two dozen COUNTs."""
+    from profiles.models import DeviceProfileAssignment
+
+    qs = (
         # select_related every FK the serializer dereferences per row - role,
         # rack, status, platform, location, cluster were method-field lookups
         # doing one query each, so the list ran ~430 extra queries (see the
@@ -3627,7 +3847,17 @@ class DeviceViewSet(
         # without their bodies - a page is up to 10,000 rows and the row only
         # shows the name.
         .prefetch_related(
-            TAGS, "secondary_ip", "oob_ip", "cabinet", "din_rail",
+            TAGS, "secondary_ip", "oob_ip", "cabinet", "din_rail", "room",
+            # Device profiles, in order, for the Profiles column and card -
+            # a plain list on a list page (#483), a manager on one device
+            # (its write responses must read it fresh).
+            (
+                "device_profile_assignments__profile" if one
+                else listed.prefetch(
+                    "device_profile_assignments",
+                    DeviceProfileAssignment.objects.select_related("profile"),
+                )
+            ),
             *(
                 Prefetch(
                     f"{path}config_template",
@@ -3636,20 +3866,89 @@ class DeviceViewSet(
                 for path in ("", "role__", "platform__")
             ),
         )
-        # ip_count + interface_count are shown/served on the list, as
-        # correlated subqueries. The joined COUNT(DISTINCT) they replaced
+        # interface_count is shown/served on the list, as a
+        # correlated subquery. The joined COUNT(DISTINCT) it and ip_count replaced
         # multiplied every device's addresses by its interfaces before
         # grouping - a 48-port switch with ten addresses was 480 rows - and a
         # page of a hundred devices took a quarter of a second in that join.
         .annotate(
-            ip_count_annotated=_count_of(IPAddress, "assigned_device"),
             interface_count_annotated=_count_of(Interface, "device"),
             # Support coverage (#421): the latest covered day and how many
             # contracts cover the device - two more correlated subqueries.
             **support_coverage.device_annotations(),
+            # Installed software's soonest end (#436), for Next end of life,
+            # and how many installs there are, for the Software tab.
+            **software_end_annotations("device"),
+            install_count_annotated=_count_of(InstalledSoftware, "device"),
         )
-        .all().order_by(NATURAL_NAME)
     )
+    if one:
+        # Every address the device uses, not only those assigned to it, by
+        # index for one device. A list counts its page in one query instead
+        # (api.ip_usage.attach_address_counts): as a subquery per row it read
+        # every address of the tenant for each row (#455).
+        qs = qs.annotate(ip_count_annotated=ip_usage.address_count("device", one=True))
+    if counts:
+        # The backing VM (an intended router VM) rides the same row: a reverse
+        # one-to-one join instead of a query of its own.
+        qs = qs.select_related("virtual_chassis", "backing_vm").annotate(
+            **detail_counts.device_annotations()
+        )
+    # One row: no ordering to compile or plan.
+    return qs.order_by() if one else qs.all().order_by(NATURAL_NAME)
+
+
+@extend_schema_view(
+    list=extend_schema(parameters=[
+        OpenApiParameter(
+            name="cooling_method",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "The device's effective cooling method - its own, else its "
+                "type's, else air: air, liquid, hybrid or immersion."
+            ),
+        ),
+        OpenApiParameter(
+            name="cooling_mismatch",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "1: only devices whose rack's cooling capability does not take "
+                "their effective method or an installed module's - a device "
+                "in a bay with no rack of its own by its parent's rack; "
+                "0: the rest."
+            ),
+        ),
+        OpenApiParameter(
+            name="bay_children",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "With rack: 1 also lists the devices in the rack's devices' "
+                "bays that have no rack of their own."
+            ),
+        ),
+        OpenApiParameter(
+            name="cooling_unconnected",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "1: only liquid, hybrid or immersion devices with no cooling "
+                "intake connected to a feed or an outflow."
+            ),
+        ),
+        SOFTWARE_TARGET_PARAMETER,
+        *SOFTWARE_VERSION_PARAMETERS,
+    ]),
+)
+class DeviceViewSet(
+    TableListMixin, PrtgCleanupDeleteMixin, FieldWriteAllowList, CloneableMixin,
+    ImageAttachmentMixin, TenantScopedViewSet,
+):
+    queryset = _device_rows()
+    detail_queryset = _device_rows(one=True, counts=True)
+    one_queryset = _device_rows(one=True)
     # ``?picker=palette`` (the topology diagram builder) lists every device at
     # once, so it starts from its own base: only the columns and joins its rows
     # print, none of the list's per-row count subqueries or tag prefetch.
@@ -3677,6 +3976,12 @@ class DeviceViewSet(
     )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
+    # Server paging, sorting, facets and the slim row (#482, #487).
+    table_spec = list_specs.DEVICE_TABLE
+    rbac_action_map = {
+        **PrtgCleanupDeleteMixin.rbac_action_map, **object_report.RBAC_ACTIONS,
+        "bulk_create": "add",
+    }
     # Field-level write allow-list, read by api.editable_fields - devices have
     # NO bulk-update endpoint, so this only powers planned changes and any
     # future single-field write path. Rack *placement* scalars (position, face,
@@ -3684,17 +3989,19 @@ class DeviceViewSet(
     # multi-field write, and the serializer rejects an inconsistent one.
     editable_str_fields = (
         "description", "comments", "serial_number", "asset_tag", "airflow",
+        "cooling_method",
+        "software_version",
     )
     editable_fk_fields = {
         "status_id": Status, "role_id": DeviceRole, "platform_id": Platform,
-        "site_id": Site, "location_id": Location, "rack_id": Rack,
+        "site_id": Site, "location_id": Location, "room_id": Room, "rack_id": Rack,
     }
     # Name/serial/asset-tag/IPs are identity; rack placement is left blank so the
     # clone doesn't fight for the source's rack unit. Carry type/role/site/etc.
     clone_fields = (
-        "device_type", "role", "platform", "status", "site", "location",
-        "cluster", "airflow", "description", "comments", "topology_card",
-        "topology_photo_size",
+        "device_type", "role", "platform", "status", "site", "location", "room",
+        "cluster", "airflow", "cooling_method", "description", "comments",
+        "topology_card", "topology_photo_size", "width_mm", "height_mm", "depth_mm",
     )
 
     @action(detail=True, methods=["get"], url_path="spec-sheet")
@@ -3720,6 +4027,78 @@ class DeviceViewSet(
             f'{disposition}; filename="{spec_filename(obj, suffix)}"'
         )
         return resp
+
+    @object_report.describe_schema(object_report.DEVICE)
+    @object_report.report_schema(object_report.DEVICE)
+    @action(detail=False, methods=["get", "post"], url_path="report")
+    def report(self, request):
+        """A PDF report of these objects (api.object_report); GET says what
+        one can hold."""
+        return object_report.export(request, object_report.DEVICE)
+
+    @object_report.file_schema(object_report.DEVICE)
+    @action(detail=False, methods=["get"], url_name="report-file",
+            url_path=r"report/file/(?P<token>[A-Za-z0-9_-]+)")
+    def report_file(self, request, token=None):
+        return object_report.export_file(request, object_report.DEVICE, token)
+
+    @object_report.job_schema(object_report.DEVICE)
+    @action(detail=False, methods=["get"], url_name="report-job",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)")
+    def report_job(self, request, token=None):
+        return object_report.job_status(request, object_report.DEVICE, token)
+
+    @object_report.job_file_schema(object_report.DEVICE)
+    @action(detail=False, methods=["get"], url_name="report-job-file",
+            url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)/file")
+    def report_job_file(self, request, token=None):
+        return object_report.job_file(request, object_report.DEVICE, token)
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"], url_path="cooling-path")
+    def cooling_path(self, request, pk=None):
+        """Where the device's coolant comes from (#434): each cooling
+        intake's path upstream - through CDUs - to its feed and source,
+        loop-guarded and at most eight devices deep; hops the caller may not
+        view come back hidden (api.cooling_trace)."""
+        from .cooling_trace import device_path
+
+        return Response(device_path(self.get_object(), request.user, _get_active_tenant(request)))
+
+    @extend_schema(
+        request={"multipart/form-data": {"type": "object", "properties": {
+            "file": {"type": "string", "format": "binary"},
+            "fit": {"type": "string"}, "up": {"type": "string"},
+            "front": {"type": "string"},
+        }}},
+        responses={200: OpenApiTypes.BINARY},
+    )
+    @action(detail=True, methods=["get", "post", "delete"], url_path="model",
+            parser_classes=[MultiPartParser, FormParser])
+    def model_file(self, request, pk=None):
+        """The device's 3D model (api.model_3d). GET downloads what the 3D
+        room draws for it - its own model, else its type's; POST a multipart
+        ``file`` to set its own (overriding the type's), with optional
+        ``fit`` / ``up`` / ``front``; DELETE removes its own, so it inherits
+        again. Reading needs view on the device, writing change."""
+        from . import model_3d
+
+        device = self.get_object()
+        resp = model_3d.handle(request, device, slugify(device.name) or "model")
+        if resp is not None:
+            return resp
+        return Response(DeviceSerializer(device, context={"request": request}).data)
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get", "put"], url_path="model-ports")
+    def model_ports(self, request, pk=None):
+        """The ports mapped onto the device's 3D model (api.model_ports): its
+        own override, and what it draws - its own, else its type's while it
+        draws the type's model. PUT ``{version, model_ports}`` saves the
+        override (null inherits again); a stale version answers 409."""
+        from . import model_ports
+
+        return model_ports.handle(request, self.get_object())
 
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):
@@ -3777,13 +4156,35 @@ class DeviceViewSet(
         per-device queries - and it rides the list queryset, so ?site= /
         ?device_type= / ?role= narrow it like any device list. A device whose
         ports are all uncounted (virtual, rear) has no fill level to show.
+
+        ``?ids=<uuid>,<uuid>,…`` (at most ``PORT_UTIL_MAX_IDS``) narrows it to
+        those devices - the Devices list asks for the page on screen (#488).
+        The ids only narrow the tenant's own devices.
         """
+        import uuid as _uuid
+
         from core.effective_settings import port_count_virtual
 
         from .port_utilization import device_port_counts, used_pct
 
         count_virtual = port_count_virtual(_get_active_tenant(request))
         devices = self.get_queryset()
+        raw = request.query_params.get("ids")
+        if raw is not None:
+            parts = [p for p in raw.split(",") if p.strip()]
+            if len(parts) > PORT_UTIL_MAX_IDS:
+                return Response(
+                    {"ids": [f"At most {PORT_UTIL_MAX_IDS} ids per request."]}, status=400
+                )
+            try:
+                ids = [_uuid.UUID(p.strip()) for p in parts]
+            except ValueError:
+                return Response({"ids": ["Expected comma-separated device ids."]}, status=400)
+            # Resolve the visible ids once against the scoped list queryset,
+            # then count from a plain one: the list's annotations otherwise
+            # ride along as a subquery in each of the twelve aggregates.
+            allowed = list(devices.filter(id__in=ids).values_list("id", flat=True))
+            devices = Device.objects.filter(id__in=allowed)
         counts = {
             device_id: row
             for device_id, row in device_port_counts(
@@ -3910,13 +4311,13 @@ class DeviceViewSet(
         if not ids:
             return Response({})
         devices = self.get_queryset().filter(pk__in=ids).select_related("device_type")
-        loader = FacePortLoader(
-            devices, user=request.user, tenant=_get_active_tenant(request)
-        )
+        tenant = _get_active_tenant(request)
+        loader = FacePortLoader(devices, user=request.user, tenant=tenant)
+        peers = PeerScope(request.user, tenant, loader.far_components())
         with_drift = (request.query_params.get("drift") or "").lower() in ("1", "true", "yes")
         out = {}
         for device in loader.devices:
-            payload = loader.payload(device)
+            payload = loader.payload(device, peer=peers.far_end)
             if with_drift:
                 self._add_face_drift(device, payload)
             out[str(device.id)] = payload
@@ -3925,9 +4326,10 @@ class DeviceViewSet(
     def _face_ports_payload(self, device) -> dict:
         """The resolved markers of one device, with drift - see
         ``face_ports``."""
-        payload = FacePortLoader(
-            [device], user=self.request.user, tenant=_get_active_tenant(self.request)
-        ).payload(device)
+        tenant = _get_active_tenant(self.request)
+        loader = FacePortLoader([device], user=self.request.user, tenant=tenant)
+        peers = PeerScope(self.request.user, tenant, loader.far_components())
+        payload = loader.payload(device, peer=peers.far_end)
         self._add_face_drift(device, payload)
         return payload
 
@@ -3975,7 +4377,9 @@ class DeviceViewSet(
         path, sha256, pushed, drift, diff}``. ``?bundle=<id|name|role>``
         renders every file of a bundle as ``{bundle, files: {path: {...}}}``;
         add ``&archive=tar`` for a tarball. ``pushed``/``drift``/``diff`` say
-        how the render compares with what a push tool last recorded.
+        how the render compares with what a push tool last recorded. A
+        directory template (target path ending in ``/``) answers like a
+        bundle: ``{template, template_id, path, files: {path: {...}}}``.
         """
         from django.http import HttpResponse
         from jinja2 import TemplateError
@@ -3983,7 +4387,7 @@ class DeviceViewSet(
         from .config_bundles import (
             attach_push_state,
             render_bundle,
-            render_file,
+            render_template_files,
             tar_of,
         )
 
@@ -3993,18 +4397,25 @@ class DeviceViewSet(
             return Response({"detail": error}, status=drf_status.HTTP_400_BAD_REQUEST)
         try:
             if bundle is not None:
-                files = attach_push_state(device, render_bundle(bundle, device, request.user))
+                files = render_bundle(bundle, device, request.user)
             else:
-                row = render_file(tmpl, device, request.user)
-                files = attach_push_state(device, {row["path"]: row})
+                files = render_template_files(tmpl, device, request.user)
+            attach_push_state(device, files)
+            if request.query_params.get("archive") == "tar":
+                archive = tar_of(files, device.name)
         except (TemplateError, ValueError) as exc:
             return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
         if request.query_params.get("archive") == "tar":
-            resp = HttpResponse(tar_of(files, device.name), content_type="application/x-tar")
+            resp = HttpResponse(archive, content_type="application/x-tar")
             resp["Content-Disposition"] = f'attachment; filename="{device.name}.tar"'
             return resp
         if bundle is not None:
             return Response({"bundle": bundle.name, "files": files})
+        if tmpl.is_directory:
+            return Response({
+                "template": tmpl.name, "template_id": str(tmpl.id),
+                "path": tmpl.target_path, "files": files,
+            })
         return Response(next(iter(files.values())))
 
     @action(detail=False, methods=["get"], url_path="render")
@@ -4025,7 +4436,7 @@ class DeviceViewSet(
             MAX_BULK_DEVICES,
             attach_push_state,
             render_bundle,
-            render_file,
+            render_template_files,
         )
 
         qs = self.get_queryset().select_related("role", "platform", "site")
@@ -4052,8 +4463,7 @@ class DeviceViewSet(
                 if bundle is not None:
                     files = render_bundle(bundle, device, request.user)
                 else:
-                    row = render_file(tmpl, device, request.user)
-                    files = {row["path"]: row}
+                    files = render_template_files(tmpl, device, request.user)
             except (TemplateError, ValueError) as exc:
                 skipped[str(device.id)] = str(exc)
                 continue
@@ -4162,15 +4572,40 @@ class DeviceViewSet(
 
     @action(detail=True, methods=["post"])
     def deploy(self, request, pk=None):
-        """Dispatch a deploy for this device to an AutomationTarget.
-        Body: {"target_id": "<id>"}.
+        """Dispatch a deploy for this device to an AutomationTarget, or run a
+        deploy pipeline for it. Body: {"target_id": "<id>"} or
+        {"pipeline_id": "<id>"}, plus an optional "dry_run": true.
         """
         from integrations.dispatch import enqueue_deploy
         from integrations.models import AutomationTarget
         from .views import _get_active_tenant
 
         tenant = _get_active_tenant(request)
-        tid = (request.data or {}).get("target_id")
+        body = request.data or {}
+        dry_run = bool(body.get("dry_run"))
+        if body.get("pipeline_id"):
+            from integrations.pipelines_api import (
+                DeployPipelineRunSerializer,
+                resolve_pipeline,
+                start_for,
+            )
+
+            device = self.get_object()
+            if tenant is None:
+                return Response({"detail": "No active tenant selected."},
+                                status=drf_status.HTTP_400_BAD_REQUEST)
+            pipeline, err = resolve_pipeline(request, tenant, body["pipeline_id"], "device")
+            if err:
+                return err
+            prun, err = start_for(request, pipeline, [device.id], dry_run=dry_run)
+            if err:
+                return err
+            return Response(
+                {"kind": "pipeline",
+                 **DeployPipelineRunSerializer(prun, context={"request": request}).data},
+                status=202,
+            )
+        tid = body.get("target_id")
         target = AutomationTarget.objects.filter(
             id=tid, tenant=tenant, enabled=True
         ).first() if (tid and tenant) else None
@@ -4178,9 +4613,10 @@ class DeviceViewSet(
             return Response({"detail": "Unknown or disabled target."},
                             status=drf_status.HTTP_400_BAD_REQUEST)
         device = self.get_object()
-        run = enqueue_deploy(target, [device.id], event="manual")
+        run = enqueue_deploy(target, [device.id], event="manual", user=request.user,
+                             dry_run=dry_run)
         from integrations.api import DeployRunSerializer
-        return Response(DeployRunSerializer(run).data, status=202)
+        return Response({"kind": "target", **DeployRunSerializer(run).data}, status=202)
 
     @action(detail=True, methods=["get", "post"], url_path="config-state")
     def config_state(self, request, pk=None):
@@ -4217,6 +4653,15 @@ class DeviceViewSet(
         if tid:
             from .models import ExportTemplate
             tmpl = ExportTemplate.objects.filter(id=tid, tenant=tenant).first()
+        if tmpl is not None and tmpl.is_directory:
+            # One running config per device; a directory of files has no
+            # single text to compare. Its files compare per path through
+            # config-pushed and the render's drift.
+            return Response(
+                {"template": f"{tmpl.name} renders a directory of files; report "
+                             "them per file through config-pushed."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
         # If no intended config was posted, render it from the named template.
         if not intended and tmpl is not None:
             from jinja2 import TemplateError
@@ -4249,6 +4694,10 @@ class DeviceViewSet(
             and self.request.query_params.get("picker") == "palette"
         )
 
+    def _one(self) -> bool:
+        """A route under one device (``/api/devices/<pk>/...``)."""
+        return bool(getattr(self, "kwargs", {}).get(self.lookup_url_kwarg or self.lookup_field))
+
     def get_serializer_class(self):
         if self._palette():
             return DevicePaletteSerializer
@@ -4263,7 +4712,19 @@ class DeviceViewSet(
             # Swap the base only - tenant scoping, RBAC rows and every list
             # filter below apply to the palette exactly as to the list.
             self.queryset = self.palette_queryset
+        elif self.action == "retrieve":
+            # The device page's read: its tab counts in the one query.
+            self.queryset = self.detail_queryset
+        elif self._one():
+            self.queryset = self.one_queryset
+        elif self.action in ("table_facets", "table_ids") or (
+            self.is_table_view() and not self.table_uses_full_queryset()
+        ):
+            # The slim row and the rail: only what the table reads (#487).
+            self.queryset = list_specs.device_table_rows()
         qs = super().get_queryset()
+        if self.is_table_view():
+            qs = self.table_include_needs(qs)
         if self.request:
             from .topology_views import _uuid_list_param, _uuid_param
 
@@ -4280,6 +4741,16 @@ class DeviceViewSet(
             qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
             # ?coverage=<status> - support & warranty coverage (#421).
             qs = support_coverage.apply_device_filter(qs, self.request)
+            # ?software_target=on|off|unknown (#395).
+            qs = software_target.apply_filter(qs, self.request)
+            # ?software_version= / ?software_version_source= (#451).
+            qs = software_versions.apply_list_filters(qs, self.request)
+            # ?prtg=linked|unlinked|up|degraded|down|unknown - the PRTG roll-up.
+            # On a delete ``prtg`` says what happens in PRTG instead.
+            if self.action not in ("destroy", "bulk_delete"):
+                from prtg.filters import apply_device_filter as prtg_filter
+
+                qs = prtg_filter(qs, self.request)
             contract = _uuid_param(self.request.query_params, "support_contract")
             if contract:
                 qs = qs.filter(support_coverage__contract_id=contract)
@@ -4295,8 +4766,18 @@ class DeviceViewSet(
             # every rack's devices in one request, not one per rack (#431).
             racks = _uuid_list_param(self.request.query_params, "rack", limit=1000)
             if racks:
-                qs = qs.filter(rack_id__in=racks)
-            for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id")):
+                # ?bay_children=1 adds the devices in the racks' devices'
+                # bays with no rack of their own - the blades a rack cools
+                # (#469), as its cooling counts them.
+                if self.request.query_params.get("bay_children") in ("1", "true"):
+                    qs = qs.filter(
+                        Q(rack_id__in=racks)
+                        | Q(rack__isnull=True, parent_bay__device__rack_id__in=racks)
+                    )
+                else:
+                    qs = qs.filter(rack_id__in=racks)
+            for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id"),
+                               ("room", "room_id")):
                 v = _uuid_param(self.request.query_params, key)
                 if v:
                     qs = qs.filter(**{field: v})
@@ -4306,6 +4787,7 @@ class DeviceViewSet(
                 if profile not in {"ts35", "ts15", "g32"}:
                     raise ValidationError({"din_profile": "One of ts35, ts15, g32."})
                 qs = qs.filter(device_type__din_profiles__contains=[profile])
+            qs = self._cooling_filters(qs)
             # The physical hosts behind a virtualization source. There is no
             # FK from Device to the source - the honest link is that the source
             # syncs VMs onto them, or into a cluster they belong to. Covers a
@@ -4335,6 +4817,39 @@ class DeviceViewSet(
             qs = _apply_custom_field_scope(self.request, qs, "device")
         return qs
 
+    def _cooling_filters(self, qs):
+        """``?cooling_method=`` - the device's effective method (its own,
+        else its type's, else air) - and ``?cooling_mismatch=1`` - the
+        devices whose rack's cooling capability does not take that method
+        (``=0`` the rest). Both computed in the query (api.cooling), and
+        only when asked for (#434)."""
+        from . import cooling
+        from .dcim_choices import COOLING_METHOD_CHOICES
+
+        params = self.request.query_params
+        method = params.get("cooling_method")
+        mismatch = (params.get("cooling_mismatch") or "").lower()
+        unconnected = (params.get("cooling_unconnected") or "").lower()
+        if not method and not mismatch and not unconnected:
+            return qs
+        qs = cooling.annotate_devices(qs)
+        if method:
+            known = [value for value, _label in COOLING_METHOD_CHOICES]
+            if method not in known:
+                raise ValidationError({"cooling_method": f"One of {', '.join(known)}."})
+            qs = qs.filter(cooling_effective=method)
+        if mismatch in ("1", "true", "yes"):
+            qs = qs.filter(cooling_mismatch=True)
+        elif mismatch in ("0", "false", "no"):
+            qs = qs.filter(cooling_mismatch=False)
+        elif mismatch:
+            raise ValidationError({"cooling_mismatch": "1 or 0."})
+        if unconnected in ("1", "true", "yes"):
+            qs = qs.filter(cooling.unconnected_q())
+        elif unconnected and unconnected not in ("0", "false", "no"):
+            raise ValidationError({"cooling_unconnected": "1 or 0."})
+        return qs
+
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
         _check_unique_name(Device, serializer, tenant, "device")
@@ -4343,6 +4858,7 @@ class DeviceViewSet(
         # C9300-48P type materialises its 48 interfaces + console + PSU
         # inlets on every new device of the type).
         materialize_device_components(serializer.instance)
+        _plan_prtg_on_save(serializer.instance, ("inherit", ""))
 
     def perform_update(self, serializer):
         _check_unique_name(Device, serializer, self._tenant_or_403(), "device")
@@ -4351,8 +4867,10 @@ class DeviceViewSet(
         old = serializer.instance
         old_in_stack = old.virtual_chassis_id is not None
         old_pos = old.vc_position if old_in_stack else None
+        old_prtg = _prtg_state(old)
         serializer.save()
         new = serializer.instance
+        _plan_prtg_on_save(new, old_prtg)
         new_in_stack = new.virtual_chassis_id is not None
         new_pos = new.vc_position if new_in_stack else None
         if (old_in_stack, old_pos) != (new_in_stack, new_pos):
@@ -4366,6 +4884,141 @@ class DeviceViewSet(
 
         for svc in new.services.filter(monitored=True):
             sync_service_checks(svc)
+
+    #: Fields that belong to one device. A name range leaves them blank:
+    #: ten devices can't share a rack unit, a serial or an IP.
+    RANGE_REFUSED_FIELDS = (
+        "position", "mount_offset_mm", "din_offset_mm", "serial_number", "asset_tag",
+        "vc_position", "primary_ip_id", "secondary_ip_id", "oob_ip_id", "prtg_host",
+    )
+
+    @extend_schema(summary="Create devices from a name range", request=DeviceSerializer,
+                   responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT})
+    @action(detail=False, methods=["post"], url_path="bulk-create")
+    def bulk_create(self, request):
+        """The create payload with a ``[a-b]`` range in ``name`` (``DK-RDS-[1-10]``,
+        ``[0001-0100]``): one device per name, every other field shared, plus
+        optional ``application_group_ids`` and ``profile_ids`` given to each.
+        All or nothing - a taken name or a failing device creates none and
+        names which. Per-device fields (rack position, serial, IPs…) must be
+        blank."""
+        from api import applications as app_sync
+        from api.application_groups_api import _require_in_scope
+        from profiles import engine as profile_engine
+        from profiles.models import DeviceProfile
+
+        from .models import ApplicationGroup, ApplicationGroupAssignment, InstalledSoftware
+        from .name_range import NAME_RANGE_RE, RANGE_CAP, expand_name_range, range_error
+        from .serializers import TenantScopedPrimaryKeyRelatedField
+
+        tenant = self._tenant_or_403()
+        raw = request.data
+        body = raw.dict() if hasattr(raw, "dict") else dict(raw)
+        name = str(body.get("name") or "").strip()
+        err = range_error(name)
+        if err:
+            raise ValidationError({"name": err})
+        names = expand_name_range(name)
+        if not NAME_RANGE_RE.search(name):
+            raise ValidationError({"name": f"Give a range like {name or 'sw'}-[1-10]."})
+        if len(names) > RANGE_CAP:  # pragma: no cover - range_error caps it
+            raise ValidationError({"name": f"At most {RANGE_CAP} devices at once."})
+        busy = [f for f in self.RANGE_REFUSED_FIELDS if body.get(f) not in (None, "")]
+        if busy:
+            raise ValidationError({
+                f: "Leave blank when creating several devices." for f in busy})
+
+        class Extras(serializers.Serializer):
+            profile_ids = TenantScopedPrimaryKeyRelatedField(
+                source="profiles", queryset=DeviceProfile.objects.all(), many=True,
+                required=False)
+            application_group_ids = TenantScopedPrimaryKeyRelatedField(
+                source="groups", queryset=ApplicationGroup.objects.all(), many=True,
+                required=False)
+
+        extras = Extras(data={k: body.pop(k) for k in ("profile_ids", "application_group_ids")
+                              if k in body}, context=self.get_serializer_context())
+        extras.is_valid(raise_exception=True)
+        profiles = extras.validated_data.get("profiles", [])
+        groups = extras.validated_data.get("groups", [])
+        if len({p.pk for p in profiles}) != len(profiles):
+            raise ValidationError({"profile_ids": "A profile is listed twice."})
+
+        taken = sorted(Device.objects.filter(tenant=tenant, name__in=names)
+                       .values_list("name", flat=True), key=natural_key)
+        if taken:
+            shown = ", ".join(taken[:5]) + (f" and {len(taken) - 5} more" if len(taken) > 5 else "")
+            raise ValidationError({
+                "name": f"Already exists: {shown}.",
+                "detail": f"Nothing created: {len(taken)} of {len(names)} names are taken.",
+            })
+
+        failed: list[dict] = []
+        created: list[Device] = []
+        with transaction.atomic():
+            for n in names:
+                ser = self.get_serializer(data={**body, "name": n})
+                if not ser.is_valid():
+                    failed.append({"name": n, "errors": ser.errors})
+                    continue
+                try:
+                    with transaction.atomic():
+                        self.perform_create(ser)
+                        device = ser.instance
+                        self._assert_write_in_site_scope(
+                            Response({"id": device.pk}), "add")
+                        if groups:
+                            before = set(InstalledSoftware.objects.filter(device=device)
+                                         .values_list("pk", flat=True))
+                            out = app_sync.set_host_groups(groups, device=device)
+                            _require_in_scope(
+                                request, ApplicationGroupAssignment,
+                                ApplicationGroupAssignment.objects.filter(
+                                    device=device, group_id__in=out["assigned"],
+                                ).values_list("pk", flat=True),
+                                "applicationgroupassignment", "add")
+                            made = set(InstalledSoftware.objects.filter(device=device)
+                                       .values_list("pk", flat=True))
+                            _require_in_scope(request, InstalledSoftware, made - before,
+                                              "installedsoftware", "add")
+                        if profiles:
+                            for p in profiles:
+                                profile_engine.check_applies(p, device)
+                                needs = [("device", "view"), *profile_engine
+                                         .required_permissions(p, device, "assign")]
+                                missing = profile_engine.missing_permissions(
+                                    request.user, tenant, needs, device)
+                                if missing:
+                                    raise PermissionDenied(profile_engine.missing_text(missing))
+                            profile_engine.set_host_profiles(profiles, device, user=request.user)
+                except profile_engine.ProfileError as exc:
+                    failed.append({"name": n, "errors": {"profile_ids": [str(exc)]}})
+                    continue
+                except ValidationError as exc:
+                    failed.append({"name": n, "errors": exc.detail})
+                    continue
+                created.append(device)
+            if failed:
+                transaction.set_rollback(True)
+        if failed:
+            first = failed[0]
+            errs = first["errors"] if isinstance(first["errors"], dict) else {
+                "non_field_errors": first["errors"]}
+            out = {}
+            for k, v in errs.items():
+                msg = v[0] if isinstance(v, list) and v else v
+                out[k] = f"{first['name']}: {msg}"
+            out["detail"] = (
+                f"Nothing created: {len(failed)} of {len(names)} devices failed "
+                f"({', '.join(f['name'] for f in failed[:5])}"
+                f"{' …' if len(failed) > 5 else ''})."
+            )
+            out["failed"] = failed
+            return Response(out, status=drf_status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "count": len(created),
+            "results": [{"id": str(d.pk), "name": d.name} for d in created],
+        }, status=drf_status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="sync-from-type")
     def sync_from_type(self, request, pk=None):
@@ -4415,7 +5068,7 @@ class DeviceViewSet(
 
         device = self.get_object()
         qs = annotate_dhcp(
-            IPAddress.objects.filter(assigned_device=device, tenant=device.tenant)
+            ip_usage.addresses_of("device", device)
             .select_related(*ASSIGNED_IP_RELATED)
             .prefetch_related(TAGS)
         )
@@ -4542,18 +5195,59 @@ class NameRangeCreateMixin:
         super().perform_create(serializer)
 
 
-class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
+_MACSEC_DETAIL_KEYS = ("macsec_cipher", "macsec_keychain_id", "macsec_replay_window")
+
+
+def _interface_list_prefetch():
+    """The interface list's prefetches with its reverse relations as plain
+    lists (api.listed, #483): the same queries, without a related manager
+    and its queryset clone per row and relation."""
+    t = listed.attr("terminations")
+    return (
+        *(
+            Prefetch(rel, queryset=Interface.objects.select_related("device"))
+            for rel in ("parent", "lag", "bridge")
+        ),
+        TAGS,
+        listed.prefetch(
+            "terminations", CableTermination.objects.select_related("cable__status"),
+        ),
+        *(f"{t}__{path.removeprefix('terminations__')}" for path in FAR_END_PREFETCH),
+        listed.prefetch(
+            "reservations", PortReservation.objects.select_related("claimed_by"),
+        ),
+        listed.prefetch("children", Interface.objects.only("id", "parent_id")),
+        listed.prefetch("lag_members", Interface.objects.only("id", "lag_id")),
+        listed.prefetch("tagged_vlans", VLAN.objects.select_related("zone")),
+        listed.prefetch("mac_addresses"),
+        listed.prefetch(
+            "tunnel_terminations", TunnelTermination.objects.select_related("tunnel"),
+        ),
+    )
+
+
+class InterfaceViewSet(
+    TableListMixin, NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet,
+):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
+
+    # Server paging, sorting, facets and the slim row (#482, #487).
+    table_spec = list_specs.INTERFACE_TABLE
 
     bulk_str_fields = (
         "type", "mode", "speed", "duplex", "description",
-        "lag_protocol", "lacp_mode", "lacp_rate",
+        "lag_protocol", "lacp_mode", "lacp_rate", "lag_mode", "lag_hash_policy",
+        "macsec_cipher",
     )
     bulk_bool_fields = (
         "enabled", "mgmt_only", "mark_connected", "is_uplink", "never_uplink",
+        "macsec_enabled",
     )
-    bulk_int_fields = ("mtu", "lag_min_links")
-    bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
+    bulk_int_fields = ("mtu", "lag_min_links", "lag_miimon", "macsec_replay_window")
+    bulk_fk_fields = {
+        "vlan_id": VLAN, "vrf_id": VRF, "status_id": Status,
+        "macsec_keychain_id": RoutingKeychain,
+    }
     bulk_name_scope_field = "device_id"
 
     def normalize_bulk_updates(self, updates):
@@ -4573,6 +5267,15 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             updates["is_uplink"] = False
         if updates.get("type") in VIRTUAL_INTERFACE_TYPES:
             updates["virtual"] = True
+        if str(updates.get("lag_protocol", "")).lower() == "static":
+            updates["lag_protocol"] = ""
+        if updates.get("lag_mode") == "802.3ad":
+            updates["lag_protocol"] = "lacp"
+        elif updates.get("lag_mode") and updates.get("lag_protocol") == "lacp":
+            raise ValidationError(
+                {"lag_mode": "LACP runs in 802.3ad mode. Pick 802.3ad, or clear "
+                             "the protocol for a static bond."}
+            )
         if "lag_protocol" in updates and updates["lag_protocol"] != "lacp":
             updates["lacp_mode"] = ""
             updates["lacp_rate"] = ""
@@ -4580,11 +5283,35 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             from .speed import normalize_speed
 
             updates["speed"] = normalize_speed(updates["speed"] or "")
+        # MACsec off clears its settings, as Interface.save does; setting
+        # them while turning it off is refused, as the form does.
+        if updates.get("macsec_enabled") is False:
+            for key in _MACSEC_DETAIL_KEYS:
+                if updates.get(key) not in (None, ""):
+                    raise ValidationError({key: "Turn MACsec on to set this."})
+            updates["macsec_cipher"] = ""
+            updates["macsec_keychain_id"] = None
+            updates["macsec_replay_window"] = None
         return updates
+
+    def check_bulk_rows(self, rows, updates):
+        # Setting a MACsec detail without turning MACsec on in the same edit
+        # only works where it is already on.
+        if updates.get("macsec_enabled") is not None:
+            return
+        for key in _MACSEC_DETAIL_KEYS:
+            if updates.get(key) in (None, ""):
+                continue
+            off = [r.name for r in rows if not r.macsec_enabled]
+            if off:
+                raise ValidationError({
+                    key: "Turn MACsec on to set this. Off on: "
+                         + ", ".join(off[:5]) + ("…" if len(off) > 5 else "")
+                })
     bulk_tags = True
 
     queryset = (
-        Interface.objects.select_related("device", "vlan", "vrf", "status")
+        Interface.objects.select_related("device", "vlan", "vrf", "status", "macsec_keychain")
         # The parent, LAG and bridge (with their devices) are prefetched, not
         # joined: joined, Postgres joined every interface in the tenant to
         # them before it could sort and take one page (#298). Most rows have
@@ -4620,10 +5347,22 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         tenant = _get_active_tenant(self.request)
         if tenant is None:
             return self.queryset.none()
-        # Each row's addresses, cut to the caller's IP view scope.
-        qs = self.queryset.filter(device__tenant=tenant).prefetch_related(
-            assigned_ips_prefetch(self.request, tenant)
-        )
+        if self.action in ("table_facets", "table_ids") or (
+            self.is_table_view() and not self.table_uses_full_queryset()
+        ):
+            # The slim row and the rail: what the table reads, no far ends
+            # or addresses (#487).
+            qs = list_specs.interface_table_rows().filter(device__tenant=tenant)
+            qs = self.table_include_needs(qs)
+        else:
+            base = self.queryset
+            if self.action == "list":
+                # A page reads its reverse relations as plain lists (#483).
+                base = base.prefetch_related(None).prefetch_related(*_interface_list_prefetch())
+            # Each row's addresses, cut to the caller's IP view scope.
+            qs = base.filter(device__tenant=tenant).prefetch_related(
+                assigned_ips_prefetch(self.request, tenant)
+            )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -4802,7 +5541,11 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         # the VLAN belongs to the active tenant (issue #59 FK smuggling).
         if vlan_id and not VLAN.objects.filter(pk=vlan_id, tenant=tenant).exists():
             raise ValidationError({"vlan_id": "Not found in this tenant."})
-        tag_ids = data.get("tag_ids") or []
+        # Ids only, of tags this tenant may use - the tag manager would take a
+        # string as the name of a new, tenant-less tag (#456).
+        from .serializers import resolve_tag_ids
+
+        tags = resolve_tag_ids(request, data.get("tag_ids") or [])
 
         existing = set(device.interfaces.values_list("name", flat=True))
         created, created_ids, skipped = [], [], []
@@ -4817,8 +5560,8 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
                     device=device, name=nm, speed=speed, mtu=mtu,
                     enabled=enabled, vlan_id=vlan_id,
                 )
-                if tag_ids:
-                    iface.tags.add(*tag_ids)
+                if tags:
+                    iface.tags.add(*tags)
                 created.append(nm)
                 created_ids.append(iface.pk)
             allowed = _rbac.restrict_queryset(
@@ -4929,7 +5672,35 @@ class MACAddressViewSet(TenantScopedViewSet):
             super().perform_update(serializer)
 
 
-class CableViewSet(TenantScopedViewSet):
+def validate_cable_rows(rows, make):
+    """Validate cable payloads for a create of several at once (#454):
+    ``make(row)`` gives each row's serializer. A port named by two rows is
+    refused as well. Answers ``(serializers, errors)`` - one error object
+    per row, in order, ``{}`` for a row that was fine."""
+    sers, errors = [], []
+    seen: dict = {}
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict):
+            errors.append({"non_field_errors": ["Expected a cable object."]})
+            continue
+        ser = make(row)
+        if not ser.is_valid():
+            errors.append(ser.errors)
+            continue
+        err = {}
+        for side in ("a", "b"):
+            for kind, obj in ser.validated_data[f"_{side}"]:
+                first = seen.setdefault((kind, obj.pk), i)
+                if first != i:
+                    err[side] = [f"{obj} is already in cable {first + 1}."]
+        errors.append(err)
+        sers.append(ser)
+    return sers, errors
+
+
+class CableViewSet(TableListMixin, TenantScopedViewSet):
+    # Server paging, sorting, facets and the slim row (#482, #487).
+    table_spec = list_specs.CABLE_TABLE
     queryset = (
         Cable.objects.select_related("status").prefetch_related(
             "terminations__interface__device",
@@ -4947,6 +5718,9 @@ class CableViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
     # Tenant + termination validation live in CableSerializer; the base
     # perform_create stamps the tenant (passed into serializer.create).
+    rbac_action_map = {"bulk_create": "add"}
+    #: Most cables one bulk-create may carry - a few full patch panels.
+    BULK_CREATE_MAX = 256
 
     def get_queryset(self):
         from auth_api.drf import _action_for
@@ -4978,6 +5752,9 @@ class CableViewSet(TenantScopedViewSet):
             feed_id = self.request.query_params.get("power_feed")
             if feed_id:
                 qs = qs.filter(terminations__power_feed_id=feed_id)
+            vnet = self.request.query_params.get("pve_vnet")
+            if vnet is not None and vnet != "":
+                qs = qs.filter(pve_vnet=vnet.strip())
         return qs.distinct()
 
     def _assert_write_in_site_scope(self, response, action):
@@ -4993,6 +5770,55 @@ class CableViewSet(TenantScopedViewSet):
             raise PermissionDenied(
                 "Your cable permission does not cover every termination site."
             )
+
+    @action(detail=False, methods=["post"], url_path="bulk-create")
+    def bulk_create(self, request):
+        """Create several cables in one all-or-nothing request (#454).
+
+        Body: ``{"cables": [<cable payload>, ...]}`` - each item is exactly
+        what ``POST /api/cables/`` takes and is validated the same way. A port
+        named by two items is refused as well. Any error writes nothing and
+        answers 400 with ``cables``: one error object per item, in order
+        (``{}`` for an item that was fine). Success answers 201 with
+        ``{created, results}``.
+        """
+        from types import SimpleNamespace
+
+        self._tenant_or_403()
+        data = request.data if isinstance(request.data, dict) else {}
+        rows = data.get("cables")
+        if not isinstance(rows, list) or not rows:
+            raise ValidationError({"cables": "Send at least one cable."})
+        if len(rows) > self.BULK_CREATE_MAX:
+            raise ValidationError(
+                {"cables": f"Too many at once (max {self.BULK_CREATE_MAX})."}
+            )
+
+        sers, errors = validate_cable_rows(rows, lambda row: self.get_serializer(data=row))
+        if any(errors):
+            return Response(
+                {"detail": "Nothing was created - fix the marked cables.",
+                 "cables": errors},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        created = []
+        with transaction.atomic():
+            for ser in sers:
+                self.perform_create(ser)
+                created.append(ser.instance.pk)
+                # The single create's post-save scope check, per cable, so a
+                # site-scoped user can't land one end outside their sites.
+                self._assert_write_in_site_scope(
+                    SimpleNamespace(data={"id": str(ser.instance.pk)}), "add"
+                )
+        order = {pk: i for i, pk in enumerate(created)}
+        saved = sorted(self.queryset.filter(pk__in=created), key=lambda c: order[c.pk])
+        return Response(
+            {"created": len(saved),
+             "results": self.get_serializer(saved, many=True).data},
+            status=drf_status.HTTP_201_CREATED,
+        )
 
     @extend_schema(parameters=[MAP_INCLUDE_PARAMETER])
     @action(detail=True, methods=["get"], url_path="trace")
@@ -5026,107 +5852,83 @@ class CableViewSet(TenantScopedViewSet):
             return Response({"detail": "strand out of range"}, status=400)
         return Response(cable_strand_path(cable, n))
 
+    def _route_plan(self, request, plan_id):
+        """The tenant's floor plan ``plan_id`` the reader may view - a view's
+        source, since routes live on the source - or None."""
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .models import FloorPlan
+
+        tenant = _get_active_tenant(self.request)
+        try:
+            qs = FloorPlan.objects.filter(id=plan_id, tenant=tenant)
+            plan = rbac.restrict_queryset(
+                qs, request.user, tenant, "floorplan", "view"
+            ).first()
+        except (DjangoValidationError, ValueError, TypeError):
+            return None
+        if plan is not None and snaps.is_view(plan):
+            plan = plan.source if plan.source_id else None
+        return plan
+
     @action(detail=True, methods=["post"], url_path="auto-route")
     def auto_route(self, request, pk=None):
         """Compute the best tray route for this cable on a floor plan and
-        persist it: the plan's trays on the winning path replace the cable's
-        current trays *on that plan* (other plans' assignments are kept), and
-        the estimated length fills ``length`` when blank (``overwrite: true``
-        replaces a recorded one). Body: ``{"floor_plan": id, "overwrite"?}``."""
-        from .models import FloorPlan
-        from .pathfinding import (
-            estimate_length_m, rack_drop_mm, route_through_trays,
-            underfloor_plenum_mm,
-        )
+        store it (``api/cable_routing.py``): the cable's path on the plan, and
+        the plan's trays on it replace the cable's trays *on that plan*
+        (other plans' assignments are kept). The computed length fills
+        ``length`` when it is blank or was computed before; ``overwrite:
+        true`` replaces a length a person entered. Body: ``{"floor_plan":
+        id, "overwrite"?}``."""
+        from .cable_routing import PlanRouter, path_data, save_path, write_length
 
         cable = self.get_object()
-        tenant = _get_active_tenant(self.request)
-        plan = FloorPlan.objects.filter(
-            id=(request.data or {}).get("floor_plan"), tenant=tenant
-        ).first()
+        plan = self._route_plan(request, (request.data or {}).get("floor_plan"))
         if plan is None:
             return Response({"detail": "Unknown floor plan."}, status=400)
 
-        # A/B endpoint devices from the cable's own terminations.
-        ends: dict = {"A": None, "B": None}
-        for term in cable.terminations.select_related():
-            dev_id = getattr(term.point, "device_id", None)
-            if dev_id and ends.get(term.end) is None:
-                ends[term.end] = dev_id
+        router = PlanRouter(plan)
+        ends = router.ends(cable)
         if not ends["A"] or not ends["B"]:
             return Response(
-                {"detail": "Both cable ends must terminate on a device."},
+                {"detail": "Both cable ends must terminate on a device placed "
+                           "on this plan."},
                 status=400,
             )
-        resolved, err = _resolve_route_endpoints(plan, {
-            "from": {"kind": "device", "id": str(ends["A"])},
-            "to": {"kind": "device", "id": str(ends["B"])},
-        })
-        if err:
-            return Response({"detail": err}, status=400)
-        a, b, rack_a, rack_b = resolved
-
-        trays = list(plan.trays.all())
-        result = route_through_trays(a, b, [t.points for t in trays])
-        if not result.reachable:
-            return Response({
-                "reachable": False,
-                "detail": "No tray path connects the two ends on this plan.",
-            })
-        used = [trays[i] for i in result.tray_indexes]
-
-        # Plenum-aware drops: an underfloor run dives as deep as the raised
-        # floor beneath it, not a constant.
-        area_rects = [
-            (a.x, a.y, a.width, a.height, a.plenum_mm)
-            for a in plan.raised_floor_areas.all()
-        ]
-
-        def _drop(rack, tray):
-            if tray is None:
-                return 0.0
-            plenum = underfloor_plenum_mm(area_rects, tray.points)
-            return rack_drop_mm(
-                rack.u_height if rack is not None else None,
-                tray.level, tray.elevation_mm, plan.ceiling_mm, plenum,
-            )
-
-        if not used:
-            # Both ends resolved to the same tile (e.g. a same-rack patch): no
-            # tray path is needed. Don't clear existing assignments or write a
-            # bogus 0 m - report it as point-to-point and leave the cable alone.
+        route = router.route(cable)
+        if route is None:
+            # Both ends stand on one tile (a same-rack patch): no route is
+            # needed. Leave the cable alone rather than write a bogus 0 m.
+            c = ends["A"][0]["tile"]
+            centre = [c.x + c.width / 2, c.y + c.height / 2]
             return Response({
                 "reachable": True,
                 "point_to_point": True,
-                "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
+                "points": [centre, centre],
                 "tray_ids": [],
                 "tray_names": [],
                 "length_m": None,
                 "length_set": False,
             })
-
-        drop_a = _drop(rack_a, used[0]) if used else 0.0
-        drop_b = _drop(rack_b, used[-1]) if used else 0.0
-        length_m = estimate_length_m(result.run_cells, plan.cell_mm, drop_a, drop_b)
-
+        if not route["reachable"]:
+            return Response({
+                "reachable": False,
+                "detail": "No tray path connects the two ends on this plan.",
+            })
         overwrite = bool((request.data or {}).get("overwrite"))
         with transaction.atomic():
-            # Replace only THIS plan's tray assignments.
-            cable.trays.remove(*cable.trays.filter(floor_plan=plan))
-            cable.trays.add(*used)
-            length_set = False
-            if cable.length is None or overwrite:
-                cable.length = length_m
-                cable.length_unit = "m"
-                cable.save(update_fields=["length", "length_unit"])
-                length_set = True
+            path = save_path(plan, cable, route)
+            length_set = write_length(cable, route["length_mm"], replace=overwrite)
+        names = {str(t.pk): t.name for t in router.trays}
         return Response({
             "reachable": True,
-            "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
-            "tray_ids": [str(t.id) for t in used],
-            "tray_names": [t.name for t in used],
-            "length_m": length_m,
+            "points": route["legs"][0]["points"],
+            "tray_ids": route["tray_order"],
+            "tray_names": [names[t] for t in route["tray_order"]],
+            "length_m": route["length_mm"] / 1000,
             "length_set": length_set,
+            "path": path_data(path),
         })
 
     @action(detail=True, methods=["get", "put"], url_path="routing")
@@ -5139,7 +5941,14 @@ class CableViewSet(TenantScopedViewSet):
 
         PUT ``{floor_plan, tray_ids: [...]}`` replaces THIS plan's assignment
         in the given order (other plans' assignments are untouched). An empty
-        list is point-to-point - a legitimate answer, not a no-op.
+        list is point-to-point - a legitimate answer, not a no-op. When both
+        ends are placed on the plan, the route through those trays (or the
+        direct run) is stored as the cable's path there, in travel order;
+        ``path`` answers it (null when there is none). The PUT also answers
+        ``reachable``, like auto-route: false (with ``detail``) when the
+        trays named do not connect the two ends - the assignment is kept,
+        but no path is stored and any earlier one is removed; null when no
+        route applies (an end not placed on the plan, or both on one tile).
 
         The auto-route action picks the trays for you; this is the manual
         twin, so an operator can see what a run follows and name the exact
@@ -5147,7 +5956,8 @@ class CableViewSet(TenantScopedViewSet):
         """
         from auth_api import rbac
 
-        from .models import FloorPlan
+        from .cable_routing import PlanRouter, delete_path, path_data, save_path
+        from .models import FloorPlanCablePath
 
         cable = self.get_object()
         tenant = _get_active_tenant(self.request)
@@ -5156,9 +5966,11 @@ class CableViewSet(TenantScopedViewSet):
             if request.method == "GET"
             else (request.data or {}).get("floor_plan")
         )
-        plan = FloorPlan.objects.filter(id=plan_id, tenant=tenant).first()
+        plan = self._route_plan(request, plan_id)
         if plan is None:
             return Response({"detail": "Unknown floor plan."}, status=400)
+        path = None
+        extra = {}
 
         def shape(trays):
             return [
@@ -5188,18 +6000,46 @@ class CableViewSet(TenantScopedViewSet):
                     {"tray_ids": f"Not a tray on this plan: {unknown[0]}"},
                     status=400,
                 )
-            chosen = [by_id[str(i)] for i in ids]
+            chosen = list({str(t.id): t for t in (by_id[str(i)] for i in ids)}.values())
             with transaction.atomic():
                 cable.trays.remove(*cable.trays.filter(floor_plan=plan))
                 if chosen:
                     cable.trays.add(*chosen)
+                route = PlanRouter(plan).route(cable, tray_ids=[t.id for t in chosen])
+                if route is not None and (route["reachable"] or not chosen):
+                    route["tray_order"] = [str(t.id) for t in chosen]
+                    path = save_path(plan, cable, route, sync_trays=False)
+                    extra["reachable"] = True
+                else:
+                    delete_path(plan, cable)
+                    if route is None:
+                        extra["reachable"] = None
+                        if chosen:
+                            extra["detail"] = (
+                                "Trays assigned. No route is stored: both ends must be "
+                                "placed on this plan, on different tiles."
+                            )
+                    else:
+                        extra["reachable"] = False
+                        extra["detail"] = (
+                            "Trays assigned, but they do not connect the two ends, so no "
+                            "route is stored. Add the missing tray or pick trays that "
+                            "join both ends."
+                        )
         else:
+            path = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
             chosen = [t for t in cable.trays.all() if t.floor_plan_id == plan.id]
+            if path is not None:
+                # The stored travel order, then any other assigned tray.
+                rank = {tid: i for i, tid in enumerate(path.tray_order or [])}
+                chosen.sort(key=lambda t: (rank.get(str(t.id), len(rank)), t.name))
 
         return Response({
             "mode": "trays" if chosen else "point-to-point",
             "trays": shape(chosen),
             "available": shape(plan.trays.all()),
+            "path": path_data(path) if path is not None else None,
+            **extra,
         })
 
     @action(detail=True, methods=["get"], url_path="floor-plan")
@@ -5460,6 +6300,61 @@ class PowerOutletViewSet(_DevicePortViewSet):
             )
 
 
+
+class _CoolingComponentViewSet(_DevicePortViewSet):
+    """Cooling intakes and outflows (#434): device components, scoped and
+    filtered like power ports and outlets. ``?picker=1`` returns id, name
+    and device."""
+
+    bulk_str_fields = ("label", "connector", "description")
+    bulk_int_fields = ("diameter_mm",)
+    #: ?param → the field it filters on.
+    cooling_filters: dict = {}
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CoolingComponentMiniSerializer
+        return self.serializer_class
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            p = self.request.query_params
+            for param, field in self.cooling_filters.items():
+                val = p.get(param)
+                if val:
+                    qs = qs.filter(**{field: val})
+            # Pickers leave out the device being edited (an intake's outflow
+            # sits on another device).
+            other = p.get("exclude_device")
+            if other:
+                qs = qs.exclude(device_id=other)
+        return qs
+
+
+class CoolingIntakeViewSet(_CoolingComponentViewSet):
+    queryset = (
+        CoolingIntake.objects
+        .select_related("device", "cooling_feed__source", "outflow__device")
+        .prefetch_related(TAGS)
+        .order_by(natural("device__name"), NATURAL_NAME)
+    )
+    serializer_class = CoolingIntakeSerializer
+    cooling_filters = {"cooling_feed": "cooling_feed_id", "outflow": "outflow_id"}
+
+
+class CoolingOutflowViewSet(_CoolingComponentViewSet):
+    queryset = (
+        CoolingOutflow.objects
+        .select_related("device", "intake")
+        .prefetch_related(TAGS, "intakes__device")
+        .order_by(natural("device__name"), NATURAL_NAME)
+    )
+    serializer_class = CoolingOutflowSerializer
+    cooling_filters = {"intake": "intake_id"}
+
+
 # ─── Device-type component templates ─────────────────────────────────────────
 class _ComponentTemplateViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Shared base for the per-device-type component templates - no direct
@@ -5607,13 +6502,13 @@ class ModuleBayTemplateViewSet(_ComponentTemplateViewSet):
     serializer_class = ModuleBayTemplateSerializer
 
 
-class TopologyViewViewSet(TenantScopedViewSet):
+class TopologyViewViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     queryset = TopologyView.objects.all().order_by(NATURAL_NAME)
     serializer_class = TopologyViewSerializer
     pagination_class = StandardPagination
     # Reading the tenant's default takes view on topology views, like the
     # views themselves; who may set it is decided in the action.
-    rbac_action_map = {"default": "view"}
+    rbac_action_map = {"default": "view", "bulk_delete": "delete"}
 
     def _picker(self) -> bool:
         """``?picker=1`` on the list: names only, never the (large) state."""
@@ -5622,13 +6517,55 @@ class TopologyViewViewSet(TenantScopedViewSet):
             and self.request.query_params.get("picker") == "1"
         )
 
+    def _summary(self) -> bool:
+        """``?summary=1`` on the list: the Topology page's list of views -
+        without the state, with who made and last changed each (from the
+        change log) and whether it is the tenant's default."""
+        return (
+            self.action == "list" and self.request is not None
+            and self.request.query_params.get("summary") == "1"
+        )
+
     def get_serializer_class(self):
+        if self._summary():
+            return TopologyViewListSerializer
         if self._picker():
             return TopologyViewSummarySerializer
         return TopologyViewSerializer
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        if self._summary():
+            from core.models import TenantSettings
+
+            tenant = self._tenant_or_403()
+            want = (
+                TenantSettings.objects.filter(tenant=tenant)
+                .values_list("default_topology_view", flat=True).first()
+            )
+            ctx["default_view"] = str(want) if want else None
+        return ctx
+
     def get_queryset(self):
         qs = super().get_queryset()
+        if self._summary():
+            from django.db.models import CharField, OuterRef, Subquery
+            from django.db.models.functions import Cast
+
+            from audit.models import ChangeLogEntry
+
+            log = ChangeLogEntry.objects.filter(
+                object_type="api.topologyview",
+                object_id=Cast(OuterRef("pk"), CharField()),
+            )
+            return qs.defer("state").annotate(
+                created_by_name=Subquery(
+                    log.filter(action="create").order_by("timestamp").values("user_name")[:1]
+                ),
+                updated_by_name=Subquery(
+                    log.exclude(action="delete").order_by("-timestamp").values("user_name")[:1]
+                ),
+            )
         return qs.defer("state") if self._picker() else qs
 
     def perform_create(self, serializer):
@@ -5714,7 +6651,7 @@ class ModuleTypeViewSet(TenantScopedViewSet):
                 qs = qs.filter(manufacturer_id=mfr)
         if self.get_serializer_class() is ModuleTypeSerializer:
             qs = qs.annotate(
-                interface_template_count_annotated=_all_n(ModuleType, "interface_templates"),
+                interface_template_count_annotated=_visible_n(self, "interface_templates"),
                 module_count_annotated=_visible_n(self, "modules"),
             )
         return restrict_for_view(self, qs)
@@ -5891,6 +6828,24 @@ class PowerOutletTemplateViewSet(_ComponentTemplateViewSet):
     serializer_class = PowerOutletTemplateSerializer
 
 
+
+class CoolingIntakeTemplateViewSet(_ComponentTemplateViewSet):
+    queryset = CoolingIntakeTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
+    serializer_class = CoolingIntakeTemplateSerializer
+    bulk_str_fields = ("connector", "description")
+    bulk_int_fields = ("diameter_mm",)
+
+
+class CoolingOutflowTemplateViewSet(_ComponentTemplateViewSet):
+    queryset = (
+        CoolingOutflowTemplate.objects
+        .select_related("device_type", "intake_template").order_by(NATURAL_NAME)
+    )
+    serializer_class = CoolingOutflowTemplateSerializer
+    bulk_str_fields = ("connector", "description")
+    bulk_int_fields = ("diameter_mm",)
+
+
 class RearPortTemplateViewSet(_ComponentTemplateViewSet):
     queryset = RearPortTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = RearPortTemplateSerializer
@@ -5935,17 +6890,7 @@ class _SlugCatalogViewSet(TenantScopedViewSet):
         ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (
-            serializer.instance.name if serializer.instance else ""
-        )
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = self.model.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, self.model)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -6027,7 +6972,7 @@ class ClusterViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("type", "group", "site")
             .prefetch_related(TAGS)
-            .annotate(vm_count_annotated=Count("virtual_machines"))
+            .annotate(vm_count_annotated=_visible_n(self, "virtual_machines"))
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6055,11 +7000,56 @@ class ClusterViewSet(TenantScopedViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+    @extend_schema(
+        parameters=[OpenApiParameter(
+            "template", OpenApiTypes.UUID, required=True,
+            description="An export template with object type cluster.",
+        )],
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["get"])
+    def render(self, request, pk=None):
+        """``{output, template}``: a cluster export template rendered for this
+        cluster - the same as ``/api/export-templates/<id>/render/?object=``.
+        The caller needs view on the cluster and on export templates."""
+        from jinja2 import TemplateError
 
-class VirtualSwitchViewSet(TenantScopedViewSet):
+        from auth_api import rbac
+
+        from .export_templates import object_for, render_object_config
+
+        cluster = self.get_object()
+        tenant = self._tenant_or_403()
+        user = request.user
+        if not (user.is_superuser or rbac.has_action(user, tenant, "exporttemplate", "view")):
+            raise PermissionDenied("You may not view export templates.")
+        tid = request.query_params.get("template")
+        try:
+            tmpl = rbac.restrict_queryset(
+                ExportTemplate.objects.filter(tenant=tenant, object_type="cluster"),
+                user, tenant, "exporttemplate", "view",
+            ).filter(pk=tid).first() if tid else None
+        except (ValueError, DjangoValidationError):
+            tmpl = None
+        if tmpl is None:
+            return Response({"detail": "Unknown cluster template."},
+                            status=drf_status.HTTP_400_BAD_REQUEST)
+        try:
+            obj = object_for(tmpl, tenant, user, cluster.pk)
+            if obj is None:
+                raise NotFound("Unknown cluster.")
+            output = render_object_config(tmpl, obj, tenant, user)
+        except (ValueError, TemplateError) as exc:
+            return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
+        return Response({"output": output, "template": tmpl.name})
+
+
+class VirtualSwitchViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = VirtualSwitch.objects.all().order_by(NATURAL_NAME)
     serializer_class = VirtualSwitchSerializer
     pagination_class = StandardPagination
+    # The VRF is what a switch's page edits; the rest comes from the sync.
+    bulk_edit = BulkEditSpec(fields=("vrf_id",), tags=False)
 
     def get_queryset(self):
         qs = (
@@ -6094,7 +7084,7 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
             .prefetch_related(TAGS)
         )
         if self.action == "list":
-            qs = qs.annotate(vm_count_annotated=Count("virtual_machines"))
+            qs = qs.annotate(vm_count_annotated=_visible_n(self, "virtual_machines"))
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -6120,17 +7110,81 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
         return VirtualMachineGroupSerializer
 
 
-class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
+@extend_schema_view(list=extend_schema(
+    parameters=[SOFTWARE_TARGET_PARAMETER, *SOFTWARE_VERSION_PARAMETERS]
+))
+class VirtualMachineViewSet(
+    TableListMixin, PrtgCleanupDeleteMixin, BulkEditMixin, CloneableMixin, TenantScopedViewSet,
+):
     queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
+    # Server paging, sorting, facets and the slim row (#482, #487).
+    table_spec = list_specs.VM_TABLE
+    # The list's bulk edit. Name, primary IP and sizing are per VM; the
+    # hypervisor-owned fields stay with the sync.
+    bulk_edit = BulkEditSpec(
+        fields=(
+            "status_id", "role_id", "platform_id", "cluster_id", "group_id",
+            "device_id", "site_id", "description", "prtg_sync",
+        ),
+        custom_fields=True,
+    )
+    rbac_action_map = {
+        **BulkEditMixin.rbac_action_map,
+        **PrtgCleanupDeleteMixin.rbac_action_map,
+        # Sending an intended VM to a runner is its own grant, not change.
+        "provision": "provision",
+    }
+
+    def bulk_row_updates(self, rows, updates):
+        """What a single save derives, per row: moving cluster drops a group
+        on the old one (the serializer's rule), and a VM left without a site
+        takes its cluster's when the cluster applies it (``_fill_site``)."""
+        out: dict = {}
+        cluster_id = updates.get("cluster_id")
+        moved_to = Cluster.objects.filter(pk=cluster_id).first() if cluster_id else None
+        for r in rows:
+            extra = {}
+            cluster = moved_to or r.cluster
+            if (
+                cluster_id and "group_id" not in updates and r.group_id
+                and str(r.group.cluster_id) != str(cluster_id)
+            ):
+                extra["group_id"] = None
+            site_id = updates["site_id"] if "site_id" in updates else r.site_id
+            if (
+                site_id is None and cluster is not None
+                and cluster.apply_site_to_vms and cluster.site_id
+            ):
+                extra["site_id"] = cluster.site_id
+            if extra:
+                out[r.pk] = extra
+        # Plan PRTG for the rows whose setting changed, once written.
+        self._prtg_changed = [
+            r.pk for r in rows
+            if "prtg_sync" in updates and (r.prtg_sync or "inherit") != updates["prtg_sync"]
+        ]
+        return out
+
+    def after_bulk_update(self, pks, updates):
+        changed = getattr(self, "_prtg_changed", None) or []
+        if not changed:
+            return
+        from prtg.provision import plan_after_save
+
+        for vm in VirtualMachine.objects.select_related("tenant").filter(pk__in=changed):
+            plan_after_save(vm)
 
     def perform_create(self, serializer):
         super().perform_create(serializer)
         self._fill_site(serializer.instance)
+        _plan_prtg_on_save(serializer.instance, ("inherit", ""))
 
     def perform_update(self, serializer):
+        old_prtg = _prtg_state(serializer.instance)
         super().perform_update(serializer)
         self._fill_site(serializer.instance)
+        _plan_prtg_on_save(serializer.instance, old_prtg)
 
     def _fill_site(self, vm) -> None:
         from .cluster_site import apply_cluster_site
@@ -6165,6 +7219,82 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
 
         return Response(render_config_context(self.get_object()))
 
+    @extend_schema(
+        request=inline_serializer(
+            name="VMProvisionRequest", fields={"target_id": serializers.UUIDField()},
+        ),
+        responses={202: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["post"])
+    def provision(self, request, pk=None):
+        """Send this intended VM to an automation runner to be built.
+        Body: ``{"target_id": "<automation target id>"}``. Danbyte never calls
+        a hypervisor's write API: the runner holds those credentials. Needs
+        the ``provision`` grant on virtual machines; audited."""
+        from integrations.dispatch import enqueue_deploy, target_covers
+        from integrations.models import AutomationTarget
+
+        vm = self.get_object()
+        if not vm.intended:
+            return Response(
+                {"detail": "Only an intended VM can be provisioned."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        tenant = self._tenant_or_403()
+        body = request.data or {}
+        dry_run = bool(body.get("dry_run"))
+        if body.get("pipeline_id"):
+            return self._provision_pipeline(request, vm, tenant, body["pipeline_id"], dry_run)
+        tid = body.get("target_id")
+        try:
+            target = AutomationTarget.objects.filter(
+                id=tid, tenant=tenant, enabled=True
+            ).first() if tid else None
+        except (ValueError, DjangoValidationError):
+            target = None
+        if target is None:
+            return Response({"target_id": "Unknown or disabled target."},
+                            status=drf_status.HTTP_400_BAD_REQUEST)
+        if not target_covers(target, "virtualmachine"):
+            return Response(
+                {"target_id": f"{target.name} does not take virtual machines."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        run = enqueue_deploy(
+            target, [vm.id], event="provision", object_type="virtualmachine",
+            user=request.user, dry_run=dry_run,
+        )
+        from integrations.provision import audit_provision
+
+        audit_provision(request, vm, target, run)
+        from integrations.api import DeployRunSerializer
+
+        return Response({"kind": "target", **DeployRunSerializer(run).data}, status=202)
+
+    def _provision_pipeline(self, request, vm, tenant, pipeline_id, dry_run):
+        """Provision through a pipeline: the same provision grant on the VM,
+        and every step's target must take virtual machines."""
+        from integrations.pipelines_api import (
+            DeployPipelineRunSerializer,
+            resolve_pipeline,
+            start_for,
+        )
+        from integrations.provision import audit_provision
+
+        pipeline, err = resolve_pipeline(request, tenant, pipeline_id, "virtualmachine")
+        if err:
+            return err
+        prun, err = start_for(request, pipeline, [vm.id], object_type="virtualmachine",
+                              dry_run=dry_run)
+        if err:
+            return err
+        audit_provision(request, vm, pipeline, prun)
+        return Response(
+            {"kind": "pipeline",
+             **DeployPipelineRunSerializer(prun, context={"request": request}).data},
+            status=202,
+        )
+
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
                 self.request.query_params.get("picker") == "1":
@@ -6177,6 +7307,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         # which would cost a query per row on the list endpoint. `integrations`
         # imports `api`, never the reverse, so the import stays local.
         from integrations.models import VirtChange, VirtGuest
+        from profiles.models import DeviceProfileAssignment
 
         latest = VirtGuest.objects.filter(vm=OuterRef("pk")).order_by(
             "-last_seen_at"
@@ -6184,6 +7315,15 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         # Provenance: a synced VM should say so on its own page, and the
         # source's page should be able to list what it syncs.
         latest_src = latest.values("source__name")[:1]
+        # A route under one VM reads the address count by index
+        # (api.ip_usage); the VM page's read also its tab counts in the one
+        # query (api.detail_counts).
+        one = bool(getattr(self, "kwargs", {}).get(self.lookup_url_kwarg or self.lookup_field))
+        # The slim row and the rail read no disks, drift or install counts
+        # (#487); ``include`` of one of those takes the full row.
+        slim = self.action in ("table_facets", "table_ids") or (
+            self.is_table_view() and not self.table_uses_full_queryset()
+        )
         qs = (
             super()
             .get_queryset()
@@ -6192,15 +7332,37 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                             # otherwise fire one query per VM for it.
                             "group", "platform", "platform__eol_mapping",
                             # The nested cluster renders its status (#427).
-                            "cluster__status")
-            # `disks` is serialised inline, so without this the list endpoint
-            # fires one query per VM.
-            .prefetch_related(TAGS, "disks")
+                            "cluster__status", "represents_device")
+            .prefetch_related(
+                TAGS,
+                # A plain list on a list page (#483); a manager on one VM,
+                # whose write responses read it fresh.
+                (
+                    listed.prefetch(
+                        "device_profile_assignments",
+                        DeviceProfileAssignment.objects.select_related("profile"),
+                    )
+                    if self.action == "list" or slim
+                    else "device_profile_assignments__profile"
+                ),
+            )
             .annotate(
                 power_state=Subquery(latest.values("power_state")[:1]),
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
+                missing_since=Subquery(latest.values("missing_since")[:1]),
                 synced_from=Subquery(latest_src),
                 synced_from_id=Subquery(latest.values("source_id")[:1]),
+                # Installed software's soonest end (#436), for Next end of life.
+                **software_end_annotations("virtual_machine"),
+            )
+        )
+        if not slim:
+            qs = qs.prefetch_related(
+                # `disks` is serialised inline, so without this the list
+                # endpoint fires one query per VM.
+                listed.prefetch("disks") if self.action == "list" else "disks",
+            ).annotate(
+                install_count_annotated=_count_of(InstalledSoftware, "virtual_machine"),
                 # Open review items for this VM - a hypervisor disagreement the
                 # operator hasn't resolved. Annotated so a list of VMs doesn't
                 # fan out one query per row.
@@ -6214,7 +7376,14 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                     0,
                 ),
             )
-        )
+        elif self.is_table_view():
+            qs = self.table_include_needs(qs)
+        if one:
+            # Every address the VM uses, for its IPs tab (api/ip_usage.py), by
+            # index. A list counts its page in one query instead (#455).
+            qs = qs.annotate(ip_count_annotated=ip_usage.address_count("vm", one=True))
+        if self.action == "retrieve":
+            qs = qs.annotate(**detail_counts.vm_annotations())
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -6240,6 +7409,17 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
+            intended = self.request.query_params.get("intended")
+            if intended in ("true", "1", "false", "0"):
+                qs = qs.filter(intended=intended in ("true", "1"))
+            rep = self.request.query_params.get("represents_device")
+            if rep:
+                qs = qs.filter(represents_device_id=rep)
+            vmid = self.request.query_params.get("vmid")
+            if vmid:
+                if not vmid.isdigit():
+                    raise ValidationError({"vmid": "A whole number."})
+                qs = qs.filter(vmid=int(vmid))
             # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
@@ -6253,6 +7433,33 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             from compliance.eol import apply_status_filter
 
             qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
+            # ?software_target=on|off|unknown (#395).
+            qs = software_target.apply_filter(qs, self.request)
+            # ?software_version= / ?software_version_source= (#451).
+            qs = software_versions.apply_list_filters(qs, self.request)
+        return qs
+
+
+class VirtualDiskViewSet(TenantScopedViewSet):
+    """A VM's virtual disks. Tenant and site come through the VM, as for VM
+    interfaces. Sync prunes only the rows it created, and never on an
+    intended VM."""
+
+    queryset = VirtualDisk.objects.select_related("vm__status").order_by("vm__name", "key")
+    serializer_class = VirtualDiskSerializer
+    pagination_class = StandardPagination
+    tenant_field = "vm__tenant"
+
+    def perform_create(self, serializer):
+        # The tenant is the VM's; the scoped vm_id field already checked it.
+        serializer.save()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            vm = self.request.query_params.get("vm")
+            if vm:
+                qs = qs.filter(vm_id=vm)
         return qs
 
 
@@ -6529,12 +7736,12 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         qs = (
             super().get_queryset()
             .select_related(
-                "site", "site__region", "location", "role", "status",
+                "site", "site__region", "location", "room", "role", "status",
                 "cabinet_type__manufacturer",
             )
             .prefetch_related(TAGS, "rails")
             .annotate(document_n=Coalesce(Subquery(documents), 0),
-                      device_n=Count("devices", distinct=True))
+                      device_n=_visible_n(self, "devices"))
         )
         if self.request:
             params = self.request.query_params
@@ -6545,6 +7752,7 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                     | Q(description__icontains=s) | cf_text_q(qs.model, s)
                 )
             for param, field in (("site", "site_id"), ("location", "location_id"),
+                                 ("room", "room_id"),
                                  ("role", "role_id"), ("status", "status_id"),
                                  ("cabinet_type", "cabinet_type_id")):
                 value = _uuid_param(params, param)
@@ -6665,6 +7873,24 @@ RACK_INCLUDE_PARAMETER = OpenApiParameter(
                 "you may view the plan."
             ),
         ),
+        OpenApiParameter(
+            name="cooling_capability",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "What the rack's cooling takes: air, hybrid, liquid, immersion, "
+                "or none for not recorded."
+            ),
+        ),
+        OpenApiParameter(
+            name="cooling_free_w_gte",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Racks whose cooling capacity less their allocated heat is at "
+                "least this many watts; racks without a capacity are left out."
+            ),
+        ),
         RACK_INCLUDE_PARAMETER,
     ]),
     retrieve=extend_schema(parameters=[RACK_INCLUDE_PARAMETER]),
@@ -6706,9 +7932,10 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         qs = (
             super().get_queryset()
             .select_related(
-                "site", "site__region", "role", "location", "rack_type__manufacturer"
+                "site", "site__region", "role", "location", "room",
+                "rack_type__manufacturer",
             )
-            .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds")
+            .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds", "cooling_feeds")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
         )
         if self.request:
@@ -6718,6 +7945,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
+            qs = self._cooling_filters(qs)
             # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
@@ -6727,6 +7955,11 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             location = self.request.query_params.get("location")
             if location:
                 qs = qs.filter(location_id=location)
+            from .topology_views import _uuid_param
+
+            room = _uuid_param(self.request.query_params, "room")
+            if room:
+                qs = qs.filter(room_id=room)
             role = self.request.query_params.get("role")
             if role:
                 qs = qs.filter(role_id=role)
@@ -6736,6 +7969,35 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             floor_plan = self.request.query_params.get("floor_plan")
             if floor_plan:
                 qs = self._on_floor_plan(qs, floor_plan)
+        return qs
+
+    def _cooling_filters(self, qs):
+        """``?cooling_capability=`` - what the rack's cooling takes (``none``:
+        not recorded) - and ``?cooling_free_w_gte=`` - the racks whose
+        cooling capacity less their allocated heat is at least that many
+        watts: the racks that can still take a load (#434)."""
+        from .dcim_choices import COOLING_CAPABILITY_CHOICES
+
+        params = self.request.query_params
+        capability = params.get("cooling_capability")
+        if capability:
+            known = [value for value, _label in COOLING_CAPABILITY_CHOICES]
+            if capability not in (*known, "none"):
+                raise ValidationError(
+                    {"cooling_capability": f"One of {', '.join(known)} or none."})
+            qs = qs.filter(cooling_capability="" if capability == "none" else capability)
+        raw = params.get("cooling_free_w_gte")
+        if raw not in (None, ""):
+            try:
+                watts = int(raw)
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    {"cooling_free_w_gte": "A whole number of watts."}) from None
+            # The rows' cooling_free_w in SQL (api.capacity), in the list's
+            # own query - only when asked for, as it walks every device.
+            qs = qs.annotate(
+                cooling_free_annotated=capacity.cooling_free_annotation()
+            ).filter(cooling_free_annotated__gte=watts)
         return qs
 
     def _on_floor_plan(self, qs, raw):
@@ -7125,15 +8387,7 @@ class DeviceRoleViewSet(TenantScopedViewSet):
         return qs
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = DeviceRole.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, DeviceRole)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -7176,19 +8430,11 @@ class PlatformGroupViewSet(TenantScopedViewSet):
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
             platform_count_annotated=_visible_n(self, "platforms"),
-            child_count_annotated=_all_n(PlatformGroup, "children"),
+            child_count_annotated=_visible_n(self, "children"),
         ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = PlatformGroup.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, PlatformGroup)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -7211,64 +8457,6 @@ class PlatformGroupViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class PlatformViewSet(DeviceRoleViewSet):
-    queryset = Platform.objects.all().order_by(NATURAL_NAME)
-    serializer_class = PlatformSerializer
-
-    def get_serializer_class(self):
-        if self.action == "list" and self.request and \
-                self.request.query_params.get("picker") == "1":
-            from .serializers import PlatformMiniSerializer
-            return PlatformMiniSerializer
-        return PlatformSerializer
-
-    def get_queryset(self):
-        qs = TenantScopedViewSet.get_queryset(self).select_related(
-            "manufacturer", "group", "eol_mapping", "config_template"
-        ).prefetch_related(TAGS)
-        if self.request:
-            s = self.request.query_params.get("search", "").strip()
-            if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-            g = self.request.query_params.get("group")
-            if g:
-                qs = qs.filter(group_id=g)
-            lc = self.request.query_params.get("lifecycle")
-            if lc:
-                qs = _apply_lifecycle_filter(qs, lc)
-            from compliance.eol import apply_status_filter
-
-            qs = apply_status_filter(qs, self.request, "eol_mapping__")
-        if getattr(self, "action", None) in ("list", "retrieve"):
-            # One query for the list's VM counts, not one per platform.
-            qs = qs.annotate(
-                device_count_annotated=_visible_n(self, "devices"),
-                vm_count_annotated=_visible_n(self, "virtual_machines"),
-            )
-        return qs.order_by(NATURAL_NAME)
-
-    def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = Platform.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
-
-    def destroy(self, request, *args, **kwargs):
-        obj = self.get_object()
-        n = obj.devices.count() + obj.virtual_machines.count()
-        if n:
-            return Response(
-                {"detail": f"{n} object{'s' if n != 1 else ''} use this platform."},
-                status=drf_status.HTTP_409_CONFLICT,
-            )
-        return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
-
-
 # ─── Services ────────────────────────────────────────────────────────────────
 class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     """NAT / port-forward documentation (#151)."""
@@ -7287,7 +8475,7 @@ class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             super().get_queryset()
             # The source prefix's mini shape names its VRF, site and VLAN.
             .select_related("device", "status", "external_ip", "internal_ip",
-                            "source_ip", "source_prefix", "source_prefix__vrf",
+                            "out_interface", "source_ip", "source_prefix", "source_prefix__vrf",
                             "source_prefix__site", "source_prefix__vlan")
             .prefetch_related(TAGS)
         )
@@ -7398,18 +8586,10 @@ class ServiceTemplateViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-        return qs.prefetch_related(TAGS)
+        return qs.select_related("application").prefetch_related(TAGS)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = ServiceTemplate.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, ServiceTemplate)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -7439,6 +8619,9 @@ class IPRangeViewSet(TenantScopedViewSet):
             # Backs a DHCP exclusion? → serializer `dhcp` flag ("exclusion").
             # Reverse accessor - no integrations import.
             .annotate(dhcp_excl_n=Count("dhcp_exclusions", distinct=True))
+            # A GROUP BY query ignores Meta.ordering: page in a stable order
+            # (#488).
+            .order_by("start_address", "end_address", "pk")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7528,15 +8711,7 @@ class RIRViewSet(TenantScopedViewSet):
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = RIR.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, RIR)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -7573,6 +8748,9 @@ class AggregateViewSet(TenantScopedViewSet):
         # the tenant per row (#181). Covered is the union (#381): the same
         # network in several VRFs counts once, and a prefix inside another
         # one adds nothing - only the outermost distinct networks are summed.
+        # Every test is on the bare ``cidr::inet``, the GiST index's expression
+        # (#484); ``>>`` reads only the container's network bits, so it needs
+        # no network() around the stored value.
         inside = (
             "FROM api_prefix {a} WHERE {a}.tenant_id = api_aggregate.tenant_id"
             " AND family({a}.cidr::inet) = 4"
@@ -7590,7 +8768,7 @@ class AggregateViewSet(TenantScopedViewSet):
                     + inside.format(a="p")
                     + ") d WHERE NOT EXISTS (SELECT 1 "
                     + inside.format(a="q")
-                    + " AND network(q.cidr::inet) >> d.net))",
+                    + " AND q.cidr::inet >> d.net))",
                     (), output_field=BigIntegerField(),
                 )
             )
@@ -7674,15 +8852,7 @@ class VLANGroupViewSet(TenantScopedViewSet):
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = VLANGroup.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, VLANGroup)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -7880,15 +9050,7 @@ class _ContactCatalogViewSet(TenantScopedViewSet):
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = self.model.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, self.model)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -7909,7 +9071,7 @@ class ContactGroupViewSet(_ContactCatalogViewSet):
     def get_queryset(self):
         qs = super().get_queryset().select_related("parent").annotate(
             contact_count_annotated=_visible_n(self, "contacts"),
-            child_count_annotated=_all_n(ContactGroup, "children"),
+            child_count_annotated=_visible_n(self, "children"),
         )
         # "Groups nested directly under this one" - the group detail page's
         # Child groups tab. Applied after the tenant scoping above, so a
@@ -7940,7 +9102,7 @@ class ContactRoleViewSet(_ContactCatalogViewSet):
 
     def get_queryset(self):
         return super().get_queryset().annotate(
-            assignment_count_annotated=_all_n(ContactRole, "assignments")
+            assignment_count_annotated=_visible_n(self, "assignments")
         )
 
     def destroy(self, request, *args, **kwargs):
@@ -7984,7 +9146,7 @@ class ContactViewSet(TenantScopedViewSet):
             group = self.request.query_params.get("group")
             if group:
                 qs = qs.filter(group_id=group)
-        return qs.annotate(assignment_count_annotated=_all_n(Contact, "assignments"))
+        return qs.annotate(assignment_count_annotated=_visible_n(self, "assignments"))
 
 
 class ContactAssignmentViewSet(TenantScopedViewSet):
@@ -8198,8 +9360,12 @@ class ProviderNetworkViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             provider = self.request.query_params.get("provider")
             if provider:
                 qs = qs.filter(provider_id=provider)
+        # The Circuits tab's count: the circuits the reader may view that
+        # terminate here (#438).
         return qs.annotate(
-            termination_count_annotated=_all_n(ProviderNetwork, "circuit_terminations")
+            circuit_count_annotated=path_count_expr(
+                self.request, Circuit, "terminations__provider_network"
+            )
         )
 
 
@@ -8387,12 +9553,6 @@ class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVie
             location = self.request.query_params.get("location")
             if location:
                 qs = qs.filter(location_id=location)
-            # VMs whose *cluster* sits at a site - they run there even when the
-            # cluster's site was not applied to them (see Cluster.
-            # apply_site_to_vms). Lets a site page show what it hosts.
-            cluster_site = self.request.query_params.get("cluster_site")
-            if cluster_site:
-                qs = qs.filter(cluster__site_id=cluster_site)
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -8405,6 +9565,19 @@ class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVie
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"])
+    def affected(self, request, pk=None):
+        """The racks and devices downstream (#434), each with the impact
+        level work here would have, and ``impacts`` ready for a maintenance
+        event (api.feed_impact). Read-only."""
+        from .feed_impact import affected
+
+        obj = self.get_object()
+        return Response(affected(
+            request.user, _get_active_tenant(request), obj, PowerFeed.objects.filter(power_panel=obj)
+        ))
 
 
 class PowerFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
@@ -8460,6 +9633,258 @@ class PowerFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedView
                 if val:
                     qs = qs.filter(**{field: val})
         return qs
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"])
+    def affected(self, request, pk=None):
+        """The racks and devices downstream (#434), each with the impact
+        level work here would have, and ``impacts`` ready for a maintenance
+        event (api.feed_impact). Read-only."""
+        from .feed_impact import affected
+
+        obj = self.get_object()
+        return Response(affected(
+            request.user, _get_active_tenant(request), obj, PowerFeed.objects.filter(pk=obj.pk)
+        ))
+
+
+# ─── Cooling ─────────────────────────────────────────────────────────────────
+_COOLING_SOURCE_FILTERS = [
+    OpenApiParameter("search", str, description="Name or custom-field text."),
+    OpenApiParameter("site", str, description="Site id."),
+    OpenApiParameter("location", str, description="Location id."),
+    OpenApiParameter("type", str, description="Unit type, e.g. `crah`."),
+    OpenApiParameter("status", str, description="Status id."),
+    OpenApiParameter("rack", str, description="Sources with a feed to this rack."),
+    OpenApiParameter("picker", str, description="`1`: id and name only."),
+]
+_COOLING_FEED_FILTERS = [
+    OpenApiParameter("search", str, description="Name or custom-field text."),
+    OpenApiParameter("source", str, description="Cooling source id."),
+    OpenApiParameter("site", str, description="The source's site id."),
+    OpenApiParameter("rack", str, description="Rack id."),
+    OpenApiParameter("type", str, description="`primary` or `redundant`."),
+    OpenApiParameter("status", str, description="Status id."),
+]
+
+
+@extend_schema_view(list=extend_schema(tags=["cooling-sources"],
+                                       parameters=_COOLING_SOURCE_FILTERS))
+@extend_schema(tags=["cooling-sources"])
+class CoolingSourceViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
+    """Cooling units and plant (#434), shaped like ``PowerPanelViewSet``: bulk
+    edit sets site, location, type, fluid, status and tags; a source with
+    feeds is a 409 to delete, and bulk delete keeps it unless ``with_feeds``
+    takes them along."""
+
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
+    queryset = CoolingSource.objects.all().order_by(NATURAL_NAME)
+    serializer_class = CoolingSourceSerializer
+    pagination_class = StandardPagination
+    bulk_str_fields = ("type", "fluid", "redundancy_group")
+    bulk_int_fields = ("rated_capacity_w",)
+    bulk_fk_fields = {"site_id": Site, "location_id": Location, "status_id": Status}
+    bulk_tags = True
+    bulk_rename = None
+    bulk_clone = None
+
+    def check_bulk_rows(self, rows, updates):
+        from .power_bulk import names_free_after_move
+
+        if "site_id" in updates:
+            names_free_after_move(rows, "site_id", updates["site_id"], "site_id")
+
+    def _with_feeds(self) -> bool:
+        data = getattr(self.request, "data", None)
+        return self.action == "bulk_delete" and isinstance(data, dict) and \
+            bool(data.get("with_feeds"))
+
+    def _deletable_feed_counts(self) -> dict:
+        """``{source id: feeds of it the caller may delete}``."""
+        if not hasattr(self, "_feed_counts"):
+            from auth_api import rbac
+
+            tenant = _get_active_tenant(self.request)
+            feeds = rbac.restrict_queryset(
+                CoolingFeed.objects.filter(
+                    tenant=tenant, source_id__in=bulk_ids(self.request, MAX_IDS)
+                ),
+                self.request.user, tenant, "coolingfeed", "delete",
+            )
+            self._feed_counts = dict(
+                feeds.values("source_id").annotate(n=Count("pk"))
+                .values_list("source_id", "n")
+            )
+        return self._feed_counts
+
+    def bulk_blocker(self, obj):
+        n = getattr(obj, "feed_count_annotated", None)
+        if n is None:
+            n = obj.cooling_feeds.count()
+        if not n:
+            return None
+        feeds = f"{n} cooling feed{'s' if n != 1 else ''}"
+        if not self._with_feeds():
+            return f"In use: {feeds}."
+        if self._deletable_feed_counts().get(obj.pk, 0) < n:
+            return f"In use: {feeds}, not all of them yours to delete."
+        return None
+
+    def bulk_collector(self):
+        from .power_bulk import FeedsFirstCollector
+
+        if self._with_feeds():
+            return FeedsFirstCollector(feed_model=CoolingFeed)
+        return super().bulk_collector()
+
+    def bulk_collect_into(self, collector, rows):
+        if self._with_feeds():
+            feeds = list(CoolingFeed.objects.filter(source__in=rows))
+            if feeds:
+                collector.collect(feeds)
+        collector.collect(rows)
+
+    def bulk_destroy(self, rows):
+        if self._with_feeds():
+            feeds = list(CoolingFeed.objects.filter(source__in=rows))
+            if feeds:
+                self.delete_together(feeds)
+        self.delete_together(rows)
+
+    def perform_destroy(self, instance):
+        if self._with_feeds():
+            CoolingFeed.objects.filter(source=instance).delete()
+        super().perform_destroy(instance)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CoolingSourceMiniSerializer
+        return CoolingSourceSerializer
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("site", "location", "status", "device")
+            .prefetch_related(
+                TAGS, "cooling_feeds__rack__cooling_feeds",
+                capacity.racked_devices_prefetch("cooling_feeds__rack__"),
+            )
+            .annotate(feed_count_annotated=Count("cooling_feeds", distinct=True))
+        )
+        if self.request:
+            p = self.request.query_params
+            s = p.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
+            for param, field in (
+                ("site", "site_id"),
+                ("location", "location_id"),
+                ("type", "type"),
+                ("status", "status"),
+            ):
+                val = p.get(param)
+                if val:
+                    qs = qs.filter(**{field: val})
+            rack = p.get("rack")
+            if rack:
+                qs = qs.filter(cooling_feeds__rack_id=rack).distinct()
+        return qs.order_by(NATURAL_NAME)
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        n = obj.cooling_feeds.count()
+        if n:
+            return Response(
+                {"detail": f"{n} feed{'s' if n != 1 else ''} run from this "
+                           "source - delete them first."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"])
+    def affected(self, request, pk=None):
+        """The racks and devices downstream (#434), each with the impact
+        level work here would have, and ``impacts`` ready for a maintenance
+        event (api.feed_impact). Read-only."""
+        from .feed_impact import affected
+
+        obj = self.get_object()
+        return Response(affected(
+            request.user, _get_active_tenant(request), obj, CoolingFeed.objects.filter(source=obj)
+        ))
+
+
+@extend_schema_view(list=extend_schema(tags=["cooling-sources"],
+                                       parameters=_COOLING_FEED_FILTERS))
+@extend_schema(tags=["cooling-sources"])
+class CoolingFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
+    """Cooling loops from a source to a rack (#434), shaped like
+    ``PowerFeedViewSet``. ``?picker=1`` returns id, name and source."""
+
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
+    queryset = CoolingFeed.objects.all().order_by(NATURAL_NAME)
+    serializer_class = CoolingFeedSerializer
+    pagination_class = StandardPagination
+    bulk_str_fields = ("type", "connector")
+    bulk_int_fields = ("rated_capacity_w", "max_utilization")
+    bulk_fk_fields = {"status_id": Status, "source_id": CoolingSource, "rack_id": Rack}
+    bulk_tags = True
+    bulk_rename = None
+    bulk_clone = None
+
+    def check_bulk_rows(self, rows, updates):
+        from .power_bulk import names_free_after_move
+
+        if "source_id" in updates:
+            names_free_after_move(rows, "source_id", updates["source_id"], "source_id")
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CoolingFeedMiniSerializer
+        return CoolingFeedSerializer
+
+    def get_queryset(self):
+        qs = (
+            super()
+            .get_queryset()
+            .select_related("source__site", "rack", "status")
+            .prefetch_related(
+                TAGS, "rack__cooling_feeds", capacity.racked_devices_prefetch("rack__"),
+                "intakes",
+            )
+        )
+        if self.request:
+            p = self.request.query_params
+            s = p.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
+            for param, field in (
+                ("source", "source_id"),
+                ("site", "source__site_id"),
+                ("rack", "rack_id"),
+                ("type", "type"),
+                ("status", "status"),
+            ):
+                val = p.get(param)
+                if val:
+                    qs = qs.filter(**{field: val})
+        return qs
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"])
+    def affected(self, request, pk=None):
+        """The racks and devices downstream (#434), each with the impact
+        level work here would have, and ``impacts`` ready for a maintenance
+        event (api.feed_impact). Read-only."""
+        from .feed_impact import affected
+
+        obj = self.get_object()
+        return Response(affected(
+            request.user, _get_active_tenant(request), obj, CoolingFeed.objects.filter(pk=obj.pk)
+        ))
 
 
 # ─── Wireless ────────────────────────────────────────────────────────────────
@@ -8715,7 +10140,11 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
         forget_visible(serializer.instance)
 
 
-class L2VPNViewSet(TenantScopedViewSet):
+class L2VPNViewSet(BulkEditMixin, TenantScopedViewSet):
+    # The VRF is checked per row: only an EVPN overlay carries one.
+    bulk_edit = BulkEditSpec(
+        fields=("status_id", "vrf_id", "description"), custom_fields=True
+    )
     queryset = (
         L2VPN.objects
         .select_related("status", "vrf")
@@ -8730,7 +10159,10 @@ class L2VPNViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # The ends the reader may view, as the nested list shows them (#448).
+        qs = super().get_queryset().annotate(
+            termination_count_annotated=_visible_n(self, "terminations")
+        )
         if self.request:
             search = self.request.query_params.get("search", "").strip()
             if search:
@@ -8749,7 +10181,7 @@ class L2VPNViewSet(TenantScopedViewSet):
             vl = self.request.query_params.get("vlan")
             if vl:
                 qs = qs.filter(terminations__vlan_id=vl)
-        return qs.annotate(vtep_count_annotated=Count("vtep_memberships", distinct=True))
+        return qs.annotate(vtep_count_annotated=_visible_n(self, "vtep_memberships"))
 
 
 class L2VPNTerminationViewSet(TenantScopedViewSet):
@@ -8891,6 +10323,7 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
         return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
 
@@ -9058,7 +10491,7 @@ class RegionViewSet(TenantScopedViewSet):
             # The site and sub-region counts, once per page (#444).
             qs = qs.annotate(
                 site_count_annotated=_visible_n(self, "sites"),
-                child_count_annotated=_all_n(Region, "children"),
+                child_count_annotated=_visible_n(self, "children"),
             )
         return qs.order_by(NATURAL_NAME)
 
@@ -9078,6 +10511,12 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     queryset = Location.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = LocationSerializer
     pagination_class = StandardPagination
+
+    @action(detail=True, methods=["get"], url_path="plan")
+    def plan(self, request, pk=None):
+        """The part of a floor plan this location is drawn on (its page's
+        Floor plan tab): ``area_plan_region``."""
+        return Response(area_plan_region(self, request, "location", self.get_object()))
 
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
@@ -9105,22 +10544,19 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
                 self.request.query_params.get("picker") == "1":
-            return LocationMiniSerializer
+            return LocationPickerSerializer
         return LocationSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("site", "parent")
-        # Detail tabs show Devices/Racks counts; annotate (distinct) so the
-        # serializer serves them without an N+1 per row.
-        # Cabinets by subquery: a third joined count would multiply the rows.
-        cabinets = (
-            Cabinet.objects.filter(location=OuterRef("pk")).order_by()
-            .values("location").annotate(n=Count("pk")).values("n")
-        )
+        qs = super().get_queryset().select_related("site", "parent", "location_type")
+        # Detail tabs show Devices/Racks/Cabinets counts; annotated so the
+        # serializer serves them without an N+1 per row, and narrowed to the
+        # rows the reader may view (#438).
         qs = qs.annotate(
-            device_count_annotated=Count("devices", distinct=True),
-            rack_count_annotated=Count("racks", distinct=True),
-            cabinet_count_annotated=Coalesce(Subquery(cabinets), 0),
+            device_count_annotated=_visible_n(self, "devices"),
+            rack_count_annotated=_visible_n(self, "racks"),
+            cabinet_count_annotated=_visible_n(self, "cabinets"),
+            room_count_annotated=_visible_n(self, "rooms"),
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -9131,6 +10567,16 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 val = self.request.query_params.get(param)
                 if val:
                     qs = qs.filter(**{field: val})
+            # ?location_type=<id>, or ``none`` for the locations without one.
+            lt = self.request.query_params.get("location_type", "").strip()
+            if lt.lower() == "none":
+                qs = qs.filter(location_type__isnull=True)
+            elif lt:
+                from .topology_views import _uuid_param
+
+                qs = qs.filter(
+                    location_type_id=_uuid_param(self.request.query_params, "location_type")
+                )
         return qs
 
     def destroy(self, request, *args, **kwargs):
@@ -9140,18 +10586,249 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 {"detail": "This location has sub-locations - delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
+        if obj.rooms.exists():
+            return Response(
+                {"detail": "This location has rooms - delete or move them first."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
         return super().destroy(request, *args, **kwargs)
 
 
+class LocationTypeViewSet(BulkEditMixin, TenantScopedViewSet):
+    """Location types - the editable catalog of what kind of place a location
+    is (Building, Floor, Manhole…). Ships empty. Deleting a type leaves its
+    locations in place without a type."""
+
+    queryset = LocationType.objects.all().order_by(NATURAL_NAME)
+    serializer_class = LocationTypeSerializer
+    pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("color", "icon", "description"), tags=False)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return LocationTypeMiniSerializer
+        return LocationTypeSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
+        if self.get_serializer_class() is LocationTypeSerializer:
+            qs = qs.annotate(location_count_annotated=_visible_n(self, "locations"))
+        return qs
+
+    def _slug(self, serializer, tenant):
+        check_name_and_slug(
+            serializer, tenant, LocationType,
+            message="A location type with this name already exists.", empty="Give the type a name.",
+        )
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        self._slug(serializer, self._tenant_or_403())
+        serializer.save()
+
+
+class AreaTypeViewSet(BulkEditMixin, TenantScopedViewSet):
+    """Area types - the editable catalog of what a plain floor-plan area is
+    (Parking, Fence, Road, Gate…), with its colour, fill pattern and icon.
+    Ships empty. Deleting a type leaves its areas in place without a type."""
+
+    queryset = AreaType.objects.all().order_by(NATURAL_NAME)
+    serializer_class = AreaTypeSerializer
+    pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("color", "pattern", "icon", "description"), tags=False)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return AreaTypeMiniSerializer
+        return AreaTypeSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
+        if self.get_serializer_class() is AreaTypeSerializer:
+            qs = qs.annotate(area_count_annotated=_visible_n(self, "areas"))
+        return qs
+
+    def _slug(self, serializer, tenant):
+        check_name_and_slug(
+            serializer, tenant, AreaType,
+            message="An area type with this name already exists.", empty="Give the type a name.",
+        )
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        self._slug(serializer, self._tenant_or_403())
+        serializer.save()
+
+
+class SensitivityLabelViewSet(BulkEditMixin, TenantScopedViewSet):
+    """Sensitivity labels - the editable catalog PDF reports are marked with
+    (Public, Internal, Confidential…), each with a colour and an optional
+    icon. A starter set is seeded once per tenant (api/sensitivity.py).
+    Marking one the default takes the flag from the tenant's other labels.
+    ``?picker=1`` lists the short form the report dialog reads."""
+
+    queryset = SensitivityLabel.objects.all().order_by("weight", NATURAL_NAME)
+    serializer_class = SensitivityLabelSerializer
+    pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("color", "icon", "weight", "description"), tags=False)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return SensitivityLabelMiniSerializer
+        return SensitivityLabelSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
+        return qs
+
+    def _slug(self, serializer, tenant):
+        check_name_and_slug(
+            serializer, tenant, SensitivityLabel,
+            message="A sensitivity label with this name already exists.", empty="Give the label a name.",
+        )
+
+    def _take_default(self, serializer, tenant):
+        """One default per tenant: the others give it up, each saved so the
+        change log shows it."""
+        if not serializer.validated_data.get("is_default"):
+            return
+        others = SensitivityLabel.objects.filter(tenant=tenant, is_default=True)
+        if serializer.instance is not None:
+            others = others.exclude(pk=serializer.instance.pk)
+        for other in others:
+            other.is_default = False
+            other.save(update_fields=["is_default", "updated_at"])
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        with transaction.atomic():
+            self._take_default(serializer, tenant)
+            serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        with transaction.atomic():
+            self._take_default(serializer, tenant)
+            serializer.save()
+
+
+class RoomViewSet(BulkEditMixin, ImageAttachmentMixin, TenantScopedViewSet):
+    """Rooms inside a location (Region → Site → Location → Room). Filters:
+    ``?site=``, ``?location=`` (with ``include_descendants=1`` the rooms of
+    its sub-locations too), ``?status=``, ``?tag=<slug>``, ``?search=``;
+    ``?picker=1`` answers the mini rows."""
+
+    queryset = Room.objects.all().order_by(
+        natural("location__site__name"), natural("location__name"), NATURAL_NAME
+    )
+    serializer_class = RoomSerializer
+    pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("status_id", "color", "description"), custom_fields=True)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return RoomMiniSerializer
+        return RoomSerializer
+
+    @action(detail=True, methods=["get"], url_path="plan")
+    def plan(self, request, pk=None):
+        """The part of a floor plan this room is drawn on (its page's Floor
+        plan tab): ``area_plan_region``."""
+        return Response(area_plan_region(self, request, "room", self.get_object()))
+
+    def get_queryset(self):
+        from .topology_views import _uuid_param
+
+        qs = (
+            super().get_queryset()
+            .select_related("location", "location__site", "status")
+            .prefetch_related(TAGS)
+            .annotate(
+                device_count_annotated=_visible_n(self, "devices"),
+                rack_count_annotated=_visible_n(self, "racks"),
+                cabinet_count_annotated=_visible_n(self, "cabinets"),
+            )
+        )
+        if not self.request:
+            return qs
+        params = self.request.query_params
+        s = params.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(name__icontains=s) | Q(code__icontains=s)
+                | Q(description__icontains=s) | cf_text_q(qs.model, s)
+            )
+        site = _uuid_param(params, "site")
+        if site:
+            qs = qs.filter(location__site_id=site)
+        location = _uuid_param(params, "location")
+        if location:
+            if params.get("include_descendants") in ("1", "true"):
+                qs = qs.filter(location_id__in=_location_subtree(location))
+            else:
+                qs = qs.filter(location_id=location)
+        status = _uuid_param(params, "status")
+        if status:
+            qs = qs.filter(status_id=status)
+        # ?tag=<slug> (repeatable) - AND, as on the device list.
+        tag_slugs = [t for t in params.getlist("tag") if t]
+        for slug in tag_slugs:
+            qs = qs.filter(tags__slug=slug)
+        if tag_slugs:
+            qs = qs.distinct()
+        return qs
+
+
+def _location_subtree(location_id) -> set:
+    """``location_id`` and every location nested under it."""
+    ids = {location_id}
+    frontier = {location_id}
+    while frontier:
+        frontier = set(
+            Location.objects.filter(parent_id__in=frontier)
+            .exclude(pk__in=ids).values_list("pk", flat=True)
+        ) - ids
+        ids |= frontier
+    return ids
+
+
 # ─── Config Contexts ─────────────────────────────────────────────────────────
-class ConfigContextViewSet(TenantScopedViewSet):
+class ConfigContextViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = ConfigContext.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = ConfigContextSerializer
     pagination_class = StandardPagination
+    # The data and the criteria belong to one context: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("is_active", "weight", "description"), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related(
-            "regions", "sites", "device_roles", "platforms"
+            "regions", "sites", "device_roles", "platforms", "tags"
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -9161,12 +10838,13 @@ class ConfigContextViewSet(TenantScopedViewSet):
 
 
 # ─── Export templates ────────────────────────────────────────────────────────
-class ConfigBundleViewSet(TenantScopedViewSet):
+class ConfigBundleViewSet(BulkEditMixin, TenantScopedViewSet):
     """Filter with ``?role=<id>`` (bundles bound to that role) and ``?search=``."""
 
     queryset = ConfigBundle.objects.all().order_by(NATURAL_NAME)
     serializer_class = ConfigBundleSerializer
     pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("description",), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related("templates", "roles")
@@ -9180,10 +10858,27 @@ class ConfigBundleViewSet(TenantScopedViewSet):
         return qs.distinct()
 
 
-class ExportTemplateViewSet(TenantScopedViewSet):
+class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = ExportTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = ExportTemplateSerializer
     pagination_class = StandardPagination
+    # The code, type and file name belong to one template: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("as_attachment", "description"), tags=False)
+
+    def bulk_notes(self, rows):
+        """A template in a config bundle leaves it, as its single delete does:
+        named first, so the bundles are no surprise."""
+        through = ConfigBundle.templates.through
+        counts: dict = {}
+        for tid in through.objects.filter(
+            exporttemplate_id__in=[r.pk for r in rows]
+        ).values_list("exporttemplate_id", flat=True):
+            counts[tid] = counts.get(tid, 0) + 1
+        return [
+            {"id": str(r.pk), "name": str(r), "label": "In a config bundle",
+             "detail": f"Leaves {n} bundle{'' if n == 1 else 's'}."}
+            for r in rows if (n := counts.get(r.pk))
+        ]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -9197,32 +10892,66 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         return qs
 
     def _render(self, request, *, preview=False):
+        """The list render, or with ``?object=<id>`` the one object's (C1):
+        that row of the template's type, tenant-, row- and site-checked. An
+        id of another type or out of reach is a 404, not a different row."""
         from jinja2 import TemplateError
 
-        from .export_templates import render_export_template
+        from .export_templates import object_for, render_export_template, render_object_config
         from .views import _get_active_tenant
 
         tmpl = self.get_object()
         tenant = _get_active_tenant(request)
+        object_id = request.query_params.get("object")
         try:
+            if tmpl.is_directory:
+                # A directory template writes files per device: a dict of
+                # ``{path: row}`` rather than one text.
+                from .config_bundles import render_template_files
+
+                if not object_id:
+                    raise ValueError(
+                        f"{tmpl.name} renders a directory of files per device; "
+                        "name the device with ?object=."
+                    )
+                obj = object_for(tmpl, tenant, request.user, object_id)
+                if obj is None:
+                    raise NotFound("Unknown object for this template.")
+                return render_template_files(tmpl, obj, request.user), tmpl
+            if object_id:
+                obj = object_for(tmpl, tenant, request.user, object_id)
+                if obj is None:
+                    raise NotFound("Unknown object for this template.")
+                return render_object_config(tmpl, obj, tenant, request.user), tmpl
             return render_export_template(
                 tmpl, tenant, request.user, preview=preview
             ), tmpl
         except (ValueError, TemplateError) as exc:
             return None, exc
 
+    @extend_schema(parameters=[OpenApiParameter(
+        "object", OpenApiTypes.UUID, description="Render for this one object of the template's type.",
+    )])
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         """Render and return the text as JSON (for the editor preview pane).
-        Over the first rows only; ``count`` in the template stays the total."""
+        Over the first rows only; ``count`` in the template stays the total.
+        ``?object=<id>`` renders that one object instead."""
         out, info = self._render(request, preview=True)
         if out is None:
             return Response({"detail": str(info)}, status=drf_status.HTTP_400_BAD_REQUEST)
+        if isinstance(out, dict):
+            # A directory template: each file on its own, keyed by path.
+            return Response({"output": "", "files": out})
         return Response({"output": out})
 
+    @extend_schema(parameters=[OpenApiParameter(
+        "object", OpenApiTypes.UUID, description="Render for this one object of the template's type.",
+    )])
     @action(detail=True, methods=["get"])
     def render(self, request, pk=None):
-        """Render and return as a downloadable file."""
+        """Render and return as a downloadable file: every row the caller may
+        view in one file, or with ``?object=<id>`` that one object."""
         from django.http import HttpResponse
 
         out, info = self._render(request)
@@ -9231,6 +10960,18 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         from .export_templates import safe_mime_type
 
         tmpl = info
+        if isinstance(out, dict):
+            # A directory template downloads as a tarball of its files.
+            from .config_bundles import tar_of
+
+            try:
+                archive = tar_of(out, tmpl.name)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
+            resp = HttpResponse(archive, content_type="application/x-tar")
+            resp["Content-Disposition"] = f'attachment; filename="{tmpl.name}.tar"'
+            resp["X-Content-Type-Options"] = "nosniff"
+            return resp
         # Always a download of an inert type, never a page on this origin:
         # the body is whatever the template's author wrote (#195). The SPA
         # fetches the text and saves it under the declared type itself.
@@ -9243,7 +10984,7 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         return resp
 
 
-class LabelTemplateViewSet(TenantScopedViewSet):
+class LabelTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
     """Printable per-object label templates (Jinja2 HTML + QR, sized in mm).
 
     CRUD, plus ``fields`` (token reference for the editor), ``preview`` (render an
@@ -9255,6 +10996,8 @@ class LabelTemplateViewSet(TenantScopedViewSet):
     queryset = LabelTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = LabelTemplateSerializer
     pagination_class = StandardPagination
+    # Size, markup and the default flag belong to one template: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("qr_enabled", "description"), tags=False)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -9748,15 +11491,7 @@ class FloorTileTypeViewSet(TenantScopedViewSet):
         return qs
 
     def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = FloorTileType.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
+        check_name_and_slug(serializer, tenant, FloorTileType)
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -9869,9 +11604,217 @@ def _clone_drawing(src, dst) -> None:
         cad_render.enqueue(copy.pk, copy.source.name)
 
 
+def _on_plan(item: dict) -> dict:
+    """A bulk row without a plan of its own: it stays on (or joins) the plan
+    the bulk call is for."""
+    return {k: v for k, v in item.items() if k != "floor_plan_id"}
+
+
+#: What a tile's row reads besides itself: its types, its link, the linked
+#: object's room and role, and a device's type (its photo).
+TILE_RELATED = (
+    "floor_plan__stack", "tile_type", "role_type", "rack__room", "rack__role",
+    "cabinet__room", "cabinet__role", "device__room", "device__role",
+    "device__device_type", "power_panel", "power_feed", "cooling_source",
+    "linked_floor_plan",
+)
+
+
+def _plan_tiles(plan):
+    return plan.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id")
+
+
+def _plan_areas(plan):
+    return plan.areas.select_related(
+        "room", "location__location_type", "area_type", "opens__stack"
+    ).order_by("z", "created_at", "id")
+
+
+def _plan_labels(plan):
+    return plan.labels.select_related("opens__stack").order_by("z", "created_at", "id")
+
+
+def plan_contents(request, tenant, src, crop=None, view=None) -> dict:
+    """What ``contents/`` answers for ``src``: every row of each kind the
+    reader may view, as its list endpoint shapes it, and ``version``. With
+    ``crop`` (a live view, or a room's part of its floor): the rows inside
+    it, in its cells, each with ``crosses_edge``. ``view`` is the live view
+    being drawn: its own back labels show, and the shapes on the source that
+    open this very view do not (they would only link to themselves)."""
+    from auth_api import rbac
+
+    from . import floor_plan_snapshots as snaps
+
+    def visible(qs, slug):
+        return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
+
+    rows = {
+        "tiles": (visible(
+            src.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id"),
+            "floorplantile",
+        ), FloorPlanTileSerializer),
+        "trays": (visible(
+            src.trays.prefetch_related("cables").order_by(NATURAL_NAME, "id"),
+            "floorplantray",
+        ), FloorPlanTraySerializer),
+        "walls": (visible(src.walls.order_by("label", "id"), "floorplanwall"),
+                  FloorPlanWallSerializer),
+        "raised_floors": (visible(
+            src.raised_floor_areas.order_by("y", "x", "id"),
+            "floorplanraisedfloorarea",
+        ), FloorPlanRaisedFloorAreaSerializer),
+        "areas": (visible(
+            _plan_areas(src).exclude(opens_id=view.pk) if view is not None
+            else _plan_areas(src),
+            "floorplanarea",
+        ), FloorPlanAreaSerializer),
+        "labels": (visible(
+            _plan_labels(src).filter(Q(shown_in__isnull=True) | Q(shown_in_id=view.pk))
+            .exclude(opens_id=view.pk) if view is not None
+            else _plan_labels(src).exclude(
+                shown_in__kind="view", shown_in__source_id=src.pk
+            ),
+            "floorplanlabel",
+        ), FloorPlanLabelSerializer),
+    }
+    ctx = {"request": request}
+    out = {}
+    stamps = []
+    for key, (qs, ser_cls) in rows.items():
+        objs = list(qs)
+        if crop is None:
+            out[key] = ser_cls(objs, many=True, context=ctx).data
+        else:
+            # A live view: the source's rows inside the crop, in the
+            # view's cells; the ones crossing its edge are locked.
+            pairs = snaps.in_crop(key, objs, crop)
+            objs = [o for o, _edge in pairs]
+            out[key] = snaps.view_data(
+                key, pairs, ser_cls(objs, many=True, context=ctx).data, crop
+            )
+        stamps += [o.updated_at for o in objs]
+    # Stored cable routes: those the reader may view, of cables they may
+    # view; on a view, those ending on a tile it shows, in its cells.
+    # ``stale`` is the stored flag - cable-paths/ also derives moves.
+    from .cable_routing import path_data
+    from .cable_scope import viewable_cable_ids
+
+    paths = list(visible(src.cable_paths.order_by("created_at", "id"), "floorplancablepath"))
+    seen = viewable_cable_ids(request.user, tenant, {p.cable_id for p in paths})
+    paths = [p for p in paths if p.cable_id in seen]
+    dx = dy = 0
+    if crop is not None:
+        shown = {str(t["id"]) for t in out["tiles"]}
+        paths = [p for p in paths if set(p.tile_ids or []) & shown]
+        dx, dy = -crop.x, -crop.y
+    out["cable_paths"] = [
+        {"cable": str(p.cable_id), **path_data(p, dx=dx, dy=dy)} for p in paths
+    ]
+    stamps += [p.updated_at for p in paths]
+    return {
+        "version": max(stamps).isoformat() if stamps else None,
+        **out,
+    }
+
+
+def area_plan_region(viewset, request, field: str, obj) -> dict:
+    """``GET /api/rooms/<id>/plan/`` and ``/api/locations/<id>/plan/``: the
+    part of a floor plan a room or location is drawn on, live and read-only,
+    for its page's Floor plan tab.
+
+    ``areas`` lists the areas linked to ``obj`` (``field`` ``room`` or
+    ``location``) on the floors the reader may view, which they may view
+    themselves: ``{id, name, color, floor_plan: {id, name, stack}}``.
+    ``?area=<id>`` (default the first) picks one; ``?margin=`` (cells, 0-50)
+    widens it. Then ``area``, ``floor_plan`` (as ``/api/floor-plans/<id>/``
+    reads it), ``crop`` (the area's bounding box in whole cells of that
+    floor), ``margin``, ``outline`` (the area's outline in the crop's cells)
+    and ``contents`` (as ``contents/`` reads it for that crop: the rows
+    inside, in the crop's cells, a tile linking what the reader may not view
+    reading Hidden). No area: only ``areas``, empty, the rest null."""
+    from auth_api import rbac
+
+    from . import floor_plan_snapshots as snaps
+    from .topology_views import _uuid_param
+
+    tenant = viewset._tenant_or_403()
+    plans = rbac.restrict_queryset(
+        FloorPlan.objects.filter(tenant=tenant).exclude(kind="view"),
+        request.user, tenant, "floorplan", "view",
+    )
+    areas = list(rbac.restrict_queryset(
+        FloorPlanArea.objects.filter(**{field: obj}, floor_plan__in=plans)
+        .select_related("room", "location__location_type", "floor_plan__stack"),
+        request.user, tenant, "floorplanarea", "view",
+    ).order_by("floor_plan__stack__name", "floor_plan__floor_order", "floor_plan__name",
+               "z", "created_at", "id"))
+
+    def row(a):
+        fp = a.floor_plan
+        linked = a.room.color if a.room_id else (
+            a.location.display_color if a.location_id else ""
+        )
+        return {
+            "id": str(a.pk), "name": str(a), "color": linked or a.color or "",
+            "floor_plan": {
+                "id": str(fp.pk), "name": fp.name,
+                "stack": {"id": str(fp.stack_id), "name": fp.stack.name}
+                if fp.stack_id else None,
+            },
+        }
+
+    out = {
+        "areas": [row(a) for a in areas], "area": None, "floor_plan": None,
+        "crop": None, "margin": 0, "outline": None, "contents": None,
+    }
+    if not areas:
+        return out
+    want = _uuid_param(request.query_params, "area")
+    area = next((a for a in areas if str(a.pk) == want), None) if want else areas[0]
+    if area is None:
+        raise NotFound("No such area of this plan.")
+    try:
+        margin = snaps.parse_margin(request.query_params.get("margin"))
+    except ValueError as exc:
+        raise ValidationError({"margin": [str(exc)]}) from exc
+    floor = FloorPlanViewSet.queryset.get(pk=area.floor_plan_id)
+    crop = snaps.area_crop(area, margin, floor.grid_width, floor.grid_height)
+    out.update({
+        "area": str(area.pk),
+        "floor_plan": FloorPlanSerializer(
+            floor, context=viewset.get_serializer_context()
+        ).data,
+        "crop": crop.as_dict(),
+        "margin": margin,
+        "outline": [[snaps._r(x - crop.x), snaps._r(y - crop.y)]
+                    for x, y in snaps.area_outline(area)],
+        "contents": plan_contents(request, tenant, floor, crop),
+    })
+    return out
+
+
+def _snap_tile(t, plan):
+    """(x, y, width, height, orientation) of ``t`` on the grid: a quarter
+    turn, whole cells at least one wide, inside the plan."""
+    w = min(plan.grid_width, max(1, round(t.width)))
+    h = min(plan.grid_height, max(1, round(t.height)))
+    x = min(max(0, round(t.x)), plan.grid_width - w)
+    y = min(max(0, round(t.y)), plan.grid_height - h)
+    o = (round(t.orientation / 90) * 90) % 360
+    return (float(x), float(y), float(w), float(h), o)
+
+
 class FloorPlanViewSet(TenantScopedViewSet):
+    """Floor plans' floors. ``?stack=<id>`` lists one floor plan's floors in
+    floor order; ``?location=``, ``?site=`` (site-wide floors and those of
+    its locations), ``?source=`` (the snapshots of a plan), ``?search=``
+    filter."""
+
     queryset = (
-        FloorPlan.objects.select_related("location", "location__site", "drawing")
+        FloorPlan.objects.select_related(
+            "site", "location", "location__site", "drawing", "stack", "source", "base_map",
+            "source__stack", "source_area__room", "source_area__location",
+        )
         .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
     )
@@ -9893,22 +11836,403 @@ class FloorPlanViewSet(TenantScopedViewSet):
             loc = self.request.query_params.get("location")
             if loc:
                 qs = qs.filter(location_id=loc)
-            site = self.request.query_params.get("site")
+            from .topology_views import _uuid_param
+
+            site = _uuid_param(self.request.query_params, "site")
             if site:
-                qs = qs.filter(location__site_id=site)
+                qs = qs.filter(site_id=site)
+
+            stack = _uuid_param(self.request.query_params, "stack")
+            if stack:
+                qs = qs.filter(stack_id=stack).order_by("floor_order", NATURAL_NAME, "pk")
+            # The snapshots (copies and live views) taken of one plan.
+            source = _uuid_param(self.request.query_params, "source")
+            if source:
+                qs = qs.filter(source_id=source)
         if self.get_serializer_class() is FloorPlanSerializer:
-            qs = qs.annotate(tile_count_annotated=_all_n(FloorPlan, "tiles"))
+            from django.db.models import Count, IntegerField, OuterRef, Subquery
+
+            floors = (
+                FloorPlan.objects.filter(base_map_id=OuterRef("base_map_id"))
+                .order_by().values("base_map_id").annotate(n=Count("pk")).values("n")
+            )
+            qs = qs.annotate(
+                tile_count_annotated=_visible_n(self, "tiles"),
+                base_map_floors=Subquery(floors, output_field=IntegerField()),
+            )
         return qs
 
     def perform_create(self, serializer):
         serializer.save(tenant=self._tenant_or_403())
+
+    def perform_destroy(self, instance):
+        """Delete the floor; a floor plan left without floors goes too.
+        Refused (409) while live views still show it."""
+        from .floor_plan_snapshots import refuse_while_viewed
+        from .floor_stacks import drop_if_empty
+
+        refuse_while_viewed([instance])
+        stack = instance.stack
+        with transaction.atomic():
+            instance.delete()
+            drop_if_empty(stack)
+
+    # ── Snapshots: live views read and write their source (api/floor_plan_snapshots.py)
+
+    def _resolved(self, plan, action="view"):
+        """``(source, crop)`` of a live view - whose source the reader must
+        be allowed to ``action`` too - or ``(plan, None)`` for a plan."""
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+
+        src, crop = snaps.resolve(plan)
+        if crop is None:
+            return plan, None
+        tenant = self._tenant_or_403()
+        if src.tenant_id != plan.tenant_id or not rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=src.pk), self.request.user, tenant,
+            "floorplan", action,
+        ).exists():
+            raise PermissionDenied(
+                f"You may not {action} {src.name}, the plan this view shows."
+            )
+        return src, crop
+
+    @staticmethod
+    def _not_on_view(plan, what="This"):
+        """A view takes its grid, background and drawing from its source:
+        refuse writing them on the view."""
+        from . import floor_plan_snapshots as snaps
+
+        if snaps.is_view(plan):
+            src = plan.source.name if plan.source_id else "its source"
+            raise ValidationError(
+                {"detail": f"{what} belongs to {src}, the plan this view shows. "
+                           "Change it there."}
+            )
+
+    @staticmethod
+    def _orphan(plan):
+        from . import floor_plan_snapshots as snaps
+
+        if snaps.is_view(plan) and plan.source_id is None:
+            raise ValidationError(
+                {"detail": "The plan this view showed is gone. Unlink or delete the view."}
+            )
+
+    def _stack_for(self, request, stack_id, action):
+        """The tenant's floor plan ``stack_id`` if the user may ``action`` it
+        (floor plans follow the ``floorplan`` permission), else a 400 that
+        reads like an unknown id."""
+        from auth_api import rbac
+
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        sid = _uuid_param({"stack_id": stack_id}, "stack_id") if stack_id else None
+        qs = FloorPlanStack.objects.filter(tenant=tenant, pk=sid) if sid else \
+            FloorPlanStack.objects.none()
+        stack = rbac.restrict_queryset(
+            qs.select_related("site", "location", "location__site"),
+            request.user, tenant, "floorplan", action,
+        ).first()
+        if stack is None:
+            raise ValidationError({"stack_id": ["Unknown floor plan."]})
+        return stack
+
+    @action(detail=True, methods=["post"], url_path="move")
+    def move(self, request, pk=None):
+        """Move this floor to another floor plan at the same site, on top of
+        its floors: ``{"stack_id": "<id>"}``. The floor plan it leaves goes
+        when it has no floors left."""
+        from .floor_stacks import move_floor
+
+        plan = self.get_object()
+        target = self._stack_for(request, request.data.get("stack_id"), "change")
+        with transaction.atomic():
+            move_floor(plan, target)
+            self._assert_bulk_write_in_site_scope([plan.pk])
+        plan.refresh_from_db()
+        return Response(self.get_serializer(plan).data)
+
+    @action(detail=True, methods=["post"], url_path="split")
+    def split(self, request, pk=None):
+        """Make this floor a floor plan of its own: ``{"name": "…"}``
+        (optional; default the floor's name). Answers the new floor plan."""
+        from auth_api import rbac
+
+        from .floor_stacks import split_floor
+
+        tenant = self._tenant_or_403()
+        if not rbac.has_action(request.user, tenant, "floorplan", "add"):
+            raise PermissionDenied("Not allowed.")
+        plan = self.get_object()
+        name = request.data.get("name")
+        with transaction.atomic():
+            stack = split_floor(plan, name if isinstance(name, str) else None)
+            self._assert_bulk_write_in_site_scope([plan.pk])
+        return Response(
+            FloorPlanStackSerializer(stack, context=self.get_serializer_context()).data,
+            status=drf_status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="snapshot")
+    def snapshot(self, request, pk=None):
+        """A rectangle of this plan as a plan of its own:
+        ``{"name", "crop": {"x", "y", "w", "h"}, "mode": "copy" | "view",
+        "target": "plan" | "floor"}`` - or, in place of ``crop``,
+        ``"area_id"`` (a room, location or area drawn on the plan) and
+        ``"margin"`` (cells, 0-50): the area's bounding box in whole cells; a
+        view taken so follows the area as it moves or changes size.
+        ``copy`` copies what the crop holds
+        (clipped at its edge where the geometry allows, the rest copied whole
+        and listed under ``crossing``), with the background cut to it;
+        ``view`` makes a live view of the crop (site-wide plans snapshot to
+        site-wide plans). ``target`` ``plan`` makes a
+        floor plan of its own at this plan's location, ``floor`` a new floor
+        of this floor plan. Needs view on this plan and ``floorplan · add``.
+        A snapshot of a view is a snapshot of the plan it shows."""
+        from audit.context import cause
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .floor_stacks import clash_message, name_clash, name_taken
+
+        tenant = self._tenant_or_403()
+        if not rbac.has_action(request.user, tenant, "floorplan", "add"):
+            raise PermissionDenied("Not allowed.")
+        plan = self.get_object()
+        self._orphan(plan)
+        body = request.data if hasattr(request.data, "get") else {}
+        mode = body.get("mode")
+        if mode not in ("copy", "view"):
+            raise ValidationError({"mode": ["copy or view."]})
+        target = body.get("target") or "plan"
+        if target not in ("plan", "floor"):
+            raise ValidationError({"target": ["plan or floor."]})
+        maxlen = FloorPlan._meta.get_field("name").max_length or 128
+        name = body.get("name")
+        name = name.strip() if isinstance(name, str) else ""
+        if not name:
+            raise ValidationError({"name": ["Name the snapshot."]})
+        if len(name) > maxlen:
+            raise ValidationError({"name": [f"At most {maxlen} characters."]})
+        src, outer = self._resolved(plan)
+        frame = outer if outer is not None else snaps.Crop(
+            0, 0, plan.grid_width, plan.grid_height
+        )
+        area, margin = None, 0
+        if body.get("area_id") not in (None, ""):
+            area, margin, crop = self._snapshot_area(request, src, frame, body)
+        else:
+            try:
+                crop = snaps.parse_crop(body.get("crop"), frame.w, frame.h)
+            except ValueError as exc:
+                raise ValidationError({"crop": [str(exc)]}) from exc
+            crop = snaps.Crop(crop.x + frame.x, crop.y + frame.y, crop.w, crop.h)
+        stack = None
+        if target == "floor":
+            stack = plan.stack
+            if stack is None:
+                raise ValidationError({"target": ["This plan is not a floor of a floor plan."]})
+            if not rbac.restrict_queryset(
+                FloorPlanStack.objects.filter(pk=stack.pk), request.user, tenant,
+                "floorplan", "add",
+            ).exists():
+                raise PermissionDenied("You may not add floors to this floor plan.")
+            if name_taken(stack, name):
+                raise ValidationError({"name": ["This floor plan already has a floor with that name."]})
+        elif name_clash(tenant.pk, src.site_id, src.location_id, name):
+            raise ValidationError({"name": [clash_message(src.location_id)]})
+        with transaction.atomic(), cause(f"Snapshot of {src.name}"[:255]):
+            dst, crossing = snaps.make_snapshot(
+                src, crop, name=name, mode=mode, stack=stack, area=area, margin=margin
+            )
+            self._assert_bulk_write_in_site_scope([dst.pk], "add")
+        data = FloorPlanSerializer(dst, context=self.get_serializer_context()).data
+        return Response({**data, "crossing": crossing}, status=drf_status.HTTP_201_CREATED)
+
+    def _snapshot_area(self, request, src, frame, body):
+        """``(area, margin, crop)`` for a snapshot taken of a room, location
+        or area drawn on ``src``: the area's bounding box in whole cells,
+        ``margin`` more on each side, inside ``frame`` (the view's rectangle
+        when the snapshot is taken through a view). The area must be one of
+        ``src``'s the reader may view."""
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        aid = _uuid_param({"area_id": body.get("area_id")}, "area_id")
+        area = rbac.restrict_queryset(
+            FloorPlanArea.objects.filter(floor_plan=src, floor_plan__tenant=tenant, pk=aid)
+            .select_related("room", "location"),
+            request.user, tenant, "floorplanarea", "view",
+        ).first() if aid else None
+        if area is None:
+            raise ValidationError({"area_id": ["Unknown area on this plan."]})
+        try:
+            margin = snaps.parse_margin(body.get("margin"))
+        except ValueError as exc:
+            raise ValidationError({"margin": [str(exc)]}) from exc
+        c = snaps.area_crop(area, margin, src.grid_width, src.grid_height)
+        x, y = max(c.x, frame.x), max(c.y, frame.y)
+        x2, y2 = min(c.x2, frame.x2), min(c.y2, frame.y2)
+        if x2 - x < 1 or y2 - y < 1:
+            raise ValidationError({"area_id": ["That area is not in this view."]})
+        return area, margin, snaps.Crop(x, y, x2 - x, y2 - y)
+
+    @action(detail=True, methods=["post"], url_path="back-link")
+    def back_link(self, request, pk=None):
+        """An area's or label's **Back button**: a label on the plan the
+        shape opens that opens this plan back. ``{"kind": "area" | "label",
+        "id", "on": true, "target_id", "text"}`` makes it (or moves it to
+        ``target_id``, or renames it); ``"on": false`` deletes it. On a live
+        view the label is written on the view's source, top-left inside the
+        crop, so the view shows it. Needs change on this plan and on the
+        target (its source, for a view). Answers ``{"back_label"}``."""
+        from audit.context import cause
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .serializers import _back_label_ref
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        here = self.get_object()
+        self._orphan(here)
+        plan, _crop = self._resolved(here, "change")
+        if not rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=here.pk), request.user, tenant, "floorplan", "change",
+        ).exists():
+            raise PermissionDenied("You may not change this plan.")
+        body = request.data if hasattr(request.data, "get") else {}
+        kind = body.get("kind")
+        if kind not in ("area", "label"):
+            raise ValidationError({"kind": ["area or label."]})
+        sid = _uuid_param({"id": body.get("id")}, "id")
+        rel, slug = (plan.areas, "floorplanarea") if kind == "area" \
+            else (plan.labels, "floorplanlabel")
+        shape = rbac.restrict_queryset(
+            rel.filter(pk=sid), request.user, tenant, slug, "view"
+        ).first() if sid else None
+        if shape is None:
+            raise ValidationError({"id": ["Unknown area or label on this plan. Save it first."]})
+        existing = list(FloorPlanLabel.objects.filter(
+            pair_id=shape.pk, floor_plan__tenant=tenant
+        ).select_related("floor_plan"))
+
+        def may_change(p):
+            return rbac.restrict_queryset(
+                FloorPlan.objects.filter(pk=p.pk), request.user, tenant, "floorplan", "change",
+            ).exists()
+
+        if not body.get("on"):
+            for lb in existing:
+                if not may_change(lb.floor_plan):
+                    raise PermissionDenied(f"You may not change {lb.floor_plan.name}.")
+            with transaction.atomic(), cause(f"Back button of {shape}"[:255]):
+                for lb in existing:
+                    lb.delete()
+            return Response({"back_label": None})
+
+        tid = _uuid_param({"target_id": body.get("target_id")}, "target_id")
+        target = FloorPlan.objects.filter(tenant=tenant, pk=tid).first() if tid else None
+        if target is None or not rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=target.pk), request.user, tenant, "floorplan", "view",
+        ).exists():
+            raise ValidationError({"target_id": ["Unknown floor plan."]})
+        if target.pk in (here.pk, plan.pk):
+            raise ValidationError({"target_id": ["Pick another plan than this one."]})
+        if not may_change(target):
+            raise PermissionDenied(f"You may not change {target.name}.")
+        self._orphan(target)
+        dst, crop = self._resolved(target, "change")
+        if snaps.is_view(target) and not may_change(dst):
+            raise PermissionDenied(f"You may not change {dst.name}.")
+        text = body.get("text")
+        text = text.replace("\r\n", "\n").strip() if isinstance(text, str) else ""
+        if len(text) > 500:
+            raise ValidationError({"text": ["At most 500 characters."]})
+        here_name = here.name if not here.stack_id or here.stack.name == here.name \
+            else f"{here.stack.name} · {here.name}"
+        keep = next((lb for lb in existing if lb.floor_plan_id == dst.pk), None)
+        with transaction.atomic(), cause(f"Back button of {shape}"[:255]):
+            for lb in existing:
+                if lb is not keep:
+                    lb.delete()
+            if keep is not None:
+                keep.opens = here
+                keep.shown_in = target if snaps.is_view(target) else None
+                if text:
+                    keep.text = text
+                keep.save()
+            else:
+                ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+                bx, by = ox + 0.5, oy + 0.5
+                # A view made from a room dims what lies outside it: the
+                # button goes just inside the room's outline instead.
+                area = snaps.following(target, dst) if crop is not None else None
+                spot = snaps.inside_corner(snaps.area_outline(area)) if area else None
+                if spot is not None:
+                    bx, by = spot
+                # The back button looks like the button that leads there; an
+                # area's gets a size that reads on the target at fit zoom. A
+                # copied size is held to the target too: a plate made for a
+                # 300 m campus would swamp an 80-cell room.
+                span = min(crop.w, crop.h) if crop is not None \
+                    else min(dst.grid_width, dst.grid_height)
+                fit = int(min(5000, max(300, span * (dst.cell_mm or 600) * 0.03)))
+                if isinstance(shape, FloorPlanLabel):
+                    style = {f: getattr(shape, f) for f in (
+                        "font_mm", "weight", "color", "plate", "plate_color")}
+                    style["font_mm"] = max(300, min(style["font_mm"] or 300, fit))
+                else:
+                    style = {"font_mm": fit}
+                style.setdefault("plate", True)
+                FloorPlanLabel.objects.create(
+                    floor_plan=dst, text=text or f"Back to {here_name}"[:500],
+                    x=min(bx, max(dst.grid_width - 1, 0)),
+                    y=min(by, max(dst.grid_height - 1, 0)),
+                    **style,
+                    opens=here, pair_id=shape.pk,
+                    shown_in=target if snaps.is_view(target) else None,
+                    z=(dst.labels.order_by("-z").values_list("z", flat=True).first() or 0) + 1,
+                )
+        return Response({"back_label": _back_label_ref({"request": request}, shape)})
+
+    @action(detail=True, methods=["post"], url_path="unlink")
+    def unlink(self, request, pk=None):
+        """Turn a live view into an independent copy of what it shows now:
+        the same plan (id, address, floor), holding copies of the source's
+        objects inside the crop and its own cut of the background. Needs
+        change on the view and view on the source. Cannot be undone."""
+        from audit.context import cause
+
+        from . import floor_plan_snapshots as snaps
+
+        plan = self.get_object()
+        if not snaps.is_view(plan):
+            raise ValidationError({"detail": "This plan is not a view."})
+        if plan.source_id is not None:
+            self._resolved(plan)
+        label = plan.source.name if plan.source_id else "a deleted plan"
+        with transaction.atomic(), cause(f"Unlinked from {label}"[:255]):
+            crossing = snaps.unlink(plan)
+        plan.refresh_from_db()
+        data = FloorPlanSerializer(plan, context=self.get_serializer_context()).data
+        return Response({**data, "crossing": crossing})
 
     @action(detail=True, methods=["post"], url_path="clone")
     def clone(self, request, pk=None):
         """Copy the plan with everything drawn on it: tiles (their object
         links included), trays (geometry only - the cables routed through the
         originals stay where they are), raised-floor areas and walls. The
-        copy lands in the same location as "<name> copy"."""
+        copy lands in the same location (or site-wide, at the same site) as
+        "<name> copy", a floor plan of its own (move it into another with
+        ``move/``)."""
         import os
 
         from django.core.files.base import ContentFile
@@ -9920,20 +12244,46 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if not rbac.has_action(request.user, tenant, "floorplan", "add"):
             return Response({"detail": "Not allowed."}, status=drf_status.HTTP_403_FORBIDDEN)
         src = self.get_object()
+        self._orphan(src)
         maxlen = FloorPlan._meta.get_field("name").max_length or 128
         base = f"{src.name} copy"[:maxlen]
         name, n = base, 2
+        from .floor_stacks import name_clash
+
         while FloorPlan.objects.filter(
-            tenant=tenant, location=src.location, name=name
-        ).exists():
+            tenant=tenant, site_id=src.site_id, location=src.location, name=name
+        ).exists() or name_clash(tenant.pk, src.site_id, src.location_id, name):
             suffix = f" {n}"
             name = base[: maxlen - len(suffix)] + suffix
             n += 1
-        skip = {"id", "numid", "name", "background_image", "created_at", "updated_at"}
+        skip = {"id", "numid", "name", "background_image", "created_at", "updated_at",
+                "stack", "floor_order", "base_map"}
+        from . import floor_plan_snapshots as snaps
+
+        if snaps.is_view(src):
+            # A copy of a view copies what it shows from its source.
+            root, crop = self._resolved(src)
+            with transaction.atomic():
+                stack = FloorPlanStack.objects.create(
+                    tenant=tenant, site_id=src.site_id, location=src.location, name=name,
+                )
+                dst, _crossing = snaps.make_snapshot(
+                    root, crop, name=name, mode="copy", stack=stack
+                )
+            return Response(
+                FloorPlanSerializer(dst, context=self.get_serializer_context()).data,
+                status=drf_status.HTTP_201_CREATED,
+            )
         with transaction.atomic():
-            dst = FloorPlan(tenant=tenant, location=src.location, name=name)
+            stack = FloorPlanStack.objects.create(
+                tenant=tenant, site_id=src.site_id, location=src.location, name=name,
+            )
+            dst = FloorPlan(
+                tenant=tenant, site_id=src.site_id, location=src.location, name=name,
+                stack=stack,
+            )
             for f in FloorPlan._meta.concrete_fields:
-                if f.name in skip or f.name in ("tenant", "location"):
+                if f.name in skip or f.name in ("tenant", "site", "location"):
                     continue
                 setattr(dst, f.attname, getattr(src, f.attname))
             if src.background_image:
@@ -9943,14 +12293,34 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     ContentFile(src.background_image.read()),
                     save=False,
                 )
+            # A map of its own: updating the clone's leaves the original's.
+            from .floor_plan_layers import copy_map
+
+            copy_map(src, dst)
             dst.save()
             dst.tags.set(tags_of(src))
-            for rel in ("tiles", "trays", "raised_floor_areas", "walls"):
+            # Areas before walls: a wall made from an area stays linked to
+            # the clone's copy of it.
+            area_ids: dict = {}
+            for rel in ("tiles", "trays", "raised_floor_areas", "areas", "walls", "labels"):
                 for obj in getattr(src, rel).all():
+                    old_pk = obj.pk
                     obj.pk = None
                     obj.id = None
                     obj.floor_plan = dst
+                    if rel == "labels":
+                        # The clone's labels open what the original's do,
+                        # but none is another plan's back label.
+                        obj.pair_id = None
+                    if rel == "walls":
+                        obj.source_area_id = area_ids.get(obj.source_area_id)
+                    if rel == "tiles":
+                        # A cloned riser is unpaired: its pair stays the
+                        # original's.
+                        obj.riser_to_id = None
                     obj.save()
+                    if rel == "areas":
+                        area_ids[old_pk] = obj.pk
             _clone_drawing(src, dst)
         return Response(
             FloorPlanSerializer(dst, context=self.get_serializer_context()).data,
@@ -9990,7 +12360,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         plan = self.get_object()
         if request.method == "GET":
+            from . import floor_plan_snapshots as snaps
+
+            if snaps.is_view(plan):
+                src, crop = self._resolved(plan)
+                body = snaps.view_drawing(
+                    plan, src, crop, self.get_serializer_context()
+                ) if crop is not None else None
+                if body is None:
+                    raise NotFound("This plan has no drawing.")
+                return Response(body)
             return self._drawing_response(self._drawing_or_404(plan))
+        self._not_on_view(plan, "The drawing")
         if request.method == "POST":
             return self._drawing_upload(request, plan)
         d = self._drawing_or_404(plan)
@@ -10084,6 +12465,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         from .models import FloorPlanDrawing
 
         plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
         d = self._drawing_or_404(plan)
         if d.source_kind == "dwg":
             try:
@@ -10112,6 +12494,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         from .serializers import FloorPlanDrawingCalibrationSerializer
 
         plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
         d = self._drawing_or_404(plan)
         if request.method == "DELETE":
             d.calibration = None
@@ -10147,6 +12530,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         calibration - the newer choice wins; ``null`` or DELETE trusts the
         file again. A calibration made afterwards still wins over it."""
         plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
         d = self._drawing_or_404(plan)
         if request.method == "DELETE":
             units = None
@@ -10167,12 +12551,14 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """Size the grid to the drawing: the drawing moves to the plan's
         origin and the grid becomes the cells that cover it. Optional
         ``cell_mm`` sets the cell size first. 400 with ``min_cell_mm`` when
-        the drawing needs more than 512 cells a side."""
+        the drawing needs more than ``FLOOR_PLAN_MAX_GRID`` cells a side."""
         from django.db import transaction
 
         from . import cad_render
+        from .models import FLOOR_PLAN_MAX_GRID
 
         plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
         d = self._drawing_or_404(plan)
         if d.status != "ready" or not d.extents:
             return Response({"detail": "The drawing is not processed yet."}, status=409)
@@ -10188,7 +12574,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if not f["fits"]:
             return Response(
                 {"detail": f"The drawing needs cells of at least {f['min_cell_mm']} mm "
-                           "to fit 512 cells.",
+                           f"to fit {FLOOR_PLAN_MAX_GRID} cells.",
                  "min_cell_mm": f["min_cell_mm"]},
                 status=400,
             )
@@ -10205,6 +12591,40 @@ class FloorPlanViewSet(TenantScopedViewSet):
             "drawing": self._drawing_response(d).data,
         })
 
+    @action(detail=True, methods=["get"], url_path="drawing/loops")
+    def drawing_loops(self, request, pk=None):
+        """The smallest closed shape of the drawing round the plan point
+        ``?x=&y=`` (in cells), for Detect outline: ``{"points": [[x, y],
+        ...], "layer"}`` in cells, its corners the drawing's own (at most
+        200). 404 when no closed shape of a shown layer holds the point;
+        409 until the drawing is processed. Read from the processed
+        drawing, cached per render (api.cad_loops)."""
+        import math
+
+        from . import cad_loops
+
+        plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
+        d = self._drawing_or_404(plan)
+        if d.status != "ready" or not d.rendered or not d.extents:
+            return Response({"detail": "The drawing is not processed yet."}, status=409)
+        point = []
+        for key in ("x", "y"):
+            try:
+                v = float(request.query_params.get(key, ""))
+            except (TypeError, ValueError):
+                v = math.nan
+            if not math.isfinite(v) or abs(v) > 100_000:
+                return Response({key: ["A number of cells."]}, status=400)
+            point.append(v)
+        try:
+            found = cad_loops.pick(d, plan.cell_mm, point[0], point[1])
+        except OSError:
+            return Response({"detail": "The drawing's file is missing."}, status=409)
+        if found is None:
+            raise NotFound("No closed shape here.")
+        return Response(found)
+
     @action(detail=True, methods=["get", "post"], url_path="drawing/render")
     def drawing_render(self, request, pk=None):
         """A server render with layers left out, for drawings too large to
@@ -10212,12 +12632,20 @@ class FloorPlanViewSet(TenantScopedViewSet):
         bool}`` returns the cached render (200) or queues one (202); GET
         ``?key=`` reports on it."""
         from . import cad_render
+        from . import floor_plan_snapshots as snaps
         from .serializers import FloorPlanDrawingPlacementSerializer
 
         plan = self.get_object()
-        d = self._drawing_or_404(plan)
+        src, crop = self._resolved(plan)
+        d = self._drawing_or_404(src)
         if d.status != "ready":
             return Response({"detail": "The drawing is not processed yet."}, status=409)
+        clip = None
+        if crop is not None:
+            cut = snaps.drawing_clip(d, src.cell_mm, crop)
+            if cut is None:
+                raise NotFound("This plan has no drawing.")
+            clip = cut[0]
         if request.method == "GET":
             key = request.query_params.get("key", "")
             entry = (d.variants or {}).get(key)
@@ -10233,7 +12661,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         hidden = ser.validated_data.get("hidden_layers", [])
         hide_text = ser.validated_data.get("hide_text", False)
         try:
-            key, entry, queued = cad_render.request_variant(d, hidden, hide_text)
+            key, entry, queued = cad_render.request_variant(d, hidden, hide_text, clip)
         except cad_render.TooManyRenders:
             return Response(
                 {"detail": "Other renders of this drawing are still queued. Try again shortly."},
@@ -10274,6 +12702,30 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """The PDF an ``export/pdf/?print=1`` kept, behind its print link."""
         return floor_plan_pdf.export_pdf_file(request, self.get_object(), token)
 
+    @floor_plan_report.report_schema
+    @action(detail=True, methods=["post"], url_path="export/report")
+    def export_report(self, request, pk=None):
+        """The view, floor, room or building as one PDF report: plan sheets,
+        cable schedule, inventory and ports (api.floor_plan_report)."""
+        return floor_plan_report.export_report(
+            request, self.get_object(), self._tenant_or_403(), self._resolved
+        )
+
+    @floor_plan_report.tables_schema
+    @action(detail=True, methods=["post"], url_path="export/report/tables")
+    def export_report_tables(self, request, pk=None):
+        """The report's tables as JSON, for its CSV and XLSX."""
+        return floor_plan_report.export_tables(
+            request, self.get_object(), self._tenant_or_403(), self._resolved
+        )
+
+    @floor_plan_report.report_file_schema
+    @action(detail=True, methods=["get"],
+            url_path=r"export/report/(?P<token>[A-Za-z0-9_-]{24,64})")
+    def export_report_file(self, request, pk=None, token=None):
+        """The report a ``export/report/?print=1`` kept, behind its link."""
+        return floor_plan_report.export_report_file(request, self.get_object(), token)
+
     @action(detail=False, methods=["get"], url_path="drawing-support")
     def drawing_support(self, request):
         """What uploads the server takes: DXF always, DWG when a converter is
@@ -10290,28 +12742,42 @@ class FloorPlanViewSet(TenantScopedViewSet):
     def state(self, request, pk=None):
         """Live per-tile metrics for linked objects, keyed by tile id.
 
-        Rack tiles → space (used_units/u_height), power rollup, and the worst
-        monitoring status across the rack's devices' IPs; device tiles →
-        object status + monitoring rollup. The canvas polls/refetches this to
-        paint overlays without re-reading the whole plan."""
+        Rack tiles → space (used_units/u_height), power and cooling rollups,
+        and the worst monitoring status across the rack's devices' IPs;
+        device tiles → object status + monitoring rollup. The canvas
+        polls/refetches this to paint overlays without re-reading the whole
+        plan. Only the tiles the reader may view whose object they may view
+        are answered (#453)."""
         from django.utils import timezone
 
+        from auth_api import rbac
         from monitoring.models import CheckState
         from monitoring.rollup import worst_status
 
+        from . import floor_plan_snapshots as snaps
+        from .floor_plan_placement import TileLinks
+
         plan = self.get_object()
-        tiles = list(
-            plan.tiles.exclude(rack=None, device=None, cabinet=None).select_related(
+        src, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        tiles = list(rbac.restrict_queryset(
+            src.tiles.exclude(rack=None, device=None, cabinet=None).select_related(
                 "rack", "device__status"
-            )
-        )
+            ),
+            request.user, tenant, "floorplantile", "view",
+        ))
+        links = TileLinks(request.user, tenant)
+        links.prime(tiles)
+        tiles = [t for t in tiles if not links.hidden(t)]
+        if crop is not None:
+            tiles = [t for t, _edge in snaps.in_crop("tiles", tiles, crop)]
         rack_ids = {t.rack_id for t in tiles if t.rack_id}
         # The racks with what their figures read (api.capacity): the poll
         # costs the same however many devices the plan holds.
         racks = {
             r.id: r
             for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
-                capacity.racked_devices_prefetch(), "power_feeds"
+                capacity.racked_devices_prefetch(), "power_feeds", "cooling_feeds"
             )
         }
         cabinets = {
@@ -10356,6 +12822,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     "used_units": rs.get_used_units(rack),
                     "u_height": rack.u_height,
                     "power": rs.get_power(rack),
+                    "cooling": rs.get_cooling(rack),
                     "total_weight_kg": rs.get_total_weight_kg(rack),
                     "max_weight_kg": rs.get_max_weight_kg(rack),
                     "device_count": len(rack_devices[rack.id]),
@@ -10377,16 +12844,196 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 }
         return Response({"as_of": timezone.now().isoformat(), "tiles": out})
 
+    @action(detail=True, methods=["get"], url_path="contents")
+    def contents(self, request, pk=None):
+        """Everything the 2D editor draws, in one read: every tile, tray, wall,
+        raised-floor area, drawn area (``areas``: rooms, locations) and label
+        of the plan, unpaginated, each kind narrowed to
+        the rows the reader may view (as its own list endpoint narrows them).
+        Rows keep their list-endpoint shape. ``version`` is the newest
+        ``updated_at`` across them (null for an empty plan). The query count
+        stays flat however many rows the plan holds."""
+        plan = self.get_object()
+        src, crop = self._resolved(plan)
+        view = plan if crop is not None and plan.pk != src.pk else None
+        return Response(
+            plan_contents(request, _get_active_tenant(request), src, crop, view=view)
+        )
+
+    @action(detail=True, methods=["get"], url_path="placeable")
+    def placeable(self, request, pk=None):
+        """What the editor's Place picker offers: the devices, racks and
+        cabinets of the plan's site the reader may view, ranked (``rank`` 0:
+        in ``?near_room=`` or ``?near_location=`` - the area near the pointer; 1: in
+        the floor's location or one inside it - on a site-wide floor, the
+        location of the near room; 2: the rest of the site), each
+        with its room and where it is already placed. ``?q=`` filters by
+        name, ``?kind=device,rack,cabinet`` by kind, ``?unplaced=1`` keeps the
+        floor's objects placed on no plan (``&include_here=1``: on no other
+        plan, those on this one last); ``?limit=`` (default 50, at most
+        200). A device in a rack or a cabinet is placed with it and is not
+        offered. On a plan made from the Site map a device reads
+        ``gps_cell`` when its GPS position is on the grid; ``?gps=1`` keeps
+        only those. ``?ids=<uuid>,...`` keeps only those objects (the far
+        ends of the cables with one end here)."""
+        from auth_api import rbac
+
+        from .floor_plan_placement import PLACEABLE, PLACEABLE_MAX, placeable
+        from .topology_views import _uuid_list_param, _uuid_param
+
+        plan = self.get_object()
+        src, crop = self._resolved(plan)
+        tenant = self._tenant_or_403()
+        params = request.query_params
+        near_room = near_location = None
+        room_id = _uuid_param(params, "near_room")
+        if room_id:
+            near_room = rbac.restrict_queryset(
+                Room.objects.filter(tenant=tenant, pk=room_id).select_related("location"),
+                request.user, tenant, "room", "view",
+            ).first()
+        loc_id = _uuid_param(params, "near_location")
+        if loc_id:
+            near_location = rbac.restrict_queryset(
+                Location.objects.filter(tenant=tenant, pk=loc_id),
+                request.user, tenant, "location", "view",
+            ).first()
+        kinds = {k for k in (params.get("kind") or "").split(",") if k in PLACEABLE}
+        try:
+            limit = max(1, min(PLACEABLE_MAX, int(params.get("limit") or 50)))
+        except ValueError:
+            limit = 50
+        rows = placeable(
+            plan, request.user, tenant,
+            q=(params.get("q") or "").strip()[:128],
+            kinds=kinds or None,
+            near_room=near_room,
+            near_location=near_location,
+            unplaced=params.get("unplaced") in ("1", "true"),
+            include_here=params.get("include_here") in ("1", "true"),
+            limit=limit,
+            view=(src, crop) if crop is not None else None,
+            gps_only=params.get("gps") in ("1", "true"),
+            ids=_uuid_list_param(params, "ids", limit=PLACEABLE_MAX) or None,
+        )
+        return Response({"results": rows})
+
+    @action(detail=True, methods=["post"], url_path="assign-rooms")
+    def assign_rooms(self, request, pk=None):
+        """Rooms from the areas drawn on this floor - never set by placing.
+        ``{"dry_run": true}`` (or no ``apply``) lists each placed device,
+        rack or cabinet whose tile stands in a room's area while it names
+        another room, with ``can_change``. ``{"apply": [{"kind", "id"}]}`` sets
+        the room of those listed ones the user may change - each write
+        validated and recorded in the change log like an edit of the object -
+        and answers ``{"applied", "skipped", "objects"}``."""
+        from . import floor_plan_snapshots as snaps
+        from .floor_plan_placement import room_mismatches
+
+        plan = self.get_object()
+        src, crop = self._resolved(plan)
+        tenant = self._tenant_or_403()
+
+        def mismatches():
+            rows = room_mismatches(src, request.user, tenant)
+            if crop is None:
+                return rows
+            shown = {str(t.pk) for t, _e in snaps.in_crop("tiles", src.tiles.all(), crop)}
+            return [r for r in rows if r["tile_id"] in shown]
+
+        found = mismatches()
+        apply = request.data.get("apply")
+        if request.data.get("dry_run") in (True, "true", "1", 1) or apply is None:
+            return Response({"objects": found})
+        if not isinstance(apply, list):
+            raise ValidationError({"apply": "A list of {kind, id}."})
+        by_key = {(r["kind"], r["id"]): r for r in found}
+        serializers_for = {
+            "device": (Device, DeviceSerializer),
+            "rack": (Rack, RackSerializer),
+            "cabinet": (Cabinet, CabinetSerializer),
+        }
+        applied, skipped = [], []
+        with transaction.atomic():
+            for item in apply:
+                key = (item.get("kind"), str(item.get("id"))) if isinstance(item, dict) \
+                    else (None, None)
+                row = by_key.get(key)
+                if row is None:
+                    skipped.append({"kind": key[0], "id": key[1],
+                                    "reason": "Not in a room's area here."})
+                    continue
+                if not row["can_change"]:
+                    skipped.append({"kind": key[0], "id": key[1],
+                                    "reason": "You may not change it."})
+                    continue
+                model, ser_cls = serializers_for[row["kind"]]
+                obj = model.objects.get(tenant=tenant, pk=row["id"])
+                ser = ser_cls(
+                    obj, data={"room_id": row["area_room"]["id"]}, partial=True,
+                    context={"request": request},
+                )
+                if not ser.is_valid():
+                    skipped.append({"kind": key[0], "id": key[1],
+                                    "reason": "; ".join(
+                                        str(m) for v in ser.errors.values()
+                                        for m in (v if isinstance(v, list) else [v])
+                                    )})
+                    continue
+                ser.save()
+                applied.append({"kind": row["kind"], "id": row["id"],
+                                "room": row["area_room"]})
+        return Response({
+            "applied": applied,
+            "skipped": skipped,
+            "objects": mismatches(),
+        })
+
     # `route` is a POST (it carries a body) but computes only - view, not change.
     # `drawing_render` asks for a cached server render with layers hidden:
     # what a viewer toggling layers on a large drawing needs. A PDF of the
     # plan is a way of looking at it.
     rbac_action_map = {
         "route": "view",
+        "cable_plan": "view",
+        "cable_plan_ports": "view",
         "drawing_render": "view",
         "export_pdf": "view",
         "export_pdf_file": "view",
+        "cable_schedule_pdf": "view",
+        "export_report": "view",
+        "export_report_tables": "view",
+        "export_report_file": "view",
+        "bulk": "change",
+        "snap_all": "change",
+        # Reads of the site's objects (each by its own view grant), and room
+        # writes checked per object against its own change grant.
+        "placeable": "view",
+        "assign_rooms": "view",
+        # A snapshot reads this plan (and needs floorplan · add, checked in
+        # the action); unlinking rewrites the view.
+        "snapshot": "view",
+        "unlink": "change",
+        "from_map": "add",
+        "expand": "change",
+        "import_outlines": "change",
     }
+
+    @extend_schema(
+        summary="A site-wide floor plan from a view of the Site map",
+        request={"multipart/form-data": FromMapRequestSerializer,
+                 "application/json": FromMapRequestSerializer},
+        responses={201: FloorPlanSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="from-map",
+            parser_classes=[MultiPartParser, FormParser, ObjectJSONParser])
+    def from_map(self, request):
+        """A site-wide floor plan spanning ``bbox`` at true scale, with the
+        browser's render of the view as its background and the site's
+        building outlines inside it as areas (api/floor_plan_from_map.py)."""
+        from .floor_plan_from_map import create_from_map
+
+        return Response(create_from_map(self, request), status=drf_status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="route")
     def route(self, request, pk=None):
@@ -10399,25 +13046,29 @@ class FloorPlanViewSet(TenantScopedViewSet):
         drops + slack)."""
         from .pathfinding import (
             estimate_length_m, rack_drop_mm, route_through_trays,
-            underfloor_plenum_mm,
+            tray_elevations, underfloor_plenum_mm,
         )
 
         plan = self.get_object()
+        view_plan = plan
+        plan, crop = self._resolved(plan)
         ends, err = _resolve_route_endpoints(plan, request.data or {})
         if err:
             return Response({"detail": err}, status=400)
         a, b, rack_a, rack_b = ends
 
         trays = list(plan.trays.all())
-        result = route_through_trays(a, b, [t.points for t in trays])
-        used = [trays[i] for i in result.tray_indexes]
-
         # Plenum-aware drops: an underfloor run dives as deep as the raised
         # floor beneath it, not a constant.
-        area_rects = [
-            (a.x, a.y, a.width, a.height, a.plenum_mm)
-            for a in plan.raised_floor_areas.all()
-        ]
+        from .raised_floor_geometry import outline_of
+
+        area_rects = [(outline_of(r), r.plenum_mm) for r in plan.raised_floor_areas.all()]
+        # Runs crossing at different heights do not join.
+        result = route_through_trays(
+            a, b, [t.points for t in trays],
+            elevations=tray_elevations(trays, plan.ceiling_mm, area_rects),
+        )
+        used = [trays[i] for i in result.tray_indexes]
 
         def _drop(rack, tray):
             if tray is None:
@@ -10433,9 +13084,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
         length_m = estimate_length_m(
             result.run_cells, plan.cell_mm, drop_a, drop_b
         )
+        dx, dy = (-crop.x, -crop.y) if crop is not None and view_plan is not plan else (0, 0)
         return Response({
             "reachable": result.reachable,
-            "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
+            "points": [[round(x + dx, 3), round(y + dy, 3)] for x, y in result.points],
             "tray_ids": [str(t.id) for t in used],
             "tray_names": [t.name for t in used],
             "length_m": length_m,
@@ -10443,29 +13095,798 @@ class FloorPlanViewSet(TenantScopedViewSet):
             "drops_mm": [round(drop_a), round(drop_b)],
         })
 
+    #: Objects, draft tiles and draft trays one ``cable-plan`` preview takes.
+    CABLE_PLAN_OBJECTS_MAX = 64
+    CABLE_PLAN_TILES_MAX = 256
+    CABLE_PLAN_TRAYS_MAX = 64
+
+    @action(detail=True, methods=["post"], url_path="cable-plan")
+    def cable_plan(self, request, pk=None):
+        """Preview the routes of cables on this plan - nothing is stored.
+
+        Body (each key optional):
+
+        - ``cable_ids``: the cables to route. Without it, ``objects``
+          (``[{"kind": "device"|"rack"|"cabinet", "id"}]``, what was just
+          placed) routes every cable on those objects' devices - "After
+          placing" - including those leaving the floor (``off_floor``, no
+          route) but not those between two of them on one tile. Without
+          either: every cable with both ends placed here (at most
+          ``ROUTE_MAX``; ``truncated`` says when there were more).
+        - the unsaved draft: ``positions`` (``{tile_id: {x, y, width?,
+          height?}}``), ``new_tiles`` (``[{"id", x, y, width, height,
+          "link_kind", "link_id"}]``, the draft's own ids), ``removed_tiles``
+          (ids) and ``draft_trays`` (``[{"id", "points", "level",
+          "elevation_mm"?}]``; one with a saved tray's id is that tray as
+          the draft reshaped it) and ``removed_trays`` (ids of saved trays
+          the draft deletes). A stored path riding a tray the draft changed
+          reads ``stale``.
+        - routing: ``tray_ids`` routes through only those trays;
+          ``choices`` (``{cable_id: {"via": "auto"|"trays"|"suggest"|
+          "direct", "tray_ids"?}}``) per cable; ``suggest_runs`` suggests a
+          run for each cable no tray path serves (``cable_routing.
+          plan_batch``), kept as a new tray unless ``keep_runs`` is false;
+          ``run_level`` (``overhead``/``underfloor``) forces its level.
+
+        Per cable: ``route`` (the computed path in the stored shape, or null
+        with ``reason``), ``via`` (``trays``, ``suggest``, ``direct``),
+        ``suggestions`` (the run keys it uses), ``path`` (the stored one, if
+        any), the cable's ``length`` / ``length_unit`` / ``length_source`` /
+        ``cable_version``, ``delta_mm`` (computed minus stored length),
+        ``write_length`` (whether a save would fill the length without being
+        asked to replace it), ``can_change``, and with ``objects`` ``far``
+        (the other end's ``device_name`` and ``port``, or ``hidden``) and
+        ``off_floor``. Plus ``suggestions`` (``[{"key", "level",
+        "elevation_mm", "points", "run", "cable_ids"}]``; ``run`` is the new
+        tray's points, null when nothing new is needed), the plan's
+        ``cell_mm`` and ``scale_source`` (``assumed`` when a CAD drawing's
+        scale was never set).
+
+        A cable whose other end is placed on another floor a riser of this
+        plan pairs with (``cable_ids`` or ``objects``) is routed to the
+        riser: ``via`` ``riser``, its ``route`` this floor's part carrying
+        ``riser`` (the riser, its pair and that floor) and the whole length
+        over both floors. One that leaves the floor otherwise names the
+        nearest riser in ``via_riser``.
+
+        ``mode: "new"`` plans new cables instead (Connect to…):
+        :meth:`_connect_preview`."""
+        import uuid as _uuid
+
+        from auth_api import rbac
+
+        from .cable_routing import (
+            ROUTE_MAX,
+            PlanRouter,
+            length_writable,
+            path_data,
+            plan_batch,
+            route_data,
+            stored_length_mm,
+        )
+        from .cable_scope import restrict_cables, viewable_cable_ids
+        from .models import Cable, CableTermination, Device, FloorPlanCablePath
+
+        view = self.get_object()
+        plan, crop = self._resolved(view)
+        tenant = self._tenant_or_403()
+        body = request.data or {}
+        ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+        positions = body.get("positions") or {}
+        if not isinstance(positions, dict):
+            raise ValidationError({"positions": "An object of tile id → {x, y}."})
+        if crop is not None:
+            positions = {
+                k: {**v, **{key: v[key] + d for key, d in (("x", ox), ("y", oy))
+                            if isinstance(v.get(key), (int, float))}}
+                for k, v in positions.items() if isinstance(v, dict)
+            }
+        tray_ids = body.get("tray_ids")
+        if tray_ids is not None and not isinstance(tray_ids, list):
+            raise ValidationError({"tray_ids": "A list of tray ids."})
+        choices = body.get("choices")
+        if choices is None:
+            choices = {}
+        if not isinstance(choices, dict) or not all(
+            isinstance(v, dict) for v in choices.values()
+        ):
+            raise ValidationError({"choices": "An object of cable id → {via, tray_ids?}."})
+        run_level = body.get("run_level") or None
+        if run_level not in (None, "overhead", "underfloor"):
+            raise ValidationError({"run_level": "overhead or underfloor."})
+        new_tiles = self._draft_tiles(request, tenant, body.get("new_tiles"), ox, oy)
+        removed = body.get("removed_tiles") or []
+        if not isinstance(removed, list):
+            raise ValidationError({"removed_tiles": "A list of tile ids."})
+        draft_trays = self._draft_trays(body.get("draft_trays"), ox, oy)
+        removed_trays = body.get("removed_trays") or []
+        if not isinstance(removed_trays, list) or not all(
+            isinstance(t, str) for t in removed_trays
+        ):
+            raise ValidationError({"removed_trays": "A list of tray ids."})
+
+        router = PlanRouter(
+            plan, positions=positions, new_tiles=new_tiles, removed=removed,
+            extra_trays=draft_trays, removed_trays=removed_trays,
+        )
+        if body.get("mode") == "new":
+            return self._connect_preview(request, tenant, plan, crop, router, body, choices,
+                                         run_level)
+        ids = body.get("cable_ids")
+        objects = body.get("objects")
+        dropped: set = set()
+        truncated = False
+
+        def cables_on(device_ids) -> tuple[set, set]:
+            """The tenant's cables with an end on ``device_ids``: (A ids, B ids)."""
+            on = Q()
+            for field in CableTermination.POINT_FIELDS:
+                if field not in ("power_feed", "circuit_termination"):
+                    on |= Q(**{f"{field}__device_id__in": device_ids})
+            return tuple(
+                set(CableTermination.objects.filter(on, end=end, cable__tenant=tenant)
+                    .values_list("cable_id", flat=True))
+                for end in ("A", "B")
+            )
+
+        if ids is None and objects is not None:
+            dropped = self._dropped_devices(request, tenant, objects)
+            a_ids, b_ids = cables_on(dropped)
+            candidates = a_ids | b_ids
+        elif ids is None:
+            # Every cable with both ends on a device placed here.
+            placed = set(router.device_tile)
+            if router.rack_tile or router.cabinet_tile:
+                placed.update(Device.objects.filter(
+                    Q(rack_id__in=router.rack_tile) | Q(cabinet_id__in=router.cabinet_tile)
+                ).values_list("id", flat=True))
+            a_ids, b_ids = cables_on(placed)
+            candidates = a_ids & b_ids
+        else:
+            if not isinstance(ids, list) or len(ids) > ROUTE_MAX:
+                raise ValidationError(
+                    {"cable_ids": f"A list of at most {ROUTE_MAX} cable ids."}
+                )
+            try:
+                wanted = {_uuid.UUID(str(i)) for i in ids}
+            except ValueError:
+                raise ValidationError({"cable_ids": "Cable ids are UUIDs."}) from None
+            candidates = set(
+                Cable.objects.filter(tenant=tenant, pk__in=wanted).values_list("pk", flat=True)
+            )
+        visible = viewable_cable_ids(request.user, tenant, candidates)
+        cables = list(
+            Cable.objects.filter(pk__in=visible).select_related("status")
+            .order_by("created_at", "pk")
+        )
+        if len(cables) > ROUTE_MAX:
+            cables, truncated = cables[:ROUTE_MAX], True
+        router.prime(cables)
+        if dropped:
+            # Not the cables between two of the objects on one tile.
+            cables = [
+                c for c in cables
+                if router.pairs(c) or not (router.ends(c)["A"] and router.ends(c)["B"])
+            ]
+        changeable = set(
+            restrict_cables(
+                Cable.objects.filter(pk__in=[c.pk for c in cables], tenant=tenant),
+                request.user, tenant, "change",
+            ).values_list("pk", flat=True)
+        )
+        stored = {
+            p.cable_id: p
+            for p in rbac.restrict_queryset(
+                FloorPlanCablePath.objects.filter(
+                    floor_plan=plan, cable_id__in=[c.pk for c in cables]
+                ),
+                request.user, tenant, "floorplancablepath", "view",
+            )
+        }
+        router.prime_paths(stored.values())
+        if tray_ids is not None:
+            choices = {
+                str(c.pk): {"via": "trays", "tray_ids": tray_ids}
+                for c in cables if str(c.pk) not in choices
+            } | choices
+        routes, suggestions = plan_batch(
+            router, cables, choices=choices, suggest=bool(body.get("suggest_runs")),
+            keep_runs=body.get("keep_runs", True) is not False, level=run_level,
+        )
+        far = self._far_ends(request, tenant, router, cables, dropped) if dropped else {}
+        # Cables between floors: routed to a riser on each floor when the
+        # other end is placed on a floor a riser of this plan pairs with.
+        via_riser: dict = {}
+        if ids is not None or dropped:
+            other_floors: dict = {}
+            seen_plans: dict = {}
+
+            def may_view(p):
+                if p.pk not in seen_plans:
+                    seen_plans[p.pk] = rbac.can_act_on(request.user, tenant, "floorplan", "view", p)
+                return seen_plans[p.pk]
+
+            for cable in cables:
+                if routes.get(cable.pk) is None and router.off_floor_side(cable):
+                    res = router.via_riser(cable, routers=other_floors, allow=may_view)
+                    if res is not None:
+                        via_riser[cable.pk] = res
+        out = []
+        for cable in cables:
+            route = routes.get(cable.pk)
+            if route is None and cable.pk in via_riser:
+                route = {**via_riser[cable.pk]["near"], "via": "riser"}
+            have = stored_length_mm(cable)
+            row = {
+                "id": str(cable.pk),
+                "label": str(cable),
+                "length": float(cable.length) if cable.length is not None else None,
+                "length_unit": cable.length_unit or "m",
+                "length_source": cable.length_source,
+                "cable_version": cable.updated_at.isoformat() if cable.updated_at else None,
+                "can_change": cable.pk in changeable,
+                "path": (
+                    path_data(stored[cable.pk], stale=router.stale(stored[cable.pk]),
+                              dx=-ox, dy=-oy)
+                    if cable.pk in stored else None
+                ),
+                "route": None,
+                "via": None,
+                "suggestions": [],
+                "reason": "",
+                "delta_mm": None,
+                "write_length": False,
+            }
+            if dropped:
+                row["far"] = far.get(cable.pk, [])
+                row["off_floor"] = route is None
+            if route is None:
+                ends = router.ends(cable)
+                row["reason"] = (
+                    "Both ends stand on one tile." if ends["A"] and ends["B"]
+                    else "Leaves this floor." if dropped
+                    else "An end is not placed on this plan."
+                )
+                riser = router.nearest_riser(cable)
+                if riser is not None:
+                    # Not routable yet (the far end is not placed on a floor
+                    # a riser pairs with), but it would leave by this riser.
+                    row["via_riser"] = riser.label or "Riser"
+                    if dropped:
+                        row["reason"] = f"Leaves this floor via {row['via_riser']}."
+            else:
+                row["route"] = route_data(route, dx=-ox, dy=-oy)
+                row["reachable"] = route["reachable"]
+                row["via"] = route["via"]
+                row["suggestions"] = route.get("suggestions", [])
+                if have is not None:
+                    row["delta_mm"] = round(route["length_mm"] - have)
+                row["write_length"] = length_writable(cable)
+            out.append(row)
+        drawing = getattr(plan, "drawing", None)
+        return Response({
+            "cables": out,
+            "suggestions": [
+                {
+                    **s,
+                    "points": [[x - ox, y - oy] for x, y in s["points"]],
+                    "run": [[x - ox, y - oy] for x, y in s["run"]] if s["run"] else None,
+                }
+                for s in suggestions
+            ],
+            "truncated": truncated,
+            "hidden_count": len(candidates - visible),
+            "cell_mm": plan.cell_mm,
+            "scale_source": drawing.scale_source if drawing is not None else None,
+        })
+
+    def _draft_tiles(self, request, tenant, raw, ox=0, oy=0) -> list:
+        """``cable-plan``'s ``new_tiles``: unsaved tiles of the draft linked
+        to a device, rack or cabinet of the tenant the user may view (any
+        other link is left out - it routes nothing)."""
+        import uuid as _uuid
+
+        from auth_api import rbac
+
+        from .cable_routing import virtual_tile
+
+        if raw in (None, ""):
+            return []
+        if not isinstance(raw, list) or len(raw) > self.CABLE_PLAN_TILES_MAX:
+            raise ValidationError(
+                {"new_tiles": f"A list of at most {self.CABLE_PLAN_TILES_MAX} tiles."}
+            )
+        from .models import Cabinet, Device, Rack
+
+        models_ = {"device": Device, "rack": Rack, "cabinet": Cabinet}
+        viewable = None if request.user.is_superuser else rbac.ViewableRows(request.user, tenant)
+        out = []
+        for row in raw:
+            if not isinstance(row, dict) or not isinstance(row.get("id"), str):
+                raise ValidationError({"new_tiles": "Each tile is an object with its id."})
+            geo = [row.get(k) for k in ("x", "y", "width", "height")]
+            if not all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) for v in geo
+            ) or geo[2] <= 0 or geo[3] <= 0:
+                raise ValidationError({"new_tiles": "A tile needs x, y, width and height."})
+            kind = row.get("link_kind")
+            model = models_.get(kind)
+            if model is None:
+                continue
+            try:
+                link = _uuid.UUID(str(row.get("link_id")))
+            except ValueError:
+                continue
+            if not model.objects.filter(tenant=tenant, pk=link).exists():
+                continue
+            if viewable is not None and not viewable.may_view(kind, link):
+                continue
+            out.append(virtual_tile(
+                row["id"][:64], x=geo[0] + ox, y=geo[1] + oy, width=geo[2], height=geo[3],
+                **{f"{kind}_id": link},
+            ))
+        return out
+
+    def _draft_trays(self, raw, ox=0, oy=0) -> list:
+        """``cable-plan``'s ``draft_trays``: unsaved trays of the draft."""
+        from rest_framework import serializers as drf_serializers
+
+        from .cable_routing import virtual_tray
+        from .serializers import validate_lattice_points
+
+        if raw in (None, ""):
+            return []
+        if not isinstance(raw, list) or len(raw) > self.CABLE_PLAN_TRAYS_MAX:
+            raise ValidationError(
+                {"draft_trays": f"A list of at most {self.CABLE_PLAN_TRAYS_MAX} trays."}
+            )
+        out = []
+        for row in raw:
+            if not isinstance(row, dict) or not isinstance(row.get("id"), str):
+                raise ValidationError({"draft_trays": "Each tray is an object with its id."})
+            level = row.get("level") or "overhead"
+            if level not in dict(FloorPlanTray.LEVEL_CHOICES):
+                raise ValidationError({"draft_trays": f"Unknown level {level}."})
+            elevation = row.get("elevation_mm")
+            if elevation is not None and (
+                not isinstance(elevation, int) or isinstance(elevation, bool)
+            ):
+                raise ValidationError({"draft_trays": "elevation_mm is whole millimetres."})
+            try:
+                points = validate_lattice_points(row.get("points"))
+            except drf_serializers.ValidationError as exc:
+                raise ValidationError({"draft_trays": exc.detail}) from None
+            out.append(virtual_tray(
+                row["id"][:64], points=[[x + ox, y + oy] for x, y in points],
+                level=level, elevation_mm=elevation,
+            ))
+        return out
+
+    def _dropped_devices(self, request, tenant, objects) -> set:
+        """The devices of ``cable-plan``'s ``objects``: a device itself, the
+        devices in a rack or a cabinet - the tenant's, each object one the
+        user may view."""
+        import uuid as _uuid
+
+        from auth_api import rbac
+
+        from .models import Device
+
+        if not isinstance(objects, list) or len(objects) > self.CABLE_PLAN_OBJECTS_MAX:
+            raise ValidationError(
+                {"objects": f"A list of at most {self.CABLE_PLAN_OBJECTS_MAX} objects."}
+            )
+        viewable = None if request.user.is_superuser else rbac.ViewableRows(request.user, tenant)
+        by_kind: dict = {"device": set(), "rack": set(), "cabinet": set()}
+        for o in objects:
+            if not isinstance(o, dict) or o.get("kind") not in by_kind:
+                raise ValidationError({"objects": "Each is {kind: device|rack|cabinet, id}."})
+            try:
+                key = _uuid.UUID(str(o.get("id")))
+            except ValueError:
+                raise ValidationError({"objects": "Object ids are UUIDs."}) from None
+            if viewable is None or viewable.may_view(o["kind"], key):
+                by_kind[o["kind"]].add(key)
+        q = Q(pk__in=by_kind["device"]) | Q(rack_id__in=by_kind["rack"]) \
+            | Q(cabinet_id__in=by_kind["cabinet"])
+        return set(Device.objects.filter(q, tenant=tenant).values_list("id", flat=True))
+
+    @staticmethod
+    def _far_ends(request, tenant, router, cables, dropped) -> dict:
+        """Per cable, its ends away from the ``dropped`` devices (the B end
+        when both sides hold one): ``[{"device_name", "port"}]``, or
+        ``{"hidden": true}`` for a device the user may not view (#453)."""
+        from auth_api import rbac
+
+        from .models import Device
+
+        user = request.user
+        terms = {c.pk: router._terms.get(c.pk, []) for c in cables}
+        devs = {d for ts in terms.values() for _e, d, _p in ts if d}
+        names = dict(Device.objects.filter(pk__in=devs).values_list("id", "name"))
+        viewable = None if user.is_superuser else rbac.ViewableRows(user, tenant)
+        if viewable is not None:
+            viewable.prime("device", devs)
+        out = {}
+        for c in cables:
+            ts = terms[c.pk]
+            near = {e for e, d, _p in ts if d in dropped}
+            side = "A" if near == {"B"} else "B"
+            ends = []
+            for end, dev, port in ts:
+                if end != side:
+                    continue
+                if dev is not None and viewable is not None and not viewable.may_view(
+                    "device", dev
+                ):
+                    ends.append({"hidden": True, "device_name": None, "port": None})
+                else:
+                    ends.append({"hidden": False, "device_name": names.get(dev, ""),
+                                 "port": port or ""})
+            out[c.pk] = ends
+        return out
+
+    # ── Connect to… (new cables) ──
+
+    def _connect_devices(self, request, tenant, router, objects, field) -> list:
+        """The devices of ``objects`` (a device, or a rack's or cabinet's)
+        placed on this plan, each one the user may view, as
+        ``[(id, name)]`` in natural order. A hidden or unplaced device is
+        never offered."""
+        from auth_api import rbac
+
+        from .models import Device
+
+        if not isinstance(objects, list) or not objects:
+            raise ValidationError({field: "Pick at least one object."})
+        try:
+            ids = self._dropped_devices(request, tenant, objects)
+        except ValidationError as exc:
+            raise ValidationError({field: exc.detail.get("objects", exc.detail)}) from None
+        router.prime_devices(ids)
+        viewable = None if request.user.is_superuser else rbac.ViewableRows(request.user, tenant)
+        if viewable is not None:
+            viewable.prime("device", ids)
+        rows = Device.objects.filter(pk__in=ids, tenant=tenant).values_list("id", "name")
+        out = [
+            (pk, name) for pk, name in rows
+            if router.tile_for(pk) is not None
+            and (viewable is None or viewable.may_view("device", pk))
+        ]
+        return sorted(out, key=lambda r: (natural_key(r[1] or ""), str(r[0])))
+
+    @staticmethod
+    def _planned_statuses(tenant) -> list:
+        """The tenant's statuses that mean planned work and apply to cables -
+        what a new cable from Connect to… may take. Nothing is seeded: with
+        none, the panel says so and links to Statuses."""
+        from .models import Status
+
+        return [
+            {"id": str(s.pk), "name": s.name, "color": s.color}
+            for s in Status.objects.filter(
+                tenant=tenant, is_planned=True, available_to__contains=["cable"],
+            ).order_by("weight", NATURAL_NAME)
+        ]
+
+    @staticmethod
+    def _port_refs(raw, field) -> list[tuple[str, str]]:
+        if raw in (None, ""):
+            return []
+        if not isinstance(raw, list) or len(raw) > 1024:
+            raise ValidationError({field: "A list of {kind, id}."})
+        out = []
+        for item in raw:
+            if not isinstance(item, dict) or not isinstance(item.get("kind"), str):
+                raise ValidationError({field: "Each port is {kind, id}."})
+            out.append((item["kind"], str(item.get("id"))))
+        return out
+
+    def _connect_preview(self, request, tenant, plan, crop, router, body, choices,
+                         run_level):
+        """``cable-plan`` with ``mode: new`` - Connect to…: new cables from
+        ``source`` to ``targets`` (objects, as ``objects``), proposed or as
+        the user edited them, routed like existing ones. Nothing is stored.
+
+        Body: ``source``, ``targets``, ``family`` (``data``, ``console``,
+        ``power``), ``per_target`` (cables to each target device, 1-8),
+        ``include_mgmt``, ``exclude_ports`` (``[{kind, id}]`` the draft
+        cables already take) and, once the user edits them, ``pairs``
+        (``[{"key", "a": {kind, id}, "b": {kind, id}}]``), plus the routing
+        keys of an ordinary preview (``choices`` by pair key,
+        ``suggest_runs``, ``keep_runs``, ``run_level``).
+
+        Answers ``pairs`` (``key``, ``a`` and ``b`` ports, ``type`` - a
+        cable type that fits, ``route``/``via``/``suggestions``/``reason``
+        as a cable row, ``error`` when a sent pair is not valid), ``short``
+        (device pairs that got fewer cables than asked, and why),
+        ``statuses`` (the planned cable statuses), ``can_add``,
+        ``suggestions``, ``cell_mm`` and ``scale_source``."""
+        import math
+        from types import SimpleNamespace
+
+        from auth_api import rbac
+
+        from .cable_connect import (
+            FAMILIES,
+            PER_TARGET_MAX,
+            cable_type_for,
+            compatible,
+            free_ports,
+            interface_counts,
+            kind_family,
+            port_of,
+            propose,
+            read_port,
+        )
+        from .cable_routing import ROUTE_MAX, plan_batch, route_data
+
+        family = body.get("family") or "data"
+        if family not in FAMILIES:
+            raise ValidationError({"family": "data, console or power."})
+        per_target = body.get("per_target", 1)
+        if not isinstance(per_target, int) or isinstance(per_target, bool) \
+                or not 1 <= per_target <= PER_TARGET_MAX:
+            raise ValidationError({"per_target": f"1 to {PER_TARGET_MAX}."})
+        sources = self._connect_devices(request, tenant, router, body.get("source"), "source")
+        targets = self._connect_devices(request, tenant, router, body.get("targets"), "targets")
+        names = {str(pk): name for pk, name in [*sources, *targets]}
+        uuids = {str(pk): pk for pk, _n in [*sources, *targets]}
+        exclude = self._port_refs(body.get("exclude_ports"), "exclude_ports")
+        include_mgmt = bool(body.get("include_mgmt"))
+        free = free_ports(uuids.values(), family, include_mgmt=include_mgmt,
+                          exclude=exclude, names=names)
+
+        # Targets nearest the source first: route distance is what the
+        # cables will run, the tile distance a fair stand-in.
+        def at(dev):
+            t = router.tile_for(dev)
+            return (t.x + t.width / 2, t.y + t.height / 2)
+
+        src0 = at(sources[0][0]) if sources else (0, 0)
+        targets.sort(key=lambda r: (
+            round(math.hypot(at(r[0])[0] - src0[0], at(r[0])[1] - src0[1]), 3),
+            natural_key(r[1] or ""), str(r[0]),
+        ))
+
+        short_out: list = []
+        errors: dict = {}
+        raw_pairs = body.get("pairs")
+        pairs: list = []
+        if raw_pairs is None:
+            device_pairs = [
+                (str(s), str(t)) for s, _sn in sources for t, _tn in targets if s != t
+            ]
+            sizes = interface_counts(uuids.values())
+            proposed, short = propose(
+                device_pairs, free, per_target=per_target, sizes=sizes, limit=ROUTE_MAX,
+            )
+            pairs = [(f"pair-{i + 1}", a, b) for i, (a, b) in enumerate(proposed)]
+            short_out = [
+                {**s, "a_device": {"id": s["a_device"], "name": names.get(s["a_device"], "")},
+                 "b_device": {"id": s["b_device"], "name": names.get(s["b_device"], "")}}
+                for s in short
+            ]
+        else:
+            if not isinstance(raw_pairs, list) or len(raw_pairs) > ROUTE_MAX:
+                raise ValidationError({"pairs": f"A list of at most {ROUTE_MAX} pairs."})
+            free_ids = {(p.kind, p.id) for ports in free.values() for p in ports}
+            used: set = set()
+            for i, item in enumerate(raw_pairs):
+                if not isinstance(item, dict):
+                    raise ValidationError({"pairs": "Each pair is {key, a, b}."})
+                key = str(item.get("key") or f"pair-{i + 1}")[:64]
+                ends = []
+                problem = ""
+                for side in ("a", "b"):
+                    ref = item.get(side)
+                    if not isinstance(ref, dict) or kind_family(ref.get("kind")) != family:
+                        raise ValidationError({"pairs": f"Each side is a {family} port."})
+                    obj = read_port(ref["kind"], ref.get("id"))
+                    dev = str(obj.device_id) if obj is not None else None
+                    if obj is None or dev not in names:
+                        raise ValidationError({"pairs": [f"Unknown port {ref.get('id')}."]})
+                    port = port_of(ref["kind"], obj, names[dev])
+                    ends.append(port)
+                    if (port.kind, port.id) not in free_ids:
+                        problem = problem or f"{port.device_name} · {port.name} is not free."
+                    elif (port.kind, port.id) in used:
+                        problem = problem or f"{port.device_name} · {port.name} is in two cables."
+                    used.add((port.kind, port.id))
+                ok, why = compatible(*ends)
+                if not ok:
+                    problem = problem or why
+                if problem:
+                    errors[key] = problem
+                pairs.append((key, ends[0], ends[1]))
+
+        virtual = []
+        for key, a, b in pairs:
+            if key in errors:
+                continue
+            router.add_planned(key, [("A", uuids[a.device], a.name),
+                                     ("B", uuids[b.device], b.name)])
+            virtual.append(SimpleNamespace(pk=key))
+        routes, suggestions = plan_batch(
+            router, virtual, choices=choices, suggest=bool(body.get("suggest_runs")),
+            keep_runs=body.get("keep_runs", True) is not False, level=run_level,
+        )
+        ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+        out = []
+        for key, a, b in pairs:
+            route = routes.get(key)
+            row = {
+                "key": key, "a": a.data(), "b": b.data(), "type": cable_type_for(a, b),
+                "route": None, "via": None, "suggestions": [], "reason": "",
+                "error": errors.get(key, ""),
+            }
+            if route is not None:
+                row["route"] = route_data(route, dx=-ox, dy=-oy)
+                row["via"] = route["via"]
+                row["suggestions"] = route.get("suggestions", [])
+            elif key not in errors:
+                row["reason"] = "Both ends stand on one tile."
+            out.append(row)
+        drawing = getattr(plan, "drawing", None)
+        return Response({
+            "pairs": out,
+            "short": short_out,
+            "statuses": self._planned_statuses(tenant),
+            "can_add": rbac.has_action(request.user, tenant, "cable", "add"),
+            "suggestions": [
+                {
+                    **s,
+                    "points": [[x - ox, y - oy] for x, y in s["points"]],
+                    "run": [[x - ox, y - oy] for x, y in s["run"]] if s["run"] else None,
+                }
+                for s in suggestions
+            ],
+            "cell_mm": plan.cell_mm,
+            "scale_source": drawing.scale_source if drawing is not None else None,
+        })
+
+    @action(detail=True, methods=["get"], url_path="cable-plan/ports")
+    def cable_plan_ports(self, request, pk=None):
+        """Free ports of one device for Connect to…'s port picker:
+        ``?device=<id>&family=data&for=<kind>:<id>&include_mgmt=1&exclude=
+        <kind>:<id>,…``. With ``for`` (the port at the other end), only the
+        ports a direct cable may join to it. The device must be the
+        tenant's and one the user may view. Answers ``{"ports": [...]}``."""
+        from auth_api import rbac
+
+        from .cable_connect import FAMILIES, compatible, free_ports, port_of, read_port
+        from .models import Device
+
+        self.get_object()
+        tenant = self._tenant_or_403()
+        q = request.query_params
+        family = q.get("family") or "data"
+        if family not in FAMILIES:
+            raise ValidationError({"family": "data, console or power."})
+
+        def visible_device(dev_id):
+            try:
+                d = Device.objects.filter(pk=dev_id, tenant=tenant).first()
+            except (DjangoValidationError, ValueError, TypeError):
+                return None
+            if d is None or not (
+                request.user.is_superuser
+                or rbac.ViewableRows(request.user, tenant).may_view("device", d.pk)
+            ):
+                return None
+            return d
+
+        device = visible_device(q.get("device"))
+        if device is None:
+            raise ValidationError({"device": "Unknown device."})
+        exclude = []
+        for part in (q.get("exclude") or "").split(","):
+            kind, _sep, pid = part.partition(":")
+            if kind and pid:
+                exclude.append((kind, pid))
+        other = None
+        if q.get("for"):
+            kind, _sep, pid = q["for"].partition(":")
+            obj = read_port(kind, pid)
+            far = visible_device(obj.device_id) if obj is not None else None
+            if far is None:
+                raise ValidationError({"for": "Unknown port."})
+            other = port_of(kind, obj, far.name)
+        ports = free_ports([device.pk], family, include_mgmt=q.get("include_mgmt") == "1",
+                           exclude=exclude, names={str(device.pk): device.name})
+        rows = ports.get(str(device.pk), [])
+        if other is not None:
+            rows = [p for p in rows if compatible(p, other)[0]]
+        return Response({"ports": [p.data() for p in rows]})
+
     @action(detail=True, methods=["get"], url_path="scene")
     def scene(self, request, pk=None):
         """Everything the 3D room view needs, in one fetch: the plan's physical
         dimensions, every tile (racks carrying their racked devices' geometry +
         face images), and the trays at their elevations. Static structure only -
         live status keeps coming from the sibling ``state`` action, so the 3D
-        view polls exactly what the 2D canvas polls."""
+        view polls exactly what the 2D canvas polls.
+
+        Each kind is narrowed to the rows the reader may view, as ``contents/``
+        narrows it, and a rack's devices to the ones they may view. A tile
+        whose object they may not view keeps its box and reads ``hidden``,
+        ``device_name`` Hidden, no rack or cabinet and no role colour (#453);
+        a tray's ``cable_count`` counts the cables they may view and
+        ``hidden_cable_count`` the others."""
         from django.utils import timezone
 
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .cable_scope import viewable_cable_ids
+        from .cable_routing import riser_links
+        from .floor_plan_placement import HIDDEN, TileLinks
+        from .floor_stacks import floor_elevation
+
         plan = self.get_object()
-        tiles_qs = plan.tiles.select_related(
-            "tile_type", "role_type", "rack", "cabinet", "device__role",
+        src, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        user = request.user
+
+        def visible(qs, slug):
+            return rbac.restrict_queryset(qs, user, tenant, slug, "view")
+
+        tiles_qs = list(visible(src.tiles.select_related(
+            "tile_type", "role_type", "rack__role", "cabinet__role", "device__role",
             "device__device_type",
-        )
-        rack_ids = {t.rack_id for t in tiles_qs if t.rack_id}
+        ), "floorplantile"))
+        if crop is not None:
+            tiles_qs = [t for t, _e in snaps.in_crop("tiles", tiles_qs, crop)]
+        links = TileLinks(user, tenant)
+        links.prime(tiles_qs)
+        hidden_tiles = {t.pk for t in tiles_qs if links.hidden(t)}
+
+        def linked_role_color(t):
+            """A tile with no type of its own: its object's role colour."""
+            if t.pk in hidden_tiles:
+                return ""
+            obj = t.device if t.device_id else t.rack if t.rack_id else \
+                t.cabinet if t.cabinet_id else None
+            role = getattr(obj, "role", None) if obj is not None else None
+            return role.color if role is not None else ""
+
+        def tile_icon(t):
+            """The icon a tile draws with: a device's own or its type's, the
+            tile's type, then its role; "" leaves the default to the client.
+            A hidden object names nothing of its own."""
+            obj = None if t.pk in hidden_tiles else (
+                t.device if t.device_id else t.rack if t.rack_id else
+                t.cabinet if t.cabinet_id else None
+            )
+            role = getattr(obj, "role", None) if obj is not None else None
+            return (
+                (obj.own_icon if t.device_id and obj is not None else "")
+                or (t.tile_type.icon if t.tile_type_id else "")
+                or (t.role_type.icon if t.role_type_id else "")
+                or (getattr(role, "icon", "") or "")
+            )
+
+        shown = [t for t in tiles_qs if t.pk not in hidden_tiles]
+        riser_reach = riser_links(src, [t for t in tiles_qs if t.riser]) \
+            if crop is None else {}
+        seen_plans = set(visible(
+            FloorPlan.objects.filter(
+                tenant=tenant,
+                pk__in={p.floor_plan_id for ps in riser_reach.values() for p in ps},
+            ), "floorplan",
+        ).values_list("pk", flat=True)) if riser_reach else set()
+        rack_ids = {t.rack_id for t in shown if t.rack_id}
+        viewable_devices = visible(Device.objects.filter(tenant=tenant), "device")
         cabinet_counts = dict(
-            Device.objects.filter(cabinet_id__in={t.cabinet_id for t in tiles_qs if t.cabinet_id})
+            viewable_devices.filter(cabinet_id__in={t.cabinet_id for t in shown if t.cabinet_id})
             .order_by().values("cabinet_id").annotate(n=Count("id"))
             .values_list("cabinet_id", "n")
         )
         # Racks, their devices and the feed each PDU hangs off: the geometry
         # a rack page's 3D view draws too (api.scene_geo).
-        racks = scene_geo.load_racks(Rack.objects.filter(id__in=rack_ids))
+        racks = scene_geo.load_racks(
+            Rack.objects.filter(id__in=rack_ids), devices=viewable_devices
+        )
         feed_types = scene_geo.power_feed_types(racks.values())
         img = scene_geo.image_url(request)
 
@@ -10474,6 +13895,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         def cabinet_geo(c):
             return scene_geo.cabinet_geo(c, cabinet_counts.get(c.id, 0))
+
+        # Devices placed straight on the floor: a rack-unit box, or their
+        # uploaded 3D model, where the reader may view them (#placed-3d).
+        placed = scene_geo.load_placed_devices(
+            viewable_devices.filter(
+                id__in={t.device_id for t in shown if t.device_id},
+                rack__isnull=True, cabinet__isnull=True,
+            )
+        )
+        viewable_types = scene_geo.viewable_type_ids(user, tenant, placed.values())
+
+        def placed_geo(t):
+            d = placed.get(t.device_id) if t.device_id else None
+            if d is None or t.pk in hidden_tiles:
+                return None
+            return scene_geo.placed_device_geo(d, img, viewable_types)
 
         tiles = [
             {
@@ -10489,7 +13926,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # The linked device's name - the 2D canvas labels device tiles
                 # with it (tileName: label || linked.name) and the 3D room's
                 # ghost boxes want the same fallback.
-                "device_name": t.device.name if t.device_id else "",
+                "device_name": (
+                    HIDDEN if t.device_id and t.pk in hidden_tiles
+                    else t.device.name if t.device_id else ""
+                ),
+                "hidden": t.pk in hidden_tiles,
                 # The type's name, so the 3D room can label unlinked tiles
                 # ("build in advance": planned massing before objects exist).
                 "type_name": (
@@ -10499,8 +13940,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "color": (
                     (t.tile_type.color if t.tile_type_id else "")
                     or (t.role_type.color if t.role_type_id else "")
-                    or t.color or ""
+                    or t.color
+                    or ("" if t.tile_type_id or t.role_type_id else linked_role_color(t))
                 ),
+                "icon": tile_icon(t),
                 "is_zone": bool(t.tile_type_id and t.tile_type.is_zone),
                 # Perforated zone types render as grate floor in 3D - the
                 # cold-aisle supply-tile read.
@@ -10509,10 +13952,29 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 ),
                 "rack": rack_geo(racks[t.rack_id])
                 if t.rack_id and t.rack_id in racks else None,
-                "cabinet": cabinet_geo(t.cabinet) if t.cabinet_id else None,
+                "cabinet": cabinet_geo(t.cabinet)
+                if t.cabinet_id and t.pk not in hidden_tiles else None,
+                "device": placed_geo(t),
+                "riser": t.riser,
+                # The risers it reaches on other floors the reader may view
+                # (by hand, or at the same place on an aligned floor plan):
+                # the 3D building draws a cable's climb between them.
+                "riser_to": [
+                    {"id": str(p.pk), "floor_plan": str(p.floor_plan_id)}
+                    for p in riser_reach.get(t.pk, [])
+                    if p.floor_plan_id in seen_plans
+                ] if t.riser else [],
             }
             for t in tiles_qs
         ]
+        tray_rows = [
+            tr for tr in visible(src.trays.prefetch_related("cables"), "floorplantray")
+            if crop is None or snaps.classify("trays", tr, crop)
+        ]
+        tray_cables = {tr.pk: {c.pk for c in tr.cables.all()} for tr in tray_rows}
+        seen_cables = viewable_cable_ids(
+            user, tenant, set().union(*tray_cables.values())
+        )
         trays = [
             {
                 "id": str(tr.id),
@@ -10522,18 +13984,21 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "level": tr.level,
                 "elevation_mm": tr.elevation_mm,
                 "points": tr.points,
-                "cable_count": tr.cables.count(),
+                "cable_count": len(tray_cables[tr.pk] & seen_cables),
+                "hidden_cable_count": len(tray_cables[tr.pk] - seen_cables),
             }
-            for tr in plan.trays.prefetch_related("cables")
+            for tr in tray_rows
         ]
         raised_floors = [
             {
                 "id": str(a.id),
                 "x": a.x, "y": a.y, "w": a.width, "h": a.height,
+                "points": a.points or [],
                 "plenum_mm": a.plenum_mm,
                 "label": a.label, "color": a.color,
             }
-            for a in plan.raised_floor_areas.all()
+            for a in visible(src.raised_floor_areas.all(), "floorplanraisedfloorarea")
+            if crop is None or snaps.classify("raised_floors", a, crop)
         ]
         walls = [
             {
@@ -10541,11 +14006,32 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "label": w.label,
                 "points": w.points,
                 "height_mm": w.height_mm,
+                "thickness_mm": w.thickness_mm,
                 "color": w.color,
                 "openings": w.openings,
+                "exterior": w.exterior,
             }
-            for w in plan.walls.all()
+            for w in visible(src.walls.all(), "floorplanwall")
+            if crop is None or snaps.classify("walls", w, crop)
         ]
+        from .floor_plan_layers import map_in_3d
+
+        background = img(plan.background_image) if plan.background_shown else None
+        # The base map lies on the ground level only (and on a floor that
+        # is no level), never on a basement's slab.
+        base_map = img(plan.base_map.image) \
+            if plan.base_map_id and map_in_3d(plan) else None
+        if crop is not None:
+            # In view cells; the 3D room draws no cut of the source's image.
+            snaps.frame(plan)
+            background = None
+            base_map = None
+            tiles = [snaps.shift("tiles", t, -crop.x, -crop.y) for t in tiles]
+            raised_floors = [
+                snaps.shift("raised_floors", a, -crop.x, -crop.y) for a in raised_floors
+            ]
+            trays = [snaps.shift("trays", t, -crop.x, -crop.y) for t in trays]
+            walls = [snaps.shift("walls", w, -crop.x, -crop.y) for w in walls]
         return Response({
             "plan": {
                 "id": str(plan.id),
@@ -10554,8 +14040,21 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "grid_height": plan.grid_height,
                 "cell_mm": plan.cell_mm,
                 "ceiling_mm": plan.ceiling_mm,
-                "background_image": img(plan.background_image),
+                "background_image": background,
                 "background_opacity": plan.background_opacity,
+                "background_shown": plan.background_shown,
+                "base_map": base_map,
+                "map_opacity": plan.map_opacity,
+                # "map" (street) or "sat": only the street map is muted.
+                "basemap": (plan.base_map.basemap or "map") if base_map else None,
+                # Building levels: where this floor sits in its aligned
+                # floor plan (floor_stacks.floor_elevation), its slab and
+                # its offset in the stack's frame.
+                "elevation_mm": floor_elevation(plan),
+                "slab_mm": plan.slab_mm,
+                "align_dx": plan.align_dx,
+                "align_dy": plan.align_dy,
+                "align_rot": plan.align_rot,
             },
             "tiles": tiles,
             "trays": trays,
@@ -10570,15 +14069,46 @@ class FloorPlanViewSet(TenantScopedViewSet):
         device-linked tile, else the device's rack or cabinet tile - so the canvas can
         draw the physical A↔B run. Includes cables routed through a tray here,
         AND any cable whose ends are both placed on the plan (drawn straight
-        when it has no tray)."""
-        from .models import Cable, CableTermination, Device
+        when it has no tray).
+
+        Only the cables the reader may view are listed - the scope of
+        ``/api/cables/`` (tenant, cable grants and their sites);
+        ``hidden_count`` counts the others. An end on a device the reader may
+        not view keeps its tile but reads ``{"device": null, "port": null,
+        "hidden": true}`` (#453). Only tiles the reader may view are named.
+        ``a_far`` / ``b_far`` list the ends on no tile here: the device and
+        port (or only ``hidden``), ``floor_plan`` - the floor of this plan's
+        stack it is placed on, if any - and ``place``, the device, rack or
+        cabinet to place to bring it here when it is on this plan's site.
+        The query count does not grow with the cables."""
+        from django.db.models import Prefetch
+
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .cable_scope import viewable_cable_ids
+        from .models import Cable, CableTermination, Device, Rack
+        from .pathfinding import RACK_PLINTH_MM, U_PITCH_MM
 
         plan = self.get_object()
-        # tile lookups: device / rack / cabinet → tile (first placed wins).
+        plan, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        user = request.user
+        # tile lookups: device / rack / cabinet → tile (first placed wins),
+        # over the tiles the reader may view, as contents/ lists them.
         device_tile: dict = {}
         rack_tile: dict = {}
         cabinet_tile: dict = {}
-        for t in plan.tiles.all():
+        tiles = rbac.restrict_queryset(
+            plan.tiles.order_by("y", "x", "id"), user, tenant, "floorplantile", "view"
+        )
+        shown_trays = None
+        if crop is not None:
+            tiles = [t for t, _e in snaps.in_crop("tiles", tiles, crop)]
+            shown_trays = {
+                tr.pk for tr, _e in snaps.in_crop("trays", plan.trays.all(), crop)
+            }
+        for t in tiles:
             if t.device_id:
                 device_tile.setdefault(t.device_id, str(t.id))
             if t.rack_id:
@@ -10602,10 +14132,30 @@ class FloorPlanViewSet(TenantScopedViewSet):
             if field in ("power_feed", "circuit_termination"):
                 continue  # neither hangs off a device
             touches_placed |= Q(**{f"terminations__{field}__device_id__in": placed_device_ids})
-        cables = (
-            Cable.objects.filter(Q(trays__floor_plan=plan) | touches_placed)
-            .distinct()
-            .prefetch_related("terminations", "trays")
+        candidates = set(
+            Cable.objects.filter(tenant=tenant)
+            .filter(
+                Q(trays__floor_plan=plan) | Q(floor_plan_paths__floor_plan=plan)
+                | touches_placed
+            )
+            .values_list("id", flat=True)
+        )
+        visible = viewable_cable_ids(user, tenant, candidates)
+        # Each end's port comes in the termination's own query: term.point
+        # over a bare prefetch read one query per termination.
+        cables = list(
+            Cable.objects.filter(pk__in=visible)
+            .select_related("status")
+            .order_by("created_at", "pk")
+            .prefetch_related(
+                Prefetch(
+                    "terminations",
+                    queryset=CableTermination.objects.select_related(
+                        *CableTermination.POINT_FIELDS
+                    ),
+                ),
+                "trays",
+            )
         )
         # Devices we may need a rack for (those not directly tiled).
         wanted_devices = set()
@@ -10621,12 +14171,28 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # the exact photo-port quad on the device face.
                 terms.append((term.end, dev_id, getattr(point, "name", "")))
             term_cache[cable.id] = terms
-        device_home = {
-            d: (rack_id, cabinet_id)
-            for d, rack_id, cabinet_id in Device.objects.filter(
-                id__in=wanted_devices
-            ).values_list("id", "rack_id", "cabinet_id")
+        device_home = {}
+        device_name = {}
+        device_site = {}
+        for d, rack_id, cabinet_id, name, site_id in Device.objects.filter(
+            id__in=wanted_devices
+        ).values_list("id", "rack_id", "cabinet_id", "name", "site_id"):
+            device_home[d] = (rack_id, cabinet_id)
+            device_name[d] = name or ""
+            device_site[d] = site_id
+        # A rack tile's top (mm above the floor): the drop term of the
+        # route length the canvas works out (pathfinding.rack_drop_mm).
+        tile_top_mm = {
+            rack_tile[r]: round(u * U_PITCH_MM + RACK_PLINTH_MM)
+            for r, u in Rack.objects.filter(id__in=rack_tile).values_list(
+                "id", "u_height"
+            )
+            if u is not None
         }
+        # An end on a device the reader may not view is named Hidden.
+        viewable = None if user.is_superuser else rbac.ViewableRows(user, tenant)
+        if viewable is not None:
+            viewable.prime("device", wanted_devices)
 
         def tile_for(dev_id):
             if dev_id is None:
@@ -10638,36 +14204,330 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 return rack_tile[rack_id]
             return cabinet_tile.get(cabinet_id) if cabinet_id else None
 
+        def point_for(dev_id, port):
+            if viewable is not None and not viewable.may_view("device", dev_id):
+                return {"device": None, "port": None, "hidden": True}
+            return {"device": str(dev_id), "port": port,
+                    "device_name": device_name.get(dev_id, "")}
+
+        # An end off this plan (a_far / b_far): its device and port, the
+        # floor of this plan's stack it stands on, and what to place to
+        # bring it here when it is on this plan's site. A Hidden end (#453)
+        # reads nothing more.
+        far_devs = {
+            dev_id
+            for terms in term_cache.values()
+            for _end, dev_id, _port in terms
+            if dev_id is not None and tile_for(dev_id) is None
+            and (viewable is None or viewable.may_view("device", dev_id))
+        }
+        far_floor: dict = {}
+        if far_devs and plan.stack_id:
+            homes = [device_home.get(d, (None, None)) for d in far_devs]
+            floors = rbac.restrict_queryset(
+                FloorPlan.objects.filter(tenant=tenant, stack_id=plan.stack_id)
+                .exclude(pk=plan.pk),
+                user, tenant, "floorplan", "view",
+            )
+            by_link: dict = {}
+            for dev, rack, cab, fp_id, fp_name in (
+                FloorPlanTile.objects.filter(floor_plan__in=floors)
+                .filter(
+                    Q(device_id__in=far_devs)
+                    | Q(rack_id__in={r for r, _c in homes if r})
+                    | Q(cabinet_id__in={c for _r, c in homes if c})
+                )
+                .order_by("floor_plan__floor_order", "floor_plan__name", "id")
+                .values_list("device_id", "rack_id", "cabinet_id",
+                             "floor_plan_id", "floor_plan__name")
+            ):
+                ref = {"id": str(fp_id), "name": fp_name}
+                for key in (("d", dev), ("r", rack), ("c", cab)):
+                    if key[1]:
+                        by_link.setdefault(key, ref)
+            for d in far_devs:
+                rack_id, cabinet_id = device_home.get(d, (None, None))
+                far_floor[d] = (
+                    by_link.get(("d", d)) or by_link.get(("r", rack_id))
+                    or by_link.get(("c", cabinet_id))
+                )
+        plan_site = plan.site_id or (plan.location.site_id if plan.location_id else None)
+
+        def far_for(dev_id, port):
+            point = point_for(dev_id, port)
+            if point.get("hidden"):
+                return point
+            rack_id, cabinet_id = device_home.get(dev_id, (None, None))
+            place = None
+            if plan_site is not None and device_site.get(dev_id) == plan_site:
+                place = (
+                    {"kind": "rack", "id": str(rack_id)} if rack_id
+                    else {"kind": "cabinet", "id": str(cabinet_id)} if cabinet_id
+                    else {"kind": "device", "id": str(dev_id)}
+                )
+            return {**point, "floor_plan": far_floor.get(dev_id), "place": place}
+
+        # Stored routes (the documented paths), the ones the reader may view,
+        # with whether each is out of date against the plan as it is now.
+        from .cable_routing import PlanRouter, path_data
+        from .models import FloorPlanCablePath
+
+        stored = {
+            p.cable_id: p
+            for p in rbac.restrict_queryset(
+                FloorPlanCablePath.objects.filter(
+                    floor_plan=plan, cable_id__in=[c.id for c in cables]
+                ),
+                user, tenant, "floorplancablepath", "view",
+            )
+        }
+        stored_data = {}
+        if stored:
+            router = PlanRouter(plan)
+            router.prime_paths(stored.values())
+            dx, dy = (-crop.x, -crop.y) if crop is not None else (0, 0)
+            for cid, p in stored.items():
+                stored_data[cid] = path_data(p, stale=router.stale(p), dx=dx, dy=dy)
+
         result = []
         for cable in cables:
             a_tiles, b_tiles = [], []
             a_points, b_points = [], []
+            a_far, b_far = [], []
             for end, dev_id, port in term_cache[cable.id]:
                 tile_id = tile_for(dev_id)
                 if tile_id is None:
+                    if dev_id is not None:
+                        (a_far if end == "A" else b_far).append(far_for(dev_id, port))
                     continue
                 (a_tiles if end == "A" else b_tiles).append(tile_id)
-                (a_points if end == "A" else b_points).append(
-                    {"device": str(dev_id), "port": port}
-                )
+                (a_points if end == "A" else b_points).append(point_for(dev_id, port))
+            a_tiles = list(dict.fromkeys(a_tiles))
+            b_tiles = list(dict.fromkeys(b_tiles))
+            st = cable.status
             result.append(
                 {
                     "id": str(cable.id),
                     "label": str(cable),
                     "color": cable.color,
                     "type": cable.type,
-                    "a_tiles": list(dict.fromkeys(a_tiles)),
-                    "b_tiles": list(dict.fromkeys(b_tiles)),
+                    "type_display": cable.get_type_display() if cable.type else "",
+                    "status": {
+                        "id": str(st.id),
+                        "name": st.name,
+                        "color": st.color,
+                        "text_color": st.text_color,
+                        "is_planned": st.is_planned,
+                    } if st is not None else None,
+                    "length": float(cable.length) if cable.length is not None else None,
+                    "length_unit": cable.length_unit or "m",
+                    "length_source": cable.length_source,
+                    "path": stored_data.get(cable.id),
+                    "a_top_mm": tile_top_mm.get(a_tiles[0], 0) if a_tiles else 0,
+                    "b_top_mm": tile_top_mm.get(b_tiles[0], 0) if b_tiles else 0,
+                    "a_tiles": a_tiles,
+                    "b_tiles": b_tiles,
                     "a_points": a_points,
                     "b_points": b_points,
+                    "a_far": a_far,
+                    "b_far": b_far,
                     "tray_ids": [
                         str(tr.id)
                         for tr in cable.trays.all()
                         if tr.floor_plan_id == plan.id
+                        and (shown_trays is None or tr.id in shown_trays)
                     ],
                 }
             )
-        return Response({"cables": result})
+        return Response({"cables": result, "hidden_count": len(candidates - visible)})
+
+    @action(detail=True, methods=["get"], url_path=r"cable-panel/(?P<cable_id>[0-9a-f-]{36})")
+    def cable_panel(self, request, pk=None, cable_id=None):
+        """The cable panel (``api.floor_plan_panels``): a cable the reader may
+        view, with each end's device and port in full. An end on a device
+        the reader may not view reads only ``{"hidden": true}`` (#453); a
+        cable they may not view is a 404."""
+        from . import floor_plan_panels
+        from .cable_scope import viewable_cable_ids
+        from .models import Cable
+
+        plan = self.get_object()
+        self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        cable = Cable.objects.filter(tenant=tenant, pk=cable_id).select_related(
+            "status"
+        ).first()
+        if cable is None or not viewable_cable_ids(request.user, tenant, {cable.pk}):
+            raise NotFound("No such cable.")
+        return Response(floor_plan_panels.cable_panel(request, tenant, cable))
+
+    @action(detail=True, methods=["get"], url_path=r"tile-panel/(?P<tile_id>[0-9a-f-]{36})")
+    def tile_panel(self, request, pk=None, tile_id=None):
+        """A device or rack tile's panel (``api.floor_plan_panels``): the
+        object's facts, monitoring, a device's port summary or a rack's
+        devices. A tile whose object the reader may not view reads only
+        ``{"kind": …, "hidden": true}``; another tile kind is a 400."""
+        from auth_api import rbac
+
+        from . import floor_plan_panels
+        from . import floor_plan_snapshots as snaps
+        from .floor_plan_placement import TileLinks, tile_link
+
+        plan = self.get_object()
+        src, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        tile = rbac.restrict_queryset(
+            src.tiles.filter(pk=tile_id).select_related("device", "rack", "cabinet"),
+            request.user, tenant, "floorplantile", "view",
+        ).first()
+        if tile is None or (crop is not None and not snaps.in_crop("tiles", [tile], crop)):
+            raise NotFound("No such tile on this plan.")
+        kind, _pk = tile_link(tile)
+        if kind not in ("device", "rack", "cabinet"):
+            raise ValidationError(
+                {"detail": "Only device, rack and cabinet tiles have a panel."}
+            )
+        links = TileLinks(request.user, tenant)
+        if links.hidden(tile):
+            return Response({"kind": kind, "hidden": True})
+        if kind == "device":
+            return Response(floor_plan_panels.device_panel(request, tenant, tile.device))
+        # ?device=<id>: one of the rack's or cabinet's devices (a device
+        # clicked in the 3D room), when the reader may view it.
+        from .topology_views import _uuid_param
+
+        device_id = _uuid_param(request.query_params, "device")
+        if device_id:
+            home = {"rack_id": tile.rack_id} if kind == "rack" else {
+                "cabinet_id": tile.cabinet_id
+            }
+            device = rbac.restrict_queryset(
+                Device.objects.filter(tenant=tenant, pk=device_id, **home),
+                request.user, tenant, "device", "view",
+            ).first()
+            if device is None:
+                return Response({"kind": "device", "hidden": True})
+            return Response(floor_plan_panels.device_panel(request, tenant, device))
+        if kind == "cabinet":
+            return Response(floor_plan_panels.cabinet_panel(request, tenant, tile.cabinet))
+        return Response(floor_plan_panels.rack_panel(request, tenant, tile.rack))
+
+    @action(detail=True, methods=["get"], url_path="callouts")
+    def callouts(self, request, pk=None):
+        """What each device, rack or cabinet tile's callout on the 2D plan
+        adds under its name (``api.floor_plan_panels.plan_callouts``):
+        ``{"tiles": {tile id: [{key, label, value, color?}]}}`` - the
+        callout fields of the panel layout its object takes, only for
+        tiles the reader may view whose object they may view."""
+        from auth_api import rbac
+
+        from . import floor_plan_panels
+        from . import floor_plan_snapshots as snaps
+
+        plan = self.get_object()
+        src, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        tiles = list(
+            rbac.restrict_queryset(
+                src.tiles.filter(
+                    Q(device__isnull=False) | Q(rack__isnull=False) | Q(cabinet__isnull=False)
+                ),
+                request.user, tenant, "floorplantile", "view",
+            )
+        )
+        if crop is not None:
+            tiles = [t for t, _edge in snaps.in_crop("tiles", tiles, crop)]
+        return Response({"tiles": floor_plan_panels.plan_callouts(request, tenant, tiles)})
+
+    @action(detail=True, methods=["get"], url_path="cable-schedule")
+    def cable_schedule(self, request, pk=None):
+        """The plan's cable schedule (``api/cable_schedule.py``): every cable
+        with a stored route here or an end on a device placed here, with its
+        ends, route, lengths and notes, grouped by room or by tray
+        (``?group=room|tray``), with totals per cable type. Cables the
+        reader may not view are counted in ``hidden_count``."""
+        from . import cable_schedule
+
+        view = self.get_object()
+        plan, crop = self._resolved(view)
+        tenant = self._tenant_or_403()
+        return Response(cable_schedule.build(
+            plan, crop, request.user, tenant, group=request.query_params.get("group", "room"),
+        ))
+
+    @action(detail=True, methods=["get"], url_path="cable-schedule/closeups")
+    def cable_schedule_closeups(self, request, pk=None):
+        """The close-up pages the schedule PDF will have for an overview
+        framed to ``?box=x,y,w,h`` (plan px) on ``?size=`` / ``?orientation=``
+        paper (``?closeups=auto|on|off``): each page's label, plan box and
+        scale, for the page to draw the plan at before it posts the PDF."""
+        from . import cable_schedule
+
+        view = self.get_object()
+        plan, crop = self._resolved(view)
+        return cable_schedule.closeup_layout(request, view, plan, crop, self._tenant_or_403())
+
+    @action(detail=True, methods=["post"], url_path="cable-schedule/pdf")
+    def cable_schedule_pdf(self, request, pk=None):
+        """The cable schedule on paper (WeasyPrint; A4 landscape unless
+        ``paper`` says), grouped as ``group`` says, optionally with the
+        posted plan drawing (``svg``) on the first page. ``?print=1``
+        answers with a short-lived link, as the floor-plan PDF does."""
+        from . import cable_schedule
+
+        view = self.get_object()
+        plan, crop = self._resolved(view)
+        return cable_schedule.export_pdf(request, view, plan, crop, self._tenant_or_403())
+
+    @action(detail=True, methods=["get"],
+            url_path=r"cable-schedule/pdf/(?P<token>[A-Za-z0-9_-]+)")
+    def cable_schedule_pdf_file(self, request, pk=None, token=None):
+        """The schedule PDF a ``cable-schedule/pdf/?print=1`` kept."""
+        from . import cable_schedule
+
+        return cable_schedule.export_pdf_file(request, self.get_object(), token)
+
+    @action(detail=True, methods=["get"], url_path="risers")
+    def risers(self, request, pk=None):
+        """The riser tiles a riser of this plan may pair with: those on the
+        other floors of its site the reader may view, each with its floor and
+        the riser it pairs with now (``pair``, null when free)."""
+        from auth_api import rbac
+
+        view = self.get_object()
+        plan, _crop = self._resolved(view)
+        tenant = self._tenant_or_403()
+        plans = rbac.restrict_queryset(
+            FloorPlan.objects.filter(tenant=tenant, site_id=plan.site_id, kind="plan")
+            .exclude(pk=plan.pk),
+            request.user, tenant, "floorplan", "view",
+        )
+        tiles = rbac.restrict_queryset(
+            FloorPlanTile.objects.filter(floor_plan__in=plans, riser=True)
+            .select_related("floor_plan__stack"),
+            request.user, tenant, "floorplantile", "view",
+        ).order_by("floor_plan__stack__name", "floor_plan__floor_order",
+                   "floor_plan__name", "label", "y", "x")
+        tiles = list(tiles)
+        back = dict(
+            FloorPlanTile.objects.filter(riser_to__in=tiles, riser=True)
+            .values_list("riser_to_id", "pk")
+        )
+        return Response({"risers": [
+            {
+                "id": str(t.pk),
+                "label": t.label or "Riser",
+                "floor_plan": {
+                    "id": str(t.floor_plan_id), "name": t.floor_plan.name,
+                    "stack": t.floor_plan.stack.name if t.floor_plan.stack_id else "",
+                },
+                "pair": (
+                    str(t.riser_to_id) if t.riser_to_id
+                    else str(back[t.pk]) if t.pk in back else None
+                ),
+            }
+            for t in tiles
+        ]})
 
     @action(detail=True, methods=["post"], url_path="background",
             parser_classes=[MultiPartParser, FormParser])
@@ -10675,12 +14535,94 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """Upload / clear the blueprint image (multipart). Send a
         `background_image` file to set, or `clear=1` to remove."""
         plan = self.get_object()
+        self._not_on_view(plan, "The background")
+        if request.data.get("map_refresh"):
+            # Refresh map: the browser's render of the plan's box from the
+            # current tiles (api/floor_plan_geo.py).
+            from .floor_plan_geo import refresh_background
+
+            plan = refresh_background(request, plan)
+            return Response(FloorPlanSerializer(plan, context={"request": request}).data)
+        # The floor's own picture: the layer over the base map, which stays
+        # (``map/``).
         if "background_image" in request.FILES:
             plan.background_image = request.FILES["background_image"]
         if request.data.get("clear"):
             plan.background_image = None
         plan.save()
         return Response(FloorPlanSerializer(plan, context={"request": request}).data)
+
+    @extend_schema(summary="Set, update or remove a floor's base map (a Site map snapshot)")
+    @action(detail=True, methods=["post", "delete"], url_path="map",
+            parser_classes=[MultiPartParser, FormParser])
+    def base_map(self, request, pk=None):
+        """``POST``: ``image`` (the browser's render of the box), ``basemap``
+        (``map``/``sat``), ``zoom``, and ``bbox`` on a plan with no geo
+        anchor yet - the box must be the grid's real size. On an anchored
+        plan the box is the anchor's and the render replaces the map
+        (Update snapshot). With ``grid`` [w, h] and ``offset`` [x, y] the
+        frame is free - larger, smaller or elsewhere: the grid takes its
+        size, everything moves by ``offset`` and the plan is anchored to it,
+        on every level that goes with it (``grow_and_map``). ``DELETE`` removes the map - and the geo anchor -
+        from every floor it lies under (api/floor_plan_layers.py)."""
+        from audit.context import cause
+
+        from .floor_plan_from_map import _clean_bbox
+        from .floor_plan_geo import has_anchor, refresh_background, set_anchor
+        from .floor_plan_layers import check_frame, remove_map
+
+        plan = self.get_object()
+        self._not_on_view(plan, "The map")
+        if request.method == "DELETE":
+            with transaction.atomic(), cause("Map removed"):
+                plan = FloorPlan.objects.select_for_update().get(pk=plan.pk)
+                remove_map(plan)
+            return Response(status=drf_status.HTTP_204_NO_CONTENT)
+        if "image" not in request.FILES:
+            raise ValidationError({"image": ["The rendered map."]})
+        if request.data.get("grid") not in (None, ""):
+            # A new frame: resize and re-anchor the grid (and the levels
+            # that go with it) and map the frame (api/floor_plan_geo.py).
+            from .floor_plan_geo import grow_and_map
+
+            return grow_and_map(self, request, plan)
+        if not has_anchor(plan):
+            raw = request.data.get("bbox")
+            if raw in (None, ""):
+                raise ValidationError({"bbox": ["Frame the plan on the map."]})
+            bbox = _clean_bbox(raw)
+            check_frame(plan, bbox)
+            with transaction.atomic():
+                locked = FloorPlan.objects.select_for_update().get(pk=plan.pk)
+                set_anchor(locked, list(bbox))
+                locked.save()
+                plan = refresh_background(request, locked, "image")
+        else:
+            plan = refresh_background(request, plan, "image")
+        plan = FloorPlan.objects.select_related(
+            "site", "location", "stack", "base_map").get(pk=plan.pk)
+        return Response(FloorPlanSerializer(plan, context={"request": request}).data)
+
+    @extend_schema(summary="Grow a plan made from the Site map to a larger box")
+    @action(detail=True, methods=["post"], url_path="expand",
+            parser_classes=[MultiPartParser, FormParser, ObjectJSONParser])
+    def expand(self, request, pk=None):
+        """``{"bbox": [s, w, n, e], "version"?}`` and optionally the
+        browser's render of the new box as ``background_image``: the grid
+        grows in whole cells and everything on the plan moves by the cells
+        added west and north, in one transaction (api/floor_plan_geo.py)."""
+        from .floor_plan_geo import expand
+
+        return expand(self, request, self.get_object())
+
+    @action(detail=True, methods=["post"], url_path="import-outlines")
+    def import_outlines(self, request, pk=None):
+        """The Site map outlines inside the plan's box that no area on it
+        stands for: ``dry_run`` lists them, ``apply`` adds the ticked ones as
+        areas (api/floor_plan_geo.py)."""
+        from .floor_plan_geo import import_outlines
+
+        return import_outlines(self, request, self.get_object())
 
     @action(detail=True, methods=["post"], url_path="tiles/bulk")
     def tiles_bulk(self, request, pk=None):
@@ -10689,6 +14631,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         ``{create: [...], update: [{id, ...}], delete: [ids]}`` → the fresh
         tile list. Deletes run first so a move-recreate can't collide."""
         plan = self.get_object()
+        if plan.kind == "view":
+            raise ValidationError({"detail": "A view saves through bulk/."})
         creates = request.data.get("create") or []
         updates = request.data.get("update") or []
         deletes = request.data.get("delete") or []
@@ -10715,21 +14659,813 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 if tile is None:
                     raise ValidationError({"update": f"Unknown tile {item['id']}."})
                 ser = FloorPlanTileSerializer(
-                    tile, data=item, partial=True, context={"request": request}
+                    tile, data=item, partial=True,
+                    context={"request": request, "floor_plan": plan},
                 )
                 ser.is_valid(raise_exception=True)
                 ser.save()
             for item in creates:
-                ser = FloorPlanTileSerializer(data=item, context={"request": request})
+                ser = FloorPlanTileSerializer(
+                    data=item, context={"request": request, "floor_plan": plan}
+                )
                 ser.is_valid(raise_exception=True)
                 ser.save(floor_plan=plan)
-        tiles = plan.tiles.select_related(
-            "tile_type", "role_type", "rack", "device",
-            "power_panel", "power_feed", "linked_floor_plan",
-        ).order_by("y", "x")
+        tiles = plan.tiles.select_related(*TILE_RELATED).order_by("y", "x")
         return Response(
             FloorPlanTileSerializer(tiles, many=True, context={"request": request}).data
         )
+
+    #: Operations one ``bulk/`` save may carry.
+    BULK_MAX = 5000
+
+    @action(detail=True, methods=["post"], url_path="bulk")
+    def bulk(self, request, pk=None):
+        """The editor's Save: tiles, areas, labels, walls, raised floors and
+        trays in one transaction. ``{"tiles": {create, update, delete},
+        "areas": {...}, "labels": {...}, "walls": {...}, "raised_floors":
+        {...}, "trays": {...}}`` (each key optional; an update carries its
+        ``id``) -> the plan's fresh ``{"tiles", "areas", "labels", "walls",
+        "raised_floors", "tray_rows"}`` in the contents shape. Deletes run
+        first. At most ``BULK_MAX`` operations. A wall, raised floor or tray
+        needs its own row permission, as on its endpoint. New trays go in
+        ``trays.create`` with their draft key (:meth:`_bulk_trays_spec`) and
+        are made after the tiles; a tray writes its cables only when it
+        carries ``cable_ids``.
+        ``cable_paths`` (:meth:`_cable_paths_spec`) stores routes last.
+
+        An update - or a delete sent as ``{"id", "version"}`` - may carry the
+        ``version`` (the row's ``updated_at``) it was based on. When a row
+        changed since, nothing is written and the answer is a 409 listing
+        each changed row as it is now (``current`` null when it was deleted).
+        Rows sent without a version are written as before (last one wins).
+
+        Through a live view, rows are in the view's cells and are the
+        source's: updates and deletes take only rows wholly inside the
+        view, every row written must stay inside it, the source must be one
+        the user may change, and the answer is the view's rows."""
+        import contextlib
+
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from audit.context import cause
+
+        from . import floor_plan_snapshots as snaps
+
+        view = self.get_object()
+        self._orphan(view)
+        plan, crop = self._resolved(view, "change")
+        kinds = (
+            ("tiles", plan.tiles, FloorPlanTileSerializer, "tile"),
+            ("areas", plan.areas, FloorPlanAreaSerializer, "area"),
+            ("labels", plan.labels, FloorPlanLabelSerializer, "label"),
+            ("walls", plan.walls, FloorPlanWallSerializer, "wall"),
+            ("raised_floors", plan.raised_floor_areas,
+             FloorPlanRaisedFloorAreaSerializer, "raised_floor"),
+            ("trays", plan.trays, FloorPlanTraySerializer, "tray"),
+        )
+        specs = {}
+        total = 0
+        for key, _rel, _ser, _noun in kinds:
+            spec = request.data.get(key) or {}
+            if not isinstance(spec, dict):
+                raise ValidationError({key: "An object of create/update/delete lists."})
+            parts = {}
+            for op in ("create", "update", "delete"):
+                # New trays carry their draft key (``_bulk_trays_spec``).
+                rows = [] if key == "trays" and op == "create" else spec.get(op) or []
+                if not isinstance(rows, list):
+                    raise ValidationError({key: f"{op} must be a list."})
+                parts[op] = rows
+                total += len(rows)
+            specs[key] = parts
+        paths_spec = self._cable_paths_spec(request.data.get("cable_paths"))
+        total += len(paths_spec["upsert"]) + len(paths_spec["delete"])
+        trays_spec = self._bulk_trays_spec(request.data.get("trays"))
+        total += len(trays_spec)
+        cables_spec = self._bulk_cables_spec(request.data.get("cables"))
+        total += len(cables_spec)
+        # Routes of the cables this save makes name them by their key: they
+        # are written after them, with no version to check.
+        new_keys = {c["key"] for c in cables_spec}
+        new_paths = [p for p in paths_spec["upsert"] if str(p["cable"]) in new_keys]
+        paths_spec["upsert"] = [
+            p for p in paths_spec["upsert"] if str(p["cable"]) not in new_keys
+        ]
+        if total > self.BULK_MAX:
+            raise ValidationError(
+                {"detail": f"At most {self.BULK_MAX} changes in one save."}
+            )
+        if crop is not None:
+            for key, parts in specs.items():
+                parts["create"] = [snaps.shift(key, r, crop.x, crop.y) for r in parts["create"]]
+                parts["update"] = [snaps.shift(key, r, crop.x, crop.y) for r in parts["update"]]
+
+        def row(rel, row_pk):
+            try:
+                return rel.filter(pk=row_pk).first()
+            except (DjangoValidationError, ValueError, TypeError):
+                return None
+
+        ctx = {"request": request, "floor_plan": plan}
+        written = []
+        # A new area's draft key -> its id: a wall saved with it may name
+        # the key as its ``source_area_id``.
+        area_keys: dict[str, str] = {}
+
+        def linked(body):
+            ref = body.get("source_area_id")
+            if isinstance(ref, str) and ref in area_keys:
+                body = {**body, "source_area_id": area_keys[ref]}
+            return body
+
+        may = self._bulk_row_permission(request, self._tenant_or_403())
+        via = cause(f"Through the view {view.name}"[:255]) if crop is not None \
+            else contextlib.nullcontext()
+        paths_out: list = []
+        with transaction.atomic(), via:
+            conflicts = self._bulk_conflicts(request, plan, kinds, specs)
+            conflicts += self._cable_path_conflicts(request, plan, crop, paths_spec)
+            if conflicts:
+                if crop is not None:
+                    keys = {noun: key for key, _rel, _ser, noun in kinds}
+                    for c in conflicts:
+                        if c.get("current") and c["kind"] in keys:
+                            c["current"] = snaps.shift(
+                                keys[c["kind"]], c["current"], -crop.x, -crop.y
+                            )
+                return Response(
+                    {"detail": "Changed elsewhere since you opened the plan.",
+                     "conflicts": conflicts},
+                    status=drf_status.HTTP_409_CONFLICT,
+                )
+            if crop is not None:
+                self._view_rows_editable(view, plan, crop, kinds, specs, row)
+            for key, rel, _ser, _noun in kinds:
+                for pk_ in specs[key]["delete"]:
+                    if isinstance(pk_, dict):
+                        pk_ = pk_.get("id")
+                    obj = row(rel, pk_)
+                    if obj is not None:
+                        may(key, "delete", obj)
+                        obj.delete()
+            for key, rel, ser_cls, noun in kinds:
+                for item in specs[key]["update"]:
+                    if not isinstance(item, dict) or not item.get("id"):
+                        raise ValidationError({key: "Each update needs an id."})
+                    obj = row(rel, item["id"])
+                    if obj is None:
+                        raise ValidationError({key: f"Unknown {noun} {item['id']}."})
+                    body = {k: v for k, v in _on_plan(item).items() if k != "version"}
+                    if key == "walls":
+                        body = linked(body)
+                    may(key, "change", obj)
+                    ser = ser_cls(obj, data=body, partial=True, context=ctx)
+                    ser.is_valid(raise_exception=True)
+                    saved = ser.save()
+                    may(key, "change", saved)
+                    written.append((key, saved))
+                for item in specs[key]["create"]:
+                    if not isinstance(item, dict):
+                        raise ValidationError({key: "Each create is an object."})
+                    body = _on_plan(item)
+                    draft_key = body.pop("key", None) if key == "areas" else None
+                    if key == "walls":
+                        body = linked(body)
+                    ser = ser_cls(data=body, context=ctx)
+                    ser.is_valid(raise_exception=True)
+                    saved = ser.save(floor_plan=plan)
+                    may(key, "add", saved)
+                    written.append((key, saved))
+                    if isinstance(draft_key, str) and draft_key:
+                        area_keys[draft_key] = str(saved.pk)
+            if crop is not None:
+                for key, obj in written:
+                    if snaps.classify(key, obj, crop) != "in":
+                        raise ValidationError({key: [
+                            f"{obj} would leave the view. Move it on {plan.name}."
+                        ]})
+            # New trays (runs kept from "After placing"), then the cable
+            # paths: a route computed here sees the tiles and trays saved.
+            tray_keys = self._bulk_trays(request, plan, crop, trays_spec)
+            # New cables (Connect to…), then every route.
+            made = self._bulk_cables(request, cables_spec)
+            paths_spec["upsert"] += new_paths
+            paths_out = self._bulk_cable_paths(
+                request, plan, crop, paths_spec, tray_keys, new_cables=made,
+            )
+        from auth_api import rbac
+
+        tenant = self._tenant_or_403()
+
+        def seen(qs, slug):
+            # As the contents read lists them: the rows the user may view.
+            return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
+
+        ctx = {"request": request}
+        # The plan's rows afterwards; its trays as ``tray_rows`` (``trays``
+        # answers the new trays' keys).
+        out = {}
+        for key, out_key, rows, ser_cls in (
+            ("tiles", "tiles", _plan_tiles(plan), FloorPlanTileSerializer),
+            ("areas", "areas", _plan_areas(plan), FloorPlanAreaSerializer),
+            ("labels", "labels", _plan_labels(plan), FloorPlanLabelSerializer),
+            ("walls", "walls", seen(plan.walls.order_by("label", "id"), "floorplanwall"),
+             FloorPlanWallSerializer),
+            ("raised_floors", "raised_floors", seen(
+                plan.raised_floor_areas.order_by("y", "x", "id"), "floorplanraisedfloorarea",
+            ), FloorPlanRaisedFloorAreaSerializer),
+            ("trays", "tray_rows", seen(
+                plan.trays.prefetch_related("cables").order_by(NATURAL_NAME, "id"),
+                "floorplantray",
+            ), FloorPlanTraySerializer),
+        ):
+            if crop is not None:
+                pairs = snaps.in_crop(key, rows, crop)
+                out[out_key] = snaps.view_data(
+                    key, pairs,
+                    ser_cls([o for o, _e in pairs], many=True, context=ctx).data, crop,
+                )
+            else:
+                out[out_key] = ser_cls(rows, many=True, context=ctx).data
+        # The routes written, when the save carried any.
+        if paths_spec["upsert"] or paths_spec["delete"]:
+            out["cable_paths"] = paths_out
+        if trays_spec:
+            out["trays"] = [{"key": k, "id": v} for k, v in tray_keys.items()]
+        if cables_spec:
+            out["cables"] = [{"key": k, "id": str(c.pk)} for k, c in made.items()]
+        return Response(out)
+
+    @staticmethod
+    def _bulk_row_permission(request, tenant):
+        """A ``bulk/`` save's check on a wall, raised floor or tray it
+        writes: the row permission that kind's own endpoint asks for."""
+        from auth_api import rbac
+
+        slugs = {
+            "walls": ("floorplanwall", "walls"),
+            "raised_floors": ("floorplanraisedfloorarea", "raised floors"),
+            "trays": ("floorplantray", "trays"),
+        }
+
+        def check(key, action, obj):
+            if key not in slugs:
+                return
+            slug, noun = slugs[key]
+            if not rbac.can_act_on(request.user, tenant, slug, action, obj):
+                raise PermissionDenied(f"You may not {action} {noun} on this plan.")
+
+        return check
+
+    @staticmethod
+    def _bulk_trays_spec(raw) -> list:
+        """``bulk/``'s ``trays``: ``{"create": [{"key", "points", "level"?,
+        "elevation_mm"?, "name"?, "kind"?}]}`` - new trays, each with the
+        draft's ``key`` the save's ``cable_paths`` may name in
+        ``tray_order``."""
+        if raw in (None, ""):
+            return []
+        if not isinstance(raw, dict) or not isinstance(raw.get("create") or [], list):
+            raise ValidationError({"trays": "An object with a create list."})
+        rows = raw.get("create") or []
+        keys = set()
+        for item in rows:
+            if not isinstance(item, dict) or not isinstance(item.get("key"), str) \
+                    or not item["key"]:
+                raise ValidationError({"trays": "Each new tray has its key."})
+            if item["key"] in keys:
+                raise ValidationError({"trays": f"Key {item['key']} twice."})
+            keys.add(item["key"])
+        if len(rows) > 64:
+            raise ValidationError({"trays": "At most 64 new trays in one save."})
+        return rows
+
+    def _bulk_trays(self, request, plan, crop, rows) -> dict:
+        """Create a ``bulk/`` save's new trays (inside its transaction), each
+        one the user may add. A tray without a name is called ``Run N``.
+        Answers ``{key: new id}``."""
+        import re as _re
+
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+
+        if not rows:
+            return {}
+        tenant = self._tenant_or_403()
+        taken = set(plan.trays.values_list("name", flat=True))
+        n = max(
+            [int(m.group(1)) for name in taken if (m := _re.fullmatch(r"Run (\d+)", name))],
+            default=0,
+        )
+        ctx = {"request": request, "floor_plan": plan}
+        out = {}
+        for item in rows:
+            name = item.get("name") or ""
+            if not name:
+                n += 1
+                name = f"Run {n}"
+            points = item.get("points")
+            if crop is not None and isinstance(points, list):
+                points = [
+                    [p[0] + crop.x, p[1] + crop.y] if isinstance(p, (list, tuple))
+                    and len(p) == 2 and all(
+                        isinstance(v, (int, float)) and not isinstance(v, bool) for v in p
+                    ) else p
+                    for p in points
+                ]
+            data = {"name": name, "points": points, "level": item.get("level") or "overhead"}
+            for key in ("elevation_mm", "kind", "color", "capacity", "description",
+                        "cable_ids"):
+                if item.get(key) is not None:
+                    data[key] = item[key]
+            ser = FloorPlanTraySerializer(data=data, context=ctx)
+            ser.is_valid(raise_exception=True)
+            tray = ser.save(floor_plan=plan)
+            if not rbac.can_act_on(request.user, tenant, "floorplantray", "add", tray):
+                raise PermissionDenied("You may not add trays to this plan.")
+            if crop is not None and snaps.classify("trays", tray, crop) != "in":
+                raise ValidationError({"trays": [f"{tray} would leave the view."]})
+            out[item["key"]] = str(tray.pk)
+        return out
+
+    @staticmethod
+    def _bulk_cables_spec(raw) -> list:
+        """``bulk/``'s ``cables``: ``{"create": [{"key", ...cable payload}]}``
+        - new cables (Connect to…), each with the draft's ``key`` the
+        save's ``cable_paths`` may name as ``cable``."""
+        from .cable_routing import ROUTE_MAX
+
+        if raw in (None, ""):
+            return []
+        if not isinstance(raw, dict) or not isinstance(raw.get("create") or [], list):
+            raise ValidationError({"cables": "An object with a create list."})
+        rows = raw.get("create") or []
+        if len(rows) > ROUTE_MAX:
+            raise ValidationError({"cables": f"At most {ROUTE_MAX} new cables in one save."})
+        keys = set()
+        for item in rows:
+            if not isinstance(item, dict) or not isinstance(item.get("key"), str) \
+                    or not item["key"]:
+                raise ValidationError({"cables": "Each new cable has its key."})
+            if item["key"] in keys:
+                raise ValidationError({"cables": f"Key {item['key']} twice."})
+            keys.add(item["key"])
+        return rows
+
+    def _bulk_cables(self, request, rows) -> dict:
+        """Make a ``bulk/`` save's new cables (inside its transaction): each
+        validated as ``POST /api/cables/bulk-create/`` validates it, in a
+        status that means planned work, and one the user may add - both
+        ends inside their cable grant's sites. Any error writes nothing:
+        a 400 with ``cables``, one error object per cable in order.
+        Answers ``{key: cable}``."""
+        from auth_api import rbac
+
+        from .cable_scope import can_act_on_cable
+
+        if not rows:
+            return {}
+        tenant = self._tenant_or_403()
+        user = request.user
+        if not rbac.has_action(user, tenant, "cable", "add"):
+            raise PermissionDenied("You may not add cables.")
+        payloads = [{k: v for k, v in r.items() if k != "key"} for r in rows]
+        sers, errors = validate_cable_rows(
+            payloads,
+            lambda row: CableSerializer(data=row, context={"request": request}),
+        )
+        index = {id(p): i for i, p in enumerate(payloads)}
+        for ser in sers:
+            i = index[id(ser.initial_data)]
+            status = ser.validated_data.get("status")
+            if status is None or not status.is_planned:
+                errors[i] = {
+                    **errors[i], "status_id": ["Pick a status that means planned work."],
+                }
+        if any(errors):
+            raise ValidationError({
+                "detail": "Nothing was saved - fix the marked cables.",
+                "cables": errors,
+            })
+        out = {}
+        for row, ser in zip(rows, sers, strict=True):
+            cable = ser.save(tenant=tenant)
+            if not can_act_on_cable(user, tenant, "add", cable):
+                raise PermissionDenied(
+                    "Your cable permission does not cover every termination site."
+                )
+            out[row["key"]] = cable
+        return out
+
+    @staticmethod
+    def _cable_paths_spec(raw) -> dict:
+        """``bulk/``'s ``cable_paths``: ``{"upsert": [...], "delete": [...]}``.
+        An upsert is ``{"cable", "legs"?, "kind"?, "tray_order"?, "version"?,
+        "write_length"?, "replace_length"?, "cable_version"?, "riser"?}``
+        (``riser``: a riser tile of this plan - the cable is routed between
+        floors through it, :meth:`_bulk_riser_path`); a delete a cable id or
+        ``{"cable", "version"?}`` (a route between floors loses both parts)."""
+        if raw in (None, ""):
+            raw = {}
+        if not isinstance(raw, dict):
+            raise ValidationError({"cable_paths": "An object of upsert/delete lists."})
+        out = {}
+        for op in ("upsert", "delete"):
+            rows = raw.get(op) or []
+            if not isinstance(rows, list):
+                raise ValidationError({"cable_paths": f"{op} must be a list."})
+            norm = []
+            for item in rows:
+                if op == "delete" and not isinstance(item, dict):
+                    item = {"cable": item}
+                if not isinstance(item, dict) or not item.get("cable"):
+                    raise ValidationError({"cable_paths": f"Each {op} names its cable."})
+                norm.append(item)
+            out[op] = norm
+        from .cable_routing import ROUTE_MAX
+
+        if len(out["upsert"]) > ROUTE_MAX:
+            raise ValidationError(
+                {"cable_paths": f"At most {ROUTE_MAX} routes in one save."}
+            )
+        return out
+
+    def _path_cables(self, request, plan, spec, known=None) -> dict:
+        """The cables a ``cable_paths`` spec names, by id string: the plan's
+        tenant's cables the user may view. An unknown or unseen one is a 400
+        that reads alike. ``known`` (key → cable) are the cables the same
+        save made."""
+        import uuid as _uuid
+
+        from .cable_scope import viewable_cable_ids
+        from .models import Cable
+
+        tenant = self._tenant_or_403()
+        known = known or {}
+        ids = {}
+        for op in ("upsert", "delete"):
+            for item in spec[op]:
+                if str(item["cable"]) in known:
+                    continue
+                try:
+                    ids[str(item["cable"])] = _uuid.UUID(str(item["cable"]))
+                except ValueError:
+                    raise ValidationError(
+                        {"cable_paths": f"Unknown cable {item['cable']}."}
+                    ) from None
+        if not ids:
+            return dict(known)
+        found = {
+            c.pk: c for c in Cable.objects.filter(tenant=plan.tenant, pk__in=ids.values())
+        }
+        seen = viewable_cable_ids(request.user, tenant, set(found))
+        out = {}
+        for key, pk_ in ids.items():
+            if pk_ not in seen:
+                raise ValidationError({"cable_paths": f"Unknown cable {key}."})
+            out[key] = found[pk_]
+        return {**out, **known}
+
+    def _cable_path_conflicts(self, request, plan, crop, spec) -> list:
+        """The cable paths (and cable lengths) of a ``bulk/`` save changed
+        since the ``version`` sent with them, locked until the save ends."""
+        from .cable_routing import path_data
+        from .floor_plan_placement import changed_by, parse_version
+        from .models import Cable, FloorPlanCablePath
+
+        if not spec["upsert"] and not spec["delete"]:
+            return []
+        cables = self._path_cables(request, plan, spec)
+        tenant = plan.tenant
+        dx, dy = (-crop.x, -crop.y) if crop is not None else (0, 0)
+        stored = {
+            p.cable_id: p
+            for p in FloorPlanCablePath.objects.select_for_update().filter(
+                floor_plan=plan, cable_id__in=[c.pk for c in cables.values()]
+            )
+        }
+        out = []
+        for op in ("upsert", "delete"):
+            for item in spec[op]:
+                cable = cables[str(item["cable"])]
+                stamp = parse_version(item.get("version"), "cable_paths")
+                if stamp is not None:
+                    p = stored.get(cable.pk)
+                    if (p is None and op == "upsert") or (p is not None and p.updated_at != stamp):
+                        out.append({
+                            "kind": "cable_path",
+                            "id": str(cable.pk),
+                            "current": path_data(p, dx=dx, dy=dy) if p is not None else None,
+                            "changed_by": changed_by(tenant, p.pk) if p is not None else "",
+                        })
+                cstamp = parse_version(item.get("cable_version"), "cable_paths")
+                if op == "upsert" and cstamp is not None:
+                    now = Cable.objects.select_for_update().filter(pk=cable.pk).first()
+                    if now is not None and now.updated_at != cstamp:
+                        out.append({
+                            "kind": "cable",
+                            "id": str(cable.pk),
+                            "current": {
+                                "length": float(now.length) if now.length is not None else None,
+                                "length_unit": now.length_unit or "m",
+                                "length_source": now.length_source,
+                                "version": now.updated_at.isoformat(),
+                            },
+                            "changed_by": changed_by(tenant, now.pk),
+                        })
+        return out
+
+    def _bulk_cable_paths(self, request, plan, crop, spec, tray_keys=None,
+                          new_cables=None) -> list:
+        """Write a ``bulk/`` save's cable paths (inside its transaction).
+
+        Each cable must be one the user may change, and each path row one
+        they may add, change or delete (``floorplancablepath``). An upsert
+        without ``legs`` is routed here, against the tiles as saved; with
+        ``legs`` (cells; the view's, through a view) the geometry is checked
+        against the plan and measured here - lengths are never taken from
+        the payload. ``write_length`` fills the cable's length when it is
+        blank or computed; ``replace_length`` also replaces one a person
+        entered. A ``tray_order`` entry may be the key of a tray the same
+        save creates (``tray_keys``); a ``cable`` the key of a cable it made
+        (``new_cables``, checked for ``add`` when made). Answers the paths
+        written."""
+        from auth_api import rbac
+
+        from .cable_routing import (
+            PlanRouter,
+            delete_path,
+            path_data,
+            save_path,
+            write_length,
+        )
+        from .cable_scope import can_act_on_cable
+        from .models import FloorPlanCablePath
+
+        if not spec["upsert"] and not spec["delete"]:
+            return []
+        user = request.user
+        tenant = self._tenant_or_403()
+        cables = self._path_cables(request, plan, spec, known=new_cables)
+        made = {c.pk for c in (new_cables or {}).values()}
+        for cable in {c.pk: c for c in cables.values()}.values():
+            if cable.pk not in made and not can_act_on_cable(user, tenant, "change", cable):
+                raise PermissionDenied(f"You may not change {cable}.")
+
+        def allowed(action, row):
+            if not rbac.can_act_on(user, tenant, "floorplancablepath", action, row):
+                raise PermissionDenied(f"You may not {action} the route of {row.cable}.")
+
+        ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+        for item in spec["delete"]:
+            cable = cables[str(item["cable"])]
+            row = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
+            if row is not None:
+                allowed("delete", row)
+                far = self._riser_far_row(row)
+                delete_path(plan, cable)
+                # The other floor's part of a route between floors goes too,
+                # when the user may edit that floor.
+                if far is not None and rbac.can_act_on(
+                    user, tenant, "floorplan", "change", far.floor_plan
+                ) and rbac.can_act_on(user, tenant, "floorplancablepath", "delete", far):
+                    far.delete()
+        router = PlanRouter(plan) if spec["upsert"] else None
+        other_floors: dict = {}
+        out = []
+        for item in spec["upsert"]:
+            cable = cables[str(item["cable"])]
+            before = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
+            if before is not None:
+                allowed("change", before)
+            if item.get("riser"):
+                out.append(self._bulk_riser_path(
+                    request, plan, cable, item, router, other_floors, allowed, before, ox, oy,
+                ))
+                continue
+            if tray_keys and isinstance(item.get("tray_order"), list):
+                item = {**item, "tray_order": [
+                    tray_keys.get(t, t) if isinstance(t, str) else t
+                    for t in item["tray_order"]
+                ]}
+            if item.get("legs") is None:
+                route = router.route(cable, tray_ids=item.get("tray_order"))
+                if route is None:
+                    raise ValidationError({"cable_paths": [
+                        f"{cable}: both ends must be placed on this plan, on different tiles."
+                    ]})
+            else:
+                legs = item["legs"]
+                if crop is not None and isinstance(legs, list):
+                    legs = [
+                        {**leg, "points": [
+                            [p[0] + ox, p[1] + oy] if isinstance(p, (list, tuple))
+                            and len(p) >= 2 and all(
+                                isinstance(v, (int, float)) and not isinstance(v, bool)
+                                for v in p[:2]
+                            ) else p
+                            for p in (leg.get("points") or [])
+                        ]} if isinstance(leg, dict) else leg
+                        for leg in legs
+                    ]
+                try:
+                    route = router.from_geometry(
+                        cable, item.get("kind") or "trays", legs, item.get("tray_order") or [],
+                    )
+                except ValueError as exc:
+                    raise ValidationError({"cable_paths": [f"{cable}: {exc}"]}) from None
+            row = save_path(plan, cable, route)
+            allowed("change" if before is not None else "add", row)
+            if item.get("write_length") or item.get("replace_length"):
+                write_length(cable, route["length_mm"], replace=bool(item.get("replace_length")))
+            out.append(path_data(row, dx=-ox, dy=-oy))
+        return out
+
+    @staticmethod
+    def _riser_far_row(row):
+        """The other floor's part of a stored route between floors, or None."""
+        from .cable_routing import riser_partner
+        from .models import FloorPlanCablePath
+
+        if row.riser_id is None:
+            return None
+        pair = riser_partner(row.riser)
+        if pair is None:
+            return None
+        return FloorPlanCablePath.objects.select_related("floor_plan").filter(
+            floor_plan_id=pair.floor_plan_id, cable_id=row.cable_id, riser=pair
+        ).first()
+
+    def _bulk_riser_path(self, request, plan, cable, item, router, other_floors, allowed,
+                         before, ox, oy) -> dict:
+        """A ``bulk/`` upsert with ``riser``: the cable routed between floors
+        through that riser of this plan, against the tiles as saved - a row
+        here and one on the floor the riser pairs with, which the user must
+        be allowed to change too. Lengths are worked out here."""
+        import uuid as _uuid
+
+        from auth_api import rbac
+
+        from .cable_routing import path_data, save_riser_route, write_length
+        from .models import FloorPlanCablePath
+
+        user = request.user
+        tenant = self._tenant_or_403()
+        try:
+            only = _uuid.UUID(str(item["riser"]))
+        except ValueError:
+            raise ValidationError({"cable_paths": [f"{cable}: unknown riser."]}) from None
+        res = router.via_riser(
+            cable, routers=other_floors, only=only,
+            allow=lambda p: rbac.can_act_on(user, tenant, "floorplan", "view", p),
+        )
+        if res is None:
+            raise ValidationError({"cable_paths": [
+                f"{cable}: no riser of this floor joins it to its other end."
+            ]})
+        far_plan = res["far_plan"]
+        if not rbac.can_act_on(user, tenant, "floorplan", "change", far_plan):
+            raise PermissionDenied(f"You may not change {far_plan.name}.")
+        far_before = FloorPlanCablePath.objects.filter(floor_plan=far_plan, cable=cable).first()
+        if far_before is not None:
+            allowed("change", far_before)
+        near_row, far_row = save_riser_route(plan, cable, res)
+        allowed("change" if before is not None else "add", near_row)
+        allowed("change" if far_before is not None else "add", far_row)
+        if item.get("write_length") or item.get("replace_length"):
+            write_length(cable, res["length_mm"], replace=bool(item.get("replace_length")))
+        return path_data(near_row, dx=-ox, dy=-oy)
+
+    @staticmethod
+    def _view_rows_editable(view, plan, crop, kinds, specs, row) -> None:
+        """Through a live view, an update or a delete takes only a row of
+        the source wholly inside the view: one crossing its edge is locked
+        there, one outside it is not the view's."""
+        from . import floor_plan_snapshots as snaps
+
+        for key, rel, _ser, noun in kinds:
+            for op in ("update", "delete"):
+                for item in specs[key][op]:
+                    pk_ = item.get("id") if isinstance(item, dict) else item
+                    obj = row(rel, pk_)
+                    if obj is None:
+                        continue
+                    where = snaps.classify(key, obj, crop)
+                    if where == "edge":
+                        raise ValidationError({key: [
+                            f"{obj} crosses the edge of {view.name}. "
+                            f"Edit it on {plan.name}."
+                        ]})
+                    if where is None:
+                        raise ValidationError({key: [f"Unknown {noun} {pk_}."]})
+
+    def _bulk_conflicts(self, request, plan, kinds, specs) -> list:
+        """The rows of a ``bulk/`` save whose stored ``updated_at`` is not the
+        ``version`` sent with them, locked until the save ends."""
+        import uuid as _uuid
+
+        from .floor_plan_placement import changed_by, parse_version
+
+        tenant = _get_active_tenant(request)
+        readers = {"tiles": _plan_tiles, "areas": _plan_areas, "labels": _plan_labels}
+        for key, rel, _ser, _noun in kinds:
+            readers.setdefault(key, lambda _plan, rel=rel: rel.all())
+        out = []
+        for key, rel, ser_cls, noun in kinds:
+            based = {}
+            for op in ("update", "delete"):
+                for item in specs[key][op]:
+                    if not isinstance(item, dict) or not item.get("version"):
+                        continue
+                    try:
+                        oid = _uuid.UUID(str(item.get("id")))
+                    except (ValueError, TypeError):
+                        continue
+                    based[oid] = (parse_version(item["version"], key), op)
+            if not based:
+                continue
+            stored = dict(
+                rel.select_for_update().filter(pk__in=list(based))
+                .values_list("pk", "updated_at")
+            )
+            stale = [
+                oid for oid, (stamp, op) in based.items()
+                if (oid not in stored and op == "update")
+                or (oid in stored and stored[oid] != stamp)
+            ]
+            if not stale:
+                continue
+            now = list(readers[key](plan).filter(pk__in=stale))
+            data = {
+                row["id"]: row
+                for row in ser_cls(now, many=True, context={"request": request}).data
+            }
+            for oid in stale:
+                out.append({
+                    "kind": noun,
+                    "id": str(oid),
+                    "current": data.get(str(oid)),
+                    "changed_by": changed_by(tenant, oid),
+                })
+        return out
+
+    @action(detail=True, methods=["post"], url_path="snap-all")
+    def snap_all(self, request, pk=None):
+        """Bring every tile back onto the grid and make the plan a grid plan:
+        a quarter turn, whole cells, inside the grid. ``{"dry_run": true}``
+        changes nothing and answers what would move and which tiles would
+        then overlap; without it the tiles are snapped (each audited) and
+        the plan's ``layout_mode`` becomes ``grid``."""
+        plan = self.get_object()
+        self._not_on_view(plan, "The layout")
+        dry = request.data.get("dry_run") in (True, "true", "1", 1)
+        tiles = list(_plan_tiles(plan))
+        snapped = {t.pk: _snap_tile(t, plan) for t in tiles}
+        moved = [
+            t for t in tiles
+            if snapped[t.pk] != (t.x, t.y, t.width, t.height, t.orientation)
+        ]
+        solid = [t for t in tiles if not (t.tile_type_id and t.tile_type.is_zone)]
+        hits = set()
+        for i, a in enumerate(solid):
+            ax, ay, aw, ah, _ = snapped[a.pk]
+            for b in solid[i + 1:]:
+                bx, by, bw, bh, _ = snapped[b.pk]
+                if ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah:
+                    hits.update((a.pk, b.pk))
+        from .floor_plan_placement import HIDDEN, TileLinks
+
+        # A collision names a tile by its label, else its object - Hidden
+        # when the user may not view that object (#453).
+        links = TileLinks(request.user, _get_active_tenant(request))
+        clashing = [t for t in solid if t.pk in hits]
+        links.prime(clashing)
+        collisions = [
+            {"id": str(t.pk), "name": t.label or (
+                HIDDEN if links.hidden(t) else str(t.linked_object or "")
+            ) or str(t)}
+            for t in clashing
+        ]
+        if dry:
+            return Response({
+                "layout_mode": plan.layout_mode, "moved": len(moved),
+                "collisions": collisions,
+            })
+        with transaction.atomic():
+            for t in moved:
+                t.x, t.y, t.width, t.height, t.orientation = snapped[t.pk]
+                t.save()
+            if plan.layout_mode != "grid":
+                plan.layout_mode = "grid"
+                plan.save(update_fields=["layout_mode", "updated_at"])
+        return Response({
+            "layout_mode": plan.layout_mode, "moved": len(moved),
+            "collisions": collisions,
+            "tiles": FloorPlanTileSerializer(
+                _plan_tiles(plan), many=True, context={"request": request}
+            ).data,
+        })
 
 
 class SiteMarkerViewSet(TenantScopedViewSet):
@@ -10754,14 +15490,430 @@ class SiteMarkerViewSet(TenantScopedViewSet):
         return qs
 
 
-class FloorPlanTileViewSet(TenantScopedViewSet):
+class FloorPlanStackViewSet(TenantScopedViewSet):
+    """Floor plans as users see them - a building or hall and its floors
+    (``FloorPlanStack``). Follows the ``floorplan`` permission and its site
+    scope. Filters: ``?location=``, ``?site=`` (site-wide floor plans and
+    those of its locations), ``?site_wide=1``, ``?tag=<slug>``, ``?search=``
+    (also matches floor names). Actions: ``floors/`` adds a floor,
+    ``reorder/`` orders them, ``merge/`` moves other floor plans' floors in;
+    a delete takes the floors with it."""
+
+    queryset = (
+        FloorPlanStack.objects.select_related("site", "location", "location__site")
+        .prefetch_related(TAGS)
+        .order_by(NATURAL_NAME, "pk")
+    )
+    serializer_class = FloorPlanStackSerializer
+    pagination_class = StandardPagination
+    rbac_object_type = "floorplan"
+    rbac_action_map = {"floors": "add", "reorder": "change", "merge": "change"}
+
+    def _floors_qs(self, action="view"):
+        from auth_api import rbac
+
+        tenant = _get_active_tenant(self.request)
+        qs = FloorPlan.objects.filter(tenant=tenant).order_by("floor_order", "name", "pk")
+        return rbac.restrict_queryset(qs, self.request.user, tenant, "floorplan", action)
+
+    def get_queryset(self):
+        from .topology_views import _uuid_param
+
+        qs = super().get_queryset()
+        if not self.request:
+            return qs
+        qs = qs.prefetch_related(
+            Prefetch("floors", queryset=self._floors_qs().select_related("source"),
+                     to_attr="visible_floors")
+        )
+        params = self.request.query_params
+        s = params.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(name__icontains=s) | Q(description__icontains=s)
+                | Q(pk__in=self._floors_qs().filter(name__icontains=s).values("stack_id"))
+            )
+        location = _uuid_param(params, "location")
+        if location:
+            qs = qs.filter(location_id=location)
+        site = _uuid_param(params, "site")
+        if site:
+            qs = qs.filter(site_id=site)
+        if params.get("site_wide") in ("1", "true"):
+            qs = qs.filter(location__isnull=True)
+        tag_slugs = [t for t in params.getlist("tag") if t]
+        for slug in tag_slugs:
+            qs = qs.filter(tags__slug=slug)
+        if tag_slugs:
+            qs = qs.distinct()
+        return qs
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete the floor plan and every floor of it. Refused when one of
+        its floors is outside what the user may delete."""
+        stack = self.get_object()
+        floors = list(FloorPlan.objects.filter(stack=stack))
+        allowed = set(
+            self._floors_qs("delete").filter(stack=stack).values_list("pk", flat=True)
+        )
+        if any(p.pk not in allowed for p in floors):
+            raise PermissionDenied("You may not delete every floor of this floor plan.")
+        from .floor_plan_snapshots import refuse_while_viewed
+
+        refuse_while_viewed(floors)
+        with transaction.atomic():
+            for plan in floors:
+                plan.delete()
+            stack.delete()
+        return Response(status=drf_status.HTTP_204_NO_CONTENT)
+
+    def _reload(self, stack):
+        return self.get_queryset().get(pk=stack.pk)
+
+    @action(detail=True, methods=["post"], url_path="floors")
+    def floors(self, request, pk=None):
+        """Add a floor: ``{"name", "position"?, "copy_from"?, "below"?,
+        "same_footprint"?, "copy_walls"?, "copy_background"?}``.
+        ``position`` is its place in the floor order (0 = lowest; default on
+        top, or with ``below`` at the bottom: a basement); ``copy_from`` (a
+        floor of this floor plan) lends its grid size and scale.
+        ``same_footprint`` makes the floor plan aligned and the floor a level
+        sharing ``copy_from``'s footprint, with its outer walls and
+        background copied on request (``floor_stacks.add_floor``). Answers
+        the new floor."""
+        from auth_api import rbac
+
+        from .floor_stacks import add_floor
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        # "add" leaves the row unrestricted: the floor plan must be one the
+        # user may see, and the new floor one they may add (site scope).
+        stack = rbac.restrict_queryset(
+            FloorPlanStack.objects.filter(tenant=tenant), request.user, tenant,
+            "floorplan", "view",
+        ).filter(pk=self.get_object().pk).first()
+        if stack is None:
+            raise NotFound()
+        body = request.data
+        position = body.get("position")
+        if position is not None:
+            try:
+                position = int(position)
+            except (TypeError, ValueError):
+                raise ValidationError({"position": ["A whole number."]}) from None
+        copy_from = None
+        if body.get("copy_from"):
+            cid = _uuid_param({"copy_from": body.get("copy_from")}, "copy_from")
+            copy_from = self._floors_qs().filter(pk=cid, stack=stack).first() if cid else None
+            if copy_from is None:
+                raise ValidationError({"copy_from": ["Pick a floor of this floor plan."]})
+        name = body.get("name")
+
+        def flag(key) -> bool:
+            v = body.get(key)
+            return v is True or (isinstance(v, str) and v.lower() in ("1", "true"))
+
+        same = flag("same_footprint")
+        with transaction.atomic():
+            plan = add_floor(stack, name if isinstance(name, str) else "",
+                             position=position, copy_from=copy_from,
+                             below=flag("below"), same_footprint=same,
+                             copy_walls=same and flag("copy_walls"),
+                             copy_background=same and flag("copy_background"))
+            walls = FloorPlanWall.objects.filter(floor_plan=plan)
+            if walls.exists() and rbac.restrict_queryset(
+                walls, request.user, tenant, "floorplanwall", "add",
+            ).count() != walls.count():
+                raise PermissionDenied("You may not add walls to this floor.")
+            if not rbac.restrict_queryset(
+                FloorPlan.objects.filter(pk=plan.pk), request.user, tenant,
+                "floorplan", "add",
+            ).exists():
+                raise PermissionDenied(
+                    "The created or updated object is outside your permission scope."
+                )
+        plan = FloorPlan.objects.select_related("site", "location", "stack") \
+            .get(pk=plan.pk)
+        return Response(
+            FloorPlanSerializer(plan, context=self.get_serializer_context()).data,
+            status=drf_status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="reorder")
+    def reorder(self, request, pk=None):
+        """Order the floors: ``{"order": [<every floor id, lowest first>]}``."""
+        from .floor_stacks import reorder
+
+        stack = self.get_object()
+        order = request.data.get("order")
+        if not isinstance(order, list):
+            raise ValidationError({"order": ["A list of floor ids."]})
+        allowed = set(self._floors_qs("change").filter(stack=stack).values_list("pk", flat=True))
+        if FloorPlan.objects.filter(stack=stack).exclude(pk__in=allowed).exists():
+            raise PermissionDenied("You may not change every floor of this floor plan.")
+        reorder(stack, order)
+        return Response(self.get_serializer(self._reload(stack)).data)
+
+    @action(detail=True, methods=["post"], url_path="merge")
+    def merge(self, request, pk=None):
+        """Move every floor of other floor plans at the same site into this
+        one: ``{"stacks": [<ids>]}``. Refused, with the clashes listed, when
+        two floors would share a name. The emptied floor plans go."""
+        from auth_api import rbac
+
+        from .floor_stacks import merge_stacks
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        target = self.get_object()
+        raw = request.data.get("stacks")
+        if not isinstance(raw, list) or not raw:
+            raise ValidationError({"stacks": ["Pick at least one other floor plan."]})
+        ids = set()
+        for x in raw:
+            sid = _uuid_param({"id": x}, "id") if isinstance(x, str) else None
+            if not sid:
+                raise ValidationError({"stacks": ["Unknown floor plan."]})
+            ids.add(sid)
+        sources = list(
+            rbac.restrict_queryset(
+                FloorPlanStack.objects.filter(tenant=tenant, pk__in=ids)
+                .select_related("site", "location", "location__site"),
+                request.user, tenant, "floorplan", "change",
+            ).order_by(NATURAL_NAME, "pk")
+        )
+        if len(sources) != len(ids):
+            raise ValidationError({"stacks": ["Unknown floor plan."]})
+        moving = FloorPlan.objects.filter(stack__in=sources)
+        allowed = set(
+            self._floors_qs("change").filter(stack__in=sources).values_list("pk", flat=True)
+        )
+        if moving.exclude(pk__in=allowed).exists():
+            raise PermissionDenied("You may not change every floor of those floor plans.")
+        moved = list(moving.values_list("pk", flat=True))
+        with transaction.atomic():
+            merge_stacks(target, sources)
+            self._assert_bulk_write_in_site_scope([target.pk])
+            if not rbac.restrict_queryset(
+                FloorPlan.objects.filter(pk__in=moved), request.user, tenant,
+                "floorplan", "change",
+            ).count() == len(moved):
+                raise PermissionDenied(
+                    "This update would move objects outside your permission scope."
+                )
+        return Response(self.get_serializer(self._reload(target)).data)
+
+
+class _ViaViewMixin:
+    """Writes of a row drawn on a plan made through a live view: with
+    ``?via=<view id>`` (or a create whose ``floor_plan_id`` is the view), the
+    payload is in the view's cells. It is moved into the source's cells and
+    written to the source's row with the same serializer, permissions,
+    version check and change log; an update or delete takes only a row
+    wholly inside the view, and the row must stay inside it. The answer is
+    in the view's cells."""
+
+    #: The contents key of the rows (``tiles``, ``walls``...).
+    snapshot_kind = ""
+
+    def _via(self):
+        import uuid as _uuid
+
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .topology_views import _uuid_param
+
+        request = self.request
+        vid = _uuid_param(request.query_params, "via")
+        if vid is None and self.action == "create" and hasattr(request.data, "get"):
+            try:
+                fp = _uuid.UUID(str(request.data.get("floor_plan_id")))
+            except (TypeError, ValueError):
+                fp = None
+            if fp is not None and FloorPlan.objects.filter(pk=fp, kind="view").exists():
+                vid = fp
+        if vid is None:
+            return None
+        tenant = self._tenant_or_403()
+        view = rbac.restrict_queryset(
+            FloorPlan.objects.filter(tenant=tenant, pk=vid, kind="view")
+            .select_related("source"),
+            request.user, tenant, "floorplan", "view",
+        ).first()
+        if view is None:
+            raise ValidationError({"via": ["Unknown view."]})
+        src, crop = snaps.resolve(view)
+        if crop is None:
+            raise ValidationError({"via": ["The plan this view showed is gone."]})
+        if src.tenant_id != tenant.pk or not rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=src.pk), request.user, tenant, "floorplan", "change"
+        ).exists():
+            raise PermissionDenied(f"You may not change {src.name}, the plan this view shows.")
+        return view, src, crop
+
+    def _view_body(self, crop):
+        from . import floor_plan_snapshots as snaps
+
+        data = self.request.data
+        body = dict(data.items()) if hasattr(data, "items") else {}
+        return snaps.shift(self.snapshot_kind, body, crop.x, crop.y)
+
+    def _view_out(self, data, crop):
+        from . import floor_plan_snapshots as snaps
+
+        return snaps.shift(self.snapshot_kind, data, -crop.x, -crop.y)
+
+    def _stays_in(self, view, src, crop, obj):
+        from . import floor_plan_snapshots as snaps
+
+        if obj.floor_plan_id != src.pk:
+            raise ValidationError({"floor_plan_id": [f"Not a row of {src.name}."]})
+        where = snaps.classify(self.snapshot_kind, obj, crop)
+        if where == "edge":
+            raise ValidationError({"detail": [
+                f"{obj} crosses the edge of {view.name}. Edit it on {src.name}."
+            ]})
+        if where is None:
+            raise ValidationError({"detail": [f"{obj} is outside {view.name}."]})
+
+    def _via_cause(self, view):
+        from audit.context import cause
+
+        return cause(f"Through the view {view.name}"[:255])
+
+    def create(self, request, *args, **kwargs):
+        via = self._via()
+        if via is None:
+            return super().create(request, *args, **kwargs)
+        view, src, crop = via
+        body = self._view_body(crop)
+        body["floor_plan_id"] = str(src.pk)
+        with transaction.atomic(), self._via_cause(view):
+            ser = self.get_serializer(data=body)
+            ser.is_valid(raise_exception=True)
+            self.perform_create(ser)
+            self._stays_in(view, src, crop, ser.instance)
+            response = Response(ser.data, status=drf_status.HTTP_201_CREATED)
+            self._assert_write_in_site_scope(response, "add")
+        return Response(self._view_out(ser.data, crop), status=drf_status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        via = self._via()
+        if via is None:
+            return super().update(request, *args, **kwargs)
+        view, src, crop = via
+        partial = kwargs.pop("partial", False)
+        body = self._view_body(crop)
+        body.pop("floor_plan_id", None)
+        body.pop("version", None)
+        with transaction.atomic(), self._via_cause(view):
+            instance = self.get_object()
+            self._stays_in(view, src, crop, instance)
+            conflict = self._version_conflict(request, instance) \
+                if hasattr(self, "_version_conflict") else None
+            if conflict is not None:
+                for c in conflict.data.get("conflicts", []):
+                    if c.get("current"):
+                        c["current"] = self._view_out(c["current"], crop)
+                return conflict
+            ser = self.get_serializer(instance, data=body, partial=partial)
+            ser.is_valid(raise_exception=True)
+            self.perform_update(ser)
+            self._stays_in(view, src, crop, ser.instance)
+            self._assert_write_in_site_scope(Response(ser.data), "change")
+        return Response(self._view_out(ser.data, crop))
+
+    def destroy(self, request, *args, **kwargs):
+        via = self._via()
+        if via is None:
+            return super().destroy(request, *args, **kwargs)
+        view, src, crop = via
+        with transaction.atomic(), self._via_cause(view):
+            instance = self.get_object()
+            self._stays_in(view, src, crop, instance)
+            conflict = self._version_conflict(request, instance) \
+                if hasattr(self, "_version_conflict") else None
+            if conflict is not None:
+                return conflict
+            self.perform_destroy(instance)
+        return Response(status=drf_status.HTTP_204_NO_CONTENT)
+
+
+class _VersionCheckMixin:
+    """Single writes of a row drawn on a plan may carry the ``version`` (its
+    ``updated_at``) they were based on - in the body, or ``?version=`` on a
+    delete. A row changed since answers 409 with the row as it is now, and
+    nothing is written. Without a version the write goes through as before."""
+
+    def _version_conflict(self, request, instance):
+        from .floor_plan_placement import changed_by, parse_version
+
+        raw = request.query_params.get("version")
+        if raw is None and hasattr(request.data, "get"):
+            raw = request.data.get("version")
+        stamp = parse_version(raw)
+        if stamp is None:
+            return None
+        stored = (
+            type(instance).objects.select_for_update()
+            .filter(pk=instance.pk).values_list("updated_at", flat=True).first()
+        )
+        if stored == stamp:
+            return None
+        return Response(
+            {"detail": "Changed elsewhere since you opened the plan.",
+             "conflicts": [{
+                 "kind": type(instance).__name__.removeprefix("FloorPlan").lower(),
+                 "id": str(instance.pk),
+                 "current": self.get_serializer(instance).data,
+                 "changed_by": changed_by(_get_active_tenant(request), instance.pk),
+             }]},
+            status=drf_status.HTTP_409_CONFLICT,
+        )
+
+    def update(self, request, *args, **kwargs):
+        with transaction.atomic():
+            conflict = self._version_conflict(request, self.get_object())
+            if conflict is not None:
+                return conflict
+            return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        with transaction.atomic():
+            conflict = self._version_conflict(request, self.get_object())
+            if conflict is not None:
+                return conflict
+            return super().destroy(request, *args, **kwargs)
+
+
+_TILE_LINK_SLUGS = {
+    "rack": "rack", "cabinet": "cabinet", "device": "device",
+    "cooling_source": "coolingsource",
+}
+
+
+def _may_view_link(user, tenant, slug: str, pk: str) -> bool:
+    """Whether ``user`` may view the linked object a tile filter names. A
+    malformed id is simply not viewable."""
+    import uuid
+
+    from auth_api import rbac
+
+    try:
+        key = uuid.UUID(str(pk))
+    except ValueError:
+        return False
+    return rbac.ViewableRows(user, tenant).may_view(slug, key)
+
+
+class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSet):
     """Tiles are scoped through their plan's tenant (they carry no tenant FK
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
-    queryset = FloorPlanTile.objects.select_related(
-        "floor_plan", "tile_type", "role_type", "rack", "cabinet", "device",
-        "power_panel", "power_feed", "linked_floor_plan",
-    ).order_by("y", "x")
+    snapshot_kind = "tiles"
+    queryset = FloorPlanTile.objects.select_related(*TILE_RELATED).order_by("y", "x")
     serializer_class = FloorPlanTileSerializer
     pagination_class = StandardPagination
     tenant_field = None
@@ -10777,12 +15929,18 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
                 ("rack", "rack_id"),
                 ("cabinet", "cabinet_id"),
                 ("device", "device_id"),
+                ("cooling_source", "cooling_source_id"),
                 # "Where is this tile type placed" - the floor-tile-type
                 # detail page's Tiles tab.
                 ("tile_type", "tile_type_id"),
             ):
                 val = self.request.query_params.get(param)
                 if val:
+                    # "Where is this object placed" answers nothing about an
+                    # object the reader may not view (#453).
+                    slug = _TILE_LINK_SLUGS.get(param)
+                    if slug and not _may_view_link(self.request.user, tenant, slug, val):
+                        return qs.none()
                     qs = qs.filter(**{field: val})
         return restrict_for_view(self, qs)
 
@@ -10791,10 +15949,70 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
             raise ValidationError({"floor_plan_id": "This field is required."})
         serializer.save()
 
+    @action(detail=True, methods=["get", "post"], url_path="through")
+    def through(self, request, pk=None):
+        """A riser on a floor plan with aligned floors: the levels it runs
+        through. ``GET`` lists the other levels (``[{id, name, tile}]``,
+        ``tile`` the riser standing at its place there, or null); ``POST
+        {"floors": [ids]}`` places a riser at its place on each level named
+        that has none and takes it off the others (floor_stacks.riser_through).
+        Risers at one place pair on their own. Needs floor plan tile change
+        here, add on the levels it reaches and delete on those it leaves."""
+        from auth_api import rbac
 
-class FloorPlanTrayViewSet(TenantScopedViewSet):
+        from .floor_stacks import riser_through, shaft_levels
+
+        tenant = self._tenant_or_403()
+        tile = self.get_object()
+        if tile.floor_plan.kind == "view":
+            raise ValidationError("Set a riser's levels on its own plan.")
+
+        def visible_floors():
+            return set(rbac.restrict_queryset(
+                FloorPlan.objects.filter(tenant=tenant), request.user, tenant,
+                "floorplan", "view",
+            ).values_list("pk", flat=True))
+
+        if request.method == "POST":
+            floors = request.data.get("floors")
+            if not isinstance(floors, list):
+                raise ValidationError({"floors": ["A list of level ids."]})
+            seen = visible_floors()
+
+            def may_add(plan):
+                return plan.pk in seen and rbac.has_action(
+                    request.user, tenant, "floorplantile", "add")
+
+            def may_delete(t):
+                return t.floor_plan_id in seen and rbac.restrict_queryset(
+                    FloorPlanTile.objects.filter(pk=t.pk), request.user, tenant,
+                    "floorplantile", "delete",
+                ).exists()
+
+            with transaction.atomic():
+                levels = riser_through(tile, floors, may_add=may_add, may_delete=may_delete)
+                made = FloorPlanTile.objects.filter(
+                    pk__in=[lv["tile"].pk for lv in levels if lv["tile"] is not None])
+                if rbac.restrict_queryset(
+                    made, request.user, tenant, "floorplantile", "add",
+                ).count() != made.count():
+                    raise PermissionDenied(
+                        "The created or updated object is outside your permission scope."
+                    )
+        else:
+            levels = shaft_levels(tile)
+        seen = visible_floors()
+        return Response({"levels": [
+            {"id": str(lv["floor"].pk), "name": lv["floor"].name,
+             "tile": str(lv["tile"].pk) if lv["tile"] is not None else None}
+            for lv in levels if lv["floor"].pk in seen
+        ]})
+
+
+class FloorPlanTrayViewSet(_ViaViewMixin, TenantScopedViewSet):
     """Tray/conduit runs - scoped through their plan's tenant, like tiles."""
 
+    snapshot_kind = "trays"
     queryset = FloorPlanTray.objects.select_related("floor_plan").prefetch_related(
         "cables"
     ).order_by(NATURAL_NAME)
@@ -10819,11 +16037,12 @@ class FloorPlanTrayViewSet(TenantScopedViewSet):
         serializer.save()
 
 
-class FloorPlanWallViewSet(TenantScopedViewSet):
+class FloorPlanWallViewSet(_ViaViewMixin, TenantScopedViewSet):
     """Wall polylines - scoped through their plan's tenant, like trays.
     Render-only geometry in v1: drawn in 2D, extruded in 3D, and deliberately
     NOT part of the cable-routing graph."""
 
+    snapshot_kind = "walls"
     queryset = FloorPlanWall.objects.select_related("floor_plan")
     serializer_class = FloorPlanWallSerializer
     pagination_class = StandardPagination
@@ -10846,13 +16065,61 @@ class FloorPlanWallViewSet(TenantScopedViewSet):
         serializer.save()
 
 
-class FloorPlanRaisedFloorAreaViewSet(TenantScopedViewSet):
+class _FloorPlanChildViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSet):
+    """Rows drawn on a plan - scoped through their plan's tenant, filtered by
+    ``?floor_plan=``."""
+
+    pagination_class = StandardPagination
+    tenant_field = None
+
+    def get_queryset(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(floor_plan__tenant=tenant)
+        if self.request:
+            from .topology_views import _uuid_param
+
+            fp = _uuid_param(self.request.query_params, "floor_plan")
+            if fp:
+                qs = qs.filter(floor_plan_id=fp)
+        return restrict_for_view(self, qs)
+
+    def perform_create(self, serializer):
+        if serializer.validated_data.get("floor_plan") is None:
+            raise ValidationError({"floor_plan_id": "This field is required."})
+        serializer.save()
+
+
+class FloorPlanAreaViewSet(_FloorPlanChildViewSet):
+    """Rooms, locations and plain areas drawn on a floor (rectangles turned
+    about their centre, or polygons)."""
+
+    queryset = FloorPlanArea.objects.select_related(
+        "floor_plan", "room", "location__location_type", "area_type", "opens__stack"
+    ).order_by("z", "created_at", "id")
+    serializer_class = FloorPlanAreaSerializer
+    snapshot_kind = "areas"
+
+
+class FloorPlanLabelViewSet(_FloorPlanChildViewSet):
+    """Free text on a floor, sized in millimetres on the floor."""
+
+    queryset = FloorPlanLabel.objects.select_related("floor_plan", "opens__stack").order_by(
+        "z", "created_at", "id"
+    )
+    serializer_class = FloorPlanLabelSerializer
+    snapshot_kind = "labels"
+
+
+class FloorPlanRaisedFloorAreaViewSet(_ViaViewMixin, TenantScopedViewSet):
     """Raised-floor rectangles - scoped through their plan's tenant, like
     trays. The plenum depth they carry feeds underfloor tray elevation in the
     3D room and the vertical-drop term in route-length estimation."""
 
     queryset = FloorPlanRaisedFloorArea.objects.select_related("floor_plan")
     serializer_class = FloorPlanRaisedFloorAreaSerializer
+    snapshot_kind = "raised_floors"
     pagination_class = StandardPagination
     tenant_field = None
 

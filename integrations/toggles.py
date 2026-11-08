@@ -22,6 +22,7 @@ KEYS = {
     "ai_writes": "ai_writes_enabled",
     "ai_chat": "ai_chat_enabled",
     "zabbix": "zabbix_enabled",
+    "prtg": "prtg_enabled",
     "oxidized": "oxidized_enabled",
 }
 

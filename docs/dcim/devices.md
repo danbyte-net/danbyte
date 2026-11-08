@@ -10,7 +10,7 @@ detail page.
 
 ## Add a device
 
-1. Open **DCIM → Devices** in the sidebar and click **Add device**.
+1. Open **DCIM → Devices → Devices** in the sidebar and click **Add device**.
 2. Give it a **name** (must be unique within the tenant).
 3. Pick a **device type** - the hardware model. The box searches as you type;
    **Search** opens the full picker, which matches on name, model **and part
@@ -20,26 +20,90 @@ detail page.
    render". Don't have the type yet? Create it first on the
    [Device catalog](device-catalog.md) page; it only takes a moment and you'll
    reuse it for every device of that model.
-4. Optionally set the **site**, **location**, **role**, **platform**,
-   **cluster**, **status**, **serial number**, **asset tag** and **warranty end**
+4. Optionally set the **site**, **location**, [**room**](rooms.md), **role**, **platform**,
+   **software version** (see
+   [Software target](../features/lifecycle.md#software-target)), **cluster**,
+   **status**, **serial number**, **asset tag** and **warranty end**
    (see [Support & warranty coverage](../features/support-coverage.md)).
-5. Optionally fill the **built-in extras** - **comments**, **airflow**, and
-   **latitude / longitude**. Which optional fields appear is controlled by your
+5. Optionally fill the **built-in extras** - **comments**, **airflow**,
+   **cooling method** and **latitude / longitude**. Which optional fields appear is controlled by your
    administrator (see [Built-in fields](#built-in-fields) below), so you may not
    see all of them.
-6. Save.
+6. Optionally pick **Application groups** and **Profiles** - the
+   [device profiles](../features/device-profiles.md#on-devices-and-vms) it
+   gets, in order. Both are written with the first save. **Add device** on a
+   device profile's page opens this form with that profile already picked.
+7. Save.
+
+### Adding many devices at once
+
+A **`[a-b]` range in the name** creates one device per number in a single
+submit: `DK-RDS-[1-10]` makes DK-RDS-1 … DK-RDS-10, and a zero-padded start
+bound pads every name to its width, so `[0001-0100]` makes 0001 … 0100. A
+line under **Name** previews it - *Creates 10 devices: DK-RDS-1 … DK-RDS-10* -
+and the button reads **Create 10 devices**. The rules are the same as for
+[components](#adding-many-components-at-once): one range per name, counting
+up, at most **128** devices.
+
+Every other field - type, site, role, status, platform, rack, tags, custom
+fields, application groups and profiles - applies to all of them. Fields that
+belong to one device must stay blank: a rack **position**, a DIN rail offset,
+a side-mount offset, **serial number**, **asset tag**, a stack position, the
+primary, secondary and out-of-band IPs and *PRTG polls*. A rack without a
+position is fine; the devices land in it unplaced. Place them on the rack
+afterwards.
+
+It is all or nothing. If any name is taken, nothing is created and the
+error names the taken ones; if one device fails validation or a permission
+check, none are created and the error names which device failed and why.
+Each device created is in the change log like a single create, and gets its
+type's components, application groups and profiles as a single create does.
+Creating takes `add` on devices at the chosen site, plus the
+[profile rights](../features/device-profiles.md#permissions) when profiles
+are picked. On a planning task, a range plans one create per name.
+
+Over the API, post the device payload with the range in `name` to
+`POST /api/devices/bulk-create/`, with optional `application_group_ids` and
+`profile_ids`. It answers `201 {count, results: [{id, name}]}`, or `400`
+with the first failing device's field errors (prefixed with its name), a
+`detail` summary and `failed: [{name, errors}]`. A plain
+`POST /api/devices/` refuses a name with a range rather than storing its
+brackets.
+
+```bash
+curl -X POST https://danbyte.example/api/devices/bulk-create/ \
+  -H "Authorization: Token $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "DK-RDS-[1-10]", "device_type_id": "…", "site_id": "…",
+       "profile_ids": ["…"]}'
+```
 
 !!! note "Built-in fields vs. custom fields"
     Danbyte ships a curated set of common attributes as built-in device
     fields - including **comments**, **location**, **cluster**, **airflow**
 (the device's own value overrides its type's default; the resolved value is
 served as `effective_airflow` and drives the 3D room's airflow cones),
-    and **latitude** / **longitude**. Comments, location, and the
+    **cooling method** (likewise an override of its type's, served as
+    `effective_cooling_method`, air when neither sets one - see
+    [Cooling](../features/cooling.md)) and **latitude** / **longitude**.
+    Comments, location, and the
     coordinates are on by default (coordinates put a device on the
-    [site map](../features/site-map.md)); cluster and airflow are opt-in
-    under **Settings → Device fields**. Anything beyond that stays a
+    [site map](../features/site-map.md)); cluster, airflow and cooling
+    method are opt-in under **Settings → Device fields**. Anything beyond that stays a
     [custom field](../features/tags-and-custom-fields.md), in line with the
     zero-pre-filled-data philosophy.
+
+While [PRTG monitoring](../features/prtg.md) is on, the form has a **PRTG**
+select: **Follow policies** (the default) leaves it to the PRTG policies
+and the connection's *Register all*, **Monitor in PRTG** puts the device in
+PRTG's plan whatever they say, and **Exclude from PRTG** keeps it out of
+every plan. The API field is `prtg_sync` (`inherit`, `always`, `never`). A
+muted line under it says what happens next: *Planned changes wait in the
+Review queue* or *Applied automatically*. **PRTG polls** (`prtg_host`) names
+the address or DNS name PRTG should poll instead of the primary address.
+Changing either plans the device for PRTG at once, and the save says
+**Planned for PRTG** or **Being added to PRTG** (`prtg_plan` on the
+response). See
+[Registering devices and VMs](../features/prtg.md#registering-devices-and-vms).
 
 The form's **Topology card** section sets which lines this device's card
 shows on the topology Diagram. **Inherit** (the default) takes them from
@@ -47,6 +111,10 @@ the map's saved view, the device role or All devices, and previews the
 role's or All devices list; **Custom** gives the device its own list, and
 **Name only** shows just its name. See
 [Card lines](../features/topology.md#card-lines).
+
+Under it, **Icon** gives this device its own icon on floor plans (`icon`),
+over its type's and its role's; blank uses theirs. See
+[Icons when zoomed out](../features/floor-plans.md#icon-tiles).
 
 You can also add devices in bulk from a spreadsheet - see
 [Import & export](../features/import-export.md).
@@ -89,19 +157,49 @@ device's power ports, and a reload, browser back/forward, or a trip through
 another tab and back all keep your place. An unknown value in either param
 falls back to the default tab instead of showing an empty pane.
 
+The page draws in stages. Opened from the device list, the header and the
+attribute cards appear at once from the list's row, while the device's own
+read (`GET /api/devices/<id>/`) fills in the tab counts and the stack badge.
+The heavier Overview cards - the panel, port utilization, support contracts,
+the rack or cabinet drawing, the cooling path - each load on their own and
+show a loading state in their own place until they do; a tab's content is
+fetched only when the tab is opened. The header's compliance marker reads the
+device's own status (`GET /api/compliance/devices/<id>/`, the
+[per-device compliance page](../features/compliance.md)'s read), not the
+tenant-wide evaluation, unless a list already fetched that.
+
 ### Overview tab
 
-The default tab lays the device's facts out in four cards:
+The default tab lays the device's facts out in cards:
 
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
-| **Device**     | name, status, role, platform, description, comments          |
-| **Hardware**   | device type, serial number, asset tag, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
-| **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
+| **Device**     | name, status, role, platform (with the software version, [where it came from](../features/lifecycle.md#where-the-running-version-comes-from) and the platform's target) and its **OS support** bar, description, comments |
+| **Cooling path** | shown once the device has a cooling intake or outflow: each intake's path from source through any CDU, each hop a link - see [Cooling](../features/cooling.md#cooling-path) |
+| **Hardware**   | device type and its **Hardware support** bar, **Support coverage**, serial number, asset tag, warranty end, height (U), **Size** (W × H × D, see [Size](#size)), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
+| **Location**   | site, location, [room](rooms.md), rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
+| **Support contracts** | shown once a contract covers the device: each contract with its manufacturer, service level, end and state |
+| **Software**   | the first eight installed applications, each with its version and end-of-life [lifetime bar](../features/lifecycle.md#the-lifetime-bar), then **View all N** to the [Software](#other-tabs) tab; *No software recorded.* when there is none |
+| **Profiles**   | the device's [device profiles](../features/device-profiles.md#on-devices-and-vms) in order, each with its state pill, **Re-apply** and **×** to unassign, and **Apply profile**, which previews what a profile would write before it does |
+| **Sensors**    | shown once a PRTG sensor or channel is [pinned](../features/prtg.md#pinned-sensors) to the device, under the monitoring strip: a pinned sensor as a tile with its state, primary value and the hour's sparkline, a pinned channel as a small gauge, lookup bar or value tile; a tile opens the sensor's panel, hover it to unpin |
 
 Technical values (name, serial, asset tag, primary IP, DNS name) have a small
 **copy button** so you can grab them in one click.
+
+The three support rows are [lifetime bars](../features/lifecycle.md#the-lifetime-bar):
+*OS support* from the platform's effective dates (entered, else its
+[end-of-life](../features/end-of-life-data.md) cycle), *Hardware support*
+from the device type, and *Support coverage* from the device's contracts and
+warranty ([Support & warranty coverage](../features/support-coverage.md)).
+
+The Devices list has the same dates as an optional **Next end of life**
+column (tick it in the **Columns** menu): the soonest of the three, or of an
+installed application's end of life ([Software](#other-tabs) tab), as the
+lifetime bar, with which source it is, sorting by days left. The API carries
+it as `lifecycle_next: {source, end, start}` (`null` with no dated end); a
+coverage end has no start there. The whole estate, one row per source, is on
+the [Lifecycle overview](../features/lifecycle-overview.md).
 
 Devices with ports also get a **Port utilization** card: a segmented bar plus
 counts of **connected** (the port terminates a cable), **reserved** (its cable
@@ -193,14 +291,21 @@ first row you see (`GET /api/devices/port-utilization/`). It lists only the
 devices you can view. `?site=<id>` or `?rack=<id>` opens it with that facet
 ticked. A device with nothing counted - a router with only loopbacks - has
 no fill level, so it is not listed. The **Devices list** carries the same
-number as a **Ports** bar column (like the prefix utilization bar), and
+number as a **Ports** bar column (like the prefix utilization bar), read for
+the rows on screen only (`?ids=<id>,<id>,…`, up to 100 per request; a longer
+page reads the whole roll-up), and
 **port utilization rules** on the Alerts → Rules tab can notify when a
 device's fill crosses a threshold - see
 [Monitoring](../features/monitoring.md#alert-rules).
 
-Any **custom fields** you've defined for devices appear below the cards. If any of the device's IPs are
-monitored, a **Monitoring** summary (roll-up badge + per-IP grid) appears at the
-**top** of the tab - see [Monitoring](../features/monitoring.md#on-a-device).
+Any **custom fields** you've defined for devices appear below the cards. When
+anything monitors the device - its own checks, Zabbix or PRTG - the
+**monitoring card** leads the tab: with problems it sits full width on top and
+lists the worst three, each a link to the check, the Zabbix section or the
+PRTG sensor's panel, then a bar per source; with none it is one line beside
+the first card (*All 3 checks up · Zabbix up · read 45s ago*). The header's
+monitoring pill is the overall state, with the sources on hover - see
+[The monitoring bar](../features/monitoring.md#the-monitoring-bar).
 The Devices list also has a **Monitoring** column rolling that status up per
 device. Where the device physically sits - its **rack elevation** with this
 device highlighted - is drawn compactly (front **and** rear side by side) in the
@@ -229,9 +334,94 @@ The same **image gallery** appears on **rack**, **site**, and **location**
 detail pages (on those it sits in the Overview) - one shared attachment system,
 each scoped to its object and gated by that object's change permission.
 
-The rows shown in _italics_ above - comments, airflow, location, coordinates,
-and cluster - are **built-in fields** whose visibility is admin-controlled; a
-device only shows the ones your administrator has enabled.
+### 3D model {#3d-model}
+
+A device with a model - its own, else its type's - shows it on the
+Overview. The model is the **3D** view of the **Panel** card, beside Photo /
+Rendered / Bare, and the card shows for a model alone too. Its header says
+whose model it is: **From type** or **Own model**. With no rack-face photo
+the model leads; with a photo the photo leads, and once you pick **3D** it
+leads for you on every device until you pick a photo view again (kept in
+this browser).
+
+The viewer turns with the mouse (drag to orbit, scroll to zoom). Its
+toolbar has **Front**, **Rear** and **Top** views, **Fit** (back to the
+three-quarter view), **Ports** to show or hide the
+[mapped ports](device-catalog.md#model-ports) and **Fullscreen**. The
+ports are coloured by state as in the 3D room - live SNMP where the device
+was polled, else cabled by speed, free and disabled grey; hovering one names
+it, its far end and VLAN, and clicking an interface opens it.
+
+The **3D model** card manages the model; it says whether the device draws
+its own or its type's (*From device type*). **Upload** gives the device its
+own model, which overrides the type's for this device only; **Remove**
+takes it away again, so the
+device goes back to its type's. Uploading takes the same files - GLB, glTF,
+STEP, IGES, STL, OBJ - and follows the same rules as a
+[device type's model](device-catalog.md#3d-models); the **Size**, **Up
+axis** and **Front** settings show for the device's own model.
+
+`GET /api/devices/{id}/model/` downloads the model the room draws for the
+device (its own, else its type's); `POST` and `DELETE` set and remove its
+own, with **change** on the device. The device's `model_3d` is its own
+model's URL, and `model_3d_effective` is what the room draws -
+`{url, source: "device" | "type", fit, up, front}` - or null.
+
+The card's **Ports** row counts the ports
+[mapped onto the model](device-catalog.md#model-ports) the device draws -
+its type's (*from device type*) while it shows its type's model.
+**Map ports** opens the same editor as the type's, listing this device's own
+components; saving gives the device a mapping of its own, which replaces the
+type's for this device, and **Use type's ports** goes back to the type's. A
+device with its own model maps its own ports or none. `GET` / `PUT
+/api/devices/{id}/model-ports/` read and save it (its `model_ports` field;
+null inherits). In the [3D room](../features/floor-plans.md#port-markers-on-3d-models)
+the mapped ports show on the model in their state colour, and cables end at
+them.
+
+The rows shown in _italics_ above - comments, airflow, cooling, location,
+coordinates, and cluster - are **built-in fields** whose visibility is
+admin-controlled; a device only shows the ones your administrator has enabled.
+
+## Size {#size}
+
+A device can carry its own body size: **Width**, **Height** and **Depth
+(mm)** in the form's **Hardware** card, in tenths of a millimetre from 1 to
+5000. Each one left blank takes its [device type's
+size](device-catalog.md#device-types) (the placeholder shows it), so set
+only what differs on this unit - a cabinet built to order, a desk, a shelf
+of gear modelled as one device.
+
+The size in use - its own, else its type's - is what places the device:
+
+- on a free [floor plan](../features/floor-plans.md#true-size) its tile
+  is its width × depth seen from above (grid plans keep one cell);
+- in the [3D room](../features/floor-plans.md#the-3d-room-view) a device
+  with a width, height and depth and no 3D model stands as a box of that
+  size in its role colour, and a [3D model](#3d-model) fitted to size is
+  fitted to it.
+
+The Overview's **Hardware** card shows it as **Size**, W × H × D, marked
+*(from type)* when the device has none of its own. The API takes and
+returns `width_mm`, `height_mm` and `depth_mm` (null inherits) and serves
+the size in use as `effective_width_mm`, `effective_height_mm` and
+`effective_depth_mm`. Changes are in the device's change log, and a clone
+keeps the size. DIN-rail placement in a [cabinet](cabinets.md) still goes
+by the type's size.
+
+## Local context data {#local-context-data}
+
+**Config context → Local context data** on the device form holds JSON for this
+device only, such as a default route or NAT settings two devices of a shared
+role need. It is merged over every matching
+[config context](../features/config-contexts.md#local-context-data), whatever
+their weight, so its keys win; templates read it through `config_context` like
+any other value. Leave it blank for none.
+
+The API field is `local_context_data`: a JSON object, or `null` (an empty
+object is stored as `null`; anything but an object is a 400). It is a JSON
+column in device export and import, its changes are in the device's change
+log, and a clone does not copy it.
 
 ## Built-in fields
 
@@ -241,9 +431,10 @@ fields** rather than custom fields:
 | Field                    | What it holds                                                                                      |
 | ------------------------ | -------------------------------------------------------------------------------------------------- |
 | **Comments**             | Long-form notes about the device (multiline).                                                      |
-| **Location**             | The [location](../features/regions-locations.md) within the site where the device lives.           |
+| **Location**             | The [location](../features/regions-locations.md) within the site where the device lives, and the [room](rooms.md) in it. The Room field shows and hides with Location. |
 | **Cluster**              | The virtualization/compute cluster the device belongs to.                                          |
 | **Airflow**              | Cooling direction - front-to-rear, rear-to-front, left-to-right, right-to-left, passive, or mixed. |
+| **Cooling method**       | How the device is cooled - air, liquid, hybrid or immersion. Blank inherits its type's; see [Cooling](../features/cooling.md). |
 | **Latitude / Longitude** | Geographic coordinates of the device.                                                              |
 
 **Visibility is admin-controlled.** Each field can be turned on or off
@@ -257,19 +448,23 @@ administrator has enabled:
 | `location`  | Yes              |
 | `cluster`   | No               |
 | `airflow`   | No               |
+| `cooling_method` | No          |
 | `latitude`  | No               |
 | `longitude` | No               |
 
 The setting is stored on the deployment singleton and read/written via
-`GET`/`PUT /api/deployment/device-fields/` (a flat object of those six
-booleans). Hidden fields disappear from the form and detail page, but any data
+`GET`/`PUT /api/deployment/device-fields/` (a flat object of those seven
+booleans). A hidden cooling method still counts: a rack's cooling capability
+is checked against the device's effective method whether the field shows or
+not. Hidden fields disappear from the form and detail page, but any data
 already set is preserved. If the setting can't be loaded, Danbyte falls back to
 the same defaults.
 
 ### Component tables {#component-tables}
 
 Every table on the Components tab - interfaces, console ports, console server
-ports, power ports, power outlets, front ports, rear ports and inventory parts -
+ports, power ports, power outlets, cooling intakes and outflows, front ports,
+rear ports and inventory parts -
 has the **Columns** menu the list pages have: tick columns on or off, drag
 them into order, and **Reset**. The layout is saved per user for each table,
 and the menu also offers the list's other fields and custom fields as
@@ -285,18 +480,24 @@ A cable trace opens a front, rear, console or power port on its own sub-tab
 (`?sub=front-ports`, `?sub=rear-ports`, `?sub=console`, `?sub=power`).
 
 `GET /api/devices/<id>/` counts the port tabs as `front_port_count` and
-`rear_port_count`; since 0.18 `hardware_count` no longer includes front and
-rear ports. Like the other tab counts they are 0 on the device list.
+`rear_port_count`, and the Cooling sub-tab as `cooling_count`; since 0.18 `hardware_count` no longer includes front and
+rear ports. Like the other tab counts they are 0 on the device list. On the
+detail read every tab count comes from the one query that reads the device,
+so the payload costs the same number of queries however much hangs off it;
+the fields and their values are unchanged.
 
 ### Other tabs
 
 | Tab            | What's there                                                                                    |
 | -------------- | ----------------------------------------------------------------------------------------------- |
-| **IPs**        | Every IP address assigned to this device.                                                       |
-| **Components** | Six sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
+| **IPs**        | Every address the device uses: assigned to it, to one of its interfaces, or set as its primary, OOB or secondary address while assigned elsewhere. **Designation** shows the slot; **Assigned to** shows *This device*, the interface (a link to Components) or the other object, with a hover note on an address that is here only through a slot. The tab count and the Overview's **IP addresses** count the same set (`?device=` on [the IP list](../models/ip-address.md#addresses-a-device-or-vm-uses)). |
+| **Components** | Seven sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Cooling** (intakes and outflows - see [Cooling](../features/cooling.md#cooling-intakes-and-outflows)), **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
 | **Services**   | Application services running on the device.                                                     |
+| **Software**   | Applications installed on the device, each at a version - add, edit and remove them here, or assign an [application group](../features/applications.md#application-groups). The tab shows the count (`install_count` on the device, list and detail). See [Applications & installed software](../features/applications.md). |
+| **Flows**      | [Application flows](../features/application-flows.md) with an end at one of the device's addresses, or at a prefix or range that holds one. |
+| **Sensors**    | Only when [PRTG monitoring](../features/prtg.md#sensors) is on, with the sensor count: a status strip, a card per PRTG sensor, and a panel with each sensor's channels as gauges and state bars. Before PRTG has sensors for the device it shows where it stands - excluded, not in PRTG, planned (with **Add to PRTG now**), needs attention, being added, or in PRTG without sensors - see [Registering devices and VMs](../features/prtg.md#registering-devices-and-vms). The **Monitoring** tab gets one **PRTG** row linking here; its chevron opens whether the device is in PRTG, whether Danbyte made it, what registers it and what is planned, with **Register in PRTG** and **Add to PRTG now** - see [Planned changes](../features/prtg.md#planned-changes). |
 | **Contacts**   | People responsible for the device.                                                              |
-| **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. |
+| **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. The config context lists its sources in merge order, the device's [local context data](#local-context-data) last. |
 | **Journal**    | Free-form notes and a running log you write.                                                    |
 | **Change log** | An automatic record of changes - who changed what, when.                                               |
 
@@ -316,6 +517,15 @@ appears on every device's form and Overview. See
 
 Use the **Delete** button in the device header. You'll be asked to confirm.
 Deleting a device removes its interfaces and any IP assignments on them.
+
+To delete several, tick them on the device list and use **Delete** on the
+selection bar: it first shows what would go and what is kept because it is
+still in use (`POST /api/devices/bulk-delete/`).
+
+When a device is linked to a PRTG device, both dialogs offer **Also remove
+from PRTG** - deleted in PRTG when Danbyte created it, otherwise paused
+unless you pick **Delete it anyway**. See
+[PRTG: Deleting and retiring](../features/prtg.md#deleting-and-retiring).
 
 ## Front panel
 
@@ -503,3 +713,13 @@ and images - or, from the same menu, the **hardware sheet**: CPU, memory and
 storage totals first, then one table of parts per kind with the slot each
 sits in - or **All in one**, both on one sheet. The file is named after the
 device and its serial number. See [Spec sheets](../features/spec-sheets.md).
+
+## PDF report
+
+**PDF report…** in the page actions prints the device with the sections you
+pick - overview and custom fields, interfaces, IP addresses, cables,
+installed software, power and console ports, lifecycle, monitoring, journal
+and change log - each with its own columns. The device list's **Import /
+Export** menu and the bulk bar's **Export** menu make one report of the rows
+shown or selected: a table with the list's columns, a summary and, if you
+like, a page per device. See [PDF reports](../features/reports.md).

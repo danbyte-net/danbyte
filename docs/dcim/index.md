@@ -20,6 +20,7 @@ Manufacturer  →  Device type  →  Device  →  Interfaces  →  Cables
 | Define a hardware model once, reuse it | **Device types / catalog** | [Device catalog](device-catalog.md) |
 | Lay out a rack and mount gear in it | **Racks** | [Racks](racks.md) |
 | Model a DIN-rail cabinet or distribution board | **Cabinets** | [Cabinets](cabinets.md) |
+| Record which room a device, rack or cabinet is in | **Rooms** | [Rooms](rooms.md) |
 | Add ports to a device | **Interfaces** | [Interfaces](interfaces.md) |
 | Model LAGs, sub-interfaces, loopbacks | **Virtual interfaces** | [Virtual & aggregate interfaces](virtual-interfaces.md) |
 | Track VMs, clusters and virtual switches | **Virtual machines** | [Virtual machines](../features/virtual-machines.md) |

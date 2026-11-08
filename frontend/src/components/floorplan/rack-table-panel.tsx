@@ -46,6 +46,7 @@ const COLUMNS = [
   "devices",
   "utilisation",
   "power",
+  "cooling",
   "ports",
   "panel_ports",
   "tags",
@@ -98,7 +99,7 @@ export function RackTablePanel({
     () =>
       buildRackColumns<PlanRack>({
         include: [...COLUMNS],
-        show: ["power", "ports", "panel_ports"],
+        show: ["power", "cooling", "ports", "panel_ports"],
         humanIds,
       }),
     [humanIds]

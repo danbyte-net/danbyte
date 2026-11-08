@@ -16,7 +16,7 @@ A physical location - DC, office, POP, edge.
 | `location` | char(255) | `""` | Free-form postal address (city, street, …). Labelled **Address** in the UI (to avoid clashing with the `Location` object), where the site page's Overview has a copy button for it. The API also exposes it read+write as `address`, an alias of this field - either name works; `location` is kept for backward compatibility. |
 | `time_zone` | char(63) | `""` | IANA name (e.g. `Europe/Copenhagen`); validated against the zoneinfo set. The detail page shows the current local time so you can read the offset between sites. |
 | `description` | text | `""` | |
-| `gateway_policy` | choice | `first` | `first` · `last` · `none` |
+| `gateway_policy` | choice | `first` | `first` · `last` · `none`. Skips container prefixes and prefixes with `auto_gateway` off |
 | `vrfs` | M2M → `VRF` | empty | Documentation only - "VRFs operating at this site" |
 | `tags` | M2M Tag | empty | |
 | `custom_fields` | JSONB | `{}` | |
@@ -55,29 +55,44 @@ A site's **Racks** tab lists its racks - name, role, status, width and units
 used - and **Cabinets** its DIN-rail cabinets, wherever in the site they
 stand; a location's tabs list only its own.
 
+## The Floor plans tab
+
+The site's [floor plans](../features/floor-plans.md): its
+[site-wide](../features/floor-plans.md#site-wide-floor-plans) ones, whose
+Location reads **Whole site**, and those of its locations, each opening its
+last-viewed or first floor. **Add floor plan** opens the new-plan form with
+the site picked. The tab shows to anyone who may view floor plans;
+`GET /api/floor-plan-stacks/?site=<id>` powers it.
+
 ## The Capacity tab
 
 How full the site's racks are, floor plan by floor plan. The tab shows when
 the site has racks and you may view racks; it sits after **Cabinets**.
 
 - **One card per floor plan** of the site: its name - which opens the
-  [floor plan](../features/floor-plans.md) - and location, a thumbnail of its
+  [floor plan](../features/floor-plans.md) - and location (**Whole site** for a
+  site-wide plan), a thumbnail of its
   rack tiles (only those, each marked on its front edge), and its racks added
   up: **Racks**, **Devices**, **Space** (units used, with the share),
-  **Power** (demand over supply, as the rack page reads it) and **Ports** /
-  **Panel ports** (in use over counted). A plan with no racks says so.
-- **Space · Power · Ports · Panel ports** above the cards picks what the
-  thumbnails are coloured by, on the racks' one scale: green up to the
-  tenant's warning level, amber above it, red above its critical level (80 %
-  and 95 % unless changed, see [Racks](../dcim/racks.md)), grey where there
-  is nothing to measure (no supply, no ports). The choice stays in the URL (`?measure=power`).
+  **Power** (demand over supply, as the rack page reads it), **Cooling**
+  (heat over cooling capacity - see [Cooling](../features/cooling.md)) and
+  **Ports** / **Panel ports** (in use over counted). A plan with no racks
+  says so.
+- **Space · Power · Cooling · Ports · Panel ports** above the cards picks
+  what the thumbnails are coloured by, on the racks' one scale: green up to
+  the tenant's warning level, amber above it, red above its critical level
+  (80 % and 95 % unless changed, see [Racks](../dcim/racks.md)), grey where
+  there is nothing to measure (no supply, no cooling capacity, no ports). The
+  choice stays in the URL (`?measure=power`).
 - **Not on a floor plan**: the site's racks that no floor plan places, by
   name, with the same figures.
 - The ports open **DCIM → Connections → Port utilization** filtered to the
   site (`/port-utilization?site=<id>`), for the per-device breakdown.
 - Under **Power**, *PDU rating* and *No supply* count the racks whose supply
   is only their PDUs' inlet rating, or that have no supply figure at all -
-  their demand still adds to the total.
+  their demand still adds to the total. Under **Cooling**, *No capacity*
+  counts the racks without a cooling capacity - their heat still adds up -
+  and *Mismatched* the devices their racks' cooling does not take.
 
 A rack on a floor plan you cannot view is on no card - not on *Not on a
 floor plan* either, as it does stand on one.
@@ -97,11 +112,15 @@ plan, for the site page's Capacity tab. The site's `rack_count` (on its own
 
 A rack carries its `role`, `status`, `u_height`, `u_used` and `u_pct` (units
 in use, as a percentage), `power` (with `supply`: `feed`, `pdu_rating` or
-null), `ports`, `panel_ports` and `device_count` - the figures its own
+null), `cooling` (its heat against its cooling capacity), `ports`,
+`panel_ports` and `device_count` - the figures its own
 [rack page](../dcim/racks.md#api-a-floor-plans-racks-and-their-ports) gives
 it. `totals` add these up, with the number of `racks` and `devices`; under
 `power`, `pdu_rating` and `no_supply` count the racks whose supply is only
-their PDUs' rating, or that have no supply figure at all.
+their PDUs' rating, or that have no supply figure at all; under `cooling`,
+`budget` and `no_supply` count the racks with a cooling capacity and without
+one, and `mismatched` the devices their racks' cooling does not take (see
+[Cooling](../features/cooling.md)).
 
 It needs **view** on sites (another tenant's site, or one outside the sites
 you are limited to, is a 404), and lists only the floor plans and racks you

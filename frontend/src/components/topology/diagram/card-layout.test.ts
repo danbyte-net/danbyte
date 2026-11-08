@@ -69,16 +69,76 @@ describe("cardLayout: Simple (no nub demand)", () => {
     expect(b.lines[0].w).toBeLessThanOrEqual(b.w - 2 * CARD.PAD_X)
   })
 
-  it("caps the width and cuts what does not fit", () => {
+  it("caps a line's width and cuts it, never the name", () => {
+    const b = layout({
+      name: "sw1",
+      lines: [{ key: "tags", text: "production-core-dc1-".repeat(4) }],
+    })
+    expect(b.w).toBe(CARD.MAX_W)
+    expect(b.lines[0].text.endsWith("…")).toBe(true)
+    expect(b.title.text).toBe("sw1")
+  })
+
+  it("grows past the line cap to fit the whole name", () => {
     const name = "distribution-switch-building-a-floor-3-east-wing"
+    const nameW = Math.ceil(m(name, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
     const b = layout({
       name,
       lines: [{ key: "tags", text: name.repeat(2) }],
     })
-    expect(b.w).toBe(CARD.MAX_W)
-    expect(b.title.text.endsWith("…")).toBe(true)
-    expect(b.title.w).toBeLessThanOrEqual(CARD.MAX_W - 2 * CARD.PAD_X)
+    expect(nameW + 2 * CARD.PAD_X).toBeGreaterThan(CARD.MAX_W)
+    expect(b.w).toBe(nameW + 2 * CARD.PAD_X)
+    expect(b.titleRows).toHaveLength(1)
+    expect(b.title.text).toBe(name)
+    expect(b.h).toBe(
+      2 * CARD.PAD_Y + CARD.TITLE_LH + CARD.LINES_GAP + CARD.LINE_LH
+    )
+    // The line is cut to the wider card, no further.
     expect(b.lines[0].text.endsWith("…")).toBe(true)
+    expect(b.lines[0].w).toBeLessThanOrEqual(b.w - 2 * CARD.PAD_X)
+  })
+
+  it("wraps a name wider than NAME_MAX_W onto more rows, never cut", () => {
+    const name =
+      "Sede Ceas de Medicina Interna e Cirurgia Geral Bloco Norte Piso 3 " +
+      "Ala Este Sala de Equipamentos Principal"
+    const b = layout({ name, lines: LINES })
+    expect(CARD.NAME_MAX_W).toBe(2 * CARD.MAX_W)
+    expect(b.titleRows.length).toBeGreaterThan(1)
+    expect(b.w).toBeLessThanOrEqual(CARD.NAME_MAX_W)
+    // Every word is there, in order, and no row ends in an ellipsis.
+    expect(b.titleRows.map((r) => r.text).join(" ")).toBe(name)
+    for (const r of b.titleRows) {
+      expect(r.text.includes("…")).toBe(false)
+      expect(r.w).toBeLessThanOrEqual(b.w - 2 * CARD.PAD_X)
+      expect(r.x).toBe(b.w / 2)
+    }
+    expect(b.title).toBe(b.titleRows[0])
+    // Rows stack one line box apart and push the card lines down.
+    const n = b.titleRows.length
+    expect(b.titleRows[1].top - b.titleRows[0].top).toBe(CARD.TITLE_LH)
+    expect(b.lines[0].top).toBe(CARD.PAD_Y + n * CARD.TITLE_LH + CARD.LINES_GAP)
+    expect(b.h).toBe(
+      2 * CARD.PAD_Y +
+        n * CARD.TITLE_LH +
+        CARD.LINES_GAP +
+        LINES.length * CARD.LINE_LH
+    )
+  })
+
+  it("breaks a name with no spaces after its separators", () => {
+    const name = Array.from({ length: 12 }, (_, i) => `segment${i}`).join("-")
+    const b = layout({ name, lines: [] })
+    expect(b.titleRows.length).toBeGreaterThan(1)
+    expect(b.titleRows.map((r) => r.text).join("")).toBe(name)
+    expect(b.titleRows[0].text.endsWith("-")).toBe(true)
+  })
+
+  it("wraps to a fixed box's width when given one (`most`)", () => {
+    const name = "Sede Ceas de Medicina Interna"
+    const b = cardLayout({ name, lines: [] }, null, m, {}, 140)
+    expect(b.w).toBeLessThanOrEqual(140)
+    expect(b.titleRows.map((r) => r.text).join(" ")).toBe(name)
   })
 })
 

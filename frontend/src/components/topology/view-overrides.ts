@@ -28,6 +28,7 @@ export const OVERRIDE_KEYS = [
   "q",
   "vlangroup",
   "vms",
+  "vrf",
 ] as const
 
 /** Overrides that are not edits of the view: typing in Find on map only

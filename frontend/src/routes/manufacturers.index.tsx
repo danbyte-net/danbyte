@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Manufacturer, type Paginated } from "@/lib/api"
+import { type Manufacturer } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
@@ -32,7 +33,7 @@ function ManufacturersPage() {
   const query = useQuery({
     queryKey: ["manufacturers", q],
     queryFn: () =>
-      api<Paginated<Manufacturer>>(
+      apiAll<Manufacturer>(
         `/api/manufacturers/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

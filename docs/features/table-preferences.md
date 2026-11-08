@@ -26,6 +26,15 @@ off.
     A few columns (like the row-select checkbox and the row-actions menu) always
     stay in place and can't be moved or hidden.
 
+## Wide tables
+
+A table with more columns than fit the window scrolls sideways. Its
+horizontal scrollbar floats at the bottom of the window while the table is
+on screen, so you can scroll sideways without first scrolling to the last
+row, and a soft shadow on the left or right edge shows there are more
+columns that way. Shift + mouse wheel and sideways trackpad scrolling work
+too.
+
 ## Every field is a column
 
 A table is not limited to the columns its page was designed with. The
@@ -123,8 +132,8 @@ part of a long list says so under the table - *Searching the first 500 of
 
 ## Very long lists
 
-A list page loads its rows in one request: up to 10,000, and 1,000 for IP
-addresses. When the tenant holds more, the page says so:
+A list page loads up to 10,000 rows, 1,000 a request, and 1,000 in all for
+IP addresses. When the tenant holds more, the page says so:
 
 - the count beside the title reads *1,000 of 40,960*, in amber;
 - a notice over the table reads *Showing the first 1,000 of 40,960 - search to

@@ -37,6 +37,14 @@ RACK_PLINTH_MM = 100.0
 #: trays); the router DECIDES routability, so a rack 30 cells from any tray
 #: must come back unreachable, not "reachable via a 20 m unsupported hop".
 MAX_ENTRY_CELLS = 6.0
+#: Two trays whose runs cross mid-segment join there only when their resolved
+#: elevations are this close (mm): an overhead ladder over an underfloor
+#: basket is not a junction. A vertex snapped onto another tray (a drop)
+#: always joins. cable-route.ts's LEVEL_JOIN_MM mirrors it.
+LEVEL_JOIN_MM = 300.0
+
+#: Node lookup that merges with a node of any level - the cable's own ends.
+_ANY = object()
 
 
 def _dist(a: Pt, b: Pt) -> float:
@@ -77,6 +85,20 @@ def _segment_intersect(a: Pt, b: Pt, c: Pt, d: Pt):
     return (a[0] + t * rx, a[1] + t * ry), t, u
 
 
+def _along_tray(
+    poly: list[Pt], arc: list[float], pos_a: float, pos_b: float, pa: Pt, pb: Pt
+) -> list[Pt]:
+    """The run along one tray from arc position ``pos_a`` (point ``pa``) to
+    ``pos_b`` (``pb``), through the vertices between: both drop points even
+    when they coincide, so the run reads as a (zero-length) stretch of the
+    tray."""
+    lo, hi = sorted((pos_a, pos_b))
+    mid = [p for p, at in zip(poly, arc, strict=True) if lo + 1e-9 < at < hi - 1e-9]
+    if pos_b < pos_a:
+        mid.reverse()
+    return [pa, *mid, pb]
+
+
 @dataclass
 class RouteResult:
     """A computed route. ``points`` in cell units; ``tray_indexes`` index into
@@ -95,27 +117,45 @@ def route_through_trays(
     tray_polys: list[list[Pt]],
     snap: float = SNAP_CELLS,
     max_entry: float = MAX_ENTRY_CELLS,
+    elevations: list[float | None] | None = None,
 ) -> RouteResult:
     """Best A→B route through the tray network (Dijkstra over tray segments,
     junctions, and entry hops). ``reachable=False`` (with a straight A→B) when
     there are no usable trays, an endpoint sits farther than ``max_entry``
-    cells from every tray, or the network doesn't connect the ends."""
-    trays = [t for t in tray_polys if len(t) >= 2]
+    cells from every tray, or the network doesn't connect the ends.
+
+    ``elevations`` (mm, one per entry of ``tray_polys``; see
+    :func:`tray_elevations`) keeps trays at different heights apart: a
+    mid-run crossing joins two trays only within ``LEVEL_JOIN_MM`` of each
+    other, and points of different heights never merge into one node. A
+    vertex snapped onto another tray joins whatever the heights. ``None``
+    for a tray (or no list) joins it at every crossing, as before."""
+    keep = [i for i, t in enumerate(tray_polys) if len(t) >= 2]
+    trays = [tray_polys[i] for i in keep]
+    # A node's level: trays at one elevation share nodes, others never do.
+    level = [elevations[i] if elevations is not None else 0 for i in keep]
     straight = RouteResult(
         reachable=False, points=[a, b], run_cells=_dist(a, b)
     )
     if not trays:
         return straight
 
-    # ── Node registry (spatial merge so coincident points share a node) ──
+    def joins(ti: int, tj: int) -> bool:
+        li, lj = level[ti], level[tj]
+        return li is None or lj is None or abs(li - lj) <= LEVEL_JOIN_MM
+
+    # ── Node registry (spatial merge so coincident points of one level share
+    # a node) ──
     nodes: list[Pt] = []
+    node_level: list = []
     merge_dist = snap * 0.5
 
-    def node_at(p: Pt) -> int:
+    def node_at(p: Pt, lv=_ANY) -> int:
         for i, n in enumerate(nodes):
-            if _dist(n, p) <= merge_dist:
+            if (lv is _ANY or node_level[i] == lv) and _dist(n, p) <= merge_dist:
                 return i
         nodes.append(p)
+        node_level.append(lv)
         return len(nodes) - 1
 
     # adjacency: u → {v: (weight, tray_index_or_None)}
@@ -156,11 +196,14 @@ def route_through_trays(
                 pt, d, seg, t = _project_polyline(v, other)
                 if d <= snap:
                     breakpoints[tj].append((pos_on_tray(tj, seg, t), pt))
-                    edge(node_at(v), node_at(pt), d, None)
+                    edge(node_at(v, level[ti]), node_at(pt, level[tj]), d, None)
 
-    # Mid-segment crossings → junctions where two trays intersect.
+    # Mid-segment crossings → junctions where two trays at one level
+    # intersect. A run passing over or under another is not a junction.
     for ti in range(len(trays)):
         for tj in range(ti + 1, len(trays)):
+            if not joins(ti, tj):
+                continue
             for si in range(len(trays[ti]) - 1):
                 for sj in range(len(trays[tj]) - 1):
                     x = _segment_intersect(
@@ -172,10 +215,13 @@ def route_through_trays(
                     p, t, u = x
                     breakpoints[ti].append((pos_on_tray(ti, si, t), p))
                     breakpoints[tj].append((pos_on_tray(tj, sj, u), p))
+                    if level[ti] != level[tj]:
+                        # Close enough to join, but not one level: link them.
+                        edge(node_at(p, level[ti]), node_at(p, level[tj]), 0.0, None)
 
     # Entry/exit: project A and B onto their nearest tray - but only within
     # max_entry, otherwise the endpoint simply isn't served by the network.
-    def entry_point(p: Pt) -> Pt | None:
+    def entry_point(p: Pt) -> tuple[Pt, int, float] | None:
         best_d, best_pt, best_ti, best_seg, best_t = math.inf, p, 0, 0, 0.0
         for ti, poly in enumerate(trays):
             pt, d, seg, t = _project_polyline(p, poly)
@@ -183,10 +229,9 @@ def route_through_trays(
                 best_d, best_pt, best_ti, best_seg, best_t = d, pt, ti, seg, t
         if best_d > max_entry:
             return None
-        breakpoints[best_ti].append(
-            (pos_on_tray(best_ti, best_seg, best_t), best_pt)
-        )
-        return best_pt
+        pos = pos_on_tray(best_ti, best_seg, best_t)
+        breakpoints[best_ti].append((pos, best_pt))
+        return best_pt, best_ti, pos
 
     entry_a = entry_point(a)
     entry_b = entry_point(b)
@@ -198,16 +243,17 @@ def route_through_trays(
         bps = sorted(breakpoints[ti], key=lambda x: x[0])
         for i in range(len(bps) - 1):
             edge(
-                node_at(bps[i][1]),
-                node_at(bps[i + 1][1]),
+                node_at(bps[i][1], level[ti]),
+                node_at(bps[i + 1][1], level[ti]),
                 abs(bps[i + 1][0] - bps[i][0]),
                 ti,
             )
 
     # Endpoint hops (straight-line ends outside the network).
+    (pa, ta, pos_a), (pb, tb, pos_b) = entry_a, entry_b
     na, nb = node_at(a), node_at(b)
-    edge(na, node_at(entry_a), _dist(a, entry_a), None)
-    edge(nb, node_at(entry_b), _dist(b, entry_b), None)
+    edge(na, node_at(pa, level[ta]), _dist(a, pa), None)
+    edge(nb, node_at(pb, level[tb]), _dist(b, pb), None)
 
     # ── Dijkstra ──
     best = [math.inf] * len(nodes)
@@ -226,8 +272,20 @@ def route_through_trays(
                 best[v] = nd
                 prev[v] = (u, tray)
                 heapq.heappush(heap, (nd, v))
-    if best[nb] is math.inf or best[nb] == math.inf:
-        return straight
+    # Both ends drop onto one tray (racks either side of it, one segment
+    # or the same point): drop, along the tray between the two drop points,
+    # drop. Dijkstra alone misses it when the drops merge into one node -
+    # the path then rides no tray edge at all.
+    same = None
+    if ta == tb:
+        same = RouteResult(
+            reachable=True,
+            points=[a, *_along_tray(trays[ta], arcs[ta], pos_a, pos_b, pa, pb), b],
+            tray_indexes=[keep[ta]],
+            run_cells=_dist(a, pa) + abs(pos_b - pos_a) + _dist(pb, b),
+        )
+    if best[nb] == math.inf:
+        return same or straight
 
     points: list[Pt] = []
     tray_order: list[int] = []
@@ -242,7 +300,9 @@ def route_through_trays(
     tray_order.reverse()
     # Deduplicate while keeping first-use order.
     seen: set[int] = set()
-    trays_used = [t for t in tray_order if not (t in seen or seen.add(t))]
+    trays_used = [keep[t] for t in tray_order if not (t in seen or seen.add(t))]
+    if same is not None and (not trays_used or same.run_cells <= best[nb] + 1e-9):
+        return same
     return RouteResult(
         reachable=True,
         points=points,
@@ -290,14 +350,33 @@ def underfloor_plenum_mm(
     of its points sits in, else the default. ``areas`` are
     ``(x, y, width, height, plenum_mm)`` rects in cell units; the max wins
     when a run crosses areas because a cable dressed to the deeper void
-    needs the longer drop."""
+    needs the longer drop. An area may also be ``(outline, plenum_mm)``,
+    the outline a polygon of ``(x, y)`` points (``raised_floor_geometry``)."""
+    from .raised_floor_geometry import contains, rect_outline
+
+    shapes = [
+        (rect_outline(*a[:4]), a[4]) if len(a) == 5 else (a[0], a[1]) for a in areas
+    ]
     best = 0.0
     for px, py in points or []:
-        for ax, ay, aw, ah, plenum in areas:
-            if ax <= px <= ax + aw and ay <= py <= ay + ah:
-                if plenum > best:
-                    best = float(plenum)
+        for poly, plenum in shapes:
+            if plenum > best and contains(poly, (px, py)):
+                best = float(plenum)
     return best or float(DEFAULT_PLENUM_MM)
+
+
+def tray_elevations(trays, ceiling_mm: int, area_rects) -> list[float]:
+    """Each tray's resolved elevation (mm), for ``route_through_trays``'s
+    ``elevations``: its own ``elevation_mm``, else derived from its level and
+    the raised floor under it. ``trays`` carry ``level``, ``elevation_mm``
+    and ``points``; ``area_rects`` are ``underfloor_plenum_mm``'s."""
+    return [
+        tray_elevation_mm(
+            t.level, t.elevation_mm, ceiling_mm,
+            underfloor_plenum_mm(area_rects, t.points),
+        )
+        for t in trays
+    ]
 
 
 def rack_drop_mm(
@@ -318,3 +397,317 @@ def rack_drop_mm(
     )
     elev = tray_elevation_mm(level, elevation_mm, ceiling_mm, plenum_mm)
     return abs(elev - top)
+
+
+# ─── Suggested runs (no tray path) ──────────────────────────────────────────
+#
+# When no tray connects a cable's ends, the plan can suggest a run: A* on
+# the half-cell lattice, orthogonal moves only. Tiles other than the two
+# ends are in the way, and so are walls except at their door openings; an
+# underfloor run stays inside the raised-floor areas. A step along an
+# existing tray (or a run suggested earlier in the batch) costs less, so a
+# suggestion extends the network rather than running beside it, and a turn
+# costs extra, so runs come out straight and tidy.
+
+#: Lattice pitch (cells) - the half-cell lattice trays and walls snap to.
+SUGGEST_STEP = 0.5
+#: A step along an existing tray costs this fraction of a plain one.
+SUGGEST_TRAY_FACTOR = 0.6
+#: A change of direction costs this many cells.
+SUGGEST_TURN_CELLS = 1.0
+#: What the search reckons a step to the goal costs when there are trays
+#: (between SUGGEST_TRAY_FACTOR and 1).
+SUGGEST_ESTIMATE = 0.8
+#: Lattice states A* may settle before it gives up (a plan too big to search).
+SUGGEST_MAX_STATES = 250_000
+
+_DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
+_E = 1e-6
+
+Rect = tuple[float, float, float, float]
+Node = tuple[int, int]
+
+
+def _strictly_in(p: Pt, r: Rect) -> bool:
+    x, y, w, h = r
+    return x + _E < p[0] < x + w - _E and y + _E < p[1] < y + h - _E
+
+
+def _closed_in(p: Pt, r: Rect) -> bool:
+    x, y, w, h = r
+    return x - _E <= p[0] <= x + w + _E and y - _E <= p[1] <= y + h + _E
+
+
+def _inside_area(p: Pt, r) -> bool:
+    """``p`` in a ``within`` area: an ``(x, y, w, h)`` rectangle or a
+    polygon of ``(x, y)`` points, its outline included."""
+    if len(r) == 4 and not isinstance(r[0], (list, tuple)):
+        return _closed_in(p, r)
+    from .raised_floor_geometry import contains
+
+    return contains(r, p, _E)
+
+
+def _along(p: Pt, s: Pt, e: Pt) -> float | None:
+    """How far along [s, e] (cells from s) the point p lies; None when it
+    is not on the segment."""
+    _pt, t, d = _project_segment(p, s, e)
+    if d > 1e-4:
+        return None
+    return t * _dist(s, e)
+
+
+def compress_polyline(points: list[Pt]) -> list[Pt]:
+    """Drop repeated points and the middle of straight runs."""
+    out: list[Pt] = []
+    for p in points:
+        if out and _dist(out[-1], p) < _E:
+            continue
+        if len(out) >= 2:
+            a, b = out[-2], out[-1]
+            cross = (b[0] - a[0]) * (p[1] - b[1]) - (b[1] - a[1]) * (p[0] - b[0])
+            dot = (b[0] - a[0]) * (p[0] - b[0]) + (b[1] - a[1]) * (p[1] - b[1])
+            if abs(cross) < _E and dot >= 0:
+                out[-1] = p
+                continue
+        out.append(p)
+    return out
+
+
+def lattice_steps(polylines) -> set[tuple[int, int, int, int]]:
+    """The half-cell lattice steps the axis-aligned runs of ``polylines``
+    cover, as ``(ix, iy, jx, jy)`` lattice coordinates, both ways."""
+    out: set[tuple[int, int, int, int]] = set()
+    for poly in polylines:
+        for s, e in zip(poly, poly[1:], strict=False):
+            sx, sy = round(s[0] / SUGGEST_STEP), round(s[1] / SUGGEST_STEP)
+            ex, ey = round(e[0] / SUGGEST_STEP), round(e[1] / SUGGEST_STEP)
+            if sx != ex and sy != ey:
+                continue
+            dx = (ex > sx) - (ex < sx)
+            dy = (ey > sy) - (ey < sy)
+            x, y = sx, sy
+            while (x, y) != (ex, ey):
+                out.add((x, y, x + dx, y + dy))
+                out.add((x + dx, y + dy, x, y))
+                x, y = x + dx, y + dy
+    return out
+
+
+def _on_lattice(v: float, step: float) -> bool:
+    return abs(v / step - round(v / step)) < 1e-6
+
+
+def _wall_nodes(
+    walls, step: float
+) -> tuple[set[Node], list[tuple[Pt, Pt, list[tuple[float, float]]]]]:
+    """The lattice points on a wall outside its door openings, and the
+    wall segments a step can cross between two lattice points - slanted
+    ones, and straight ones off the lattice lines (a wall made from an
+    area's outline) - each with its door spans."""
+    on_wall: set[Node] = set()
+    doors: set[Node] = set()
+    slanted: list[tuple[Pt, Pt, list[tuple[float, float]]]] = []
+    for points, openings in walls:
+        pts = [(float(p[0]), float(p[1])) for p in points or []]
+        for seg, (s, e) in enumerate(zip(pts, pts[1:], strict=False)):
+            spans = [
+                (float(o.get("from", 0)), float(o.get("to", 0)))
+                for o in openings or []
+                if isinstance(o, dict) and o.get("seg") == seg
+            ]
+            vertical = abs(s[0] - e[0]) <= _E
+            horizontal = abs(s[1] - e[1]) <= _E
+            if not (vertical or horizontal) or (
+                vertical and not _on_lattice(s[0], step)
+            ) or (horizontal and not _on_lattice(s[1], step)):
+                slanted.append((s, e, spans))
+            lo_x, hi_x = sorted((s[0], e[0]))
+            lo_y, hi_y = sorted((s[1], e[1]))
+            for ix in range(math.floor(lo_x / step), math.ceil(hi_x / step) + 1):
+                for iy in range(math.floor(lo_y / step), math.ceil(hi_y / step) + 1):
+                    at = _along((ix * step, iy * step), s, e)
+                    if at is None:
+                        continue
+                    # Inside the door; a door narrower than a lattice step
+                    # lets through at its jambs.
+                    door = any(
+                        (f + _E < at < t - _E)
+                        or (t - f <= step + _E and f - _E <= at <= t + _E)
+                        for f, t in spans
+                    )
+                    (doors if door else on_wall).add((ix, iy))
+    return on_wall - doors, slanted
+
+
+def suggest_run(
+    a: Pt,
+    b: Pt,
+    *,
+    width: float,
+    height: float,
+    obstacles=(),
+    walls=(),
+    trays=(),
+    within=None,
+    max_states: int = SUGGEST_MAX_STATES,
+) -> list[Pt] | None:
+    """A suggested run from ``a`` to ``b`` (cells) on the half-cell lattice
+    of a ``width`` × ``height`` plan, or None when nothing gets through.
+
+    ``obstacles`` are rectangles ``(x, y, w, h)`` a run may not cross (the
+    tiles other than the two ends); it may run along an edge, but not
+    between two that touch. ``walls`` are ``(points, openings)`` with the
+    wall's door spans (``{"seg", "from", "to"}``, cells from the segment's
+    start): a run crosses a wall only inside an opening. ``trays`` are
+    polylines a run is cheaper along. ``within``, when given, are the
+    rectangles (or polygons) every point must stay inside (an underfloor
+    run: the raised floors). Answers the polyline from ``a`` to ``b``, its middle points on
+    the lattice, straight runs as one segment."""
+    step = SUGGEST_STEP
+    cols = math.ceil(max(width, a[0], b[0]) / step) + 1
+    rows = math.ceil(max(height, a[1], b[1]) / step) + 1
+
+    def node_of(p: Pt) -> Node:
+        return (
+            min(max(round(p[0] / step), 0), cols - 1),
+            min(max(round(p[1] / step), 0), rows - 1),
+        )
+
+    # Obstacles bucketed by the cells they cover.
+    buckets: dict[Node, list[Rect]] = {}
+    for r in obstacles:
+        x, y, w, h = r
+        for bx in range(math.floor(x), math.ceil(x + w) + 1):
+            for by in range(math.floor(y), math.ceil(y + h) + 1):
+                buckets.setdefault((bx, by), []).append(r)
+
+    def occupied(p: Pt) -> bool:
+        return any(
+            _strictly_in(p, r)
+            for r in buckets.get((math.floor(p[0]), math.floor(p[1])), ())
+        )
+
+    on_wall, slanted = _wall_nodes(walls, step)
+    count = cols * rows
+    # Per node: 0 (absent) not looked at yet, 1 free, 2 blocked. Kept for
+    # the nodes the search reaches only (at most ``max_states`` and their
+    # neighbours), never for the whole plan: a 2048-cell plan is 16.8M
+    # lattice nodes.
+    node_state: dict[int, int] = {}
+
+    def blocked(i: int) -> bool:
+        v = node_state.get(i, 0)
+        if not v:
+            ix, iy = i % cols, i // cols
+            p = (ix * step, iy * step)
+            hit = (
+                (ix, iy) in on_wall
+                or occupied(p)
+                or (within is not None and not any(_inside_area(p, r) for r in within))
+            )
+            v = node_state[i] = 2 if hit else 1
+        return v == 2
+
+    def step_ok(i: int, j: int) -> bool:
+        ux, uy, vx, vy = i % cols, i // cols, j % cols, j // cols
+        mid = ((ux + vx) * step / 2, (uy + vy) * step / 2)
+        if occupied(mid):
+            return False
+        if ux == vx:
+            sides = ((mid[0] - step / 2, mid[1]), (mid[0] + step / 2, mid[1]))
+        else:
+            sides = ((mid[0], mid[1] - step / 2), (mid[0], mid[1] + step / 2))
+        if occupied(sides[0]) and occupied(sides[1]):
+            return False
+        p, q = (ux * step, uy * step), (vx * step, vy * step)
+        for s, e, spans in slanted:
+            x = _segment_intersect(p, q, s, e)
+            # A wall's end counts: a step does not slip past it there.
+            if x is not None and _E < x[1] < 1 - _E:
+                # Through a door: a step crosses there.
+                at = x[2] * _dist(s, e)
+                if not any(f - _E <= at <= t + _E for f, t in spans):
+                    return False
+        return True
+
+    sx, sy = node_of(a)
+    gx, gy = node_of(b)
+    start, goal = sy * cols + sx, gy * cols + gx
+    if blocked(start) or blocked(goal):
+        return None
+    # The cheaper steps, as (node, direction) - both ways.
+    deltas = (1, -1, cols, -cols)
+    cheap: set[int] = set()
+    for ix, iy, jx, jy in lattice_steps(trays):
+        if 0 <= ix < cols and 0 <= iy < rows and 0 <= jx < cols and 0 <= jy < rows:
+            k = _DIRS.index((jx - ix, jy - iy))
+            cheap.add((iy * cols + ix) * 4 + k)
+    factor, turn = SUGGEST_TRAY_FACTOR, SUGGEST_TURN_CELLS
+    plain, along = step, step * factor
+    # Steps to the goal, priced between a plain step and one along a tray
+    # when there are trays: low enough that the search finds a tray close
+    # by, high enough that it does not comb the whole floor for one.
+    least = step * SUGGEST_ESTIMATE if cheap else plain
+
+    def est(i: int) -> float:
+        return (abs(i % cols - gx) + abs(i // cols - gy)) * least
+
+    # One state per node, with the direction its best way in arrived from
+    # (-1: the start). A turn is priced against that direction - close to
+    # exact, and a quarter of the states of tracking every direction.
+    inf = math.inf
+    best: dict[int, float] = {}
+    came: dict[int, int] = {}
+    prev: dict[int, int] = {}
+    # Per (node, direction): 0 (absent) not looked at, 1 fine, 2 not.
+    steps: dict[int, int] = {}
+    best[start] = 0.0
+    # Ties go to the state further along (-g), so the many equal-cost
+    # staircases of an open floor are not all explored.
+    heap = [(est(start), -0.0, start)]
+    settled = 0
+    found = False
+    while heap:
+        _f, neg_g, i = heapq.heappop(heap)
+        g = -neg_g
+        if g > best.get(i, inf) + _E:
+            continue
+        if i == goal:
+            found = True
+            break
+        settled += 1
+        if settled > max_states:
+            return None
+        d = came.get(i, -1)
+        ix = i % cols
+        for k in range(4):
+            if k == 0 and ix == cols - 1 or k == 1 and ix == 0:
+                continue
+            j = i + deltas[k]
+            if j < 0 or j >= count or blocked(j):
+                continue
+            sk = i * 4 + k
+            ok = steps.get(sk, 0)
+            if not ok:
+                ok = 1 if step_ok(i, j) else 2
+                steps[sk] = ok
+                steps[j * 4 + (k ^ 1)] = ok
+            if ok == 2:
+                continue
+            ng = g + (along if sk in cheap else plain) + (turn if d >= 0 and d != k else 0)
+            if ng < best.get(j, inf) - _E:
+                best[j] = ng
+                came[j] = k
+                prev[j] = i
+                heapq.heappush(heap, (ng + est(j), -ng, j))
+    if not found:
+        return None
+    nodes: list[Pt] = []
+    i = goal
+    while i >= 0:
+        nodes.append(((i % cols) * step, (i // cols) * step))
+        i = prev.get(i, -1)
+
+    nodes.reverse()
+    return compress_polyline([(float(a[0]), float(a[1])), *nodes, (float(b[0]), float(b[1]))])

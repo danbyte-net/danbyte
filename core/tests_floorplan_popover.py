@@ -207,6 +207,19 @@ class EndpointTests(TestCase):
         dep = DeploymentSettings.load()
         self.assertEqual(dep.floorplan_popover_fields, ["name", "size"])
 
+    def test_cooling_is_a_live_state_field(self):
+        # A rack's heat against its cooling capacity (#434), off by default.
+        c = self._client(True)
+        r = c.get("/api/deployment/floorplan-popover/")
+        self.assertIn("cooling", r.json()["available"])
+        self.assertNotIn("cooling", r.json()["defaults"])
+        r = c.put(
+            "/api/deployment/floorplan-popover/",
+            data=json.dumps({"popover_fields": ["name", "power", "cooling"]}),
+            content_type="application/json",
+        )
+        self.assertEqual(r.json()["popover_fields"], ["name", "power", "cooling"])
+
     def test_write_is_reflected_in_the_effective_config(self):
         c = self._client(True)
         c.put(

@@ -9,6 +9,8 @@ way they should be**.
 |---|---|
 | [Monitoring](../features/monitoring.md) | Run health checks (ping, TCP, HTTP, and more) against IPs and subnets, with schedules, history, and alerts. |
 | [Outposts](outposts.md) | Remote check engines for networks Danbyte can't reach directly. |
+| [Zabbix](zabbix.md) | Let an existing Zabbix answer for a scope's monitoring status. Off by default. |
+| [PRTG monitoring](../features/prtg.md) | Connect an existing PRTG core server and test what Danbyte can read. Off by default. |
 | [SNMP discovery](../features/snmp-discovery.md) | Walk devices for interfaces, neighbors and facts, and reconcile drift. |
 | [Certificate inventory](certificates.md) | Record the TLS certificates your endpoints actually serve - expiry, issuer, SANs, key strength. Public data only; never a private key. |
 | [SSH host keys](ssh-host-keys.md) | Capture and track the host keys your devices present. |

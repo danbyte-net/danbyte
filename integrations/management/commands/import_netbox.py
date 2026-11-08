@@ -35,6 +35,7 @@ from django.utils.text import slugify
 
 from api.status_registry import resolve_status, seed_builtin_statuses
 from core.models import Organization, Tenant, Tag
+from core.tags import find_visible_tag
 from customization.models import CustomField
 from api import models as m
 
@@ -352,11 +353,13 @@ class _Importer:
             color = _color(t.get("color") if isinstance(t, dict) else None)
             try:
                 with transaction.atomic():
-                    tag, _ = Tag.objects.get_or_create(
+                    # Reuse a tag of that name the tenant already sees (case
+                    # ignored, global ones included) rather than doubling it.
+                    tag = find_visible_tag(name, self.tenant) or Tag.objects.get_or_create(
                         tenant=self.tenant,
                         slug=slug,
                         defaults={"name": name, "color": color},
-                    )
+                    )[0]
             except Exception as e:  # noqa: BLE001 - never fail the parent object
                 self.notes.append(f"tag '{name}' skipped: {e}")
                 continue

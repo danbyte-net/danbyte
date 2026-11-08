@@ -27,6 +27,7 @@ export function CheckStatusBadge({
   const s = STATUS_LABEL[status] ? status : "unknown"
   return (
     <span
+      data-check-status={s}
       className={cn(
         "inline-flex h-5 items-center rounded-[5px] px-2 text-xs font-medium ring-1 ring-black/10 ring-inset dark:ring-white/10",
         className

@@ -1,5 +1,11 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
+
+import { api } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { Input } from "@/components/ui/input"
 
 import type {
   ASPathListRule,
@@ -199,6 +205,12 @@ export function policyRuleColumns(): ColumnDef<RoutingPolicyRule, unknown>[] {
               </Link>
             </span>
           )
+        if (r.match_rpki)
+          parts.push(
+            <span key="rpki" className="font-mono">
+              rpki {r.match_rpki}
+            </span>
+          )
         for (const [k, v] of Object.entries(r.match_extra))
           parts.push(
             <span key={k} className="font-mono">
@@ -254,12 +266,75 @@ export function policyRuleColumns(): ColumnDef<RoutingPolicyRule, unknown>[] {
   ]
 }
 
+type SegmentMember = EthernetSegment["members"][number]
+
+/** A member's own DF preference, edited in place; blank falls back to the
+ * segment's, shown muted. */
+function MemberDfCell({
+  member,
+  segmentDefault,
+  canEdit,
+  invalidate,
+}: {
+  member: SegmentMember
+  segmentDefault: number | null
+  canEdit: boolean
+  invalidate: readonly unknown[]
+}) {
+  const qc = useQueryClient()
+  const own = member.df_preference
+  const [value, setValue] = useState(own != null ? String(own) : "")
+  useEffect(() => setValue(own != null ? String(own) : ""), [own])
+  const save = useMutation({
+    mutationFn: (v: number | null) =>
+      api(`/api/routing/ethernet-segment-members/${member.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ df_preference: v }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: invalidate }),
+    onError: (e) => {
+      setValue(own != null ? String(own) : "")
+      apiErrorToast(e)
+    },
+  })
+  if (!canEdit)
+    return own != null ? (
+      <span className="num text-xs">{own}</span>
+    ) : (
+      <span className="num text-xs text-muted-foreground">
+        {segmentDefault ?? "–"}
+      </span>
+    )
+  return (
+    <Input
+      type="number"
+      min={0}
+      aria-label={`DF preference for ${member.device.name} ${member.interface.name}`}
+      className="h-7 w-28 font-mono text-xs"
+      value={value}
+      placeholder={segmentDefault != null ? String(segmentDefault) : "–"}
+      disabled={save.isPending}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => {
+        const next = value.trim() === "" ? null : Number(value)
+        if (next !== own && !Number.isNaN(next)) save.mutate(next)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur()
+      }}
+    />
+  )
+}
+
 /** The member ports of an Ethernet segment - one per leaf, each linked to
- * its device and its own page. */
-export function segmentMemberColumns(): ColumnDef<
-  EthernetSegment["interfaces"][number],
-  unknown
->[] {
+ * its device and its own page, with the port's DF preference. */
+export function segmentMemberColumns(
+  opts: {
+    segmentDefault?: number | null
+    canEdit?: boolean
+    invalidate?: readonly unknown[]
+  } = {}
+): ColumnDef<SegmentMember, unknown>[] {
   return [
     {
       id: "device",
@@ -277,16 +352,29 @@ export function segmentMemberColumns(): ColumnDef<
     },
     {
       id: "interface",
-      accessorKey: "name",
+      accessorFn: (r) => r.interface.name,
       header: "Interface",
       cell: ({ row }) => (
         <Link
           to="/interfaces/$id"
-          params={{ id: row.original.id }}
+          params={{ id: row.original.interface.id }}
           className="link font-mono text-xs"
         >
-          {row.original.name}
+          {row.original.interface.name}
         </Link>
+      ),
+    },
+    {
+      id: "df_preference",
+      accessorFn: (r) => r.df_preference_effective ?? "",
+      header: "DF preference",
+      cell: ({ row }) => (
+        <MemberDfCell
+          member={row.original}
+          segmentDefault={opts.segmentDefault ?? null}
+          canEdit={!!opts.canEdit}
+          invalidate={opts.invalidate ?? ["ethernet-segment"]}
+        />
       ),
     },
   ]

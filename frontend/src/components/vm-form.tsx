@@ -4,15 +4,16 @@ import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
 import {
-  api,
   type DeviceRoleOption,
-  type Paginated,
   type PlatformOption,
+  type PrtgSync,
   type Status,
   type VirtualMachine,
   type VirtualMachineWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
+  FormCheckbox,
   FormColumn,
   FormColumns,
   FormSection,
@@ -31,7 +32,21 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import {
+  DeviceProfilesField,
+  useHostProfilesDraft,
+} from "@/components/device-profile-assign"
+import {
+  ApplicationGroupsField,
+  useHostGroupsDraft,
+} from "@/components/application-group-assign"
 import { useSaveObject } from "@/lib/save-object"
+import { jsonObjectText, parseJsonObject } from "@/lib/json-object"
+import { usePrtgEnabled } from "@/components/prtg/group-picker"
+import {
+  PrtgSyncSelect,
+  showPrtgSaveToast,
+} from "@/components/prtg/prtg-sync-select"
 
 interface MiniNamed {
   id: string
@@ -46,6 +61,10 @@ function numOrNull(s: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+// Thrown when the local-context-data text is not a JSON object: the field
+// shows the error, so no toast.
+const LOCAL_DATA_INVALID = "Invalid local context data."
+
 export interface VmFormProps {
   vm?: VirtualMachine
   onSaved: (saved: VirtualMachine) => void
@@ -57,6 +76,10 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  const groupsDraft = useHostGroupsDraft(vm ? { kind: "vm", id: vm.id } : null)
+  const profilesDraft = useHostProfilesDraft(
+    vm ? { kind: "vm", id: vm.id } : null
+  )
 
   const [name, setName] = useState(vm?.name ?? "")
   const [clusterId, setClusterId] = useState<string | null>(
@@ -84,13 +107,35 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const [diskGb, setDiskGb] = useState(
     vm?.disk_gb != null ? String(vm.disk_gb) : ""
   )
+  const [softwareVersion, setSoftwareVersion] = useState(
+    vm?.software_version ?? ""
+  )
+  // Build: what a runner needs to (re)create the VM.
+  const [intended, setIntended] = useState(vm?.intended ?? false)
+  const [representsId, setRepresentsId] = useState<string | null>(
+    vm?.represents_device?.id ?? null
+  )
+  const [vmid, setVmid] = useState(vm?.vmid != null ? String(vm.vmid) : "")
+  const [cpuType, setCpuType] = useState(vm?.cpu_type ?? "")
+  const [sockets, setSockets] = useState(
+    vm?.sockets != null ? String(vm.sockets) : ""
+  )
+  const [image, setImage] = useState(vm?.image ?? "")
+  const [storage, setStorage] = useState(vm?.storage ?? "")
   const [description, setDescription] = useState(vm?.description ?? "")
+  const [localData, setLocalData] = useState(
+    jsonObjectText(vm?.local_context_data)
+  )
+  const [localDataError, setLocalDataError] = useState<string | null>(null)
   const [tagIds, setTagIds] = useState<number[]>(
     vm?.tags.map((t) => t.id) ?? []
   )
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
     vm?.custom_fields ?? {}
   )
+  const prtgOn = usePrtgEnabled()
+  const [prtgSync, setPrtgSync] = useState<PrtgSync>(vm?.prtg_sync ?? "inherit")
+  const [prtgHost, setPrtgHost] = useState(vm?.prtg_host ?? "")
 
   useEffect(() => {
     if (!vm) return
@@ -106,50 +151,63 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
     setVcpus(vm.vcpus != null ? String(vm.vcpus) : "")
     setMemoryMb(vm.memory_mb != null ? String(vm.memory_mb) : "")
     setDiskGb(vm.disk_gb != null ? String(vm.disk_gb) : "")
+    setSoftwareVersion(vm.software_version ?? "")
+    setIntended(vm.intended ?? false)
+    setRepresentsId(vm.represents_device?.id ?? null)
+    setVmid(vm.vmid != null ? String(vm.vmid) : "")
+    setCpuType(vm.cpu_type ?? "")
+    setSockets(vm.sockets != null ? String(vm.sockets) : "")
+    setImage(vm.image ?? "")
+    setStorage(vm.storage ?? "")
     setDescription(vm.description)
+    setLocalData(jsonObjectText(vm.local_context_data))
+    setLocalDataError(null)
     setTagIds(vm.tags.map((t) => t.id))
     setCustomFields(vm.custom_fields ?? {})
+    setPrtgSync(vm.prtg_sync ?? "inherit")
+    setPrtgHost(vm.prtg_host ?? "")
     reset()
   }, [vm, reset])
 
   const clusters = useQuery({
     queryKey: ["clusters-picker"],
-    queryFn: () => api<Paginated<MiniNamed>>("/api/clusters/?picker=1"),
+    queryFn: () => apiAll<MiniNamed>("/api/clusters/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // A group lives below one cluster, so only the chosen cluster's are offered.
   const groups = useQuery({
     queryKey: ["vm-groups-picker", clusterId],
     queryFn: () =>
-      api<Paginated<MiniNamed>>(
-        `/api/vm-groups/?picker=1&cluster=${clusterId}`
-      ),
+      apiAll<MiniNamed>(`/api/vm-groups/?picker=1&cluster=${clusterId}`),
     enabled: !!clusterId,
     staleTime: 60_000,
   })
   const sites = useSiteOptions()
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceRoleOption>>("/api/device-roles/?picker=1"),
+    queryFn: () => apiAll<DeviceRoleOption>("/api/device-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const platforms = useQuery({
     queryKey: ["platforms-picker"],
-    queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
+    queryFn: () => apiAll<PlatformOption>("/api/platforms/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "virtualmachine"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=virtualmachine&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=virtualmachine&picker=1"),
     staleTime: 5 * 60_000,
   })
 
   const mutation = useMutation({
     mutationFn: async () => {
+      const localContextData = parseJsonObject(localData)
+      if (localContextData === undefined) {
+        setLocalDataError("Must be a valid JSON object.")
+        throw new Error(LOCAL_DATA_INVALID)
+      }
+      setLocalDataError(null)
       const payload: VirtualMachineWritePayload = {
         name: name.trim(),
         cluster_id: clusterId ?? "",
@@ -163,25 +221,47 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         vcpus: numOrNull(vcpus),
         memory_mb: numOrNull(memoryMb),
         disk_gb: numOrNull(diskGb),
+        software_version: softwareVersion.trim(),
+        intended,
+        vmid: numOrNull(vmid),
+        cpu_type: cpuType.trim(),
+        sockets: numOrNull(sockets),
+        image: image.trim(),
+        storage: storage.trim(),
+        // Sent only when changed: a represented device the caller may not
+        // view reads back as null and must not be cleared by a save.
+        ...(representsId !== (vm?.represents_device?.id ?? null)
+          ? { represents_device_id: representsId }
+          : {}),
         description: description.trim(),
+        local_context_data: localContextData,
         tag_ids: tagIds,
         custom_fields: customFields,
+        // Only while PRTG is on: the field is not shown otherwise.
+        ...(prtgOn ? { prtg_sync: prtgSync, prtg_host: prtgHost.trim() } : {}),
       }
-      return saveObject<VirtualMachine>({
+      const saved = await saveObject<VirtualMachine>({
         objectType: "api.virtualmachine",
         endpoint: "/api/virtual-machines/",
         id: isEdit ? vm!.id : undefined,
         payload,
       })
+      // Application groups (#436): written once the VM saved.
+      await groupsDraft.commit({ kind: "vm", id: saved.id })
+      await profilesDraft.commit({ kind: "vm", id: saved.id })
+      return saved
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["virtual-machines"] })
       qc.invalidateQueries({ queryKey: ["virtual-machines-picker"] })
       qc.invalidateQueries({ queryKey: ["virtual-machine", saved.id] })
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      if (showPrtgSaveToast(saved.prtg_plan))
+        qc.invalidateQueries({ queryKey: ["prtg-plan"] })
       onSaved(saved)
     },
     onError: (err) => {
+      if (err.message === LOCAL_DATA_INVALID) return
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
     },
@@ -351,6 +431,14 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
                 }
               />
             </div>
+            <FormText
+              label="Software version"
+              value={softwareVersion}
+              onChange={setSoftwareVersion}
+              mono
+              placeholder="17.9.4a"
+              error={fieldErrors.software_version}
+            />
           </FormSection>
 
           <FormSection title="Notes" card>
@@ -359,6 +447,21 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
               value={description}
               onChange={setDescription}
               error={fieldErrors.description}
+            />
+          </FormSection>
+
+          <FormSection title="Config context" card>
+            <FormTextarea
+              label="Local context data"
+              info="Merged over every matching config context, so these keys win."
+              rows={6}
+              placeholder='{"default_route": "192.0.2.1"}'
+              value={localData}
+              onChange={(v) => {
+                setLocalData(v)
+                setLocalDataError(null)
+              }}
+              error={localDataError ?? fieldErrors.local_context_data}
             />
           </FormSection>
         </FormColumn>
@@ -432,8 +535,99 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
               />
             </div>
           </FormSection>
+          <FormSection title="Build" card>
+            <FormCheckbox
+              label="Intended"
+              checked={intended}
+              onChange={setIntended}
+              info="Danbyte holds the intent. Sync reports differences as drift and never overwrites, deletes or prunes this VM."
+            />
+            <DevicePicker
+              label="Is router"
+              hint="optional"
+              value={representsId}
+              onChange={setRepresentsId}
+              noneLabel="No device"
+              placeholder="Select the device this VM is…"
+              error={fieldErrors.represents_device_id}
+            />
+            <div className="grid gap-3 @md:grid-cols-3">
+              <FormText
+                label="VMID"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={vmid}
+                onChange={setVmid}
+                placeholder="-"
+                mono
+                error={fieldErrors.vmid}
+              />
+              <FormText
+                label="CPU type"
+                value={cpuType}
+                onChange={setCpuType}
+                placeholder="host"
+                mono
+                error={fieldErrors.cpu_type}
+              />
+              <FormText
+                label="Sockets"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={sockets}
+                onChange={setSockets}
+                placeholder="-"
+                error={fieldErrors.sockets}
+              />
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Image"
+                value={image}
+                onChange={setImage}
+                placeholder="local:import/debian-13.qcow2"
+                mono
+                error={fieldErrors.image}
+              />
+              <FormText
+                label="Storage"
+                value={storage}
+                onChange={setStorage}
+                placeholder="local-lvm"
+                mono
+                error={fieldErrors.storage}
+              />
+            </div>
+          </FormSection>
+          {prtgOn && (
+            <FormSection title="PRTG" card>
+              <PrtgSyncSelect
+                value={prtgSync}
+                onChange={setPrtgSync}
+                error={fieldErrors.prtg_sync}
+                host={prtgHost}
+                onHostChange={setPrtgHost}
+                hostError={fieldErrors.prtg_host}
+              />
+            </FormSection>
+          )}
         </FormColumn>
       </FormColumns>
+
+      {groupsDraft.show && (
+        <ApplicationGroupsField
+          value={groupsDraft.ids}
+          onChange={groupsDraft.setIds}
+        />
+      )}
+      {profilesDraft.show && (
+        <DeviceProfilesField
+          value={profilesDraft.ids}
+          onChange={profilesDraft.setIds}
+        />
+      )}
 
       <FormTags
         label="Tags"

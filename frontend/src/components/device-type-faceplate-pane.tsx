@@ -27,12 +27,8 @@ import { CSS } from "@dnd-kit/utilities"
 import { Boxes, Plus, Trash2, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type DeviceType,
-  type DeviceTypeWritePayload,
-  type Paginated,
-} from "@/lib/api"
+import { api, type DeviceType, type DeviceTypeWritePayload } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CONNECTOR_MM,
   PANEL_MM,
@@ -109,6 +105,8 @@ const KIND_TITLE: Record<TemplateKind, string> = {
   "device-bay": "Device bays", // not placeable on faceplates
   "inventory-item": "Inventory", // not placeable on faceplates
   antenna: "Antennas", // photo markers only, like inventory
+  "cooling-intake": "Cooling intakes", // not placeable (#434)
+  "cooling-outflow": "Cooling outflows", // not placeable (#434)
   interface: "Interfaces",
   "console-port": "Console ports",
   "console-server-port": "Console server ports",
@@ -181,7 +179,7 @@ export function DeviceTypeFaceplatePane({
         ? ["mt-interface-templates", deviceType.id]
         : [TEMPLATE_QUERY_KEY[k], deviceType.id],
       queryFn: () =>
-        api<Paginated<PortComponent>>(
+        apiAll<PortComponent>(
           moduleMode
             ? `/api/module-interface-templates/?module_type=${deviceType.id}`
             : `/api/${TEMPLATE_ENDPOINT[k]}/?device_type=${deviceType.id}`
@@ -281,7 +279,7 @@ export function DeviceTypeFaceplatePane({
   const bayTemplatesQ = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY["module-bay"], deviceType.id],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
+      apiAll<{ id: string; name: string }>(
         `/api/module-bay-templates/?device_type=${deviceType.id}`
       ),
     enabled: !moduleMode,
@@ -637,7 +635,11 @@ export function DeviceTypeFaceplatePane({
                     }
                     disabled={!canWrite}
                   >
-                    <SelectTrigger size="sm" className="h-7 w-24 text-[12px]">
+                    <SelectTrigger
+                      aria-label="Rows"
+                      size="sm"
+                      className="h-7 w-24 text-[12px]"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -665,7 +667,11 @@ export function DeviceTypeFaceplatePane({
                     }}
                     disabled={!canWrite}
                   >
-                    <SelectTrigger size="sm" className="h-7 w-28 text-[12px]">
+                    <SelectTrigger
+                      aria-label="Banks"
+                      size="sm"
+                      className="h-7 w-28 text-[12px]"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -704,7 +710,11 @@ export function DeviceTypeFaceplatePane({
                     }
                     disabled={!canWrite}
                   >
-                    <SelectTrigger size="sm" className="h-7 w-28 text-[12px]">
+                    <SelectTrigger
+                      aria-label="Gap"
+                      size="sm"
+                      className="h-7 w-28 text-[12px]"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -723,7 +733,11 @@ export function DeviceTypeFaceplatePane({
                       }
                       disabled={!canWrite}
                     >
-                      <SelectTrigger size="sm" className="h-7 w-20 text-[12px]">
+                      <SelectTrigger
+                        aria-label="Starting U"
+                        size="sm"
+                        className="h-7 w-20 text-[12px]"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -748,7 +762,11 @@ export function DeviceTypeFaceplatePane({
                       }
                       disabled={!canWrite}
                     >
-                      <SelectTrigger size="sm" className="h-7 w-24 text-[12px]">
+                      <SelectTrigger
+                        aria-label="Height"
+                        size="sm"
+                        className="h-7 w-24 text-[12px]"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1410,7 +1428,11 @@ function AutoArrangePopover({
               value={String(rows)}
               onValueChange={(v) => setRows(Number(v) as 0 | 1 | 2 | 3 | 4)}
             >
-              <SelectTrigger size="sm" className="h-7 text-[12px]">
+              <SelectTrigger
+                aria-label="Rows"
+                size="sm"
+                className="h-7 text-[12px]"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1428,7 +1450,11 @@ function AutoArrangePopover({
               value={String(bank)}
               onValueChange={(v) => setBank(Number(v))}
             >
-              <SelectTrigger size="sm" className="h-7 text-[12px]">
+              <SelectTrigger
+                aria-label="Banks"
+                size="sm"
+                className="h-7 text-[12px]"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type ConsolePort, type Paginated } from "@/lib/api"
+import { type ConsolePort } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { buildConsolePortColumns } from "@/components/columns/console-port-columns"
@@ -36,14 +37,12 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
   const ports = useQuery({
     queryKey: ["device-console-ports", deviceId],
     queryFn: () =>
-      api<Paginated<ConsolePort>>(`/api/console-ports/?device=${deviceId}`),
+      apiAll<ConsolePort>(`/api/console-ports/?device=${deviceId}`),
   })
   const serverPorts = useQuery({
     queryKey: ["device-console-server-ports", deviceId],
     queryFn: () =>
-      api<Paginated<ConsolePort>>(
-        `/api/console-server-ports/?device=${deviceId}`
-      ),
+      apiAll<ConsolePort>(`/api/console-server-ports/?device=${deviceId}`),
   })
 
   const portCols = useMemo(

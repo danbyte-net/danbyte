@@ -1,0 +1,174 @@
+[
+ {
+  "creatable": true,
+  "kind": "http",
+  "name": "HTTP",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=http",
+  "manual": "/help/http_sensor.htm",
+  "resource_usage": "Low"
+ },
+ {
+  "creatable": true,
+  "kind": "ping",
+  "name": "Ping",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=ping",
+  "manual": "/help/ping_sensor.htm",
+  "resource_usage": "VeryLow"
+ },
+ {
+  "creatable": true,
+  "kind": "snmpcpu",
+  "name": "SNMP CPU Load",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=snmpcpu",
+  "manual": "/help/snmp_cpu_load_sensor.htm",
+  "resource_usage": "Low"
+ },
+ {
+  "creatable": true,
+  "kind": "snmpmemory",
+  "name": "SNMP Memory",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=snmpmemory",
+  "manual": "/help/snmp_memory_sensor.htm",
+  "resource_usage": "Low",
+  "flags": [
+   "NeedsProbe",
+   "HasMetaScan"
+  ],
+  "metascan_field": "memory",
+  "metascan_href": "/api/v2/experimental/devices/2081/metascan?kind=snmpmemory"
+ },
+ {
+  "creatable": true,
+  "kind": "snmpuptime",
+  "name": "SNMP System Uptime",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=snmpuptime",
+  "manual": "/help/snmp_uptime_sensor.htm",
+  "resource_usage": "VeryLow"
+ },
+ {
+  "creatable": true,
+  "kind": "snmptraffic",
+  "name": "SNMP Traffic",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=snmptraffic",
+  "manual": "/help/snmp_traffic_sensor.htm",
+  "resource_usage": "VeryLow",
+  "flags": [
+   "NeedsProbe",
+   "HasMetaScan"
+  ],
+  "metascan_field": "interfacenumber",
+  "metascan_href": "/api/v2/experimental/devices/2081/metascan?kind=snmptraffic"
+ },
+ {
+  "creatable": true,
+  "kind": "paessler.snmp.traffic_sensor",
+  "name": "SNMP Traffic v2",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=paessler.snmp.traffic_sensor",
+  "manual": "/help/snmp_traffic_v2_sensor.htm",
+  "resource_usage": "VeryLow",
+  "sensor_family": [
+   "SNMP"
+  ],
+  "system_compatibility": [
+   "IPv4",
+   "IPv6"
+  ],
+  "flags": [
+   "IsReleaseCandidate",
+   "NeedsProbe",
+   "HasMetaScan",
+   "NeedsCredentials"
+  ],
+  "metascan_field": "metascan",
+  "credential_group": "snmpversiongroup",
+  "metascan_href": "/api/v2/experimental/devices/2081/metascan?kind=paessler.snmp.traffic_sensor"
+ },
+ {
+  "creatable": true,
+  "kind": "sslcertificate",
+  "name": "SSL Certificate",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=sslcertificate",
+  "manual": "/help/ssl_certificate_sensor.htm",
+  "resource_usage": "VeryLow"
+ },
+ {
+  "creatable": true,
+  "kind": "ssl",
+  "name": "SSL Security Check",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=ssl",
+  "manual": "/help/ssl_security_check_sensor.htm",
+  "resource_usage": "VeryLow"
+ },
+ {
+  "creatable": false,
+  "hints": [
+   "CredentialsMissing"
+  ],
+  "kind": "wmidiskspace",
+  "name": "WMI Free Disk Space (Multi Disk)",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=wmidiskspace",
+  "manual": "/help/wmi_free_disk_space_multi_drive.htm",
+  "resource_usage": "High",
+  "flags": [
+   "NeedsWindowsCredentials",
+   "NotOnPod",
+   "NeedsCredentials"
+  ],
+  "credential_group": "windowsconnection"
+ },
+ {
+  "creatable": false,
+  "hints": [
+   "CredentialsMissing"
+  ],
+  "kind": "wmimemory",
+  "name": "WMI Memory",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=wmimemory",
+  "manual": "/help/wmi_memory_sensor.htm",
+  "resource_usage": "High",
+  "flags": [
+   "NeedsWindowsCredentials",
+   "NotOnPod",
+   "NeedsCredentials"
+  ],
+  "credential_group": "windowsconnection"
+ },
+ {
+  "creatable": false,
+  "hints": [
+   "CredentialsMissing"
+  ],
+  "kind": "wmiservice",
+  "name": "WMI Service",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=wmiservice",
+  "manual": "/help/wmi_service_sensor.htm",
+  "resource_usage": "High",
+  "flags": [
+   "NeedsProbe",
+   "NeedsWindowsCredentials",
+   "NotOnPod",
+   "NeedsCredentials",
+   "HasMetaScan"
+  ],
+  "metascan_field": "service",
+  "credential_group": "windowsconnection",
+  "metascan_href": "/api/v2/experimental/devices/2081/metascan?kind=wmiservice"
+ },
+ {
+  "creatable": false,
+  "hints": [
+   "CredentialsMissing"
+  ],
+  "kind": "wmiprocessor",
+  "name": "Windows CPU Load",
+  "href": "/api/v2/experimental/schemas/2081/post&kind=wmiprocessor",
+  "manual": "/help/wmi_cpu_load_sensor.htm",
+  "resource_usage": "High",
+  "flags": [
+   "NeedsWindowsCredentials",
+   "NotOnPod",
+   "NeedsCredentials"
+  ],
+  "credential_group": "windowsconnection"
+ }
+]

@@ -72,7 +72,23 @@ jobs:
       # BuildKit and every base image come from Google's Docker Hub mirror:
       # Docker Hub and ECR Public both throttle anonymous pulls from shared
       # runners.
+      # The mirror's copy of the moving tag can be briefly incomplete
+      # ("could not fetch content descriptor"); a second try after a pause
+      # keeps a release from failing on it. Never fall back to Docker Hub
+      # (tests_container_images).
       - name: Set up Buildx
+        id: buildx
+        continue-on-error: true
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+
+      - name: Wait before retrying Buildx
+        if: steps.buildx.outcome == 'failure'
+        run: sleep 45
+
+      - name: Set up Buildx (retry)
+        if: steps.buildx.outcome == 'failure'
         uses: docker/setup-buildx-action@v3
         with:
           driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1

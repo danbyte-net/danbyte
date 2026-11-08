@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
-import { api, type CheckTemplate, type Paginated } from "@/lib/api"
+import { api, type CheckTemplate } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -28,7 +29,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 export function TemplatesList() {
   const q = useQuery({
     queryKey: ["check-templates"],
-    queryFn: () => api<Paginated<CheckTemplate>>("/api/monitoring/templates/"),
+    queryFn: () => apiAll<CheckTemplate>("/api/monitoring/templates/"),
   })
   const [editing, setEditing] = useState<CheckTemplate | null>(null)
   const [creating, setCreating] = useState(false)

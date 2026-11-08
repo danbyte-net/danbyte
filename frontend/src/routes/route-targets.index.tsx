@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type RouteTarget } from "@/lib/api"
+import { type RouteTarget } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -37,7 +38,7 @@ function RtsPage() {
   const query = useQuery({
     queryKey: ["rts", q],
     queryFn: () =>
-      api<Paginated<RouteTarget>>(
+      apiAll<RouteTarget>(
         `/api/route-targets/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

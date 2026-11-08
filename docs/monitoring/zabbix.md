@@ -138,7 +138,7 @@ perfectly healthy while its SNMP interface polls nothing because the community
 is wrong or absent, and nothing in Danbyte's own view would ever say so.
 
 They appear as **chips beside the roll-up badge** on device and prefix lists
-and on the device's Overview and Monitoring tab - a count for problems, a red
+and on the device's Monitoring tab - a count for problems, a red
 protocol chip for anything unreachable - and in full on an address's
 **Monitoring** section, where the error text sits next to the protocol it
 belongs to. Chips rather than columns: most targets carry neither, and two
@@ -153,7 +153,7 @@ has no Zabbix check on is covered by the next section.
 each linked host's open problems and reachability are read every few minutes
 (**Every**, 5 by default) on a schedule of their own, so the **Zabbix** panel
 appears on a device's Monitoring tab, on each of its addresses' Monitoring
-tabs, and as a chip row on the device Overview - whether or not a Zabbix
+tabs, and as the **Zabbix** row of the device's [monitoring bar](../features/monitoring.md#the-monitoring-bar) - whether or not a Zabbix
 check exists, and with provisioning off. Two calls per pass, read-only.
 
 The panel shows Danbyte's word for the worst open problem (through the
@@ -380,7 +380,9 @@ like every other scheduled task, so when it stops you can see that it stopped.
 
 The tenant switch is re-checked **inside the job**, not only when it was
 queued: a toggle flipped in between wins, or Danbyte writes hosts into a Zabbix
-somebody just switched off.
+somebody just switched off. A deactivated tenant's connections are skipped the
+same way - the beat queues nothing for them, and a queued pass, maintenance
+reconcile or host-status read returns without touching Zabbix.
 
 ### Working the queue
 

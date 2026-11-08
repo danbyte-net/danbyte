@@ -9,28 +9,30 @@ class ZabbixConfig(AppConfig):
     def ready(self):
         # Registering the engine kind is the whole point of the app being
         # installed; the driver itself is built lazily, per call.
-        from django.db.models.signals import post_delete
-
         from monitoring.engine_drivers import register_monitoring_engine
+        from monitoring.external.hooks import register_ack_writer, register_window_listener
         from monitoring.observations import register_observation_source
-        from monitoring.signals import alert_acknowledged, maintenance_window_changed
 
         from . import hooks
+        from .checker import KIND
         from .driver import ZabbixDriver
 
-        # Two-way: windows and acknowledgements flow back. The handlers only
-        # queue jobs, which re-check every switch at run time.
-        maintenance_window_changed.connect(
-            hooks.on_window_changed, dispatch_uid="zabbix.window_changed"
-        )
-        post_delete.connect(
-            hooks.on_event_deleted,
-            sender="monitoring.MaintenanceEvent",
-            dispatch_uid="zabbix.event_deleted",
-        )
-        alert_acknowledged.connect(
-            hooks.on_alert_acknowledged, dispatch_uid="zabbix.alert_acknowledged"
-        )
+        # Two-way: windows and acknowledgements flow back. Monitoring owns
+        # the signal handlers; the registered functions only queue jobs,
+        # which re-check every switch at run time.
+        register_window_listener("zabbix", hooks.window_changed)
+        register_ack_writer(KIND, hooks.write_back, system=hooks.SYSTEM)
+
+        # On the shared beat, but still driven by danbyte-zabbix-sync.timer -
+        # extmon_sync skips it unless named, so nothing runs twice.
+        from monitoring.external.beat import register_beat
+
+        def _enqueue_due(now):
+            from .sync_tasks import enqueue_due_syncs
+
+            return enqueue_due_syncs(now)
+
+        register_beat("zabbix", "Zabbix sync", _enqueue_due, own_timer=True)
 
         # What Zabbix knows about a device reaches the drift inbox the SNMP
         # poller fills, rather than a second one beside it.

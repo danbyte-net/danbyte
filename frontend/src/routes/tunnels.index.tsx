@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Tunnel, type Paginated } from "@/lib/api"
+import { type Tunnel } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
@@ -28,7 +29,7 @@ function TunnelsPage() {
   const query = useQuery({
     queryKey: ["tunnels", q],
     queryFn: () =>
-      api<Paginated<Tunnel>>(
+      apiAll<Tunnel>(
         `/api/tunnels/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

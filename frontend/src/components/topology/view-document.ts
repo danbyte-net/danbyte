@@ -68,6 +68,7 @@ export const DOC_STYLES: readonly DocStyle[] = [
   "hierarchy",
   "flat",
   "diagram",
+  "routing",
 ]
 
 /** Undo depth. A drag is one step, however long it took. */

@@ -8,6 +8,7 @@ import {
   useCabinetDevices,
 } from "@/components/cabinet-devices"
 import { CabinetElevation } from "@/components/cabinet-elevation"
+import { Loading } from "@/components/loading"
 import { Section } from "@/components/ui/section"
 
 /** Where the device sits in its cabinet - the plate drawn with its rails and
@@ -22,19 +23,30 @@ export function DeviceCabinetCard({ device }: { device: Device }) {
     staleTime: 60_000,
   })
   const devices = useCabinetDevices(cabinetId)
-  if (!device.cabinet || !device.din_rail || !cabinet.data) return null
+  if (!device.cabinet || !device.din_rail) return null
+  const title = (
+    <span>
+      Cabinet ·{" "}
+      <Link
+        to="/cabinets/$id"
+        params={{ id: device.cabinet.id }}
+        className="link"
+      >
+        {device.cabinet.name}
+      </Link>
+    </span>
+  )
+  // Known from the device: the card holds its place while the plate loads.
+  if (cabinet.isPending)
+    return (
+      <Section title={title} boxed>
+        <Loading />
+      </Section>
+    )
+  if (!cabinet.data) return null
   const c = cabinet.data
   return (
-    <Section
-      title={
-        <span>
-          Cabinet ·{" "}
-          <Link to="/cabinets/$id" params={{ id: c.id }} className="link">
-            {device.cabinet.name}
-          </Link>
-        </span>
-      }
-    >
+    <Section title={title}>
       <div className="rounded-lg border border-border bg-card p-4">
         <CabinetElevation
           width={c.inner_width_mm}

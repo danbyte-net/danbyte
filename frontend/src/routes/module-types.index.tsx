@@ -4,7 +4,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type ModuleType, type Paginated } from "@/lib/api"
+import { api, type ModuleType } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -20,6 +21,7 @@ import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
 import { manufacturerColumn } from "@/components/cells/manufacturer-cell"
+import { coolingMethodColumn } from "@/components/cells/cooling-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { RowActions } from "@/components/row-actions"
@@ -46,7 +48,7 @@ function ModuleTypesPage() {
   const query = useQuery({
     queryKey: ["module-types", q],
     queryFn: () =>
-      api<Paginated<ModuleType>>(
+      apiAll<ModuleType>(
         `/api/module-types/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
@@ -160,6 +162,11 @@ function buildColumns({
           <span className="text-muted-foreground">-</span>
         ),
     },
+    // How the module is cooled (#434) - hidden until ticked.
+    coolingMethodColumn<ModuleType>({
+      get: (r) => r.cooling_method,
+      field: "cooling_method",
+    }),
     {
       id: "interfaces",
       accessorKey: "interface_template_count",

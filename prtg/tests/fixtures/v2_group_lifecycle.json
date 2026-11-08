@@ -1,0 +1,117 @@
+{
+ "_note": "PRTG 26.3.124 API v2, recorded 2026-10-27 on the lab: create a group under the Local Probe and one under it, rename, move, set credential sections with throwaway values, read inheritance, delete. Bodies scrubbed.",
+ "create_group_probe": {
+  "status": 201,
+  "location": "/api/v2/groups/2143",
+  "body": ""
+ },
+ "waits": [
+  5.1,
+  6.1
+ ],
+ "create_group_group": {
+  "status": 201,
+  "location": "/api/v2/groups/2144",
+  "body": ""
+ },
+ "read_child": {
+  "status": 200,
+  "location": "",
+  "body": "{\"basic\":{\"active\":\"1\",\"name\":\"Danbyte test child\",\"parenttags\":[\"danbyte\",\"danbyte-group-test-1\"],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-group-test-2\"]},\"href\":\"/api/v2/groups/2144\",\"id\":\"2144\",\"kind\":\"group\",\"kind_name\":\"Group\",\"name\":\"Danbyte test child\",\"parent\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"path\":[{\"id\":\"0\",\"name\":\"Root\",\"type\":\"REFERENCED_ROOT\",\"href\":\"/api/v2/groups/0\"},{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"}],\"status\":\"UP\",\"type\":\"osk.group\"}\n"
+ },
+ "filter_tag_contains": {
+  "status": 200,
+  "location": "",
+  "body": "[]"
+ },
+ "filter_tag_eq": {
+  "status": 200,
+  "location": "",
+  "body": "[]"
+ },
+ "rename_group": {
+  "status": 204,
+  "location": "",
+  "body": ""
+ },
+ "read_renamed": {
+  "status": 200,
+  "location": "",
+  "body": "{\"basic\":{\"active\":\"1\",\"name\":\"Danbyte test renamed\",\"parenttags\":[\"danbyte\",\"danbyte-group-test-1\"],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-group-test-2\"]},\"href\":\"/api/v2/groups/2144\",\"id\":\"2144\",\"kind\":\"group\",\"kind_name\":\"Group\",\"name\":\"Danbyte test renamed\",\"parent\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"status\":\"UP\",\"type\":\"osk.group\"}\n"
+ },
+ "move_group": {
+  "status": 204,
+  "location": "/api/v2/groups/2144",
+  "body": ""
+ },
+ "move_group_back": {
+  "status": 204,
+  "location": "/api/v2/groups/2144",
+  "body": ""
+ },
+ "patch_paessler-proxmox-credentials_section": {
+  "status": 204,
+  "location": "",
+  "body": ""
+ },
+ "patch_windowsconnection": {
+  "status": 204,
+  "location": "",
+  "body": ""
+ },
+ "patch_linuxconnection": {
+  "status": 204,
+  "location": "",
+  "body": ""
+ },
+ "patch_vmwareconnection": {
+  "status": 204,
+  "location": "",
+  "body": ""
+ },
+ "patch_paessler-vmware-vmware_credentials_section": {
+  "status": 204,
+  "location": "",
+  "body": ""
+ },
+ "read_parent_creds": {
+  "status": 200,
+  "location": "",
+  "body": "{\"basic\":{\"active\":\"1\",\"name\":\"Danbyte test parent\",\"parenttags\":[],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-group-test-1\"]},\"href\":\"/api/v2/groups/2143\",\"id\":\"2143\",\"kind\":\"group\",\"kind_name\":\"Group\",\"linuxconnection\":{\"_inheritancesource\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"_inherited\":false,\"_shadowed\":{\"elevationnamesu\":\"\",\"elevationnamesudo\":\"\",\"elevationpass\":\"\",\"linuxloginmode\":\"0\",\"linuxloginpassword\":\"REDACTED\",\"linuxloginusername\":\"\",\"privatekey\":\"\",\"sshelevatedrights\":\"1\",\"sshport\":22,\"sshversion_devicegroup\":\"2\",\"wbemport\":5989,\"wbemportmode\":\"0\",\"wbemprotocol\":\"https\"},\"elevationnamesu\":\"\",\"elevationnamesudo\":\"\",\"elevationpass\":\"\",\"linuxloginmode\":\"0\",\"linuxloginpassword\":\"REDACTED\",\"linuxloginusername\":\"throwaway\",\"privatekey\":\"\",\"sshelevatedrights\":\"1\",\"sshport\":22,\"sshversion_devicegroup\":\"2\",\"wbemport\":5989,\"wbemportmode\":\"0\",\"wbemprotocol\":\"https\"},\"name\":\"Danbyte test parent\",\"paessler-proxmox-credentials_section\":{\"_inheritancesource\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"_inherited\":false,\"_shadowed\":{\"paessler-proxmox-credentials_section-connection_group-port\":8006,\"paessler-proxmox-credentials_section-credentials_group-api_token_id\":\"root@pam!prtg\",\"paessler-proxmox-credentials_section-credentials_group-api_token_secret\":\"REDACTED\"},\"paessler-proxmox-credentials_section-connection_group-port\":8006,\"paessler-proxmox-credentials_section-credentials_group-api_token_id\":\"throwaway@pve!danbyte\",\"paessler-proxmox-credentials_section-credentials_group-api_token_secret\":\"REDACTED\"},\"paessler-vmware-vmware_credentials_section\":{\"_inheritancesource\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"_inherited\":false,\"_shadowed\":{\"paessler-vmware-vmware_credentials_section-connection_group-port\":443,\"paessler-vmware-vmware_credentials_section-vmware_credentials_group-password\":\"REDACTED\",\"paessler-vmware-vmware_credentials_section-vmware_credentials_group-username\":\"root\"},\"paessler-vmware-vmware_credentials_section-connection_group-port\":443,\"paessler-vmware-vmware_credentials_section-vmware_credentials_group-password\":\"REDACTED\",\"paessler-vmware-vmware_credentials_section-vmware_credentials_group-username\":\"throwaway\"},\"parent\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"status\":\"UP\",\"type\":\"osk.group\",\"vmwareconnection\":{\"_inheritancesource\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"_inherited\":false,\"_shadowed\":{\"esxpassword\":\"REDACTED\",\"esxprotocol\":\"0\",\"esxuser\":\"\",\"vmwaresessionpool\":\"1\"},\"esxpassword\":\"REDACTED\",\"esxprotocol\":\"0\",\"esxuser\":\"throwaway\",\"vmwaresessionpool\":\"1\"},\"windowsconnection\":{\"_inheritancesource\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"_inherited\":false,\"_shadowed\":{\"windowsauthenticationmethod\":\"0\",\"windowslogindomain\":\"\",\"windowsloginpassword\":\"REDACTED\",\"windowsloginusername\":\"\",\"wmiauthenticationinfo\":\"[b]Important[/b]: To use \\\"Kerberos only\\\", you must enable WSMan on the probe system. You can find the setting in the \\\"WMI Protocol\\\" section on the Probe Settings for Monitoring tab in the PRTG Administration Tool.\",\"wmibackend\":\"WSMAN\"},\"windowsauthenticationmethod\":\"0\",\"windowslogindomain\":\"THROW\",\"windowsloginpassword\":\"REDACTED\",\"windowsloginusername\":\"throwaway\",\"wmiauthenticationinfo\":\"[b]Important[/b]: To use \\\"Kerberos only\\\", you must enable WSMan on the probe system. You can find the setting in the \\\"WMI Protocol\\\" section on the Probe Settings for Monitoring tab in the PRTG Administration Tool.\",\"wmibackend\":\"WSMAN\"}}\n"
+ },
+ "read_child_creds": {
+  "status": 200,
+  "location": "",
+  "body": "{\"basic\":{\"active\":\"1\",\"name\":\"Danbyte test renamed\",\"parenttags\":[\"danbyte\",\"danbyte-group-test-1\"],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-group-test-2\"]},\"href\":\"/api/v2/groups/2144\",\"id\":\"2144\",\"kind\":\"group\",\"kind_name\":\"Group\",\"linuxconnection\":{\"_inheritancesource\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"_inherited\":true,\"_shadowed\":{\"elevationnamesu\":\"\",\"elevationnamesudo\":\"\",\"elevationpass\":\"\",\"linuxloginmode\":\"0\",\"linuxloginpassword\":\"REDACTED\",\"linuxloginusername\":\"\",\"privatekey\":\"\",\"sshelevatedrights\":\"1\",\"sshport\":22,\"sshversion_devicegroup\":\"2\",\"wbemport\":5989,\"wbemportmode\":\"0\",\"wbemprotocol\":\"https\"},\"elevationnamesu\":\"\",\"elevationnamesudo\":\"\",\"elevationpass\":\"\",\"linuxloginmode\":\"0\",\"linuxloginpassword\":\"REDACTED\",\"linuxloginusername\":\"throwaway\",\"privatekey\":\"\",\"sshelevatedrights\":\"1\",\"sshport\":22,\"sshversion_devicegroup\":\"2\",\"wbemport\":5989,\"wbemportmode\":\"0\",\"wbemprotocol\":\"https\"},\"name\":\"Danbyte test renamed\",\"paessler-proxmox-credentials_section\":{\"_inheritancesource\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"_inherited\":true,\"_shadowed\":{\"paessler-proxmox-credentials_section-connection_group-port\":8006,\"paessler-proxmox-credentials_section-credentials_group-api_token_id\":\"\",\"paessler-proxmox-credentials_section-credentials_group-api_token_secret\":\"REDACTED\"},\"paessler-proxmox-credentials_section-connection_group-port\":8006,\"paessler-proxmox-credentials_section-credentials_group-api_token_id\":\"throwaway@pve!danbyte\",\"paessler-proxmox-credentials_section-credentials_group-api_token_secret\":\"REDACTED\"},\"paessler-vmware-vmware_credentials_section\":{\"_inheritancesource\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"_inherited\":true,\"_shadowed\":{\"paessler-vmware-vmware_credentials_section-connection_group-port\":443,\"paessler-vmware-vmware_credentials_section-vmware_credentials_group-password\":\"REDACTED\",\"paessler-vmware-vmware_credentials_section-vmware_credentials_group-username\":\"\"},\"paessler-vmware-vmware_credentials_section-connection_group-port\":443,\"paessler-vmware-vmware_credentials_section-vmware_credentials_group-password\":\"REDACTED\",\"paessler-vmware-vmware_credentials_section-vmware_credentials_group-username\":\"throwaway\"},\"parent\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"status\":\"UP\",\"type\":\"osk.group\",\"vmwareconnection\":{\"_inheritancesource\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"_inherited\":true,\"_shadowed\":{\"esxpassword\":\"REDACTED\",\"esxprotocol\":\"0\",\"esxuser\":\"\",\"vmwaresessionpool\":\"1\"},\"esxpassword\":\"REDACTED\",\"esxprotocol\":\"0\",\"esxuser\":\"throwaway\",\"vmwaresessionpool\":\"1\"},\"windowsconnection\":{\"_inheritancesource\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"_inherited\":true,\"_shadowed\":{\"windowsauthenticationmethod\":\"0\",\"windowslogindomain\":\"\",\"windowsloginpassword\":\"REDACTED\",\"windowsloginusername\":\"\",\"wmiauthenticationinfo\":\"[b]Important[/b]: To use \\\"Kerberos only\\\", you must enable WSMan on the probe system. You can find the setting in the \\\"WMI Protocol\\\" section on the Probe Settings for Monitoring tab in the PRTG Administration Tool.\",\"wmibackend\":\"WSMAN\"},\"windowsauthenticationmethod\":\"0\",\"windowslogindomain\":\"THROW\",\"windowsloginpassword\":\"REDACTED\",\"windowsloginusername\":\"throwaway\",\"wmiauthenticationinfo\":\"[b]Important[/b]: To use \\\"Kerberos only\\\", you must enable WSMan on the probe system. You can find the setting in the \\\"WMI Protocol\\\" section on the Probe Settings for Monitoring tab in the PRTG Administration Tool.\",\"wmibackend\":\"WSMAN\"}}\n"
+ },
+ "patch_linux_key": {
+  "status": 204,
+  "location": "",
+  "body": ""
+ },
+ "read_child_linux": {
+  "status": 200,
+  "location": "",
+  "body": "{\"basic\":{\"active\":\"1\",\"name\":\"Danbyte test renamed\",\"parenttags\":[\"danbyte\",\"danbyte-group-test-1\"],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-group-test-2\"]},\"href\":\"/api/v2/groups/2144\",\"id\":\"2144\",\"kind\":\"group\",\"kind_name\":\"Group\",\"linuxconnection\":{\"_inheritancesource\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"_inherited\":false,\"_shadowed\":{\"elevationnamesu\":\"\",\"elevationnamesudo\":\"\",\"elevationpass\":\"\",\"linuxloginmode\":\"0\",\"linuxloginpassword\":\"REDACTED\",\"linuxloginusername\":\"throwaway\",\"privatekey\":\"\",\"sshelevatedrights\":\"1\",\"sshport\":22,\"sshversion_devicegroup\":\"2\",\"wbemport\":5989,\"wbemportmode\":\"0\",\"wbemprotocol\":\"https\"},\"elevationnamesu\":\"\",\"elevationnamesudo\":\"\",\"elevationpass\":\"\",\"linuxloginmode\":\"1\",\"linuxloginpassword\":\"REDACTED\",\"linuxloginusername\":\"throwaway\",\"privatekey\":\"*********\",\"sshelevatedrights\":\"1\",\"sshport\":22,\"sshversion_devicegroup\":\"2\",\"wbemport\":5989,\"wbemportmode\":\"0\",\"wbemprotocol\":\"https\"},\"name\":\"Danbyte test renamed\",\"parent\":{\"id\":\"2143\",\"name\":\"Danbyte test parent\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/2143\"},\"status\":\"UP\",\"type\":\"osk.group\"}\n"
+ },
+ "read_probe_proxmox": {
+  "status": 200,
+  "location": "",
+  "body": "{\"basic\":{\"active\":\"1\",\"name\":\"Local Probe\",\"priority\":\"3\",\"tags\":[]},\"href\":\"/api/v2/probes/1\",\"id\":\"1\",\"kind\":\"probenode\",\"kind_name\":\"Probe\",\"name\":\"Local Probe\",\"paessler-proxmox-credentials_section\":{\"paessler-proxmox-credentials_section-connection_group-port\":8006,\"paessler-proxmox-credentials_section-credentials_group-api_token_id\":\"root@pam!prtg\",\"paessler-proxmox-credentials_section-credentials_group-api_token_secret\":\"REDACTED\"},\"parent\":{\"id\":\"0\",\"name\":\"Root\",\"type\":\"REFERENCED_ROOT\",\"href\":\"/api/v2/groups/0\"},\"status\":\"CONNECTED\",\"type\":\"osk.probe\"}\n"
+ },
+ "delete_2143": {
+  "status": 204,
+  "location": "",
+  "body": ""
+ },
+ "delete_again_2143": {
+  "status": 404,
+  "location": "",
+  "body": "{\"code\":\"NOT_FOUND\",\"message\":\"The resource could not be found in this endpoint. Check the ID of the object.\",\"request_id\":\"TIFwxd\"}\n\n"
+ },
+ "leftovers": {
+  "status": 200,
+  "location": "",
+  "body": "[]"
+ }
+}

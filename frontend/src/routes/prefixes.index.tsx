@@ -4,12 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
-import {
-  api,
-  type BulkStatusEntry,
-  type Paginated,
-  type Prefix,
-} from "@/lib/api"
+import { type BulkStatusEntry, type Prefix } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { annotateNesting, type NestedPrefix } from "@/lib/prefix-tree"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Button } from "@/components/ui/button"
@@ -24,6 +20,7 @@ import { useCustomFieldDefs } from "@/components/custom-field-display"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { useViolationMap } from "@/components/compliance/violation-badge"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
+import { reportExport, useObjectReport } from "@/components/object-report"
 import { useMe, objCan } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 import {
@@ -66,7 +63,7 @@ function PrefixesPage() {
   const query = useQuery({
     queryKey: ["prefixes", q],
     queryFn: () =>
-      api<Paginated<Prefix>>(
+      apiAll<Prefix>(
         `/api/prefixes/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
@@ -137,6 +134,17 @@ function PrefixesPage() {
   }, [filteredRows])
 
   const violations = useViolationMap()
+  // The PDF report of the rows the list shows now.
+  const report = useObjectReport("prefix")
+  const reportItem = reportExport(
+    report.openReport,
+    () => ({
+      ids: rows.map((p) => p.id),
+      filters: q ? { search: q } : undefined,
+      scope: "filtered",
+    }),
+    rows.length === 0
+  )
 
   const columns = useMemo<ColumnDef<NestedPrefix>[]>(
     () =>
@@ -205,7 +213,7 @@ function PrefixesPage() {
               value={sla.frame}
               onChange={sla.setFrame}
             />
-            <TableActions ioType="prefix" />
+            <TableActions ioType="prefix" extraExports={[reportItem]} />
             {canAdd && (
               <Button size="sm" asChild>
                 <Link
@@ -244,6 +252,7 @@ function PrefixesPage() {
         prefix={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
+      {report.dialog}
       <PrefixBulkBar
         selected={selectedRows}
         onCleared={() => setSelectedRows([])}

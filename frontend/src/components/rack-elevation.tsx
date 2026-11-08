@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import { CalendarClock } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Device,
   Paginated,
@@ -164,7 +165,7 @@ export function RackElevation({
 
   const q = useQuery({
     queryKey: ["rack-devices", rack.id],
-    queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rack.id}`),
+    queryFn: () => apiAll<Device>(`/api/devices/?rack=${rack.id}`),
     ...(prefetched ? { staleTime: Infinity } : {}),
   })
 

@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type PlatformGroup } from "@/lib/api"
+import { type PlatformGroup } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
@@ -31,7 +32,7 @@ function PlatformGroupsPage() {
   const query = useQuery({
     queryKey: ["platform-groups", q],
     queryFn: () =>
-      api<Paginated<PlatformGroup>>(
+      apiAll<PlatformGroup>(
         `/api/platform-groups/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

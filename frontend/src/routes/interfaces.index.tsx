@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
-import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Cable as CableIcon } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Interface, type Paginated } from "@/lib/api"
+import { type Interface } from "@/lib/api"
+import { useServerList } from "@/lib/server-list"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildInterfaceColumns } from "@/components/columns/interface-columns"
@@ -14,102 +14,65 @@ import {
   MarkConnectedToggle,
   PortReserveAction,
 } from "@/components/port-reservation-dialog"
-import {
-  FilterRail,
-  FacetGroup,
-  tagFacetOptions,
-  type FacetOption,
-} from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
 import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
 import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
+import { wireFacetColumns } from "@/components/table-filters"
+import type { ServerFacetExtra } from "@/components/table-filters"
 import { useMe } from "@/lib/use-me"
 import { hereUrl } from "@/lib/return-url"
-import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
-
-const statusKey = (i: Interface) => i.status?.id ?? "none"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/interfaces/")({
   component: InterfacesPage,
 })
 
+/** The rail: Device and Tags from their columns, Status (keyed by id, `none`
+ * for Active - the links the list has always used) from the server alone,
+ * as the list shows no Status column. */
+const INTERFACE_FACETS = ["device", "status", "tags"]
+const STATUS_FACET: ServerFacetExtra[] = [
+  { id: "status", label: "Status", kind: "enum" },
+]
+const COLUMNS = [
+  "device",
+  "name",
+  "enabled",
+  "speed",
+  "mtu",
+  "vlan",
+  "cables",
+  "tags",
+  "description",
+] as const
+
 function InterfacesPage() {
   const [q, setQ] = useUrlSearch()
-  const [deviceFilterRaw, setDeviceFilter] = useUrlSet("device")
-  const [statusFilterRaw, setStatusFilter] = useUrlSet("status")
-  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
   const [deleting, setDeleting] = useState<Interface | null>(null)
 
   const { canDo } = useMe()
   const canAddCable = canDo("cable", "add")
   const canChangeCable = canDo("cable", "change")
-  const canDeleteCable = canDo("cable", "delete")
   const canReserve = canDo("portreservation", "add")
   const canAdd = canDo("interface", "add")
   const canEdit = canDo("interface", "change")
   const canDelete = canDo("interface", "delete")
 
-  const query = useQuery({
-    queryKey: ["interfaces", q],
-    queryFn: () =>
-      api<Paginated<Interface>>(
-        `/api/interfaces/?${new URLSearchParams({ search: q }).toString()}`
-      ),
+  // One page at a time from the server (#482): 41,600 interfaces used to be
+  // ten sequential requests before the first row showed.
+  const facetColumns = useMemo(
+    () => buildInterfaceColumns<Interface>({ include: [...COLUMNS] }),
+    []
+  )
+  const list = useServerList<Interface>({
+    endpoint: "/api/interfaces/",
+    queryKey: "interfaces",
+    columns: facetColumns,
+    facets: INTERFACE_FACETS,
+    extraFacets: STATUS_FACET,
   })
-  const allRows = query.data?.results ?? []
-
-  // Status facet counts null as Active - that's how it reads everywhere.
-  // Keyed by status id (`none` for no status), so the URL holds ids.
-  const statusFacets = useMemo(() => {
-    const c: Record<string, FacetOption> = {}
-    for (const i of allRows) {
-      const key = statusKey(i)
-      if (!c[key])
-        c[key] = {
-          value: key,
-          label: i.status?.name ?? "Active",
-          count: 0,
-          color: i.status?.color || undefined,
-          textColor: i.status?.text_color || undefined,
-        }
-      c[key].count++
-    }
-    return Object.values(c).sort((a, b) => b.count - a.count)
-  }, [allRows])
-
-  const facets = useMemo(() => {
-    const c: Record<string, { name: string; count: number }> = {}
-    for (const i of allRows) {
-      if (!c[i.device.id]) c[i.device.id] = { name: i.device.name, count: 0 }
-      c[i.device.id].count++
-    }
-    return Object.entries(c)
-      .sort(([, a], [, b]) => b.count - a.count)
-      .map<FacetOption>(([id, v]) => ({
-        value: id,
-        label: v.name,
-        count: v.count,
-      }))
-  }, [allRows])
-  const tagFacets = useMemo(
-    () => tagFacetOptions(allRows, (i) => i.tags),
-    [allRows]
-  )
-  // A value no row carries (a stale link) is ignored.
-  const deviceFilter = useKnown(deviceFilterRaw, facets)
-  const statusFilter = useKnown(statusFilterRaw, statusFacets)
-  const tagFilter = useKnown(tagFilterRaw, tagFacets)
-  const rows = useMemo(
-    () =>
-      allRows.filter(
-        (i) =>
-          (deviceFilter.size === 0 || deviceFilter.has(i.device.id)) &&
-          (statusFilter.size === 0 || statusFilter.has(statusKey(i))) &&
-          (tagFilter.size === 0 || i.tags.some((t) => tagFilter.has(t.slug)))
-      ),
-    [allRows, deviceFilter, statusFilter, tagFilter]
-  )
+  const { query, rows, selectedValues, toggleValue } = list
 
   const handleDelete = useCallback((i: Interface) => setDeleting(i), [])
   // Fleet-wide SNMP drift for every port on the page, in ONE request - the
@@ -119,121 +82,88 @@ function InterfacesPage() {
   const planned = usePlannedChangeMap()
   const columns = useMemo<ColumnDef<Interface>[]>(
     () =>
-      buildInterfaceColumns<Interface>({
-        selection: true,
-        drift,
-        planned,
-        include: [
-          "device",
-          "name",
-          "enabled",
-          "speed",
-          "mtu",
-          "vlan",
-          "cables",
-          "tags",
-          "description",
-        ],
-        // Only this table lets you flip a cable's status inline; the per-device
-        // tables keep that control in their actions column.
-        cableControl: { canEdit: canChangeCable },
-        tagFilter: {
-          activeSlugs: tagFilter,
-          onToggle: (v) => setTagFilter((s) => toggled(s, v)),
-        },
-        actions: {
-          editTo: "/interfaces/$id/edit",
-          editParams: (i) => ({ id: i.id }),
-          canEdit: () => canEdit,
-          onDelete: handleDelete,
-          canDelete: () => canDelete,
-          extra: (i) =>
-            !i.cable && !i.virtual ? (
-              <>
-                {canAddCable && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    asChild
-                    className="h-7 px-1.5 text-muted-foreground hover:text-primary"
-                    title="Connect cable"
-                  >
-                    <Link
-                      to="/cables/new"
-                      search={{
-                        a_kind: "interface",
-                        a_id: i.id,
-                        ret: hereUrl(),
-                      }}
+      wireFacetColumns(
+        buildInterfaceColumns<Interface>({
+          selection: true,
+          drift,
+          planned,
+          include: [...COLUMNS],
+          // Only this table lets you flip a cable's status inline; the
+          // per-device tables keep that control in their actions column.
+          cableControl: { canEdit: canChangeCable },
+          actions: {
+            editTo: "/interfaces/$id/edit",
+            editParams: (i) => ({ id: i.id }),
+            canEdit: () => canEdit,
+            onDelete: handleDelete,
+            canDelete: () => canDelete,
+            extra: (i) =>
+              !i.cable && !i.virtual ? (
+                <>
+                  {canAddCable && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      asChild
+                      className="h-7 px-1.5 text-muted-foreground hover:text-primary"
+                      title="Connect cable"
                     >
-                      <CableIcon className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                )}
-                {!i.mark_connected && (
-                  <PortReserveAction
-                    kind="interface"
-                    portId={i.id}
-                    name={i.name}
-                    reservation={i.reservation}
-                    canReserve={canReserve}
-                  />
-                )}
-                {!i.reservation && (
-                  <MarkConnectedToggle
-                    endpoint="/api/interfaces/"
-                    portId={i.id}
-                    name={i.name}
-                    marked={i.mark_connected}
-                    canEdit={canEdit}
-                  />
-                )}
-              </>
-            ) : null,
-        },
-      }),
+                      <Link
+                        to="/cables/new"
+                        search={{
+                          a_kind: "interface",
+                          a_id: i.id,
+                          ret: hereUrl(),
+                        }}
+                      >
+                        <CableIcon className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  )}
+                  {!i.mark_connected && (
+                    <PortReserveAction
+                      kind="interface"
+                      portId={i.id}
+                      name={i.name}
+                      reservation={i.reservation}
+                      canReserve={canReserve}
+                    />
+                  )}
+                  {!i.reservation && (
+                    <MarkConnectedToggle
+                      endpoint="/api/interfaces/"
+                      portId={i.id}
+                      name={i.name}
+                      marked={i.mark_connected}
+                      canEdit={canEdit}
+                    />
+                  )}
+                </>
+              ) : null,
+          },
+        }),
+        selectedValues,
+        toggleValue
+      ),
     [
       handleDelete,
       canEdit,
       canDelete,
       canAddCable,
       canChangeCable,
-      canDeleteCable,
       canReserve,
       drift,
-      tagFilter,
-      setTagFilter,
+      planned,
+      selectedValues,
+      toggleValue,
     ]
-  )
-
-  const rail = (
-    <FilterRail>
-      <FacetGroup
-        label="Device"
-        options={facets}
-        selected={deviceFilter}
-        onToggle={(v) => setDeviceFilter((s) => toggled(s, v))}
-      />
-      <FacetGroup
-        label="Status"
-        options={statusFacets}
-        selected={statusFilter}
-        onToggle={(v) => setStatusFilter((s) => toggled(s, v))}
-      />
-      <FacetGroup
-        label="Tags"
-        options={tagFacets}
-        selected={tagFilter}
-        onToggle={(v) => setTagFilter((s) => toggled(s, v))}
-      />
-    </FilterRail>
   )
 
   return (
     <ListPageShell
       title="Interfaces"
-      count={query.data ? rows.length : undefined}
-      rail={rail}
+      count={query.data ? list.total : undefined}
+      rail={list.rail}
       search={{
         value: q,
         onChange: setQ,
@@ -259,11 +189,11 @@ function InterfacesPage() {
         </>
       }
       query={query}
-      page={query.data}
     >
       <DataTable
         data={rows}
         columns={columns}
+        {...list.tableProps}
         tableId="interfaces"
         flexColumn="description"
         rowStyle={(r) => portTint(r)}

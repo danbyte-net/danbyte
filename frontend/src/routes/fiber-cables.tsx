@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo } from "react"
 
-import { api } from "@/lib/api"
-import type { Cable, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Cable } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { buildCableColumns } from "@/components/columns/cable-columns"
 import { EmptyState } from "@/components/empty-state"
@@ -24,7 +24,7 @@ function FiberCablesPage() {
   const query = useQuery({
     queryKey: ["fiber-cables", q],
     queryFn: () =>
-      api<Paginated<Cable>>(
+      apiAll<Cable>(
         `/api/cables/?${new URLSearchParams({ fiber: "1", search: q }).toString()}`
       ),
   })

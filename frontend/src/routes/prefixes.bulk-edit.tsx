@@ -6,13 +6,13 @@ import { toast } from "sonner"
 import {
   api,
   type BulkUpdateFields,
-  type Paginated,
   type SiteOption,
   type StatusOption,
   type TagOption,
   type VLANOption,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Combobox } from "@/components/ui/combobox"
@@ -40,33 +40,33 @@ function BulkEditPrefixesPage() {
   const [vrfId, setVrfId] = useState<string>(KEEP)
   const [siteId, setSiteId] = useState<string>(KEEP)
   const [vlanId, setVlanId] = useState<string>(KEEP)
+  const [autoGateway, setAutoGateway] = useState<string>(KEEP)
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
 
   const statuses = useQuery({
     queryKey: ["prefix-statuses-picker"],
-    queryFn: () =>
-      api<Paginated<StatusOption>>("/api/statuses/?available_to=prefix"),
+    queryFn: () => apiAll<StatusOption>("/api/statuses/?available_to=prefix"),
     staleTime: 10 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
     staleTime: 10 * 60_000,
   })
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/"),
     staleTime: 10 * 60_000,
   })
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
+    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 
@@ -80,6 +80,7 @@ function BulkEditPrefixesPage() {
       if (vrfId !== KEEP) fields.vrf_id = vrfId === NONE ? null : vrfId
       if (siteId !== KEEP) fields.site_id = siteId === NONE ? null : siteId
       if (vlanId !== KEEP) fields.vlan_id = vlanId === NONE ? null : vlanId
+      if (autoGateway !== KEEP) fields.auto_gateway = autoGateway === "on"
       if (addTags.length) fields.add_tag_ids = addTags
       if (removeTags.length) fields.remove_tag_ids = removeTags
       if (Object.keys(fields).length === 0) {
@@ -202,6 +203,20 @@ function BulkEditPrefixesPage() {
               })),
             ]}
             searchPlaceholder="Search VLANs…"
+            emptyText="No matches."
+          />
+        </Field>
+
+        <Field label="Automatic gateway">
+          <Combobox
+            value={autoGateway}
+            onChange={(v) => setAutoGateway(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
+            ]}
+            searchPlaceholder="Search…"
             emptyText="No matches."
           />
         </Field>

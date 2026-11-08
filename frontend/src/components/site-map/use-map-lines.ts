@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
-import type { SiteMapCable, SiteMapConnection } from "@/lib/api"
+import type { SiteMapCable, SiteMapConnections } from "@/lib/api"
 
 // The site map page's lines, with their speeds and the links behind them
 // (`?include=capacity`, #246). The dashboard widget and the site and device
@@ -20,8 +20,7 @@ export const MAP_CABLES_URL = "/api/site-map/cables/?include=capacity"
 export function useMapConnections() {
   return useQuery({
     queryKey: MAP_CONNECTIONS_KEY,
-    queryFn: () =>
-      api<{ connections: SiteMapConnection[] }>(MAP_CONNECTIONS_URL),
+    queryFn: () => api<SiteMapConnections>(MAP_CONNECTIONS_URL),
   })
 }
 

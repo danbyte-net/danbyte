@@ -15,6 +15,7 @@ import {
   type SiteOption,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -121,13 +122,13 @@ export function AssignIpDialog({
   // Filter option sources (small, tenant-scoped - safe to load whole).
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/?picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })
@@ -194,6 +195,7 @@ export function AssignIpDialog({
       if (target!.vmId) {
         qc.invalidateQueries({ queryKey: ["vm-interfaces", target!.vmId] })
         qc.invalidateQueries({ queryKey: ["vm", target!.vmId] })
+        qc.invalidateQueries({ queryKey: ["vm-ips", target!.vmId] })
       }
       qc.invalidateQueries({
         queryKey: ["device-interfaces", target!.deviceId],
@@ -254,6 +256,7 @@ export function AssignIpDialog({
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Combobox
+            aria-label="Site"
             value={site}
             onChange={(v) => {
               setSite(v)
@@ -268,6 +271,7 @@ export function AssignIpDialog({
             emptyText="No sites."
           />
           <Combobox
+            aria-label="VRF"
             value={vrf}
             onChange={(v) => {
               setVrf(v)
@@ -281,6 +285,7 @@ export function AssignIpDialog({
             emptyText="No VRFs."
           />
           <Combobox
+            aria-label="Subnet"
             value={prefix}
             onChange={setPrefix}
             options={prefixOpts}

@@ -2,8 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { ConfigBundle, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ConfigBundle } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
@@ -11,6 +11,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { buildConfigBundleColumns } from "@/components/columns/config-bundle-columns"
 import { ConfigBundleDeleteDialog } from "@/components/config-bundle-delete-dialog"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/config-bundles/")({
@@ -22,13 +23,15 @@ function ConfigBundlesPage() {
   const canAdd = canDo("configbundle", "add")
   const canEdit = canDo("configbundle", "change")
   const canDelete = canDo("configbundle", "delete")
+  const selectable = canEdit || canDelete
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ConfigBundle | null>(null)
+  const [selected, setSelected] = useState<ConfigBundle[]>([])
 
   const query = useQuery({
     queryKey: ["config-bundles", q],
     queryFn: () =>
-      api<Paginated<ConfigBundle>>(
+      apiAll<ConfigBundle>(
         `/api/config-bundles/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
@@ -38,6 +41,7 @@ function ConfigBundlesPage() {
     () =>
       buildConfigBundleColumns({
         humanIds,
+        selection: selectable,
         actions: {
           editTo: "/config-bundles/$id/edit",
           editParams: (b) => ({ id: b.id }),
@@ -46,7 +50,7 @@ function ConfigBundlesPage() {
           canDelete: () => canDelete,
         },
       }),
-    [humanIds, canEdit, canDelete]
+    [humanIds, canEdit, canDelete, selectable]
   )
 
   return (
@@ -75,6 +79,18 @@ function ConfigBundlesPage() {
         total={query.data?.count}
         columns={columns}
         flexColumn="description"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/config-bundles/"
+        noun={["bundle", "bundles"]}
+        invalidate={[["config-bundles"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="configbundle"
       />
       <ConfigBundleDeleteDialog
         item={deleting}

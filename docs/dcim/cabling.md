@@ -28,10 +28,73 @@ ports** - so USB console links or video runs are first-class cables.
      on the same end (breakout).
 3. Optionally set the cable's **type**, **status**, **length**, **color**, and a
    description.
-4. Save.
+4. Save with **Create cable** (or **Enter**), or keep going with **Save and
+   add another**.
+
+**Where a length came from.** A length you enter (or import) is yours: a
+cable's route on a floor plan never replaces it unless you tick **Replace
+measured length** for that cable. A route fills a blank length, and keeps a
+length it computed up to date; the API reads which with `length_source`
+(`""` entered, `computed` worked out from a route - read-only). Editing the
+length makes it entered again. See
+[stored routes and lengths](../features/floor-plans.md#stored-routes-and-lengths).
 
 A port can be cabled **only once** - Danbyte rejects connecting a port that's
 already in use, so every connection stays unambiguous.
+
+## Cabling a run of ports
+
+Patching one device to another usually means port after port - Gi1/0/1 to
+Eth1/1, Gi1/0/2 to Eth1/2, and so on. The cable form has two ways to do that
+without leaving it.
+
+### Save and add another
+
+**Save and add another** (or **Ctrl+Enter** / **Cmd+Enter**) saves the cable
+and keeps the form open:
+
+- both ends stay on the same devices, and the cable's type, status, color,
+  length, description and tags are kept; the label is cleared,
+- each end moves on to the **next free port** on its device, in natural order
+  (Gi1/0/2 after Gi1/0/1, Gi1/0/10 after Gi1/0/9), skipping ports that already
+  carry a cable. An end of several ports moves on by as many. An end with no
+  free port left, or one on a circuit, is left empty to pick by hand,
+- the cables made this way are listed under **N cables added**, each with an
+  **undo** button that deletes it again.
+
+**Enter** saves the last one and closes the form. **Done** closes it without
+saving the ports currently picked.
+
+### Many at once
+
+Switch the form from **One cable** to **Many at once** to cable a whole run in
+one step:
+
+1. On each side, pick the **device** and the **port type**. The side lists that
+   device's **free** ports of that type in natural order, each with a
+   checkbox; **All** ticks every listed port (after a filter, only the
+   filtered ones) and **None** clears the side.
+2. Tick ports on both sides. Pairing is **by position**: the first ticked
+   port on A (top-down) goes to the first ticked port on B, the second to the
+   second, and so on. The **Pairs** table previews every cable before
+   anything is written; ports ticked on one side without a partner are counted
+   below it and left out.
+3. Set the shared **type**, **status**, **length**, **color**, description and
+   tags - every cable in the run gets them. Labels are per cable, so the label
+   field is hidden here.
+4. **Create N cables**.
+
+The run is created **all or nothing**: each pair is checked exactly like a
+single cable (ports in the current tenant, not already cabled, kinds that plug
+into each other), and if any pair fails, no cable is created and the reason
+shows on that pair's row.
+
+The same works through the API: `POST /api/cables/bulk-create/` with
+`{"cables": [<cable>, ...]}`, each item the body `POST /api/cables/` takes (at
+most 256). It needs the **add** permission on cables. A failure answers 400
+with `cables` - one error object per item, in order, `{}` for the items that
+were fine - and writes nothing; success answers 201 with `created` and the
+new cables in `results`.
 
 ## What connects to what
 
@@ -106,6 +169,27 @@ Full taxonomy: [Interface & cable types](type-taxonomy.md).
 | **Length** | a number plus a unit (m / cm / ft / in). |
 | **Color** | the literal color of the physical cable - shown on the [topology map](../features/topology.md) and the cable page's path strip. |
 
+### Proxmox VNet
+
+A cable between two devices that are Proxmox VMs (a virtual router with **Is
+router** set on its VM) can name the **SDN VNet** that carries it - field
+**Proxmox VNet**, `pve_vnet` in the API. It is a VNet id: 1 to 8 characters, a
+lowercase letter followed by lowercase letters or digits (`c0042`). Leave it
+blank for any other cable. The cable list filters on `?pve_vnet=<id>`.
+
+The VNet is not unique: two cables naming the same one are allowed and are
+reported as duplicates in the source's [network
+plan](../features/virt-proxmox.md#network-plan), which is what reads this
+field. Danbyte never creates the VNet itself.
+
+Upgrading copies an interface custom field named `pve_vnet` onto the cable:
+when every end that has a value agrees, or only one end has one. A
+disagreement or a value that is not a VNet id is logged as a warning and the
+cable stays blank; the custom field itself is left in place.
+
+A Proxmox source can also make cables from VNets; see [cables from
+VNets](../features/virt-proxmox.md#cables-from-vnets).
+
 A cable's detail page draws its **end-to-end path** under the A/B boxes -
 every device and panel the run passes through as linked chips, with the
 pass-through ports shown `front ⇄ rear` and each cable segment labelled
@@ -116,6 +200,24 @@ while a front / rear / console / power port opens the
 [Components](devices.md#component-tables) sub-tab of its device that lists
 it - **Front ports**, **Rear ports**, **Console** or **Power**
 (`?tab=components&sub=front-ports`, …).
+
+### Planning cables on a floor plan
+
+A floor plan's [Connect to…](../features/floor-plans.md#connect-to-plan-new-cables)
+plans new direct cables between placed objects: it proposes free,
+compatible port pairs (same media and speed, uplinks first), shows their
+routes and lengths on the plan, and makes them on the plan's Save in a
+status marked **Planned** - all or nothing, through the same checks as
+**Many at once**. Mark a cable status *Planned* (Settings → Statuses) to
+use it; none is created for you.
+
+A cable between two floors is routed through a
+[riser](../features/floor-plans.md#cables-between-floors-risers): on each
+floor to the riser and up or down it, its computed length the whole run.
+A floor's [cable schedule](../features/floor-plans.md#cable-schedule) (Export
+→ Cable schedule…) lists its cables with their ends, routes and lengths -
+computed, stored and where the stored one came from - as a PDF, CSV or
+XLSX pull sheet.
 
 ## Connection shapes
 

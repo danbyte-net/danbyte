@@ -1,0 +1,238 @@
+import type {
+  DeviceRole,
+  FloorPlan,
+  FloorPlanBackLabelRef,
+  FloorPlanTile,
+  FloorPlanTray,
+  FloorPlanWall,
+  FloorTileTypeOption,
+  RaisedFloorArea,
+} from "@/lib/api"
+
+import {
+  AreaInspector as ShapeAreaInspector,
+  LabelInspector,
+} from "./shape-inspector"
+import { AreaWallsRow, WallLinkRow } from "./linked-walls"
+import { areaName } from "./shapes"
+import { AreaInspector, WallInspector } from "./structure-panels"
+import { TileInspector } from "./tile-inspector"
+import { TrayInspector } from "./tray-panels"
+import type { PlanEditState } from "./use-plan-edit-state"
+import type { PlanViewPrefs } from "./use-plan-view-prefs"
+import type { ShapeEdits } from "./use-shape-edits"
+import type { StructureEdits } from "./use-structure-edits"
+import type { TileEdits } from "./use-tile-edits"
+import { isTemp } from "./use-tile-edits"
+
+/** The editor's right panel for what is selected in the mode in hand: a
+ * tile, an area or a label (Layout), a tray (Cables), a wall or a raised
+ * floor (Structure). */
+export function PlanInspector({
+  plan,
+  ed,
+  edits,
+  structure,
+  prefs,
+  shapeEdits,
+  trays,
+  walls,
+  areas,
+  tileTypes,
+  roles,
+  openTile,
+  onSelectWalls,
+  onShowTrayCables,
+  coverage = null,
+}: {
+  /** The selected area's camera coverage (0-1), or null. */
+  coverage?: number | null
+  /** A tray's Show cables: its cables in the chooser at a client point. */
+  onShowTrayCables?: (trayId: string, at: { x: number; y: number }) => void
+  /** The area's linked walls selected, in the walls tool. */
+  onSelectWalls?: (ids: string[]) => void
+  shapeEdits: ShapeEdits
+  plan: FloorPlan
+  ed: PlanEditState
+  edits: TileEdits
+  structure: StructureEdits
+  prefs: PlanViewPrefs
+  trays: FloorPlanTray[]
+  walls: FloorPlanWall[]
+  areas: RaisedFloorArea[]
+  tileTypes: FloorTileTypeOption[]
+  roles: DeviceRole[]
+  openTile: (tile: FloorPlanTile) => void
+}) {
+  const {
+    mode,
+    tiles,
+    selectedId,
+    selectedTrayId,
+    selectedWallId,
+    selectedAreaId,
+    highlightCableIds,
+    setHighlightCableIds,
+    trayEditMode,
+    setTrayEditMode,
+    doorArmed,
+    setDoorArmed,
+    shapes,
+    selectedShapeId,
+  } = ed
+  const { changeTile, rotateTile, setTileFacing, fitTile, deleteTile } = edits
+  const {
+    patchTray,
+    deleteTray,
+    patchWall,
+    deleteWall,
+    patchArea,
+    deleteArea,
+  } = structure
+  const { showCableLinks, setViewPref } = prefs
+
+  const selected = tiles.find((t) => t.id === selectedId) ?? null
+  const selectedTray = trays.find((t) => t.id === selectedTrayId) ?? null
+
+  const shape = shapes.find((s) => s.id === selectedShapeId) ?? null
+  if (mode === "layout" && shape) {
+    const common = {
+      plan,
+      onChange: (patch: Parameters<ShapeEdits["changeShape"]>[1]) =>
+        shapeEdits.changeShape(shape.id, patch),
+      onRestack: (dir: 1 | -1) => shapeEdits.restack(shape.id, dir),
+      onDelete: () => shapeEdits.deleteShape(shape.id),
+      shapes,
+      // A Back button's label is on another plan: shown here, not an edit
+      // of this one.
+      onBackLabel: (ref: FloorPlanBackLabelRef | null) =>
+        ed.setShapes((prev) =>
+          prev.map((s) => (s.id === shape.id ? { ...s, back_label: ref } : s))
+        ),
+    }
+    const linked = shape.kind === "area" ? structure.linkedTo(shape.id) : []
+    return shape.kind === "area" ? (
+      <ShapeAreaInspector
+        key={shape.id}
+        area={shape}
+        {...common}
+        coverage={coverage}
+        walls={
+          linked.length > 0 && (
+            <AreaWallsRow
+              count={linked.length}
+              onSelect={() => onSelectWalls?.(linked.map((w) => w.id))}
+              onUnlink={() => structure.unlinkWalls(linked.map((w) => w.id))}
+            />
+          )
+        }
+        // A room's or location's new colour shows on each of its areas at
+        // once - a repaint, not an edit of the plan.
+        onLinkColour={(kind, id, color) =>
+          ed.setShapes((prev) =>
+            prev.map((s) => {
+              if (s.kind !== "area") return s
+              const ref = s[kind]
+              return ref?.id === id ? { ...s, [kind]: { ...ref, color } } : s
+            })
+          )
+        }
+      />
+    ) : (
+      <LabelInspector key={shape.id} label={shape} {...common} />
+    )
+  }
+  if (mode === "layout")
+    return (
+      selected && (
+        <TileInspector
+          key={selected.id}
+          tile={selected}
+          planId={plan.id}
+          siteId={plan.site.id}
+          cellMm={plan.cell_mm}
+          tileTypes={tileTypes}
+          roles={roles}
+          onChange={(patch) => changeTile(selected.id, patch)}
+          onRotate={() => rotateTile(selected)}
+          onSetFacing={(o) => setTileFacing(selected, o)}
+          onFit={(size) => fitTile(selected, size)}
+          onDelete={() => deleteTile(selected.id)}
+          onOpenContents={
+            !selected.linked?.hidden &&
+            (selected.linked?.kind === "rack" ||
+              selected.linked?.kind === "cabinet" ||
+              selected.linked?.kind === "device")
+              ? () => openTile(selected)
+              : undefined
+          }
+        />
+      )
+    )
+  if (mode === "cable")
+    return (
+      selectedTray && (
+        <TrayInspector
+          key={selectedTray.id}
+          highlightCableId={highlightCableIds[0] ?? null}
+          tray={selectedTray}
+          editing={trayEditMode}
+          onEditShape={() => setTrayEditMode((v) => !v)}
+          onHighlightCable={(cableId) => {
+            setHighlightCableIds(cableId ? [cableId] : [])
+            if (cableId && !showCableLinks)
+              setViewPref("show_cable_links", true)
+          }}
+          saved={!isTemp(selectedTray.id)}
+          onPatch={(patch) => patchTray(selectedTray.id, patch)}
+          onShowCables={
+            onShowTrayCables
+              ? (at) => onShowTrayCables(selectedTray.id, at)
+              : undefined
+          }
+          onDelete={() => deleteTray(selectedTray.id)}
+        />
+      )
+    )
+  const wall = walls.find((w) => w.id === selectedWallId)
+  const source = wall?.source_area
+    ? shapes.find((s) => s.id === wall.source_area && s.kind === "area")
+    : undefined
+  if (wall)
+    return (
+      <WallInspector
+        key={wall.id}
+        wall={wall}
+        link={
+          source?.kind === "area" && (
+            <WallLinkRow
+              areaName={areaName(source) || "Area"}
+              onUnlink={() => structure.unlinkWalls([wall.id])}
+            />
+          )
+        }
+        cellMM={plan.cell_mm}
+        ceilingMM={plan.ceiling_mm}
+        doorArmed={doorArmed || ed.tool === "door"}
+        onArmDoor={() => setDoorArmed((v) => !v)}
+        selectedDoor={
+          ed.selectedDoor?.wallId === wall.id ? ed.selectedDoor.index : null
+        }
+        onSelectDoor={(index) =>
+          ed.setSelectedDoor(index === null ? null : { wallId: wall.id, index })
+        }
+        onPatch={(body) => patchWall(wall.id, body)}
+        onDelete={() => deleteWall(wall.id)}
+      />
+    )
+  const area = areas.find((a) => a.id === selectedAreaId)
+  if (!area) return null
+  return (
+    <AreaInspector
+      key={area.id}
+      area={area}
+      onPatch={(body) => patchArea(area.id, body)}
+      onDelete={() => deleteArea(area.id)}
+    />
+  )
+}

@@ -6,6 +6,7 @@ from rest_framework import serializers
 from api.serializers import (
     TagSerializer,
     TaggableSerializerMixin,
+    TenantScopedModelSerializer,
     TenantScopedPrimaryKeyRelatedField,
 )
 from core.models import Tag
@@ -39,7 +40,7 @@ class BoardSerializer(TaggableSerializerMixin, serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
 
-class TaskStatusSerializer(serializers.ModelSerializer):
+class TaskStatusSerializer(TenantScopedModelSerializer):
     class Meta:
         model = TaskStatus
         fields = [
@@ -56,7 +57,7 @@ class TaskLabelSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
 
-class MilestoneSerializer(serializers.ModelSerializer):
+class MilestoneSerializer(TenantScopedModelSerializer):
     task_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
@@ -76,7 +77,7 @@ class TaskAssigneeSerializer(serializers.Serializer):
     email = serializers.EmailField(allow_blank=True)
 
 
-class TaskLinkSerializer(serializers.ModelSerializer):
+class TaskLinkSerializer(TenantScopedModelSerializer):
     class Meta:
         model = TaskLink
         fields = [
@@ -106,7 +107,7 @@ class TaskLinkSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class PlannedChangeSerializer(serializers.ModelSerializer):
+class PlannedChangeSerializer(TenantScopedModelSerializer):
     """A staged change set. ``payload`` arrives as the *complete* form payload;
     the viewset diffs it against the live object and stores only what differs, so
     ``before``/``display`` are server-computed and never client-asserted."""
@@ -171,7 +172,7 @@ class PlannedChangeSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class TaskSerializer(serializers.ModelSerializer):
+class TaskSerializer(TenantScopedModelSerializer):
     status_name = serializers.CharField(source="status.name", read_only=True)
     status_color = serializers.CharField(source="status.color", read_only=True)
     status_group = serializers.CharField(

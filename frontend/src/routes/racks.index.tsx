@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type Rack } from "@/lib/api"
+import { type Rack } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildRackColumns } from "@/components/columns/rack-columns"
@@ -34,7 +35,7 @@ function RacksPage() {
   const query = useQuery({
     queryKey: withPorts ? ["racks", q, WITH_PORTS] : ["racks", q],
     queryFn: () =>
-      api<Paginated<Rack>>(
+      apiAll<Rack>(
         `/api/racks/?${new URLSearchParams({
           search: q,
           ...(withPorts ? { include: "ports" } : {}),

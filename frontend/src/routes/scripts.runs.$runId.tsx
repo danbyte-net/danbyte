@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
@@ -13,6 +13,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { CodeEditor } from "@/components/code-editor"
 import { FormCheckbox } from "@/components/forms/checkbox"
 import { EmptyState } from "@/components/empty-state"
+import { FileViewer } from "@/components/file-viewer"
 import { ScriptOutputCard } from "@/components/script-output"
 import { isRunActive, RunStatusBadge } from "@/components/script-run-status"
 import { useUrlTab } from "@/lib/use-url-tab"
@@ -29,7 +30,6 @@ function ScriptRunPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useUrlTab<Tab>("log", "tab", TABS)
   const [follow, setFollow] = useState(true)
-  const logRef = useRef<HTMLPreElement>(null)
 
   const query = useQuery({
     queryKey: ["script-run", runId],
@@ -39,12 +39,6 @@ function ScriptRunPage() {
       q.state.data && isRunActive(q.state.data.status) ? 2000 : false,
   })
   const run = query.data
-
-  useEffect(() => {
-    if (follow && logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight
-    }
-  }, [run?.log, follow])
 
   const cancel = useMutation({
     mutationFn: () =>
@@ -140,15 +134,18 @@ function ScriptRunPage() {
               {run.error}
             </div>
           )}
-          <pre
-            ref={logRef}
-            className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap"
-          >
-            {run.log ||
-              (isRunActive(run.status)
-                ? "Waiting for output..."
-                : "No output.")}
-          </pre>
+          <FileViewer
+            text={run.log}
+            filename={`run-${run.id}.log`}
+            language="log"
+            storageKey="script-log"
+            follow={follow}
+            defaultWrap
+            label="Run log"
+            emptyText={
+              isRunActive(run.status) ? "Waiting for output…" : "No output."
+            }
+          />
           {run.truncated && (
             <p className="text-xs text-muted-foreground">
               The log hit its size limit and was cut short.
@@ -159,9 +156,7 @@ function ScriptRunPage() {
 
       <DetailTab value="outputs">
         {run.outputs.length === 0 ? (
-          <EmptyState title="No files">
-            This run produced no files.
-          </EmptyState>
+          <EmptyState title="No files">This run produced no files.</EmptyState>
         ) : (
           <div className="space-y-3">
             {run.outputs.map((o) => (
@@ -179,6 +174,7 @@ function ScriptRunPage() {
 
       <DetailTab value="code">
         <CodeEditor
+          aria-label="Script source"
           value={run.source}
           language="python"
           readOnly

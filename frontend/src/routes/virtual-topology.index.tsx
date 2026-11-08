@@ -5,9 +5,8 @@ import { Link as LinkIcon } from "lucide-react"
 
 import { useUrlText } from "@/lib/use-url-state"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
-  Paginated,
   VirtNetwork,
   VirtualizationSource,
   VirtualSwitch,
@@ -121,17 +120,16 @@ function VirtualTopologyPage() {
 
   const sources = useQuery({
     queryKey: ["virtualization-sources", "topology"],
-    queryFn: () =>
-      api<Paginated<VirtualizationSource>>("/api/virtualization-sources/"),
+    queryFn: () => apiAll<VirtualizationSource>("/api/virtualization-sources/"),
   })
   const switches = useQuery({
     queryKey: ["virtual-switches", "topology"],
-    queryFn: () => api<Paginated<VirtualSwitch>>("/api/virtual-switches/"),
+    queryFn: () => apiAll<VirtualSwitch>("/api/virtual-switches/"),
   })
   const networks = useQuery({
     queryKey: ["virt-networks", "topology", source],
     queryFn: () =>
-      api<Paginated<VirtNetwork>>(
+      apiAll<VirtNetwork>(
         `/api/virt-networks/?${new URLSearchParams(source ? { source } : {})}`
       ),
   })
@@ -172,6 +170,7 @@ function VirtualTopologyPage() {
         </InfoTip>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <Combobox
+            aria-label="Data source"
             value={source || null}
             onChange={(v) => setSource(v ?? "")}
             options={(sources.data?.results ?? []).map((s) => ({

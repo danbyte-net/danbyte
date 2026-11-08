@@ -3,19 +3,11 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
-import {
-  api,
-  type DeviceConfigStateRow,
-  type Paginated,
-  type SnmpDriftRow,
-} from "@/lib/api"
+import { api, type DeviceConfigStateRow, type SnmpDriftRow } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { deviceColumn } from "@/components/cells/device-cell"
-import {
-  DataTable,
-  SortHeader,
-  selectionColumn,
-} from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -76,7 +68,7 @@ function StatusFilter({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-8 w-36 text-xs">
+      <SelectTrigger aria-label="Status" className="h-8 w-36 text-xs">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -100,9 +92,7 @@ function ConfigTab() {
     queryFn: () => {
       const p = new URLSearchParams()
       if (status !== "all") p.set("status", status)
-      return api<Paginated<DeviceConfigStateRow>>(
-        `/api/config-states/?${p.toString()}`
-      )
+      return apiAll<DeviceConfigStateRow>(`/api/config-states/?${p.toString()}`)
     },
     refetchInterval: 30_000,
   })
@@ -247,7 +237,11 @@ function SnmpTab() {
         id: "status",
         // Unreachable, then in sync, then by how much drifted.
         accessorFn: (r) =>
-          r.status === "unreachable" ? -1 : r.status === "in_sync" ? 0 : r.drift_count,
+          r.status === "unreachable"
+            ? -1
+            : r.status === "in_sync"
+              ? 0
+              : r.drift_count,
         header: ({ column }) => <SortHeader column={column} label="Status" />,
         cell: ({ row }) => <SnmpDriftStatusBadge row={row.original} />,
       },

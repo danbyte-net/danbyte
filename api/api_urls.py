@@ -7,10 +7,8 @@ just register a viewset on the router.
 from __future__ import annotations
 
 from django.urls import include, path
-from django.views.decorators.cache import cache_page
 from django.views.generic import RedirectView
 from drf_spectacular.views import (
-    SpectacularAPIView,
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
@@ -69,7 +67,10 @@ from compliance.api import (
     ComplianceRuleViewSet,
     compliance_device_status,
     compliance_evaluate,
+    compliance_fields,
     compliance_object_types,
+    compliance_summary,
+    compliance_triage,
 )
 from compliance.eol_api import (
     eol_import,
@@ -79,6 +80,7 @@ from compliance.eol_api import (
     eol_refresh,
     eol_settings,
 )
+from compliance.eol_custom import EolCustomProductViewSet
 from core import (
     deployment,
     service_api,
@@ -124,6 +126,8 @@ from integrations.netbox_api import (
     netbox_imports,
     netbox_test,
 )
+from integrations.pipelines_api import DeployPipelineRunViewSet, DeployPipelineViewSet
+from integrations.script_targets import DeployResultView
 from integrations.virt_api import (
     VirtChangeViewSet,
     VirtNetworkViewSet,
@@ -136,6 +140,7 @@ from routing.viewsets import (
     BFDProfileViewSet,
     BGPAddressFamilyViewSet,
     BGPInstanceViewSet,
+    BGPNeighborAFViewSet,
     BGPPeerGroupViewSet,
     BGPSessionViewSet,
     CommunityListRuleViewSet,
@@ -143,6 +148,7 @@ from routing.viewsets import (
     CommunityViewSet,
     EIGRPInstanceViewSet,
     EIGRPInterfaceViewSet,
+    EthernetSegmentMemberViewSet,
     EthernetSegmentViewSet,
     ISISInstanceViewSet,
     ISISInterfaceViewSet,
@@ -150,21 +156,28 @@ from routing.viewsets import (
     OSPFAreaViewSet,
     OSPFInstanceViewSet,
     OSPFInterfaceViewSet,
+    PolicyRuleViewSet,
     PrefixListRuleViewSet,
     PrefixListViewSet,
     RedistributionViewSet,
+    ROAViewSet,
     RoutingKeychainViewSet,
     RoutingPolicyRuleViewSet,
     RoutingPolicyViewSet,
+    RPKICacheViewSet,
     StaticRouteViewSet,
     VTEPMembershipViewSet,
     VTEPViewSet,
 )
 
+from .application_flows_api import ApplicationFlowViewSet
+from .application_groups_api import ApplicationGroupAssignmentViewSet, ApplicationGroupViewSet
+from .applications_api import ApplicationViewSet, InstalledSoftwareViewSet
 from .csp_views import csp_report
 from .dashboard_views import dashboard_view
 from .dcim_choices import dcim_choices_view
 from .editable_fields import editable_fields_view
+from .flow_requirements_api import ApplicationFlowRequirementViewSet
 from .inventory_views import ansible_inventory
 from .io_views import (
     io_export_view,
@@ -172,19 +185,32 @@ from .io_views import (
     io_import_view,
     io_types_view,
 )
+from .lifecycle_api import lifecycle_overview
 from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import mac_detail_view, mac_list_view
 from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
+from .panel_layouts_api import PanelLayoutViewSet
+from .platforms_api import PlatformViewSet
 from .presence_views import (
     presence_heartbeat,
     presence_leave,
     presence_list,
 )
+from .sbom import sbom
+from .schema_view import CachedSpectacularAPIView
 from .search_views import search as search_view
+from .site_map_outlines import SiteMapOutlineViewSet
 from .site_map_views import site_map, site_map_cables, site_map_connections
+from .software_versions_api import software_versions_summary
 from .support_coverage_api import SupportContractViewSet, SupportCoverageViewSet
 from .terraform_views import vm_render_view
+from .reports.kinds.topology import (
+    topology_report_file_view,
+    topology_report_job_file_view,
+    topology_report_job_view,
+    topology_report_view,
+)
 from .topology_export import topology_pdf_file_view, topology_pdf_view
 from .topology_views import (
     topology_logical_view,
@@ -195,6 +221,8 @@ from .viewsets import (
     AggregateViewSet,
     AntennaTemplateViewSet,
     AntennaViewSet,
+    AreaTypeViewSet,
+    SensitivityLabelViewSet,
     ASNViewSet,
     AuxPortTemplateViewSet,
     AuxPortViewSet,
@@ -219,6 +247,12 @@ from .viewsets import (
     ContactGroupViewSet,
     ContactRoleViewSet,
     ContactViewSet,
+    CoolingFeedViewSet,
+    CoolingIntakeTemplateViewSet,
+    CoolingIntakeViewSet,
+    CoolingOutflowTemplateViewSet,
+    CoolingOutflowViewSet,
+    CoolingSourceViewSet,
     CustomFieldGroupViewSet,
     CustomFieldViewSet,
     DeviceBayTemplateViewSet,
@@ -233,7 +267,10 @@ from .viewsets import (
     FHRPGroupAssignmentViewSet,
     FHRPGroupViewSet,
     FiberSettingsViewSet,
+    FloorPlanAreaViewSet,
+    FloorPlanLabelViewSet,
     FloorPlanRaisedFloorAreaViewSet,
+    FloorPlanStackViewSet,
     FloorPlanTileViewSet,
     FloorPlanTrayViewSet,
     FloorPlanViewSet,
@@ -252,6 +289,7 @@ from .viewsets import (
     L2VPNTerminationViewSet,
     L2VPNViewSet,
     LabelTemplateViewSet,
+    LocationTypeViewSet,
     LocationViewSet,
     MACAddressViewSet,
     ManufacturerViewSet,
@@ -262,7 +300,6 @@ from .viewsets import (
     ModuleViewSet,
     NATRuleViewSet,
     PlatformGroupViewSet,
-    PlatformViewSet,
     PortReservationViewSet,
     PowerFeedViewSet,
     PowerOutletTemplateViewSet,
@@ -281,6 +318,7 @@ from .viewsets import (
     RearPortViewSet,
     RegionViewSet,
     RIRViewSet,
+    RoomViewSet,
     RouteTargetViewSet,
     ServiceTemplateViewSet,
     ServiceViewSet,
@@ -295,6 +333,7 @@ from .viewsets import (
     TunnelTerminationViewSet,
     TunnelViewSet,
     VirtualChassisViewSet,
+    VirtualDiskViewSet,
     VirtualMachineGroupViewSet,
     VirtualMachineViewSet,
     VirtualSwitchViewSet,
@@ -322,6 +361,10 @@ router.register(r"route-targets", RouteTargetViewSet, basename="route-target")
 router.register(r"sites",         SiteViewSet,        basename="site")
 router.register(r"regions",       RegionViewSet,      basename="region")
 router.register(r"locations",     LocationViewSet,    basename="location")
+router.register(r"location-types", LocationTypeViewSet, basename="location-type")
+router.register(r"area-types",    AreaTypeViewSet,    basename="area-type")
+router.register(r"sensitivity-labels", SensitivityLabelViewSet, basename="sensitivity-label")
+router.register(r"rooms",         RoomViewSet,        basename="room")
 router.register(r"config-contexts", ConfigContextViewSet, basename="config-context")
 router.register(r"export-templates", ExportTemplateViewSet, basename="export-template")
 router.register(r"config-bundles", ConfigBundleViewSet, basename="config-bundle")
@@ -351,6 +394,8 @@ router.register(r"l2vpn-terminations", L2VPNTerminationViewSet, basename="l2vpn-
 router.register(r"virtual-chassis", VirtualChassisViewSet, basename="virtual-chassis")
 router.register(r"power-panels",  PowerPanelViewSet,  basename="power-panel")
 router.register(r"power-feeds",   PowerFeedViewSet,   basename="power-feed")
+router.register(r"cooling-sources", CoolingSourceViewSet, basename="cooling-source")
+router.register(r"cooling-feeds", CoolingFeedViewSet, basename="cooling-feed")
 router.register(r"wireless-lan-groups", WirelessLANGroupViewSet, basename="wireless-lan-group")
 router.register(r"wireless-lans", WirelessLANViewSet, basename="wireless-lan")
 router.register(r"tunnel-groups", TunnelGroupViewSet, basename="tunnel-group")
@@ -358,6 +403,7 @@ router.register(r"ipsec-profiles", IPSecProfileViewSet, basename="ipsec-profile"
 router.register(r"tunnels",       TunnelViewSet,      basename="tunnel")
 router.register(r"tags",          TagViewSet,         basename="tag")
 router.register(r"site-markers",  SiteMarkerViewSet, basename="site-marker")
+router.register(r"site-map-outlines", SiteMapOutlineViewSet, basename="site-map-outline")
 router.register(r"statuses",      StatusViewSet,    basename="status")
 # Legacy alias - the page/API were renamed "statuses" (they cover every model,
 # not just IPs); old integrations keep working.
@@ -372,6 +418,7 @@ router.register(r"virtual-machines", VirtualMachineViewSet, basename="virtual-ma
 router.register(r"vm-groups", VirtualMachineGroupViewSet, basename="vm-group")
 router.register(r"virtual-switches", VirtualSwitchViewSet, basename="virtual-switch")
 router.register(r"vm-interfaces",  VMInterfaceViewSet, basename="vm-interface")
+router.register(r"virtual-disks",  VirtualDiskViewSet, basename="virtual-disk")
 router.register(r"racks",         RackViewSet,        basename="rack")
 router.register(r"rack-roles",    RackRoleViewSet,    basename="rack-role")
 router.register(r"rack-types",    RackTypeViewSet,    basename="rack-type")
@@ -383,6 +430,14 @@ router.register(r"cabinet-types", CabinetTypeViewSet, basename="cabinet-type")
 router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
 router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
+router.register(r"applications", ApplicationViewSet, basename="application")
+router.register(r"installed-software", InstalledSoftwareViewSet, basename="installed-software")
+router.register(r"application-groups", ApplicationGroupViewSet, basename="application-group")
+router.register(r"application-group-assignments", ApplicationGroupAssignmentViewSet,
+                basename="application-group-assignment")
+router.register(r"application-flows", ApplicationFlowViewSet, basename="application-flow")
+router.register(r"application-flow-requirements", ApplicationFlowRequirementViewSet,
+                basename="application-flow-requirement")
 router.register(r"nat-rules",     NATRuleViewSet,     basename="natrule")
 # Routing - on this router (not a mounted app router) so bulk edit, planned
 # changes, CSV IO and the assistant's router walk all see the types.
@@ -403,7 +458,11 @@ router.register(r"routing/policy-rules", RoutingPolicyRuleViewSet,
 router.register(r"routing/keychains", RoutingKeychainViewSet,
                 basename="routingkeychain")
 router.register(r"routing/bfd-profiles", BFDProfileViewSet, basename="bfdprofile")
+router.register(r"routing/rpki-caches", RPKICacheViewSet, basename="rpkicache")
+router.register(r"routing/roas", ROAViewSet, basename="roa")
 router.register(r"routing/static-routes", StaticRouteViewSet, basename="staticroute")
+# `ip rule` rows; `routing/policy-rules` is the route-map rule endpoint.
+router.register(r"routing/ip-rules", PolicyRuleViewSet, basename="policyrule")
 router.register(r"routing/bgp-instances", BGPInstanceViewSet, basename="bgpinstance")
 router.register(r"routing/bgp-address-families", BGPAddressFamilyViewSet,
                 basename="bgpaddressfamily")
@@ -411,6 +470,7 @@ router.register(r"routing/redistributions", RedistributionViewSet,
                 basename="redistribution")
 router.register(r"routing/bgp-peer-groups", BGPPeerGroupViewSet, basename="bgppeergroup")
 router.register(r"routing/bgp-sessions", BGPSessionViewSet, basename="bgpsession")
+router.register(r"routing/bgp-neighbor-afs", BGPNeighborAFViewSet, basename="bgpneighboraf")
 router.register(r"routing/ospf-areas", OSPFAreaViewSet, basename="ospfarea")
 router.register(r"routing/ospf-instances", OSPFInstanceViewSet, basename="ospfinstance")
 router.register(r"routing/ospf-interfaces", OSPFInterfaceViewSet, basename="ospfinterface")
@@ -420,6 +480,8 @@ router.register(r"routing/eigrp-instances", EIGRPInstanceViewSet, basename="eigr
 router.register(r"routing/eigrp-interfaces", EIGRPInterfaceViewSet, basename="eigrpinterface")
 router.register(r"routing/vteps", VTEPViewSet, basename="vtep")
 router.register(r"routing/ethernet-segments", EthernetSegmentViewSet, basename="ethernetsegment")
+router.register(r"routing/ethernet-segment-members", EthernetSegmentMemberViewSet,
+                basename="ethernetsegmentmember")
 router.register(r"routing/ldp-instances", LDPInstanceViewSet, basename="ldpinstance")
 router.register(r"routing/vtep-memberships", VTEPMembershipViewSet, basename="vtepmembership")
 router.register(r"services",      ServiceViewSet,     basename="service")
@@ -433,6 +495,8 @@ router.register(r"console-ports", ConsolePortViewSet, basename="console-port")
 router.register(r"console-server-ports", ConsoleServerPortViewSet, basename="console-server-port")
 router.register(r"power-ports",   PowerPortViewSet,   basename="power-port")
 router.register(r"power-outlets", PowerOutletViewSet, basename="power-outlet")
+router.register(r"cooling-intakes", CoolingIntakeViewSet, basename="cooling-intake")
+router.register(r"cooling-outflows", CoolingOutflowViewSet, basename="cooling-outflow")
 router.register(r"aux-ports",     AuxPortViewSet,     basename="aux-port")
 router.register(r"antennas", AntennaViewSet, basename="antenna")
 router.register(r"interface-templates", InterfaceTemplateViewSet, basename="interface-template")
@@ -441,6 +505,8 @@ router.register(r"console-port-templates", ConsolePortTemplateViewSet, basename=
 router.register(r"console-server-port-templates", ConsoleServerPortTemplateViewSet, basename="console-server-port-template")
 router.register(r"power-port-templates", PowerPortTemplateViewSet, basename="power-port-template")
 router.register(r"power-outlet-templates", PowerOutletTemplateViewSet, basename="power-outlet-template")
+router.register(r"cooling-intake-templates", CoolingIntakeTemplateViewSet, basename="cooling-intake-template")
+router.register(r"cooling-outflow-templates", CoolingOutflowTemplateViewSet, basename="cooling-outflow-template")
 router.register(r"rear-port-templates", RearPortTemplateViewSet, basename="rear-port-template")
 router.register(r"front-port-templates", FrontPortTemplateViewSet, basename="front-port-template")
 router.register(r"aux-port-templates", AuxPortTemplateViewSet, basename="aux-port-template")
@@ -455,6 +521,9 @@ router.register(r"module-types", ModuleTypeViewSet, basename="module-type")
 router.register(r"topology-views", TopologyViewViewSet, basename="topology-view")
 router.register(r"floor-tile-types", FloorTileTypeViewSet, basename="floor-tile-type")
 router.register(r"floor-plans", FloorPlanViewSet, basename="floor-plan")
+router.register(r"floor-plan-stacks", FloorPlanStackViewSet, basename="floor-plan-stack")
+# The floor plan detail panels' layouts (tenant admins; api.panel_layouts).
+router.register(r"panel-layouts", PanelLayoutViewSet, basename="panel-layout")
 router.register(r"floor-plan-tiles", FloorPlanTileViewSet, basename="floor-plan-tile")
 router.register(r"floor-plan-trays", FloorPlanTrayViewSet, basename="floor-plan-tray")
 router.register(
@@ -464,6 +533,12 @@ router.register(
 )
 router.register(
     r"floor-plan-walls", FloorPlanWallViewSet, basename="floor-plan-wall"
+)
+router.register(
+    r"floor-plan-areas", FloorPlanAreaViewSet, basename="floor-plan-area"
+)
+router.register(
+    r"floor-plan-labels", FloorPlanLabelViewSet, basename="floor-plan-label"
 )
 router.register(r"cable-routes", CableRouteViewSet, basename="cable-route")
 router.register(r"module-interface-templates", ModuleInterfaceTemplateViewSet, basename="module-interface-template")
@@ -497,10 +572,15 @@ router.register(r"virt-networks", VirtNetworkViewSet, basename="virt-network")
 router.register(r"virt-placement-rules", VirtPlacementRuleViewSet,
                 basename="virt-placement-rule")
 router.register(r"deploy-runs",   DeployRunViewSet,   basename="deploy-run")
+router.register(r"deploy-pipelines", DeployPipelineViewSet, basename="deploy-pipeline")
+router.register(r"deploy-pipeline-runs", DeployPipelineRunViewSet,
+                basename="deploy-pipeline-run")
 router.register(r"config-states", DeviceConfigStateViewSet, basename="config-state")
 router.register(r"config-snapshots", DeviceConfigSnapshotViewSet, basename="config-snapshot")
 router.register(r"journal",       JournalEntryViewSet, basename="journal")
 router.register(r"compliance-rules", ComplianceRuleViewSet, basename="compliance-rule")
+router.register(r"eol/custom-products", EolCustomProductViewSet,
+                basename="eol-custom-product")
 router.register(r"users",         UserViewSet,        basename="user")
 router.register(r"groups",        GroupViewSet,       basename="group")
 router.register(r"object-permissions", ObjectPermissionViewSet, basename="object-permission")
@@ -512,10 +592,9 @@ router.register(r"tenant-ldap-group-mappings", TenantLDAPGroupMappingViewSet, ba
 urlpatterns = [
     # OpenAPI schema + interactive reference. /api/ lands on the docs so hitting
     # the API root gives the object-grouped reference, not the raw router index.
-    # Generating the schema walks every viewset and takes well over a minute
-    # on this API; it only changes with the code, so one copy an hour is
-    # plenty for the people who write templates against it.
-    path("schema/", cache_page(60 * 60)(SpectacularAPIView.as_view()), name="schema"),
+    # Generating the schema walks every viewset; the view caches one copy
+    # per release, after the permission check (schema_view.py).
+    path("schema/", CachedSpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("docs/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     path("", RedirectView.as_view(pattern_name="docs", permanent=False), name="api-root"),
@@ -529,7 +608,10 @@ urlpatterns = [
     path("presence/leave/", presence_leave, name="presence-leave"),
     path("presence/", presence_list, name="presence-list"),
     path("compliance/evaluate/", compliance_evaluate, name="compliance-evaluate"),
+    path("compliance/summary/", compliance_summary, name="compliance-summary"),
+    path("compliance/triage/", compliance_triage, name="compliance-triage"),
     path("compliance/object-types/", compliance_object_types, name="compliance-object-types"),
+    path("compliance/fields/", compliance_fields, name="compliance-fields"),
     path("compliance/devices/<uuid:device_id>/", compliance_device_status,
          name="compliance-device-status"),
     path("eol/settings/", eol_settings, name="eol-settings"),
@@ -551,6 +633,10 @@ urlpatterns = [
          name="people-group-detail"),
     path("people/<int:pk>/", PersonDetail.as_view(), name="people-detail"),
     path("inventory/ansible/", ansible_inventory, name="inventory-ansible"),
+    path("sbom/", sbom, name="sbom"),
+    # The Lifecycle page (#436): end dates per device and VM, soonest first.
+    path("lifecycle/", lifecycle_overview, name="lifecycle-overview"),
+    path("lifecycle/versions/", software_versions_summary, name="lifecycle-versions"),
     path("virtual-machines/<uuid:pk>/render/", vm_render_view, name="vm-render"),
     # Generic round-trip export/import (any IO-capable object type).
     path("io/types/", io_types_view, name="io-types"),
@@ -578,6 +664,19 @@ urlpatterns = [
     path("topology/export/pdf/", topology_pdf_view, name="topology-export-pdf"),
     path("topology/export/pdf/<str:token>/", topology_pdf_file_view,
          name="topology-export-pdf-file"),
+    # The topology report: the drawing above plus cover, chapters and tables.
+    path("topology/report/", topology_report_view, name="topology-report"),
+    path("topology/report/job/<str:token>/", topology_report_job_view,
+         name="topology-report-job"),
+    path("topology/report/job/<str:token>/file/", topology_report_job_file_view,
+         name="topology-report-job-file"),
+    path("topology/report/<str:token>/", topology_report_file_view,
+         name="topology-report-file"),
+    # Any diagram as a PDF, by kind (#163); the topology paths above are the
+    # same views.
+    path("diagram/export/pdf/", topology_pdf_view, name="diagram-export-pdf"),
+    path("diagram/export/pdf/<str:token>/", topology_pdf_file_view,
+         name="diagram-export-pdf-file"),
     path("customization/meta/", customization_meta, name="customization-meta"),
     path("customization/object-labels/", object_labels, name="customization-object-labels"),
     path("oui/status/", oui_status, name="oui-status"),
@@ -598,6 +697,9 @@ urlpatterns = [
     path("monitoring/", include("monitoring.api_urls")),
     path("zabbix/", include("zabbix.api_urls")),
     path("oxidized/", include("oxidized.api_urls")),
+    path("prtg/", include("prtg.api_urls")),
+    # Device profiles: /api/device-profiles/ and /api/device-profile-assignments/.
+    path("", include("profiles.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) - gated on jobs.manage.
@@ -699,6 +801,8 @@ urlpatterns = [
          name="tenant-settings-email-test"),
     path("tenant-settings/digest/test/", tenant_settings_mod.tenant_test_digest,
          name="tenant-settings-digest-test"),
+    path("tenant-settings/report-cover/", tenant_settings_mod.tenant_report_cover,
+         name="tenant-settings-report-cover"),
     # First-run onboarding wizard state (any tenant member; core/tenant_settings).
     path("onboarding/", tenant_settings_mod.onboarding_state, name="onboarding"),
     # Per-SITE settings (email v1) - site-admin gated, see core.site_settings.
@@ -731,6 +835,7 @@ urlpatterns = [
     # In-app updates - current version + available releases (users.manage).
     path("health/", deployment.health, name="health"),
     path("system/info/", deployment.system_info, name="system-info"),
+    path("system/sbom/", deployment.system_sbom, name="system-sbom"),
     path("system/updates/", deployment.system_updates, name="system-updates"),
     path("system/upgrade-notes/", deployment.upgrade_notes, name="system-upgrade-notes"),
     path("system/upgrade-notes/ack/", deployment.upgrade_notes_ack,
@@ -763,5 +868,8 @@ urlpatterns = [
          name="column-pref"),
     path("prefs/columns/<slug:table_id>/default/",
          column_prefs.column_pref_default, name="column-pref-default"),
+    # Signed by the target's secret, not a session: see integrations.script_targets.
+    path("deploy-runs/<uuid:run_id>/result/", DeployResultView.as_view(),
+         name="deploy-run-result"),
     *router.urls,
 ]

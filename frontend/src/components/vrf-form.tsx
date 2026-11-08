@@ -2,13 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type RouteTargetMini,
-  type VRF,
-  type VRFWritePayload,
-} from "@/lib/api"
+import { type RouteTargetMini, type VRF, type VRFWritePayload } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { RtMultiSelect } from "@/components/cells/rt-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
@@ -78,8 +73,7 @@ export function VrfForm({ vrf, clone, onSaved, onCancel }: VrfFormProps) {
 
   const rts = useQuery({
     queryKey: ["rts-picker"],
-    queryFn: () =>
-      api<Paginated<RouteTargetMini>>("/api/route-targets/?picker=1"),
+    queryFn: () => apiAll<RouteTargetMini>("/api/route-targets/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

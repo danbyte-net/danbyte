@@ -50,6 +50,25 @@ class DashboardTests(APITestCase):
         self.assertEqual(r.status_code, 403)
         self.assertEqual(self.client.delete(f"{URL}{d['id']}/").status_code, 403)
 
+    def test_bulk_delete_takes_only_my_own_boards(self):
+        mine = self.create()["id"]
+        shared = self.create(name="Shared", visibility="tenant")["id"]
+        self.login(self.bob)
+        bobs = self.create(name="Bob's")["id"]
+        ids = [mine, shared, bobs]
+        r = self.client.post(f"{URL}bulk-delete/", {"ids": ids, "dry_run": True},
+                             format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        # Alice's private board is not his to see; her shared one stays.
+        self.assertEqual(body["deleted_ids"], [bobs])
+        self.assertEqual(body["skipped"], [{"id": shared, "name": "Shared",
+                                            "reason": "Belongs to someone else."}])
+        r = self.client.post(f"{URL}bulk-delete/", {"ids": ids}, format="json")
+        self.assertEqual(r.json()["deleted"], 1)
+        self.assertEqual(sorted(Dashboard.objects.values_list("name", flat=True)),
+                         ["NOC", "Shared"])
+
     def test_shared_with_a_group(self):
         noc = Group.objects.create(name="noc")
         self.alice.groups.add(noc)

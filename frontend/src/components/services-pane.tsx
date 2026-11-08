@@ -13,6 +13,7 @@ import {
   type ServiceWritePayload,
   type ServiceTemplate,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -92,8 +93,7 @@ export function ServicesPane({
   const queryParam = parent.kind === "device" ? "device" : "vm"
   const q = useQuery({
     queryKey: ["services", parent.kind, parent.id],
-    queryFn: () =>
-      api<Paginated<Service>>(`/api/services/?${queryParam}=${parent.id}`),
+    queryFn: () => apiAll<Service>(`/api/services/?${queryParam}=${parent.id}`),
   })
   const rows = q.data?.results ?? []
 

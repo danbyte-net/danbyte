@@ -3,6 +3,7 @@ import type { LinkProps } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -49,6 +50,8 @@ export interface RoutingListSpec<T extends { id: string }> {
   searchText: (row: T) => string
   flexColumn: string
   label: (row: T) => string
+  /** More header actions, before Add - an export the list offers. */
+  actions?: () => ReactNode
   columns: (o: {
     onDelete: (row: T) => void
     humanIds: boolean
@@ -163,6 +166,7 @@ export function RoutingListPage<T extends { id: string }>({
       actions={
         <>
           <TableActions ioType={spec.objectType} />
+          {spec.actions?.()}
           {canAdd && spec.newTo && (
             <Button size="sm" asChild>
               <Link to={spec.newTo}>{spec.addLabel}</Link>

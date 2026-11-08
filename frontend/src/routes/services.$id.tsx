@@ -19,6 +19,12 @@ import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
+import {
+  PrtgSensorsSection,
+  usePrtgSensors,
+} from "@/components/prtg/sensors-tab"
+import { ObjectPinnedSensors } from "@/components/prtg/sensor-pins"
 import { servicePortsLabel } from "@/components/service-ports-field"
 import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
 import { ServiceFormDialog } from "@/components/services-pane"
@@ -45,8 +51,7 @@ function ServiceDetail() {
     queryFn: () => api<Service>(`/api/services/${id}/`),
   })
 
-  if (query.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (query.isLoading) return <Loading />
   if (query.isError)
     return (
       <div className="p-6">
@@ -58,9 +63,16 @@ function ServiceDetail() {
 }
 
 function ServiceDetailBody({ service: s }: { service: Service }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<
+    "overview" | "sensors" | "journal" | "history"
+  >("overview")
+  // The PRTG HTTP and SSL sensors checking this service's port; the tab
+  // shows once there is one (none while the integration is off).
+  const prtgSensors = usePrtgSensors({ service: s.id })
+  const sensorCount = prtgSensors.data?.length ?? 0
+  // The sensor whose panel is open on the Sensors tab; a pinned tile on the
+  // Overview opens it there.
+  const [sensor, setSensor] = useState<string | null>(null)
   const { canDo, humanIds } = useMe()
   const nav = useNavigate()
   const qc = useQueryClient()
@@ -240,6 +252,9 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        ...(sensorCount > 0
+          ? [{ value: "sensors", label: "Sensors", count: sensorCount }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -247,6 +262,15 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
+        <div className="mb-6 empty:hidden">
+          <ObjectPinnedSensors
+            parent={{ service: s.id }}
+            onOpen={(id) => {
+              setSensor(id)
+              setTab("sensors")
+            }}
+          />
+        </div>
         {/* Summary - details, custom fields, timestamps. */}
         <div className="grid gap-6 lg:grid-cols-2">
           <KvCard title="Details" rows={detailRows} />
@@ -265,6 +289,13 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
             <TimeCell iso={s.updated_at} />
           </span>
         </div>
+      </DetailTab>
+      <DetailTab value="sensors">
+        <PrtgSensorsSection
+          scope={{ service: s.id }}
+          selected={sensor ?? undefined}
+          onSelect={setSensor}
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.service" objectId={s.id} />

@@ -23,16 +23,19 @@ import type { Pt, Rect } from "./types"
 //   needs a straight stretch of its route clear of every card, label and
 //   other cable; it slides out along the route until one is free, and is
 //   left off when none is (the nub's tooltip and the link's panel still
-//   name the port). A Detailed port name keeps to the straight run out of
-//   its nub, which the planner lengthens for it (`portStub`). In Simple the
+//   name the port). An end's addresses may be cut short instead: the
+//   last ones (IPv6) go before the first (`least`). A Detailed port name
+//   keeps to the straight run out of its nub, which the planner lengthens for it (`portStub`). In Simple the
 //   side's lines share the point they leave from, so their labels settle
 //   where each cable runs on its own.
-// - A middle chip sits at the middle of its route, or the nearest spot
-//   along it clear of cards and other labels; with none free it is
+// - A middle chip, placed after every end label, sits at the middle of
+//   its route, or the nearest spot along it clear of cards and other
+//   labels; with none free it is
 //   `crowded` and shows on hover only.
 
 /** A run of end labels to place along one end of a cable: its port name
- * and addresses, or either, nearest the end first. All or none. */
+ * and addresses, or either, nearest the end first. All or none, unless
+ * it says how far it may be cut (`least`). */
 export interface InlineAsk {
   /** Unique per ask. */
   key: string
@@ -40,6 +43,10 @@ export interface InlineAsk {
   cable: string
   /** The texts' widths, measured, nearest the end first. */
   ws: number[]
+  /** With no room for them all: the fewest that may show, the run cut
+   * from its far end (an end's addresses, IPv6 after IPv4, drop IPv6
+   * first). All or none when absent. */
+  least?: number
   /** The drawn route walked from this end: the point `d` px along it and
    * the direction of travel there, degrees. */
   walk: (d: number) => Pt & { angle: number }
@@ -51,6 +58,10 @@ export interface InlineAsk {
   /** Where that run starts, px from the end: past a photo port's lead,
    * which turns where it leaves the photo. */
   run?: number
+  /** The route is a curve (a bendy line): each label follows it, bent
+   * as the line bends under it (`PortPlace.path`), rather than waiting
+   * for a straight stretch. */
+  curved?: boolean
   /** The route is one straight line - past `run` - where `walk(d)` is
    * `at` plus `d` times the unit vector `u`. Lets a label skip the
    * stretch something is sure to block. */
@@ -95,11 +106,29 @@ export type Blocker = Item
 export function blocks(
   it: Blocker,
   box: TurnedBox,
-  mine: (cable: string) => boolean
+  mine: (cable: string) => boolean,
+  crossing = false
 ): boolean {
-  if (it.k === "seg") return !mine(it.cable) && segHitsBox(it.p, it.q, box)
+  if (it.k === "seg")
+    return (
+      !mine(it.cable) &&
+      !(crossing && crossesSteeply(it.p, it.q, box)) &&
+      segHitsBox(it.p, it.q, box)
+    )
   if (it.k === "label" && it.dead) return false
   return boxesOverlap(box, it.box)
+}
+
+/** The least angle, degrees, another cable may cross a label on a curve
+ * at: its gap breaks that cable there and the text reads over it. One
+ * running along it more nearly than this would vanish under it. */
+const CROSS = 30
+
+/** Does the run `p`-`q` cross `box` steeply enough to pass under it? */
+export function crossesSteeply(p: Pt, q: Pt, box: TurnedBox): boolean {
+  const a = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
+  const d = Math.abs((((a - box.angle) % 180) + 180) % 180)
+  return Math.min(d, 180 - d) >= CROSS
 }
 
 /** Everything labels keep clear of: the routes, the cards, and the labels
@@ -126,10 +155,15 @@ export class LabelScene {
     return !this.blocker(box, mine)
   }
 
-  /** What `box` runs into first, if anything (`free` is its absence). */
-  blocker(box: TurnedBox, mine: (cable: string) => boolean): Blocker | null {
+  /** What `box` runs into first, if anything (`free` is its absence).
+   * With `crossing`, a cable crossing it steeply does not count. */
+  blocker(
+    box: TurnedBox,
+    mine: (cable: string) => boolean,
+    crossing = false
+  ): Blocker | null {
     for (const it of this.grid.near(turnedBounds(box)))
-      if (blocks(it, box, mine)) return it
+      if (blocks(it, box, mine, crossing)) return it
     return null
   }
 
@@ -284,6 +318,86 @@ export function inlineBox(
   }
 }
 
+/** How far a label on a curve may bend away from its chord, degrees:
+ * gentle enough to read, and - its chord turned upright - never upside
+ * down. */
+const BEND = 20
+/** Spacing of a curved label's points, px. */
+const CURVE_STEP = 3
+/** The longest piece of a curved label one box stands for, px. */
+const CURVE_PIECE = 8
+
+/**
+ * A label `span` px long laid on a curve from `a` px along it: its place
+ * (centre, chord turned upright, and the stretch it reads along) and the
+ * boxes it takes, piece by piece along the curve. Null where the curve
+ * bends more than `BEND` under it.
+ */
+function onCurve(
+  walk: (d: number) => Pt & { angle: number },
+  a: number,
+  span: number,
+  pad: number
+): { place: PortPlace; boxes: TurnedBox[]; taken: TurnedBox[] } | null {
+  const n = Math.max(2, Math.ceil(span / CURVE_STEP))
+  const pts: (Pt & { angle: number })[] = []
+  for (let k = 0; k <= n; k++) pts.push(walk(a + (span * k) / n))
+  const [p, q] = [pts[0], pts[n]]
+  if (Math.hypot(q.x - p.x, q.y - p.y) < span * 0.8) return null
+  const chord = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
+  let most = 0
+  for (const t of pts) most = Math.max(most, turnOf(t.angle, chord))
+  if (most > BEND) return null
+  const c = walk(a + span / 2)
+  const rotate = uprightAngle(chord)
+  const line = pts.map((t) => ({ x: t.x, y: t.y }))
+  const place: PortPlace = { x: c.x, y: c.y, rotate }
+  // A curve this gentle is a straight label. Turned upright, the text
+  // reads the curve the other way.
+  if (most > 1)
+    place.path = turnOf(rotate, chord) > 90 ? [...line].reverse() : line
+  return {
+    place,
+    boxes: curveBoxes(line, pad),
+    taken: curveBoxes(line),
+  }
+}
+
+/**
+ * The boxes a label laid along a curve takes (`PortPlace.path`, read in
+ * either direction): one for each piece of it up to `CURVE_PIECE` px
+ * long, as tall as the label, `pad` more at both ends and half that each
+ * side.
+ */
+export function curveBoxes(path: readonly Pt[], pad = 0): TurnedBox[] {
+  const out: TurnedBox[] = []
+  const n = path.length - 1
+  let i = 0
+  while (i < n) {
+    let j = i + 1
+    let len = Math.hypot(path[j].x - path[i].x, path[j].y - path[i].y)
+    while (j < n) {
+      const next = Math.hypot(
+        path[j + 1].x - path[i].x,
+        path[j + 1].y - path[i].y
+      )
+      if (next > CURVE_PIECE) break
+      j++
+      len = next
+    }
+    const [u, v] = [path[i], path[j]]
+    out.push({
+      cx: (u.x + v.x) / 2,
+      cy: (u.y + v.y) / 2,
+      hw: len / 2 + (i === 0 || j === n ? pad : 0),
+      hh: PORT_H / 2 + pad / 2,
+      angle: (Math.atan2(v.y - u.y, v.x - u.x) * 180) / Math.PI,
+    })
+    i = j
+  }
+  return out
+}
+
 /** Steps along a route a run of labels tries, px. */
 const STEP = 2
 /** Steps a stretch's straightness is checked at, px. */
@@ -317,7 +431,8 @@ export interface InlinePlace {
  * Place every run of end labels, in order: on a straight stretch of its
  * route between `from` and `until`, nearest the end first, each label
  * centred on the line and turned to read upright, clear of every card,
- * label and other cable. Null = no room, left off.
+ * label and other cable; cut short as its `least` allows when the whole
+ * run has no room. Null = no room, left off.
  */
 export function placeInline(
   asks: readonly InlineAsk[],
@@ -325,102 +440,129 @@ export function placeInline(
 ): Map<string, InlinePlace | null> {
   const out = new Map<string, InlinePlace | null>()
   for (const ask of asks) {
-    const walk = ask.walk
-    const spans = ask.ws.map(inlineSpan)
-    const total = inlineLength(ask.ws)
-    const mine = (c: string) => c === ask.cable
-    // What stopped the last try: a label sliding along its line usually
-    // runs into the same thing a step on, so it is asked first.
-    let last: Blocker | null = null
-    const stop = (box: TurnedBox): Blocker | null => {
-      if (last && blocks(last, box, mine)) return last
-      last = scene.blocker(box, mine)
-      return last
-    }
-    // A port name keeps to its nub's run: straight from the end on. The
-    // run is probed every PROBE px once, however far the name slides:
-    // the two directions furthest apart so far stand for all of them (a
-    // stretch whose directions spread more than twice STRAIGHT cannot lie
-    // within STRAIGHT of one chord; one that spreads less does when both
-    // of those do).
-    let upto = ask.run ?? 0
-    let ref = NaN
-    let lo = Infinity
-    let hi = -Infinity
-    let loA = 0
-    let hiA = 0
-    const runTo = (b: number) => {
-      for (; upto < b; upto += PROBE) {
-        const angle = walk(upto).angle
-        if (Number.isNaN(ref)) ref = angle
-        const dev = ((((angle - ref + 540) % 360) + 360) % 360) - 180
-        if (dev < lo) [lo, loA] = [dev, angle]
-        if (dev > hi) [hi, hiA] = [dev, angle]
-      }
-    }
-    const bentFrom = (chord: number) =>
-      hi - lo > 2 * STRAIGHT + 1e-9 ||
-      turnOf(loA, chord) > STRAIGHT ||
-      turnOf(hiA, chord) > STRAIGHT
-    // On a straight route, the tries after one that stopped are passed
-    // over while the label that stopped is sure to stay stopped by what
-    // stopped it (each would fail the same way).
-    const line = ask.line
-    let skip: { from: number; by: number } | null = null
+    // The whole run, or - when it has no room anywhere - the longest
+    // shorter one down to `least` labels, cut from the far end.
     let found: InlinePlace | null = null
-    for (let d = ask.from; d + total <= ask.until + 1e-6; d += STEP) {
-      if (skip && d - skip.from <= skip.by) continue
-      skip = null
-      const places: PortPlace[] = []
-      let off = d
-      let bent = false
-      for (let i = 0; i < spans.length; i++) {
-        // Each label on a straight stretch of its own, centred on the
-        // route and turned along the stretch.
-        const [a, b] = [off, off + spans[i]]
-        const p = walk(a)
-        const q = walk(b)
-        const chord = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
-        let straight = Math.hypot(q.x - p.x, q.y - p.y) > spans[i] * 0.97
-        if (ask.first && i === 0) {
-          if (straight) runTo(b)
-          if (
-            straight &&
-            (bentFrom(chord) || turnOf(q.angle, chord) > STRAIGHT)
-          )
-            straight = false
-        } else
-          for (let k = a; straight && k < b + PROBE; k += PROBE)
-            if (turnOf(walk(Math.min(k, b)).angle, chord) > STRAIGHT)
-              straight = false
-        if (!straight) {
-          bent = i === 0
-          break
-        }
-        const c = walk(a + spans[i] / 2)
-        const place = { x: c.x, y: c.y, rotate: uprightAngle(chord) }
-        const box = inlineBox(place, ask.ws[i], PAD, PAD / 2)
-        const hit = stop(box)
-        if (hit) {
-          const by = line ? sureRun(hit, line, box, a + spans[i] / 2) : 0
-          if (by > 0) skip = { from: d, by }
-          break
-        }
-        places.push(place)
-        off = b + LABEL.LEAD
-      }
-      if (places.length === spans.length) {
-        found = { at: places, reach: d + total }
-        break
-      }
-      // Past the run out of the nub: nothing further along will do.
-      if (ask.first && bent && d > ask.from) break
-    }
-    if (found)
-      found.at.forEach((place, i) => scene.take(inlineBox(place, ask.ws[i])))
+    const least = Math.min(Math.max(1, ask.least ?? Infinity), ask.ws.length)
+    for (let n = ask.ws.length; n >= least && !found; n--)
+      found = placeRun(ask, ask.ws.slice(0, n), scene)
     out.set(ask.key, found)
   }
   return out
+}
+
+/** One run of labels (`ws`, nearest the end first) placed along `ask`'s
+ * route and taken into the scene, or null. */
+function placeRun(
+  ask: InlineAsk,
+  ws: readonly number[],
+  scene: LabelScene
+): InlinePlace | null {
+  const walk = ask.walk
+  const spans = ws.map(inlineSpan)
+  const total = inlineLength(ws)
+  const mine = (c: string) => c === ask.cable
+  // What stopped the last try: a label sliding along its line usually
+  // runs into the same thing a step on, so it is asked first.
+  let last: Blocker | null = null
+  // On a curve the labels read over a cable crossing them.
+  const crossing = !!ask.curved
+  const stop = (box: TurnedBox): Blocker | null => {
+    if (last && blocks(last, box, mine, crossing)) return last
+    last = scene.blocker(box, mine, crossing)
+    return last
+  }
+  // A port name keeps to its nub's run: straight from the end on. The
+  // run is probed every PROBE px once, however far the name slides:
+  // the two directions furthest apart so far stand for all of them (a
+  // stretch whose directions spread more than twice STRAIGHT cannot lie
+  // within STRAIGHT of one chord; one that spreads less does when both
+  // of those do).
+  let upto = ask.run ?? 0
+  let ref = NaN
+  let lo = Infinity
+  let hi = -Infinity
+  let loA = 0
+  let hiA = 0
+  const runTo = (b: number) => {
+    for (; upto < b; upto += PROBE) {
+      const angle = walk(upto).angle
+      if (Number.isNaN(ref)) ref = angle
+      const dev = ((((angle - ref + 540) % 360) + 360) % 360) - 180
+      if (dev < lo) [lo, loA] = [dev, angle]
+      if (dev > hi) [hi, hiA] = [dev, angle]
+    }
+  }
+  const bentFrom = (chord: number) =>
+    hi - lo > 2 * STRAIGHT + 1e-9 ||
+    turnOf(loA, chord) > STRAIGHT ||
+    turnOf(hiA, chord) > STRAIGHT
+  // On a straight route, the tries after one that stopped are passed
+  // over while the label that stopped is sure to stay stopped by what
+  // stopped it (each would fail the same way).
+  const line = ask.line
+  let skip: { from: number; by: number } | null = null
+  let found: InlinePlace | null = null
+  for (let d = ask.from; d + total <= ask.until + 1e-6; d += STEP) {
+    if (skip && d - skip.from <= skip.by) continue
+    skip = null
+    const places: PortPlace[] = []
+    const takes: TurnedBox[][] = []
+    let off = d
+    let bent = false
+    for (let i = 0; i < spans.length; i++) {
+      if (ask.curved) {
+        const fit = onCurve(walk, off, spans[i], PAD)
+        if (!fit) break
+        let hit: Blocker | null = null
+        for (const box of fit.boxes) if ((hit = stop(box))) break
+        if (hit) break
+        places.push(fit.place)
+        takes.push(fit.taken)
+        off += spans[i] + LABEL.LEAD
+        continue
+      }
+      // Each label on a straight stretch of its own, centred on the
+      // route and turned along the stretch.
+      const [a, b] = [off, off + spans[i]]
+      const p = walk(a)
+      const q = walk(b)
+      const chord = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
+      let straight = Math.hypot(q.x - p.x, q.y - p.y) > spans[i] * 0.97
+      if (ask.first && i === 0) {
+        if (straight) runTo(b)
+        if (straight && (bentFrom(chord) || turnOf(q.angle, chord) > STRAIGHT))
+          straight = false
+      } else
+        for (let k = a; straight && k < b + PROBE; k += PROBE)
+          if (turnOf(walk(Math.min(k, b)).angle, chord) > STRAIGHT)
+            straight = false
+      if (!straight) {
+        bent = i === 0
+        break
+      }
+      const c = walk(a + spans[i] / 2)
+      const place = { x: c.x, y: c.y, rotate: uprightAngle(chord) }
+      const box = inlineBox(place, ws[i], PAD, PAD / 2)
+      const hit = stop(box)
+      if (hit) {
+        const by = line ? sureRun(hit, line, box, a + spans[i] / 2) : 0
+        if (by > 0) skip = { from: d, by }
+        break
+      }
+      places.push(place)
+      takes.push([inlineBox(place, ws[i])])
+      off = b + LABEL.LEAD
+    }
+    if (places.length === spans.length) {
+      found = { at: places, reach: d + total }
+      for (const boxes of takes) for (const box of boxes) scene.take(box)
+      break
+    }
+    // Past the run out of the nub: nothing further along will do.
+    if (ask.first && bent && d > ask.from) break
+  }
+  return found
 }
 
 /** Where a middle chip may sit, nearest the middle first. */

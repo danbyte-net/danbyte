@@ -23,13 +23,17 @@ STATUSABLE_MODELS = [
     ("interface", "Interfaces"),
     ("circuit", "Circuits"),
     ("powerfeed", "Power feeds"),
+    ("coolingsource", "Cooling sources"),
+    ("coolingfeed", "Cooling feeds"),
     ("wirelesslan", "Wireless LANs"),
     ("tunnel", "Tunnels"),
     ("l2vpn", "L2VPNs"),
     ("location", "Locations"),
+    ("room", "Rooms"),
     ("inventoryitem", "Inventory items"),
     ("maintenanceevent", "Maintenance & outage events"),
     ("natrule", "NAT rules"),
+    ("applicationflow", "Application flows"),
     ("staticroute", "Static routes"),
     ("bgpsession", "BGP sessions"),
     # One scope shared by the BGP, OSPF and IS-IS instance models.
@@ -128,11 +132,15 @@ STATUS_MODEL_SEEDS = [
     ("interface", "Interface", "active"),
     ("circuit", "Circuit", "active"),
     ("powerfeed", "PowerFeed", "active"),
+    ("coolingsource", "CoolingSource", "active"),
+    ("coolingfeed", "CoolingFeed", "active"),
     ("wirelesslan", "WirelessLAN", "active"),
     ("tunnel", "Tunnel", "active"),
     ("location", "Location", "active"),
+    ("room", "Room", "active"),
     ("inventoryitem", "InventoryItem", "active"),
     ("vlan", "VLAN", "active"),
+    ("applicationflow", "ApplicationFlow", "active"),
 ]
 
 # Built-in status values per object type, mirroring the historical per-model
@@ -157,6 +165,9 @@ STATUS_MODEL_VALUES = {
     "interface": ["active", "disabled", "planned", "not_present", "decommissioning"],
     "circuit": ["planned", "provisioning", "active", "offline", "deprovisioning", "decommissioned"],
     "powerfeed": ["planned", "active", "offline", "failed"],
+    # The cooling plant (#434) takes the power feed's vocabulary.
+    "coolingsource": ["planned", "active", "offline", "failed"],
+    "coolingfeed": ["planned", "active", "offline", "failed"],
     "wirelesslan": ["active", "reserved", "disabled", "deprecated"],
     "tunnel": ["planned", "active", "disabled"],
     "l2vpn": ["planned", "active", "disabled"],
@@ -164,6 +175,8 @@ STATUS_MODEL_VALUES = {
     # in force. Nothing here means "broken" - a rule that stopped working is
     # a device problem, not a state of the record.
     "natrule": ["active", "planned", "disabled"],
+    # Application flows (#163): in use, on the way, or kept for the record.
+    "applicationflow": ["active", "planned", "retired"],
     # Static routes: in the table, on the way, or written down and off.
     "staticroute": ["active", "planned", "disabled"],
     "bgpsession": ["active", "planned", "disabled"],
@@ -172,6 +185,8 @@ STATUS_MODEL_VALUES = {
     # VLANs (#172): in use, held for a rollout, or on the way out.
     "vlan": ["active", "reserved", "deprecated"],
     "location": ["active", "planned", "decommissioning", "retired"],
+    # Rooms (floor plans P1b) take the location vocabulary.
+    "room": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.
     "inventoryitem": ["active", "planned", "failed", "spare", "empty"],

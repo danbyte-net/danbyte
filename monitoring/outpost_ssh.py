@@ -100,13 +100,15 @@ def drive_ssh_engine(engine, now=None, *, run_ssh=None) -> dict:
 
 
 def drive_ssh_outposts(now=None) -> dict:
-    """Drive every enabled, configured SSH-transport engine - runs on a timer."""
+    """Drive every enabled, configured SSH-transport engine of an active
+    tenant - runs on a timer."""
     now = now or timezone.now()
     total = {"engines": 0, "ran": 0, "ingested": 0, "errors": 0}
     for engine in MonitoringEngine.objects.filter(
         kind=MonitoringEngine.REMOTE,
         enabled=True,
         transport=MonitoringEngine.SSH,
+        tenant__is_active=True,
     ):
         if not engine.ssh_configured:
             continue

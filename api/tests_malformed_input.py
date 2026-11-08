@@ -275,7 +275,9 @@ class NonObjectBodyAnswers(APITestCase):
 
     def test_object_and_empty_bodies_still_parse(self):
         r = self.client.post("/api/devices/bulk-delete/", {"ids": []}, format="json")
-        self.assertNotEqual(r.status_code, 400, r.content)
+        # The object parses; what it says is answered field by field.
+        self.assertNotIn("non_field_errors", r.json(), r.content)
+        self.assertIn("ids", r.json())
         r = self.client.post(f"/api/devices/{self.device.pk}/config-pushed/")
         self.assertLess(r.status_code, 500)
 

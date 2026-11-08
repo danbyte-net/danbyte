@@ -45,7 +45,6 @@ import { CanvasTip } from "./canvas-tip"
 import { PartialMapChip } from "./partial-map-chip"
 import type { CanvasTipHandle } from "./canvas-tip"
 import { handleId } from "./port-handles"
-import { hierarchyWidth } from "./hierarchy-node"
 import { hierCardBox } from "./hier-card"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import {
@@ -72,6 +71,7 @@ import { patchNote, readNotes, removeNotes } from "./diagram/notes"
 import type { BandData } from "./diagram/band-node"
 import {
   bandExits,
+  bandLines,
   bandRows,
   drawnRegions,
   isRow,
@@ -81,14 +81,20 @@ import {
 } from "./diagram/bands"
 import type { BandBy, BandLayout, BandRow, LabelRoom } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
-import type { BandExits, Zone } from "./view-positions"
+import type { BandAlign, BandExits, Zone } from "./view-positions"
 import { lagBundleLabel, sharedLag } from "./lag-bundles"
 import {
   CANVAS_MINIMAP_AT,
   MiniMapCanvas,
   NoMiniMapNode,
 } from "./minimap-canvas"
-import { bundleStroke, edgeLook, edgeStroke, flowEdgeStyle } from "./edge-style"
+import {
+  bundleStroke,
+  edgeLook,
+  edgeStroke,
+  flowEdgeStyle,
+  isSiteCircuit,
+} from "./edge-style"
 import type { EdgeColorMode } from "./edge-style"
 import { classifyEdges, orientHubToLeaf } from "./edge-semantics"
 import type { BundleMember, EdgeClass } from "./edge-semantics"
@@ -141,7 +147,11 @@ function linkRef(e: Edge): DiagramLinkRef | undefined {
   if (!d?.pairKey || d.fan?.role === "trunk") return undefined
   if (d.sem !== "cable" && d.sem !== "bundle" && d.sem !== "lagbundle")
     return undefined
-  return { pairKey: d.pairKey, ...(d.arc ? { arc: d.arc.flip } : {}) }
+  return {
+    pairKey: d.pairKey,
+    ...(d.arc ? { arc: d.arc.flip } : {}),
+    ...(d.lineFrom ? { inherited: { line: d.line, ...d.lineFrom } } : {}),
+  }
 }
 
 /** A drawn line, as its right-click menu and Hide see it. */
@@ -208,6 +218,8 @@ export type CanvasBandEdit =
   | { type: "resize"; id: string; rect: Rect }
   | { type: "layers"; id: string; by: BandBy; ids: string[] }
   | { type: "layout"; id: string; layout: BandLayout }
+  | { type: "per_row"; id: string; perRow: number | undefined }
+  | { type: "align"; id: string; align: BandAlign | undefined }
   | { type: "merge"; id: string }
   | { type: "split"; id: string }
 
@@ -581,9 +593,19 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
       if (via.length) labelBits.push(`via ${via.join(", ")}`)
       if (r?.cable_label) labelBits.push(r.cable_label)
       if (colorMode === "speed" && r?.speed) labelBits.push(r.speed)
+      // A circuit to a provider network (#466): named by its circuit id,
+      // and the network card meets it on its own sides.
+      // A circuit between two sites runs port to port on the device map,
+      // and between the cards' own sides on the grouped one.
+      if (r?.circuit) labelBits.unshift(r.circuit.cid)
+      const siteCircuit = isSiteCircuit(r)
       return {
         ...ends,
         ...portHandles(first),
+        ...(r?.circuit && !siteCircuit ? { targetHandle: "n" } : {}),
+        ...(siteCircuit && !pairs.length
+          ? { sourceHandle: "n", targetHandle: "n" }
+          : {}),
         ...smoothstep(),
         label: labelBits.length ? labelBits.join(" · ") : undefined,
         animated: r?.marked,
@@ -594,6 +616,7 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
             count,
             via: via.length > 0,
             marked: r?.marked,
+            circuit: siteCircuit,
           })
         ),
       }
@@ -700,7 +723,8 @@ export function build(
         }
       : n
   )
-  const widthOf = (n: Node) => hierarchyWidth(n.data as { name?: string })
+  // Each card's own width: a Hierarchy card's header, a site card's name.
+  const widthOf = (n: Node) => sizeOf(n).width
   const res = layoutHierarchy(carded, allEdges, widthOf, opts.positions)
   const laid = res.nodes.map((n) => ({
     ...n,
@@ -847,6 +871,9 @@ export interface TopologyCanvasProps {
   diagramLine?: LineType
   /** Diagram: per device-pair line overrides from the saved view. */
   linkOverrides?: Record<string, TopologyLinkOverride>
+  /** Diagram: device id → its own line (`state.nodes[id].line`). Keep
+   * the object stable. The bands' lines come with `zones`. */
+  nodeLines?: Readonly<Record<string, LineType>>
   /** Diagram: which labels the links carry (subnets, addresses, port
    * names); all three when absent. Keep the array stable. */
   diagramLabels?: readonly LabelToken[]
@@ -901,7 +928,9 @@ export interface TopologyCanvasProps {
 /** Where to aim the camera for a node: diagram nodes are placed by their
  * centre, Hierarchy and site cards by their corner. */
 function nodeCentre(n: Node): { x: number; y: number } {
-  return n.origin ? n.position : { x: n.position.x + 110, y: n.position.y + 40 }
+  if (n.origin) return n.position
+  const s = sizeOf(n)
+  return { x: n.position.x + s.width / 2, y: n.position.y + s.height / 2 }
 }
 
 /** A built map: React Flow's nodes and edges, and the Diagram's model
@@ -1087,6 +1116,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     diagramMode = "detailed",
     diagramLine = "straight",
     linkOverrides,
+    nodeLines,
     diagramLabels,
     monitor,
     onDropDevices,
@@ -1168,15 +1198,32 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     []
   )
   const withExits = Object.keys(exits).length ? { exits } : {}
+  // Each row's line and each device's: a change rebuilds the links' lines
+  // (line-source.ts), never on a rename or tint.
+  const bandLinesKey = diagram ? JSON.stringify(bandLines(zones)) : "{}"
+  const lineOpts = useMemo(() => {
+    const bands = JSON.parse(bandLinesKey) as Record<string, LineType>
+    return {
+      ...(nodeLines && Object.keys(nodeLines).length ? { nodeLines } : {}),
+      ...(Object.keys(bands).length ? { bandLines: bands } : {}),
+    }
+  }, [bandLinesKey, nodeLines])
 
   // The Diagram is laid out in a worker (diagram-client.ts) wherever the
   // browser has one, so a big map never holds the page while it is built;
   // the server, tests and a worker that fails build it here instead.
   const [workerFailed, setWorkerFailed] = useState(false)
-  // The worker sizes devices and site/location cards (the kinds the
-  // topology API sends); anything else is sized by the node registry here.
+  // The worker sizes devices, site/location cards and provider networks
+  // (the kinds the topology API sends, the last two a site card's box);
+  // anything else is sized by the node registry here.
   const plainGraph = useMemo(
-    () => graph.nodes.every((n) => n.type === "device" || n.type === "group"),
+    () =>
+      graph.nodes.every(
+        (n) =>
+          n.type === "device" ||
+          n.type === "group" ||
+          n.type === "provider_network"
+      ),
     [graph]
   )
   const offThread =
@@ -1210,6 +1257,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               mode: diagramMode,
               line: diagramLine,
               links: linkOverrides,
+              ...lineOpts,
               ...(diagramLabels ? { labels: diagramLabels } : {}),
               colorMode,
               direction,
@@ -1264,6 +1312,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       diagramMode,
       diagramLine,
       linkOverrides,
+      lineOpts,
       diagramLabels,
       checkLabels,
       bandRowList,
@@ -1284,6 +1333,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               mode: diagramMode,
               line: diagramLine,
               links: linkOverrides,
+              ...lineOpts,
               ...(diagramLabels ? { labels: diagramLabels } : {}),
               colorMode,
               direction,
@@ -1314,6 +1364,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       diagramMode,
       diagramLine,
       linkOverrides,
+      lineOpts,
       diagramLabels,
       colorMode,
       direction,

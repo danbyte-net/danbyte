@@ -9,7 +9,7 @@ familiar front/rear diagram showing what's mounted in each rack unit.
 
 ## Add a rack
 
-1. Open **DCIM → Racks** and click **Add rack**.
+1. Open **DCIM → Racks & cabinets → Racks** and click **Add rack**.
 2. Name it and set its **height** in rack units (e.g. 42U) and **starting unit**
    (usually 1).
 3. Optionally assign a **site**, a **rack role**, and tags.
@@ -19,7 +19,8 @@ familiar front/rear diagram showing what's mounted in each rack unit.
    derived from the rail width plus a 150 mm frame).
 
 Picking a [**rack type**](#rack-types) fills the height, width, outer
-dimensions and weight budget from the cabinet model in one go.
+dimensions, weight budget, power budget and cooling from the cabinet model in
+one go.
 
 A rack's units can't shrink or shift out from under its devices: lowering
 the **height** or raising the **starting unit** below a mounted device is
@@ -39,10 +40,15 @@ roles** page - like everything else, none ship by default.
 
 A **rack type** is a cabinet *model* - "APC NetShelter SX 42U 600mm" - with
 the dimensions a cabinet of that model always has: rail width, height in U,
-starting unit and numbering direction, outer width/depth (mm), and the load
-rating. Define them on **DCIM → Rack types**; picking one on the rack form
-**pre-fills all of those fields** (each stays editable - the rack remains the
-source of truth, so a one-off odd cabinet just overrides a value).
+starting unit and numbering direction, outer width/depth (mm), the load
+rating, the **power budget (W)** a rack of the model may draw, and its
+**cooling** - what the cooling takes (air, hybrid, liquid or immersion) and
+how much heat it removes (see [Cooling](../features/cooling.md)). Define them
+on **DCIM → Racks & cabinets → Rack types**; picking one on the rack form
+**pre-fills all of those fields** (each stays editable - the rack remains the source of truth,
+so a one-off odd cabinet just overrides a value). The API carries them as
+`max_power_w`, `cooling_capability` and `cooling_capacity_w` (watts) on the
+rack type and on the `rack_type` a rack embeds.
 
 **Import from library** on the Rack types page reads the NetBox
 devicetype-library's `rack-types/` folder - single files, pasted YAML, uploads,
@@ -50,8 +56,12 @@ or a `/tree/` link to a manufacturer - through the same import the device types
 use. The model, width, height, starting unit, top-down numbering, outer width
 and depth (converted from inches when the file uses them) and load budget come
 across; the form factor, outer height, the rack's own weight and mounting depth
-aren't held on a rack type, and the import report lists them as skipped. A
-model that already exists is left alone.
+aren't held on a rack type, and the import report lists them as skipped. The
+library has no power or cooling figures, but a file of your own may add
+Danbyte's keys: `max_power_w` and `cooling_capacity_w` (whole watts) and
+`cooling_capability` (`air`, `hybrid`, `liquid` or `immersion`). A value that
+is not a positive whole number, or a capability Danbyte doesn't know, is
+dropped and reported. A model that already exists is left alone.
 
 A rack type can also carry **accessories**: the factory-fitted 0U gear the
 model ships with - typically a pair of vertical PDU strips. Each accessory
@@ -77,7 +87,8 @@ or its recorded depth was wrong. **Sync type** on a rack's page (the rack
 twin of a device's *Sync from type*) compares the two and shows a preview
 before touching anything:
 
-- **Dimensions to copy** - every dimension that drifted from the model, old
+- **Dimensions to copy** - every dimension, budget (weight, power) and
+  cooling figure (capability, capacity) that drifted from the model, old
   value and new. Drift is legitimate (you can edit a rack's dims after
   picking a type), so this reports rather than nags.
 - **Accessories to add** - strips the type defines that this rack hasn't
@@ -111,7 +122,8 @@ takes:
 - **Devices going along**: everything racked in it - positioned, half-width
   and side-mounted alike - plus the devices installed in their device bays.
   Each keeps its U position, face and rail; its site and location become the
-  rack's. Without a location, the old one is cleared.
+  rack's. Without a location, the old one is cleared. The [room](rooms.md) of
+  the rack and of each device is cleared: a room is at the old site.
 - **Cleared**: a floor-plan tile at the old site that places the rack or one
   of its devices loses its link. The tile itself stays on the plan.
 - **Blocking the move**: anything still tied to the old site. The move is
@@ -132,7 +144,7 @@ takes:
       on: a catalog entry local to another site - a device type, status,
       tag, VRF, IP role, manufacturer or custom field - on the rack, its
       devices, their ports and other components such as inventory items,
-      their IP and MAC addresses, their services, NAT rules and port rules,
+      their IP and MAC addresses, their services, NAT rules, installed software and port rules,
       or their static routes, BGP sessions and other routing processes.
 
 Port reservations on the moving ports follow them to the new site. Each moved
@@ -185,6 +197,12 @@ A device with no type counts as full depth, as the elevation draws it.
 (`Pick a rack in the device's site.`), and so is moving a racked device to
 another site without taking it out of the rack. A device with no site takes
 its rack's. Its **location**, when set, is in its site too.
+
+**A rack takes the hardware its cooling serves.** Air-cooled gear goes in
+any rack. Where the rack records a cooling capability, a liquid, hybrid or
+immersion device it does not take - liquid gear in an air-cooled rack, say -
+is refused (`Rack R12 is air-cooled; this device type is liquid-cooled.`).
+See [Cooling](../features/cooling.md#which-hardware-a-rack-takes).
 
 **A device type's change keeps its racked devices in place.** A new height,
 full depth or width that would put one of its devices over another device or
@@ -402,7 +420,7 @@ devices you can view.
 **2D | 3D**, first on the Elevation toolbar, swaps the drawing for the rack in
 3D (`?viz=3d` keeps it in the URL) - the same cabinet, devices and photo
 faceplates as the floor plan's [3D room](../features/floor-plans.md#the-3d-room-view),
-this rack alone. Drag to turn it and scroll to zoom; **Front** and **Rear**
+this rack alone. Drag to turn it and scroll to zoom toward the pointer; **Front** and **Rear**
 look straight at either face, and a double-click on a device frames it.
 Ports on the photos are coloured as the room colours them - cabled by
 speed, free faint, disabled grey, live SNMP where it is polled - and a port
@@ -438,14 +456,24 @@ The rack's **Power feeds** tab lists the feeds delivered to it, the same rows
 as the feeds list; tick them to edit or delete several at once (see
 [Power](../features/power.md#editing-and-deleting-several-at-once)).
 
+Racks roll up **cooling** the same way: the heat their devices give off -
+each device's type heat output where it has one, else the power it draws,
+PDUs aside - over the rack's **cooling capacity**, on the same scale and with
+the same *nameplate* fallback. The rack page's Capacity card reads it under
+**Cooling** (`3.2 kW / 10 kW`, *No capacity* without one), with the rack's
+**Cooling capability** beneath, and the racks list offers a **Cooling**
+column like **Power**. The capability decides which liquid, hybrid and
+immersion hardware the rack takes - air-cooled gear goes in any rack - and a
+device it does not take is refused. See [Cooling](../features/cooling.md).
+
 The racks list offers **Ports** and **Panel ports** the same way - hidden
 until ticked, each a bar and *in use / counted* (`46 / 48`), sorting by the
 share in use and opening the Port utilization page on the rack. Counting
 ports costs the list a few queries, so it asks for them
 (`?include=ports`) only while one of the two is shown.
 
-A rack's space, power and ports share one scale wherever they are drawn as a
-bar or a colour: green up to the warning level, amber above it, red above the
+A rack's space, power, cooling and ports share one scale wherever they are
+drawn as a bar or a colour: green up to the warning level, amber above it, red above the
 critical level. The levels are 80 % and 95 % until a tenant admin changes them
 under **Settings → Tenant policy → Rack capacity** (`capacity_warn_pct`,
 `capacity_critical_pct`; the warning level must sit below the critical one).
@@ -485,8 +513,9 @@ red when over. Types without a weight contribute nothing, so the number is a
 floor, not a guarantee.
 
 Racks can carry a **location** (building / floor / room within their
-site) - the Locations page's **Rack elevations** button then shows exactly
-the racks in that room, and `/api/racks/?location=` filters likewise. The
+site) and a [**room**](rooms.md) in it - the Locations page's **Rack
+elevations** button then shows exactly the racks in that location, and
+`/api/racks/?location=` and `?room=` filter likewise. The
 wall reads the devices of all its racks in one request:
 `/api/devices/?rack=` takes one rack id or several, comma-separated. A
 location can also be drawn as a [floor plan](../features/floor-plans.md),
@@ -526,8 +555,13 @@ number of queries whatever stands in them, ports or not.
 A rack's `power` holds `available_w`, `allocated_w`, `maximum_w` and
 `supply`: `feed` when the supply is its primary feeds, `pdu_rating` when it is
 its PDUs' inlet ratings (the smaller of two sides), null when there is
-neither. A site adds its racks up
-floor plan by floor plan on its [Capacity](../models/site.md#capacity) API.
+neither. Its `cooling` holds `available_w` (the cooling capacity),
+`heat_allocated_w`, `heat_maximum_w`, `supply` (`budget`, or null without a
+capacity) and `mismatched`, and `cooling_free_w` is the capacity less the
+allocated heat - see [Cooling](../features/cooling.md#in-the-api), with the
+`?cooling_capability=` and `?cooling_free_w_gte=` filters. A site adds its
+racks up floor plan by floor plan on its
+[Capacity](../models/site.md#capacity) API.
 
 ## API: port state and 3D geometry
 

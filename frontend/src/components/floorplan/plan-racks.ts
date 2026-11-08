@@ -1,11 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   FloorPlanLiveState,
   FloorPlanTile,
   FloorTileRackState,
-  Paginated,
   Rack,
 } from "@/lib/api"
 
@@ -27,14 +26,14 @@ export function usePlanRacks(planId: string, enabled: boolean) {
   return useQuery({
     queryKey: planRacksKey(planId),
     queryFn: () =>
-      api<Paginated<Rack>>(`/api/racks/?floor_plan=${planId}&include=ports`),
+      apiAll<Rack>(`/api/racks/?floor_plan=${planId}&include=ports`),
     enabled,
   })
 }
 
 /** A rack on the plan, as its table lists it: the plan's rack row with its
- * units, power and devices as the live poll last read them, and the tiles
- * that stand for it (one, as a rule). */
+ * units, power, cooling and devices as the live poll last read them, and
+ * the tiles that stand for it (one, as a rule). */
 export interface PlanRack extends Rack {
   tileIds: string[]
 }
@@ -56,7 +55,7 @@ export function planRackRows(
 ): PlanRack[] {
   const byRack = new Map<string, string[]>()
   for (const t of tiles) {
-    if (t.linked?.kind !== "rack") continue
+    if (t.linked?.kind !== "rack" || !t.linked.id) continue
     const ids = byRack.get(t.linked.id) ?? []
     ids.push(t.id)
     byRack.set(t.linked.id, ids)
@@ -76,6 +75,7 @@ export function planRackRows(
             used_units: fresh.used_units,
             u_height: fresh.u_height,
             power: fresh.power,
+            cooling: fresh.cooling ?? rack.cooling,
             device_count: fresh.device_count,
             total_weight_kg: fresh.total_weight_kg,
           }
@@ -96,7 +96,7 @@ export function tileRackFigures(
   const byId = new Map((racks ?? []).map((r) => [r.id, r] as const))
   const out = new Map<string, RackFigures>()
   for (const t of tiles) {
-    if (t.linked?.kind !== "rack") continue
+    if (t.linked?.kind !== "rack" || !t.linked.id) continue
     const fig = rackFigures(byId.get(t.linked.id), rackLive(live, t.id))
     if (fig) out.set(t.id, fig)
   }

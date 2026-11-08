@@ -135,7 +135,6 @@ export function PrefixPolicyTable() {
         tableId="monitoring-config-prefixes"
         exportName="monitoring-prefix-policies"
         flexColumn="description"
-        pagedWhenGrouped
       />
     </FilteredTable>
   )

@@ -80,6 +80,16 @@ const LISTS: Record<
     to: "/cluster-types",
     api: "/api/cluster-types/",
   },
+  coolingfeed: {
+    label: "Cooling feeds",
+    to: "/cooling-feeds",
+    api: "/api/cooling-feeds/",
+  },
+  coolingsource: {
+    label: "Cooling sources",
+    to: "/cooling-sources",
+    api: "/api/cooling-sources/",
+  },
   device: { label: "Devices", to: "/devices", api: "/api/devices/" },
   devicerole: {
     label: "Device roles",
@@ -98,6 +108,22 @@ const LISTS: Record<
     api: "/api/ipsec-profiles/",
   },
   location: { label: "Locations", to: "/locations", api: "/api/locations/" },
+  locationtype: {
+    label: "Location types",
+    to: "/location-types",
+    api: "/api/location-types/",
+  },
+  areatype: {
+    label: "Area types",
+    to: "/area-types",
+    api: "/api/area-types/",
+  },
+  sensitivitylabel: {
+    label: "Sensitivity labels",
+    to: "/sensitivity-labels",
+    api: "/api/sensitivity-labels/",
+  },
+  room: { label: "Rooms", to: "/rooms", api: "/api/rooms/" },
   macaddress: { label: "MAC addresses", to: "/macs", api: "/api/macs/" },
   maintenanceevent: {
     label: "Maintenance",
@@ -468,6 +494,7 @@ function EditDialog({
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Name</label>
               <Input
+                aria-label="Name"
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}

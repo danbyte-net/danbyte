@@ -66,6 +66,32 @@ def flush_deferred(alias: str) -> None:
         cur.execute("SET CONSTRAINTS ALL DEFERRED")
 
 
+def discard_transaction(alias: str) -> None:
+    """Roll back whatever a failed attempt left open and start a new
+    connection.
+
+    A migration whose deferred SQL fails (an index created at the end of the
+    migration) raises out of the schema editor before it closes its own
+    savepoint, so leaving ``transaction.atomic`` only rolls back to that
+    savepoint: the transaction stays open with the earlier migrations in it,
+    and a retry on the same connection runs inside it. Roll the real
+    transaction back and forget Django's atomic state so the retry starts
+    clean, as a new process would."""
+    conn = connections[alias]
+    raw = conn.connection
+    if raw is not None:
+        try:
+            raw.rollback()
+        except Exception:  # noqa: BLE001 - the connection is dropped below anyway
+            pass
+    conn.atomic_blocks = []
+    conn.savepoint_ids = []
+    conn.in_atomic_block = False
+    conn.needs_rollback = False
+    conn.closed_in_transaction = False
+    conn.close()
+
+
 def pending_plan(alias: str = DEFAULT_DB_ALIAS) -> list:
     """The migrations ``migrate`` would apply, in order."""
     from django.db.migrations.executor import MigrationExecutor
@@ -129,6 +155,7 @@ def run_migrate(*, alias: str = DEFAULT_DB_ALIAS, atomic: bool = True, verbosity
                 _migrate(alias, verbosity, stdout)
             return MigrateResult(EXIT_OK, "atomic", len(plan))
         except Exception as exc:  # noqa: BLE001 - reported through the exit code
+            discard_transaction(alias)
             code = sqlstate(exc)
             if code not in RETRY_SQLSTATES:
                 return MigrateResult(EXIT_UNCHANGED, "atomic", len(plan),

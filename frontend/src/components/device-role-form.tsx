@@ -2,12 +2,11 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   DeviceRole,
   DeviceRoleWritePayload,
   ExportTemplate,
-  Paginated,
 } from "@/lib/api"
 import {
   FormColor,
@@ -100,9 +99,7 @@ export function DeviceRoleForm({
   const templates = useQuery({
     queryKey: ["export-templates", "device"],
     queryFn: () =>
-      api<Paginated<ExportTemplate>>(
-        "/api/export-templates/?object_type=device"
-      ),
+      apiAll<ExportTemplate>("/api/export-templates/?object_type=device"),
     staleTime: 5 * 60_000,
   })
 

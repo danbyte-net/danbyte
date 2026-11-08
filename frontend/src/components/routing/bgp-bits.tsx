@@ -31,6 +31,34 @@ const numOr = (v: number | null | undefined, unset: string) =>
   ) : (
     <span className="num">{v}</span>
   )
+const unitOr = (v: number | null | undefined, unit: string, unset: string) =>
+  v == null ? (
+    <span className="text-muted-foreground">{unset}</span>
+  ) : (
+    <span className="num">
+      {v}
+      {unit}
+    </span>
+  )
+
+/** `maximum-prefix` and its details on one line - `10 · 75% · restart 5 min`
+ * - or null when no maximum is set. */
+export function maxPrefixText(r: {
+  maximum_prefix: number | null
+  maximum_prefix_threshold?: number | null
+  maximum_prefix_restart?: number | null
+  maximum_prefix_warning_only?: boolean | null
+}): string | null {
+  if (r.maximum_prefix == null) return null
+  const parts = [String(r.maximum_prefix)]
+  if (r.maximum_prefix_threshold != null)
+    parts.push(`${r.maximum_prefix_threshold}%`)
+  if (r.maximum_prefix_restart != null)
+    parts.push(`restart ${r.maximum_prefix_restart} min`)
+  else if (r.maximum_prefix_warning_only) parts.push("warning only")
+  return parts.join(" · ")
+}
+
 const nameOr = (
   v: { id: string; name: string } | null | undefined,
   unset: string,
@@ -85,6 +113,18 @@ export function knobRows(
       value: nameOr(k.default_originate_policy, unset, "/routing-policies/$id"),
     },
     { label: "Maximum prefix", value: numOr(k.maximum_prefix, unset) },
+    {
+      label: "Warning threshold",
+      value: unitOr(k.maximum_prefix_threshold, "%", unset),
+    },
+    {
+      label: "Restart after",
+      value: unitOr(k.maximum_prefix_restart, " min", unset),
+    },
+    {
+      label: "Warning only",
+      value: onOff(k.maximum_prefix_warning_only, unset),
+    },
     { label: "Allowas-in", value: numOr(k.allowas_in, unset) },
     { label: "AS override", value: onOff(k.as_override, unset) },
     { label: "Remove private AS", value: onOff(k.remove_private_as, unset) },

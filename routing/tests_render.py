@@ -139,7 +139,8 @@ class LinkPeerTests(_Base):
         self._peer()
         peer = device_render_interfaces(self.dev)[0].link_peer
         self.assertEqual(
-            set(peer), {"device", "interface", "description", "custom_fields"}
+            set(peer), {"device", "interface", "description", "mac_address", "mtu",
+             "custom_fields"}
         )
         self.assertIsInstance(peer["device"], str)
 

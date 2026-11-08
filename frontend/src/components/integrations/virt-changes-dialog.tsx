@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
@@ -9,6 +9,7 @@ import {
   type VirtChange,
   type VirtualizationSource,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -54,12 +55,17 @@ const ACCEPT_LABEL: Record<VirtChange["kind"], string> = {
   iface_change: "Take values",
 }
 const DESTRUCTIVE: VirtChange["kind"][] = ["removed_guest", "iface_extra"]
+/** Kinds that overwrite fields: on an intended VM they overwrite intent. */
+const OVERWRITES: VirtChange["kind"][] = ["spec_change", "iface_change"]
 
 // Interface fields as they appear in an iface_change payload.
 const IFACE_LABELS: Record<string, string> = {
   mac_address: "MAC",
   mtu: "MTU",
   vlan_vid: "VLAN",
+  index: "Index",
+  model: "Model",
+  bridge: "Bridge",
 }
 
 // Spec fields as they appear in change payloads, with display labels and
@@ -80,6 +86,7 @@ const SPEC_FIELDS: {
     },
   },
   { key: "disk_gb", label: "Disk", fmt: (v) => `${v} GB` },
+  { key: "vmid", label: "VMID", fmt: (v) => String(v) },
 ]
 
 /** One labeled spec value, e.g. "RAM · 32 GB" or "RAM · 2 GB → 32 GB". */
@@ -176,6 +183,26 @@ function ChangeDetail({ c }: { c: VirtChange }) {
 export function VirtChangesPanel({ source }: { source: VirtualizationSource }) {
   const [confirm, setConfirm] = useState<VirtChange | null>(null)
   const qc = useQueryClient()
+  // Intended VMs of this source: taking the hypervisor's values on one
+  // overwrites what Danbyte holds as intent, so it asks first.
+  const intendedQ = useQuery({
+    queryKey: ["virtual-machines", "intended", source.id],
+    queryFn: () =>
+      apiAll<{ id: string }>(
+        `/api/virtual-machines/?picker=1&intended=true&virt_source=${source.id}`
+      ),
+    staleTime: 60_000,
+  })
+  const intendedIds = useMemo(
+    () => new Set((intendedQ.data?.results ?? []).map((v) => v.id)),
+    [intendedQ.data]
+  )
+  const needsConfirm = useCallback(
+    (c: VirtChange) =>
+      DESTRUCTIVE.includes(c.kind) ||
+      (OVERWRITES.includes(c.kind) && !!c.vm && intendedIds.has(c.vm)),
+    [intendedIds]
+  )
   const query = useQuery({
     queryKey: ["virt-changes", source.id],
     queryFn: () =>
@@ -268,8 +295,9 @@ export function VirtChangesPanel({ source }: { source: VirtualizationSource }) {
               className="h-7 px-2 text-xs"
               disabled={resolve.isPending}
               onClick={() => {
-                // Deleting inventory a person entered deserves a beat.
-                if (DESTRUCTIVE.includes(row.original.kind)) {
+                // Deleting inventory a person entered, or overwriting an
+                // intended VM, deserves a beat.
+                if (needsConfirm(row.original)) {
                   setConfirm(row.original)
                   return
                 }
@@ -293,7 +321,7 @@ export function VirtChangesPanel({ source }: { source: VirtualizationSource }) {
         ),
       },
     ],
-    [resolve]
+    [resolve, needsConfirm]
   )
 
   return (
@@ -321,28 +349,38 @@ export function VirtChangesPanel({ source }: { source: VirtualizationSource }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirm?.kind === "removed_guest"
-                ? `Delete ${confirm?.vm_name || "this VM"} from Danbyte?`
-                : "Delete these interfaces from Danbyte?"}
+              {confirm && OVERWRITES.includes(confirm.kind)
+                ? "Hypervisor differs from intent"
+                : confirm?.kind === "removed_guest"
+                  ? `Delete ${confirm?.vm_name || "this VM"} from Danbyte?`
+                  : "Delete these interfaces from Danbyte?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirm?.kind === "removed_guest"
-                ? "The hypervisor no longer has this VM. Its Danbyte record and everything hanging off it goes."
-                : "The hypervisor doesn't report these interfaces, so accepting removes the Danbyte rows - including anything cabled or addressed on them."}{" "}
+              {confirm && OVERWRITES.includes(confirm.kind)
+                ? `${confirm.vm_name || "This VM"} is intended. Accepting replaces its intended values with the hypervisor's.`
+                : confirm?.kind === "removed_guest"
+                  ? "The hypervisor no longer has this VM. Its Danbyte record and everything hanging off it goes."
+                  : "The hypervisor doesn't report these interfaces, so accepting removes the Danbyte rows - including anything cabled or addressed on them."}{" "}
               Nothing on the hypervisor is touched either way.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              variant="destructive"
+              variant={
+                confirm && OVERWRITES.includes(confirm.kind)
+                  ? "default"
+                  : "destructive"
+              }
               onClick={(e) => {
                 e.preventDefault()
                 if (confirm) resolve.mutate({ c: confirm, action: "accept" })
                 setConfirm(null)
               }}
             >
-              Delete in Danbyte
+              {confirm && OVERWRITES.includes(confirm.kind)
+                ? "Take hypervisor values"
+                : "Delete in Danbyte"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

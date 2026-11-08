@@ -3,7 +3,8 @@
 #
 #   scripts/build-release.sh [VERSION]
 #
-# Produces  dist/danbyte-<version>-linux-x86_64.tar.gz  containing everything a
+# Produces  dist/danbyte-<version>-linux-x86_64.tar.gz  (plus the SBOM beside it,
+# dist/danbyte-<version>.cdx.json) containing everything a
 # fresh, internet-less Ubuntu/Debian box needs to run Danbyte:
 #
 #   <bundle>/                     clean source tree (git-tracked files)
@@ -15,6 +16,7 @@
 #   <bundle>/vendor/node          Node runtime (matches the ABI node_modules was built with)
 #   <bundle>/vendor/cad           LibreDWG's dwg2dxf, static (bin/), its licence,
 #                                 NOTICE and source tarball (src/) - DWG floor plans
+#   <bundle>/sbom.cdx.json        CycloneDX SBOM of the bundle's Python + npm deps
 #   <bundle>/install.sh           the one-shot installer (scripts/install.sh)
 #   <bundle>/BUNDLE_INFO          version / platform / build date
 #
@@ -83,6 +85,9 @@ export PATH="$STAGE/vendor/node/bin:$PATH"
 # ── 3. Frontend: build with the bundled node, keep node_modules for runtime ───
 log "Building frontend (node $(node -v))"
 ( cd "$STAGE/frontend" && npm ci --no-audit --no-fund && npm run build )
+# nginx serves dist/client/assets (and their .gz copies, which the build
+# writes) from disk as another user; the tarball keeps the modes (#485).
+chmod -R u=rwX,go=rX "$STAGE/frontend/dist/client"
 
 # ── 4. Standalone CPython 3.13 (relocatable base for the target venv) ─────────
 log "Fetching standalone CPython ${PBS_PYTHON}"
@@ -139,7 +144,16 @@ file -b "$CAD/bin/dwg2dxf" | grep -Eq 'statically linked|static-pie linked' \
 chmod 0755 "$CAD/bin/dwg2dxf"
 chmod -R u=rwX,go=rX "$CAD"
 
-# ── 8. Installer + metadata ──────────────────────────────────────────────────
+# ── 8. SBOM: the installed wheels + the runtime npm packages ─────────────────
+# From the build venv, so it lists exactly what the wheelhouse installs. It
+# lands in the app directory with the rest of the tree (served by
+# /api/system/sbom/) and goes beside the tarball as a release asset.
+log "SBOM (CycloneDX)"
+"$BUILD_VENV/bin/python" "$STAGE/scripts/release/sbom.py" --root "$STAGE" \
+  --version "$VERSION" --output "$STAGE/sbom.cdx.json"
+cp "$STAGE/sbom.cdx.json" "$OUT/danbyte-${VERSION}.cdx.json"
+
+# ── 9. Installer + metadata ──────────────────────────────────────────────────
 cp "$STAGE/scripts/install.sh" "$STAGE/install.sh"
 chmod +x "$STAGE/install.sh"
 cat > "$STAGE/BUNDLE_INFO" <<EOF
@@ -151,7 +165,7 @@ dwg2dxf: LibreDWG $LIBREDWG_VERSION (static)
 offline: yes (wheels + node_modules + node + python bundled)
 EOF
 
-# ── 9. Tarball ───────────────────────────────────────────────────────────────
+# ── 10. Tarball ───────────────────────────────────────────────────────────────
 log "Packing ${NAME}.tar.gz"
 # Owned by root in the archive: extracted by root, nobody else on the host
 # can change the installer or anything it runs as root.

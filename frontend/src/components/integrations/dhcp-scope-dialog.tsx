@@ -10,6 +10,7 @@ import {
   type VRFOption,
   type WindowsConnection,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -71,7 +72,7 @@ export function DhcpScopeDialog({
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
 

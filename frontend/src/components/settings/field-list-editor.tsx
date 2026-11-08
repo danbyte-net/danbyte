@@ -1,8 +1,8 @@
 import { useQueries } from "@tanstack/react-query"
 import { ChevronDown, ChevronUp, Plus, X } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type { CustomField, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { CustomField } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -42,8 +42,7 @@ export function useCustomFieldMeta(
   const results = useQueries({
     queries: models.map((model) => ({
       queryKey: ["custom-fields-for", model],
-      queryFn: () =>
-        api<Paginated<CustomField>>(`/api/custom-fields/?model=${model}`),
+      queryFn: () => apiAll<CustomField>(`/api/custom-fields/?model=${model}`),
     })),
   })
   const out: Partial<Record<string, FieldMeta>> = {}

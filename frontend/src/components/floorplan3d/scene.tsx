@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Scan } from "lucide-react"
 import * as THREE from "three"
 
 import { detectRenderQuality } from "@/lib/render-quality"
@@ -12,6 +13,7 @@ import type {
   Cable,
   FacePorts,
   FloorPlanLiveState,
+  FloorPlanStack,
   ImagePortMarker,
   InventoryItemRow,
   Paginated,
@@ -24,9 +26,10 @@ import { FaceplateLegend } from "@/components/device-faceplate"
 import { LegendFrame } from "@/components/map-legend"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loading } from "@/components/loading"
-import { BarButton } from "@/components/map-toolbar"
+import { BarButton, BarIconButton } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -43,6 +46,7 @@ import { usePortLabelsShown } from "@/lib/port-labels-pref"
 
 import {
   cableEndsAnchored,
+  cableRunBox,
   CablesLayer,
   CableTrace3D,
   useCablePaths,
@@ -62,30 +66,68 @@ import { CabinetMesh } from "./cabinet-mesh"
 import { DeviceHud, PortHud, rackPortPosition } from "./hud-cards"
 import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
 import type { PartMarkerAt } from "@/components/part-status"
-import type { FlyToRequest } from "./camera-rig"
+import type { FlyToRequest, NavApi } from "./camera-rig"
+import { areaBox, planBounds, smallestArea, wallBox } from "./focus-boxes"
+import type { FocusBox } from "./focus-boxes"
 import { Room } from "./room"
 import type { DrawingFloor } from "./room"
 import { RackMesh } from "./rack-mesh"
 import type { Sel, ShellMode } from "./rack-mesh"
 import { RackHud } from "./rack-hud"
 import { roomStamp } from "./room-stamp"
+import type { AreaShape, LabelShape } from "@/components/floorplan/shapes"
+import { useTheme } from "@/components/theme-provider"
+
+import { AreaFloorMesh } from "./area-floor-mesh"
+import { CameraFanMeshes } from "./camera-fan-mesh"
+import type { CameraView } from "@/components/floorplan/camera-view"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
+import { raisedRegions } from "../floorplan/raised-floor-shape"
 import { NoWebGL, Stage, roomLights } from "./stage"
+import { ReadableNames3D, sceneTileName } from "./readable-names"
+import { planTexts } from "./plan-text"
+import type { PlanTextShow } from "./plan-text"
+import { createPlanTextBus } from "./plan-text-bus"
+import { PlanTextDriver, PlanTextLayer } from "./plan-text-layer"
+import { LevelPlanText } from "./level-plan-text"
+import { SummaryMembers3D, createSummaryStore } from "./summary-picker"
 import { TileGhostMesh } from "./tile-ghost-mesh"
+import { FloorDevicesLayer, isPlacedDevice } from "./floor-device-mesh"
 import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
 import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
+import { BuildingLevels, RiserRuns, Roofline, Slab } from "./building"
+import { placeLevels } from "./building-math"
+import { poseBounds, tilePose } from "../floorplan/tile-pose"
+import type { LevelMode } from "./building-math"
 import {
   cabinetBoxM,
+  cellM,
   cellToWorld,
+  floorDeviceBoxM,
   rackFootprintM,
   rackViewpoint,
+  rowAxes,
+  sceneRaised,
+  tileStandsIn,
   trayElevationM,
   trayJunctions,
   webglSupported,
   type SceneTile,
   type SceneTray,
 } from "./world"
+
+const NO_AREAS: AreaShape[] = []
+const NO_LABELS: LabelShape[] = []
+
+/** The building around the active level of an aligned floor plan. */
+export interface Building3D {
+  stack: FloorPlanStack
+  mode: LevelMode
+  explode: number
+  /** Another level clicked: make it the active one, flying to `tileId`. */
+  onGoLevel: (floorId: string, tileId?: string) => void
+}
 
 /**
  * The 3D room view - the floor plan extruded into a navigable scene: racks as
@@ -98,11 +140,16 @@ import {
  * may be imported; the route loads it via `React.lazy` so the 3D stack stays
  * in its own chunk. Default export for `lazy()`.
  */
+const NO_VIEWS: readonly CameraView[] = []
+
 export default function FloorScene3D({
   planId,
   liveState,
   hiddenTileIds,
   traceCableId,
+  onOpenCable,
+  onOpenDevice,
+  focusTarget = null,
   showUNumbers = false,
   showNames = false,
   namesScope = "all",
@@ -121,12 +168,37 @@ export default function FloorScene3D({
   pointTileIds,
   focusRack = null,
   drawingFloor = null,
+  areas = NO_AREAS,
+  labels = NO_LABELS,
+  showPlanLabels = true,
+  showAreaNames = true,
+  showZoneLabels = true,
+  readableNames = false,
+  readableIcons = true,
+  readableCallouts = true,
+  muteBackground = true,
+  building = null,
+  cameraViews = NO_VIEWS,
 }: {
+  /** The cameras' views, cut short by the walls (camera-view.ts): flat
+   * fans on the floor. Empty with Display > Camera FOV cones off. */
+  cameraViews?: readonly CameraView[]
+  /** An aligned floor plan: its other levels drawn around this one, as
+   * the level mode says (building.tsx). */
+  building?: Building3D | null
   planId: string
   liveState: FloorPlanLiveState | null
   /** Tiles the plan's eyes have switched off - not drawn here either. */
   hiddenTileIds?: Set<string>
   traceCableId?: string | null
+  /** A cable run clicked: the plan's cable panel in place of the room's
+   * cable card (null: clicked away). */
+  onOpenCable?: (cableId: string | null) => void
+  /** A device clicked: the plan's device panel in place of its card. */
+  onOpenDevice?: (tileId: string, deviceId: string) => void
+  /** Fly to a cable's run or a tile (Find, Show on plan); a new `n` flies
+   * again. */
+  focusTarget?: { kind: "cable" | "tile"; id: string; n: number } | null
   /** Overlay toggles - owned by the route's View popover, like the 2D prefs. */
   showUNumbers?: boolean
   showNames?: boolean
@@ -165,9 +237,44 @@ export default function FloorScene3D({
   focusRack?: { tileId: string; n: number } | null
   /** The plan's CAD drawing as the floor texture (room.tsx). */
   drawingFloor?: DrawingFloor | null
+  /** Rooms and areas drawn on the plan: flat tints on the floor, and
+   * their names on it. */
+  areas?: AreaShape[]
+  /** The labels placed on the plan, written on the floor (plan-text.ts). */
+  labels?: LabelShape[]
+  /** Display > Labels (3D): the placed labels and the trays' names. */
+  showPlanLabels?: boolean
+  /** Display > Room & area names (3D). */
+  showAreaNames?: boolean
+  /** Display > Zone labels: the zones' names, as on the 2D plan. */
+  showZoneLabels?: boolean
+  /** Display > Object size: Readable - every object's name at one size on
+   * screen, thinned (readable-names.tsx). */
+  readableNames?: boolean
+  /** Display > Icons when zoomed out: the names' plates carry the
+   * object's icon. */
+  readableIcons?: boolean
+  /** Display > Callouts: a crowd of Readable names is called out or
+   * summarised (name-layout.ts). */
+  readableCallouts?: boolean
+  /** Display > Muted background: the floor's picture muted as on the 2D
+   * plan. */
+  muteBackground?: boolean
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
+  const levels = useMemo(
+    () =>
+      building
+        ? placeLevels(
+            building.stack.floors,
+            planId,
+            building.mode,
+            building.explode
+          )
+        : [],
+    [building, planId]
+  )
   // Read once here; every rack and device gets the values as props. The
   // viewer's own switch (View menu) can clear the labels off this screen.
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
@@ -180,10 +287,21 @@ export default function FloorScene3D({
   /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
   const [traySel, setTraySel] = useState<string | null>(null)
   const flyToRef = useRef<FlyToRequest | null>(null)
+  // The camera's framing calls (frame a box, fit the whole plan).
+  const navRef = useRef<NavApi | null>(null)
+  // An area (a building on a site plan) or a wall clicked: a navigation
+  // target only - F or a double-click frames it.
+  const [structSel, setStructSel] = useState<{
+    kind: "area" | "wall"
+    id: string
+  } | null>(null)
   // Focus (F): the selected rack/device stays lit, the rest of the room
   // ghosts. Session state, deliberately not persisted - it is a look, not a
   // preference.
   const [focusOn, setFocusOn] = useState(false)
+  // Placed devices whose 3D model is over the room's triangle budget and
+  // draws as its bounding box.
+  const [tooDetailed, setTooDetailed] = useState<string[]>([])
   // Isolation: only these tile ids render (zone click or "Isolate row").
   const [isolation, setIsolation] = useState<{
     label: string
@@ -198,6 +316,42 @@ export default function FloorScene3D({
   // The cabinet under the pointer, for its card - kept out of this
   // component's state so a hover never re-renders the room.
   const [hoverStore] = useState(createHoverStore)
+  // Readable's summary plates: the one hovered and the one opened.
+  const [summaryStore] = useState(createSummaryStore)
+  // The plan's own text and the Readable plates share one collision pass.
+  const [textBus] = useState(createPlanTextBus)
+  const dark = useTheme().theme === "dark"
+  const textShow = useMemo<PlanTextShow>(
+    () => ({
+      labels: showPlanLabels,
+      areaNames: showAreaNames,
+      zoneNames: showZoneLabels,
+      readable: readableNames,
+    }),
+    [showPlanLabels, showAreaNames, showZoneLabels, readableNames]
+  )
+  const sceneData = scene.data
+  // Touching raised floors of one depth and colour are one pad.
+  const raisedPads = useMemo(
+    () => raisedRegions((sceneData?.raised_floors ?? []).map(sceneRaised)),
+    [sceneData?.raised_floors]
+  )
+  const activeTexts = useMemo(
+    () =>
+      sceneData
+        ? planTexts({
+            scene: {
+              ...sceneData,
+              tiles: sceneData.tiles.filter((t) => !hiddenTileIds?.has(t.id)),
+            },
+            areas,
+            labels,
+            show: textShow,
+            dark,
+          })
+        : [],
+    [sceneData, hiddenTileIds, areas, labels, textShow, dark]
+  )
   // The same for a device inside an open cabinet, keyed tile/device.
   const [deviceHover] = useState(createHoverStore)
   const hoverCabinetDevice = useCallback(
@@ -291,7 +445,9 @@ export default function FloorScene3D({
       queryFn: () => api<FacePorts>(`/api/devices/${sel.deviceId}/face-ports/`),
       staleTime: 30_000,
     })
-    const list = sel.portSide ? fp[sel.portSide] : [...fp.front, ...fp.rear]
+    const list = sel.portSide
+      ? (fp[sel.portSide] ?? [])
+      : [...fp.front, ...fp.rear]
     return list.find((p) => p.marker === sel.portName) ?? null
   }
 
@@ -378,12 +534,15 @@ export default function FloorScene3D({
       return
     }
     setCableSel(null)
+    setStructSel(null)
     // A different cabinet resets the flip - you arrive at its front. (Plain
     // sequential setState: the first version nested this inside the
     // setSelection updater, and a state update from inside an updater is a
     // render-phase side effect React is allowed to double-fire.)
     if (selection?.tileId !== sel.tileId) setViewSide("front")
     setSelection(sel)
+    if (sel.kind === "device" && sel.deviceId)
+      onOpenDevice?.(sel.tileId, sel.deviceId)
   }
 
   // Esc cancels an in-flight connect.
@@ -396,28 +555,84 @@ export default function FloorScene3D({
     return () => window.removeEventListener("keydown", onKey)
   }, [connecting])
 
-  // F toggles focus on the current selection; Escape unwinds focus first,
-  // then isolation (the connect flow's own Esc wins while it is arming).
+  // F on a rack, cabinet or device toggles focus, flying to its front on
+  // the way in; on an area or wall it frames it. Escape unwinds focus
+  // first, then isolation, then the selection - flying back to the whole
+  // plan (the connect flow's own Esc wins while it is arming, and an open
+  // dialog keeps its Esc to itself).
+  const dialogOpen = !!modal || !!installBay || !!partEdit || !!partMenu
   useEffect(() => {
     const editable = (t: EventTarget | null) =>
       t instanceof Element &&
       t.closest('input, textarea, select, [contenteditable="true"]') !== null
+    const flyTo = (vp: {
+      target: [number, number, number]
+      position: [number, number, number]
+    }) => {
+      flyToRef.current = {
+        target: new THREE.Vector3(...vp.target),
+        position: new THREE.Vector3(...vp.position),
+      }
+      invalidateRef.current?.()
+    }
+    const frame = (box: FocusBox | null) => {
+      if (box) navRef.current?.frame(box.min, box.max)
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (editable(e.target)) return
+      const d = scene.data
       if (e.key === "f" || e.key === "F") {
-        if (selection) setFocusOn((v) => !v)
+        if (selection) {
+          const t = d?.tiles.find((x) => x.id === selection.tileId)
+          const height = t?.rack
+            ? rackFootprintM(t.rack).height
+            : t?.cabinet
+              ? cabinetBoxM(t.cabinet).height
+              : t?.device
+                ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
+                : null
+          if (!focusOn && d && t && height != null) {
+            setViewSide("front")
+            flyTo(rackViewpoint(d.plan, t, height, "front"))
+          }
+          setFocusOn((v) => !v)
+        } else if (structSel && d) {
+          if (structSel.kind === "area") {
+            const a = areas.find((x) => x.id === structSel.id)
+            frame(a ? areaBox(d.plan, a) : null)
+          } else {
+            const w = d.walls?.find((x) => x.id === structSel.id)
+            frame(w ? wallBox(d.plan, w) : null)
+          }
+        }
         return
       }
       if (e.key === "Escape") {
-        if (connecting) return
+        if (connecting || dialogOpen) return
         if (focusOn) setFocusOn(false)
         else if (isolation) setIsolation(null)
+        else {
+          setSelection(null)
+          setStructSel(null)
+          setCableSel(null)
+          setTraySel(null)
+          navRef.current?.fitAll()
+        }
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [selection, focusOn, isolation, connecting])
+  }, [
+    selection,
+    structSel,
+    focusOn,
+    isolation,
+    connecting,
+    dialogOpen,
+    scene.data,
+    areas,
+  ])
 
   // A rack table row clicked under the room: select that rack and fly to
   // its front - the double-click's framing - once the room has loaded.
@@ -440,6 +655,53 @@ export default function FloorScene3D({
     // A prop change, demand frameloop: kick a frame so the rig moves.
     invalidateRef.current?.()
   }, [focusRack, scene.data])
+
+  // Find or the plan's panels: fly to a cable's run or a tile. The cable
+  // paths are the plan's own query, so this waits for them.
+  const focusPaths = useCablePaths(planId)
+  const focusTargetRef = useRef(0)
+  useEffect(() => {
+    const d = scene.data
+    if (!focusTarget || !d || focusTargetRef.current === focusTarget.n) return
+    if (focusTarget.kind === "cable") {
+      const cp = focusPaths.data?.cables.find((c) => c.id === focusTarget.id)
+      if (!cp) return
+      focusTargetRef.current = focusTarget.n
+      const box = cableRunBox(d, cp)
+      if (box) navRef.current?.frame(box.min, box.max)
+      return
+    }
+    const t = d.tiles.find((x) => x.id === focusTarget.id)
+    if (!t) return
+    focusTargetRef.current = focusTarget.n
+    if (t.rack) {
+      setSelection({ kind: "rack", tileId: t.id })
+      setViewSide("front")
+      const vp = rackViewpoint(
+        d.plan,
+        t,
+        rackFootprintM(t.rack).height,
+        "front"
+      )
+      flyToRef.current = {
+        target: new THREE.Vector3(...vp.target),
+        position: new THREE.Vector3(...vp.position),
+      }
+      invalidateRef.current?.()
+      return
+    }
+    const c = cellM(d.plan)
+    const h = t.cabinet
+      ? cabinetBoxM(t.cabinet).height
+      : t.device
+        ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
+        : 1
+    const b = poseBounds(tilePose(t))
+    navRef.current?.frame(
+      [b.minX * c, 0, b.minY * c],
+      [b.maxX * c, h, b.maxY * c]
+    )
+  }, [focusTarget, scene.data, focusPaths.data])
 
   // Every near-tier device reports the colours it draws; the HUD legend keys
   // their union (and hides when nothing photo-anchored is in view). Above the
@@ -498,6 +760,34 @@ export default function FloorScene3D({
   // explicit Flat pick is already the cheapest and is left alone; an explicit
   // Low/Medium is the operator's call and is respected.
   const BIG_HALL_RACKS = 40
+  // The building: the levels on show, for the camera's fit and the roofline.
+  const shownLevels = levels.filter((l) => l.look !== "hidden")
+  const buildingBounds =
+    shownLevels.length > 1
+      ? {
+          min: [
+            0,
+            Math.min(
+              ...shownLevels.map((l) => l.y - (l.floor.slab_mm ?? 300) / 1000)
+            ),
+            0,
+          ] as [number, number, number],
+          max: [
+            w,
+            Math.max(
+              ...shownLevels.map(
+                (l) => l.y + (l.floor.ceiling_mm ?? 3000) / 1000
+              )
+            ),
+            d,
+          ] as [number, number, number],
+        }
+      : null
+  const activeLevel = levels.find((l) => l.look === "active")
+  const roofLevel =
+    building?.mode === "upto" && activeLevel
+      ? (levels[levels.length - 1] ?? null)
+      : null
   const rq: RenderQuality =
     quality === "auto" && rackTiles.length > BIG_HALL_RACKS ? "low" : detected
 
@@ -507,6 +797,16 @@ export default function FloorScene3D({
   const selDevice =
     (selection?.kind === "device" || selection?.kind === "port") && selTile
       ? (selTile.rack!.devices.find((x) => x.id === selection.deviceId) ?? null)
+      : null
+  // A port mapped onto a floor device's 3D model, selected.
+  const selFloorPort =
+    selection?.kind === "port" && selection.portSide === "model"
+      ? (data.tiles.find((t) => t.id === selection.tileId && t.device) ?? null)
+      : null
+  // A device standing on the floor, selected.
+  const selFloor =
+    selection?.kind === "device"
+      ? (data.tiles.find((t) => t.id === selection.tileId && t.device) ?? null)
       : null
   const selCabinet =
     selection?.kind === "cabinet"
@@ -536,15 +836,7 @@ export default function FloorScene3D({
   const nonZoneTiles = data.tiles.filter((t) => !t.is_zone)
   const isolateZone = (zone: SceneTile) => {
     const ids = new Set(
-      nonZoneTiles
-        .filter(
-          (t) =>
-            t.x < zone.x + zone.w &&
-            zone.x < t.x + t.w &&
-            t.y < zone.y + zone.h &&
-            zone.y < t.y + t.h
-        )
-        .map((t) => t.id)
+      nonZoneTiles.filter((t) => tileStandsIn(t, zone)).map((t) => t.id)
     )
     if (ids.size === 0) {
       toast.info("Nothing stands in that zone yet.")
@@ -560,14 +852,7 @@ export default function FloorScene3D({
   const zonesAround = (tile: SceneTile | null) =>
     tile
       ? data.tiles
-          .filter(
-            (z) =>
-              z.is_zone &&
-              tile.x < z.x + z.w &&
-              z.x < tile.x + tile.w &&
-              tile.y < z.y + z.h &&
-              z.y < tile.y + tile.h
-          )
+          .filter((z) => z.is_zone && tileStandsIn(tile, z))
           .sort((a, b) => a.w * a.h - b.w * b.h)
       : []
   const zonesForSelected = zonesAround(selTile)
@@ -575,11 +860,13 @@ export default function FloorScene3D({
   const isolateRow = (anchor: SceneTile) => {
     // A row is whichever axis the hall actually runs: the alignment
     // (same-y vs same-x) that catches more racks wins.
-    const sameY = rackTiles.filter((t) => t.y === anchor.y).length
-    const sameX = rackTiles.filter((t) => t.x === anchor.x).length
+    // A turned row (free plan) runs along the anchor's own axes.
+    const along = rowAxes(anchor)
+    const sameY = rackTiles.filter((t) => along(t).sameY).length
+    const sameX = rackTiles.filter((t) => along(t).sameX).length
     const ids = new Set(
       nonZoneTiles
-        .filter((t) => (sameY >= sameX ? t.y === anchor.y : t.x === anchor.x))
+        .filter((t) => (sameY >= sameX ? along(t).sameY : along(t).sameX))
         .map((t) => t.id)
     )
     setIsolation({
@@ -593,6 +880,73 @@ export default function FloorScene3D({
   const shownCabinets = isolation
     ? cabinetTiles.filter((t) => isolation.ids.has(t.id))
     : cabinetTiles
+  // Readable: the names of what the room shows.
+  const namedTiles = nonZoneTiles.filter(
+    (t) => !hiddenTileIds?.has(t.id) && (!isolation || isolation.ids.has(t.id))
+  )
+
+  // A summary's member picked: select it and fly to its front, as F does;
+  // anything that is not a rack, cabinet or device is framed.
+  const goToTile = (tileId: string) => {
+    const t = data.tiles.find((x) => x.id === tileId)
+    if (!t) return
+    const height = t.rack
+      ? rackFootprintM(t.rack).height
+      : t.cabinet
+        ? cabinetBoxM(t.cabinet).height
+        : t.device
+          ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
+          : null
+    if (height == null) {
+      frameTiles([tileId])
+      return
+    }
+    setFocusOn(false)
+    handleSelect(
+      t.rack
+        ? { kind: "rack", tileId }
+        : t.cabinet
+          ? { kind: "cabinet", tileId }
+          : { kind: "device", tileId, deviceId: t.device!.id }
+    )
+    setViewSide("front")
+    const vp = rackViewpoint(plan, t, height, "front")
+    flyToRef.current = {
+      target: new THREE.Vector3(...vp.target),
+      position: new THREE.Vector3(...vp.position),
+    }
+    invalidateRef.current?.()
+  }
+  // Zoom to these: the tiles' boxes, framed together.
+  const frameTiles = (ids: readonly string[]) => {
+    const want = new Set(ids)
+    const ts = data.tiles.filter((t) => want.has(t.id))
+    if (!ts.length) return
+    const c = cellM(plan)
+    const top = (t: SceneTile) =>
+      t.rack
+        ? rackFootprintM(t.rack).height
+        : t.cabinet
+          ? cabinetBoxM(t.cabinet).height
+          : t.device
+            ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
+            : 1
+    // The tiles as drawn: a turned tile's corners reach past its rect.
+    const bs = ts.map((t) => poseBounds(tilePose(t)))
+    navRef.current?.frame(
+      [
+        Math.min(...bs.map((b) => b.minX)) * c,
+        0,
+        Math.min(...bs.map((b) => b.minY)) * c,
+      ],
+      [
+        Math.max(...bs.map((b) => b.maxX)) * c,
+        Math.max(...ts.map(top)),
+        Math.max(...bs.map((b) => b.maxY)) * c,
+      ]
+    )
+    invalidateRef.current?.()
+  }
 
   // HUD front↔rear flip - same viewpoint math as the double-click fly-to.
   const flipView = () => {
@@ -618,15 +972,29 @@ export default function FloorScene3D({
       <Stage
         quality={rq}
         camera={{
-          position: [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
+          // A building opens framed whole, from further out and above.
+          position: buildingBounds
+            ? [
+                w / 2 + diag * 0.75,
+                buildingBounds.max[1] + diag * 0.55,
+                d + diag * 0.7,
+              ]
+            : [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
           far: diag * 10 + 50,
         }}
         lights={roomLights(w, d, diag)}
         controls={{
-          target: [w / 2, 0.8, d / 2],
+          target: buildingBounds
+            ? [
+                w / 2,
+                (buildingBounds.min[1] + buildingBounds.max[1]) / 2,
+                d / 2,
+              ]
+            : [w / 2, 0.8, d / 2],
           maxDistance: diag * 8 + 20,
-          roomDiag: diag,
           requestRef: flyToRef,
+          navRef,
+          bounds: buildingBounds ?? planBounds(plan),
         }}
         // Every view setting, the racks' tints among them: a change the
         // demand frameloop doesn't see would leave the old picture.
@@ -644,11 +1012,22 @@ export default function FloorScene3D({
           quality: rq,
           tints,
           pointed: pointTileIds,
+          readableNames,
+          readableCallouts,
+          planText: [
+            showPlanLabels,
+            showAreaNames,
+            showZoneLabels,
+            activeTexts.length,
+            cameraViewsStamp(cameraViews),
+          ].join(),
         })}
         invalidateRef={invalidateRef}
         onPointerMissed={() => {
           setSelection(null)
+          setStructSel(null)
           setConnecting(null)
+          if (cableSel) onOpenCable?.(null)
           setCableSel(null)
           // Focus follows the selection - a click into nothing ends both.
           setFocusOn(false)
@@ -659,7 +1038,60 @@ export default function FloorScene3D({
           xray={shellMode === "xray"}
           ceiling={showCeiling}
           drawingFloor={drawingFloor}
+          muted={muteBackground}
+          slab={!(building && levels.length > 1 && building.mode !== "only")}
         />
+        {building && levels.length > 1 && building.mode !== "only" && (
+          <>
+            <Slab scene={data} sink />
+            <BuildingLevels
+              levels={levels}
+              onGo={building.onGoLevel}
+              ghostWalls={showCables}
+              muted={muteBackground}
+            />
+            {roofLevel && roofLevel !== activeLevel && (
+              <Roofline placement={roofLevel} />
+            )}
+            {showCables && (
+              <RiserRuns
+                levels={levels}
+                selectedId={cableSel}
+                onSelect={(id) => {
+                  setSelection(null)
+                  setStructSel(null)
+                  setTraySel(null)
+                  setCableSel(id)
+                  onOpenCable?.(id)
+                }}
+              />
+            )}
+          </>
+        )}
+        {cameraViews.length > 0 && (
+          <CameraFanMeshes plan={plan} views={cameraViews} />
+        )}
+        {areas.map((a) => (
+          <AreaFloorMesh
+            key={a.id}
+            plan={plan}
+            area={a}
+            selected={structSel?.kind === "area" && structSel.id === a.id}
+            onPick={(ids, frame) => {
+              // Floor inside an area: what a click into nothing does, and
+              // the area (the innermost under the pointer) as the target.
+              const hit = smallestArea(areas, ids, plan)
+              setSelection(null)
+              setConnecting(null)
+              setCableSel(null)
+              setTraySel(null)
+              setFocusOn(false)
+              setStructSel(hit ? { kind: "area", id: hit.id } : null)
+              const box = hit && frame ? areaBox(plan, hit) : null
+              if (box) navRef.current?.frame(box.min, box.max)
+            }}
+          />
+        ))}
         {shownRacks.map((t) => (
           <RackMesh
             key={t.id}
@@ -695,7 +1127,7 @@ export default function FloorScene3D({
                       ...at,
                       deviceId: sel.deviceId,
                       marker: sel.portName,
-                      side: sel.portSide,
+                      side: sel.portSide === "model" ? undefined : sel.portSide,
                     })
                 : undefined
             }
@@ -781,6 +1213,7 @@ export default function FloorScene3D({
             selected={traySel === tr.id}
             onSelect={(id) => {
               setSelection(null)
+              setStructSel(null)
               setCableSel(null)
               setTraySel((cur) => (cur === id ? null : id))
             }}
@@ -800,18 +1233,24 @@ export default function FloorScene3D({
             />
           )
         })}
-        {(scene.data.raised_floors ?? []).map((a) => (
+        {raisedPads.map((rg) => (
           <RaisedFloorMesh
-            key={a.id}
+            key={rg.rows[0].id}
             plan={plan}
-            area={a}
+            region={rg}
             // X-ray lifts every raised floor - the plenum is half the point.
-            peek={floorPeek || shellMode === "xray" || liftedIds.has(a.id)}
-            onToggleLift={(id) =>
+            peek={
+              floorPeek ||
+              shellMode === "xray" ||
+              rg.rows.some((r) => liftedIds.has(r.id))
+            }
+            onToggleLift={(ids) =>
               setLiftedIds((prev) => {
                 const next = new Set(prev)
-                if (next.has(id)) next.delete(id)
-                else next.add(id)
+                const lifted = ids.some((id) => next.has(id))
+                for (const id of ids)
+                  if (lifted) next.delete(id)
+                  else next.add(id)
                 return next
               })
             }
@@ -824,6 +1263,16 @@ export default function FloorScene3D({
               plan={plan}
               wall={wl}
               mode={shellMode === "xray" ? "ghost" : "solid"}
+              selected={structSel?.kind === "wall" && structSel.id === wl.id}
+              onPick={(frame) => {
+                setSelection(null)
+                setCableSel(null)
+                setTraySel(null)
+                setFocusOn(false)
+                setStructSel({ kind: "wall", id: wl.id })
+                const box = frame ? wallBox(plan, wl) : null
+                if (box) navRef.current?.frame(box.min, box.max)
+              }}
             />
           ))}
         {/* Unlinked / non-rack tiles as ghost massing - a typed tile holds
@@ -834,12 +1283,70 @@ export default function FloorScene3D({
               !t.is_zone &&
               !t.rack &&
               !t.cabinet &&
+              !isPlacedDevice(t) &&
               !hiddenTileIds?.has(t.id) &&
               (!isolation || isolation.ids.has(t.id))
           )
           .map((t) => (
-            <TileGhostMesh key={`ghost-${t.id}`} plan={plan} tile={t} />
+            <TileGhostMesh
+              key={`ghost-${t.id}`}
+              plan={plan}
+              tile={t}
+              showName={!readableNames}
+            />
           ))}
+        {/* Devices placed on the floor: their rack-unit box or 3D model. */}
+        <FloorDevicesLayer
+          scene={data}
+          tiles={data.tiles.filter(
+            (t) =>
+              isPlacedDevice(t) &&
+              !hiddenTileIds?.has(t.id) &&
+              (!isolation || isolation.ids.has(t.id))
+          )}
+          checks={(id) => liveState?.tiles[id]?.check ?? null}
+          selection={selection}
+          focusTileId={focusOn && selection ? selection.tileId : null}
+          showNames={!readableNames}
+          onSelect={handleSelect}
+          onFlyTo={(target, position) => {
+            flyToRef.current = { target, position }
+            setViewSide("front")
+          }}
+          onTooDetailed={setTooDetailed}
+        />
+        <PlanTextDriver bus={textBus} />
+        <PlanTextLayer
+          bus={textBus}
+          items={activeTexts}
+          plan={plan}
+          readable={readableNames}
+        />
+        {building &&
+          levels.length > 1 &&
+          building.mode !== "only" &&
+          levels
+            .filter((lv) => lv.look === "solid")
+            .map((lv) => (
+              <LevelPlanText
+                key={`text-${lv.floor.id}`}
+                placement={lv}
+                bus={textBus}
+                show={textShow}
+                readable={readableNames}
+              />
+            ))}
+        {readableNames && (
+          <ReadableNames3D
+            textBus={textBus}
+            plan={plan}
+            tiles={namedTiles}
+            icons={readableIcons}
+            callouts={readableCallouts}
+            pinned={() => [selection?.tileId, hoverStore.get()]}
+            summaries={summaryStore}
+          />
+        )}
         {showCables && (
           <CablesLayer
             planId={planId}
@@ -850,8 +1357,10 @@ export default function FloorScene3D({
             selectedId={cableSel}
             onSelect={(id) => {
               setSelection(null)
+              setStructSel(null)
               setTraySel(null)
               setCableSel(id)
+              onOpenCable?.(id)
             }}
           />
         )}
@@ -864,6 +1373,16 @@ export default function FloorScene3D({
           />
         )}
       </Stage>
+      {readableNames && (
+        <SummaryMembers3D
+          store={summaryStore}
+          tiles={namedTiles}
+          nameOf={sceneTileName}
+          selected={selection?.tileId}
+          onPick={goToTile}
+          onZoom={frameTiles}
+        />
+      )}
       {selTile && selection?.kind === "rack" && (
         <RackHud
           tile={selTile}
@@ -940,7 +1459,7 @@ export default function FloorScene3D({
             }
           />
         )}
-      {selCabinetDevice && selection?.deviceId && (
+      {selCabinetDevice && selection?.deviceId && !onOpenDevice && (
         <CabinetDeviceHud
           cabinet={selCabinetDevice}
           deviceId={selection.deviceId}
@@ -948,14 +1467,43 @@ export default function FloorScene3D({
           focus={{ on: focusOn, onToggle: () => setFocusOn((v) => !v) }}
         />
       )}
-      {selTile && selDevice && selection?.kind === "device" && (
+      {selFloorPort?.device && selection?.kind === "port" && (
+        <PortHud
+          planId={planId}
+          device={selFloorPort.device}
+          position={selFloorPort.label || "Floor"}
+          selection={selection}
+          onConnect={(path) => void startConnect(selection, path)}
+        />
+      )}
+      {selFloor?.device && !onOpenDevice && (
         <DeviceHud
-          tile={selTile}
-          dev={selDevice}
+          tile={selFloor}
+          dev={selFloor.device}
           focused={focusOn}
           onToggleFocus={() => setFocusOn((v) => !v)}
         />
       )}
+      {tooDetailed.length > 0 && (
+        <div className="pointer-events-none absolute right-3 bottom-3 max-w-72 rounded-lg border border-border bg-popover/95 px-3 py-2 text-[12px] text-popover-foreground shadow-lg backdrop-blur">
+          <Badge variant="warning">Model too detailed</Badge>
+          <div className="mt-1 text-muted-foreground">
+            {tooDetailed.slice(0, 3).join(", ")}
+            {tooDetailed.length > 3 ? ` +${tooDetailed.length - 3}` : ""}
+          </div>
+        </div>
+      )}
+      {selTile &&
+        selDevice &&
+        selection?.kind === "device" &&
+        !onOpenDevice && (
+          <DeviceHud
+            tile={selTile}
+            dev={selDevice}
+            focused={focusOn}
+            onToggleFocus={() => setFocusOn((v) => !v)}
+          />
+        )}
       {/* Isolation pill - hidden racks must read as "isolated", never as
           "my racks vanished". */}
       {isolation && (
@@ -990,7 +1538,9 @@ export default function FloorScene3D({
           }
         />
       )}
-      {cableSel && <CableHud planId={planId} cableId={cableSel} />}
+      {cableSel && !onOpenCable && (
+        <CableHud planId={planId} cableId={cableSel} />
+      )}
       <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
       {traySel && (
         <TrayHud
@@ -1149,13 +1699,24 @@ export default function FloorScene3D({
           devices actually draw - so it's absent until a photo panel with real
           ports is in view, and then explains only those colours - in the maps'
           legend frame. The overlay toggles live in the route's View popover. */}
-      {!legendIsEmpty(legend) && (
-        <div className="absolute top-3 right-3">
+      <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
+        <BarIconButton
+          label="Fit all"
+          shortcut="0"
+          tipSide="left"
+          className="bg-popover/95"
+          onClick={() => {
+            navRef.current?.fitAll()
+          }}
+        >
+          <Scan />
+        </BarIconButton>
+        {!legendIsEmpty(legend) && (
           <LegendFrame storageKey="floorplan:3d-legend" className="w-fit">
             <FaceplateLegend observed content={legend} />
           </LegendFrame>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
@@ -1360,4 +1921,15 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
       )}
     </div>
   )
+}
+
+/** What the cameras' fans look like, for the frame stamp: a moved camera
+ * or wall changes it. */
+function cameraViewsStamp(views: readonly CameraView[]): string {
+  return views
+    .map((v) => {
+      const p = v.polygon[Math.floor(v.polygon.length / 2)] ?? [0, 0]
+      return `${v.id}:${v.polygon.length}:${v.color}:${p[0].toFixed(3)},${p[1].toFixed(3)}`
+    })
+    .join(";")
 }

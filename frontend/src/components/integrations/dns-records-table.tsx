@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
+import { Pencil, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { ApiError, api, type DnsRecord, type Paginated } from "@/lib/api"
@@ -11,7 +11,7 @@ import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { FormText } from "@/components/forms"
@@ -123,6 +123,32 @@ export function dnsRecordColumns(showZone: boolean): ColumnDef<DnsRecord>[] {
   return cols
 }
 
+/** Adds the listed records to IPAM in one call - the ones already in IPAM,
+ * or in another tenant, are left out server-side. Records no prefix holds
+ * are skipped and counted. */
+export function useDnsBulkImport(onDone?: () => void) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      api<{ created: number; skipped: number }>(
+        "/api/dns-records/import_unmatched/",
+        { method: "POST", body: JSON.stringify({ ids }) }
+      ),
+    onSuccess: ({ created, skipped }) => {
+      const added = created === 1 ? "1 record" : `${created} records`
+      if (skipped)
+        toast.warning(
+          `Added ${added} to IPAM, ${skipped} skipped: no prefix holds them`
+        )
+      else toast.success(`Added ${added} to IPAM`)
+      qc.invalidateQueries({ queryKey: ["dns-records"] })
+      qc.invalidateQueries({ queryKey: ["ip-addresses"] })
+      onDone?.()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+}
+
 /** A stored-DNS-records table. Either fetches from a query string
  * (zone/prefix/ip/…) or renders `rows` supplied by a faceted parent. */
 export function DnsRecordsTable({
@@ -134,6 +160,7 @@ export function DnsRecordsTable({
   tableId = "dns-records",
   editable = false,
   searchable = false,
+  bulkImport = false,
 }: {
   params?: string
   queryKey?: unknown[]
@@ -146,6 +173,8 @@ export function DnsRecordsTable({
   editable?: boolean
   /** A search box above the rows - for a zone's or prefix's long list. */
   searchable?: boolean
+  /** Tick records to add them to IPAM together. */
+  bulkImport?: boolean
 }) {
   const qc = useQueryClient()
   const { canDo } = useMe()
@@ -220,8 +249,14 @@ export function DnsRecordsTable({
   const anyToImport = rows.some((r) => !r.ip_address)
   const anyManaged = rows.some((r) => r.managed)
 
+  const [selected, setSelected] = useState<DnsRecord[]>([])
+  const toImport = selected.filter((r) => !r.ip_address)
+  const bulk = useDnsBulkImport(() => setSelected([]))
+  const selectable = bulkImport && canImport && anyToImport
+
   const columns = useMemo(() => {
     const cols = dnsRecordColumns(showZone)
+    if (selectable) cols.unshift(selectionColumn<DnsRecord>())
     // Only add an action column when some row can actually use it. Synced
     // records already in IPAM can do neither, and an always-empty column
     // renders as a narrow unexplained sliver at the right edge.
@@ -278,8 +313,16 @@ export function DnsRecordsTable({
       })
     return cols
   }, [
-    showZone, canImport, anyToImport, anyManaged, importOne,
-    editable, canChange, canDelete, del,
+    showZone,
+    canImport,
+    anyToImport,
+    anyManaged,
+    importOne,
+    editable,
+    canChange,
+    canDelete,
+    del,
+    selectable,
   ])
 
   if (query.isError) return <QueryError error={query.error} />
@@ -295,11 +338,43 @@ export function DnsRecordsTable({
         flexColumn="name"
         searchable={searchable}
         searchPlaceholder="Search records…"
+        {...(selectable && {
+          onSelectedRowsChange: setSelected,
+          selectedRows: selected,
+        })}
       />
     )
   return (
     <>
       {table}
+      {selectable && selected.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
+            <span className="pl-2 text-xs font-medium text-foreground">
+              {selected.length} selected
+            </span>
+            <span className="h-4 w-px bg-border" />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              disabled={toImport.length === 0 || bulk.isPending}
+              onClick={() => bulk.mutate(toImport.map((r) => r.id))}
+            >
+              {bulk.isPending ? "Adding…" : `Add ${toImport.length} to IPAM`}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={() => setSelected([])}
+              aria-label="Clear selection"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      )}
       <Dialog
         open={needPrefix !== null}
         onOpenChange={(o) => !o && setNeedPrefix(null)}

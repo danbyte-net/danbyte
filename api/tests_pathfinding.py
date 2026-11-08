@@ -2,7 +2,13 @@
 route/auto-route endpoints."""
 from __future__ import annotations
 
+import json
+import math
+from pathlib import Path
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
@@ -74,6 +80,36 @@ class RouterTests(APITestCase):
         self.assertEqual(r.tray_indexes, [0])
         self.assertAlmostEqual(r.run_cells, 10.0, places=2)
 
+    def test_both_ends_drop_onto_the_same_point(self):
+        # Two racks either side of one underfloor tray, straight across it.
+        tray = [(0.0, 5.0), (20.0, 5.0)]
+        r = route_through_trays((10, 3), (10, 7), [tray])
+        self.assertTrue(r.reachable)
+        self.assertEqual(r.tray_indexes, [0])
+        self.assertEqual(r.points, [(10, 3), (10.0, 5.0), (10.0, 5.0), (10, 7)])
+        self.assertAlmostEqual(r.run_cells, 4.0, places=6)
+
+    def test_both_ends_drop_onto_one_segment(self):
+        tray = [(0.0, 5.0), (20.0, 5.0)]
+        # Close enough that the drops would merge into one graph node.
+        r = route_through_trays((10, 3), (10.2, 7), [tray])
+        self.assertEqual(r.tray_indexes, [0])
+        self.assertEqual(r.points[1:3], [(10.0, 5.0), (10.2, 5.0)])
+        self.assertAlmostEqual(r.run_cells, 4.2, places=6)
+        r = route_through_trays((4, 3), (12, 7), [tray])
+        self.assertEqual(r.tray_indexes, [0])
+        self.assertAlmostEqual(r.run_cells, 12.0, places=6)
+
+    def test_both_ends_drop_onto_different_segments_of_one_tray(self):
+        tray = [(0.0, 5.0), (10.0, 5.0), (10.0, 15.0)]
+        r = route_through_trays((5, 3), (12, 12), [tray])
+        self.assertEqual(r.tray_indexes, [0])
+        self.assertEqual(r.points, [(5, 3), (5.0, 5.0), (10.0, 5.0), (10.0, 12.0), (12, 12)])
+        self.assertAlmostEqual(r.run_cells, 2 + 5 + 7 + 2, places=6)
+        # Travelling the other way walks the vertices backwards.
+        r = route_through_trays((12, 12), (5, 3), [tray])
+        self.assertEqual(r.points[1:4], [(10.0, 12.0), (10.0, 5.0), (5.0, 5.0)])
+
     def test_length_estimate(self):
         # 10 cells × 600mm = 6m run, 2m + 1m drops → 9m, +10% slack = 9.9.
         self.assertAlmostEqual(
@@ -85,6 +121,41 @@ class RouterTests(APITestCase):
         self.assertEqual(tray_elevation_mm("underfloor", None, 3000), -300)
         self.assertEqual(tray_elevation_mm("floor", None, 3000), 0)
         self.assertEqual(tray_elevation_mm("overhead", 2400, 3000), 2400)
+
+
+#: Cases cable-route.test.ts runs through the client copy too.
+SHARED_CASES = (
+    Path(settings.BASE_DIR) / "frontend/src/components/floorplan/cable-route.cases.json"
+)
+
+
+class SharedCaseTests(SimpleTestCase):
+    """The server router and the client's ``routeCable`` agree, case by case:
+    trays join where their runs cross only at one level (#floor-plan cables,
+    Phase 0); a vertex dropped onto another tray always joins."""
+
+    def test_cases(self):
+        cases = json.loads(SHARED_CASES.read_text())["cases"]
+        self.assertGreater(len(cases), 5)
+        for case in cases:
+            with self.subTest(case["name"]):
+                polys = [[tuple(p) for p in t["points"]] for t in case["trays"]]
+                elevations = (
+                    [t["elevation_mm"] for t in case["trays"]] if case["levels"] else None
+                )
+                r = route_through_trays(
+                    tuple(case["a"]), tuple(case["b"]), polys, elevations=elevations
+                )
+                self.assertEqual(r.reachable, case["reachable"])
+                self.assertEqual(r.tray_indexes, case["trays_used"])
+                self.assertAlmostEqual(r.run_cells, case["run"], places=4)
+                run = sum(math.dist(p, q) for p, q in zip(r.points, r.points[1:], strict=False))
+                self.assertAlmostEqual(run, case["run"], places=4)
+                if "points" in case:
+                    self.assertEqual(len(r.points), len(case["points"]))
+                    for got, want in zip(r.points, case["points"], strict=True):
+                        self.assertAlmostEqual(got[0], want[0], places=6)
+                        self.assertAlmostEqual(got[1], want[1], places=6)
 
 
 class RouteApiTests(APITestCase):
@@ -245,3 +316,46 @@ class RouteApiTests(APITestCase):
         self.assertFalse(resp.json()["reachable"])
         cable.refresh_from_db()
         self.assertEqual(cable.trays.count(), 0)
+
+    def _crossing_plan(self, under_level, under_elevation=None):
+        """The overhead run stops short of rack B; a second run crosses it
+        mid-segment and passes rack B."""
+        self.tray.points = [[0, 1], [6, 1]]
+        self.tray.save()
+        return FloorPlanTray.objects.create(
+            floor_plan=self.plan, name="X-2", level=under_level,
+            elevation_mm=under_elevation, points=[[4, -0.5], [4, 4.5], [11, 4.5]],
+        )
+
+    def _preview(self):
+        resp = self.client.post(
+            f"/api/floor-plans/{self.plan.id}/route/",
+            {"from": {"kind": "rack", "id": str(self.rack_a.id)},
+             "to": {"kind": "rack", "id": str(self.rack_b.id)}},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        return resp.json()
+
+    def test_crossing_at_one_level_joins(self):
+        other = self._crossing_plan("overhead")
+        body = self._preview()
+        self.assertTrue(body["reachable"])
+        self.assertEqual(body["tray_ids"], [str(self.tray.id), str(other.id)])
+
+    def test_overhead_crossing_underfloor_is_not_a_junction(self):
+        self._crossing_plan("underfloor")
+        self.assertFalse(self._preview()["reachable"])
+        cable = self._cable()
+        resp = self.client.post(
+            f"/api/cables/{cable.id}/auto-route/",
+            {"floor_plan": str(self.plan.id)}, format="json",
+        )
+        self.assertFalse(resp.json()["reachable"])
+
+    def test_elevation_decides_not_the_level_name(self):
+        # An "underfloor" run recorded at 2600 mm hangs with the overhead one.
+        other = self._crossing_plan("underfloor", 2600)
+        body = self._preview()
+        self.assertTrue(body["reachable"])
+        self.assertEqual(body["tray_ids"], [str(self.tray.id), str(other.id)])

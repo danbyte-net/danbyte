@@ -1,20 +1,28 @@
 import { useEffect, useMemo } from "react"
 import * as THREE from "three"
 
+import { useTheme } from "@/components/theme-provider"
+
+import { roomLook } from "./room-look"
 import { useMaxAnisotropy } from "./texture-quality"
+
+/** The room's plates' face: the system stack. */
+export const ROOM_FONT = "ui-monospace, ui-sans-serif, system-ui, sans-serif"
 
 /** Render text to a canvas texture (system font - no network fetch, so it's
  * airgap/CSP-safe, unlike drei's troika `<Text>`). Returns the texture plus
  * its pixel width/height so callers can size a plane to the text aspect. */
-function textTexture(
+export function textTexture(
   text: string,
   {
     color = "#e4e4e7",
     background = "rgba(24,24,27,0.9)",
+    /** A hairline round the plate, as the 2D plan's chips have. */
+    border = "",
     fontPx = 44,
     /** The face; the room's plates use the system stack, port labels use
      * the app's own so they match the 2D faceplate. */
-    fontFamily = "ui-monospace, ui-sans-serif, system-ui, sans-serif",
+    fontFamily = ROOM_FONT,
     align = "left" as CanvasTextAlign,
     pad = 12,
     anisotropy = 4,
@@ -22,13 +30,17 @@ function textTexture(
      * a steep angle, where an undersampled canvas is exactly what makes a rack
      * name plate mushy - draw it at 2x and let mipmaps take it down. */
     scale = 2,
+    /** Room left of the text (texture px before `scale`) for a glyph the
+     * caller draws there - the readable names' icon. */
+    lead = 0,
   } = {}
 ): { texture: THREE.CanvasTexture; w: number; h: number } {
   const font = `600 ${fontPx * scale}px ${fontFamily}`
   const canvas = document.createElement("canvas")
   const ctx = canvas.getContext("2d")!
   ctx.font = font
-  const w = Math.ceil(ctx.measureText(text).width) + pad * scale * 2
+  const w =
+    Math.ceil(ctx.measureText(text).width) + pad * scale * 2 + lead * scale
   const h = (fontPx + pad * 2) * scale
   canvas.width = w
   canvas.height = h
@@ -37,12 +49,20 @@ function textTexture(
   ctx.beginPath()
   ctx.roundRect(0, 0, w, h, 8 * scale)
   ctx.fill()
+  if (border) {
+    const lw = 2 * scale
+    ctx.strokeStyle = border
+    ctx.lineWidth = lw
+    ctx.beginPath()
+    ctx.roundRect(lw / 2, lw / 2, w - lw, h - lw, 8 * scale - lw / 2)
+    ctx.stroke()
+  }
   ctx.fillStyle = color
   ctx.textBaseline = "middle"
   ctx.textAlign = align
   ctx.fillText(
     text,
-    align === "center" ? w / 2 : pad * scale,
+    align === "center" ? (w + lead * scale) / 2 : (pad + lead) * scale,
     h / 2 + 2 * scale
   )
   const texture = new THREE.CanvasTexture(canvas)
@@ -131,8 +151,8 @@ export function TextSprite({
   text,
   position,
   heightM = 0.22,
-  color = "#e4e4e7",
-  background = "rgba(24,24,27,0.85)",
+  color: colorProp,
+  background: backgroundProp,
 }: {
   text: string
   position: [number, number, number]
@@ -144,10 +164,15 @@ export function TextSprite({
   // Same canvas painter as FaceLabel - one place that decides how crisp text
   // in the room is.
   const anisotropy = useMaxAnisotropy()
+  // The room's plate in this theme unless the caller picks its own.
+  const look = roomLook(useTheme().theme === "dark")
+  const color = colorProp ?? look.plateText
+  const background = backgroundProp ?? look.plate
+  const border = backgroundProp ? "" : look.plateBorder
   const { texture, aspect } = useMemo(() => {
-    const t = textTexture(text, { color, background, anisotropy })
+    const t = textTexture(text, { color, background, border, anisotropy })
     return { texture: t.texture, aspect: t.w / t.h }
-  }, [text, color, background, anisotropy])
+  }, [text, color, background, border, anisotropy])
   useEffect(() => () => texture.dispose(), [texture])
 
   return (

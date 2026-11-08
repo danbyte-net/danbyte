@@ -300,10 +300,26 @@ class GroupedCostTests(_GroupedFabric):
             self.assertLessEqual(after, 8, kw)
 
     def test_never_builds_the_device_graph(self):
+        import sys
         from unittest import mock
 
+        real = tv._cables_qs
+
+        def narrowed_only(tenant):
+            # The circuit lines walk out from the circuits' own cables
+            # (``_links_around``); nothing else loads cable rows here.
+            frame, callers = sys._getframe(1), set()
+            for _ in range(6):  # through the mock's own frames
+                if frame is None:
+                    break
+                callers.add(frame.f_code.co_name)
+                frame = frame.f_back
+            if "_links_around" not in callers:
+                raise AssertionError("grouped map loaded the cables")
+            return real(tenant)
+
         with mock.patch.object(tv, "_build_graph", side_effect=AssertionError), \
-                mock.patch.object(tv, "_cables_qs", side_effect=AssertionError):
+                mock.patch.object(tv, "_cables_qs", side_effect=narrowed_only):
             r = self.client.get("/api/topology/?group_by=site")
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()["nodes"])

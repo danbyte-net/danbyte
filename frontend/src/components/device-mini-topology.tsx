@@ -117,7 +117,7 @@ export function DeviceMiniTopology({
             ]}
           />
           <Button size="sm" variant="ghost" asChild className="h-7">
-            <Link to="/topology" search={{ device: deviceId }}>
+            <Link to="/topology/map" search={{ device: deviceId }}>
               <Share2 className="h-3.5 w-3.5" /> Open in Topology
             </Link>
           </Button>

@@ -145,7 +145,7 @@ class EffectivePlatformTests(BaseCase):
         self.assertIsNone(data["platform"])
         self.assertEqual(
             data["effective_platform"],
-            {"id": str(self.generic.id), "name": self.generic.name},
+            {"id": str(self.generic.id), "name": self.generic.name, "target_version": ""},
         )
 
     def test_own_platform_wins(self):
@@ -157,7 +157,7 @@ class EffectivePlatformTests(BaseCase):
         self.assertEqual(data["platform"]["id"], str(self.specific.id))
         self.assertEqual(
             data["effective_platform"],
-            {"id": str(self.specific.id), "name": self.specific.name},
+            {"id": str(self.specific.id), "name": self.specific.name, "target_version": ""},
         )
 
     def test_no_platform_anywhere_is_null(self):
@@ -175,7 +175,7 @@ class EffectivePlatformTests(BaseCase):
         data = self._device_payload(d)
         self.assertEqual(
             data["effective_platform"],
-            {"id": str(self.specific.id), "name": self.specific.name},
+            {"id": str(self.specific.id), "name": self.specific.name, "target_version": ""},
         )
 
 

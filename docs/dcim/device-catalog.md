@@ -50,19 +50,49 @@ Fields:
   of the type over another or past the top of its rack is refused, naming the
   devices.
 - **Airflow**, **weight** - hardware facts (airflow also exists per device as
-  an override)
+  an override). The airflow directions - front to rear, rear to front, left
+  to right, right to left, passive, mixed - are the `airflow` list of
+  `GET /api/dcim/choices/`, the list the forms offer and the library import
+  accepts; the type's page shows it in the **Hardware** card.
+- **Cooling** - how the hardware is cooled: air, liquid, hybrid or immersion
+  (`cooling_method`; blank reads as air). A device of the type takes it unless
+  it sets its own, and a rack's cooling capability is checked against it -
+  see [Cooling](../features/cooling.md).
+- **Heat output (W)** - the heat the hardware gives off, where that is not its
+  allocated draw (`heat_output_w`): a rack counts it in place of the device's
+  draw when it adds up its heat. Blank counts the draw. Cooling and heat
+  output sit in the form's **Chassis** card and the page's **Hardware** card.
 - **Size (mm)** - the body's width, height and depth, in tenths of a
-  millimetre. Drawings scale the hardware by it.
+  millimetre. Drawings scale the hardware by it, and it sizes the type's
+  devices on floor plans: a free plan places a device at its width × depth
+  ([True size](../features/floor-plans.md#true-size)), and the 3D room
+  stands one with no model as a box of that size. A device can carry its
+  own size over the type's ([Size](devices.md#size)).
 - **DIN rail** - the rail profiles the type mounts on (*TS 35*, *TS 15*,
   *G 32*) and the rail's position: its centreline below the body's top edge,
   the middle when left empty. A type with a profile needs its width and
   height. See [mounting devices](cabinets.md#mounting-devices).
+- **Icon** - a Lucide icon (`icon`, e.g. `router`, `network`, `shield`)
+  that devices of the type draw with on floor plans when zoomed out. It wins
+  over the role's icon; a device can set its own over it. Blank uses the
+  role's. The type's page shows it in the **Hardware** card. See
+  [Icons when zoomed out](../features/floor-plans.md#icon-tiles).
 - **Description**, **tags**, **custom fields**
 
 Device types accept [custom fields](../features/tags-and-custom-fields.md)
 (target **Device types**) - handy for catalog-level attributes such as a
 warranty window or an end-of-life date that belongs to the model, not the
 individual device.
+
+### Picking an icon {#icon-picker}
+
+The role, device type and device forms share one **icon picker**: a search
+box over every Lucide icon, with a **Network** group at the top - router,
+switch, firewall, server, access point, camera, printer, phone, UPS and
+power, PDU, storage, patch panel, load balancer, VPN, cloud and monitor.
+The group's icons are found by what they stand for too: type `firewall` or
+`ups`. **Clear** sets it back to blank. Nothing is pre-filled; every icon is
+optional.
 
 ### Importing from the NetBox devicetype-library
 
@@ -89,9 +119,12 @@ console/console-server ports, power ports/outlets, front/rear ports,
 **module bays**, **device bays** (+ subdevice role, exclude-from-utilisation),
 **inventory items**, plus **full-depth, airflow, and weight** - comes across, and
 the library's **elevation images** are downloaded automatically when the file
-declares them. **Module-type files** (`module-types/…`) and **rack-type
+declares them. The library has no cooling key, so a device type arrives
+without a cooling method or heat output. **Module-type files** (`module-types/…`) and **rack-type
 files** (`rack-types/…`) import through the same dialog - auto-detected, so a
-mixed paste works. The Module types and Rack types pages open the same
+mixed paste works; the keys a rack-type file may carry, Danbyte's own
+`max_power_w`, `cooling_capability` and `cooling_capacity_w` among them, are
+listed under [Rack types](racks.md#rack-types). The Module types and Rack types pages open the same
 dialog from the same **Import from library** button, right after
 **Import / Export** on all three pages (CSV round-trips live in that menu).
 **Every construct in the library schema now maps** - anything unrecognised in
@@ -248,6 +281,117 @@ there is the offline route: restore the media folder from a backup, or
 re-upload images per type, or import [bundles](#bundles) exported with
 *Include photos*, which carry the files themselves.
 
+### 3D models {#3d-models}
+
+A device type can carry a **3D model** of the hardware. The
+[3D room view](../features/floor-plans.md#the-3d-room-view) draws every
+device of the type that stands on the floor with it, fitted to the
+hardware's size. A [device](devices.md#3d-model) can have its own model,
+which wins over its type's.
+
+A type with a model shows it on its Overview in a **3D model** viewer at
+the top of the right-hand column. The model stands the way the room stands
+it, front toward you. Drag to orbit and scroll to zoom; the toolbar has
+**Front**, **Rear** and **Top** views, **Fit**, **Ports** (the
+[mapped ports](#model-ports), in one neutral colour - a type has no port
+state; hovering one names it) and **Fullscreen**. The type's rack-face
+photos stay in their own section below the cards.
+
+The **3D model** card manages it - **Upload** / **Replace** and **Remove**,
+then:
+
+| Setting | What it does |
+|---|---|
+| **Size** | **Fit to size** (the default) scales the model to the device's width, height and depth where they are recorded - its own ([Size](devices.md#size)), else the type's - else to the footprint of the tile it stands on, so a model fills its tile. Give the type a width, height or depth to size it exactly. Scaling is uniform, by the tightest axis, so nothing is squashed. **Own size** draws it at its own size in metres. |
+| **Up axis** | **Y up** (glTF's convention) or **Z up** (most CAD exports). |
+| **Front** | The model axis its front faces: +Z (glTF's convention), −Z, +X or −X. The room turns that face to the tile's front edge. |
+
+Uploading, replacing and removing need **change** on the type; anyone who can
+view the type sees the card read-only. Each change lands in the type's
+change log.
+
+#### What can be uploaded
+
+The upload dialog takes **.glb**, **.gltf** (self-contained), **.step** /
+**.stp**, **.iges** / **.igs**, **.stl** and **.obj**. Everything is
+converted in the browser and stored as one **binary glTF (.glb)** - the only
+format the server keeps:
+
+- STEP and IGES go through OpenCascade (compiled to WebAssembly, shipped
+  with Danbyte and loaded only when a CAD file is picked - nothing is fetched
+  from the internet, so it works airgapped). It runs in the background, so a
+  large assembly doesn't freeze the page. Part and face colours in the STEP
+  file are kept; parts without one are a neutral grey.
+- STL and OBJ go through three.js's own readers, in a neutral grey (an OBJ's
+  `.mtl` materials aren't carried).
+- A `.gltf` that refers to separate `.bin` or texture files is refused -
+  upload the `.glb` instead.
+- Native CAD files (`.sldprt`, `.ipt`, `.f3d`, …) can't be read: export them
+  as STEP or STL first.
+
+Before saving, the dialog shows the converted model with its **triangle
+count**, **stored size** and **dimensions**, and lets you set:
+
+- **Units** - mm, cm, m or in. STEP and IGES default to mm; STL and OBJ carry
+  no unit, so a part more than 10 units across is taken as mm, a smaller one
+  as metres. If the dimensions look a thousand times off, change this.
+- **Up axis** - STEP, IGES and STL default to Z up, glTF and OBJ to Y up.
+
+The saved file is always metres and Y up, with parts merged per material so a
+400-part assembly draws as a handful of meshes. A model over **300,000
+triangles** can't be saved as it is; **Simplify** reduces it to the cap (with
+meshoptimizer's simplifier, also shipped with Danbyte).
+
+#### Using models from GrabCAD
+
+GrabCAD models are mostly native CAD files plus STEP, IGES or STL exports.
+
+1. On the model's GrabCAD page, download the **STEP** (`.step` / `.stp`)
+   file if there is one, else the **STL**. A native file (SolidWorks,
+   Inventor, Fusion) won't load - Danbyte says *Export it from GrabCAD as STEP
+   or STL*.
+2. Unzip it if it came as a `.zip`, and upload the `.step` or `.stl` on the
+   type's **3D model** card.
+3. Check the dimensions under the preview. If they are wrong by a factor of
+   10, 25.4 or 1000, pick the right **Units**; if the model lies on its side,
+   switch the **Up axis**.
+4. Save. If it faces the wrong way in the room, set **Front** on the card.
+
+#### Format rules
+
+The server checks every upload, whichever way it arrives:
+
+- the file starts with the binary glTF header (`glTF`), says **version 2**,
+  and its declared length equals its size;
+- it is at most **25 MB** - set by
+  [`DEVICE_MODEL_MAX_BYTES`](../reference/settings.md#device-3d-models-device_model_max_bytes);
+- every buffer and image is inside the file (the binary chunk, a buffer view,
+  or a `data:` URI). A model can't refer to anything outside itself, so it
+  can't make a viewer's browser fetch from elsewhere;
+- any extension it **requires** is one the room reads without a decoder from
+  elsewhere: the `KHR_materials_*` family, `KHR_texture_transform`,
+  `KHR_mesh_quantization`, `KHR_lights_punctual`, `EXT_meshopt_compression`,
+  `EXT_mesh_gpu_instancing`, `EXT_texture_webp` and `EXT_texture_avif`.
+  Draco (`KHR_draco_mesh_compression`) and Basis textures are refused.
+
+The file is stored under the media folder but never served from `/media/`:
+only through the type's (or device's) `model/` endpoint, to a signed-in user
+who may view it, as a download (`model/gltf-binary`, `nosniff`, attachment).
+
+#### API
+
+| Call | Does |
+|---|---|
+| `GET /api/device-types/{id}/model/` | Downloads the model (view on the type). |
+| `POST /api/device-types/{id}/model/` | Sets or replaces it: multipart `file`, optional `fit` (`auto` / `native`), `up` (`y` / `z`), `front` (`+z` / `-z` / `+x` / `-x`). Change on the type. Answers the type. |
+| `DELETE /api/device-types/{id}/model/` | Removes it (change on the type). |
+
+The type's `model_3d` is the model's download URL (never a file path), or
+null; `model_3d_fit`, `model_3d_up` and `model_3d_front` are plain fields you
+can `PATCH`. The spreadsheet export carries the three settings; the file
+itself is never imported or exported. Library bundles and the NetBox
+library import don't carry models.
+
 ### Jumping to the devices
 
 The **Devices** count on a device type's detail page is a link: it opens the
@@ -266,7 +410,11 @@ it is knowledge about the **model** - identical for everyone who owns that box.
 A **bundle** is that work in one file. On a device type, **Export bundle**
 downloads everything that makes the model work:
 
-- every component template (interfaces, console, power, panel ports, bays)
+- the type's own fields - height, width, depth, airflow, cooling method and
+  heat output, weight, DIN rails
+- every component template (interfaces, console, power, cooling, panel ports,
+  bays) - cooling under the keys `cooling_intakes` and `cooling_outflows`, an
+  outflow naming its `intake`
 - the faceplate layout and the photo-port markers
 - the front and rear photos, when you tick **Include photos**
 - inventory-item templates (the disk bays a chassis ships with)
@@ -345,7 +493,8 @@ hand-typing ports per device.
 
 Manage them on the device type's **Components** tab, which splits the component
 kinds - Interfaces, Console ports, Console server ports, Power ports, Power
-outlets, Rear ports, Front ports, **Aux ports**, and **Services** - into
+outlets, **Cooling intakes**, **Cooling outflows**, Rear ports, Front ports,
+**Aux ports**, and **Services** - into
 sub-tabs with counts. The open sub-tab is part of the URL
 (`?tab=components&sub=power-port`), so you can link someone straight at one
 kind, and reload or back/forward without losing your place.
@@ -386,6 +535,10 @@ Notes:
 - Power **outlet** templates can reference the power **inlet** template that
   feeds them; front-port templates map onto rear-port template positions - the
   same relationships the concrete components carry.
+- **Cooling intake** and **cooling outflow** templates carry a connector,
+  diameter and max flow; an outflow template can name the intake template
+  that feeds it, as a CDU's do. They have no faceplate marker. See
+  [Cooling](../features/cooling.md#cooling-intakes-and-outflows).
 - **Service** templates (name · ports per protocol) stamp a **Service** onto each
   new device; tick **Monitor** and those services are watched from the moment
   the device has an IP - fleet-wide service monitoring configured in one place.
@@ -635,6 +788,78 @@ which stays port-only: there a bay is a **group placeholder** whose installed
 module's own faceplate gets composed in, while the photo builder marks the
 slot's real position on the artwork.
 
+### Mapping ports on a 3D model {#model-ports}
+
+A type with a [3D model](#3d-models) can carry its ports on the model the
+way [photo ports](#photo-ports) carry them on a photo. The
+[3D room](../features/floor-plans.md#port-markers-on-3d-models) then draws
+each mapped port on the model, coloured by its state, and cables end at the
+port instead of the middle of the box.
+
+**Map ports** on the type's **3D model** card opens the editor: the model
+large on the left, the type's interface, front/rear port, console and power
+templates on the right, grouped by kind, with a search box and a mapped
+count per kind.
+
+- **Place a port.** Pick it in the list and click the model. The marker
+  lands where you clicked, facing out of the surface there, and the next
+  unmapped port is picked, so a run of ports is one click each. **Next
+  unmapped** (or **Enter**) skips ahead.
+- **Move or clear.** Drag a marker over the surface to move it. Pick a port
+  and press **Backspace** (or **Clear**) to take its marker off.
+- **Row.** Switch to **Row**, place the row's first port, then its last
+  (Gi1/0/1, then Gi1/0/24): the ports between fill in evenly, each dropped
+  onto the surface. **2 rows** lays the common switch layout - odd ports on
+  the first port's row, even ports on the last's, one column per pair; **1
+  row** spaces them on the line between the two.
+- **Copy from photo ports.** Starts from the type's photo ports: the front
+  photo's markers project onto the model's front, the rear photo's onto its
+  back, each dropped onto the surface, ready to adjust. Ports already mapped
+  stay where they are.
+- **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z) work inside the dialog. Nothing is
+  written until **Save**, which sends the whole mapping in one request. If
+  someone saved a mapping since you opened the editor, Save is refused and
+  says so rather than overwrite it.
+
+A port is stored at its spot in the model's upright bounding box - after the
+**Up axis** and **Front** that stand it in the room - as fractions 0..1 of
+each side, with the outward direction of the surface there. That survives
+the room fitting the model to any size. Changing the model's **Up axis** or
+**Front** turns its mapping with it, so each port stays on the same spot.
+
+**Replacing the model** clears its mapping, since the ports were placed on
+the old shape. When the new model has the old one's proportions (within 5%
+on each side), the upload dialog offers **Keep port mappings**, ticked.
+Removing the model clears the mapping too.
+
+Markers name templates by kind and name, as photo ports do, so a device's
+ports match by name, case and spacing tolerant, with `{position}` rendered
+for a stack member. A device that draws its type's model uses its type's
+mapping; **Map ports** on the device's own card saves a mapping for that
+device only (starting from a copy of the type's, listing the device's real
+components), and **Use type's ports** goes back to the type's. A device with
+its own model has its own mapping or none.
+
+Mapping needs **change** on the type (or the device); anyone who can view it
+sees the mapped count. Each save lands in the change log. The mapping is the
+`model_ports` field - `{bounds, ports: [{kind, name, p, n}]}`, `p` the 0..1
+spot, `n` the unit normal, `bounds` the upright size it was made on - and the
+spreadsheet export carries it as a JSON column, checked on import like any
+other field.
+
+| Call | Does |
+|---|---|
+| `GET /api/device-types/{id}/model-ports/` | The mapping and its `version` (view on the type). |
+| `PUT /api/device-types/{id}/model-ports/` | `{version, model_ports}` replaces the whole mapping; `null` clears it. A stale `version` answers 409. Change on the type. |
+| `GET /api/devices/{id}/model-ports/` | The device's own mapping, its `version`, and the `effective` one it draws with its `source` (`own` / `type`). |
+| `PUT /api/devices/{id}/model-ports/` | Saves the device's own mapping; `null` inherits the type's again. |
+
+A model upload takes `keep_ports=1` with `ports_bounds` (the new model's
+upright size, JSON `[w, h, d]`) to keep the mapping; the server keeps it only
+when the proportions match. Each device's `face-ports/` answer lists the
+mapped ports under `model`, resolved to the device's real components like
+photo markers, with their `p` and `n` and an interface's untagged VLAN.
+
 ## Device bays (chassis nesting)
 
 A **parent** chassis (blade enclosure, FEX parent) declares **device bays**
@@ -716,8 +941,8 @@ and port tables, so one habit covers every component list.
 ## Module types
 
 A **module type** is a pluggable hardware model - a line card, uplink module,
-or PSU sled (e.g. a Cisco `C9300-NM-8X`). It lives under **DCIM → Module
-types** and carries its own **interface templates**, whose names may use the
+or PSU sled (e.g. a Cisco `C9300-NM-8X`). It lives under **DCIM → Catalog →
+Module types** and carries its own **interface templates**, whose names may use the
 **`{module}` token**: when a module is installed into a device's bay, the
 token resolves to the bay's *position* (`TenGigabitEthernet1/{module}/1` in
 bay position 1 → `…1/1/1`), and the [`{position}` stack
@@ -725,7 +950,9 @@ token](virtual-chassis.md#position-aware-interface-names) still applies after.
 The `[1-24]` range shorthand works here too: `A[1-24]` or
 `TenGigabitEthernet1/{module}/[1-8]` adds one template per port in a single
 add, from the dialog or the API. A range written with curly braces
-(`{1-24}`) is refused rather than stored literally.
+(`{1-24}`) is refused rather than stored literally. A module type records its
+own **cooling** method (`cooling_method`) too; it is a fact about the module
+and does not change its host device's.
 
 The workflow:
 
@@ -824,7 +1051,11 @@ background.
 ## Device roles
 
 A **role** classifies what a device *does* - access switch, distribution, core,
-firewall, load balancer. Roles carry a color so devices group visually in lists.
+firewall, load balancer. Roles carry a color so devices group visually in lists,
+and an optional **icon** shown in the role's badge - in the device and role
+lists, on the role's page and on maps. On a floor plan the role's icon is the
+fallback for a device whose type and own record name none (see
+[Icons when zoomed out](../features/floor-plans.md#icon-tiles)).
 Roles also accept [custom fields](../features/tags-and-custom-fields.md) (target
 **Device roles**) - for example a service tier or an escalation team.
 
@@ -834,10 +1065,50 @@ A **platform** is the operating system / NOS a device or virtual machine
 runs - IOS-XE, JunOS, PAN-OS, Cumulus. Platforms are handy for filtering and
 for configuration rendering.
 
+A platform also carries a **Target version** and a **Version pattern** - the
+regular expression that reads the running version out of SNMP `sysDescr`
+for devices and VMs on it; see [Software
+target](../features/lifecycle.md#software-target) and [Version
+pattern](../features/lifecycle.md#version-pattern). Its **License** is
+the OS's SPDX licence expression (`license` in the API and import), reported
+by the [SBOM](../features/sbom.md). Its **Package URL** and **CPE**
+(`purl_template`, `cpe_template`) are templates for the OS component's
+`purl` and `cpe`, filled in with the host's software version; see [Package
+URLs and CPEs](../features/sbom.md#package-urls-and-cpes).
+
 A platform's page has a **Devices** tab and a **Virtual machines** tab, each
 listing what runs it; the API gives both counts (`device_count`, `vm_count`).
 Like every catalog count, they count only the devices and virtual machines
 you may view, so a site-limited user's tab number matches the table under it.
+
+### Editing and deleting platforms in bulk {#platforms-bulk}
+
+Tick rows in the **Platforms** list and a bar floats up with **Edit** and
+**Delete** (each shown only with the *change* or *delete* permission on
+platforms).
+
+- **Edit** sets the **Group**, **Manufacturer**, **Config template**,
+  **Target version** and **Description** of every ticked platform, and adds
+  or removes tags. Only the fields you tick are written; each platform gets
+  its own [change log](../features/change-log.md) entry. The version pattern
+  stays a one-at-a-time edit.
+- **Delete** asks first. The dialog says how many platforms go, what goes
+  with them (an end-of-life mapping, a monitoring policy scoped to the
+  platform), and which are **kept** because something still uses them: a
+  platform any device or virtual machine runs (counted across the whole
+  tenant, not only what you can see), or one a
+  [device profile](../features/device-profiles.md) names. Only the free
+  platforms are deleted, the same rule a single delete follows.
+
+The endpoints are `POST /api/platforms/bulk-delete/` (`{"ids": [...]}`, add
+`"dry_run": true` for the preview; needs *delete*), `POST
+/api/platforms/bulk-update/` (`{"ids": [...], "fields": {...}}` with
+`group_id`, `manufacturer_id`, `config_template_id`, `target_version`,
+`description`, `add_tag_ids`, `remove_tag_ids`; needs *change*) and `GET
+/api/platforms/bulk-edit-fields/` - see [Bulk
+calls](../reference/api.md#bulk-calls). Ids from another tenant, or outside your
+permissions, are left out; a group, manufacturer or template from another
+tenant is a `400`.
 
 ### Platform groups and the effective platform
 

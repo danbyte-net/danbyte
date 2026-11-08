@@ -14,10 +14,12 @@ import {
 import { toast } from "sonner"
 
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
+import { ObjectReportButton } from "@/components/object-report"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 
-import { api, type IPAddress, type IPRange, type Paginated } from "@/lib/api"
+import { api, type IPAddress, type IPRange } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { parseCidr, bigIntToIp, ipToBigInt } from "@/lib/prefix-tree"
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { VlanBadge } from "@/components/cells/vlan-badge"
@@ -47,6 +49,12 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe, objCan } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
+import {
+  PrtgSensorsSection,
+  usePrtgSensors,
+} from "@/components/prtg/sensors-tab"
+import { ObjectPinnedSensors } from "@/components/prtg/sensor-pins"
 
 export const Route = createFileRoute("/ips/$id")({ component: IPDetail })
 
@@ -71,8 +79,21 @@ function IPDetail() {
 function IPDetailBody({ ip }: { ip: IPAddress }) {
   const [deleteOpen, setDeleteOpen] = useState<IPAddress | null>(null)
   const [tab, setTab] = useUrlTab<
-    "overview" | "monitoring" | "certificates" | "journal" | "history"
+    | "overview"
+    | "monitoring"
+    | "sensors"
+    | "certificates"
+    | "flows"
+    | "journal"
+    | "history"
   >("overview")
+  // PRTG sensors that reach their device on this address; the tab shows once
+  // there is one (none while the integration is off).
+  const prtgSensors = usePrtgSensors({ ip_address: ip.id })
+  const sensorCount = prtgSensors.data?.length ?? 0
+  // The sensor whose panel is open on the Sensors tab; a pinned tile on the
+  // Overview opens it there.
+  const [sensor, setSensor] = useState<string | null>(null)
   const qc = useQueryClient()
   const { canDo, humanIds } = useMe()
 
@@ -103,8 +124,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   // client-side over the prefix's few ranges, same as the prefix IPs pane.
   const rangesQuery = useQuery({
     queryKey: ["prefix-ip-ranges", ip.prefix?.id],
-    queryFn: () =>
-      api<Paginated<IPRange>>(`/api/ip-ranges/?prefix=${ip.prefix!.id}`),
+    queryFn: () => apiAll<IPRange>(`/api/ip-ranges/?prefix=${ip.prefix!.id}`),
     enabled: !!ip.prefix,
     staleTime: 60_000,
   })
@@ -457,6 +477,11 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           <Button variant="outline" size="sm" onClick={copyAllAsTable}>
             <TableIcon className="h-3.5 w-3.5" /> Copy as table
           </Button>
+          <ObjectReportButton
+            kind="ipaddress"
+            id={ip.id}
+            name={ip.ip_address}
+          />
           {canDo("ipaddress", "add") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/ips/new" search={{ clone: ip.id }}>
@@ -523,11 +548,17 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "monitoring", label: "Monitoring" },
+        ...(sensorCount > 0
+          ? [{ value: "sensors", label: "Sensors", count: sensorCount }]
+          : []),
         {
           value: "certificates",
           label: "Certificates",
           count: ip.certificate_count,
         },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -540,6 +571,16 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
             ipId={ip.id}
             lastSeen={ip.last_seen}
             onOpenMonitoring={() => setTab("monitoring")}
+          />
+        </div>
+
+        <div className="mb-6 empty:hidden">
+          <ObjectPinnedSensors
+            parent={{ ip_address: ip.id }}
+            onOpen={(id) => {
+              setSensor(id)
+              setTab("sensors")
+            }}
           />
         </div>
 
@@ -598,8 +639,20 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         />
       </DetailTab>
 
+      <DetailTab value="sensors">
+        <PrtgSensorsSection
+          scope={{ ip_address: ip.id }}
+          selected={sensor ?? undefined}
+          onSelect={setSensor}
+        />
+      </DetailTab>
+
       <DetailTab value="certificates">
         <CertificatesPanel objectType="api.ipaddress" objectId={ip.id} />
+      </DetailTab>
+
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "ip", id: ip.id }} />
       </DetailTab>
 
       <DetailTab value="journal">

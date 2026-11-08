@@ -48,6 +48,8 @@ DCIM_CHOICE_KEYS: dict[tuple[str, str], str] = {
     ("api.interface", "lag_protocol"): "lag_protocols",
     ("api.interface", "lacp_mode"): "lacp_modes",
     ("api.interface", "lacp_rate"): "lacp_rates",
+    ("api.interface", "lag_mode"): "lag_modes",
+    ("api.interface", "lag_hash_policy"): "lag_hash_policies",
     ("api.interface", "duplex"): "interface_duplex",
     ("api.interface", "poe_mode"): "poe_modes",
     ("api.interface", "poe_type"): "poe_types",
@@ -60,6 +62,18 @@ DCIM_CHOICE_KEYS: dict[tuple[str, str], str] = {
     ("api.frontport", "type"): "front_port_types",
     ("api.rearport", "type"): "front_port_types",
     ("api.cable", "type"): "cable_types",
+    ("api.device", "airflow"): "airflow",
+    ("api.devicetype", "airflow"): "airflow",
+    ("api.device", "cooling_method"): "cooling_method",
+    ("api.devicetype", "cooling_method"): "cooling_method",
+    ("api.moduletype", "cooling_method"): "cooling_method",
+    ("api.rack", "cooling_capability"): "cooling_capability",
+    ("api.racktype", "cooling_capability"): "cooling_capability",
+    ("api.coolingsource", "type"): "cooling_source_types",
+    ("api.coolingsource", "fluid"): "cooling_fluids",
+    ("api.coolingfeed", "type"): "cooling_feed_types",
+    ("api.coolingintake", "connector"): "cooling_connectors",
+    ("api.coolingoutflow", "connector"): "cooling_connectors",
 }
 
 # Free-text fields with well-known values worth offering as suggestions. The
@@ -87,7 +101,7 @@ class EditableField:
 
     key: str            # the payload key = the model attname ("enabled", "status_id")
     label: str
-    kind: str           # text|int|bool|choice|options|status|bytes|vlan|vrf|object
+    kind: str           # text|int|bool|choice|options|status|bytes|vlan|vrf|object|color
     nullable: bool
     hint: str = ""
     choices: str | None = None                 # /api/dcim/choices/ list key
@@ -226,6 +240,9 @@ def _describe(model, key: str, target_model=None, *, is_fk=False) -> EditableFie
                 options=[{"value": v, "label": str(text)} for v, text in flat],
                 **common,
             )
+        if f.name == "color" and getattr(f, "max_length", None) == 7:
+            # A hex swatch: the dialog offers the forms' colour picker.
+            return EditableField(kind="color", **common)
         source = SUGGESTION_SOURCES.get((label, f.name))
         return EditableField(
             kind="text", suggestions=source() if source else None, **common,

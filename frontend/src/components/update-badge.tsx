@@ -8,14 +8,17 @@ import { Badge } from "@/components/ui/badge"
 /** Top-bar "Update available" badge (#25). Only shown to users who can manage
  * updates (the /api/system/updates check is `users.manage`-gated anyway), and
  * hidden when an admin turns the badge off. Links to the Updates page. Uses the
- * same blue badge as that page. */
+ * same blue badge as that page. Read once per session (#478): the server
+ * answers from a cached release list, refreshed in the background. */
 export function UpdateBadge() {
   const { canManageDeployment } = useMe()
   const q = useQuery({
     queryKey: ["system-updates"],
     queryFn: () => api<SystemUpdates>("/api/system/updates/"),
     enabled: canManageDeployment,
-    staleTime: 30 * 60_000,
+    staleTime: Infinity,
+    // A cold server cache answers "checking"; ask again until it has a list.
+    refetchInterval: (query) => (query.state.data?.checking ? 30_000 : false),
     retry: false,
   })
   const d = q.data

@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type PowerFeed, type Paginated } from "@/lib/api"
+import { type PowerFeed } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
@@ -32,7 +33,7 @@ function PowerFeedsPage() {
   const query = useQuery({
     queryKey: ["power-feeds", q],
     queryFn: () =>
-      api<Paginated<PowerFeed>>(
+      apiAll<PowerFeed>(
         `/api/power-feeds/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

@@ -61,6 +61,26 @@ def bulk_ids(request, limit: int | None = None) -> list[str]:
     return out
 
 
+def int_bulk_ids(request, limit: int | None = None) -> list[int]:
+    """:func:`bulk_ids` for a model with integer keys (users, groups)."""
+    if not isinstance(request.data, dict):
+        raise ValidationError({"ids": 'Send a JSON object: {"ids": [...]}.'})
+    ids = request.data.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        raise ValidationError({"ids": "Provide a non-empty list of ids."})
+    if limit is not None and len(ids) > limit:
+        raise ValidationError({"ids": f"At most {limit} ids per call."})
+    out = []
+    for v in ids:
+        if isinstance(v, bool) or not isinstance(v, (int, str)):
+            raise ValidationError({"ids": f"«{v}» is not an id."})
+        try:
+            out.append(int(v))
+        except ValueError:
+            raise ValidationError({"ids": f"«{v}» is not an id."}) from None
+    return out
+
+
 def plural_label(model) -> str:
     """How a preview names ``model``'s rows: the object-type registry's label
     ("BGP sessions", "prefix lists"), lower-cased unless it opens with an
@@ -110,6 +130,11 @@ def collect_emptied_cables(collector, origin_model) -> None:
 class SafeBulkDeleteMixin:
     """Adds ``bulk-delete``; see the module docstring. Declare
     ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset."""
+
+    def _bulk_ids(self, request):
+        """The selection's ids; a model with integer keys answers with
+        :func:`int_bulk_ids`."""
+        return bulk_ids(request, MAX_IDS)
 
     def bulk_blocker(self, obj) -> str | None:
         """Why ``obj`` may not be deleted now, or None. Mirror the viewset's
@@ -218,7 +243,7 @@ class SafeBulkDeleteMixin:
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = bulk_ids(request, MAX_IDS)
+        ids = self._bulk_ids(request)
         dry_run = bool(request.data.get("dry_run"))
         rows = list(self.get_queryset().filter(pk__in=ids))
         skipped, ok = [], []

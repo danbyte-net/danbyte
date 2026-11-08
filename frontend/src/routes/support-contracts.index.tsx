@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { Paginated, SupportContract } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { SupportContract } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
@@ -34,7 +34,7 @@ function SupportContractsPage() {
   const query = useQuery({
     queryKey: ["support-contracts", q],
     queryFn: () =>
-      api<Paginated<SupportContract>>(
+      apiAll<SupportContract>(
         `/api/support-contracts/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

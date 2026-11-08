@@ -39,7 +39,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .bulk_delete import SafeBulkDeleteMixin, _protected_reason, plural_label
-from .viewsets import BulkUpdateMixin
+from .bulk_update import BulkUpdateMixin
 
 
 @dataclass(frozen=True)
@@ -48,13 +48,16 @@ class BulkEditSpec:
 
     ``fields`` are the serializer's write keys in dialog order
     (``status_id``, ``description``, ``peer_group_id``). ``tags`` adds the
-    add/remove tag pickers. ``status_model`` is the ``Status.available_to``
+    add/remove tag pickers, ``custom_fields`` the model's custom fields.
+    ``status_model`` is the ``Status.available_to``
     scope when it is not the model's own slug (the routing instances share
     ``routinginstance``)."""
 
     fields: tuple[str, ...] = ()
     tags: bool = True
     status_model: str | None = None
+    #: Offer the model's custom fields, each kept or set on its own.
+    custom_fields: bool = False
 
 
 def _model_field(model, key: str):
@@ -114,6 +117,10 @@ class BulkEditMixin(SafeBulkDeleteMixin, BulkUpdateMixin):
     def bulk_tags(self) -> bool:  # read by BulkUpdateMixin.bulk_update
         return self.bulk_edit.tags
 
+    @property
+    def bulk_cf_model(self) -> str | None:  # read by BulkUpdateMixin.bulk_update
+        return self.queryset.model._meta.model_name if self.bulk_edit.custom_fields else None
+
     def bulk_update_allow_list(self) -> dict:
         model = self.queryset.model
         out = {"str": [], "bool": [], "int": [], "fk": {}}
@@ -160,7 +167,12 @@ class BulkEditMixin(SafeBulkDeleteMixin, BulkUpdateMixin):
             if d.kind == "status" and self.bulk_edit.status_model:
                 d = dataclasses.replace(d, status_model=self.bulk_edit.status_model)
             out.append(d.payload())
-        return Response({"fields": out, "tags": self.bulk_edit.tags})
+        return Response({
+            "fields": out,
+            "tags": self.bulk_edit.tags,
+            # The custom-field model slug the dialog lists fields for, or null.
+            "custom_fields": self.bulk_cf_model,
+        })
 
     def bulk_blockers(self, rows) -> dict:
         out = super().bulk_blockers(rows)

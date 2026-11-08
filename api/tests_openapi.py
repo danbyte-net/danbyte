@@ -34,3 +34,24 @@ class OpenApiSchemaTests(APITestCase):
         self.client.force_login(User.objects.get(username="root"))
         r = self.client.get("/api/docs/")
         self.assertEqual(r.status_code, 200)
+
+    def test_cached_schema_is_not_served_to_anonymous(self):
+        # A token client (no session cookie) fills the cache; an anonymous
+        # request after it must still be refused, not handed that copy.
+        from django.core.cache import cache
+        from django.test import override_settings
+        from rest_framework.test import APIClient
+
+        root = User.objects.create_superuser("root", "root@acme.com", "pw")
+        with override_settings(
+            CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                                "LOCATION": "openapi-tests"}}
+        ):
+            cache.clear()
+            token_like = APIClient()
+            token_like.force_authenticate(root)
+            self.assertEqual(token_like.get("/api/schema/").status_code, 200)
+            self.assertIn(APIClient().get("/api/schema/").status_code, (401, 403))
+            # The second authenticated read comes from the cache.
+            self.assertEqual(token_like.get("/api/schema/").status_code, 200)
+

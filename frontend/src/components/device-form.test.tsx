@@ -36,7 +36,7 @@ const { apiMock } = vi.hoisted(() => ({
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<typeof Api>()),
-  api: apiMock,
+  api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
 }))
 vi.mock("@/lib/use-me", () => ({
   useMe: () => ({ me: {}, canDo: () => true, humanIds: false }),
@@ -971,6 +971,17 @@ describe("DeviceForm rack elevation", () => {
   })
 })
 
+describe("DeviceForm labels", () => {
+  it("heads Card lines as a group, and no label points at nothing (#445)", async () => {
+    renderForm()
+    await screen.findByRole("group", { name: "Card lines" })
+    const dangling = [...document.querySelectorAll("label[for]")]
+      .filter((label) => !document.getElementById(label.getAttribute("for")!))
+      .map((label) => label.textContent)
+    expect(dangling).toEqual([])
+  })
+})
+
 describe("DeviceForm side mount", () => {
   it("keeps a strip's side mount while the device types load", async () => {
     // Until the types answer, the strip's type is unknown - not "takes
@@ -1034,5 +1045,140 @@ describe("DeviceForm side mount", () => {
       ([, init]) => init?.method === "PATCH"
     )!
     expect(JSON.parse(String(call[1]?.body)).mount).toBe("left")
+  })
+})
+
+describe("DeviceForm cooling (#434)", () => {
+  it("sends the device's own cooling method when the field is on", async () => {
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path === "/api/device-fields/"
+        ? Promise.resolve({ comments: true, cooling_method: true })
+        : path === "/api/dcim/choices/"
+          ? Promise.resolve({
+              cooling_method: [
+                { value: "air", label: "Air" },
+                { value: "liquid", label: "Liquid" },
+              ],
+            })
+          : base(path, init)
+    )
+    renderForm()
+    await screen.findByText("Cooling", { selector: "label" })
+    expect(trigger("Cooling").textContent).toBe("Inherit")
+    await choose("Cooling", "Liquid")
+    await save()
+    expect(await sent()).toMatchObject({ cooling_method: "liquid" })
+  })
+
+  it("hides it by default and sends blank, which inherits the type's", async () => {
+    renderForm()
+    await save()
+    expect(await sent()).toMatchObject({ cooling_method: "" })
+    expect(screen.queryByText("Cooling", { selector: "label" })).toBeNull()
+  })
+})
+
+describe("DeviceForm PRTG", () => {
+  it("offers the PRTG select while the integration is on, and sends it", async () => {
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path === "/api/integrations/enabled/"
+        ? Promise.resolve({ prtg: true })
+        : base(path, init)
+    )
+    renderForm()
+    await screen.findByText("PRTG", { selector: "label" })
+    expect(trigger("PRTG").textContent).toBe("Follow policies")
+    await choose("PRTG", "Exclude from PRTG")
+    await save()
+    expect(await sent()).toMatchObject({ prtg_sync: "never" })
+  })
+
+  it("hides it and sends nothing while PRTG is off", async () => {
+    renderForm()
+    await save()
+    expect(await sent()).not.toHaveProperty("prtg_sync")
+    expect(screen.queryByText("PRTG", { selector: "label" })).toBeNull()
+  })
+})
+
+describe("DeviceForm name range", () => {
+  const typeName = (name: string) =>
+    fireEvent.change(within(field("Name")).getByRole("textbox"), {
+      target: { value: name },
+    })
+
+  it("previews what a range creates and relabels the submit", async () => {
+    renderForm()
+    typeName("DK-RDS-[1-10]")
+    expect(
+      screen.getByText("Creates 10 devices: DK-RDS-1 … DK-RDS-10")
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Create 10 devices" })
+    ).toBeTruthy()
+    typeName("[0001-0100]")
+    expect(screen.getByText("Creates 100 devices: 0001 … 0100")).toBeTruthy()
+    typeName("sw-01")
+    expect(screen.queryByText(/^Creates /)).toBeNull()
+    expect(screen.getByRole("button", { name: "Create device" })).toBeTruthy()
+  })
+
+  it("sends a range to bulk-create in one request, with the profile", async () => {
+    apiMock.mockImplementation((path, init) => {
+      if (path === "/api/devices/bulk-create/")
+        return Promise.resolve({
+          count: 3,
+          results: [
+            { id: "d1", name: "rds-1" },
+            { id: "d2", name: "rds-2" },
+            { id: "d3", name: "rds-3" },
+          ],
+        })
+      if (path === "/api/device-profiles/?picker=1")
+        return page([
+          { id: "p1", name: "RDS", slug: "rds", color: "", path: "RDS" },
+        ])
+      return init?.method ? Promise.resolve({}) : page([])
+    })
+    const onSavedMany = vi.fn()
+    const { onSaved } = renderForm({
+      initial: { profileIds: ["p1"] },
+      onSavedMany,
+    })
+    typeName("rds-[1-3]")
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Create 3 devices" })
+        .closest("form") as HTMLFormElement
+    )
+    await waitFor(() => expect(onSavedMany).toHaveBeenCalled())
+    const posts = apiMock.mock.calls.filter(([, i]) => i?.method === "POST")
+    expect(posts.map(([p]) => p)).toEqual(["/api/devices/bulk-create/"])
+    expect(JSON.parse(String(posts[0][1]?.body))).toMatchObject({
+      name: "rds-[1-3]",
+      profile_ids: ["p1"],
+    })
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it("writes a picked profile after a single create", async () => {
+    renderForm({ initial: { profileIds: ["p1"] } })
+    await save("rds-1")
+    await waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(
+          ([p]) => p === "/api/device-profile-assignments/set/"
+        )
+      ).toBe(true)
+    )
+    const set = apiMock.mock.calls.find(
+      ([p]) => p === "/api/device-profile-assignments/set/"
+    )!
+    expect(JSON.parse(String(set[1]?.body))).toEqual({
+      device_id: "d-new",
+      profile_ids: ["p1"],
+    })
   })
 })

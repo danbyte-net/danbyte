@@ -103,6 +103,8 @@ def fake_get(source, path):
         return NODE_NET_PVE1
     if path == "nodes/pve2/network":
         return []
+    if path.startswith("cluster/sdn/"):
+        return []  # no SDN configured
     raise AssertionError(f"unexpected path {path}")
 
 
@@ -2328,6 +2330,51 @@ class HostHardwareTests(TestCase):
         dev.refresh_from_db()
         self.assertEqual(dev.device_type_id, mine.id)
         self.assertEqual(dev.serial_number, "MINE-1")
+
+    def test_host_version_fills_the_software_version(self):
+        """#395: the bare ESXi version, stamped as integration-filled, and it
+        follows the host on the next upgrade."""
+        from api.models import Device
+
+        self.sync([{**self.HW, "version": "8.0.3"}])
+        dev = Device.objects.get(name="esxi-lab-01")
+        self.assertEqual(dev.software_version, "8.0.3")
+        self.assertIsNotNone(dev.software_version_seen_at)
+        self.assertEqual(dev.software_version_source, "virtualization")
+
+        self.sync([{**self.HW, "version": "8.0.4"}])
+        dev.refresh_from_db()
+        self.assertEqual(dev.software_version, "8.0.4")
+        self.assertEqual(dev.software_version_source, "virtualization")
+
+    def test_a_manual_source_wins_over_the_sync(self):
+        """#451: a value marked manual stays, even with seen_at left set."""
+        from api.models import Device
+
+        self.sync([{**self.HW, "version": "8.0.3"}])
+        dev = Device.objects.get(name="esxi-lab-01")
+        dev.software_version = "8.0.2"
+        dev.software_version_source = "manual"
+        dev.save(update_fields=["software_version", "software_version_source"])
+
+        self.sync([{**self.HW, "version": "8.0.4"}])
+        dev.refresh_from_db()
+        self.assertEqual(dev.software_version, "8.0.2")
+        self.assertEqual(dev.software_version_source, "manual")
+
+    def test_a_typed_software_version_is_never_overwritten(self):
+        from api.models import Device
+
+        self.sync([{**self.HW, "version": ""}])
+        dev = Device.objects.get(name="esxi-lab-01")
+        self.assertEqual(dev.software_version, "")
+        dev.software_version = "8.0.2"
+        dev.save(update_fields=["software_version"])
+
+        self.sync([{**self.HW, "version": "8.0.3"}])
+        dev.refresh_from_db()
+        self.assertEqual(dev.software_version, "8.0.2")
+        self.assertIsNone(dev.software_version_seen_at)
 
     def test_a_blank_serial_is_not_written(self):
         """Nested ESXi reports no service tag - that must stay empty."""

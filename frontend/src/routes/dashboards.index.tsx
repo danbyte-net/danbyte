@@ -11,6 +11,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { dashboardColumns } from "@/components/columns/dashboard-columns"
 import { DashboardSettingsDialog } from "@/components/dashboard/dashboard-settings"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/dashboards/")({
@@ -26,7 +27,10 @@ function DashboardsPage() {
     queryFn: () =>
       api<Paginated<NamedDashboard>>("/api/dashboards/?page_size=200"),
   })
-  const columns = useMemo(() => dashboardColumns(), [])
+  // Anyone may tick boards; the delete takes only their own and names the
+  // ones shared with them, which stay.
+  const [selected, setSelected] = useState<NamedDashboard[]>([])
+  const columns = useMemo(() => dashboardColumns({ selection: true }), [])
   const rows = useMemo(
     () =>
       (query.data?.results ?? []).filter((d) =>
@@ -59,6 +63,15 @@ function DashboardsPage() {
         exportName="dashboards"
         exportTitle="Dashboards"
         flexColumn="description"
+        onSelectedRowsChange={setSelected}
+        selectedRows={selected}
+      />
+      <SafeBulkDeleteBar
+        selected={selected}
+        endpoint="/api/dashboards/"
+        noun={["dashboard", "dashboards"]}
+        invalidate={[["dashboards"]]}
+        onCleared={() => setSelected([])}
       />
       <DashboardSettingsDialog
         open={creating}

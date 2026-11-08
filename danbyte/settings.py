@@ -74,6 +74,8 @@ INSTALLED_APPS = [
     "integrations.apps.IntegrationsConfig",
     "zabbix.apps.ZabbixConfig",
     "oxidized.apps.OxidizedConfig",
+    "prtg.apps.PrtgConfig",
+    "profiles.apps.ProfilesConfig",
     "search.apps.SearchConfig",
     "monitoring.apps.MonitoringConfig",
     "planning.apps.PlanningConfig",
@@ -178,11 +180,16 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "auth_api.rbac.RequestCacheMiddleware",
+    # Signed-in /api/ responses are `private, no-store` unless the view chose
+    # its own Cache-Control (#491). After auth, so it sees request.user.
+    "core.middleware.ApiNoStoreMiddleware",
     # Rolling idle-session timeout (admin-configurable; no-op when unset). After
     # auth so request.user is resolved.
     "core.middleware.SessionIdleTimeoutMiddleware",
     # A restore holds the whole site behind 503 while it replaces the database.
     "core.middleware.MaintenanceMiddleware",
+    # Two large list pages in flight per token or user; the next is a 429 (#452).
+    "core.middleware.LargePageGuardMiddleware",
     # Captures the request user for the change-log signals.
     "audit.middleware.AuditContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -222,6 +229,15 @@ DATABASES = {
         # A dropped connection is noticed before a request uses it, and a
         # database that does not answer fails the request in 10 s, not never.
         "CONN_HEALTH_CHECKS": True,
+        # Persistent connections for the gunicorn app only (#481): a new
+        # connection per request was most of a small API call's cost.
+        # danbyte/wsgi.py marks the process before settings load; daphne,
+        # runserver, workers and commands keep 0 (a connection per request).
+        "CONN_MAX_AGE": (
+            int(os.getenv("DB_CONN_MAX_AGE", "60"))
+            if os.getenv("DANBYTE_WSGI_SERVER") == "1"
+            else 0
+        ),
         "OPTIONS": {
             "connect_timeout": 10,
             # JIT off for Danbyte's sessions (#443): its queries are short OLTP
@@ -297,10 +313,119 @@ RQ_QUEUES = {
     },
 }
 
+# List pagination (#447). A list request without ?page_size= gets API_PAGE_SIZE
+# rows: serializing 10,000 rows held a sync gunicorn worker for seconds, and a
+# few such requests starved every other request, the health check included.
+# ?page_size= may ask for up to API_MAX_PAGE_SIZE rows in one response. The cap
+# was 10,000, and a few such pages still held every worker (#452); the web app
+# never asks for more than 2,000 a request, so that is the default. Both are
+# positive integers and the cap is at least the default page; a bad value
+# refuses to start rather than quietly serving something else.
+#
+# A request asking for more than API_LARGE_PAGE_THRESHOLD rows (1,000, the
+# most the web app asks for) is a large page; one token or user may have
+# API_LARGE_PAGE_CONCURRENCY of them in flight, and the next answers 429 with
+# Retry-After until one finishes (#452, core/middleware.py).
+def api_paging(env) -> tuple[int, int, int, int]:
+    """``(API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_THRESHOLD,
+    API_LARGE_PAGE_CONCURRENCY)`` from an environment mapping. An unset cap is
+    2,000, or the default page when a deployment set that higher; an unset
+    threshold is 1,000 kept between the two. A cap below the default page, or
+    a threshold outside default page..cap, is refused."""
+    from django.core.exceptions import ImproperlyConfigured
+
+    def positive(name: str, default: int) -> int:
+        raw = str(env.get(name) or "").strip()
+        if not raw:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            value = 0
+        if value < 1:
+            raise ImproperlyConfigured(f"{name} must be a positive whole number, not {raw!r}.")
+        return value
+
+    page = positive("API_PAGE_SIZE", 100)
+    cap = positive("API_MAX_PAGE_SIZE", max(2000, page))
+    if cap < page:
+        raise ImproperlyConfigured(
+            f"API_MAX_PAGE_SIZE ({cap}) must be at least API_PAGE_SIZE ({page})."
+        )
+    threshold = positive("API_LARGE_PAGE_THRESHOLD", min(max(1000, page), cap))
+    if not page <= threshold <= cap:
+        raise ImproperlyConfigured(
+            f"API_LARGE_PAGE_THRESHOLD ({threshold}) must be between API_PAGE_SIZE "
+            f"({page}) and API_MAX_PAGE_SIZE ({cap})."
+        )
+    return page, cap, threshold, positive("API_LARGE_PAGE_CONCURRENCY", 2)
+
+
+(
+    API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_THRESHOLD, API_LARGE_PAGE_CONCURRENCY,
+) = api_paging(os.environ)
+
+
+# The most unexpired API tokens one user may hold (#457). Large-page slots are
+# per user whatever token a request carries; this bounds the rest. A positive
+# whole number; a bad value refuses to start.
+def api_max_tokens_per_user(env) -> int:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raw = str(env.get("API_MAX_TOKENS_PER_USER") or "").strip()
+    try:
+        value = int(raw) if raw else 25
+    except ValueError:
+        value = 0
+    if value < 1:
+        raise ImproperlyConfigured(
+            f"API_MAX_TOKENS_PER_USER must be a positive whole number, not {raw!r}."
+        )
+    return value
+
+
+API_MAX_TOKENS_PER_USER = api_max_tokens_per_user(os.environ)
+
+
+# Application flow requirements (api.flow_requirements): the preview warns
+# above FLOW_REQUIREMENT_WARN_PAIRS generated flows for one requirement, and a
+# requirement over FLOW_REQUIREMENT_MAX_PAIRS is refused (Unresolved) until it
+# is narrowed or this is raised. Positive integers, the cap at least the
+# warning; a bad value refuses to start.
+def flow_requirement_limits(env) -> tuple[int, int]:
+    """``(FLOW_REQUIREMENT_WARN_PAIRS, FLOW_REQUIREMENT_MAX_PAIRS)`` from an
+    environment mapping."""
+    from django.core.exceptions import ImproperlyConfigured
+
+    out = []
+    for name, default in (("FLOW_REQUIREMENT_WARN_PAIRS", 500),
+                          ("FLOW_REQUIREMENT_MAX_PAIRS", 5000)):
+        raw = str(env.get(name) or "").strip()
+        try:
+            value = int(raw) if raw else default
+        except ValueError:
+            value = 0
+        if value < 1:
+            raise ImproperlyConfigured(f"{name} must be a positive whole number, not {raw!r}.")
+        out.append(value)
+    if out[1] < out[0]:
+        raise ImproperlyConfigured(
+            f"FLOW_REQUIREMENT_MAX_PAIRS ({out[1]}) must be at least "
+            f"FLOW_REQUIREMENT_WARN_PAIRS ({out[0]})."
+        )
+    return out[0], out[1]
+
+
+FLOW_REQUIREMENT_WARN_PAIRS, FLOW_REQUIREMENT_MAX_PAIRS = flow_requirement_limits(os.environ)
+
 REST_FRAMEWORK = {
     # Converts an uncaught IntegrityError (a duplicate/constraint hit a
     # serializer didn't validate) into a 409 instead of a raw 500.
     "EXCEPTION_HANDLER": "api.exception_handler.exception_handler",
+    # Errors for a nested list stay a list (one entry per item), as before
+    # DRF 3.18 changed the default to a dict keyed by index. The frontend and
+    # API clients read the list form; DRF removes this switch in 3.20.
+    "LIST_SERIALIZER_ERRORS_AS_DICT": False,
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "auth_api.token_auth.ApiTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
@@ -314,12 +439,19 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
-    # High default page size: the SPA loads full result sets and filters
-    # client-side, so a small page silently hides rows. ?limit= still overrides.
+    # A list without ?page_size= answers one small page (API_PAGE_SIZE) with a
+    # `next` link; ?page_size= up to API_MAX_PAGE_SIZE is the caller's opt-in.
+    # The SPA asks for what it needs (lib/api.ts apiAll walks `next`) (#447).
     "DEFAULT_PAGINATION_CLASS": "api.pagination.StandardResultsSetPagination",
-    "PAGE_SIZE": 10000,
+    "PAGE_SIZE": API_PAGE_SIZE,
     # JSON bodies must be objects: a string or list reached views reading
     # request.data.get(...) and crashed (#373). See api/parsers.py.
+    # JSON through orjson when it is installed, else DRF's renderer: the same
+    # bytes either way (api/renderers.py, #488). orjson is not a requirement.
+    "DEFAULT_RENDERER_CLASSES": [
+        "api.renderers.FastJSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
+    ],
     "DEFAULT_PARSER_CLASSES": [
         "api.parsers.ObjectJSONParser",
         "rest_framework.parsers.FormParser",
@@ -373,6 +505,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "routing", "description": "Static routes, routing policies, prefix lists, communities, keychains."},
         {"name": "virtual-machines", "description": "VMs, clusters, and VM interfaces."},
         {"name": "power-panels", "description": "Power panels and feeds."},
+        {"name": "cooling-sources", "description": "Cooling sources and feeds."},
         {"name": "monitoring", "description": "Checks, status, alerts, and SNMP."},
         {"name": "tenants", "description": "Tenants and tenant groups."},
     ],
@@ -443,11 +576,14 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 
 # Referrer + clickjacking defaults apply in every mode (defense-in-depth for a
-# direct hit on /api that doesn't pass through nginx). X_FRAME_OPTIONS defaults
-# to DENY via XFrameOptionsMiddleware (already in MIDDLEWARE); make it explicit.
+# direct hit on /api that doesn't pass through nginx). Framing is same-origin
+# only, not DENY: the topology report draws each saved view in a hidden
+# same-origin frame of the map page.
+# The shipped nginx configs set these at the edge and drop Django's copies, so
+# each is sent once (#490); keep the values the same in both places.
 SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = "DENY"
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # ─── Transport hardening ────────────────────────────────────────────────────
 # Is this deployment served over TLS? That is a DIFFERENT question from DEBUG,
@@ -476,9 +612,13 @@ if HTTPS_DEPLOYMENT:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
+    # The same HSTS value as the production nginx template, which owns the
+    # header behind it and drops this copy (#490); this one serves installs
+    # that terminate TLS somewhere else. No `preload`: asking browsers to
+    # hard-code a customer's domain is that customer's call, and hard to undo.
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    SECURE_HSTS_PRELOAD = False
 
 EMAIL_BACKEND = os.getenv(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
@@ -604,6 +744,10 @@ STATICFILES_DIRS: list = []
 # large topology view before it reached validation; a saved view is bounded
 # at 8 MB by its serializer, and file uploads stream to disk regardless.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
+# The largest 3D model (binary glTF) a device type or device takes, in bytes
+# (api.model_3d). 25 MB by default.
+DEVICE_MODEL_MAX_BYTES = int(os.getenv("DEVICE_MODEL_MAX_BYTES", str(25 * 1024 * 1024)))
 
 # Uploaded media (device-type rack images, …). Served through
 # api.media_views, never straight from disk: a new upload and the folders
@@ -756,3 +900,9 @@ DANBYTE_CAD_CONVERTER = resolve_cad_converter(
 # where bwrap cannot build one refuses DWG. `off` runs the converter without
 # it (limits only) - an explicit, documented risk, never the default.
 CAD_SANDBOX = os.getenv("DANBYTE_CAD_SANDBOX", "bwrap")
+
+# Object PDF reports too large to render inside a request (api/object_report.py)
+# render as an RQ job on the low queue with this deadline in seconds, and the
+# finished PDF is kept this many seconds for the user who asked for it.
+REPORT_JOB_TIMEOUT = int(os.getenv("DANBYTE_REPORT_JOB_TIMEOUT", "300"))
+REPORT_JOB_KEEP = int(os.getenv("DANBYTE_REPORT_JOB_KEEP", "3600"))

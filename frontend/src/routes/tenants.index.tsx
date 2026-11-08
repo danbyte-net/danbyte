@@ -5,7 +5,8 @@ import { ArrowRightLeft } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type Paginated, type Tenant, type TenantPicker } from "@/lib/api"
+import { api, type Tenant, type TenantPicker } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
@@ -36,7 +37,7 @@ function TenantsPage() {
   const query = useQuery({
     queryKey: ["tenants", q],
     queryFn: () =>
-      api<Paginated<Tenant>>(
+      apiAll<Tenant>(
         `/api/tenants/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

@@ -12,7 +12,10 @@ sidebar's **Customize** section.
 ## Tags
 
 Tags are short labels - `prod`, `core`, `monitored` - that you attach to objects
-to group, filter, and find them. Tags are **shared across all tenants**.
+to group, filter, and find them. A tag belongs to the tenant that created it;
+a few older **global** tags, from before tags were tenant-scoped, are shared by
+every tenant and carry a small `global` chip in tag pickers and on the Tags
+list.
 
 ### Managing tags
 
@@ -21,13 +24,60 @@ to group, filter, and find them. Tags are **shared across all tenants**.
 3. Save.
 
 The Tags list shows how many objects use each tag, and you can filter by usage or
-colour.
+colour. For a site-scoped user the number counts only the tagged objects at
+the sites they can view (and shared, site-less ones).
+
+### Unique names
+
+A tag name can exist only once among the tags a tenant sees: its own tags
+(site-local ones included) and the global ones. Case and surrounding spaces
+don't count, so `Prod` clashes with `prod`. Creating or renaming a tag into
+a name that is taken fails with an error naming the existing tag and its
+scope. A global tag's name must be free in every tenant.
+
+The rule applies from now on. Installs that already have two tags of one
+name - typically a global `prod` and a tenant `prod` - keep both until you
+merge them: the Tags list shows a notice such as *2 tag names are used
+twice*; **Show** (or the **Names → Used twice** filter) lists the pairs side
+by side.
+
+Imports and hypervisor syncs reuse a tag of the same name the tenant already
+sees instead of creating a second one.
+
+### Tags in the API
+
+API writes pick tags by **id**: `tag_ids` on a create or edit,
+`add_tag_ids` / `remove_tag_ids` on a bulk update, and `tag_ids` on the
+interface bulk add. An id must name a tag the tenant may use - one of its own,
+a global one, or, for a site-scoped user under enhanced site separation, a tag
+local to one of their sites. Anything else (another tenant's tag, another
+site's local tag, a tag name instead of an id) is a **400** on that field and
+nothing is written. These writes never create a tag; create it first under
+**Customize → Tags** (`POST /api/tags/`).
+
+### Merging tags
+
+Use a row's **Merge into…** action to fold one tag into another. Pick the
+tag to keep; the dialog says how many objects move. On **Merge** every
+object carrying the tag gets the kept tag instead (an object that already
+has both keeps one), each object's change log records the swap, and the
+merged tag is deleted - all in one step.
+
+The kept tag must be of the same scope or wider: a tag local to the same
+site, a tenant-wide tag, or a global tag. A global tag merges only into
+another global tag, and only a superuser can merge it. Merging needs the
+**change** and **delete** permissions on tags.
+
+API: `POST /api/tags/<id>/merge/` with `{"into": <id>}` returns
+`{moved, already_tagged, into}`; `GET /api/tags/duplicates/` returns the
+colliding names as `{count, results: [{name, ids}]}`.
 
 ### Seeing where a tag is used
 
 Open a tag to see its **Used by** table - every object in the **current tenant**
-that carries it, with a link to each. (Tags are shared, but this view only shows
-your active tenant's objects, so it never leaks another tenant's data.)
+that carries it, with a link to each. (A global tag is shared, but this view
+only shows your active tenant's objects, so it never leaks another tenant's
+data.)
 
 !!! tip
     To apply a tag, open the object you want to label and add the tag on its
@@ -135,7 +185,10 @@ list of those objects: open the list's **Columns** menu and tick it under
 dates by date - and exports with its value as text (an object reference
 exports its name). Anyone who can view the list sees the column; a field local
 to one site is offered only to people who work at that site. See
-[Table columns](table-preferences.md).
+[Table columns](table-preferences.md). On the
+[virtual machine list](virtual-machines.md#editing-several-at-once) the
+selection bar's **Edit** sets custom fields on many VMs at once, one field
+at a time.
 
 !!! note "Required and choice fields are enforced"
     When you save an object, Danbyte checks its custom fields: required fields

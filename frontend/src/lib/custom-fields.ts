@@ -114,6 +114,7 @@ export const CUSTOMIZABLE_MODELS: { value: string; label: string }[] = [
   { value: "devicetype", label: "Device types" },
   { value: "devicerole", label: "Device roles" },
   { value: "cabinet", label: "Cabinets" },
+  { value: "room", label: "Rooms" },
   { value: "routetarget", label: "Route targets" },
   { value: "cable", label: "Cables" },
   { value: "macaddress", label: "MAC addresses" },

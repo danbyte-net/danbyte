@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/table"
 import { TagList } from "@/components/cells/tag-list"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
-import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import { CopyButton, KvCard, dash, type KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
@@ -286,6 +286,7 @@ function TerminationsTab({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<TunnelTermination | null>(null)
   const [deleting, setDeleting] = useState<TunnelTermination | null>(null)
+  const wg = t.encapsulation === "wireguard"
 
   const del = useMutation({
     mutationFn: () =>
@@ -330,6 +331,8 @@ function TerminationsTab({
                 <TableHead>Role</TableHead>
                 <TableHead className="w-full">Endpoint</TableHead>
                 <TableHead>Outside IP</TableHead>
+                {wg && <TableHead>Listen port</TableHead>}
+                {wg && <TableHead>Public key</TableHead>}
                 {canEdit && <TableHead className="w-20" />}
               </TableRow>
             </TableHeader>
@@ -355,6 +358,26 @@ function TerminationsTab({
                       dash
                     )}
                   </TableCell>
+                  {wg && (
+                    <TableCell className="py-2 font-mono text-[13px]">
+                      {term.endpoint_port &&
+                      term.endpoint_port !== term.listen_port
+                        ? `${term.listen_port ?? "–"} → ${term.endpoint_port}`
+                        : (term.listen_port ?? dash)}
+                    </TableCell>
+                  )}
+                  {wg && (
+                    <TableCell className="py-2">
+                      {term.public_key ? (
+                        <span className="inline-flex items-center gap-1 font-mono text-[13px]">
+                          {term.public_key.slice(0, 10)}…
+                          <CopyButton value={term.public_key} />
+                        </span>
+                      ) : (
+                        dash
+                      )}
+                    </TableCell>
+                  )}
                   {canEdit && (
                     <TableCell className="py-1 text-right">
                       <RowActions
@@ -376,6 +399,7 @@ function TerminationsTab({
 
       <TunnelTerminationDialog
         tunnelId={t.id}
+        encapsulation={t.encapsulation}
         termination={editing}
         open={dialogOpen}
         onOpenChange={(o) => {

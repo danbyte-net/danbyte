@@ -15,8 +15,9 @@ source under **Integrations → Virtualization sources**; see
 - **Host** - any cluster node's address works: the API answers cluster-wide.
   Default API port `8006`.
 - **Auth** - an **API token** (Datacenter → Permissions → API Tokens);
-  the `PVEAuditor` role is enough for read sync. The secret is encrypted at
-  rest and write-only.
+  the `PVEAuditor` role is enough for read sync. Reading SDN also needs
+  `SDN.Audit` on `/sdn` (`PVEAuditor` on `/` includes it). The secret is
+  encrypted at rest and write-only.
 - **Address VRF** - the routing context guest addresses land in; see [where
   synced addresses land](external-sync.md#where-synced-addresses-land).
 - **Test connection** reports the reachable node count and API version.
@@ -34,6 +35,7 @@ source under **Integrations → Virtualization sources**; see
 | Disk (`scsiN`/`virtioN`/…) | **Virtual disk** (name, size, storage, controller) - *opt-in* |
 | Bridge + VLAN tag (`vmbr0,tag=42`) | **VLAN** (in the source's VLAN group) + the interface's access VLAN - *opt-in* |
 | Bridge / OVS switch | **Virtual switch** - *opt-in* |
+| SDN zone · VNet | **Virtual switch** of kind *SDN zone* · **network** under it - *opt-in*, with networks |
 | Guest-agent IP | **IP address** assigned to the interface |
 | `ostype` | **Platform** - *opt-in* (*Set platform from the guest OS*). QEMU's enum maps to readable names (`l26` → *Linux 6.x/2.6 Kernel*, `win11` → *Windows 11/2022/2025*); LXC distro identifiers are title-cased (`debian` → *Debian*). Matches an existing platform before minting one, and `other` sets nothing. |
 | Node | linked to the **Device** of the same name |
@@ -79,6 +81,48 @@ Per-source switches widen what a source imports:
   already returns, so it costs no extra request. A guest in no pool has no
   group.
 
+### SDN zones and VNets
+
+With **Sync virtual switches & networks** on, the sync also reads
+`cluster/sdn/zones` and `cluster/sdn/vnets`:
+
+- each **zone** becomes a virtual switch of kind **SDN zone** on the cluster;
+- each **VNet** becomes a network under its zone, keeping its tag (a VLAN id
+  in a vlan zone, a VNI in a vxlan or evpn zone), alias and zone. No VLAN is
+  created for the tag. A VNet with no NIC on it still gets its network;
+- a VM NIC whose bridge is a VNet links to that network, the same as a NIC on
+  a bridge. A VNet seen earlier as a plain bridge moves under its zone, and the
+  bridge switch the sync made for it is removed when nothing else uses it.
+
+If the token cannot read SDN (no `SDN.Audit`, or a release without SDN), the
+pass skips SDN and says so on the **Skipped** tab; everything else syncs as
+usual. A pass reports `sdn_zones` and `sdn_vnets` in its counts. Proxmox
+lists only the zones and VNets the token may see, so a token scoped to some
+zones reads only those.
+
+### Cables from VNets
+
+**Cables from VNets** (off by default, shown with networks sync) turns a VNet
+into a cable. A VNet with exactly two NICs on this source's VMs becomes a
+cable between the interfaces of the devices those VMs are (**Is router** on
+the VM). A NIC is matched to a device interface by MAC (the interface's own
+MAC or its MAC addresses), then by name (`net1`, or the LXC NIC name). The new
+cable has the VNet as its [Proxmox VNet](../dcim/cabling.md#proxmox-vnet) and
+the description *Synced from «source» (VNet …)*. It is made in every sync
+mode: turning the setting on is the consent.
+
+A cable that is already there is never changed or deleted. When it joins the
+same two ports and has no VNet, the VNet is filled in; anything else is
+reported on the **Skipped** tab and left alone:
+
+- a VNet with one NIC, or more than two;
+- a VM with no device, or a NIC with no matching interface;
+- a port already cabled to something else, or a cable naming another VNet;
+- a cable made from a VNet that no longer joins its two ports.
+
+A pass reports `vnet_cables_created`, `vnet_cables_matched` and
+`vnet_findings` in its counts.
+
 Once networks are synced, each **virtual switch** page has a **Networks** tab
 and **Maps → Virtual topology** draws the whole picture - switches,
 their networks (VLANs) as bars, and the VMs on each.
@@ -113,6 +157,8 @@ your inventory before you've seen what it would do.
 - **You own** everything else: role, platform, tags, custom fields,
   description, site, and the primary-IP choice. The sync never overwrites
   those in any mode.
+- On an [intended VM](#intended-vms) you own its specs, NICs, disks and
+  existence too.
 
 Rules:
 
@@ -129,6 +175,72 @@ Rules:
   The first private IPv4 becomes the VM's primary IP (if it had none).
 - VM templates are skipped; the sync is read-only - Danbyte never changes the
   hypervisor.
+
+## Network plan
+
+A Proxmox source's **Network plan** tab works out what SDN should look like
+from the cables between its VMs, and compares it with what the last sync saw.
+It is read-only: Danbyte lists the plan and something else - a runner, a
+script, a person - applies it.
+
+A cable is in the plan when each end is one interface on a device that a VM
+of this source is (**Is router**). It wants the VNet in its [Proxmox
+VNet](../dcim/cabling.md#proxmox-vnet) field. A cable with none gets a name
+from the source's **VNet name pattern** when one is set - `c{n:04}` gives
+`c0042` for cable #42 - marked *Suggested*; the cable is not changed. Each end
+is matched to a VM NIC by MAC, then by name, then to the one NIC of the VM
+already on the wanted VNet.
+
+| Section | What it lists |
+| --- | --- |
+| **VNets to create** | Wanted VNets the last sync did not see: name, zone (the source's **VNet zone**), tag and the cables that want it. The tag is the lowest free one in the source's **VNet tag range** (`1000-1999`) among the zone's VNets; blank range, no tag. |
+| **Wrong VNet** | NICs on another VNet or bridge than their cable wants: VM, NIC (`net1`), interface, current, wanted, MAC and cable. |
+| **No VNet** | NICs whose cable names no VNet and gets none from the pattern. |
+| **Unused VNets** | VNets in the source's zone (or any zone, when none is set) that no cable wants and no NIC sits on. Report only. |
+| **Issues** | VNets named by more than one cable, interfaces with no matching NIC, a pattern that gives an invalid id, an exhausted tag range, and cables left out (an end that is not a VM of this source, or several ports on one end). |
+
+Pick a device to see only its VM and the VMs it is cabled to; **JSON**
+downloads the plan (or that slice). The same plan is
+`GET /api/virtualization-sources/<id>/network-plan/`, with `?device=<id>` to
+scope it and `?format=json` for a download. It needs `view` on the source and
+lists only the VMs, devices and cables the reader may view, so a site-scoped
+user sees the plan of their own sites. The plan reads what the last sync
+recorded; it makes no call to Proxmox.
+
+Response keys: `vnets_to_create`, `nics_wrong_vnet`, `nics_without_vnet`,
+`unused_vnets`, `duplicates`, `conflicts`, `cables_skipped`, `counts`,
+`notes`, plus `source`, `device`, `zone` and `generated_at`.
+
+## Intended VMs
+
+An [intended VM](virtual-machines.md#intended-vms) is one Danbyte holds the
+intent for. Every rule here applies only with **Intended** ticked; any other
+VM syncs exactly as above.
+
+| Rule | What the sync does |
+| --- | --- |
+| **Adopt** | A new guest links to the intended VM whose **VMID** is its own (one per cluster; a cluster of the same name breaks a tie), then to a VM of the same name. A VM without the flag is never matched by VMID. |
+| **Re-link on rebuild** | When the guest an intended VM was linked to has gone - absent from this pass, or flagged missing on another source - and a new guest matches it by VMID or name, the stale tracking row is dropped and the new guest linked. The VM itself is untouched. While the old guest is still reported, the new one is skipped with a warning, as for any duplicate name. Rebuilt with the same VMID, the link simply carries on. |
+| **Diff, never apply** | vCPU, memory, disk, name and VMID differences are raised as **Specs changed** for review - in Automatic mode too, and even for a VM the sync created. NIC **MAC**, **MTU**, **VLAN**, **model**, **bridge** and **index** differences are raised as **Interface fields differ**. Accepting one takes the hypervisor's value. |
+| **Blank-fill** | Empty fields are still filled: specs, host, VMID, and each NIC's model, bridge and index (from `netN`). Filling a blank is not a disagreement. |
+| **Never delete** | The VM is never deleted or offered for removal, whatever the mode, **Prune** setting or delay. Its tracking row stays with the time it went missing, and the VM page says **Not on any hypervisor**. A removal queued before the VM was ticked keeps the VM when accepted. |
+| **Never prune** | No NIC or disk of an intended VM is pruned, even one the sync created; a NIC the hypervisor no longer has is raised as **Interface not on hypervisor**. |
+
+Ticking **Intended** on a VM the sync created sets nothing else: it keeps
+its history, and the flag wins in every rule above.
+
+A sync pass reports `vms_missing_intended` and `vms_relinked` in its counts.
+
+### The rebuild flow
+
+1. Mark the router's VM **Intended**, set **Is router**, the VMID, image,
+   CPU type and storage, and each NIC's index, model and bridge.
+2. Your runner - a script, AWX or a webhook consumer - reads the VM from
+   `GET /api/virtual-machines/<id>/` (or a render of it), or receives it
+   through [Provision](iac-runner.md#provisioning-an-intended-vm), and
+   builds it on Proxmox with its own credentials.
+3. The next sync adopts the new guest by VMID or name and re-links it; any
+   difference between what was built and the intent shows as drift.
 
 !!! tip "Virtual routers become monitorable"
     Once a virtual router's IP is synced, the monitoring engine can check and

@@ -11,18 +11,20 @@ import {
   type Cabinet,
   DEFAULT_DEVICE_FIELD_VISIBILITY,
   type Device,
+  type DeviceBulkCreateResult,
   type DeviceFieldVisibility,
   type DeviceRoleOption,
   type DeviceTypeOption,
   type DeviceWritePayload,
   type ExportTemplate,
   type LocationOption,
-  type Paginated,
   type PlatformOption,
+  type PrtgSync,
   type RackOption,
   type Status,
   type TagOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Field,
   FormCombobox,
@@ -32,6 +34,7 @@ import {
   FormDate,
   FormSection,
   FormStatusSelect,
+  FormIcon,
   FormSelect,
   FormText,
   QuickAddDialog,
@@ -46,7 +49,12 @@ import {
   BindingDraftsProvider,
   useBindingDraftsRoot,
 } from "@/lib/binding-drafts"
-import { useSaveObject } from "@/lib/save-object"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import { expandNameRange } from "@/lib/name-range"
+import { NameRangeHint } from "@/components/name-range-hint"
+import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { MM_INPUT, mmOrNull, mmText } from "@/lib/mm-field"
+import { jsonObjectText, parseJsonObject } from "@/lib/json-object"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceTypePicker } from "@/components/device-type-picker"
@@ -56,8 +64,22 @@ import { RackPlacement } from "@/components/rack-placement"
 import { fmtUnits, unitBlocker } from "@/lib/rack-placement"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import {
+  DeviceProfilesField,
+  useHostProfilesDraft,
+} from "@/components/device-profile-assign"
+import {
+  ApplicationGroupsField,
+  useHostGroupsDraft,
+} from "@/components/application-group-assign"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { FormRoomCombobox } from "@/components/room-field"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
+import { usePrtgEnabled } from "@/components/prtg/group-picker"
+import {
+  PrtgSyncSelect,
+  showPrtgSaveToast,
+} from "@/components/prtg/prtg-sync-select"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
   CardLinesEditor,
@@ -66,18 +88,13 @@ import {
 import { inheritedCardLines } from "@/components/topology/diagram/card-lines"
 import { useMe } from "@/lib/use-me"
 
+// Thrown when the local-context-data text is not a JSON object: the field
+// shows the error, so no toast.
+const LOCAL_DATA_INVALID = "Invalid local context data."
+
 const PORT_LABEL_OPTIONS = [
   { value: "on", label: "Shown" },
   { value: "off", label: "Hidden" },
-]
-
-const AIRFLOW_OPTIONS: { value: string; label: string }[] = [
-  { value: "front-to-rear", label: "Front to rear" },
-  { value: "rear-to-front", label: "Rear to front" },
-  { value: "left-to-right", label: "Left to right" },
-  { value: "right-to-left", label: "Right to left" },
-  { value: "passive", label: "Passive" },
-  { value: "mixed", label: "Mixed" },
 ]
 
 interface ClusterOption {
@@ -109,6 +126,8 @@ export interface DeviceFormProps {
     cabinetId?: string
     dinRailId?: string
     dinOffset?: number
+    /** Pre-pick device profiles - "Add device" from a profile's page. */
+    profileIds?: string[]
   }
   /** Clone seed (create only): the source's carried-over fields from
    * GET /api/devices/<id>/clone/. Identity/placement (name, serial, rack) are
@@ -116,6 +135,8 @@ export interface DeviceFormProps {
    * Distinct from `device` so this still POSTs a new device. */
   clone?: Partial<Device>
   onSaved: (d: Device) => void
+  /** After a name range (`sw-[1-10]`) created several devices at once. */
+  onSavedMany?: (r: DeviceBulkCreateResult) => void
   onCancel: () => void
 }
 
@@ -124,6 +145,7 @@ export function DeviceForm({
   initial,
   clone,
   onSaved,
+  onSavedMany,
   onCancel,
 }: DeviceFormProps) {
   const { canDo } = useMe()
@@ -137,8 +159,21 @@ export function DeviceForm({
   const saveObject = useSaveObject()
   // The Monitoring section stages its picks; Save writes them (#324).
   const bindingDrafts = useBindingDraftsRoot()
+  // Application groups (#436): written once the device saved.
+  const groupsDraft = useHostGroupsDraft(
+    device ? { kind: "device", id: device.id } : null
+  )
+  // Device profiles: likewise written once the device saved.
+  const profilesDraft = useHostProfilesDraft(
+    device ? { kind: "device", id: device.id } : null,
+    initial?.profileIds
+  )
+  const isPlanning = !!usePlanTarget()
 
   const [name, setName] = useState(device?.name ?? "")
+  // A `[a-b]` range in a new device's name creates one device per name.
+  const rangeNames = isEdit ? [] : expandNameRange(name.trim())
+  const isRange = rangeNames.length > 1
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(
     seed?.device_type?.id ?? initial?.deviceTypeId ?? null
   )
@@ -152,11 +187,18 @@ export function DeviceForm({
   const [configTemplateId, setConfigTemplateId] = useState<string | null>(
     device?.config_template?.own?.id ?? null
   )
+  const [localData, setLocalData] = useState(
+    jsonObjectText(device?.local_context_data)
+  )
+  const [localDataError, setLocalDataError] = useState<string | null>(null)
   const [statusId, setStatusId] = useState<string | null>(
     seed?.status?.id ?? null
   )
   const [serial, setSerial] = useState(device?.serial_number ?? "")
   const [assetTag, setAssetTag] = useState(device?.asset_tag ?? "")
+  const [softwareVersion, setSoftwareVersion] = useState(
+    device?.software_version ?? ""
+  )
   const [warrantyEnd, setWarrantyEnd] = useState(device?.warranty_end ?? "")
   const [description, setDescription] = useState(seed?.description ?? "")
   const [rackId, setRackId] = useState<string | null>(
@@ -220,13 +262,25 @@ export function DeviceForm({
   )
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   const [comments, setComments] = useState(seed?.comments ?? "")
+  const prtgOn = usePrtgEnabled()
+  const [prtgSync, setPrtgSync] = useState<PrtgSync>(
+    device?.prtg_sync ?? "inherit"
+  )
+  const [prtgHost, setPrtgHost] = useState(device?.prtg_host ?? "")
   const [locationId, setLocationId] = useState<string | null>(
     seed?.location?.id ?? null
   )
+  const [roomId, setRoomId] = useState<string | null>(seed?.room?.id ?? null)
   const [clusterId, setClusterId] = useState<string | null>(
     seed?.cluster?.id ?? null
   )
   const [airflow, setAirflow] = useState(seed?.airflow ?? "")
+  // Blank inherits the type's method (#434).
+  const [coolingMethod, setCoolingMethod] = useState(seed?.cooling_method ?? "")
+  // Its own body size; blank inherits the type's.
+  const [widthMm, setWidthMm] = useState(mmText(seed?.width_mm))
+  const [heightMm, setHeightMm] = useState(mmText(seed?.height_mm))
+  const [depthMm, setDepthMm] = useState(mmText(seed?.depth_mm))
   const [portLabels, setPortLabels] = useState<DevicePortLabels>(
     seed?.port_labels ?? ""
   )
@@ -250,6 +304,7 @@ export function DeviceForm({
   const [photoSize, setPhotoSize] = useState(
     photoSizeOf(seed?.topology_photo_size)
   )
+  const [icon, setIcon] = useState(seed?.icon ?? "")
 
   useEffect(() => {
     if (!device) return
@@ -259,9 +314,12 @@ export function DeviceForm({
     setRoleId(device.role?.id ?? null)
     setPlatformId(device.platform?.id ?? null)
     setConfigTemplateId(device.config_template?.own?.id ?? null)
+    setLocalData(jsonObjectText(device.local_context_data))
+    setLocalDataError(null)
     setStatusId(device.status?.id ?? null)
     setSerial(device.serial_number)
     setAssetTag(device.asset_tag)
+    setSoftwareVersion(device.software_version ?? "")
     setWarrantyEnd(device.warranty_end ?? "")
     setDescription(device.description)
     setRackId(device.rack?.id ?? null)
@@ -282,9 +340,16 @@ export function DeviceForm({
     setTagIds(device.tags.map((t) => t.id))
     setCustomFields(device.custom_fields ?? {})
     setComments(device.comments ?? "")
+    setPrtgSync(device.prtg_sync ?? "inherit")
+    setPrtgHost(device.prtg_host ?? "")
     setLocationId(device.location?.id ?? null)
+    setRoomId(device.room?.id ?? null)
     setClusterId(device.cluster?.id ?? null)
     setAirflow(device.airflow ?? "")
+    setCoolingMethod(device.cooling_method ?? "")
+    setWidthMm(mmText(device.width_mm))
+    setHeightMm(mmText(device.height_mm))
+    setDepthMm(mmText(device.depth_mm))
     setPortLabels(device.port_labels ?? "")
     setLatitude(device.latitude ?? "")
     setLongitude(device.longitude ?? "")
@@ -293,19 +358,19 @@ export function DeviceForm({
     setVcPriority(device.vc_priority != null ? String(device.vc_priority) : "")
     setTopologyCard(device.topology_card ?? null)
     setPhotoSize(photoSizeOf(device.topology_photo_size))
+    setIcon(device.icon ?? "")
     reset()
   }, [device, reset])
 
   const types = useQuery({
     queryKey: ["device-types-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceTypeOption>>("/api/device-types/?picker=1"),
+    queryFn: () => apiAll<DeviceTypeOption>("/api/device-types/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "device"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=device&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=device&picker=1"),
     staleTime: 5 * 60_000,
   })
   const sites = useSiteOptions()
@@ -317,12 +382,12 @@ export function DeviceForm({
   }, [isEdit, sites.lockedId, siteId])
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   const racks = useQuery({
     queryKey: ["racks-picker"],
-    queryFn: () => api<Paginated<RackOption>>("/api/racks/?picker=1"),
+    queryFn: () => apiAll<RackOption>("/api/racks/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Devices already in the selected rack - drives the Position (U) dropdown
@@ -330,7 +395,7 @@ export function DeviceForm({
   // cache is shared.
   const rackDevices = useQuery({
     queryKey: ["rack-devices", rackId],
-    queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rackId}`),
+    queryFn: () => apiAll<Device>(`/api/devices/?rack=${rackId}`),
     enabled: !!rackId,
   })
   // The picked cabinet: its rails, and its site - a device in a cabinet is
@@ -352,37 +417,33 @@ export function DeviceForm({
   }, [cabinetSite, siteId])
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceRoleOption>>("/api/device-roles/?picker=1"),
+    queryFn: () => apiAll<DeviceRoleOption>("/api/device-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const platforms = useQuery({
     queryKey: ["platforms-picker"],
-    queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
+    queryFn: () => apiAll<PlatformOption>("/api/platforms/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const templates = useQuery({
     queryKey: ["export-templates", "device"],
     queryFn: () =>
-      api<Paginated<ExportTemplate>>(
-        "/api/export-templates/?object_type=device"
-      ),
+      apiAll<ExportTemplate>("/api/export-templates/?object_type=device"),
     staleTime: 5 * 60_000,
   })
   const locations = useQuery({
     queryKey: ["locations-picker"],
-    queryFn: () => api<Paginated<LocationOption>>("/api/locations/?picker=1"),
+    queryFn: () => apiAll<LocationOption>("/api/locations/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const clusters = useQuery({
     queryKey: ["clusters-picker"],
-    queryFn: () => api<Paginated<ClusterOption>>("/api/clusters/?picker=1"),
+    queryFn: () => apiAll<ClusterOption>("/api/clusters/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const virtualChassis = useQuery({
     queryKey: ["virtual-chassis-picker"],
-    queryFn: () =>
-      api<Paginated<VirtualChassisOption>>("/api/virtual-chassis/"),
+    queryFn: () => apiAll<VirtualChassisOption>("/api/virtual-chassis/"),
     staleTime: 10 * 60_000,
   })
   // Admin-controlled field visibility. Falls back to the documented defaults
@@ -394,6 +455,8 @@ export function DeviceForm({
     retry: false,
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
+  // Airflow's options are the model's own list (/api/dcim/choices/).
+  const choices = useDcimChoices()
   // What the topology card shows while this device inherits: its role's
   // lines, else All devices. A saved view's own lines come first on its map.
   const cardConfig = useCardLineConfig()
@@ -535,7 +598,15 @@ export function DeviceForm({
   // (site, role, table…) and clear only what names this one.
   const againRef = useRef(false)
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<
+      { one: Device } | { many: DeviceBulkCreateResult }
+    > => {
+      const localContextData = parseJsonObject(localData)
+      if (localContextData === undefined) {
+        setLocalDataError("Must be a valid JSON object.")
+        throw new Error(LOCAL_DATA_INVALID)
+      }
+      setLocalDataError(null)
       const payload: DeviceWritePayload = {
         name: name.trim(),
         device_type_id: deviceTypeId,
@@ -545,6 +616,7 @@ export function DeviceForm({
         status_id: statusId,
         serial_number: serial.trim(),
         asset_tag: assetTag.trim(),
+        software_version: softwareVersion.trim(),
         warranty_end: warrantyEnd || null,
         description: description.trim(),
         tag_ids: tagIds,
@@ -571,12 +643,18 @@ export function DeviceForm({
             : null,
         comments: comments.trim(),
         airflow,
+        cooling_method: coolingMethod,
+        width_mm: mmOrNull(widthMm),
+        height_mm: mmOrNull(heightMm),
+        depth_mm: mmOrNull(depthMm),
         port_labels: portLabels,
         latitude: latitude.trim() !== "" ? latitude.trim() : null,
         longitude: longitude.trim() !== "" ? longitude.trim() : null,
         location_id: locationId,
+        room_id: roomId,
         cluster_id: clusterId,
         config_template_id: configTemplateId,
+        local_context_data: localContextData,
         virtual_chassis_id: vcId,
         vc_position:
           vcId && vcPosition.trim() !== "" ? Number(vcPosition) : null,
@@ -584,17 +662,60 @@ export function DeviceForm({
           vcId && vcPriority.trim() !== "" ? Number(vcPriority) : null,
         topology_card: topologyCard,
         topology_photo_size: photoSize ?? "",
+        icon,
+        // Only while PRTG is on: the field is not shown otherwise.
+        ...(prtgOn ? { prtg_sync: prtgSync, prtg_host: prtgHost.trim() } : {}),
+      }
+      if (isRange && !isPlanning) {
+        // One request, all or nothing: the server makes every name, and
+        // gives each the groups and profiles picked here.
+        const many = await api<DeviceBulkCreateResult>(
+          "/api/devices/bulk-create/",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              ...payload,
+              ...(groupsDraft.show && groupsDraft.ids.length
+                ? { application_group_ids: groupsDraft.ids }
+                : {}),
+              ...(profilesDraft.show && profilesDraft.ids.length
+                ? { profile_ids: profilesDraft.ids }
+                : {}),
+            }),
+          }
+        )
+        return { many }
       }
       const saved = await saveObject<Device>({
         objectType: "api.device",
         endpoint: "/api/devices/",
         id: isEdit ? device!.id : undefined,
         payload,
+        // Planning a range stages one create per name.
+        names: isRange ? rangeNames : undefined,
       })
       await bindingDrafts.commit()
-      return saved
+      await groupsDraft.commit({ kind: "device", id: saved.id })
+      await profilesDraft.commit({ kind: "device", id: saved.id })
+      return { one: saved }
     },
-    onSuccess: (saved) => {
+    onSuccess: (r) => {
+      if ("many" in r) {
+        qc.invalidateQueries({ queryKey: ["devices"] })
+        qc.invalidateQueries({ queryKey: ["devices-picker"] })
+        qc.invalidateQueries({ queryKey: ["device-profile-assignments"] })
+        qc.invalidateQueries({ queryKey: ["device-profile"] })
+        invalidatePortCounts(qc)
+        toast.success(`Created ${r.many.count} devices`)
+        if (againRef.current) {
+          againRef.current = false
+          setName("")
+          return
+        }
+        onSavedMany?.(r.many)
+        return
+      }
+      const saved = r.one
       qc.invalidateQueries({ queryKey: ["devices"] })
       qc.invalidateQueries({ queryKey: ["devices-picker"] })
       qc.invalidateQueries({ queryKey: ["device", saved.id] })
@@ -602,6 +723,8 @@ export function DeviceForm({
       invalidatePortCounts(qc)
       if (saved.cabinet || device?.cabinet) invalidateCabinetDeviceViews(qc)
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      if (showPrtgSaveToast(saved.prtg_plan))
+        qc.invalidateQueries({ queryKey: ["prtg-plan"] })
       if (againRef.current) {
         againRef.current = false
         setName("")
@@ -613,6 +736,7 @@ export function DeviceForm({
       onSaved(saved)
     },
     onError: (err) => {
+      if (err.message === LOCAL_DATA_INVALID) return
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
     },
@@ -639,6 +763,7 @@ export function DeviceForm({
               placeholder="sw-fra-01"
               error={fieldErrors.name}
             />
+            <NameRangeHint name={name} editing={isEdit} noun="devices" />
             <div className="grid gap-3 @md:grid-cols-2">
               <DeviceTypePicker
                 required
@@ -733,6 +858,14 @@ export function DeviceForm({
                 }
               />
             </div>
+            <FormText
+              label="Software version"
+              value={softwareVersion}
+              onChange={setSoftwareVersion}
+              mono
+              placeholder="17.9.4a"
+              error={fieldErrors.software_version}
+            />
             <FormCombobox
               label="Config template"
               hint="overrides role/platform"
@@ -767,9 +900,24 @@ export function DeviceForm({
               />
             )}
           </FormSection>
+          <FormSection title="Config context" card>
+            <FormTextarea
+              label="Local context data"
+              info="Merged over every matching config context, so these keys win."
+              rows={6}
+              placeholder='{"default_route": "192.0.2.1"}'
+              value={localData}
+              onChange={(v) => {
+                setLocalData(v)
+                setLocalDataError(null)
+              }}
+              error={localDataError ?? fieldErrors.local_context_data}
+            />
+          </FormSection>
           <FormSection title="Topology card" card>
             <Field
               label="Card lines"
+              group
               info="Device, then view, then role, then All devices."
               error={fieldErrors.topology_card}
             >
@@ -792,6 +940,13 @@ export function DeviceForm({
               value={photoSize}
               onChange={setPhotoSize}
               error={fieldErrors.topology_photo_size}
+            />
+            <FormIcon
+              label="Icon"
+              hint="blank uses the type's, then the role's"
+              value={icon}
+              onChange={setIcon}
+              error={fieldErrors.icon}
             />
           </FormSection>
         </FormColumn>
@@ -820,16 +975,57 @@ export function DeviceForm({
                 error={fieldErrors.warranty_end}
               />
             </div>
-            {visibility.airflow && (
-              <FormSelect
-                label="Airflow"
-                value={airflow === "" ? null : airflow}
-                onChange={(v) => setAirflow(v ?? "")}
-                noneLabel="-"
-                options={AIRFLOW_OPTIONS}
-                error={fieldErrors.airflow}
-              />
+            {(visibility.airflow || visibility.cooling_method) && (
+              <div className="grid gap-3 @md:grid-cols-2">
+                {visibility.airflow && (
+                  <FormSelect
+                    label="Airflow"
+                    value={airflow === "" ? null : airflow}
+                    onChange={(v) => setAirflow(v ?? "")}
+                    noneLabel="-"
+                    options={choices.airflow}
+                    error={fieldErrors.airflow}
+                  />
+                )}
+                {visibility.cooling_method && (
+                  <FormSelect
+                    label="Cooling"
+                    info="Blank takes the device type's; nothing set anywhere reads as air."
+                    value={coolingMethod === "" ? null : coolingMethod}
+                    onChange={(v) => setCoolingMethod(v ?? "")}
+                    noneLabel="Inherit"
+                    placeholder="Inherit"
+                    options={choices.cooling_method}
+                    error={fieldErrors.cooling_method}
+                  />
+                )}
+              </div>
             )}
+            <div className="grid gap-3 @md:grid-cols-3">
+              {(
+                [
+                  ["Width (mm)", "width_mm", widthMm, setWidthMm],
+                  ["Height (mm)", "height_mm", heightMm, setHeightMm],
+                  ["Depth (mm)", "depth_mm", depthMm, setDepthMm],
+                ] as const
+              ).map(([label, key, value, set], i) => (
+                <FormText
+                  key={key}
+                  label={label}
+                  info={
+                    i === 0
+                      ? "Blank takes the device type's. Sizes the device on floor plans and in 3D."
+                      : undefined
+                  }
+                  {...MM_INPUT}
+                  min={1}
+                  placeholder={mmText(selectedType?.[key])}
+                  value={value}
+                  onChange={set}
+                  error={fieldErrors[key]}
+                />
+              ))}
+            </div>
             <FormSelect
               label="Port labels"
               value={portLabels === "" ? null : portLabels}
@@ -848,7 +1044,10 @@ export function DeviceForm({
                     label="Location"
                     hint="optional"
                     value={locationId}
-                    onChange={setLocationId}
+                    onChange={(v) => {
+                      setLocationId(v)
+                      setRoomId(null) // rooms are per-location
+                    }}
                     options={(locations.data?.results ?? []).map((l) => ({
                       value: l.id,
                       label: l.name,
@@ -878,6 +1077,14 @@ export function DeviceForm({
                   />
                 )}
               </div>
+            )}
+            {visibility.location && (
+              <FormRoomCombobox
+                locationId={locationId}
+                value={roomId}
+                onChange={setRoomId}
+                error={fieldErrors.room_id}
+              />
             )}
 
             {(visibility.latitude || visibility.longitude) && (
@@ -1131,6 +1338,19 @@ export function DeviceForm({
             </div>
           </FormSection>
 
+          {prtgOn && (
+            <FormSection title="PRTG" card>
+              <PrtgSyncSelect
+                value={prtgSync}
+                onChange={setPrtgSync}
+                error={fieldErrors.prtg_sync}
+                host={prtgHost}
+                onHostChange={setPrtgHost}
+                hostError={fieldErrors.prtg_host}
+              />
+            </FormSection>
+          )}
+
           {device?.id && (
             <BindingDraftsProvider value={bindingDrafts}>
               <FormSection title="Monitoring" card>
@@ -1144,6 +1364,19 @@ export function DeviceForm({
           )}
         </FormColumn>
       </FormColumns>
+
+      {groupsDraft.show && (
+        <ApplicationGroupsField
+          value={groupsDraft.ids}
+          onChange={groupsDraft.setIds}
+        />
+      )}
+      {profilesDraft.show && (
+        <DeviceProfilesField
+          value={profilesDraft.ids}
+          onChange={profilesDraft.setIds}
+        />
+      )}
 
       <Field label="Tags" error={fieldErrors.tag_ids}>
         {" "}
@@ -1162,7 +1395,13 @@ export function DeviceForm({
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}
-        submitLabel={isEdit ? "Save changes" : "Create device"}
+        submitLabel={
+          isEdit
+            ? "Save changes"
+            : isRange
+              ? `Create ${rangeNames.length} devices`
+              : "Create device"
+        }
         secondary={
           isEdit ? undefined : (
             <Button

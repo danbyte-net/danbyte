@@ -3,13 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type BusinessHours,
   type ContactMini,
-  type Paginated,
   type Provider,
   type ProviderWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormColumn,
   FormColumns,
@@ -107,7 +106,7 @@ export function ProviderForm({
 
   const contacts = useQuery({
     queryKey: ["contacts-picker"],
-    queryFn: () => api<Paginated<ContactMini>>("/api/contacts/?picker=1"),
+    queryFn: () => apiAll<ContactMini>("/api/contacts/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

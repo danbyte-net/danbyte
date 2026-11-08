@@ -161,7 +161,9 @@ interface Item {
   ib?: string[]
   wia: number[]
   wib: number[]
-  /** A Detailed nub end: the straight run its labels need (`endRun`). */
+  /** A Detailed nub end: the straight run its labels need (`endRun`) -
+   * on a bendy line only a photo port's lead, the labels following the
+   * curve. */
   runA: number
   runB: number
   /** Drawn as an arc along this axis, bulging this way. */
@@ -178,6 +180,11 @@ interface Item {
   portA: boolean
   portB: boolean
   fanLeg: boolean
+  /** A breakout leg into a Detailed nub: the straight run its far port's
+   * name takes (`endRun`), whether the map shows the name or not - legs
+   * converging on one card run in side by side, a name to each gap, and
+   * the line is the same with labels or without. */
+  fanRun?: number
   /** A bendy line leaving a point it shares: the part of its reach each
    * end bends within (`sharedShares`). */
   share?: [number, number]
@@ -257,19 +264,23 @@ function items(input: PlanInput): Item[] {
       // A trunk is straight - unless its port faces away from its legs,
       // and it goes round to the junction by the far cards.
       const bentTrunk = d.fan?.role === "trunk" && !!d.fan.bent
+      // A cyclical link the view's default leaves unarched is bendy.
+      const line: LineType =
+        d.fan?.role === "trunk"
+          ? bentTrunk
+            ? "elbow"
+            : "straight"
+          : d.line === "cyclical" && !arc
+            ? "bendy"
+            : d.line
+      // A curve is the same with labels or without: they follow it, so
+      // it runs straight out of a photo port's lead only.
+      const bendy = line === "bendy"
       out.push({
         edge: e,
         i,
         key: `${e.id}#${i}`,
-        // A cyclical link the view's default leaves unarched is bendy.
-        line:
-          d.fan?.role === "trunk"
-            ? bentTrunk
-              ? "elbow"
-              : "straight"
-            : d.line === "cyclical" && !arc
-              ? "bendy"
-              : d.line,
+        line,
         ...(bentTrunk ? { rerouted: true as const } : {}),
         a: {
           ...a,
@@ -291,8 +302,8 @@ function items(input: PlanInput): Item[] {
         ...(ib ? { ib } : {}),
         wia,
         wib,
-        runA,
-        runB,
+        runA: bendy ? nubRun(nubA, !!leadA, []) : runA,
+        runB: bendy ? nubRun(nubB, !!leadB, []) : runB,
         ...(arc ? { arc } : {}),
         nubA,
         nubB,
@@ -301,6 +312,9 @@ function items(input: PlanInput): Item[] {
         portA,
         portB,
         fanLeg: d.fan?.role === "leg",
+        ...(d.fan?.role === "leg" && nubB && portOf(ba)
+          ? { fanRun: endRun([width(portOf(ba)!)]) }
+          : {}),
       })
     })
   }
@@ -317,6 +331,10 @@ function fanBends(first: number): number[] {
   for (let b = first + 0.1; b <= 0.851; b += 0.1) out.push(b)
   return out
 }
+
+/** The least part of its run along the trunk a breakout leg bends
+ * within at either end: nearer still, its curve turns in a kink. */
+const FAN_FLOOR = 0.35
 
 /** Reach scales a bendy cable tries when a card is in its way, `[a, b]`
  * for its two ends: its free curve first, then ever further from it.
@@ -422,10 +440,11 @@ function sharedShares(all: readonly Item[]): Map<string, number> {
 
 /**
  * A bendy cable's points: its free curve (`freeBendy`: out along each
- * end's normal, straight past its labels), unless that curve runs through
- * a card it does not connect - then the nearest curve that keeps clear,
- * its arms made longer or shorter (`BENDY_WAYS`), no shorter than its
- * labels' straight run while one of those gets clear. A breakout leg
+ * end's normal), unless that curve runs through a card it does not
+ * connect - then the nearest curve that keeps clear, its arms made longer
+ * or shorter (`BENDY_WAYS`). Its labels play no part: they follow the
+ * curve (`placeInline`), so it is the same with labels or without. A
+ * breakout leg
  * curves like the cable page's fan-out, bending nearer the junction or
  * the port where that keeps it clear. Null for a cable no curve gets
  * clear: it goes round the cards as an elbow.
@@ -437,11 +456,19 @@ function bendyPts(it: Item, obs: Obstacles): Pt[] | null {
   if (it.fanLeg) {
     // Bend nearer the junction when the far port's name needs the room.
     const along = (B.x - A.x) * it.a.dir[0] + (B.y - A.y) * it.a.dir[1]
-    const named = it.runB > 0
-    const need = named ? 2 * it.b.stub : 0
+    const run = it.fanRun ?? 0
+    const need = run ? 2 * portStub(run) : 0
+    // Never so near the junction or the port that it turns there in a
+    // kink: a leg far off to the side has to turn twice within its run
+    // along the trunk, and bends at least `FAN_FLOOR` of it from either.
+    const floor = FAN_FLOOR
     const first =
-      along > 0 ? Math.max(0.2, Math.min(FAN_BEND, 1 - need / along)) : FAN_BEND
-    for (const bend of fanBends(first)) {
+      along > 0
+        ? Math.max(0.2, floor, Math.min(FAN_BEND, 1 - need / along))
+        : FAN_BEND
+    for (const bend of fanBends(first).filter(
+      (f) => f >= floor - 1e-9 && f <= 1 - floor + 1e-9
+    )) {
       const fan = fanControls(it.a, it.b, bend)
       if (!fan) break
       // Legs converging on one card run in side by side. A point on the
@@ -450,9 +477,9 @@ function bendyPts(it: Item, obs: Obstacles): Pt[] | null {
       // control point: at least a stub, so each name keeps its own gap.
       const [, p2] = fan
       const last = Math.hypot(B.x - p2.x, B.y - p2.y)
-      const x = Math.max(1, 2 * it.b.stub - last)
+      const x = Math.max(1, need - last)
       const pts =
-        named && x < last - 1
+        run && x < last - 1
           ? [
               A,
               ...fan,
@@ -465,10 +492,10 @@ function bendyPts(it: Item, obs: Obstacles): Pt[] | null {
     }
   }
   const [ka, kb] = armsOf(it)
-  // Pulled in, an arm reaches past its labels while any such curve gets
-  // clear; failing that, as short as a curve goes (its labels may then
-  // be left off). Reaching further, never past the cap that keeps facing
-  // ends from overshooting and waving back.
+  // Pulled in, an arm reaches past a photo port's lead while any such
+  // curve gets clear; failing that, as short as a curve goes. Reaching
+  // further, never past the cap that keeps facing ends from overshooting
+  // and waving back.
   const least = (k: number, run: number) =>
     Math.min(k, Math.max(BENDY.MIN, run ? portStub(run) : 0))
   const cap = bendyCap(it.a, it.b)
@@ -498,6 +525,11 @@ interface Hook {
   pts: Pt[]
   dir: Dir
 }
+
+/** How far a bendy line's hook runs out of its photo before it turns:
+ * the curve through the hook's corners cuts them, and from this far out
+ * it rounds the photo's corner clear of it. */
+const CURVE_HOOK = 3 * STUB
 
 /** How far past a photo's side a hook turns. */
 const HOOK_CLEAR = CLEAR + 4
@@ -530,7 +562,14 @@ function hooks(
   rects: ReadonlyMap<string, Rect>,
   obs: ReturnType<typeof obstacles>
 ): Map<string, Hook> {
-  type Ask = { key: string; at: PlanEnd; r: Rect; way: HookWay; far: number }
+  type Ask = {
+    key: string
+    at: PlanEnd
+    r: Rect
+    way: HookWay
+    far: number
+    stub: number
+  }
   const groups = new Map<string, Ask[]>()
   const facesAway = (at: PlanEnd, to: Pt) =>
     (to.x - at.x) * at.dir[0] + (to.y - at.y) * at.dir[1] < -2
@@ -547,10 +586,14 @@ function hooks(
     const rb = it.leadB && facesAway(it.b, it.a) ? rects.get(it.b.node) : null
     if (!ra && !rb) continue
     let best: { a?: HookWay; b?: HookWay; cost: number } | null = null
+    // A curve's labels follow it: its hook runs out as far as the curve
+    // needs to round the photo's corner clear of it, not their room.
+    const [sa, sb] =
+      it.line === "bendy" ? [CURVE_HOOK, CURVE_HOOK] : [it.a.stub, it.b.stub]
     for (const wa of ra ? HOOK_WAYS : [undefined])
       for (const wb of rb ? HOOK_WAYS : [undefined]) {
-        const pa = wa && ra ? hookPts(it.a, ra, wa, it.a.stub, HOOK_CLEAR) : []
-        const pb = wb && rb ? hookPts(it.b, rb, wb, it.b.stub, HOOK_CLEAR) : []
+        const pa = wa && ra ? hookPts(it.a, ra, wa, sa, HOOK_CLEAR) : []
+        const pb = wb && rb ? hookPts(it.b, rb, wb, sb, HOOK_CLEAR) : []
         const pts = [it.a, ...pa, ...[...pb].reverse(), it.b]
         const cost =
           length(pts) + (pathClear(obs, pts, [it.a.node, it.b.node]) ? 0 : 1e6)
@@ -579,6 +622,7 @@ function hooks(
         r,
         way,
         far: Math.abs(edge - pos),
+        stub: end === "a" ? sa : sb,
       })
       groups.set(g, list)
     }
@@ -587,7 +631,7 @@ function hooks(
   for (const list of groups.values()) {
     // Nearest the side first: it turns off lowest, the others round it.
     list.sort((p, q) => p.far - q.far || (p.key < q.key ? -1 : 1))
-    const base = Math.max(...list.map((x) => x.at.stub))
+    const base = Math.max(...list.map((x) => x.stub))
     list.forEach(({ key, at, r, way }, k) => {
       const [dx, dy] = at.dir
       out.set(key, {
@@ -888,8 +932,8 @@ export function planEdges(
     routeOf.set(it.key, routeThrough(it.line, pts, it.a.dir))
   }
 
-  // Labels: port names first (they belong to one spot), then the chips,
-  // then the addresses after each port name.
+  // Labels: port names first (they belong to one spot), then the
+  // addresses after each port name, then the chips.
   const scene = new LabelScene(
     all.map((it): [string, Pt[]] => [
       it.key,
@@ -900,6 +944,9 @@ export function planEdges(
       ...(input.strips ?? []).filter((s) => s.fixed).map((s) => s.r),
     ]
   )
+  // A bendy line's labels follow its curve.
+  const curved = (it: Item) =>
+    it.line === "bendy" && drawnPts.get(it.key)!.length > 2
   const asks: InlineAsk[] = []
   for (const it of all) {
     const route = routeOf.get(it.key)!
@@ -918,6 +965,7 @@ export function planEdges(
         cable: it.key,
         ws,
         walk: walker(route, end === "b"),
+        ...(curved(it) ? { curved: true } : {}),
         ...(line ? { line } : {}),
         from,
         // A nub's name keeps to its run; a Simple line's finds its own.
@@ -931,6 +979,38 @@ export function planEdges(
     }
   }
   const ports = placeInline(asks, scene)
+
+  // End addresses next, after their port names and before the chips:
+  // anywhere along their end's half of the route (all of it when the
+  // other end has none), IPv6 dropped before IPv4 where they do not all
+  // fit. A chip moves along its line round them, never the other way.
+  const addrAsks: InlineAsk[] = []
+  for (const it of all) {
+    const route = routeOf.get(it.key)!
+    if (route.length < 1) continue
+    for (const end of ["a", "b"] as const) {
+      const lines = end === "a" ? it.ia : it.ib
+      if (!lines) continue
+      const ws = end === "a" ? it.wia : it.wib
+      const port = ports.get(`${it.key}${end}`)
+      const from = port ? port.reach + LABEL.LEAD : leadOf(it, end) + LABEL.LEAD
+      const line = lineOf(ptsOf.get(it.key)!, end === "b", leadOf(it, end))
+      addrAsks.push({
+        key: `${it.key}${end}`,
+        cable: it.key,
+        ws,
+        walk: walker(route, end === "b"),
+        ...(curved(it) ? { curved: true } : {}),
+        ...(line ? { line } : {}),
+        from,
+        until: labelledAt(it, end === "a" ? "b" : "a")
+          ? route.length / 2
+          : route.length - LABEL.LEAD,
+        least: 1,
+      })
+    }
+  }
+  const addrs = placeInline(addrAsks, scene)
 
   const byEdge = new Map<string, Item[]>()
   for (const it of all) {
@@ -989,31 +1069,6 @@ export function planEdges(
       }
     }
   }
-  // End addresses last, after their port names: best effort round the
-  // names and chips.
-  const addrAsks: InlineAsk[] = []
-  for (const it of all) {
-    const route = routeOf.get(it.key)!
-    if (route.length < 1) continue
-    for (const end of ["a", "b"] as const) {
-      const lines = end === "a" ? it.ia : it.ib
-      if (!lines) continue
-      const ws = end === "a" ? it.wia : it.wib
-      const port = ports.get(`${it.key}${end}`)
-      const from = port ? port.reach + LABEL.LEAD : leadOf(it, end) + LABEL.LEAD
-      const line = lineOf(ptsOf.get(it.key)!, end === "b", leadOf(it, end))
-      addrAsks.push({
-        key: `${it.key}${end}`,
-        cable: it.key,
-        ws,
-        walk: walker(route, end === "b"),
-        ...(line ? { line } : {}),
-        from,
-        until: reach(route, from, ws, labelledAt(it, end === "a" ? "b" : "a")),
-      })
-    }
-  }
-  const addrs = placeInline(addrAsks, scene)
 
   // Each chip by the edge that draws it, with the edge it belongs to.
   const chipFor = new Map<

@@ -4,13 +4,8 @@ import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { ChevronRight, Download } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type {
-  ChangeAction,
-  ChangeLogEntry,
-  FieldChange,
-  Paginated,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ChangeAction, ChangeLogEntry, FieldChange } from "@/lib/api"
 import { downloadBlob } from "@/lib/table-export"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -68,8 +63,13 @@ const COLUMNS: ColumnDef<ChangeLogEntry>[] = [
     meta: {
       export: {
         value: (e) =>
-          Object.entries(e.changes)
-            .map(([f, c]) => `${f}: ${diffText(c)}`)
+          [
+            e.cause,
+            ...Object.entries(e.changes).map(
+              ([f, c]) => `${f}: ${diffText(c)}`
+            ),
+          ]
+            .filter(Boolean)
             .join("; "),
       },
     },
@@ -92,7 +92,7 @@ export function ChangeLogPanel({
   const q = useQuery({
     queryKey: ["changelog", objectType, objectId],
     queryFn: () =>
-      api<Paginated<ChangeLogEntry>>(
+      apiAll<ChangeLogEntry>(
         `/api/changelog/?object_type=${objectType}&object_id=${objectId}`
       ),
     // History should always reflect the latest writes - refetch whenever the
@@ -144,10 +144,15 @@ export function ChangeLogPanel({
 function ChangesCell({ e }: { e: ChangeLogEntry }) {
   const [open, setOpen] = useState(false)
   const fields = Object.entries(e.changes)
+  // Why a derived write happened ("Requirement 'WMS to Broker': …").
+  const cause = e.cause ? (
+    <div className="text-xs text-muted-foreground">{e.cause}</div>
+  ) : null
   if (fields.length === 0)
-    return <span className="text-muted-foreground">-</span>
+    return cause ?? <span className="text-muted-foreground">-</span>
   return (
     <div className="space-y-1.5">
+      {cause}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

@@ -2,6 +2,7 @@ import * as React from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
   Activity,
+  AppWindow,
   ArrowDownUp,
   BellRing,
   BookOpen,
@@ -9,7 +10,9 @@ import {
   Boxes,
   Building2,
   Cable as CableIcon,
+  CalendarClock,
   CalendarDays,
+  CalendarX,
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -18,6 +21,7 @@ import {
   Contact,
   Container,
   Cpu,
+  DoorClosed,
   ExternalLink,
   EyeOff,
   Factory,
@@ -30,6 +34,7 @@ import {
   FolderTree,
   GitBranch,
   GitCompareArrows,
+  GitFork,
   GitPullRequestArrow,
   Globe,
   Group,
@@ -37,7 +42,9 @@ import {
   History,
   KeyRound,
   Landmark,
+  LandPlot,
   Layers,
+  Layers3,
   LayoutDashboard,
   LayoutGrid,
   LayoutPanelTop,
@@ -50,6 +57,7 @@ import {
   MonitorSmartphone,
   MoreHorizontal,
   Network,
+  Package,
   Plus,
   Printer,
   Puzzle,
@@ -57,6 +65,7 @@ import {
   RefreshCw,
   Rocket,
   Route as RouteIcon,
+  Signpost,
   Rows3,
   Rows4,
   Server,
@@ -65,6 +74,7 @@ import {
   Shield,
   ShieldCheck,
   SlidersHorizontal,
+  Snowflake,
   Split,
   SquareKanban,
   SquareStack,
@@ -77,6 +87,7 @@ import {
   UserMinus,
   Users,
   UsersRound,
+  Waves,
   Waypoints,
   Bot,
   FileCode,
@@ -85,6 +96,7 @@ import {
   Wrench,
   Zap,
   ListFilter,
+  Shapes,
 } from "lucide-react"
 
 import {
@@ -135,17 +147,17 @@ import {
   auth,
   type Bookmark as BookmarkRow,
   type BookmarkFolder,
-  type Paginated,
   type SystemInfo,
   type TenantPicker,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { cn } from "@/lib/utils"
 import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
 import { useBookmarks } from "@/lib/use-bookmarks"
 import { usePluginUi } from "@/lib/plugins"
 import { useUserPrefs } from "@/lib/use-user-prefs"
-import { DynamicIcon } from "@/components/dynamic-icon"
+import { LazyDynamicIcon } from "@/components/dynamic-icon-lazy"
 import { apiErrorToast } from "@/lib/api-toast"
 import { naturalCompare } from "@/lib/natural-sort"
 import {
@@ -178,7 +190,7 @@ type NavItem = {
   perm?: string
   /** Also require one of these Settings → Integrations toggles to be on. */
   integration?: Array<
-    "dhcp" | "dns" | "virtualization" | "ai" | "zabbix" | "oxidized"
+    "dhcp" | "dns" | "virtualization" | "ai" | "zabbix" | "prtg" | "oxidized"
   >
 }
 // A cluster is a labelled run of items inside a section (rendered as a small
@@ -338,7 +350,7 @@ function EntryIcon({
 }) {
   if (entry.icon) return <entry.icon className={className} />
   if (entry.iconName)
-    return <DynamicIcon name={entry.iconName} className={className} />
+    return <LazyDynamicIcon name={entry.iconName} className={className} />
   return null
 }
 
@@ -417,6 +429,24 @@ export const sections: NavSection[] = [
             url: "/locations",
             icon: FolderTree,
             objectType: "location",
+          },
+          {
+            title: "Location types",
+            url: "/location-types",
+            icon: Shapes,
+            objectType: "locationtype",
+          },
+          {
+            title: "Area types",
+            url: "/area-types",
+            icon: LandPlot,
+            objectType: "areatype",
+          },
+          {
+            title: "Rooms",
+            url: "/rooms",
+            icon: DoorClosed,
+            objectType: "room",
           },
         ],
       },
@@ -614,6 +644,301 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "dcim",
+    label: "DCIM",
+    icon: Server,
+    clusters: [
+      {
+        label: "Devices",
+        items: [
+          {
+            title: "Devices",
+            url: "/devices",
+            icon: Server,
+            objectType: "device",
+          },
+          {
+            title: "Virtual chassis",
+            url: "/virtual-chassis",
+            icon: Layers,
+            objectType: "virtualchassis",
+          },
+          {
+            title: "Device roles",
+            url: "/device-roles",
+            icon: Tag,
+            objectType: "devicerole",
+          },
+          {
+            title: "Device profiles",
+            url: "/device-profiles",
+            icon: Layers3,
+            objectType: "deviceprofile",
+          },
+        ],
+      },
+      {
+        label: "Catalog",
+        items: [
+          {
+            title: "Manufacturers",
+            url: "/manufacturers",
+            icon: Factory,
+            objectType: "manufacturer",
+          },
+          {
+            title: "Device types",
+            url: "/device-types",
+            icon: ArrowDownUp,
+            objectType: "devicetype",
+          },
+          {
+            title: "Module types",
+            url: "/module-types",
+            icon: ArrowDownUp,
+            objectType: "moduletype",
+          },
+          {
+            title: "Platforms",
+            url: "/platforms",
+            icon: Cpu,
+            objectType: "platform",
+          },
+          {
+            title: "Platform groups",
+            url: "/platform-groups",
+            icon: Layers,
+            objectType: "platformgroup",
+          },
+        ],
+      },
+      {
+        label: "Racks & cabinets",
+        items: [
+          {
+            title: "Racks",
+            url: "/racks",
+            icon: Container,
+            objectType: "rack",
+          },
+          {
+            title: "Rack types",
+            url: "/rack-types",
+            icon: SquareStack,
+            objectType: "racktype",
+          },
+          {
+            title: "Rack roles",
+            url: "/rack-roles",
+            icon: Rows3,
+            objectType: "rackrole",
+          },
+          {
+            title: "Cabinets",
+            url: "/cabinets",
+            icon: Rows4,
+            objectType: "cabinet",
+          },
+          {
+            title: "Cabinet types",
+            url: "/cabinet-types",
+            icon: LayoutPanelTop,
+            objectType: "cabinettype",
+          },
+          {
+            title: "Cabinet roles",
+            url: "/cabinet-roles",
+            icon: SwatchBook,
+            objectType: "cabinetrole",
+          },
+        ],
+      },
+      {
+        label: "Connections",
+        items: [
+          {
+            title: "Interfaces",
+            url: "/interfaces",
+            icon: Workflow,
+            objectType: "interface",
+          },
+          {
+            title: "Cables",
+            url: "/cables",
+            icon: CableIcon,
+            objectType: "cable",
+          },
+          {
+            title: "Port reservations",
+            url: "/port-reservations",
+            icon: Bookmark,
+            objectType: "portreservation",
+          },
+          {
+            title: "Port utilization",
+            url: "/port-utilization",
+            icon: Gauge,
+            objectType: "device",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Software, support and end-of-life cover virtual machines as well as
+    // devices, so they sit beside DCIM rather than inside it.
+    id: "software",
+    label: "Software & lifecycle",
+    icon: Package,
+    clusters: [
+      {
+        items: [
+          {
+            title: "Applications",
+            url: "/applications",
+            icon: AppWindow,
+            objectType: "application",
+          },
+          {
+            title: "Application groups",
+            url: "/application-groups",
+            icon: LayoutGrid,
+            objectType: "applicationgroup",
+          },
+          {
+            title: "Lifecycle",
+            url: "/lifecycle",
+            icon: CalendarClock,
+            anyOf: ["device", "virtualmachine"],
+          },
+          {
+            title: "End-of-life products",
+            url: "/eol-products",
+            icon: CalendarX,
+            objectType: "eolproduct",
+          },
+          {
+            title: "Support contracts",
+            url: "/support-contracts",
+            icon: ShieldCheck,
+            objectType: "supportcontract",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "maps",
+    label: "Maps",
+    icon: MapIcon,
+    clusters: [
+      {
+        items: [
+          {
+            title: "Site map",
+            url: "/site-map",
+            icon: MapIcon,
+            objectType: "site",
+          },
+          {
+            title: "Floor plans",
+            url: "/floorplans",
+            icon: LayoutGrid,
+            objectType: "floorplan",
+          },
+          {
+            title: "Topology",
+            url: "/topology",
+            icon: Share2,
+            anyOf: ["device", "cable", "interface"],
+          },
+          {
+            title: "Virtual topology",
+            url: "/virtual-topology",
+            icon: Waypoints,
+            objectType: "virtualswitch",
+          },
+          {
+            title: "Application map",
+            url: "/application-map",
+            icon: GitFork,
+            objectType: "application",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "circuits",
+    label: "Circuits",
+    icon: GitPullRequestArrow,
+    clusters: [
+      {
+        items: [
+          {
+            title: "Circuits",
+            url: "/circuits",
+            icon: GitPullRequestArrow,
+            objectType: "circuit",
+          },
+          {
+            title: "Providers",
+            url: "/providers",
+            icon: Factory,
+            objectType: "provider",
+          },
+          {
+            title: "Provider networks",
+            url: "/provider-networks",
+            icon: Cloud,
+            objectType: "providernetwork",
+          },
+          {
+            title: "Circuit types",
+            url: "/circuit-types",
+            icon: Tag,
+            objectType: "circuittype",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "power",
+    label: "Power & cooling",
+    icon: Zap,
+    clusters: [
+      {
+        items: [
+          {
+            title: "Power feeds",
+            url: "/power-feeds",
+            icon: Activity,
+            objectType: "powerfeed",
+          },
+          {
+            title: "Power panels",
+            url: "/power-panels",
+            icon: SquareStack,
+            objectType: "powerpanel",
+          },
+          {
+            title: "Cooling sources",
+            url: "/cooling-sources",
+            icon: Snowflake,
+            objectType: "coolingsource",
+          },
+          {
+            title: "Cooling feeds",
+            url: "/cooling-feeds",
+            icon: Waves,
+            objectType: "coolingfeed",
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: "routing",
     label: "Routing",
     icon: RouteIcon,
@@ -706,6 +1031,12 @@ export const sections: NavSection[] = [
             icon: RouteIcon,
             objectType: "staticroute",
           },
+          {
+            title: "Policy rules",
+            url: "/policy-rules",
+            icon: Signpost,
+            objectType: "policyrule",
+          },
         ],
       },
       {
@@ -744,6 +1075,23 @@ export const sections: NavSection[] = [
         ],
       },
       {
+        label: "RPKI",
+        items: [
+          {
+            title: "RPKI caches",
+            url: "/rpki-caches",
+            icon: Server,
+            objectType: "rpkicache",
+          },
+          {
+            title: "ROAs",
+            url: "/roas",
+            icon: ShieldCheck,
+            objectType: "roa",
+          },
+        ],
+      },
+      {
         label: "Profiles",
         items: [
           {
@@ -757,235 +1105,6 @@ export const sections: NavSection[] = [
             url: "/bfd-profiles",
             icon: Zap,
             objectType: "bfdprofile",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "dcim",
-    label: "DCIM",
-    icon: Server,
-    clusters: [
-      {
-        label: "Devices",
-        items: [
-          {
-            title: "Devices",
-            url: "/devices",
-            icon: Server,
-            objectType: "device",
-          },
-          {
-            title: "Virtual chassis",
-            url: "/virtual-chassis",
-            icon: Layers,
-            objectType: "virtualchassis",
-          },
-          {
-            title: "Device types",
-            url: "/device-types",
-            icon: ArrowDownUp,
-            objectType: "devicetype",
-          },
-          {
-            title: "Module types",
-            url: "/module-types",
-            icon: ArrowDownUp,
-            objectType: "moduletype",
-          },
-          {
-            title: "Device roles",
-            url: "/device-roles",
-            icon: Tag,
-            objectType: "devicerole",
-          },
-          {
-            title: "Platforms",
-            url: "/platforms",
-            icon: Cpu,
-            objectType: "platform",
-          },
-          {
-            title: "Platform groups",
-            url: "/platform-groups",
-            icon: Layers,
-            objectType: "platformgroup",
-          },
-          {
-            title: "Manufacturers",
-            url: "/manufacturers",
-            icon: Factory,
-            objectType: "manufacturer",
-          },
-          {
-            title: "Support contracts",
-            url: "/support-contracts",
-            icon: ShieldCheck,
-            objectType: "supportcontract",
-          },
-        ],
-      },
-      {
-        label: "Racks",
-        items: [
-          {
-            title: "Racks",
-            url: "/racks",
-            icon: Container,
-            objectType: "rack",
-          },
-          {
-            title: "Rack types",
-            url: "/rack-types",
-            icon: SquareStack,
-            objectType: "racktype",
-          },
-          {
-            title: "Rack roles",
-            url: "/rack-roles",
-            icon: Rows3,
-            objectType: "rackrole",
-          },
-          {
-            title: "Cabinets",
-            url: "/cabinets",
-            icon: Rows4,
-            objectType: "cabinet",
-          },
-          {
-            title: "Cabinet types",
-            url: "/cabinet-types",
-            icon: LayoutPanelTop,
-            objectType: "cabinettype",
-          },
-          {
-            title: "Cabinet roles",
-            url: "/cabinet-roles",
-            icon: SwatchBook,
-            objectType: "cabinetrole",
-          },
-        ],
-      },
-      {
-        label: "Connections",
-        items: [
-          {
-            title: "Interfaces",
-            url: "/interfaces",
-            icon: Workflow,
-            objectType: "interface",
-          },
-          {
-            title: "Cables",
-            url: "/cables",
-            icon: CableIcon,
-            objectType: "cable",
-          },
-          {
-            title: "Port reservations",
-            url: "/port-reservations",
-            icon: Bookmark,
-            objectType: "portreservation",
-          },
-          {
-            title: "Port utilization",
-            url: "/port-utilization",
-            icon: Gauge,
-            objectType: "device",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "maps",
-    label: "Maps",
-    icon: MapIcon,
-    clusters: [
-      {
-        items: [
-          {
-            title: "Site map",
-            url: "/site-map",
-            icon: MapIcon,
-            objectType: "site",
-          },
-          {
-            title: "Floor plans",
-            url: "/floorplans",
-            icon: LayoutGrid,
-            objectType: "floorplan",
-          },
-          {
-            title: "Topology",
-            url: "/topology",
-            icon: Share2,
-            anyOf: ["device", "cable", "interface"],
-          },
-          {
-            title: "Virtual topology",
-            url: "/virtual-topology",
-            icon: Waypoints,
-            objectType: "virtualswitch",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "circuits",
-    label: "Circuits",
-    icon: GitPullRequestArrow,
-    clusters: [
-      {
-        items: [
-          {
-            title: "Circuits",
-            url: "/circuits",
-            icon: GitPullRequestArrow,
-            objectType: "circuit",
-          },
-          {
-            title: "Providers",
-            url: "/providers",
-            icon: Factory,
-            objectType: "provider",
-          },
-          {
-            title: "Provider networks",
-            url: "/provider-networks",
-            icon: Cloud,
-            objectType: "providernetwork",
-          },
-          {
-            title: "Circuit types",
-            url: "/circuit-types",
-            icon: Tag,
-            objectType: "circuittype",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "power",
-    label: "Power",
-    icon: Zap,
-    clusters: [
-      {
-        items: [
-          {
-            title: "Power feeds",
-            url: "/power-feeds",
-            icon: Activity,
-            objectType: "powerfeed",
-          },
-          {
-            title: "Power panels",
-            url: "/power-panels",
-            icon: SquareStack,
-            objectType: "powerpanel",
           },
         ],
       },
@@ -1186,6 +1305,12 @@ export const sections: NavSection[] = [
             objectType: "status",
           },
           {
+            title: "Sensitivity labels",
+            url: "/sensitivity-labels",
+            icon: Shield,
+            objectType: "sensitivitylabel",
+          },
+          {
             title: "Custom fields",
             url: "/custom-fields",
             icon: SquareStack,
@@ -1264,6 +1389,12 @@ export const sections: NavSection[] = [
             objectType: "automationtarget",
           },
           {
+            title: "Pipelines",
+            url: "/pipelines",
+            icon: GitBranch,
+            objectType: "deploypipeline",
+          },
+          {
             title: "Deploy runs",
             url: "/deploy-runs",
             icon: Rocket,
@@ -1301,6 +1432,13 @@ export const sections: NavSection[] = [
             icon: Activity,
             objectType: "zabbixconnection",
             integration: ["zabbix"],
+          },
+          {
+            title: "PRTG",
+            url: "/prtg",
+            icon: Activity,
+            objectType: "prtgconnection",
+            integration: ["prtg"],
           },
           {
             title: "Oxidized",
@@ -1863,7 +2001,10 @@ function FavoritesSection() {
                             })
                           }
                         >
-                          <SelectTrigger className="h-8 w-32 text-xs">
+                          <SelectTrigger
+                            aria-label={`${folder.name} parent folder`}
+                            className="h-8 w-32 text-xs"
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1908,7 +2049,10 @@ function FavoritesSection() {
                             })
                           }
                         >
-                          <SelectTrigger className="h-8 w-32 text-xs">
+                          <SelectTrigger
+                            aria-label={`${bookmark.label} folder`}
+                            className="h-8 w-32 text-xs"
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2030,7 +2174,7 @@ function TenantSwitcher() {
   const qc = useQueryClient()
   const list = useQuery({
     queryKey: ["tenants-picker"],
-    queryFn: () => api<Paginated<TenantPicker>>("/api/tenants/?picker=1"),
+    queryFn: () => apiAll<TenantPicker>("/api/tenants/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const active = useQuery({

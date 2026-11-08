@@ -73,7 +73,8 @@ export function DeviceHud({
   /** Moves the card, e.g. `CARD_PLACE.bottom`. */
   className?: string
 }) {
-  const rack = tile.rack!
+  // Null for a device standing on the floor rather than in a rack.
+  const rack = tile.rack
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex items-baseline justify-between gap-3">
       <span className="shrink-0 text-muted-foreground">{label}</span>
@@ -112,12 +113,14 @@ export function DeviceHud({
           )}
         {row(
           "Position",
-          dev.position != null
-            ? `${rack.name} · U${dev.position}` +
+          !rack
+            ? "On the floor"
+            : dev.position != null
+              ? `${rack.name} · U${dev.position}` +
                 (dev.u_height > 1 ? `–${dev.position + dev.u_height - 1}` : "")
-            : `${rack.name} · ${
-                dev.mount === "side_left" ? "left" : "right"
-              } side rail`
+              : `${rack.name} · ${
+                  dev.mount === "side_left" ? "left" : "right"
+                } side rail`
         )}
         {row(
           "Size",

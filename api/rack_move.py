@@ -20,7 +20,8 @@ the rack, its devices, their components, IP and MAC addresses (#407) and
 routing rows (#409). Cleared:
 a floor-plan tile that places the rack or one of its devices on a plan of
 another site. Updated: each device's site and location, and the site a port
-reservation on a moving port carries.
+reservation on a moving port carries. The room of the rack and of each
+device stays behind: a room is in one location, at the old site.
 
 A reason names an object only when the caller may view it; otherwise it says
 "a device", "another site" and so on (#404).
@@ -41,6 +42,9 @@ from .models import (
     Cluster,
     ConsolePort,
     ConsoleServerPort,
+    CoolingFeed,
+    CoolingIntake,
+    CoolingOutflow,
     Device,
     DeviceBay,
     FloorPlanTile,
@@ -77,6 +81,7 @@ COMPONENTS = (
     (Interface, "name"), (FrontPort, "name"), (RearPort, "name"),
     (ConsolePort, "name"), (ConsoleServerPort, "name"), (PowerPort, "name"),
     (PowerOutlet, "name"), (AuxPort, "name"), (Antenna, "name"),
+    (CoolingIntake, "name"), (CoolingOutflow, "name"),
     (DeviceBay, "name"), (ModuleBay, "name"), (Module, "module_bay__name"),
     (InventoryItem, "name"),
 )
@@ -86,8 +91,11 @@ COMPONENTS = (
 DEVICE_ROWS = (
     ("api.Service", "device", "service {}", "name"),
     ("api.NATRule", "device", "NAT rule {}", "name"),
+    ("api.InstalledSoftware", "device", "installed software {}", "application__name"),
+    ("prtg.PrtgSensor", "device", "PRTG sensor {}", "name"),
     ("monitoring.PortUtilizationRule", "device", "port rule {}", "name"),
     ("routing.StaticRoute", "device", "static route {}", "prefix"),
+    ("routing.PolicyRule", "device", "policy rule {}", "priority"),
     ("routing.BGPInstance", "device", "BGP AS{}", "asn__asn"),
     ("routing.BGPSession", "instance__device", "BGP session {}", "remote_address"),
     ("routing.OSPFInstance", "device", "OSPF {}", "process_id"),
@@ -189,12 +197,23 @@ def plan(rack: Rack, site, location, *, user, tenant) -> Plan:
         p.block("power_feed", f"{n} power feed{'s' if n != 1 else ''} from {{site}} "
                               f"deliver{'' if n != 1 else 's'} to this rack.",
                 site=_site(site_id, names))
+    # Cooling loops as power feeds (#434): a source's site is the loop's.
+    loops = list(
+        CoolingFeed.objects.filter(rack=rack)
+        .exclude(source__site_id=site.pk)
+        .values_list("source__site_id", flat=True)
+    )
+    for site_id in sorted(set(loops), key=lambda s: names.get(s, "")):
+        n = sum(1 for s in loops if s == site_id)
+        p.block("cooling_feed", f"{n} cooling feed{'s' if n != 1 else ''} from {{site}} "
+                                f"deliver{'' if n != 1 else 's'} to this rack.",
+                site=_site(site_id, names))
     if separation_enabled(rack.tenant):
         _check_catalog(p, names)
 
     p.tiles = list(
         FloorPlanTile.objects.filter(Q(rack=rack) | Q(device_id__in=ids))
-        .exclude(floor_plan__location__site_id=site.pk)
+        .exclude(floor_plan__site_id=site.pk)
     )
     _cap(p)
     _name(p, user, tenant)
@@ -617,11 +636,13 @@ def apply(p: Plan) -> None:
     for d in p.devices:
         d.site = site
         d.location = location
-        d.save(update_fields=["site", "location", "updated_at"])
+        d.room = None
+        d.save(update_fields=["site", "location", "room", "updated_at"])
     rack = p.rack
     rack.site = site
     rack.location = location
-    rack.save(update_fields=["site", "location", "updated_at"])
+    rack.room = None
+    rack.save(update_fields=["site", "location", "room", "updated_at"])
     ids = p.device_ids
     for tile in p.tiles:
         if tile.rack_id == rack.pk:

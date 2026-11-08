@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   EIGRPInstance,
   EIGRPInterface,
@@ -11,7 +11,6 @@ import type {
   OSPFAreaMini,
   OSPFInstance,
   OSPFInterface,
-  Paginated,
   Status,
   VRFOption,
 } from "@/lib/api"
@@ -76,16 +75,14 @@ const triTo = (v: string | null) =>
 function useVrfs() {
   return useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
   })
 }
 function useInstanceStatuses() {
   return useQuery({
     queryKey: ["statuses", "routinginstance"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=routinginstance&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=routinginstance&picker=1"),
     staleTime: 5 * 60_000,
   })
 }
@@ -171,6 +168,7 @@ function RedistributeSection({
         renderRow={(r, update) => [
           <CellSelect
             key="src"
+            aria-label="Source"
             value={r.source}
             onChange={(v) => update({ source: v })}
             options={SOURCES}
@@ -180,6 +178,7 @@ function RedistributeSection({
             ? [
                 <CellSelect
                   key="fam"
+                  aria-label="Family"
                   value={r.family || "ipv4"}
                   onChange={(v) => update({ family: v })}
                   options={REDIST_FAMILIES}
@@ -187,6 +186,7 @@ function RedistributeSection({
                 />,
                 <CellSelect
                   key="lvl"
+                  aria-label="Level"
                   value={r.level || NONE}
                   onChange={(v) => update({ level: v === NONE ? "" : v })}
                   options={REDIST_LEVELS}
@@ -196,6 +196,7 @@ function RedistributeSection({
             : []),
           <CellSelect
             key="pol"
+            aria-label="Policy"
             value={r.policyId ?? NONE}
             onChange={(v) => update({ policyId: v === NONE ? null : v })}
             options={policyOptions}

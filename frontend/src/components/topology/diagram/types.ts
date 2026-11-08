@@ -103,7 +103,8 @@ export interface End {
 
 /** One line of text placed on a card, card-relative. */
 export interface PlacedText {
-  /** Already cut to fit, with an ellipsis. */
+  /** As drawn: a card line already cut to fit, with an ellipsis; a name
+   * row whole (names wrap, never cut). */
   text: string
   size: number
   weight: Weight
@@ -210,6 +211,9 @@ export type LinkData = {
    * key in a saved view. */
   pairKey: string
   line: LineType
+  /** Where `line` comes from when an end's device or band sets it
+   * (line-source.ts); absent: the link's own line or the view's. */
+  lineFrom?: { kind: "device" | "band"; id: string }
   a: Anchor[]
   b: Anchor[]
   /** Cyclical: how the arc was asked for. `always`: the link's own line
@@ -286,6 +290,8 @@ export type DiagramCardData = TopoNode["data"] & {
 export interface DiagramLinkRef {
   pairKey: string
   arc?: 1 | -1
+  /** The line it takes from an end's device or band, and which. */
+  inherited?: { line: LineType; kind: "device" | "band"; id: string }
 }
 
 /** The per-link override key: the two device ids, sorted, joined by "|". */

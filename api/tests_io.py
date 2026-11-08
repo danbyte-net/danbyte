@@ -215,6 +215,30 @@ class IOEndpointTests(APITestCase):
         self.assertEqual(by_slug["prefix"]["natural_key"], ["cidr", "vrf"])
         self.assertNotIn("group", by_slug)  # non-tenant model excluded
 
+    def test_types_are_cached_per_user_and_tenant(self):
+        """#488: the second ask in a minute is a cache read, not ~65 queries;
+        another user or tenant gets its own answer."""
+        from unittest.mock import patch
+
+        from django.test import override_settings
+
+        locmem = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                              "LOCATION": "io-types-tests"}}
+        with override_settings(CACHES=locmem), patch("api.io_views.IO_TYPES_TTL", 60):
+            first = self.client.get("/api/io/types/").json()
+            with patch("api.io_views._io_types_for") as compute:
+                again = self.client.get("/api/io/types/").json()
+                compute.assert_not_called()
+            self.assertEqual(again, first)
+            other = User.objects.create_user("b", password="x")
+            UserProfile.objects.create(user=other).tenants.add(self.tenant)
+            self.client.force_login(other)
+            self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
+            with patch("api.io_views._io_types_for", return_value=[]) as compute:
+                self.assertEqual(self.client.get("/api/io/types/").json(),
+                                 {"object_types": []})
+                compute.assert_called_once()
+
     def test_fields_returns_columns_and_key(self):
         res = self.client.get("/api/io/prefix/fields/")
         self.assertEqual(res.status_code, 200)

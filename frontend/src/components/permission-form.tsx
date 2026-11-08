@@ -6,13 +6,13 @@ import {
   api,
   type ObjectPermission,
   type ObjectPermissionWritePayload,
-  type Paginated,
   type RBACAction,
   type RBACGroup,
   type RBACObjectTypes,
   type RBACUser,
   type TenantPicker,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CheckList,
   Field,
@@ -48,6 +48,7 @@ const ACTION_ORDER: RBACAction[] = [
   "view_cost",
   "set_default",
   "view_config",
+  "provision",
 ]
 const ACTION_HINT: Partial<Record<RBACAction, string>> = {
   view_credits: "See the service credits an agreement owes",
@@ -55,6 +56,7 @@ const ACTION_HINT: Partial<Record<RBACAction, string>> = {
   set_default: "Choose the view Topology opens with",
   view_config: "Read configuration backups from Oxidized",
   connect: "Open an interactive session to the device",
+  provision: "Send an intended VM to an automation runner to be built",
   reveal: "Read the referenced secret value",
   subscribe: "Opt in or out of this notification channel",
   grant_superuser:
@@ -140,19 +142,19 @@ export function PermissionForm({
   )
   const groupsQuery = useQuery({
     queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    queryFn: () => apiAll<RBACGroup>("/api/groups/"),
   })
   const usersQuery = useQuery({
     queryKey: ["users", ""],
-    queryFn: () => api<Paginated<RBACUser>>("/api/users/"),
+    queryFn: () => apiAll<RBACUser>("/api/users/"),
   })
   const tenantsQuery = useQuery({
     queryKey: ["tenants", "picker"],
-    queryFn: () => api<Paginated<TenantPicker>>("/api/tenants/?picker=1"),
+    queryFn: () => apiAll<TenantPicker>("/api/tenants/?picker=1"),
   })
   const sitesQuery = useQuery({
     queryKey: ["sites", "picker"],
-    queryFn: () => api<Paginated<{ id: string; name: string }>>("/api/sites/"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/sites/"),
   })
 
   const typeOptions = useMemo<CheckOption<string>[]>(

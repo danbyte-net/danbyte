@@ -10,8 +10,8 @@ import {
   TerminalSquare,
 } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type { ConnectProtocol, Device, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ConnectProtocol, Device } from "@/lib/api"
 import { copyWithToast } from "@/lib/clipboard"
 import { useMe } from "@/lib/use-me"
 import { getLucideIcon } from "@/components/dynamic-icon"
@@ -124,7 +124,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
   const protocolsQ = useQuery({
     queryKey: ["connect-protocols", "enabled", device.id],
     queryFn: () =>
-      api<Paginated<ConnectProtocol>>(
+      apiAll<ConnectProtocol>(
         // ?device= filters to protocols applicable to this device (untargeted,
         // or targeted at its type/role). The server already orders by weight,name.
         `/api/monitoring/connect-protocols/?enabled=1&device=${device.id}`
@@ -134,7 +134,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
   const credsQ = useQuery({
     queryKey: ["device-credentials", device.id],
     queryFn: () =>
-      api<Paginated<DeviceCredentialRow>>(
+      apiAll<DeviceCredentialRow>(
         `/api/monitoring/device-credentials/?device=${device.id}`
       ),
     enabled: canConnect && open,

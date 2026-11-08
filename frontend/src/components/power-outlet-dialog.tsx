@@ -2,13 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
-import type {
-  Paginated,
-  PowerOutlet,
-  PowerOutletWritePayload,
-  PowerPort,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { PowerOutlet, PowerOutletWritePayload, PowerPort } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -77,8 +72,7 @@ export function PowerOutletDialog({
   // An outlet is fed by a power port on the SAME device.
   const powerPorts = useQuery({
     queryKey: ["device-power-ports", deviceId],
-    queryFn: () =>
-      api<Paginated<PowerPort>>(`/api/power-ports/?device=${deviceId}`),
+    queryFn: () => apiAll<PowerPort>(`/api/power-ports/?device=${deviceId}`),
     enabled: open,
   })
 

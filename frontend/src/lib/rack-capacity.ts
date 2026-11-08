@@ -1,9 +1,9 @@
 /**
- * Rack capacity - how full a rack is in space, power and ports - read the
- * same way on every surface: the racks table, the rack page, the floor
- * plan's tiles and popover, and the 3D room.
+ * Rack capacity - how full a rack is in space, power, cooling and ports -
+ * read the same way on every surface: the racks table, the rack page, the
+ * floor plan's tiles and popover, and the 3D room.
  *
- * One scale for all three figures: above the tenant's warning level (80 %
+ * One scale for every figure: above the tenant's warning level (80 %
  * unless changed) a rack is filling up, above its critical level (95 %) it
  * is full. The levels are a tenant setting, served on `/api/me/` as
  * `capacity_thresholds`; `useMe` hands them to `setCapacityThresholds` as it
@@ -13,7 +13,7 @@
  */
 import { useSyncExternalStore } from "react"
 
-import type { RackPower } from "@/lib/api"
+import type { RackCooling, RackPower } from "@/lib/api"
 
 /** The default levels, as shares: above 80 % warn, above 95 % critical. */
 export const CAPACITY_WARN = 0.8
@@ -128,6 +128,21 @@ export function formatWatts(watts: number): string {
   return `${sig(w / 1_000_000)} MW`
 }
 
+/** Watts as a kW input holds them: `12500` → "12.5", null → "". Exact, so
+ * a form that saves the value back unchanged writes the same watts. */
+export function wattsToKw(watts: number | null | undefined): string {
+  return watts == null || !Number.isFinite(watts) ? "" : String(watts / 1_000)
+}
+
+/** A kW input back to whole watts: "12.5" → 12500, "" → null, and null for
+ * anything that is no number. */
+export function kwToWatts(text: string): number | null {
+  const t = text.trim().replace(",", ".")
+  if (t === "") return null
+  const kw = Number(t)
+  return Number.isFinite(kw) ? Math.round(kw * 1_000) : null
+}
+
 // ─── Power ───────────────────────────────────────────────────────────────────
 
 /** A rack's power roll-up as the server sends it on a rack, a floor-plan
@@ -162,4 +177,37 @@ export function rackPowerRatio(p: RackPower): number | null {
 /** Anything to say about the rack's power at all. */
 export function hasPowerData(p: RackPower | null | undefined): p is RackPower {
   return !!p && (p.allocated_w > 0 || p.maximum_w > 0 || p.available_w > 0)
+}
+
+// ─── Cooling (#434) ──────────────────────────────────────────────────────────
+
+/** A rack's heat load against its cooling capacity, as the server sends it
+ * on a rack, a floor-plan tile and a site's Capacity tab
+ * (`api/capacity.py rack_cooling`). */
+export type { RackCooling }
+
+/** The heat a rack carries: from the allocated draws where recorded (or the
+ * types' heat output), else the nameplate sum - and which it is. */
+export function rackCoolingDemand(c: RackCooling): {
+  watts: number
+  nameplate: boolean
+} {
+  if (c.heat_allocated_w > 0)
+    return { watts: c.heat_allocated_w, nameplate: false }
+  return { watts: c.heat_maximum_w, nameplate: c.heat_maximum_w > 0 }
+}
+
+/** Heat over cooling capacity, or null without a capacity to measure
+ * against. */
+export function rackCoolingRatio(c: RackCooling): number | null {
+  return capacityRatio(rackCoolingDemand(c).watts, c.available_w)
+}
+
+/** Anything to say about the rack's cooling figure at all. */
+export function hasCoolingData(
+  c: RackCooling | null | undefined
+): c is RackCooling {
+  return (
+    !!c && (c.heat_allocated_w > 0 || c.heat_maximum_w > 0 || c.available_w > 0)
+  )
 }

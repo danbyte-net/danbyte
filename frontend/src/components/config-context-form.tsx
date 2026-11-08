@@ -2,12 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type ConfigContext,
-  type ConfigContextWritePayload,
-  type Paginated,
-} from "@/lib/api"
+import { type ConfigContext, type ConfigContextWritePayload } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CheckList,
   Field,
@@ -15,11 +11,13 @@ import {
   FormFooter,
   FormSection,
   FormText,
+  FormTags,
   FormTextarea,
   useFieldErrors,
   type CheckOption,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { parseJsonObject } from "@/lib/json-object"
 
 interface NamedRow {
   id: string
@@ -29,7 +27,7 @@ interface NamedRow {
 function usePicker(key: string, url: string) {
   return useQuery({
     queryKey: [key],
-    queryFn: () => api<Paginated<NamedRow>>(url),
+    queryFn: () => apiAll<NamedRow>(url),
     staleTime: 10 * 60_000,
   })
 }
@@ -73,6 +71,9 @@ export function ConfigContextForm({
   const [platformIds, setPlatformIds] = useState<string[]>(
     context?.platforms.map((p) => p.id) ?? []
   )
+  const [tagIds, setTagIds] = useState<number[]>(
+    context?.tags.map((t) => t.id) ?? []
+  )
 
   useEffect(() => {
     if (!context) return
@@ -86,6 +87,7 @@ export function ConfigContextForm({
     setSiteIds(context.sites.map((s) => s.id))
     setRoleIds(context.device_roles.map((r) => r.id))
     setPlatformIds(context.platforms.map((p) => p.id))
+    setTagIds(context.tags.map((t) => t.id))
     reset()
   }, [context, reset])
 
@@ -99,15 +101,12 @@ export function ConfigContextForm({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      let data: Record<string, unknown>
-      try {
-        data = JSON.parse(dataText || "{}")
-        if (typeof data !== "object" || Array.isArray(data) || data === null)
-          throw new Error("not an object")
-      } catch {
+      const parsed = parseJsonObject(dataText)
+      if (parsed === undefined) {
         setJsonError("Data must be a valid JSON object.")
         throw new Error("Invalid JSON in data.")
       }
+      const data = parsed ?? {}
       setJsonError(null)
       // Number("abc") is NaN, which would serialize as null and silently
       // clobber the weight - validate before building the payload.
@@ -128,6 +127,7 @@ export function ConfigContextForm({
         site_ids: siteIds,
         device_role_ids: roleIds,
         platform_ids: platformIds,
+        tag_ids: tagIds,
       }
       return saveObject<ConfigContext>({
         objectType: "api.configcontext",
@@ -247,6 +247,14 @@ export function ConfigContextForm({
               empty="No platforms."
             />
           </Field>
+          <FormTags
+            label="Tags"
+            info="Matches a device or VM carrying any of these tags."
+            tenantOnly
+            value={tagIds}
+            onChange={setTagIds}
+            error={fieldErrors.tag_ids}
+          />
         </div>
       </FormSection>
 

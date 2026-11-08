@@ -2,8 +2,14 @@
 import { cleanup, fireEvent, render } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { FloorPlan, FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
+import type {
+  FloorPlan,
+  FloorPlanLiveState,
+  FloorPlanTile,
+  FloorPlanTray,
+} from "@/lib/api"
 import { FloorCanvas } from "./floor-canvas"
+import { structureOf } from "./structure"
 
 // A tile linked to a DIN-rail cabinet on the 2D plan: named after the
 // cabinet unless labelled, its device count from the live state in its
@@ -114,13 +120,18 @@ describe("a cabinet tile", () => {
 
   it("turns its border red when a device is down", () => {
     const up = draw(tile(), live("up"))
-    const calm = tileGroup(up.container).querySelector("rect")!
+    const calm = tileGroup(up.container).querySelector("rect[data-part=fill]")!
     expect(calm.getAttribute("stroke")).toBe("#64748b")
     cleanup()
     const down = draw(tile(), live("down"))
-    const red = tileGroup(down.container).querySelector("rect")!
+    const red = tileGroup(down.container).querySelector("rect[data-part=fill]")!
     expect(red.getAttribute("stroke")).toBe("#ef4444")
     expect(red.getAttribute("stroke-width")).toBe("2")
+    // And a soft ring round it in the same red.
+    const ring = tileGroup(down.container).querySelector(
+      "rect[data-part=alarm]"
+    )!
+    expect(ring.getAttribute("stroke")).toBe("#ef4444")
   })
 
   it("draws no utilization bar - a cabinet has no units", () => {
@@ -236,7 +247,30 @@ describe("point-pick mode and the drawing underlay", () => {
     fireEvent.pointerUp(g, { button: 0, clientX: 140, clientY: 90 })
     expect(onOpen).not.toHaveBeenCalled()
     // The default view is translated by (40, 40) at zoom 1.
-    expect(onPick).toHaveBeenCalledWith({ x: 100, y: 50 })
+    expect(onPick).toHaveBeenCalledWith({ x: 100, y: 50 }, { shiftKey: false })
+  })
+
+  it("a viewer's click goes to onClickTile; a double-click opens", () => {
+    const onClick = vi.fn()
+    const onOpen = vi.fn()
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[tile()]}
+        selectedId={null}
+        editable={false}
+        showGrid
+        armed={null}
+        onOpenTile={onOpen}
+        onClickTile={onClick}
+      />
+    )
+    const g = tileGroup(container)
+    fireEvent.pointerDown(g, { button: 0, clientX: 140, clientY: 90 })
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(onOpen).not.toHaveBeenCalled()
+    fireEvent.doubleClick(g)
+    expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
   it("draws the underlay before the grid", () => {
@@ -338,5 +372,111 @@ describe("a multi-selection", () => {
     fireEvent.pointerUp(svg, at(2, 2))
     expect(props.onMoveSelection).not.toHaveBeenCalled()
     expect(props.onSelect).toHaveBeenCalledWith("t1")
+  })
+})
+
+describe("trays while picking a cable's run", () => {
+  const trays = [
+    {
+      id: "tr1",
+      name: "T-03",
+      points: [
+        [0, 1],
+        [11, 1],
+      ],
+    },
+    {
+      id: "new-5",
+      name: "Run 1",
+      points: [
+        [0, 5],
+        [11, 5],
+      ],
+    },
+  ].map((t) => ({
+    kind: "",
+    color: "",
+    level: "overhead",
+    elevation_mm: null,
+    description: "",
+    cables: [],
+    hidden_cable_count: 0,
+    created_at: "",
+    updated_at: "",
+    ...t,
+  })) as unknown as FloorPlanTray[]
+  const trayGroup = (c: HTMLElement, name: string) =>
+    c.querySelector<SVGGElement>(
+      `[data-tray="${trays.find((t) => t.name === name)!.id}"]`
+    )!
+
+  function drawTrays(props: Partial<React.ComponentProps<typeof FloorCanvas>>) {
+    return render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[]}
+        selectedId={null}
+        editable
+        showGrid
+        armed={null}
+        trays={trays}
+        {...props}
+      />
+    )
+  }
+
+  it("a click on a tray picks it, in any mode", () => {
+    const onPick = vi.fn()
+    const onSelectTray = vi.fn()
+    const { container } = drawTrays({
+      mode: "layout",
+      trayPick: { picked: [], onPick },
+      onSelectTray,
+    })
+    fireEvent.pointerDown(trayGroup(container, "T-03"), { button: 0 })
+    expect(onPick).toHaveBeenCalledWith("tr1")
+    fireEvent.pointerDown(trayGroup(container, "Run 1"), { button: 0 })
+    expect(onPick).toHaveBeenCalledWith("new-5")
+    expect(onSelectTray).not.toHaveBeenCalled()
+  })
+
+  it("an unsaved run is not selected for editing", () => {
+    const onSelectTray = vi.fn()
+    // The kept run is not a tray of the draft; T-03 is.
+    const { container } = drawTrays({
+      mode: "cable",
+      onSelectTray,
+      structure: structureOf([], trays.slice(0, 1), []),
+    })
+    fireEvent.pointerDown(trayGroup(container, "Run 1"), { button: 0 })
+    expect(onSelectTray).not.toHaveBeenCalledWith("new-5")
+    fireEvent.pointerDown(trayGroup(container, "T-03"), { button: 0 })
+    expect(onSelectTray).toHaveBeenCalledWith("tr1")
+  })
+})
+
+describe("tiles while picking what to connect to", () => {
+  it("a click on a tile picks it, in any mode, instead of selecting it", () => {
+    Element.prototype.setPointerCapture = () => {}
+    const onPick = vi.fn()
+    const onSelect = vi.fn()
+    const t = tile()
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[t]}
+        selectedId={null}
+        editable
+        showGrid
+        armed={null}
+        mode="cable"
+        onSelect={onSelect}
+        tilePick={{ picked: new Set(), onPick }}
+      />
+    )
+    const g = container.querySelector<SVGGElement>('g[data-tile="t1"]')!
+    fireEvent.pointerDown(g, { button: 0 })
+    expect(onPick).toHaveBeenCalledWith(t)
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

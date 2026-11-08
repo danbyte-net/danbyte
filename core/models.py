@@ -76,6 +76,19 @@ class Tag(TagBase):
             ),
         ]
 
+    def clean(self):
+        super().clean()
+        from core.tags import tag_clash_message, tag_name_clash
+
+        clash = tag_name_clash(self.name, tenant=self.tenant, exclude_pk=self.pk)
+        if clash is not None:
+            raise ValidationError({"name": tag_clash_message(clash)})
+
+    @property
+    def is_global(self) -> bool:
+        """Deployment-global: no tenant, so every tenant sees it."""
+        return self.tenant_id is None
+
     @property
     def text_color(self) -> str:
         """Black or white text for the badge - chosen by sRGB luminance.
@@ -803,16 +816,19 @@ class DeploymentSettings(TimestampedModel):
 
     @classmethod
     def load(cls) -> "DeploymentSettings":
-        obj, created = cls.objects.get_or_create(pk=1)
-        if created:
+        obj = cls.objects.filter(pk=1).first()
+        if obj is None:
             # First run: nothing to do "after upgrading" to the version we
             # were installed at. An upgraded install keeps [] from the
-            # migration, so its notes stay pending.
+            # migration, so its notes stay pending. Created with it in one
+            # write, not created and then updated.
             from .upgrade_notes import ids_up_to
             from .version import system_version
 
-            obj.upgrade_notes_done = ids_up_to(system_version()["version"])
-            obj.save(update_fields=["upgrade_notes_done"])
+            obj, _ = cls.objects.get_or_create(
+                pk=1,
+                defaults={"upgrade_notes_done": ids_up_to(system_version()["version"])},
+            )
         return obj
 
 
@@ -1236,11 +1252,77 @@ class TenantSettings(TimestampedModel):
         help_text="Coverage ending within this many days reads as Expiring.",
     )
 
+    # ─── floor-plan cable lengths ──────────────────────────────────────────
+    # The rules a cable's length is worked out from its route by. Tenant
+    # only, like the capacity levels. Read through
+    # ``core.effective_settings.cable_length_rules``.
+    cable_slack_pct = models.PositiveSmallIntegerField(
+        default=10, db_default=10,
+        validators=[MaxValueValidator(100)],
+        help_text="Added to a route's length for dressing and termination.",
+    )
+    cable_service_loop_mm = models.PositiveIntegerField(
+        default=0, db_default=0,
+        validators=[MaxValueValidator(20000)],
+        help_text="A service loop left at each end, in millimetres.",
+    )
+    cable_length_step_mm = models.PositiveIntegerField(
+        default=500, db_default=500,
+        validators=[MaxValueValidator(10000)],
+        help_text="Lengths round up to a multiple of this. 0: to the millimetre.",
+    )
+    cable_standalone_height_mm = models.PositiveIntegerField(
+        default=0, db_default=0,
+        validators=[MaxValueValidator(20000)],
+        help_text="Port height of a device standing on its own tile, in millimetres.",
+    )
+
     # ─── first-run onboarding ──────────────────────────────────────────────
     # Per-tenant bookkeeping (like digest_last_run) - not an inheritable
     # override. Set once the first-run wizard is completed or skipped, so it
     # never pops up again for this tenant.
     onboarding_dismissed = models.BooleanField(default=False)
+
+    # ─── report cover page (api/reports/cover.py) ───────────────────────────
+    # The look of every PDF report's cover in this tenant. The uploaded
+    # image is kept in the row, not under /media/: media is served without
+    # a session, and an upload may be an SVG (sanitised, but still never
+    # served from the app's origin).
+    COVER_STYLE_CHOICES = [
+        ("waves", "Waves"),
+        ("plain", "Plain colour"),
+        ("upload", "Your upload"),
+        ("none", "None"),
+    ]
+    report_cover_style = models.CharField(
+        max_length=10, choices=COVER_STYLE_CHOICES, default="waves", db_default="waves",
+        help_text="The full-page background behind the cover's text.",
+    )
+    report_cover_horizon = models.CharField(
+        max_length=7, default="#063d66", db_default="#063d66",
+        help_text="The darkest colour of the waves; the plain background's colour.",
+    )
+    report_cover_wave = models.CharField(
+        max_length=7, default="#0b6fb0", db_default="#0b6fb0",
+        help_text="The waves' mid tones.",
+    )
+    report_cover_crest = models.CharField(
+        max_length=7, default="#ffffff", db_default="#ffffff",
+        help_text="The light the crests catch.",
+    )
+    report_cover_image = models.BinaryField(
+        blank=True, default=b"", db_default=b"", editable=False,
+        help_text="The uploaded cover image: PNG, JPEG or sanitised SVG.",
+    )
+    report_cover_image_type = models.CharField(
+        max_length=20, blank=True, default="", db_default="", editable=False,
+    )
+
+    # The starter sensitivity labels (api/sensitivity.py) are seeded once:
+    # a label the tenant deletes stays deleted on the next bootstrap.
+    sensitivity_labels_seeded = models.BooleanField(
+        default=False, db_default=False, editable=False,
+    )
 
     class Meta:
         verbose_name = "tenant settings"

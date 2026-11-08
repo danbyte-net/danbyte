@@ -14,7 +14,7 @@ from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from api.models import Device, DeviceRole, DeviceType, IPAddress, Status, Prefix, VRF
-from api.serializers import TenantScopedPrimaryKeyRelatedField
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 
 from .checkers import CheckConfigError, get_checker
 from .worker import _split_resolver
@@ -273,8 +273,10 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
     Authoring is by pasting an OpenSSH public-key line into ``public_key_line``
     (write-only). The type/blob/fingerprint are parsed from it - never trusted
     from the payload - in :func:`monitoring.ssh_host_keys.upload_host_key`, which
-    also refuses private keys. ``device`` is required (a host key belongs to a
-    device)."""
+    also refuses private keys. ``device`` is required on upload and read-only
+    after it: a host key belongs to one device (#458). The viewset reads it
+    from the request and checks it against the active tenant and the user's
+    sites."""
 
     origin = serializers.CharField(read_only=True)
     device_name = serializers.CharField(
@@ -296,13 +298,13 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
         # Every fact is derived from the pasted key or the collector; the client
         # only supplies device + public_key_line.
         read_only_fields = [
-            "id", "key_type", "public_key", "fingerprint_sha256", "comment",
-            "bits", "origin", "observed", "uploaded", "first_seen", "last_seen",
-            "created_at", "updated_at",
+            "id", "device", "key_type", "public_key", "fingerprint_sha256",
+            "comment", "bits", "origin", "observed", "uploaded", "first_seen",
+            "last_seen", "created_at", "updated_at",
         ]
 
 
-class DeviceCredentialSerializer(serializers.ModelSerializer):
+class DeviceCredentialSerializer(TenantScopedModelSerializer):
     """A device login. The secret value is **never** serialised back - only
     whether one is set. Fetching it is the viewset's ``reveal`` action.
 
@@ -433,7 +435,7 @@ class ConnectProtocolSerializer(serializers.ModelSerializer):
         ]
 
 
-class CertificateAssignmentSerializer(serializers.ModelSerializer):
+class CertificateAssignmentSerializer(TenantScopedModelSerializer):
     """Declares that a certificate should be presented by some object.
 
     The generic ``(object_type, object_id)`` target is validated for existence
@@ -632,7 +634,7 @@ class AcmeOrderSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class SnmpSensorSerializer(serializers.ModelSerializer):
+class SnmpSensorSerializer(TenantScopedModelSerializer):
     """A user-defined SNMP health sensor (OID → inventory-item status)."""
 
     device_type_name = serializers.CharField(
@@ -728,10 +730,10 @@ class CheckTemplateSerializer(SecretParamsMergeMixin, serializers.ModelSerialize
         return attrs
 
 
-class CheckAssignmentSerializer(serializers.ModelSerializer):
+class CheckAssignmentSerializer(TenantScopedModelSerializer):
     template_detail = TemplateMiniSerializer(source="template", read_only=True)
     target_kind = serializers.CharField(read_only=True)
-    exclusions = serializers.PrimaryKeyRelatedField(
+    exclusions = TenantScopedPrimaryKeyRelatedField(
         many=True, queryset=IPAddress.objects.all(), required=False
     )
 
@@ -777,7 +779,7 @@ class CheckAssignmentSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MonitoringProfileSerializer(serializers.ModelSerializer):
+class MonitoringProfileSerializer(TenantScopedModelSerializer):
     template_detail = TemplateMiniSerializer(source="templates", many=True, read_only=True)
 
     class Meta:
@@ -796,7 +798,7 @@ class MonitoringProfileSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MonitoringPolicySerializer(serializers.ModelSerializer):
+class MonitoringPolicySerializer(TenantScopedModelSerializer):
     profile_detail = MonitoringProfileSerializer(source="profiles", many=True, read_only=True)
     template_detail = TemplateMiniSerializer(source="templates", many=True, read_only=True)
 
@@ -831,7 +833,7 @@ class MonitoringPolicySerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MonitoringDenySubnetSerializer(serializers.ModelSerializer):
+class MonitoringDenySubnetSerializer(TenantScopedModelSerializer):
     vrf_detail = serializers.SerializerMethodField()
 
     class Meta:
@@ -886,7 +888,7 @@ class _EngineSourceMixin(serializers.Serializer):
         return source_of(obj.engine if obj.engine_id else None)
 
 
-class CheckResultSerializer(_EngineSourceMixin, serializers.ModelSerializer):
+class CheckResultSerializer(_EngineSourceMixin, TenantScopedModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
 
     class Meta:
@@ -897,7 +899,7 @@ class CheckResultSerializer(_EngineSourceMixin, serializers.ModelSerializer):
         ]
 
 
-class StateTransitionSerializer(_EngineSourceMixin, serializers.ModelSerializer):
+class StateTransitionSerializer(_EngineSourceMixin, TenantScopedModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
     target_ip = serializers.SerializerMethodField()
 
@@ -914,12 +916,12 @@ class StateTransitionSerializer(_EngineSourceMixin, serializers.ModelSerializer)
         return {"id": str(obj.target_ip_id), "ip_address": obj.target_ip.ip_address}
 
 
-class MonitoringSettingsSerializer(serializers.ModelSerializer):
-    skip_ip_statuses = serializers.PrimaryKeyRelatedField(
+class MonitoringSettingsSerializer(TenantScopedModelSerializer):
+    skip_ip_statuses = TenantScopedPrimaryKeyRelatedField(
         many=True, queryset=Status.objects.all(), required=False
     )
     skip_ip_status_detail = serializers.SerializerMethodField()
-    flap_exclude_ip_statuses = serializers.PrimaryKeyRelatedField(
+    flap_exclude_ip_statuses = TenantScopedPrimaryKeyRelatedField(
         many=True, queryset=Status.objects.all(), required=False
     )
     flap_exclude_ip_status_detail = serializers.SerializerMethodField()
@@ -929,7 +931,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
         queryset=Device.objects.all(), required=False, many=True
     )
     snmp_default_vrf = serializers.SerializerMethodField()
-    snmp_default_vrf_id = serializers.PrimaryKeyRelatedField(
+    snmp_default_vrf_id = TenantScopedPrimaryKeyRelatedField(
         source="snmp_default_vrf", write_only=True, required=False,
         allow_null=True, queryset=VRF.objects.all(),
     )
@@ -1086,7 +1088,7 @@ class AlertSerializer(serializers.ModelSerializer):
         return bool(getattr(obj, "_silenced", False))
 
 
-class SilenceSerializer(serializers.ModelSerializer):
+class SilenceSerializer(TenantScopedModelSerializer):
     match_prefix_cidr = serializers.CharField(
         source="match_prefix.cidr", read_only=True, default=None
     )
@@ -1192,7 +1194,7 @@ class PortUtilizationRuleSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class AlertRuleSerializer(serializers.ModelSerializer):
+class AlertRuleSerializer(TenantScopedModelSerializer):
     match_prefix_cidr = serializers.CharField(
         source="match_prefix.cidr", read_only=True, default=None
     )
@@ -1222,16 +1224,24 @@ class AlertRuleSerializer(serializers.ModelSerializer):
         return value
 
 
-class NotificationChannelSerializer(serializers.ModelSerializer):
-    """A notification destination. ``config`` is the transport's plain target and
-    is read back; a credential (the Telegram bot token) is write-only and stored
-    encrypted in ``secrets``, so reads only report whether one is set."""
+class NotificationChannelSerializer(TenantScopedModelSerializer):
+    """A notification destination. ``config`` is the transport's plain target
+    and is read back. Credentials are write-only and stored encrypted in
+    ``secrets``: the webhook ``url`` (webhook/Slack/Teams/Discord) and the
+    PagerDuty ``routing_key`` are written inside ``config``, the Telegram
+    ``bot_token`` as its own field. Reads drop them and report ``url_set`` /
+    ``routing_key_set`` / ``bot_token_set`` instead - for every caller.
+
+    On write a credential key that is present replaces the stored value, an
+    empty string clears it, and an absent one keeps it."""
 
     # Write-only credential - accepted on create/update, never returned.
     bot_token = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=True
     )
     bot_token_set = serializers.SerializerMethodField()
+    url_set = serializers.SerializerMethodField()
+    routing_key_set = serializers.SerializerMethodField()
 
     class Meta:
         model = NotificationChannel
@@ -1240,51 +1250,111 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             "enabled", "self_subscribable", "send_status_changes",
             "status_change_mode", "status_change_interval_minutes",
             "status_change_last_run", "match_prefix", "match_ip", "match_device",
-            "bot_token", "bot_token_set",
+            "bot_token", "bot_token_set", "url_set", "routing_key_set",
             "auto_created", "created_at", "updated_at",
         ]
         read_only_fields = [
             "created_at", "updated_at", "status_change_last_run", "auto_created",
-            "bot_token_set",
+            "bot_token_set", "url_set", "routing_key_set",
         ]
 
     # config validation per transport: which key the channel needs to deliver.
     _URL_KINDS = {"webhook", "slack", "teams", "discord"}
-    # Write-only secrets → the encrypted ``secrets`` map, keyed by field name.
-    _SECRET_FIELDS = {"bot_token": "bot_token"}
+    # Credential keys carried inside ``config`` on write, never on read.
+    _CONFIG_SECRETS = NotificationChannel.CONFIG_SECRET_KEYS
 
     def get_bot_token_set(self, obj) -> bool:
-        return bool((obj.secrets or {}).get("bot_token"))
+        return obj.secret_set("bot_token")
 
-    def _apply_secrets(self, secrets: dict, validated_data) -> dict:
-        for field, key in self._SECRET_FIELDS.items():
-            value = validated_data.pop(field, None)
-            if value is None:
-                continue  # not supplied - leave the stored secret untouched
+    def get_url_set(self, obj) -> bool:
+        return obj.secret_set("url") or bool((obj.config or {}).get("url"))
+
+    def get_routing_key_set(self, obj) -> bool:
+        return obj.secret_set("routing_key") or bool(
+            (obj.config or {}).get("routing_key")
+        )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        config = data.get("config")
+        if isinstance(config, dict):
+            data["config"] = {
+                k: v for k, v in config.items() if k not in self._CONFIG_SECRETS
+            }
+        return data
+
+    def validate_config(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Must be an object.")
+        for key in self._CONFIG_SECRETS:
+            if key in value and not isinstance(value[key], (str, type(None))):
+                raise serializers.ValidationError({key: "Must be a string."})
+        return value
+
+    def _incoming_secrets(self, attrs) -> dict:
+        """Credential changes in this request: ``{key: value}`` where an empty
+        value means clear. Absent keys are not in the map."""
+        out = {}
+        config = attrs.get("config")
+        if isinstance(config, dict):
+            for key in self._CONFIG_SECRETS:
+                if key in config:
+                    out[key] = str(config[key] or "").strip()
+        if "bot_token" in attrs:
+            out["bot_token"] = attrs["bot_token"] or ""
+        return out
+
+    def _apply_secrets(self, instance, validated_data) -> dict:
+        """Pop the credentials out of ``validated_data`` and return the
+        ``secrets`` map to store, pruned to the keys this kind uses."""
+        changes = self._incoming_secrets(validated_data)
+        validated_data.pop("bot_token", None)
+        config = validated_data.get("config")
+        if isinstance(config, dict):
+            validated_data["config"] = {
+                k: v for k, v in config.items() if k not in self._CONFIG_SECRETS
+            }
+        secrets = {}
+        if instance is not None:
+            # A legacy row may still carry a credential in config - lift it out
+            # before the incoming config replaces that column.
+            instance.seal_config_secrets()
+            secrets = dict(instance.secrets or {})
+        for key, value in changes.items():
             if value:
                 secrets[key] = value
             else:
                 secrets.pop(key, None)
-        return secrets
+        kind = validated_data.get("kind", getattr(instance, "kind", None))
+        keep = set(NotificationChannel.SECRET_KEYS.get(kind, ()))
+        return {k: v for k, v in secrets.items() if k in keep}
 
     def create(self, validated_data):
-        secrets = self._apply_secrets({}, validated_data)
+        secrets = self._apply_secrets(None, validated_data)
         if secrets:
             validated_data["secrets"] = secrets
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         # Set before super().update() so the encrypted column rides the same save.
-        instance.secrets = self._apply_secrets(
-            dict(instance.secrets or {}), validated_data
-        )
+        instance.secrets = self._apply_secrets(instance, validated_data)
         return super().update(instance, validated_data)
+
+    def _has_secret(self, attrs, key: str) -> bool:
+        """Whether the channel will hold ``key`` after this write."""
+        changes = self._incoming_secrets(attrs)
+        if key in changes:
+            return bool(changes[key])
+        inst = self.instance
+        if inst is None:
+            return False
+        return inst.secret_set(key) or bool((inst.config or {}).get(key))
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         kind = attrs.get("kind", getattr(self.instance, "kind", None))
         config = attrs.get("config", getattr(self.instance, "config", {}) or {})
-        if kind in self._URL_KINDS and not config.get("url"):
+        if kind in self._URL_KINDS and not self._has_secret(attrs, "url"):
             raise serializers.ValidationError(
                 {"config": f"{kind} needs a webhook 'url'."}
             )
@@ -1292,7 +1362,7 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"config": "email needs a 'recipients' list."}
             )
-        if kind == "pagerduty" and not config.get("routing_key"):
+        if kind == "pagerduty" and not self._has_secret(attrs, "routing_key"):
             raise serializers.ValidationError(
                 {"config": "pagerduty needs an Events v2 'routing_key'."}
             )
@@ -1333,7 +1403,7 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             )
 
 
-class NotificationSubscriptionSerializer(serializers.ModelSerializer):
+class NotificationSubscriptionSerializer(TenantScopedModelSerializer):
     channel_name = serializers.CharField(source="channel.name", read_only=True)
     user_username = serializers.CharField(
         source="user.username", read_only=True, default=None

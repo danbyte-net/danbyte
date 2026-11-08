@@ -3,7 +3,8 @@ import type { CSSProperties } from "react"
 import { Check, ChevronDown } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { Paginated, Status, StatusMini } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Status, StatusMini } from "@/lib/api"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Button } from "@/components/ui/button"
@@ -72,8 +73,7 @@ export function CableStatusControl({
   const qc = useQueryClient()
   const statuses = useQuery({
     queryKey: ["statuses", "cable"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=cable&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=cable&picker=1"),
     enabled: canEdit,
     staleTime: 5 * 60_000,
   })

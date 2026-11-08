@@ -12,10 +12,11 @@ rack of a different height.
 
 ## Add a cabinet
 
-1. Open **DCIM → Cabinets** and click **Add cabinet**.
+1. Open **DCIM → Racks & cabinets → Cabinets** and click **Add cabinet**.
 2. Name it and pick its **site**. Names are unique per site, like rack names.
 3. Optionally pick a [**cabinet type**](#cabinet-types), a
-   [**role**](#cabinet-roles), a **location** within the site, a **status**,
+   [**role**](#cabinet-roles), a **location** within the site and a
+   [**room**](rooms.md) in it, a **status**,
    tags and a **facility ID** (the label on the door, e.g. `=UH1+K1`).
 4. Give the **mounting plate** size - the plate the rails are fixed to - and,
    if you know it, the **outer** width, height and depth of the box.
@@ -183,7 +184,7 @@ calibrated photo is clipped to its device, so are its ports. They resolve
 in one request when the view opens - the room's own, so the drift outline
 costs a check per device - and the key to their colours sits under the view.
 
-Drag to turn it and scroll to zoom. **Close door** and **Open door** swing
+Drag to turn it and scroll to zoom toward the pointer. **Close door** and **Open door** swing
 the door on its left-hand hinge (it snaps when the system asks for reduced
 motion); **Front** and **Rear** look straight at either side, as a
 double-click on the cabinet does; **PNG** downloads `<cabinet>-3d.png`.
@@ -273,7 +274,7 @@ shared by the whole tenant.
 
 | Endpoint | What |
 |---|---|
-| `/api/cabinets/` | Cabinets. Filters: `site`, `location`, `role`, `status`, `cabinet_type`, `search` (name, facility ID, description, custom fields). |
+| `/api/cabinets/` | Cabinets. Filters: `site`, `location`, `room`, `role`, `status`, `cabinet_type`, `search` (name, facility ID, description, custom fields). |
 | `/api/cabinet-types/` | Cabinet types. Filters: `manufacturer`, `search`. |
 | `/api/cabinet-roles/` | Cabinet roles. Filter: `search`. |
 

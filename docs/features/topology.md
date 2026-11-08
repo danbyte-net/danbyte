@@ -4,8 +4,10 @@ icon: lucide/share-2
 
 # Topology {#topology-map}
 
-**Maps → Topology** draws your network three ways, switched by the
-**Diagram / Hierarchy / Logical** tabs in the header:
+**Maps → Topology** opens the [list of saved views](#topology-views-list);
+**Open map** there, or a view's name, opens the map at `/topology/map`.
+The map draws your network four ways, switched by the
+**Diagram / Hierarchy / Logical / Routing** tabs in the header:
 
 - **Diagram** (default) - a clean, printable network diagram: one solid
   card per device in its role's color, in **Detailed** mode (the default:
@@ -52,6 +54,16 @@ icon: lucide/share-2
   same rail diagram draws the
   [Virtual topology](virtual-switches.md#network-topology) and a VM's
   Topology card.)
+- **Routing** - how traffic is routed rather than cabled: the routers of
+  the same device set in a box per AS, with eBGP and iBGP sessions, and
+  circuits and cables as layers you switch on and off. See
+  [Routing view](#routing-view).
+
+The **Maps** menu holds the other maps too: the
+[Site map](site-map.md), [Floor plans](floor-plans.md), the
+[Virtual topology](virtual-switches.md#network-topology) and the
+[Application map](application-flows.md#application-map) - the application
+tree and its flows, drawn with this Diagram's cards, lines and export.
 
 The view choice is remembered per browser and saved with
 [saved views](#saved-views); a map opens on the Diagram, Detailed, until
@@ -97,6 +109,20 @@ something.
   [Card lines](#card-lines)). The text is black or white, whichever reads on
   that color. A device whose role has no color gets a plain grey card.
   Patch panels keep a dashed edge.
+- **Names are never cut** - a card grows to fit its whole name, measured in
+  the card's own font: from 88 px up to 480 px wide (twice the 240 px the
+  card lines stop at). A longer name wraps onto a second row, or more, at
+  its spaces and after `-` `_` `.` `/`, and the card grows taller; the card
+  lines and the pill keep their places under and beside it. A card line
+  wider than the card is still cut with `…`. The same rule sizes the
+  Hierarchy's card headers, the site, location and
+  [provider network](#provider-networks) cards on a grouped map (212 px,
+  growing to 424 px, then wrapping), a photo's caption, and a
+  [virtual chassis](#virtual-chassis-stacks) frame's name strip; the
+  layout, bands, levels and lines all use the grown size, and every
+  export prints the name whole, in the same rows. A saved view keeps each
+  card's centre on the Diagram (its top-left corner on the Hierarchy), so a
+  card that grows spreads round where it stood.
 - **The pill** - at most one, inside the card's top-left corner: the
   monitoring pill (your tenant's name for *down* or *degraded*) while the
   device is down or degraded, else the lifecycle status pill when the card
@@ -140,7 +166,8 @@ something.
   (`TEST · cat5e`; on a trunk too short for it, the longest leg carries
   it). Hovering or clicking any part lights up and opens the whole cable.
   With Bendy lines, legs converging on one card end in a straight run long
-  enough for their port names, one name to each gap between them; a leg
+  enough for their port names (with labels on or off), one name to each
+  gap between them; a leg
   bends nearer its split point or its port to keep clear of the cards it
   passes, and one no curve gets clear of goes round them as an elbow.
   In Simple the legs to one card fold into one, named by its first port in
@@ -179,7 +206,10 @@ names it at any zoom.
 The cards fetch their lines with the map (`include=card`, on the Hierarchy
 tab too), and the monitoring states load whenever a card lists the
 monitoring pill - not only with the sidebar open. The legend lists the roles on the map in their card
-colors, and the monitoring pill when a card can show it.
+colors - those the map draws in colour: on a card, or on a photo's
+[role badge](#photo-nodes) (a map of photos whose chosen card lines leave
+the role out lists none) - and the monitoring pill when a card can show
+it.
 
 ### Card lines
 
@@ -264,7 +294,10 @@ Admins also get **Role card lines** in the card's menu, which opens
 **Lines** in the Display popover sets the view's line, as icon tabs (hover
 one for its name). LLDP ghosts stay straight and dashed; BGP sessions stay
 the faint dotted overlay from card centre to card centre, and hovering one
-names its peers, the session kind and the VRF.
+names its peers, the session kind and the VRF. A
+[circuit between two of your sites](#circuits-between-sites) is a long-dashed
+line in its circuit's colour, named by its circuit id, so it reads as a
+provider's service rather than a cable.
 
 - **Straight** - the direct line; a card's side is still chosen so the line
   does not leave it straight into a neighbour.
@@ -289,8 +322,11 @@ names its peers, the session kind and the VRF.
   sideways by more than twice the gap; further apart it sweeps out past
   the middle in an S. Lines leaving one Simple midpoint each bend within a
   reach of their own, the one heading most steeply out soonest, so they
-  part right after it and keep room for their names. Where a nub has
-  labels the curve runs straight out of it far enough for them.
+  part right after it and keep room for their names. The curve is the
+  same with labels on or off: its port names and addresses follow it
+  (see [Link labels](#link-labels)) instead of it running straight for
+  them. Out of a photo port that faces away from the far card it runs out
+  far enough to round the photo's corner before it turns.
 - **Cyclical** - an arc that loops round the cards between its two ends
   instead of crossing them, both ends leaving through the side it bulges to
   (the top of a row, say). In Detailed each end first runs straight out of
@@ -315,6 +351,26 @@ between the two devices, in Simple and Detailed alike, and is part of the
 view like its arrangement: each change is one undo step, marks the view
 **Edited**, and is kept by **Save** (on No view, in this browser).
 
+**A device's or a band's line** - right-click a card (or open its panel) for
+**Line**, or right-click a row for **Line** under **Cards per row** and
+**Align**: **Default** or one of the four line types, for every cable at
+that device, or at the cards standing in that band. Each change is one undo
+step and saves with the view; **Arrange ▸ Bands by role** keeps a band's
+line. A cable takes the first of these that is set:
+
+1. the link's own line;
+2. its ends' device lines - one end set wins; both set and equal is that
+   line; both set and different, the cable's A end wins;
+3. its ends' band lines (the row each card's centre stands in), by the same
+   rule - so a device line on one end beats a band line on the other;
+4. the view's line.
+
+LLDP ghosts and BGP sessions keep their fixed look. A device's or band's
+Cyclical arcs the cables it has to and draws the rest Bendy, as the view's
+does; only a link's own Cyclical always arcs. On **Default**, a link's panel
+says where its line comes from: *Bendy (from leaf-3a)*, *Elbow (from band
+Leaf)*. The exports draw each cable as its line resolves.
+
 ### Link labels
 
 **Labels** in the Display popover picks what the links carry - **Subnets**,
@@ -325,14 +381,23 @@ and of the link (`labels=`).
   it: out of the nub the line runs a few pixels, stops for a small gap, the
   name, a gap, and runs on. So when many ports sit side by side, each name
   is plainly on its own cable. It reads along the line, turned to stay
-  upright (a line within 10° of vertical reads bottom to top). In Detailed
-  the name sits on the straight run out of its nub, and the planner makes
-  that run long enough for it before the cable bends; in Simple a line that
-  is one cable carries its names on its own run, once it has parted from
-  the other lines leaving that side.
+  upright (a line within 10° of vertical reads bottom to top). On an Elbow
+  or Straight line in Detailed the name sits on the straight run out of
+  its nub, and the planner makes that run long enough for it before the
+  cable bends; in Simple a line that is one cable carries its names on its
+  own run, once it has parted from the other lines leaving that side. On a
+  **Bendy** line the names and addresses follow the curve, letter by
+  letter, over a gap that bends with it - never upside down, and only
+  where the curve bends gently under them - and the curve is drawn exactly
+  as with labels off. Names on neighbouring cables out of one row of nubs
+  stagger along their curves where they would meet, and a cable crossing a
+  curved label steeply passes under it (the gap breaks it there).
 - **IPs** - each end's full address in the subnet the two ends share, the
   same way on the same cable, after its port name (a dual-stack end shows
-  both, one after the other).
+  both, one after the other, IPv4 first). They may sit anywhere along their
+  end's half of the cable - all of it when the other end has no labels -
+  nearest the port name first. Where the run does not fit anywhere, the
+  IPv6 address goes and the IPv4 stays; an address is never cut.
 - **Subnets** - the shared subnet as the chip on the middle of the line
   (both, stacked, on a dual-stack link; under a bundle's count).
 
@@ -353,10 +418,12 @@ link's chip sits over its raised line. Which labels exist:
   view IP addresses - or with none recorded - there are no subnet or address
   labels, and no error. The cable's panel lists every address of each end,
   and the subnets they share.
-- Labels are best effort: one with no free stretch of its line, clear of the
-  cards, the other labels and the other lines, is left off (the nub's
-  tooltip and the panel still name the port). With Ports off the cables
-  carry no names.
+- Labels are best effort, placed in order: port names, then each end's
+  addresses, then the subnet chips - a chip moves along its line (or beside
+  it) round the end labels, never the other way. One with no free stretch
+  of its line, clear of the cards, the other labels and the other lines, is
+  left off (the nub's tooltip and the panel still name the port). With
+  Ports off the cables carry no names.
 
 ### Photo nodes
 
@@ -379,6 +446,17 @@ greyed out (it would change nothing).
   wide (a half-width type half that), at the photo's own proportions. The
   device's name is a caption under it, its card lines and the status pill
   after it, with no card fill.
+- **Role badge:** a photo has no card fill, so its role is a badge in the
+  role's colour right after the name, before the other lines - on screen
+  and in the SVG, PNG and PDF; in draw.io a small coloured label in the
+  caption. It wraps with the name (the name is never cut). It shows by
+  default: on Danbyte's built-in [card lines](#card-lines) a photo always
+  carries it. Card lines chosen on purpose - on the device, the saved
+  view, the role, the tenant or the deployment - are followed: the badge
+  shows only when they list **Role**. A photo without the badge shows no
+  role colour, and the legend leaves out the roles only such photos
+  carry. A single device drawn as its photo on a card map follows the same
+  rule.
 - **Own size:** a device that is not rack gear - a DIN-rail switch, a
   desktop firewall - can be drawn at its photo's own size instead: its true
   size against a 19-inch device when the photo is
@@ -388,7 +466,8 @@ greyed out (it would change nothing).
   device's own setting wins, then its type's, then its role's, and with none
   set a photo is drawn at rack width.
 - **Cables on their ports:** a cable starts at its port's marker, runs
-  straight up or down (its lead, drawn over the photo) - towards its far
+  straight up or down (its lead, drawn over the photo but under the nubs
+  on the image's edge, which stay on top of every line) - towards its far
   device when that lies above or below the photo, else to the nearer
   edge; on a map where that makes more lines cross than every port
   leaving by its nearer edge would, all of them do that instead (a map of
@@ -437,8 +516,12 @@ greyed out (it would change nothing).
   shown whole or not at all - never an address cut in two; only a value
   too long to fit whole beside the name, with no lead in the way, is cut.
   `· …` at the end says some lines were left off; hover a cut caption for
-  all of it. The caption never makes the photo taller, so nothing moves
-  when a line changes. It sits at the left under the photo, or steps
+  all of it. The name itself is never cut: one wider than the photo wraps
+  onto more rows from the photo's left edge, the lines and pill after its
+  last row, and the node is that much taller; one no gap between the leads
+  holds starts in the widest gap and runs on over the leads. Lines never
+  make the photo taller, so nothing moves when a line changes. The caption
+  sits at the left under the photo, or steps
   right past the leads running down through it to the first gap that
   holds:
     1. the name, the pill and every line;
@@ -484,7 +567,9 @@ A switch stack is drawn as one thing. The members of a
 frame, packed a few pixels apart, with a slim strip carrying the chassis'
 name along the frame's side - by default down its left side when the
 members stand top to bottom, across its top when they stand left to right,
-or on whichever side you pick for it. Click the
+or on whichever side you pick for it. The strip is at least as long as the
+chassis' whole name: a frame whose members are shorter grows along the
+strip, the members kept in its middle. Click the
 name to open the chassis; drag the strip (or any member) to move the stack,
 members and all. Hover the strip for its member count and the cables
 between members.
@@ -532,6 +617,180 @@ between members.
   way. A map arranged before it stacked puts the stack where its members
   stood on average. Layer bands sort and carry a stack as one card, by its
   master's role.
+
+## Routing view {#routing-view}
+
+The **Routing** tab (`?tab=routing`) draws how the network routes rather
+than how it is cabled. It takes the same device set as the Diagram - the
+**Filters**, a focus, a hand-picked map, a saved view - so one view can be
+exported as "Core - physical" on the Diagram and "Core - routing" here.
+
+**Routers.** A card is a device or a VM that runs a routing process (a BGP,
+OSPF, IS-IS, EIGRP or LDP instance, or a static route) that you may view,
+or a device at the far end of a BGP session or a static route's next hop
+from one; such a far end has a dashed edge. Cards are the Diagram's: the role's color, the name bold and
+never cut (see [Names are never cut](#diagram-view)), and under it the
+card lines - by default the **router ID** (`RID 10.255.0.1`), the **ASNs**
+(the local AS of each BGP instance, each AS once: an AS the global table
+runs is just `AS65100` even when its VRFs run it too, an AS only VRFs run
+names them, `AS65200 (VRF red)`; the router's panel lists every table,
+`AS65100 (global, VRF TENANT-A)`)
+and the **loopback** (the global table's address on an interface named
+`lo`/`Loopback…`, or one whose IP role is *Loopback*; IPv4 first). The
+header's **Simple | Detailed** switches between the name and its AS only,
+and every line; **Display ▸ Card lines** picks the lines (Role, Router
+ID, ASN, Loopback, Site, Primary IP, Status). There is no photo face: this
+is a logical picture. The router ID is the global table's, BGP's first.
+
+**AS boxes.** The cards sit in one box per local AS - the iBGP domain -
+titled with the AS number and the first line of the ASN's description
+(`AS65001 · Core`). A router with BGP in several tables sits in the box of
+its global table's AS (else its lowest); a far end with no BGP of its own
+sits in the AS its sessions name. A map never arranged is laid out
+**By AS**: each box holds its routers in rows by role (in the
+[Levels](#levels-role-tiers) order), the boxes packed left to right, the
+routers in no AS after them and the provider networks in a row below.
+Boxes are zones: move one by its title bar and the cards inside it go with
+it; resize it from its corners; rename, recolor or delete it from its
+toolbar or right-click menu. **Add ▸ Zone** draws a zone of your own.
+**Arrange ▸ By AS** lays everything out by AS again, keeping each box's
+name and color and the zones you drew; **Arrange ▸ Reset layout** drops
+the arrangement and lays the map out By AS on the fly. Dragging a card or
+a box keeps the whole arrangement - every card and box - as one undo step.
+
+**Lines (layers).**
+
+| Layer | Drawn as | Label |
+|---|---|---|
+| **eBGP** | solid and thick, one color per AS pair | `AS65001 ⇄ AS65050`, then the address families (`v4`, `v6`, `vpnv4`, `evpn`…) and the VRF |
+| **iBGP** | thin; from a route reflector to its client, an arrow at the client | the families, `RR client` and the cluster ID - only when there is more to say than IPv4 unicast |
+| **OSPF** | dashed, teal | `area 0` (`area 0 ⇄ 1` when the ends differ), `v3` for OSPFv3, `2x` for several links, the VRF; under it `cost 10 ⇄ 20` when the costs each way differ |
+| **IS-IS** | dotted, purple | the level (`L1`, `L2`, `L1-2`; `L1 ⇄ L2` when the ends share none), the metric (`metric 10`, or each way when they differ), the VRF |
+| **Static** | thin, an arrow from the route's router to its next hop's | `12 routes`, the VRF |
+| **Circuits** | dash-dot in the circuit type's color, to the [provider network](#provider-networks) the router is cabled to | the circuit ID |
+| **Cables** | faint, one line per pair of routers cabled together (through patch panels) | `2x` for several cables |
+
+A BGP line stands for every session between two routers in one table:
+both ends' sessions fold into it, and a session defined on one end only is
+marked *One side only* in its panel.
+
+An **OSPF** or **IS-IS** line is an adjacency: an interface of the
+process on each router, joined by a cable - walked through patch panels as
+the Cables layer does, an aggregate's members counting for the aggregate -
+or, where the interface is not cabled to one of the process, sharing a
+subnet with it (their addresses in one network; host routes don't count).
+Both ends run in the same table (and, for OSPF, the same version). One
+line stands for every adjacency between two routers in one table and area
+(OSPF) or level (IS-IS). A **Static** line runs from a route's router to
+the router (or any device or VM of the map's set) its next hop is an
+address of - looked up in the route's next-hop table when it leaks, else
+its own; one line per pair and table. Several lines between the same two
+cards run side by side.
+
+**Line labels.** A label never sits on a card or on another label. Lines
+inside one AS box that would all say the same thing - every leaf's
+session to the route reflectors `evpn · RR client · cluster 10.255.0.0`,
+every IS-IS adjacency `L2` - lose their own label and the **Legend** says
+it once for the box, with the line's look (`AS65100 · iBGP · RR clients
+of spine1, spine2 · evpn · cluster 10.255.0.0`, `AS65100 · IS-IS · L2`);
+a line that says something different keeps its label. Each label left
+sits on its own line at the first free spot - the middle, then a little
+either side, then nearer the ends - clear of the other lines if it can,
+else with them passing under it; of two lines side by side (a session
+and an adjacency between the same two cards) each takes its label on its
+own side. A label with no free spot is left off the line. Hovering or
+selecting a line shows its whole label, and its panel has the same
+facts. The exports place every label where the canvas does.
+
+Cables are off until you switch them on; each
+layer's eye in the **Objects** sidebar (and **Display ▸ Layers**) switches
+it, saved with the view, and a line's own eye hides that one line. A layer
+you may not see is not offered.
+
+**VRF.** **Display ▸ VRF** picks the table the routing lines are drawn
+for: **All tables** (the default when none is picked, so a view saved
+before the picker shows what it always did), **Global**, or one of the
+VRFs the map's processes and routes run in (each in its color). Global or
+a VRF narrows every routing layer - eBGP, iBGP, OSPF, IS-IS, static - to that table; a VRF
+also keeps the global table's VPNv4/VPNv6 BGP lines between two routers
+that run it (the PEs' transport), so an L3VPN shows its PE-CE eBGP and
+the VPN iBGP between its PEs. Circuits and cables belong to no table and
+always show. The pick is in the URL (`?vrf=global` or `?vrf=<id>`) and saved
+with the view (`filters.routing.vrf`).
+
+**Checks.** **Display ▸ Checks** (off by default, saved with the view as
+`filters.routing.checks`) puts a **Checks** chip over the map, its count
+on a badge, and draws the lines it names over a red halo. Its list:
+
+| Check | When |
+|---|---|
+| One-sided session | a BGP session only one of its two routers defines |
+| AS mismatch | a session's remote AS is not the peer's own AS (its local AS on the line, else the AS its BGP instance in that table runs) |
+| Area mismatch | the two ends of a cabled OSPF adjacency are in different areas |
+| Hello/dead mismatch | the two ends of an OSPF adjacency set different hello or dead intervals (both set) |
+| MTU mismatch | the two interfaces of an OSPF adjacency have different MTUs (both set) and neither ignores MTU |
+| Level mismatch | the two ends of a cabled IS-IS adjacency share no level |
+
+An item clicks to its line and opens its panel. Checks only read; they
+change nothing and are not compliance rules.
+
+**Panels.** A router's panel lists its role, status, site, router ID, ASNs,
+loopback and every routing process (`BGP AS65001`, `OSPF · VRF red`,
+`Static · 12`), with **Open device** (or **Open VM**) and **Focus**. A BGP
+line's panel names its kind, the two ASes, the families, the VRF and the
+route reflector (with its cluster ID), then one section per session:
+the session (a link), its status, **Peer group**, **Policy in** and
+**Policy out** (each a link to the [routing policy](routing.md)), a
+family's own policies and maximum where they differ, **Max prefixes**
+(with its threshold and restart or warning only, `1000 · 75% · restart 5 min`),
+**BFD** (its profile, linked), **Keepalive / hold** and the instance's
+**RPKI** caches - each as the session ends up with it (session, then peer
+group, then instance). A catalog row you may not view is left out. A
+circuit's and a provider network's panels are the Diagram's; a cable
+line's lists its cables. An **OSPF** or **IS-IS** line's panel names the
+area (or level) and VRF, then one section per adjacency: how the two
+interfaces meet (the cable, linked, or the shared subnet), the **Cost** or
+**Metric** (each way when they differ), OSPF's **Hello / dead** and
+**MTU**, and per end its interface (with *passive* and the network type
+where set), **BFD** (its profile, linked) and **Auth** - the
+authentication kind and the keychain's name, linked; the key itself never
+shows. A **Static** line's panel lists its routes (each a link, with its
+next hop and distance) - the first 25, then *and N more*. A line the
+Checks name shows its items as badges. Monitoring has no link to BGP
+sessions, so a session's panel shows no monitoring state.
+
+**Objects sidebar and legend.** The sidebar lists the **Layers** first
+(each with its eye, its line swatch and its lines), then the **AS boxes
+and zones** (click to frame one), then the **Routers** by AS, each with an
+eye; *Show all* brings back what was hidden. **H** hides the selected card
+or line, **Shift+H** shows everything. The **Legend** keys the layers drawn
+and each AS pair's color, then what the lines of each AS box share
+(see *Line labels*).
+
+**Saved views.** A view keeps the Routing tab's arrangement apart from the
+other tabs' (`positions_by_style.routing`, `zones_by_style.routing`) and
+its display (`filters.routing`: card mode, layers, card lines, VRF,
+Checks), with the same Save, Undo, Redo and leave guard. The URL
+parameters are the Diagram's (`site`, `role`, `status`, `tag`, `device`,
+`depth`, `devices`, `view`, `q`) plus `vrf`. A focus (`device`, `depth`)
+follows every routing line drawn - BGP, OSPF, IS-IS and static.
+
+**Export.** The second bar's [Export](#export) draws the tab as **SVG**,
+**PNG**, **PDF**, **Print** and **draw.io**, titled *Routing topology*
+(the view's or site's name joins the filters line and the file name): the
+cards, the AS boxes, each line in its layer's look with its label where the canvas puts it, the
+route reflector's and static routes' arrowheads, and the legend. In
+draw.io each routing layer is a layer of its own - *eBGP*, *iBGP*,
+*OSPF*, *IS-IS*, *Static*, *Circuits*, *Cables* - to switch on and off
+there too.
+
+**Who sees what.** A card needs view on the device (on the VM for a VM)
+and shows only the processes you may view; a line needs both ends on the
+map and, per layer, view on BGP sessions (eBGP, iBGP), on OSPF
+instances and OSPF interfaces (OSPF), on IS-IS instances and IS-IS
+interfaces (IS-IS), on static routes (Static) or on circuits, provider
+networks and sites (Circuits). A missing grant hides that layer, never the
+map. A keychain, BFD profile or OSPF area is named only with view on it. See [Routing topology API](#routing-topology-api).
 
 ## Big graphs
 
@@ -721,6 +980,9 @@ stays on the map.
 | A bundle | Titled by its aggregates (`Po1 ⇄ Po10 · 2 cables`) or by its two devices. **Line** (Diagram), then **Cables**: each member with its type, speed and ports, and its own *Open*. |
 | A site or location card | **Grouped by**, **Devices**, and **Roles** with the number of each. *Open group* drills in on the same map. |
 | The line between two cards | The number of cables and their **Cable types**. |
+| A provider network | **Provider**, **Service ID**, and **Circuits**: each circuit id with its site and status. *Open provider network*. |
+| A line to a provider network | The circuit id as the title, **Provider**, **Type**, **Status**, **Commit rate**, **Network**, **Site**, **Port** (the device port the site end is cabled to, or *Not cabled*), **Via**. *Open circuit*. |
+| A circuit between two sites | The same circuit panel: **Provider**, **Type**, **Status**, **Commit rate**, then **Side A** and **Side Z**, each with its **Site**, **Port** (device and port) and **Via**. *Open circuit*. |
 
 A status left unset has no row, rather than a dash.
 
@@ -760,6 +1022,67 @@ isn't a device level.
 server-to-switch run through two patch panels is **one edge**, annotated
 `via panel-a, panel-b`. Untick it to see the raw physical hops with the
 panels as nodes - the truth on the wall vs the truth in the racks.
+
+## Provider networks
+
+A circuit that runs from one of your sites to a
+[provider network](circuits.md#provider-networks) - an MPLS cloud, a
+carrier's fabric - is drawn to a card of its own for that network: a neutral
+card with a cloud, its name, how many circuits meet there and its provider.
+Every circuit to the same network meets at the one card, so several sites on
+one MPLS service read as hub and spoke, the network in the middle.
+
+- **The line** runs from the device the circuit's site end is cabled to -
+  through patch panels, like any collapsed run, with **Collapse panels** off
+  from the device the cable lands on - to the network's card. It wears the
+  circuit's colour (its type's, else its status's) whatever the colour mode,
+  and is named by its circuit id.
+- **Grouped by site or location**, the line runs from the cabled device's
+  site or location card. An end that is **not cabled** still draws when the
+  map is grouped by site: from its own site's card. On the device map, and
+  grouped by location (a termination names a site, never a location), an
+  uncabled end draws nothing - there is no card to start it from.
+- A device left off the map by a filter, the focus or a hand-picked set
+  takes its circuits with it; a network with no circuit left is not drawn.
+- **Click** the card for the network's panel, the line for the circuit's
+  (see [Detail panels](#detail-panels)).
+- **Hide** them in the Objects sidebar: the **Provider networks** group's eye
+  takes every network card and its lines off the map, a row's eye one
+  network. Both save with the view like the other eyes.
+
+You see a network and its circuits only with view on circuits and on
+provider networks, and only the circuits whose site end is at a site you may
+view - a reader scoped to some sites never sees a card built from circuits
+at the others.
+
+## Circuits between sites
+
+A circuit with **both** ends on your own sites - an MPLS or point-to-point
+service between NSP1-PE2 and NSP2-PE2, side A cabled to one router's port
+and side Z to the other's - is drawn as one line between the two devices.
+There is no hub card: the circuit is the link.
+
+- **The line** runs from the device side A is cabled to, to the device side
+  Z is cabled to - through patch panels, like any collapsed run, or with
+  **Collapse panels** off from the device each cable lands on. It is
+  **dashed** (long dashes, apart from a patch-panel run's), wears the
+  circuit's colour (its type's, else its status's) whatever the colour
+  mode, and is named by its circuit id on the Diagram. It is never folded
+  into a LAG or a bundle with the cables between the same two devices.
+- **Both ends must be cabled** to devices on the map. An end not cabled,
+  or cabled to a device a filter, the focus or a hand-picked set leaves
+  off, draws nothing - on a hand-picked map, put both routers on it.
+- **Grouped by site or location**, it is a line between the two cards when
+  its devices are in different groups, and stays inside the card when both
+  are in one, like cables.
+- **Click** it for the circuit's panel (see [Detail panels](#detail-panels)).
+- **Hide** them in the Objects sidebar: its **Circuits** section lists each
+  by circuit id with its two devices; the group's eye takes every such line
+  off the map, a row's eye one. Both save with the view.
+
+You see the line only with view on circuits and on **both** devices: when
+one end's device is outside your `device.view` scope the line is left out,
+so the far device is never named.
 
 ## Hand-picked maps {#building-a-diagram}
 
@@ -876,8 +1199,10 @@ The map has the same eyes as the [site map](site-map.md) and the
 [floor plans](floor-plans.md). In the **Objects** sidebar, every group
 header has one - a **role**, a **site** or a **location** (whichever the
 Devices list is grouped by), a **link family** (a cable type, **No type**
-for cables without one, **LLDP** for discovered links, or **BGP sessions**)
-- and so does every device row and every cable row. Right-click a card →
+for cables without one, **LLDP** for discovered links, or **BGP sessions**,
+and **Provider networks**, and **Circuits** for the circuits between your
+sites) - and so does every device row, every cable row, every provider
+network row and every circuit row. Right-click a card →
 **Hide** is the same thing for one card, from the canvas, and right-click a
 line → **Hide** for one line: a cable, a bundle or LAG (its cables), a
 breakout (the whole cable), an LLDP neighbour or a BGP session.
@@ -920,8 +1245,9 @@ role and stacks them: in the [Levels](#levels-role-tiers) order when you have
 set one (roles bonded to one level share a band, "Spine + Border"), otherwise
 in the order the layout ranked them, core on top. Devices with no role get a
 band of their own at the bottom. Each band's cards stand side by side in the
-order they stood, wrapping onto another line past 12 cards; every band is as
-wide as the widest. In **Detailed**, rows keep room for the port names (and
+order they stood, wrapping onto another line past 12 cards (or a line too
+wide) unless the band's [Cards per row](#cards-per-row) says otherwise;
+every band is as wide as the widest. In **Detailed**, rows keep room for the port names (and
 addresses) on the cables: a clear run above and below a row's cards where
 its cables leave that way, lanes between rows for the cables to turn in, and
 cabled cards side by side far enough apart for a name at each end - the
@@ -1014,6 +1340,30 @@ rows' edges. Side bands can stand side by side.
 - **Delete** it from the toolbar or by right-clicking it (**Delete**); its cards stay
   where they are. **Arrange ▸ Clear bands** removes every band (after a
   question when some were drawn by hand).
+
+**Cards per row.** Right-click a row → **Cards per row** sets how many cards
+stand on one line before the band wraps onto another:
+
+- **Auto** (the default) wraps past 12 cards, or sooner when the line gets
+  too wide.
+- **All on one line** never wraps - a leaf band of 20 switches stays one
+  line, however wide.
+- **A number** (2 to 24 in the menu) wraps past exactly that many cards,
+  however wide they are.
+
+The band is laid out again where it stands, the rows under it moving up or
+down with their cards, as one undo step. **Arrange ▸ Bands by role** (or
+*by type*) and **Reset layout** keep a band's setting when they rebuild it,
+and it saves with the view.
+
+**Align.** Right-click a row → **Align** (under **Cards per row**) lines its
+cards up across the band's width: **Left**, **Center** or **Right**, each line
+on its own when the band wraps - a short last line sits under the left end,
+the middle or the right end of the full ones. **Auto** (the default) is what
+bands always did: every line centred, so Center looks the same. The band is
+laid out again where it stands, as one undo step; Arrange and Reset layout
+keep it, it saves with the view, and the exports draw the cards where it put
+them.
 
 A card belongs to the band its centre is in - nothing else is stored - so
 you can drag a card into another band, and the draw.io file nests it
@@ -1305,6 +1655,27 @@ connects on their touching edges, uplinks sit on top and downlinks on the
 bottom, and cables never wrap around a card. Port strips size to their own
 counts.
 
+## Topology views list {#topology-views-list}
+
+**Maps → Topology** (`/topology`) lists the tenant's saved views:
+
+| Column | |
+|---|---|
+| View | The name, which opens the view on the map, and a **Default** badge on the [default view](#default-view) |
+| Created by, Updated by | From the change log: who saved it first and who saved it last (blank for a view the log has no entry for) |
+| Updated | When it was last saved |
+
+**Open map** opens the map with the default view. The search box matches
+the name and the people. Tick views for the bulk bar:
+
+- **PDF report…** - a [topology report](reports.md#topology-report) of the
+  selected views: one PDF with a chapter per view, or a ZIP of one PDF a
+  view. Each view is drawn as it is saved, one after another, in a hidden
+  copy of the map page in this tab (*Drawing 2 of 5…*), then the server
+  makes the report. Up to 20 views.
+- **Delete** - asks first, like every bulk delete; needs the delete
+  permission on topology views. Deleting the default view clears it.
+
 ## Saved views
 
 Drag cards where you want them, then **Save as…** - a saved view stores,
@@ -1396,9 +1767,10 @@ for everyone in the tenant: **Set as default** on a view, **Clear default**
 on the one that is. The select marks it with a **Default** pill; setting it
 reports *Default: "name"*, clearing it *Default cleared*.
 
-- **Topology** from the sidebar - a bare `/topology` - opens the default
-  view as last saved, with its own tab and Diagram mode. The address becomes
-  `?view=<id>` in place, so Back leaves the page.
+- **Open map** on the [Topology page](#topology-views-list) - a bare
+  `/topology/map` - opens the default view as last saved, with its own tab
+  and Diagram mode. The address becomes `?view=<id>` in place, so Back
+  leaves the page. The list marks the default view with a **Default** badge.
 - Links keep what they show. A link naming a view opens that view, and a
   link from a site, location, cable or device page - any address with other
   parameters - opens No view with them. Such an address gains `view=none`
@@ -1427,11 +1799,11 @@ is open it acts on what you right-clicked, not on what is selected.
 
 | Right-click | Items, in order |
 |---|---|
-| A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Card lines…*, *Role card lines* for admins, and on a member of a virtual chassis *Virtual chassis* ▸ its stack's items |
+| A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Line* ▸ *Default* and the four line types (the device's own line, one undo step), *Card lines…*, *Role card lines* for admins, and on a member of a virtual chassis *Virtual chassis* ▸ its stack's items |
 | A virtual chassis' stack | *Open virtual chassis*; *Top-down*, *Left-right*, *Unstacked*; *Hide stack*; on a hand-picked map where it was placed, *Remove from map* |
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
 | A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide*. A grouped map's line has no menu: hide one of its sites or locations instead |
-| A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), on a row *Cables to other bands* ▸ *Auto*, *Up and down*, *Left and right*, *Delete* |
+| A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), on a row *Cables to other bands* ▸ *Auto*, *Up and down*, *Left and right*, and on a Diagram row *Cards per row*, *Align* and *Line* ▸ *Default* and the four line types; *Delete* |
 | Empty canvas | Diagram: *Add devices…*, *Add virtual chassis…* (with view on virtual chassis), *Add band*, *Add zone*, *Add text*. Hierarchy: *Add devices…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
 
 ### Keyboard
@@ -1466,7 +1838,7 @@ back button and a reload all keep it.
 
 | Parameter | Values |
 |---|---|
-| `tab` | `diagram` (default), `hierarchy`, `logical`. The retired `wiring` (or `stencil`) and `flat` open `diagram` with `mode=detailed` and `mode=simple` |
+| `tab` | `diagram` (default), `hierarchy`, `logical`, `routing`. The retired `wiring` (or `stencil`) and `flat` open `diagram` with `mode=detailed` and `mode=simple` |
 | `mode` | Diagram: `detailed` (default), `simple` |
 | `face` | Diagram: devices as `card` (default) or `photo` - see [Photo nodes](#photo-nodes) |
 | `anchor` | Diagram: cables meet a photo at its `ports` (default) or its `edge` |
@@ -1487,10 +1859,14 @@ back button and a reload all keep it.
 | `chassis` | with `devices`: the virtual chassis placed on that map, comma-separated, up to 200 |
 | `q` | the **Find on map** box (never an edit of a saved view) |
 | `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
+| `vrf` | Routing view: the table drawn - `global` or a VRF id (the view's, else every table, by default) |
 
-A setting on its default is left out, so a link stays short. A bare
-`/topology` opens the tenant's [default view](#default-view), or No view
-when there is none. A value the page doesn't recognise reads as the
+These are parameters of the map's address, `/topology/map`. A setting on
+its default is left out, so a link stays short. A bare `/topology/map`
+opens the tenant's [default view](#default-view), or No view when there is
+none. A link from before the map moved - `/topology?view=…`,
+`/topology?site=…`, any `/topology` address with a map parameter - still
+works: it goes on to `/topology/map` with every parameter it had. A value the page doesn't recognise reads as the
 setting's default rather than breaking the page.
 Grouping by site while scoped to one site *is* that site's device view, so
 `?group=site&site=<id>` is the drill-in - the same link the breadcrumb gives
@@ -1511,6 +1887,8 @@ layout run.
 the map's data, not captured from the screen, so every card is in the file
 however far off screen it sits. A [trace map](#trace-maps) has the same
 menu beside its axis, and its files are titled after the cable or port.
+On the [Routing tab](#routing-view) the files are the routing picture,
+titled *Routing topology*.
 
 | Format | What you get | Good for |
 |---|---|---|
@@ -1518,6 +1896,11 @@ menu beside its axis, and its files are titled after the cable or port.
 | **SVG** | A vector drawing: cards, lines and text, each card and cable a link back to Danbyte | Inkscape or Illustrator, documentation |
 | **PDF** | The map on one sheet of paper, fitted to the page, with a title block | Printing, a change record, a handover pack |
 | **draw.io** | An editable `.drawio` file (see [draw.io](#drawio) below) | A diagram you keep editing in draw.io |
+
+**PDF report…** opens the [topology report](reports.md#topology-report)
+for the map as drawn: the same diagram as **PDF**, with a cover, a contents
+page and tables of the devices on the map, their IP addresses and the
+cables between them.
 
 **Print** makes the same PDF and opens it in a new tab, where the browser's
 PDF viewer prints it. The page is already the paper's size, so print it at
@@ -1547,7 +1930,9 @@ A file is named after the saved view (else the site, else `topology`) and
 the day: `arhus-dc-2026-09-26.drawio`. Every format, the PDF too, takes
 the same name; a letter such as ø or æ reads as `o` or `ae`
 (`kobenhavn-hq-…`), and anything else that is not a letter or digit as a
-hyphen. The PDF's day is the server's, in UTC.
+hyphen. The PDF's day and the time in its title block are the server's
+clock in your timezone (your date and time preferences), named after
+the time - `2026-11-07 00:01 EET` - as on every Danbyte PDF.
 
 **Hierarchy** exports its PNG, SVG, PDF and draw.io in the Diagram's
 Simple look, so the four files match: its card headers as compact
@@ -1573,6 +1958,23 @@ same way.
 Every export is light-themed whatever theme the app is in: white paper,
 zinc greys, and color only where it means something - role fills, status
 pills, cable colors.
+
+Names print whole: each card, header, caption and site card is laid out
+by the same sizing rule as the canvas (see **Names are never cut** under
+[Diagram view](#diagram-view)), so a long name is in the file in the rows
+the screen wraps it into - separate text rows in the SVG, PNG and PDF,
+`<br>`-joined in the draw.io label - and never ends in `…`. The PDF is the
+browser's SVG laid out by the server, which draws the text as given and
+measures nothing itself.
+
+A [provider network](#provider-networks) is drawn as a neutral card like a
+site card - its name, then its provider - linking back to the network, and
+each circuit to it is its own line in its circuit's colour, linking back to
+the circuit; a Simple export never folds two circuits into one line. A
+[circuit between two sites](#circuits-between-sites) prints as its dashed
+line between the two cards, its circuit id at the middle, linking back to
+the circuit - in the SVG, PNG, PDF and draw.io exports of the Diagram and
+of the Hierarchy alike.
 
 - **SVG** is plain vector drawing: shapes, lines and text, no embedded HTML.
   It opens in a browser, Inkscape or Illustrator and stays editable. Text is
@@ -1635,7 +2037,11 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   name and address is a label cell on its line, turned along it, on a
   background of the color under it (white, or its band's) with a space
   either side, so the line breaks for it
-  with a small gap round the text - move the line and they follow.
+  with a small gap round the text - move the line and they follow. draw.io
+  cannot bend text along a line: a label that follows a Bendy curve on the
+  map is a straight label here, turned along the curve where it sits. The
+  SVG, PNG and PDF bend it as the map does (glyph by glyph, plain SVG
+  text the PDF renderer draws as well).
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
   with each corner as a waypoint, so they stay square when you move a card.
   Bendy lines and Cyclical arcs are draw.io curves through the same points
@@ -1747,6 +2153,78 @@ the map was saved is on it and one removed is not. Only chassis the caller
 may view count (others, another tenant's and unknown ids are ignored), and
 the members still follow the caller's `device.view` scope. Without `devices`
 the parameter changes nothing. A malformed id is a 400.
+
+**Provider networks.** A circuit with one end on a site and the other on a
+[provider network](circuits.md#provider-networks) adds a node of its own and
+a line to it (see [Provider networks](#provider-networks)) - on the device
+graph, the grouped graph and a hand-picked map alike:
+
+```json
+{"id": "pn:<uuid>", "type": "provider_network", "data": {
+  "kind": "provider_network", "provider_network_id": "<uuid>",
+  "name": "MPLS", "service_id": "", "provider": {"id": "…", "name": "Telco"},
+  "circuit_count": 2,
+  "circuits": [{"id": "…", "cid": "C-1", "provider": {…}, "type": {…},
+                "status": {…}, "commit_rate_kbps": 100000,
+                "site": {"id": "…", "name": "Aarhus"}}]}}
+
+{"id": "ce:<circuit uuid>", "source": "dev:<uuid>", "target": "pn:<uuid>",
+ "type": "circuit", "data": {
+  "circuit": {"id", "cid", "provider", "type", "status", "commit_rate_kbps"},
+  "provider_network": {"id", "name", "service_id", "provider"},
+  "termination": {"id", "side", "port_speed_kbps", "upstream_speed_kbps"},
+  "site": {"id", "name"}, "device": {"id", "name"},
+  "port": {"id", "name", "kind"}, "via": ["pp-1"],
+  "color": "aa00ff", "status": "active", "status_mini": {…},
+  "pairs": [{"a": "sw1:Gi0/48", "b": "MPLS:C-1", "a_port": "Gi0/48",
+             "b_port": "C-1", "a_kind": "interface",
+             "b_kind": "circuit_termination", …}]}}
+```
+
+`circuit.type` and `status` are `null` when unset; `color` is the circuit
+type's colour, else its status's. On the grouped graph the `source` is the
+group (`grp:<id>`), and an edge drawn from an uncabled end's site has no
+`device`, `port` or `pairs`. One node per network, listing only the circuits
+that drew; a network none of whose circuits drew is left out. The node and
+its lines need `circuit.view` and `providernetwork.view`, and the circuit's
+site end must be at a site the caller may view (`site.view`); on the device
+graph the device follows `device.view`, and a patch panel outside it is not
+walked. Every map costs the same few queries whatever the number of
+circuits. `include` enrichment never touches these nodes and lines.
+
+**Circuits between sites.** A circuit with both ends on sites, each cabled
+to a device port (through patch panels with `collapse_panels=1`), is one
+edge between the two devices (see
+[Circuits between sites](#circuits-between-sites)), side A the `source`:
+
+```json
+{"id": "cc:<circuit uuid>", "source": "dev:<A uuid>", "target": "dev:<Z uuid>",
+ "type": "circuit", "data": {
+  "circuit": {"id", "cid", "provider", "type", "status", "commit_rate_kbps"},
+  "color": "aa00ff", "status": "active", "status_mini": {…},
+  "ends": [
+    {"side": "A",
+     "termination": {"id", "side", "port_speed_kbps", "upstream_speed_kbps"},
+     "site": {"id", "name"}, "device": {"id", "name"},
+     "port": {"id", "name", "kind"}, "via": []},
+    {"side": "Z", …, "via": ["pp-1"]}],
+  "via": ["pp-1"],
+  "pairs": [{"a": "NSP1-PE2:xe-0/0/0", "b": "NSP2-PE2:xe-0/0/0",
+             "a_port": "xe-0/0/0", "b_port": "xe-0/0/0",
+             "a_id": "…", "a_kind": "interface",
+             "b_id": "…", "b_kind": "interface"}]}}
+```
+
+It has no `provider_network`, and carries no `lag`, so it is never folded
+into a bundle. `via` is both ends' panels, A's first. On the grouped graph
+the `source` and `target` are the two groups (`grp:<id>`), with no `pairs`;
+when both devices are in one group there is no edge. Both ends must be
+cabled to devices on the map - an uncabled end, or one cabled to a device
+the map leaves out, draws nothing. It needs `circuit.view`, and both devices
+must be in the caller's `device.view` scope (a panel outside it is not
+walked); otherwise the edge is left out. A device's card carries the port
+the edge anchors to in its `ports`. The same fixed number of queries covers
+these and the provider-network circuits.
 
 `GET /api/topology/chassis/` lists the virtual chassis the Diagram's device
 list offers: `{results: [{id, name, master_id, members: [{id, name,
@@ -1936,6 +2414,160 @@ what" questions.
 
 All three are RBAC-scoped to the caller's `device.view` grant.
 
+### Routing topology API
+
+`GET /api/topology/routing/` (or `POST` with the query as a JSON body, as
+the page sends it) - the [Routing tab](#routing-view)'s payload, one call.
+The query is the graph endpoint's: `site`, `location`, `role`, `status`,
+`tag`, `devices` (with `chassis`), `device` with `depth` (here: that many
+routing hops around the router, over the lines drawn), plus `layers` - a
+comma-separated (or JSON) list of `ebgp`, `ibgp`, `ospf`, `isis`,
+`static`, `circuits`, `cables`, default all but `cables` - and `vrf`, the
+table the routing lines are drawn for: `all` (every table, the default),
+`global` or a VRF id. An unknown layer, a `vrf` that is none of those or a malformed id
+is a 400, no `device.view` a 403. A VM has
+no location: a `location` filter or a hand-picked set leaves VMs out.
+
+```json
+{
+  "nodes": [
+    {"id": "dev:<id>", "type": "router", "data": {
+      "kind": "device", "device_id": "<id>", "vm_id": null, "name": "r1",
+      "role": {"id": "…", "name": "Router", "slug": "router", "color": "0ea5e9"},
+      "status_mini": {…}, "site": "AMS", "site_id": "…", "primary_ip": null,
+      "router": true, "router_id": "10.255.0.1",
+      "asns": [{"asn": 65001, "vrf": null}], "as_group": 65001,
+      "loopback": "10.255.0.1",
+      "instances": [{"kind": "bgp", "id": "…", "vrf": null,
+                     "router_id": "10.255.0.1", "asn": 65001,
+                     "asn_id": "…", "cluster_id": null},
+                    {"kind": "static", "id": null, "count": 12, …}]}},
+    {"id": "pn:<id>", "type": "provider_network", "data": {…}}
+  ],
+  "as_groups": [{"id": "as:65001", "asn": 65001, "asn_id": "…",
+                 "name": "Core", "nodes": ["dev:<id>", …]}],
+  "edges": [
+    {"id": "ibgp:dev:<rr>|dev:<client>|", "source": "dev:<rr>",
+     "target": "dev:<client>", "type": "ibgp", "data": {
+       "kind": "ibgp", "vrf": null, "address_families": ["vpnv4-unicast"],
+       "a_asn": 65001, "b_asn": 65001, "pairs": [{"a": "AS65001", "b": "AS65001"}],
+       "rr": {"reflector": "dev:<rr>", "client": "dev:<client>", "cluster_id": "1.1.1.1"},
+       "one_sided": false,
+       "sessions": [{"id": "…", "numid": 7, "name": null, "node": "dev:<rr>",
+         "vrf": null, "local_asn": 65001, "remote_asn": 65001,
+         "local_address": "…", "remote_address": "…", "interface": null,
+         "status_mini": null, "peer_group": {"id": "…", "name": "CLIENTS"},
+         "import_policy": {"id": "…", "name": "IN"}, "export_policy": null,
+         "address_families": [{"afi_safi": "vpnv4-unicast", "activate": true,
+           "import_policy": …, "export_policy": …, "maximum_prefix": null,
+           "maximum_prefix_threshold": null, "maximum_prefix_restart": null,
+           "maximum_prefix_warning_only": false, "route_reflector_client": true}],
+         "maximum_prefix": null, "maximum_prefix_threshold": null,
+         "maximum_prefix_restart": null, "maximum_prefix_warning_only": false,
+         "bfd": true, "bfd_profile": {"id": "…", "name": "fast"},
+         "keepalive": 10, "hold_time": 30, "route_reflector_client": true,
+         "cluster_id": "1.1.1.1", "rpki_caches": [{"id": "…", "name": "rpki1"}]}]}},
+    {"id": "ce:<circuit id>", "type": "circuit", "source": "dev:<id>",
+     "target": "pn:<id>", "data": {…}},
+    {"id": "ospf:dev:<a>|dev:<b>||0|v2", "type": "ospf", "source": "dev:<a>",
+     "target": "dev:<b>", "data": {
+       "vrf": null, "vrf_id": null, "version": 2, "area": "0",
+       "areas": ["0", "0"], "cost": [10, 20], "problems": [],
+       "links": [{"via": "cable", "cable_id": "…", "subnet": null,
+         "a": {"node": "dev:<a>", "id": "…", "instance_id": "…", "process": "1",
+               "interface": "et-0/0/1", "interface_id": "…", "vm_interface_id": null,
+               "network_type": "point-to-point", "passive": false,
+               "bfd": true, "bfd_profile": {"id": "…", "name": "fast"},
+               "authentication": "md5", "keychain": {"id": "…", "name": "OSPF-KEYS"},
+               "area": "0", "area_ref": {"id": "…", "name": "backbone"},
+               "cost": 10, "priority": null, "hello": 10, "dead": 40,
+               "mtu": 9000, "mtu_ignore": false},
+         "b": {…}}]}},
+    {"id": "isis:dev:<a>|dev:<b>||2", "type": "isis", "source": "dev:<a>",
+     "target": "dev:<b>", "data": {
+       "vrf": null, "vrf_id": null, "level": "2", "levels": ["2", "1-2"],
+       "metric": [10, 10], "problems": [],
+       "links": [{"via": "subnet", "cable_id": null, "subnet": "10.0.0.0/31",
+         "a": {…, "level": "2", "metric": 10, "metric_l2": null,
+               "hello_interval": null, "hello_multiplier": null},
+         "b": {…}}]}},
+    {"id": "static:dev:<a>|dev:<b>|", "type": "static", "source": "dev:<a>",
+     "target": "dev:<b>", "data": {"vrf": null, "vrf_id": null, "count": 12,
+       "problems": [],
+       "routes": [{"id": "…", "numid": 3, "prefix": "10.8.0.0/16",
+                   "next_hop": "10.0.0.2", "distance": null}, …]}},
+    {"id": "cable:dev:<a>|dev:<b>", "type": "cable", "source": "dev:<a>",
+     "target": "dev:<b>", "data": {"cables": [{"id": "…", "numid": 12,
+       "label": null, "a": "r1:et-0/0/1", "b": "r2:et-0/0/1"}]}}
+  ],
+  "checks": [{"id": "ospf:…#0", "kind": "ospf_timers", "edge": "ospf:…",
+              "layer": "ospf", "title": "r1 ⇄ r2",
+              "text": "Hello 10 ⇄ 5 s on r1 et-0/0/1 ⇄ r2 et-0/0/1"}],
+  "meta": {"layers": {"ebgp": true, "ibgp": true, "ospf": true, "isis": true,
+                      "static": true, "circuits": false, "cables": true},
+           "requested": ["circuits", "ebgp", "ibgp", "isis", "ospf", "static"],
+           "vrf": "all",
+           "vrfs": [{"id": "…", "name": "red", "color": "#ef4444"}]}
+}
+```
+
+- **Nodes.** `router: false` marks a far end with no process of its own;
+  `as_group` is the AS box it sits in. `instances` lists only the processes
+  the caller may view (`bgpinstance`, `ospfinstance`, `isisinstance`,
+  `eigrpinstance`, `ldpinstance`, `staticroute`); a box with none of those
+  is not a router. The loopback needs view on IP addresses.
+- **BGP lines** are `ebgp` or `ibgp` (from the AS numbers, or the remote
+  AS mode): one per node pair and table, both ends' sessions folded in
+  (`one_sided` when only one end defines it); the far end is the session's
+  peer device, else the device or VM its remote address is on. A line with
+  a route reflector at one end runs from it (`rr`); `a_asn` is the
+  source's AS. Each session's values are its effective ones (session, then
+  peer group, then instance); a peer group, policy, BFD profile or RPKI
+  cache the caller may not view is `null` or left out.
+- **OSPF and IS-IS lines** are adjacencies: an interface row of the
+  process on each end, joined by a cable through patch panels (`via:
+  "cable"`, an aggregate's members counting for the aggregate) or, when the
+  interface is not cabled to one of the process, sharing a subnet (`via:
+  "subnet"`, `subnet` the network). Both ends are in the same table and,
+  for OSPF, version. One line per router pair, table and area (OSPF; the
+  sorted pair of areas when the ends differ) or adjacency level (IS-IS,
+  `null` when they share none); `links` lists each adjacency, `a` on the
+  source. `areas`, `cost`, `levels` and `metric` are the first link's, the
+  source first. An end's `passive` is its own, else its OSPF instance's
+  default; its BFD profile its own, else its instance's; `keychain` is a
+  name and id only - never the key.
+- **Static lines** run from a route's owner to the one box of the map's
+  set its next hop is an address of (in the route's next-hop table, else
+  its own), one per pair and the route's table; that box is a card even
+  with no routing process. `routes` holds the first 25 (by prefix),
+  `count` all.
+- **VRF.** `vrf_id` (and `vrf`, its name) is a routing line's table. With
+  `vrf=global` only the global table's lines come; with a VRF id that
+  VRF's, plus the global table's BGP lines with VPNv4/VPNv6 between two
+  routers that run that VRF; with `all` - or no `vrf` at all - every
+  table's. `meta.vrfs` lists the VRFs the map's processes and static
+  routes run in (whatever is drawn), `meta.vrf` the table drawn (`all`
+  when none was asked for). Circuits and cables are never
+  narrowed.
+- **Checks** (`checks`) are worked out over the routing lines returned:
+  `bgp_one_sided`, `bgp_as_mismatch`, `ospf_area` (cabled only),
+  `ospf_timers` (hello or dead, both set), `ospf_mtu` (both set, neither
+  `mtu_ignore`), `isis_level` (cabled only). Each names its line (`edge`),
+  and the line's `data.problems` lists the kinds. Monitoring has no link to
+  BGP sessions, so no monitoring state is returned.
+- **Circuits** are the [provider network](#provider-networks) lines of the
+  graph endpoint, from the routers on the map.
+- **`meta.layers`** says which layers the caller may see: the BGP layers
+  need `bgpsession.view`, OSPF `ospfinstance.view` and
+  `ospfinterface.view`, IS-IS `isisinstance.view` and `isisinterface.view`,
+  static `staticroute.view`, circuits `circuit`, `providernetwork` and
+  `site` view. A missing grant leaves that layer's lines out, never a
+  card. A keychain, BFD profile or OSPF area the caller may not view is
+  `null`.
+
+Everything is inside the active tenant, and the endpoint costs the same
+handful of queries whatever the size of the map.
+
 ### Device palette API
 
 `GET /api/devices/?picker=palette` is the light device list the diagram
@@ -1962,11 +2594,16 @@ and the query count doesn't grow with the number of devices.
 `/api/topology-views/` is a CRUD endpoint, gated by the `topologyview`
 view, add, change and delete permissions. `GET /api/topology-views/?picker=1`
 lists `{id, numid, name, updated_at}` only, without `state`, for the views
-select; one view's state can run to megabytes. `GET` of a view that is gone,
-or another tenant's, is a 404.
+select; one view's state can run to megabytes. `GET /api/topology-views/?summary=1`
+is the [views list](#topology-views-list)'s shape: also without `state`,
+with `created_at`, `created_by` and `updated_by` (user names from the change
+log, `""` when it has none) and `is_default`. `POST
+/api/topology-views/bulk-delete/` with `{"ids": [...]}` deletes several, with
+the usual dry run. `GET` of a view that is gone, or another tenant's, is a
+404.
 
 **Default view.** `GET /api/topology-views/default/` returns `{"id": ...}`,
-the view a bare `/topology` opens for the tenant, or `null` for No view. It
+the view a bare `/topology/map` opens for the tenant, or `null` for No view. It
 needs view on topology views, as does `PUT`, and a default the caller can't
 see (row limits) reads as `null`. `PUT` with `{"id": "<view id>"}` sets it and `{"id": null}`
 clears it. It is allowed for superusers and tenant admins, and for anyone with
@@ -1994,12 +2631,15 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto), `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400) and `align` (`left`, `center` or `right`: where its cards line up across its width; absent is Auto, centred - anything else is a 400) and `line` (`straight`, `elbow`, `bendy` or `cyclical`: the [line](#line-types) its cards' cables take; absent is Default - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
+| `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
+| `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |
+| `filters.routing` | the Routing tab's display: `{mode: simple\|detailed, layers: {ebgp, ibgp, ospf, isis, static, circuits, cables: bool}, fields: [role, router_id, asn, loopback, site, primary_ip, status], vrf: global\|all\|<VRF id>, checks: bool}`, each optional; any other key is a 400. Absent layers are their defaults (all on but `cables`); absent `fields` is `router_id, asn, loopback`; absent `vrf` every table (`all`); absent `checks` off. |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
 | `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
-| `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |
+| `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical}`, each optional, at most 10,000. `line` is the [line](#line-types) the device's cables take; absent is Default. |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building, size: s\|m\|l, outline: bool}`; `x, y` is the note's centre, `id` is unique, `text` at most 200 characters, `size` absent = `m` |
 | `hidden` | what the eyes switched off: `{sites, locations, roles, kinds, devices, edges}`, each a list of names (or ids); `edges` holds single lines hidden from their right-click menu, by the map's edge id, and is written only when there is one. Any other group is a 400; the flat list older views saved still loads as `devices`. |
 
@@ -2063,10 +2703,17 @@ after them - see [Photo nodes](#photo-nodes).
 ### PDF export API
 
 `POST /api/topology/export/pdf/` lays a drawing out on one sheet of paper and
-returns the PDF as a download (`Content-Disposition: attachment`). The body:
+returns the PDF as a download (`Content-Disposition: attachment`). It is
+`POST /api/diagram/export/pdf/` for the topology: that endpoint draws other
+diagrams too, by `kind` - an application's
+[flows](application-flows.md#application-map) are
+`"kind": "application-flows"`, which needs `applicationflow.view` where the
+topology needs `device.view`; their print links are
+`/api/diagram/export/pdf/<token>/?kind=application-flows`. The body:
 
 | Field | Shape |
 |---|---|
+| `kind` | `topology` (the default) or `application-flows` |
 | `svg` | the drawing, as the Diagram's SVG export draws it (required) |
 | `title` | the sheet's title, usually the view name; else `meta.view`, else `Topology` |
 | `paper` | `{size: a4\|a3\|letter\|tabloid, orientation: landscape\|portrait}`; A3 landscape when absent |

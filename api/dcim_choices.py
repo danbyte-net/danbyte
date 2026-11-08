@@ -29,6 +29,7 @@ INTERFACE_TYPE_CHOICES: GroupedChoices = [
         ("virtual", "Virtual"),
         ("bridge", "Bridge"),
         ("lag", "Link Aggregation Group (LAG)"),
+        ("vxlan", "VXLAN"),
     ]),
     ("Fast Ethernet (100M)", [
         ("100base-tx", "100BASE-TX (10/100ME)"),
@@ -297,7 +298,7 @@ INTERFACE_TYPE_CHOICES: GroupedChoices = [
 #: one of these types is always ``virtual`` - ``Interface.save()``, bulk edit
 #: and the template and module installs set the flag - and port utilization
 #: counts it as virtual even where the flag was never set.
-VIRTUAL_INTERFACE_TYPES: tuple[str, ...] = ("virtual", "bridge", "lag")
+VIRTUAL_INTERFACE_TYPES: tuple[str, ...] = ("virtual", "bridge", "lag", "vxlan")
 
 # ─── Cable types (standard cable-type taxonomy) ──────────────────────────────
 CABLE_TYPE_CHOICES: GroupedChoices = [
@@ -578,6 +579,92 @@ CONNECTOR_FIBERS: dict[str, int] = {
 }
 
 
+# ─── Airflow ────────────────────────────────────────────────────────────────
+# Which way air moves through a chassis: a device type's default and a
+# device's own override (``DeviceType.airflow``, ``Device.airflow``), and what
+# the device-type import accepts. NetBox's airflow slugs, so library files
+# carry over.
+AIRFLOW_CHOICES: Choices = [
+    ("front-to-rear", "Front to rear"),
+    ("rear-to-front", "Rear to front"),
+    ("left-to-right", "Left to right"),
+    ("right-to-left", "Right to left"),
+    ("passive", "Passive"),
+    ("mixed", "Mixed"),
+]
+
+
+# ─── Cooling (#434) ─────────────────────────────────────────────────────────
+# How hardware is cooled - a device type's, a module type's, and a device's
+# own override - and what a rack's cooling takes. Blank on a device inherits
+# its type's; nothing set anywhere is air. Blank on a rack is not recorded,
+# so nothing is checked against it.
+COOLING_METHOD_CHOICES: Choices = [
+    ("air", "Air"),
+    ("liquid", "Liquid"),
+    ("hybrid", "Hybrid"),
+    ("immersion", "Immersion"),
+]
+COOLING_DEFAULT = "air"
+
+COOLING_CAPABILITY_CHOICES: Choices = [
+    ("air", "Air"),
+    ("hybrid", "Hybrid"),
+    ("liquid", "Liquid"),
+    ("immersion", "Immersion"),
+]
+
+#: The liquid, hybrid and immersion hardware a rack of each capability takes
+#: (``api.cooling``): a hybrid rack has air and a liquid loop, a liquid rack
+#: the loop, an immersion rack is a tank. Air-cooled hardware - a method of
+#: air, or none - goes in any rack.
+COOLING_ADMITS: dict[str, frozenset[str]] = {
+    "air": frozenset(),
+    "hybrid": frozenset({"liquid", "hybrid"}),
+    "liquid": frozenset({"liquid", "hybrid"}),
+    "immersion": frozenset({"immersion"}),
+}
+
+# The cooling plant (#434): what kind of unit a cooling source is, the fluid
+# its loop carries, and whether a feed is a rack's primary loop or a spare.
+COOLING_SOURCE_TYPE_CHOICES: Choices = [
+    ("chiller", "Chiller"),
+    ("cooling_tower", "Cooling tower"),
+    ("dry_cooler", "Dry cooler"),
+    ("crac", "CRAC"),
+    ("crah", "CRAH"),
+    ("in_row", "In-row"),
+    ("other", "Other"),
+]
+
+COOLING_FLUID_CHOICES: Choices = [
+    ("air", "Air"),
+    ("water", "Water"),
+    ("glycol", "Glycol"),
+    ("dielectric", "Dielectric"),
+    ("refrigerant", "Refrigerant"),
+    ("other", "Other"),
+]
+
+COOLING_FEED_TYPE_CHOICES: Choices = [
+    ("primary", "Primary"),
+    ("redundant", "Redundant"),
+]
+
+#: What a cooling intake or outflow's hose lands on (#434) - quick-disconnect
+#: sizes, a barb or a flange.
+COOLING_CONNECTOR_CHOICES: Choices = [
+    ("qd-1/4", "QD 1/4\""),
+    ("qd-3/8", "QD 3/8\""),
+    ("qd-1/2", "QD 1/2\""),
+    ("qd-3/4", "QD 3/4\""),
+    ("qd-1", "QD 1\""),
+    ("barb", "Hose barb"),
+    ("flange", "Flange"),
+    ("other", "Other"),
+]
+
+
 def flatten_choices(groups: GroupedChoices) -> list[tuple[str, str]]:
     """Grouped → flat ``[(value, label), …]`` (e.g. for validation sets)."""
     return [(value, label) for _, options in groups for value, label in options]
@@ -614,8 +701,9 @@ from rest_framework.response import Response
         description=(
             "Single source of truth for the DCIM dropdowns: grouped interface, "
             "cable, console/power/aux/front-port type choices (each row carries "
-            "value/label/group), duplex/mode/PoE options, connector fibre counts, "
-            "and common speed suggestions."
+            "value/label/group), duplex/mode/PoE options, airflow directions, "
+            "cooling methods and rack cooling capabilities, connector fibre "
+            "counts, and common speed suggestions."
         ),
     ),
 )
@@ -653,6 +741,12 @@ def dcim_choices_view(request):
         "lacp_modes": flat(
             apps.get_model("api", "Interface")._meta.get_field("lacp_mode").flatchoices
         ),
+        "lag_modes": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lag_mode").flatchoices
+        ),
+        "lag_hash_policies": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lag_hash_policy").flatchoices
+        ),
         "lacp_rates": flat(
             apps.get_model("api", "Interface")._meta.get_field("lacp_rate").flatchoices
         ),
@@ -684,5 +778,12 @@ def dcim_choices_view(request):
         "antenna_bands": flat(ANTENNA_BAND_CHOICES),
         "antenna_polarizations": flat(ANTENNA_POLARIZATION_CHOICES),
         "rf_connector_types": flat(RF_CONNECTOR_CHOICES),
+        "airflow": flat(AIRFLOW_CHOICES),
+        "cooling_method": flat(COOLING_METHOD_CHOICES),
+        "cooling_capability": flat(COOLING_CAPABILITY_CHOICES),
+        "cooling_source_types": flat(COOLING_SOURCE_TYPE_CHOICES),
+        "cooling_fluids": flat(COOLING_FLUID_CHOICES),
+        "cooling_feed_types": flat(COOLING_FEED_TYPE_CHOICES),
+        "cooling_connectors": flat(COOLING_CONNECTOR_CHOICES),
         "common_speeds": COMMON_SPEEDS,
     })

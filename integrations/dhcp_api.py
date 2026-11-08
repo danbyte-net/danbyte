@@ -12,8 +12,11 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
 
+from .bulk import RemoteBulkDeleteMixin
 from .dhcp_sync import (
     WinRMError,
     push_reservation,
@@ -58,7 +61,7 @@ class DhcpScopeSerializer(serializers.ModelSerializer):
         read_only_fields = [f for f in fields if f != "lease_sync"]
 
 
-class DhcpScopeWriteSerializer(serializers.ModelSerializer):
+class DhcpScopeWriteSerializer(TenantScopedModelSerializer):
     """Author a scope. Two flavours:
 
     * ``connection`` set - created on that Windows server first
@@ -71,7 +74,7 @@ class DhcpScopeWriteSerializer(serializers.ModelSerializer):
     and mask derive from it; the range is the lease pool inside it.
     """
 
-    connection = serializers.PrimaryKeyRelatedField(
+    connection = TenantScopedPrimaryKeyRelatedField(
         queryset=WindowsServerConnection.objects.all(),
         required=False, allow_null=True, default=None,
     )
@@ -134,12 +137,21 @@ class DhcpScopeWriteSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+class DhcpScopeViewSet(
+    RemoteBulkDeleteMixin, BulkEditMixin, IntegrationToggleMixin, TenantScopedViewSet
+):
     """Scopes are read from sync; the per-scope ``lease_sync`` opt-in is PATCHable.
     A scope can also be **authored** here (POST): with a connection Danbyte
     creates it on the Windows server first (``Add-DhcpServerv4Scope``) and only
     saves once accepted; without one it's a **local** Danbyte-owned scope.
-    DELETE removes a pushed scope on its server too."""
+    DELETE removes a pushed scope on its server too.
+
+    Bulk edit sets ``lease_sync``, the one field a PATCH writes; bulk delete
+    removes each scope as its single delete does, keeping the ones the server
+    refuses."""
+
+    bulk_edit = BulkEditSpec(fields=("lease_sync",), tags=False)
+    rbac_action_map = BulkEditMixin.rbac_action_map
 
     # No integration gate: scopes are first-class - the DHCP toggle only
     # governs the Windows-sync machinery.
@@ -294,7 +306,7 @@ class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return qs
 
 
-class DhcpReservationSerializer(serializers.ModelSerializer):
+class DhcpReservationSerializer(TenantScopedModelSerializer):
     scope_display = serializers.CharField(source="scope.scope_id", read_only=True)
     # Server id + name so tables can link the Server cell to its detail page
     # (null for local scopes), and the scope's backing prefix so the Scope cell
@@ -346,16 +358,22 @@ class DhcpReservationSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class DhcpReservationViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+class DhcpReservationViewSet(
+    RemoteBulkDeleteMixin, IntegrationToggleMixin, TenantScopedViewSet
+):
     """Bidirectional: every write here is pushed to the Windows server first;
-    the row is only saved once the server accepted it."""
+    the row is only saved once the server accepted it.
+
+    No bulk edit: an edit is pushed to the server row by row, which a bulk
+    field write would skip. Bulk delete removes each reservation as its
+    single delete does, keeping the ones the server refuses."""
 
     tenant_field = "scope__connection__tenant"
     queryset = DhcpReservation.objects.select_related(
         "scope", "scope__connection", "ip_address"
     ).order_by("ip")
     serializer_class = DhcpReservationSerializer
-    rbac_action_map = {"resolve": "change"}
+    rbac_action_map = {**RemoteBulkDeleteMixin.rbac_action_map, "resolve": "change"}
 
     def get_queryset(self):
         from django.db.models import Q

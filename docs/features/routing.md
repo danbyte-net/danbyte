@@ -70,6 +70,7 @@ and **sets**.
 | Community lists | The route carries a community any of them permits. |
 | AS-path lists | The route's AS path matches any of them. |
 | Next hop in | The next hop is in the named prefix list. |
+| RPKI state | The route's origin validation state is `valid`, `invalid` or `notfound` - see [RPKI](#rpki). |
 
 | Set | What it changes |
 |---|---|
@@ -113,6 +114,191 @@ way the other settings do: an interface row's profile, else its
 instance's; a session's, else its peer group's, else its instance's.
 Deleting a profile leaves BFD on and the timers at the default.
 
+## RPKI
+
+Route origin validation checks that the AS originating a route is allowed to
+announce that prefix. A router learns the allowed pairs from an **RPKI
+cache** (an RTR server such as Routinator or rpki-client, RFC 8210) and a
+route map acts on each route's state - typically dropping `invalid` routes
+on eBGP sessions. Danbyte models the three parts; it does not render the
+config itself, the template you write does (see the example below).
+
+### RPKI caches
+
+**Routing → RPKI → RPKI caches.** A cache is a tenant-wide catalog row:
+
+| Field | What it records |
+|---|---|
+| **Name** | What the cache is called; unique per tenant. |
+| **Address** | The RTR server's IP address or hostname. |
+| **Port** | Default `3323`, the usual RTR port. |
+| **Transport** | `tcp` or `ssh`. |
+| **Preference** | 1-255; the router uses the lowest-numbered cache it can reach. |
+| **Username**, **Host key**, **Private key** | SSH only. The private key is written to the deployment's [secret store](../architecture/tenant-settings.md), never to the row, and is never in a read: the API says only `ssh_private_key_set`. As for a keychain, revealing it is an audited action behind the `reveal` grant on RPKI caches, for a push tool that has to place the key file. Switching a cache back to TCP drops the stored key. |
+
+A BGP instance names the caches it validates against: **RPKI caches** on the
+instance form (on its device's Routing tab), `rpki_cache_ids` in the API.
+The device's BGP card lists them next to the router ID.
+
+### Matching the validation state
+
+A routing policy rule matches **RPKI state** - `valid`, `invalid` or
+`notfound` (the prefix is covered by no ROA). Leave it at **Any** to not
+match on it. A deny rule early in an eBGP import policy is the usual shape:
+
+| Seq | Action | Match |
+|---|---|---|
+| 5 | deny | RPKI state `invalid` |
+| 10 | permit | … |
+
+### ROAs and SLURM
+
+Public RPKI only covers address space a regional registry publishes ROAs
+for. For private space (RFC 1918, ULA) or space you announce internally,
+keep the ROAs in Danbyte: **Routing → RPKI → ROAs**, each a prefix
+(IPv4 or IPv6), a **max length** (from the prefix's own length to 32 or 128;
+blank on the form means the prefix's own length), the **origin AS** (an
+[ASN](ipam-objects.md#asns) of the tenant) and, optionally, the **aggregate** it is
+carved from - the prefix has to sit inside it. Description and tags are as
+everywhere.
+
+**Export SLURM** on the ROA list downloads the ROAs as an RFC 8416 SLURM
+file - local assertions a relying party serves to its routers as if an RIR
+had published them:
+
+```json
+{
+  "slurmVersion": 1,
+  "validationOutputFilters": {"prefixFilters": [], "bgpsecFilters": []},
+  "locallyAddedAssertions": {
+    "prefixAssertions": [
+      {"prefix": "10.16.0.0/12", "maxPrefixLength": 24, "asn": 65050,
+       "comment": "NSP1 space"}
+    ],
+    "bgpsecAssertions": []
+  }
+}
+```
+
+`comment` is the ROA's description and is left out when that is empty. The
+endpoint is `GET /api/routing/roas/slurm/`; it takes the list's filters, so
+`?aggregate=<id>` exports one aggregate's ROAs and `?tag=<slug>` (repeatable,
+all must match) one tagged set. It needs `view` on ROAs and only ever
+returns the active tenant's.
+
+#### Feeding Routinator
+
+Routinator reads SLURM files as *local exceptions*. Fetch the file on a
+timer with an [API token](../reference/api.md#authenticating) that has `view` on ROAs, and point
+Routinator at it:
+
+```sh
+#!/bin/sh
+# /usr/local/bin/danbyte-slurm
+set -e
+out=/var/lib/routinator/danbyte-slurm.json
+curl -fsS -H "Authorization: Token $(cat /etc/routinator/danbyte.token)" \
+  -o "$out.tmp" https://danbyte.example.net/api/routing/roas/slurm/
+mv "$out.tmp" "$out"
+```
+
+```
+# /etc/cron.d/danbyte-slurm - every 5 minutes
+*/5 * * * * routinator /usr/local/bin/danbyte-slurm
+```
+
+```sh
+routinator --exceptions /var/lib/routinator/danbyte-slurm.json \
+  server --rtr 0.0.0.0:3323
+```
+
+or `exceptions = ["/var/lib/routinator/danbyte-slurm.json"]` in
+`routinator.conf`. Routinator reads the exceptions again on each validation
+run, so a new file is picked up without a restart. `curl -f` and `set -e` keep a failed fetch
+from replacing the last good file with an error page.
+
+### Rendering the rpki block
+
+The FRR config this produces - one cache, and a route map that drops
+invalid routes before anything else:
+
+```
+rpki
+ rpki cache tcp 10.0.0.65 3323 preference 1
+exit
+!
+route-map NSP1-IN deny 5
+ match rpki invalid
+exit
+```
+
+bgpd has to be started with the RPKI module (`bgpd_options=" -A 127.0.0.1 -M rpki"`
+in `/etc/frr/daemons`).
+
+From a device's [config template](export-templates.md#rendering-one-device),
+the `routing` block carries it ready to loop: `routing.rpki_caches` is every
+cache the box's BGP instances name, by preference, and each policy rule's
+`match.rpki` the state it matches.
+
+```jinja
+{% if routing.rpki_caches %}
+rpki
+{% for c in routing.rpki_caches %}
+{% if c.transport == "ssh" %}
+ rpki cache ssh {{ c.address }} {{ c.port }} {{ c.ssh_username }} /etc/frr/rpki/{{ c.name }}.key preference {{ c.preference }}
+{% else %}
+ rpki cache tcp {{ c.address }} {{ c.port }} preference {{ c.preference }}
+{% endif %}
+{% endfor %}
+exit
+!
+{% endif %}
+{% for name, p in routing.policies.items() %}
+{% for r in p.rules %}
+route-map {{ name }} {{ r.action }} {{ r.sequence }}
+{% if r.match.rpki %}
+ match rpki {{ r.match.rpki }}
+{% endif %}
+{% for pl in r.match.prefix_lists %}
+ match ip address prefix-list {{ pl }}
+{% endfor %}
+exit
+{% endfor %}
+{% endfor %}
+```
+
+Rendering outside Danbyte from the REST API, the same data is on two reads -
+`GET /api/routing/bgp-instances/?device=<id>` (each instance's
+`rpki_caches`: `name`, `address`, `port`, `transport`, `preference`) and
+`GET /api/routing/policies/<id>/` (each rule's `match_rpki`):
+
+```jinja
+{# bgp = one instance from /api/routing/bgp-instances/,
+   policies = the /api/routing/policies/<id>/ reads it uses #}
+{% if bgp.rpki_caches %}
+rpki
+{% for c in bgp.rpki_caches | sort(attribute="preference") %}
+ rpki cache {{ c.transport }} {{ c.address }} {{ c.port }} preference {{ c.preference }}
+{% endfor %}
+exit
+!
+{% endif %}
+{% for p in policies %}
+{% for r in p.rules %}
+route-map {{ p.name }} {{ r.action }} {{ r.sequence }}
+{% if r.match_rpki %}
+ match rpki {{ r.match_rpki }}
+{% endif %}
+exit
+{% endfor %}
+{% endfor %}
+```
+
+An SSH cache also needs its username and the path you deploy the private
+key to; read the cache itself (`GET /api/routing/rpki-caches/<id>/`) for
+`ssh_username` and `ssh_host_key`. The key never appears in either form of
+the render.
+
 ## Static routes
 
 **Routing → Static routes**, or a device's or VM's **Routing** tab. One row
@@ -127,11 +313,47 @@ is one path on one box:
 | **Kind** | Next hop, interface, blackhole or reject. |
 | **Next hop** / **Interface** | For a next-hop route: an address, an interface on the same device, or both (`ip route 0.0.0.0/0 10.1.1.1 eth0`). An **interface** route points out of a port with no address - the point-to-point shape some platforms write (`ip route 10.30.0.0/16 Serial0/0`). |
 | **Next hop VRF** | Route leaking - the table the next hop is looked up in. |
+| **Table** | A kernel table number for policy routing (`ip route … table 100`). Blank is the main table, or the VRF's own. |
 | **Distance**, **Metric**, **Tag**, **BFD** | As on the box; blank means the platform default. |
 | **Status** | Your own status catalog; the built-ins are active, planned and disabled. |
 
 The same prefix through two next hops is two rows (ECMP); the same path twice
-is refused. A next-hop interface on another box is refused too.
+is refused. The same prefix in the main table and in table 100 is two paths.
+A next-hop interface on another box is refused too.
+
+**Table** and **VRF** exclude each other: a Linux VRF already is a table,
+so a route names one or the other. Tables 0, 253, 254 and 255 are the
+kernel's own (unspec, default, main, local) and are refused.
+
+## Policy rules
+
+**Routing → Policy rules**, or the **Policy rules** section of a device's or
+VM's **Routing** tab. One row is one `ip rule`: which table a packet is
+looked up in, chosen by where it comes from or goes to.
+
+| Field | What it records |
+|---|---|
+| **Runs on** | The router: a device or a virtual machine. |
+| **Priority** | The rule's preference; unique per box and family. |
+| **Family** | IPv4 or IPv6. Taken from **From** / **To** when either is set. |
+| **Action** | *Lookup* (the default), *blackhole*, *unreachable* or *prohibit*. |
+| **Table** / **VRF** | For a lookup: a table number, or a VRF (its table) - one of the two. |
+| **From**, **To** | Source and destination prefixes; a host address is stored as its /32 or /128. Blank matches all. |
+| **In interface**, **Out interface** | `iif` / `oif`, ports on the same box. |
+| **Firewall mark** | `fwmark`. |
+| **Invert** | `not`: the rule matches what its selectors do not. |
+
+Together with a static route's **Table**, this renders a source-routed
+management interface:
+
+```jinja
+{% for r in routing.static_routes if r.table %}
+    post-up ip route replace {{ r.prefix|replace("0.0.0.0/0", "default") }} via {{ r.next_hop }} dev {{ r.next_hop_interface }} table {{ r.table }}
+{% endfor %}
+{% for p in routing.policy_rules %}
+    post-up ip rule add{% if p.invert %} not{% endif %}{% if p.from %} from {{ p.from }}{% endif %}{% if p.to %} to {{ p.to }}{% endif %} lookup {{ p.table or p.vrf }} priority {{ p.priority }}
+{% endfor %}
+```
 
 ## BGP
 
@@ -179,8 +401,12 @@ the platform default. The settings are the address families, import and
 export policy, BFD and its profile, eBGP multihop, next-hop self, route
 reflector client, send community, keepalive and hold time, the keychain,
 and the day-one neighbour knobs: **default originate**, **maximum
-prefix**, **allowas-in**, **AS override**, **remove private AS** and
-**soft reconfiguration**. The session's page shows both: **Effective settings** - what the
+prefix** (with **Warning threshold** in percent, **Restart after** in
+minutes and **Warning only**), **allowas-in**, **AS override**, **remove
+private AS** and **soft reconfiguration**. Restart after and warning only
+are alternatives: one row cannot set both, and when inheritance brings
+both the more specific wins. The three details print nothing without a
+maximum in effect. The session's page shows both: **Effective settings** - what the
 box ends up with - and **Own values**. The API returns the same as
 `effective`, and the render context carries only effective values, so a
 template never repeats the resolution.
@@ -188,7 +414,44 @@ template never repeats the resolution.
 Sessions whose far end is a device Danbyte knows draw on the
 [topology map](topology.md) as their own link family - a dotted line per
 device pair and table, hidden with the eyes like any other family, with
-the session a click away.
+the session a click away. The topology's [Routing tab](topology.md#routing-view)
+draws the routing picture on its own: routers in boxes per AS, eBGP and iBGP
+lines (a route reflector's to its client as an arrow) with each session's
+peer group, policies, max-prefix, BFD, timers and RPKI caches in the line's
+panel, and the same export menu.
+
+### Address families per neighbour
+
+A neighbour often wants different policies per family: a PE sends one
+route-map in `ipv4-unicast` and another in `vpnv4-unicast` to the same
+neighbour, and a CE's IPv6 family must not get the IPv4 route-map. A
+session's and a peer group's **Address families** tab lists one row per
+family, each with **Activate**, an import and export policy, a **prefix
+list in** and **out**, default originate (and its policy), next-hop self,
+route reflector client, soft reconfiguration, AS override, remove private
+AS, send community, allowas-in and maximum prefix with its warning
+threshold, restart and warning only. A family that sets one of those
+details needs a maximum somewhere in its chain. **Add family** adds a
+row; a blank value inherits, and the In / Out columns show an inherited
+policy muted.
+
+Per family and per setting, the **most specific value wins**:
+
+1. the session's row for that family;
+2. the session's own neighbour-level field (the form's value for all
+   families);
+3. the peer group's row for that family;
+4. the peer group's neighbour-level field.
+
+So a neighbour-level **Export policy** on the session beats a per-family
+value on its group, and a per-family value on the session beats both. The
+family set is the session's active rows when it has any, else the group's.
+Turning **Activate** off keeps the row and prints `no neighbor X activate`.
+
+The session and peer-group forms keep their **Address families** pick
+list: it is the same set as the rows. Dropping a family there deletes a row
+that sets nothing, and switches off one that carries a policy, so a
+per-family policy is never lost by editing the list.
 
 **Create the far end** on a session's page writes the mirror session on the
 peer device - its instance in the same table, addresses swapped, the
@@ -299,6 +562,15 @@ targets. Two things are added for it:
   optionally a device-local VLAN, a per-leaf RD, ingress replication or a
   multicast group.
 
+The `vxlan<N>` netdevs a leaf runs need no interface rows: a template
+writes them from `routing.vtep.vnis` (VNI, VLAN, VRF, multicast group).
+When you want them as rows - for an MTU, bridge membership or the cabling
+views - create an interface of type **VXLAN** (a virtual type) and pick it
+as the VNI's **Interface** on the VTEP; it must be on the VTEP's device.
+The VNI stays on the L2VPN and is never typed on the interface, so there is
+one place to change it. The render gives each `vtep.vnis[]` entry its
+`interface` (the port's name, or `null`).
+
 A VNI's VLAN on a given leaf resolves in this order: the membership's own
 VLAN → the L2VPN's termination on a VLAN at the device's site → the L2VPN's
 sole VLAN termination → none. A VNI stretched across sites therefore needs
@@ -330,18 +602,32 @@ A server plugged into two leaves is one **Ethernet segment**: the LAG on
 each leaf, sharing one identity. **Routing → Ethernet segments** is that
 catalog. A segment is named either by a full ten-octet **ESI** (type 0) or
 by an **es-id** and a **system MAC** (type 3, which is what FRR's `evpn mh
-es-id` / `es-sys-mac` take), carries the **DF preference** that decides who
-forwards BUM traffic, and lists its **member interfaces** - on different
-devices, which is the point: the segment page is where a reviewer sees that
-`leaf1 bond1` and `leaf2 bond1` are the same server. An interface's page
-shows the segment it is in.
+es-id` / `es-sys-mac` take), carries the **default DF preference** that
+decides who forwards BUM traffic, and lists its **member interfaces** - on
+different devices, which is the point: the segment page is where a reviewer
+sees that `leaf1 bond1` and `leaf2 bond1` are the same server. An interface's
+page shows the segment it is in and the DF preference its port runs with.
+
+Each member may carry its **own DF preference** (`es-df-pref` differs per
+leaf when one leaf should be the designated forwarder): the **Interfaces**
+tab of a segment edits it in place, and a blank one shows the segment's
+default, muted. The effective value is the member's own, else the
+segment's. Changing the segment's member list keeps the members that stay,
+with their own values; a port added starts on the default. A port sits in
+one segment: adding one another segment holds is refused.
 
 Each fabric-facing port on a multihomed leaf is marked **EVPN MH uplink**
 on the interface form (`evpn mh uplink`): FRR watches those to decide
 whether the leaf has lost the fabric and should stop forwarding for its
 segments. The render hands a template `by_interface[port].es`,
 `by_interface[port].evpn_mh_uplink`, the device's `ethernet_segments` and
-`es_count` - a device with any segment is a multihomed leaf.
+`es_count` - a device with any segment is a multihomed leaf. In
+`by_interface[port].es`, `df_preference` is **this port's effective value**
+(so `evpn mh es-df-pref {{ es.df_preference }}` prints the per-leaf value
+with no template change) and `segment_df_preference` the segment's default;
+each entry of `es.members` carries `df_preference` (its own) and
+`df_preference_effective`, and each entry of `ethernet_segments` carries
+`local_df_preference` beside the segment's `df_preference`.
 
 ## MPLS: LDP and L3VPN
 
@@ -382,8 +668,9 @@ routes, BGP, OSPF, IS-IS and EIGRP work there exactly as on a device:
   segments.
 - Deleting the VM deletes its routing, as deleting a device does.
 
-BGP sessions to or from a VM do not draw on the topology map, which shows
-devices only.
+BGP sessions to or from a VM do not draw on the topology's Diagram, which
+shows devices only; the [Routing tab](topology.md#routing-view) draws a VM
+with a routing process as a router card of its own.
 
 ## Rendering a config
 
@@ -395,8 +682,10 @@ for the address filters that turn an address into a mask or a length):
 routing:
   vrfs:          [{name, rd, import_targets, export_targets, l3vni, description}]
   static_routes: [{vrf, prefix, kind, next_hop, next_hop_interface, next_hop_vrf,
-                   distance, metric, tag, bfd, description}]
-  bgp:           [{vrf, asn, router_id, cluster_id, graceful_restart, bfd,
+                   table, distance, metric, tag, bfd, description}]
+  policy_rules:  [{family, priority, action, table, vrf, from, to, iif, oif,
+                   fwmark, invert, description}]     # sorted by family, then priority
+  bgp:           [{vrf, asn, router_id, cluster_id, graceful_restart, bfd, rpki_caches,
                    address_families: [{afi_safi, networks, maximum_paths, maximum_paths_ibgp,
                                        import_policy, export_policy, redistribute: [{source, policy, metric}]}],
                    sessions: [{name, peer_group, remote_asn, remote_asn_mode, kind, local_asn,
@@ -404,9 +693,20 @@ routing:
                                peer_device, address_families, import_policy, export_policy, bfd,
                                ebgp_multihop, update_source, next_hop_self, route_reflector_client,
                                send_community, keepalive, hold_time, keychain, default_originate,
-                               maximum_prefix, allowas_in, as_override, remove_private_as,
-                               soft_reconfiguration, extra}],
-                   peer_groups: [{name, ...}]}]      # only the groups this instance's sessions use
+                               maximum_prefix, maximum_prefix_threshold,
+                               maximum_prefix_restart, maximum_prefix_warning_only,
+                               allowas_in, as_override, remove_private_as,
+                               soft_reconfiguration, extra,
+                               afs: [{afi_safi, activate, import_policy, export_policy,
+                                      prefix_list_in, prefix_list_out, default_originate,
+                                      default_originate_policy, next_hop_self,
+                                      route_reflector_client, soft_reconfiguration,
+                                      as_override, remove_private_as, send_community,
+                                      allowas_in, maximum_prefix, maximum_prefix_threshold,
+                                      maximum_prefix_restart,
+                                      maximum_prefix_warning_only, extra}],
+                               af_by_name: {AFI_SAFI: <the active afs row>}}],
+                   peer_groups: [{name, ..., afs, af_by_name}]}]  # only the groups this instance's sessions use
   ospf:          [{vrf, process_id, version, router_id, reference_bandwidth, passive_by_default,
                    default_originate, bfd, redistribute: [...],
                    areas: [{area_id, name, kind}],
@@ -427,8 +727,9 @@ routing:
                                  auth_type, key_set, key_placeholder}],
                          gateway: "10.100.0.1/24" | null}}
   vtep:          {source_interface, source_ip, anycast_ip, anycast_gateway_mac, arp_suppression,
-                  vnis: [{vni, name, kind: l2|l3, vlan, vlan_name, vrf, rd, import_targets,
-                          export_targets, ingress_replication, mcast_group, extra}]} | null
+                  vnis: [{vni, name, kind: l2|l3, vlan, vlan_name, vrf, interface, rd,
+                          import_targets, export_targets, ingress_replication,
+                          mcast_group, extra}]} | null
   policies:      {NAME: {rules: [{sequence, action, match: {...}, set: {...}, continue}]}}
   prefix_lists:  {NAME: {family, rules: [{sequence, action, prefix, ge, le}]}}
   community_lists: {NAME: {kind, rules: [...]}}
@@ -436,6 +737,8 @@ routing:
   communities:   [{value, kind, name}]
   keychains:     [{name, algorithm, key_set}]
   bfd_profiles:  [{name, min_tx, min_rx, multiplier, echo}]
+  rpki_caches:   [{name, address, port, transport, preference, ssh_username,
+                   ssh_host_key, key_set}]   # the caches this box's BGP instances name, by preference
   keychain_by_name, bfd_profile_by_name: the same two, keyed by name
 ```
 
@@ -461,7 +764,14 @@ each with its `l3vni`. `vtep.vnis` is sorted L2 first, then by VNI, with
 the VLAN resolved for this leaf. `policies` and the three list kinds hold only
 what the device's address families, sessions and peer groups reference, so
 a template prints what the box needs and no more. Session values are the
-effective ones; `remote_asn_mode` is `asn`, `external` or `internal`. Every row carries its
+effective ones; `remote_asn_mode` is `asn`, `external` or `internal`.
+A session's `afs` are resolved per family in the order under
+[Address families per neighbour](#address-families-per-neighbour), so a
+template never computes it; `af_by_name` holds the active ones, so
+`af.afi_safi in s.af_by_name` reads "activated in this family". Every
+policy and prefix list a family names is in `policies` / `prefix_lists`.
+The neighbour-level keys (`address_families`, `import_policy`, …) keep
+their meaning. Every row carries its
 `id`; `vrf` is a name, `null` for the global table.
 
 A static-routes fragment, IOS-style:
@@ -594,7 +904,7 @@ it.
 
 Every routing list has tick boxes: BGP instances, sessions and peer groups;
 OSPF instances and areas; IS-IS and EIGRP instances; VTEPs and Ethernet
-segments; static routes; routing policies, prefix lists, communities,
+segments; static routes and policy rules; routing policies, prefix lists, communities,
 community lists and AS-path lists; keychains and BFD profiles. A device's or
 VM's **Routing** tab (static routes and BGP sessions) and a VRF's, an ASN's,
 a peer group's and a prefix's **BGP sessions** and **Static routes** tabs
@@ -649,17 +959,23 @@ delete's words (`In use: 2 BGP sessions.`).
 | `/api/routing/communities/` | Communities. |
 | `/api/routing/keychains/` | Keychains; `psk` is write-only, `reveal-psk` is the audited read. |
 | `/api/routing/bfd-profiles/` | BFD profiles; every instance, enrolled interface, session and peer group takes `bfd_profile_id`. |
-| `/api/routing/static-routes/` | Static routes; filter by `device`, `virtual_machine`, `vrf` (`global` for the global table), `kind`, `status`, `site`, `prefix_obj`. |
+| `/api/routing/rpki-caches/` | RPKI caches; `ssh_private_key` is write-only (`ssh_private_key_set` on read), `reveal-psk` is the audited read. A BGP instance takes `rpki_cache_ids` and reads `rpki_caches`. |
+| `/api/routing/roas/` | ROAs; write `origin_asn_id` and `aggregate_id`; filter by `aggregate`, `origin_asn`, `family` (`4`/`6`) and `tag`. `GET …/slurm/` is the same selection as an RFC 8416 SLURM download. |
+| `/api/routing/static-routes/` | Static routes; filter by `device`, `virtual_machine`, `vrf` (`global` for the global table), `table`, `kind`, `status`, `site`, `prefix_obj`. |
+| `/api/routing/ip-rules/` | Policy rules (`ip rule`); filter by `device`, `virtual_machine`, `family`, `action`, `table`, `vrf`, `status`, `site`. Ports are `iif_id` / `oif_id`, or `vm_iif_id` / `vm_oif_id` on a VM. (`…/policy-rules/` is the routing-policy rule endpoint.) |
 | `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `virtual_machine`, `vrf`, `asn`, `site`, `status`. |
 | `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`, `?ospf_instance=`, `?isis_instance=`, `?eigrp_instance=`); an address family or IGP instance accepts `redistributions: [...]`. |
 | `/api/routing/bgp-peer-groups/` | Peer groups. |
-| `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `virtual_machine`, `instance`, `vrf` (`global`), `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
+| `/api/routing/bgp-neighbor-afs/` | Address-family rows of sessions and peer groups (`?session=`, `?peer_group=`, `?afi_safi=`); write with `session_id` or `peer_group_id`, policies as `import_policy_id`, `export_policy_id`, `default_originate_policy_id`, lists as `prefix_list_in_id` / `prefix_list_out_id`. A row read on its own carries `effective`. |
+| `/api/routing/bgp-sessions/` | Sessions with `effective`, their rows as `afs`, and on a single read `effective_afs` (every family, resolved); `address_families` stays a read/write list of the active families; filter by `device`, `virtual_machine`, `instance`, `vrf` (`global`), `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
 | `/api/routing/ospf-areas/` | Areas. |
 | `/api/routing/ospf-instances/`, `…/isis-instances/` | Instances with their interfaces and redistributions nested; accept `redistributions: [...]`; filter by `device`, `virtual_machine`, `vrf`, `site`, `status`. |
 | `/api/routing/ospf-interfaces/`, `…/isis-interfaces/` | Enrolled interfaces (`?instance=`, `?interface=`, `?area=`). |
 | `/api/routing/eigrp-instances/`, `…/eigrp-interfaces/` | EIGRP instances (interfaces and redistributions nested; filter by `device`, `virtual_machine`, `vrf`, `site`, `status`) and their enrolled interfaces (`?instance=`, `?interface=`). |
 | `/api/routing/vteps/` | One per device, VNI memberships nested; filter by `device`, `site`, `status`, `l2vpn`. |
 | `/api/routing/vtep-memberships/` | The VNI rows on their own (`?vtep=`, `?l2vpn=`). |
+| `/api/routing/ethernet-segments/` | Segments; `interface_ids` sets the members (kept members keep their own DF preference), `members` reads `[{id, interface, device, df_preference, df_preference_effective}]`, and `member_df_preferences: {interface_id: n \| null}` sets members' own values in the same call. |
+| `/api/routing/ethernet-segment-members/` | One member per row (`?segment=`, `?device=`, `?interface=`); `PATCH` its `df_preference`. |
 | `/api/l2vpns/` | Gains `vrf`/`vrf_id` and `vtep_count`; `?vxlan=1` keeps the VXLAN types, `?vrf=` the L3VNIs of a VRF, `?vlan=` those terminating on a VLAN. |
 
 Child rows - address families, OSPF, IS-IS and EIGRP interface rows, VTEP
@@ -675,7 +991,7 @@ interfaces) or `next_hop_vm_interface_id` (static routes). Reads carry both
 `device` and `virtual_machine`, one of them null, plus `site`.
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
-supports CSV import/export like the rest of Danbyte. The seventeen lists
+supports CSV import/export like the rest of Danbyte. The eighteen lists
 above also answer:
 
 - `POST …/bulk-delete/` with `{"ids": [...]}` (add `"dry_run": true` for
@@ -713,9 +1029,9 @@ their destination), an L2VPN's **VTEPs** tab and a VLAN's **L2VPNs** tab.
 
 The **Routing** menu is grouped by protocol: **BGP** (instances, sessions,
 peer groups), **OSPF** (instances, areas), **IS-IS**, **EIGRP**, **EVPN /
-VXLAN** (VTEPs), **Static** (static routes), **Policy** (routing policies,
-prefix lists, communities, community lists, AS-path lists) and
-**Profiles** (keychains, BFD profiles). An instance
+VXLAN** (VTEPs), **Static** (static routes, policy rules), **Policy** (routing policies,
+prefix lists, communities, community lists, AS-path lists), **RPKI**
+(RPKI caches, ROAs) and **Profiles** (keychains, BFD profiles). An instance
 or a VTEP is added and edited on its device's Routing tab - the fleet list
 is where you find which boxes run what, and its pencil takes you there.
 A list's rules (prefix lists, community lists, AS-path lists, policies) are
@@ -727,3 +1043,10 @@ Each routing object is its own RBAC type under the **Routing** group; a
 site-scoped grant on static routes covers the routes of that site's devices.
 Every create, edit and delete - rule rows included - is in the
 [change log](change-log.md).
+
+RPKI caches and ROAs are their own types (`rpkicache`, `roa`); new types are
+closed until a role grants them, and the built-in roles reach them through
+their wildcard. A site viewer, and a site editor through its catalog view,
+read RPKI caches - the catalog their BGP instances point at; upgrading to
+0.19 adds the type to existing site roles. ROAs are tenant-wide and no site
+role covers them.

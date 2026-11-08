@@ -1,14 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 
-import { api, type Paginated, type VirtualSwitch } from "@/lib/api"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { type VirtualSwitch } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { buildVirtualSwitchColumns } from "@/components/columns/virtual-switch-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/virtual-switches/")({
@@ -17,83 +19,23 @@ export const Route = createFileRoute("/virtual-switches/")({
 
 function VirtualSwitchesPage() {
   const [q, setQ] = useUrlSearch()
+  const [selected, setSelected] = useState<VirtualSwitch[]>([])
+  const { canDo } = useMe()
+  // The sync fills the switches and their page never deletes one, so the
+  // selection edits the VRF and exports - nothing is deleted here.
+  const canEdit = canDo("virtualswitch", "change")
   const query = useQuery({
     queryKey: ["virtual-switches", q],
     queryFn: () =>
-      api<Paginated<VirtualSwitch>>(
+      apiAll<VirtualSwitch>(
         `/api/virtual-switches/?${new URLSearchParams({ search: q })}`
       ),
   })
   const rows = query.data?.results ?? []
 
-  const columns = useMemo<ColumnDef<VirtualSwitch>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/virtual-switches/$id"
-            params={{ id: row.original.id }}
-            className="link font-medium"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      {
-        id: "kind",
-        accessorKey: "kind_display",
-        header: "Kind",
-        cell: ({ row }) =>
-          row.original.kind_display ? (
-            <Badge variant="outline" className="text-[10px]">
-              {row.original.kind_display}
-            </Badge>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "cluster",
-        header: "Cluster",
-        cell: ({ row }) =>
-          row.original.cluster ? (
-            <Link
-              to="/clusters/$id"
-              params={{ id: row.original.cluster.id }}
-              className="link text-xs"
-            >
-              {row.original.cluster.name}
-            </Link>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "uplinks",
-        accessorKey: "uplinks",
-        header: "Uplinks",
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.uplinks || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "mtu",
-        accessorKey: "mtu",
-        header: "MTU",
-        cell: ({ row }) =>
-          row.original.mtu != null ? (
-            <span className="num text-xs">{row.original.mtu}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-    ],
-    []
+  const columns = useMemo(
+    () => buildVirtualSwitchColumns<VirtualSwitch>({ selection: canEdit }),
+    [canEdit]
   )
 
   return (
@@ -124,8 +66,20 @@ function VirtualSwitchesPage() {
           columns={columns}
           tableId="virtual-switches"
           flexColumn="name"
+          onSelectedRowsChange={canEdit ? setSelected : undefined}
+          selectedRows={canEdit ? selected : undefined}
         />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/virtual-switches/"
+        noun={["switch", "switches"]}
+        invalidate={[["virtual-switches"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={false}
+        ioType="virtualswitch"
+      />
     </ListPageShell>
   )
 }

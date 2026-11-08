@@ -17,6 +17,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.bulk_delete import SafeBulkDeleteMixin
 from api.views import _get_active_tenant
 from auth_api.dashboard_prefs import clean_layout
 
@@ -107,11 +108,22 @@ class DashboardSerializer(serializers.ModelSerializer):
         return groups
 
 
-class DashboardViewSet(viewsets.ModelViewSet):
-    """Mine, the tenant's, and those shared with a group I am in."""
+class DashboardViewSet(SafeBulkDeleteMixin, viewsets.ModelViewSet):
+    """Mine, the tenant's, and those shared with a group I am in.
+
+    ``bulk-delete`` takes the caller's own boards; one shared with them by
+    someone else stays, with the single delete's reason."""
 
     serializer_class = DashboardSerializer
     permission_classes = [IsAuthenticated]
+    # Dashboards are not an RBAC type - ownership gates the delete - but every
+    # bulk delete declares its verb.
+    rbac_action_map = {"bulk_delete": "delete"}
+
+    def bulk_blocker(self, obj):
+        if obj.owner_id != self.request.user.id:
+            return "Belongs to someone else."
+        return None
 
     def _tenant(self):
         tenant = _get_active_tenant(self.request)

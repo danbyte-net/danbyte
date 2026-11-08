@@ -1,0 +1,1674 @@
+{
+ "ping": {
+  "modifyItemSchema": {
+   "properties": {
+    "basic": {
+     "properties": {
+      "name": {
+       "default": "Ping",
+       "title": "Sensor Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "required": true,
+        "sortIndex": 0,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "parenttags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "readOnly": true,
+       "title": "Parent Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "notInRoot": true,
+        "sortIndex": 1
+       }
+      },
+      "priority": {
+       "default": "3",
+       "enum": [
+        "5",
+        "4",
+        "3",
+        "2",
+        "1"
+       ],
+       "title": "Priority",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "combo",
+        "notInRoot": true,
+        "sortIndex": 3,
+        "options": {
+         "1": "* (lowest)",
+         "2": "**",
+         "3": "*** (default)",
+         "4": "****",
+         "5": "***** (highest)"
+        }
+       }
+      },
+      "tags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "title": "Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "sortIndex": 2
+       }
+      }
+     },
+     "title": "Basic Sensor Settings",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 0
+     }
+    }
+   },
+   "title": "Schema.ping",
+   "type": "object"
+  }
+ },
+ "snmptraffic": {
+  "modifyItemSchema": {
+   "additionalProperties": {
+    "nullable": true,
+    "properties": {
+     "metascan": {
+      "items": {
+       "properties": {
+        "info": {
+         "properties": {
+          "64 bit": {
+           "type": "string"
+          },
+          "internal name": {
+           "type": "string"
+          },
+          "name": {
+           "type": "string"
+          },
+          "speed": {
+           "type": "string"
+          },
+          "status": {
+           "type": "string"
+          },
+          "type": {
+           "type": "string"
+          }
+         },
+         "type": "object"
+        },
+        "interfacenumber": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "interfacenumber"
+       ],
+       "type": "object"
+      },
+      "title": "Metascan: SNMP Traffic",
+      "type": "array",
+      "x-prtg-meta": {
+       "class": "lookupchecklistbox",
+       "editOnRequest": true,
+       "required": true,
+       "sortIndex": 0,
+       "href": "/api/v2/devices/2081/metascan?kind=snmptraffic",
+       "metascan_field": "#/components/schemas/modifyItemSchema/properties/traffic/interfacenumber"
+      }
+     }
+    },
+    "type": "object"
+   },
+   "properties": {
+    "basic": {
+     "properties": {
+      "parenttags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "readOnly": true,
+       "title": "Parent Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "notInRoot": true,
+        "sortIndex": 1
+       }
+      },
+      "priority": {
+       "default": "3",
+       "enum": [
+        "5",
+        "4",
+        "3",
+        "2",
+        "1"
+       ],
+       "title": "Priority",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "combo",
+        "notInRoot": true,
+        "sortIndex": 3,
+        "options": {
+         "1": "* (lowest)",
+         "2": "**",
+         "3": "*** (default)",
+         "4": "****",
+         "5": "***** (highest)"
+        }
+       }
+      },
+      "tags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "title": "Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "sortIndex": 2
+       }
+      }
+     },
+     "title": "Basic Sensor Settings",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 0
+     }
+    },
+    "traffic": {
+     "properties": {
+      "interfacenumber": {
+       "items": {
+        "type": "string"
+       },
+       "title": "Interface Number",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "lookupchecklistbox",
+        "editOnRequest": true,
+        "sortIndex": 0,
+        "lookupkey": "snmptraffic",
+        "$ref": "#components/schemas/modifyItemSchema/additionalProperties/properties/metascan"
+       }
+      },
+      "monitorstate": {
+       "default": "0",
+       "enum": [
+        "1",
+        "2",
+        "0"
+       ],
+       "title": "Connection Status Handling",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 2,
+        "options": {
+         "0": "Ignore all disconnected states (default)",
+         "1": "Show down status for all disconnected states",
+         "2": "Show down status when disconnected, ignore when deactivated"
+        }
+       }
+      },
+      "namein": {
+       "default": "Traffic In",
+       "title": "Name for Traffic In Channel",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "sortIndex": 3,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "nameout": {
+       "default": "Traffic Out",
+       "title": "Name for Traffic Out Channel",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "sortIndex": 4,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "namesum": {
+       "default": "Traffic Total",
+       "title": "Name for Traffic Total Channel",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "sortIndex": 5,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "trafficmode": {
+       "default": [],
+       "items": {
+        "enum": [
+         "errors",
+         "discards",
+         "unicast",
+         "nonunicast",
+         "multicast",
+         "broadcast",
+         "unknown"
+        ],
+        "type": "string"
+       },
+       "title": "Additional Channels",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "checklistbox",
+        "sortIndex": 1,
+        "options": {
+         "broadcast": "Broadcast packets in and broadcast packets out (64-bit only)",
+         "discards": "Discards in and discards out",
+         "errors": "Errors in and errors out",
+         "multicast": "Multicast packets in and multicast packets out (64-bit only)",
+         "nonunicast": "Non unicast packets in and non unicast packets out (32-bit only)",
+         "unicast": "Unicast packets in and unicast packets out",
+         "unknown": "Unknown Protocols"
+        }
+       }
+      }
+     },
+     "title": "Traffic Specific",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 1
+     }
+    }
+   },
+   "title": "Schema.snmptraffic",
+   "type": "object"
+  }
+ },
+ "wmiservice": {
+  "modifyItemSchema": {
+   "additionalProperties": {
+    "nullable": true,
+    "properties": {
+     "metascan": {
+      "items": {
+       "properties": {
+        "info": {
+         "properties": {
+          "description": {
+           "type": "string"
+          },
+          "name": {
+           "type": "string"
+          },
+          "status": {
+           "type": "string"
+          }
+         },
+         "type": "object"
+        },
+        "service": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "service"
+       ],
+       "type": "object"
+      },
+      "title": "Metascan: WMI Service",
+      "type": "array",
+      "x-prtg-meta": {
+       "class": "lookupchecklistbox",
+       "required": true,
+       "sortIndex": 3,
+       "href": "/api/v2/devices/2081/metascan?kind=wmiservice",
+       "metascan_field": "#/components/schemas/modifyItemSchema/properties/wmiservicemonitor/service"
+      }
+     }
+    },
+    "type": "object"
+   },
+   "properties": {
+    "basic": {
+     "properties": {
+      "parenttags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "readOnly": true,
+       "title": "Parent Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "notInRoot": true,
+        "sortIndex": 1
+       }
+      },
+      "priority": {
+       "default": "3",
+       "enum": [
+        "5",
+        "4",
+        "3",
+        "2",
+        "1"
+       ],
+       "title": "Priority",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "combo",
+        "notInRoot": true,
+        "sortIndex": 3,
+        "options": {
+         "1": "* (lowest)",
+         "2": "**",
+         "3": "*** (default)",
+         "4": "****",
+         "5": "***** (highest)"
+        }
+       }
+      },
+      "tags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "title": "Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "sortIndex": 2
+       }
+      }
+     },
+     "title": "Basic Sensor Settings",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 1
+     }
+    },
+    "wmiservicemonitor": {
+     "properties": {
+      "monitorchange": {
+       "default": "1",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "Change Notifications",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "masterSetting": "restart",
+        "masterValues": [
+         "1"
+        ],
+        "sortIndex": 1,
+        "options": {
+         "0": "Disable (default)",
+         "1": "Enable"
+        }
+       }
+      },
+      "monitorextended": {
+       "default": "0",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "Extended Monitoring",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 2,
+        "options": {
+         "0": "Only check if the service is running (default)",
+         "1": "Monitor other performance counters"
+        }
+       }
+      },
+      "restart": {
+       "default": "0",
+       "enum": [
+        "1",
+        "0"
+       ],
+       "title": "If Service is Not Running",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 0,
+        "options": {
+         "0": "Do not start/restart the service (default)",
+         "1": "Start/Restart the service"
+        }
+       }
+      },
+      "service": {
+       "items": {
+        "type": "string"
+       },
+       "title": "Services",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "lookupchecklistbox",
+        "sortIndex": 3,
+        "lookupkey": "wmiservice",
+        "$ref": "#components/schemas/modifyItemSchema/additionalProperties/properties/metascan"
+       }
+      }
+     },
+     "title": "WMI Service Monitor",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 2
+     }
+    }
+   },
+   "title": "Schema.wmiservice",
+   "type": "object"
+  }
+ },
+ "http_all": {
+  "modifyItemSchema": {
+   "properties": {
+    "accessgroup": {
+     "properties": {
+      "_inheritancesource": {
+       "properties": {
+        "href": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "id": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "name": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "type": {
+         "enum": [
+          "REFERENCED_ROOT",
+          "REFERENCED_GROUP",
+          "REFERENCED_PROBE",
+          "REFERENCED_DEVICE",
+          "REFERENCED_UNKNOWN_TYPE"
+         ],
+         "readOnly": true,
+         "type": "string"
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "_inherited": {
+       "default": true,
+       "description": "When an object inherits its values, PRTG looks for the closest parent, which does not inherit its values and uses those. Otherwise the objects own values are used.",
+       "type": "boolean"
+      },
+      "_shadowed": {
+       "properties": {
+        "accessrights": {
+         "items": {
+          "type": "string"
+         },
+         "nullable": true,
+         "title": "User Group Access",
+         "type": "array",
+         "x-prtg-meta": {
+          "class": "accessrights",
+          "sortIndex": 0,
+          "lookupkey": "usergroupid",
+          "href": "/api/v2/setting-lookups/usergroupid"
+         }
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "accessrights": {
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "title": "User Group Access",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "accessrights",
+        "sortIndex": 0,
+        "lookupkey": "usergroupid",
+        "href": "/api/v2/setting-lookups/usergroupid"
+       }
+      }
+     },
+     "title": "Access Rights",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "inheritable": true,
+      "sortIndex": 6
+     }
+    },
+    "basic": {
+     "properties": {
+      "name": {
+       "default": "HTTP",
+       "title": "Sensor Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "required": true,
+        "sortIndex": 0,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "parenttags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "readOnly": true,
+       "title": "Parent Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "notInRoot": true,
+        "sortIndex": 1
+       }
+      },
+      "priority": {
+       "default": "3",
+       "enum": [
+        "5",
+        "4",
+        "3",
+        "2",
+        "1"
+       ],
+       "title": "Priority",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "combo",
+        "notInRoot": true,
+        "sortIndex": 3,
+        "options": {
+         "1": "* (lowest)",
+         "2": "**",
+         "3": "*** (default)",
+         "4": "****",
+         "5": "***** (highest)"
+        }
+       }
+      },
+      "tags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "title": "Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "sortIndex": 2
+       }
+      }
+     },
+     "title": "Basic Sensor Settings",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 0
+     }
+    },
+    "commentgroup": {
+     "properties": {
+      "comments": {
+       "default": "",
+       "title": "Comment",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "notOnBasicPage": true,
+        "sortIndex": 0,
+        "security": "storeencrypted",
+        "multiline": true,
+        "contenttype": "raw"
+       }
+      }
+     },
+     "title": "commentgroup",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 7
+     }
+    },
+    "httpproxy": {
+     "properties": {
+      "_inheritancesource": {
+       "properties": {
+        "href": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "id": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "name": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "type": {
+         "enum": [
+          "REFERENCED_ROOT",
+          "REFERENCED_GROUP",
+          "REFERENCED_PROBE",
+          "REFERENCED_DEVICE",
+          "REFERENCED_UNKNOWN_TYPE"
+         ],
+         "readOnly": true,
+         "type": "string"
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "_inherited": {
+       "default": true,
+       "description": "When an object inherits its values, PRTG looks for the closest parent, which does not inherit its values and uses those. Otherwise the objects own values are used.",
+       "type": "boolean"
+      },
+      "_shadowed": {
+       "properties": {
+        "proxy": {
+         "default": "",
+         "title": "IP Address/DNS Name",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "edit",
+          "sortIndex": 0,
+          "security": "none",
+          "contenttype": "raw"
+         }
+        },
+        "proxypassword": {
+         "default": "",
+         "title": "Password",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "password",
+          "sortIndex": 3
+         }
+        },
+        "proxyport": {
+         "default": 8080,
+         "maximum": 65535,
+         "minimum": 1,
+         "nullable": true,
+         "title": "Port",
+         "type": "integer",
+         "x-prtg-meta": {
+          "class": "integer",
+          "sortIndex": 1
+         }
+        },
+        "proxyuser": {
+         "default": "",
+         "title": "User Name",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "edit",
+          "sortIndex": 2,
+          "security": "none",
+          "contenttype": "raw"
+         }
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "proxy": {
+       "default": "",
+       "title": "IP Address/DNS Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "sortIndex": 0,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "proxypassword": {
+       "default": "",
+       "title": "Password",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "password",
+        "sortIndex": 3
+       }
+      },
+      "proxyport": {
+       "default": 8080,
+       "maximum": 65535,
+       "minimum": 1,
+       "nullable": true,
+       "title": "Port",
+       "type": "integer",
+       "x-prtg-meta": {
+        "class": "integer",
+        "sortIndex": 1
+       }
+      },
+      "proxyuser": {
+       "default": "",
+       "title": "User Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "sortIndex": 2,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      }
+     },
+     "title": "Proxy Settings",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "inheritable": true,
+      "sortIndex": 2
+     }
+    },
+    "httpspecific": {
+     "properties": {
+      "httpmethod": {
+       "default": "GET",
+       "enum": [
+        "GET",
+        "POST",
+        "HEAD"
+       ],
+       "title": "Request Method",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 2,
+        "options": {
+         "GET": "GET (default)",
+         "HEAD": "HEAD",
+         "POST": "POST"
+        }
+       }
+      },
+      "httpurl": {
+       "default": "https://",
+       "title": "URL",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "required": true,
+        "sortIndex": 1,
+        "security": "none",
+        "contenttype": "url"
+       }
+      },
+      "postcontentoptions": {
+       "default": "0",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "Content Type",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "masterSetting": "httpmethod",
+        "masterValues": [
+         "POST"
+        ],
+        "sortIndex": 4,
+        "options": {
+         "0": "Default (application/x-www-form-urlencoded)",
+         "1": "Custom"
+        }
+       }
+      },
+      "postcontenttype": {
+       "default": "",
+       "title": "Custom Content Type",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "required": true,
+        "masterSetting": "postcontentoptions",
+        "masterValues": [
+         "1"
+        ],
+        "sortIndex": 5,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "postdata": {
+       "default": "",
+       "title": "Postdata",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "masterSetting": "httpmethod",
+        "masterValues": [
+         "POST"
+        ],
+        "sortIndex": 3,
+        "security": "none",
+        "multiline": true,
+        "contenttype": "raw"
+       }
+      },
+      "sni_inheritance": {
+       "default": "0",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "SNI Inheritance",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 7,
+        "options": {
+         "0": "Inherit SNI from parent device (default)",
+         "1": "Do not inherit SNI from parent device"
+        }
+       }
+      },
+      "timeout": {
+       "default": 60,
+       "maximum": 900,
+       "minimum": 1,
+       "title": "Timeout (Sec.)",
+       "type": "integer",
+       "x-prtg-meta": {
+        "class": "integer",
+        "required": true,
+        "sortIndex": 0,
+        "extra": "sec"
+       }
+      }
+     },
+     "title": "Specific Sensor Settings",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 1
+     }
+    },
+    "intervalgroup": {
+     "properties": {
+      "_inheritancesource": {
+       "properties": {
+        "href": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "id": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "name": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "type": {
+         "enum": [
+          "REFERENCED_ROOT",
+          "REFERENCED_GROUP",
+          "REFERENCED_PROBE",
+          "REFERENCED_DEVICE",
+          "REFERENCED_UNKNOWN_TYPE"
+         ],
+         "readOnly": true,
+         "type": "string"
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "_inherited": {
+       "default": true,
+       "description": "When an object inherits its values, PRTG looks for the closest parent, which does not inherit its values and uses those. Otherwise the objects own values are used.",
+       "type": "boolean"
+      },
+      "_shadowed": {
+       "properties": {
+        "autoacknowledge": {
+         "default": "0",
+         "enum": [
+          "0",
+          "1"
+         ],
+         "title": "Acknowledge Automatically",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "radio",
+          "sortIndex": 2,
+          "options": {
+           "0": "Show down status on error (default)",
+           "1": "Show down (acknowledged) status on error"
+          }
+         }
+        },
+        "errorintervalsdown": {
+         "default": "1",
+         "enum": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         "title": "If a Sensor Scan Fails",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "combo",
+          "sortIndex": 1,
+          "options": {
+           "0": "Set sensor to [b]down[/b] status immediately",
+           "1": "Set sensor to [b]warning[/b] status for 1 interval, then set to [b]down[/b] status (default)",
+           "2": "Set sensor to [b]warning[/b] status for 2 intervals, then set to [b]down[/b] status",
+           "3": "Set sensor to [b]warning[/b] status for 3 intervals, then set to [b]down[/b] status",
+           "4": "Set sensor to [b]warning[/b] status for 4 intervals, then set to [b]down[/b] status",
+           "5": "Set sensor to [b]warning[/b] status for 5 intervals, then set to [b]down[/b] status"
+          }
+         }
+        },
+        "inherittriggers": {
+         "default": "1",
+         "enum": [
+          "1",
+          "0"
+         ],
+         "title": "Notification Trigger Inheritance",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "radio",
+          "notInRoot": true,
+          "notOnBasicPage": true,
+          "sortIndex": 3,
+          "options": {
+           "0": "Only use the notification triggers defined above",
+           "1": "Inherit all notification triggers from parent objects and use the notification triggers defined above (default)"
+          }
+         }
+        },
+        "interval": {
+         "default": "60",
+         "title": "Scanning Interval",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "lookuplist",
+          "sortIndex": 0,
+          "lookupkey": "intervalid",
+          "href": "/api/v2/setting-lookups/intervalid"
+         }
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "autoacknowledge": {
+       "default": "0",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "Acknowledge Automatically",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 2,
+        "options": {
+         "0": "Show down status on error (default)",
+         "1": "Show down (acknowledged) status on error"
+        }
+       }
+      },
+      "errorintervalsdown": {
+       "default": "1",
+       "enum": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+       ],
+       "title": "If a Sensor Scan Fails",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "combo",
+        "sortIndex": 1,
+        "options": {
+         "0": "Set sensor to [b]down[/b] status immediately",
+         "1": "Set sensor to [b]warning[/b] status for 1 interval, then set to [b]down[/b] status (default)",
+         "2": "Set sensor to [b]warning[/b] status for 2 intervals, then set to [b]down[/b] status",
+         "3": "Set sensor to [b]warning[/b] status for 3 intervals, then set to [b]down[/b] status",
+         "4": "Set sensor to [b]warning[/b] status for 4 intervals, then set to [b]down[/b] status",
+         "5": "Set sensor to [b]warning[/b] status for 5 intervals, then set to [b]down[/b] status"
+        }
+       }
+      },
+      "inherittriggers": {
+       "default": "1",
+       "enum": [
+        "1",
+        "0"
+       ],
+       "title": "Notification Trigger Inheritance",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "notInRoot": true,
+        "notOnBasicPage": true,
+        "sortIndex": 3,
+        "options": {
+         "0": "Only use the notification triggers defined above",
+         "1": "Inherit all notification triggers from parent objects and use the notification triggers defined above (default)"
+        }
+       }
+      },
+      "interval": {
+       "default": "60",
+       "title": "Scanning Interval",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "lookuplist",
+        "sortIndex": 0,
+        "lookupkey": "intervalid",
+        "href": "/api/v2/setting-lookups/intervalid"
+       }
+      }
+     },
+     "title": "Scanning Interval",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "inheritable": true,
+      "sortIndex": 4
+     }
+    }
+   },
+   "title": "Schema.http",
+   "type": "object"
+  }
+ },
+ "sslcertificate_all": {
+  "modifyItemSchema": {
+   "properties": {
+    "accessgroup": {
+     "properties": {
+      "_inheritancesource": {
+       "properties": {
+        "href": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "id": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "name": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "type": {
+         "enum": [
+          "REFERENCED_ROOT",
+          "REFERENCED_GROUP",
+          "REFERENCED_PROBE",
+          "REFERENCED_DEVICE",
+          "REFERENCED_UNKNOWN_TYPE"
+         ],
+         "readOnly": true,
+         "type": "string"
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "_inherited": {
+       "default": true,
+       "description": "When an object inherits its values, PRTG looks for the closest parent, which does not inherit its values and uses those. Otherwise the objects own values are used.",
+       "type": "boolean"
+      },
+      "_shadowed": {
+       "properties": {
+        "accessrights": {
+         "items": {
+          "type": "string"
+         },
+         "nullable": true,
+         "title": "User Group Access",
+         "type": "array",
+         "x-prtg-meta": {
+          "class": "accessrights",
+          "sortIndex": 0,
+          "lookupkey": "usergroupid",
+          "href": "/api/v2/setting-lookups/usergroupid"
+         }
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "accessrights": {
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "title": "User Group Access",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "accessrights",
+        "sortIndex": 0,
+        "lookupkey": "usergroupid",
+        "href": "/api/v2/setting-lookups/usergroupid"
+       }
+      }
+     },
+     "title": "Access Rights",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "inheritable": true,
+      "sortIndex": 7
+     }
+    },
+    "basic": {
+     "properties": {
+      "name": {
+       "default": "SSL Certificate",
+       "title": "Sensor Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "required": true,
+        "sortIndex": 0,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "parenttags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "readOnly": true,
+       "title": "Parent Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "notInRoot": true,
+        "sortIndex": 1
+       }
+      },
+      "priority": {
+       "default": "3",
+       "enum": [
+        "5",
+        "4",
+        "3",
+        "2",
+        "1"
+       ],
+       "title": "Priority",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "combo",
+        "notInRoot": true,
+        "sortIndex": 3,
+        "options": {
+         "1": "* (lowest)",
+         "2": "**",
+         "3": "*** (default)",
+         "4": "****",
+         "5": "***** (highest)"
+        }
+       }
+      },
+      "tags": {
+       "default": [],
+       "items": {
+        "type": "string"
+       },
+       "nullable": true,
+       "title": "Tags",
+       "type": "array",
+       "x-prtg-meta": {
+        "class": "tags",
+        "sortIndex": 2
+       }
+      },
+      "timeout": {
+       "default": 60,
+       "maximum": 300,
+       "minimum": 1,
+       "title": "Timeout (Sec.)",
+       "type": "integer",
+       "x-prtg-meta": {
+        "class": "integer",
+        "required": true,
+        "sortIndex": 4,
+        "extra": "sec"
+       }
+      }
+     },
+     "title": "Basic Sensor Settings",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 0
+     }
+    },
+    "commentgroup": {
+     "properties": {
+      "comments": {
+       "default": "",
+       "title": "Comment",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "notOnBasicPage": true,
+        "sortIndex": 0,
+        "security": "storeencrypted",
+        "multiline": true,
+        "contenttype": "raw"
+       }
+      }
+     },
+     "title": "commentgroup",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 8
+     }
+    },
+    "connectionspecific": {
+     "properties": {
+      "socksproxyhost": {
+       "default": "",
+       "title": "Server",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "required": true,
+        "masterSetting": "usesocksproxy",
+        "masterValues": [
+         "1"
+        ],
+        "sortIndex": 1,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "socksproxypass": {
+       "default": "",
+       "title": "Password",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "password",
+        "masterSetting": "usesocksproxy",
+        "masterValues": [
+         "1"
+        ],
+        "sortIndex": 4
+       }
+      },
+      "socksproxyport": {
+       "maximum": 65535,
+       "minimum": 1,
+       "nullable": true,
+       "title": "Port",
+       "type": "integer",
+       "x-prtg-meta": {
+        "class": "integer",
+        "required": true,
+        "masterSetting": "usesocksproxy",
+        "masterValues": [
+         "1"
+        ],
+        "sortIndex": 2
+       }
+      },
+      "socksproxyuser": {
+       "default": "",
+       "title": "User Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "masterSetting": "usesocksproxy",
+        "masterValues": [
+         "1"
+        ],
+        "sortIndex": 3,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "usesocksproxy": {
+       "default": "0",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "SOCKS Proxy (v5 only)",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "required": true,
+        "sortIndex": 0,
+        "options": {
+         "0": "Do not use SOCKS proxy (default)",
+         "1": "Use SOCKS proxy"
+        }
+       }
+      }
+     },
+     "title": "Connection Specific",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 2
+     }
+    },
+    "exespecific": {
+     "properties": {
+      "cncheck": {
+       "default": "1",
+       "enum": [
+        "1",
+        "0",
+        "2"
+       ],
+       "title": "Certificate Name Validation",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 2,
+        "options": {
+         "0": "Compare and show down status if common name (CN) and address/SNI do not match",
+         "1": "Do not compare common name (CN) with device address or SNI (default)",
+         "2": "Compare and show down status if common name (CN)/alternative names (SAN) and address/SNI do not match"
+        }
+       }
+      },
+      "port": {
+       "default": 443,
+       "maximum": 65535,
+       "minimum": 1,
+       "title": "Port",
+       "type": "integer",
+       "x-prtg-meta": {
+        "class": "integer",
+        "required": true,
+        "sortIndex": 0
+       }
+      },
+      "sni": {
+       "default": "",
+       "title": "Virtual Host (SNI Domain)",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "sortIndex": 1,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      }
+     },
+     "title": "SSL Certificate Specific",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "sortIndex": 1
+     }
+    },
+    "intervalgroup": {
+     "properties": {
+      "_inheritancesource": {
+       "properties": {
+        "href": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "id": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "name": {
+         "readOnly": true,
+         "type": "string"
+        },
+        "type": {
+         "enum": [
+          "REFERENCED_ROOT",
+          "REFERENCED_GROUP",
+          "REFERENCED_PROBE",
+          "REFERENCED_DEVICE",
+          "REFERENCED_UNKNOWN_TYPE"
+         ],
+         "readOnly": true,
+         "type": "string"
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "_inherited": {
+       "default": true,
+       "description": "When an object inherits its values, PRTG looks for the closest parent, which does not inherit its values and uses those. Otherwise the objects own values are used.",
+       "type": "boolean"
+      },
+      "_shadowed": {
+       "properties": {
+        "autoacknowledge": {
+         "default": "0",
+         "enum": [
+          "0",
+          "1"
+         ],
+         "title": "Acknowledge Automatically",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "radio",
+          "sortIndex": 2,
+          "options": {
+           "0": "Show down status on error (default)",
+           "1": "Show down (acknowledged) status on error"
+          }
+         }
+        },
+        "errorintervalsdown": {
+         "default": "1",
+         "enum": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         "title": "If a Sensor Scan Fails",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "combo",
+          "sortIndex": 1,
+          "options": {
+           "0": "Set sensor to [b]down[/b] status immediately",
+           "1": "Set sensor to [b]warning[/b] status for 1 interval, then set to [b]down[/b] status (default)",
+           "2": "Set sensor to [b]warning[/b] status for 2 intervals, then set to [b]down[/b] status",
+           "3": "Set sensor to [b]warning[/b] status for 3 intervals, then set to [b]down[/b] status",
+           "4": "Set sensor to [b]warning[/b] status for 4 intervals, then set to [b]down[/b] status",
+           "5": "Set sensor to [b]warning[/b] status for 5 intervals, then set to [b]down[/b] status"
+          }
+         }
+        },
+        "inherittriggers": {
+         "default": "1",
+         "enum": [
+          "1",
+          "0"
+         ],
+         "title": "Notification Trigger Inheritance",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "radio",
+          "notInRoot": true,
+          "notOnBasicPage": true,
+          "sortIndex": 3,
+          "options": {
+           "0": "Only use the notification triggers defined above",
+           "1": "Inherit all notification triggers from parent objects and use the notification triggers defined above (default)"
+          }
+         }
+        },
+        "interval": {
+         "default": "60",
+         "title": "Scanning Interval",
+         "type": "string",
+         "x-prtg-meta": {
+          "class": "lookuplist",
+          "sortIndex": 0,
+          "lookupkey": "intervalid",
+          "href": "/api/v2/setting-lookups/intervalid"
+         }
+        }
+       },
+       "readOnly": true,
+       "type": "object"
+      },
+      "autoacknowledge": {
+       "default": "0",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "Acknowledge Automatically",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 2,
+        "options": {
+         "0": "Show down status on error (default)",
+         "1": "Show down (acknowledged) status on error"
+        }
+       }
+      },
+      "errorintervalsdown": {
+       "default": "1",
+       "enum": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+       ],
+       "title": "If a Sensor Scan Fails",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "combo",
+        "sortIndex": 1,
+        "options": {
+         "0": "Set sensor to [b]down[/b] status immediately",
+         "1": "Set sensor to [b]warning[/b] status for 1 interval, then set to [b]down[/b] status (default)",
+         "2": "Set sensor to [b]warning[/b] status for 2 intervals, then set to [b]down[/b] status",
+         "3": "Set sensor to [b]warning[/b] status for 3 intervals, then set to [b]down[/b] status",
+         "4": "Set sensor to [b]warning[/b] status for 4 intervals, then set to [b]down[/b] status",
+         "5": "Set sensor to [b]warning[/b] status for 5 intervals, then set to [b]down[/b] status"
+        }
+       }
+      },
+      "inherittriggers": {
+       "default": "1",
+       "enum": [
+        "1",
+        "0"
+       ],
+       "title": "Notification Trigger Inheritance",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "notInRoot": true,
+        "notOnBasicPage": true,
+        "sortIndex": 3,
+        "options": {
+         "0": "Only use the notification triggers defined above",
+         "1": "Inherit all notification triggers from parent objects and use the notification triggers defined above (default)"
+        }
+       }
+      },
+      "interval": {
+       "default": "60",
+       "title": "Scanning Interval",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "lookuplist",
+        "sortIndex": 0,
+        "lookupkey": "intervalid",
+        "href": "/api/v2/setting-lookups/intervalid"
+       }
+      }
+     },
+     "title": "Scanning Interval",
+     "type": "object",
+     "x-prtg-meta": {
+      "class": "section",
+      "inheritable": true,
+      "sortIndex": 5
+     }
+    }
+   },
+   "title": "Schema.sslcertificate",
+   "type": "object"
+  }
+ }
+}

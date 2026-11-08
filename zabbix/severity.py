@@ -8,8 +8,13 @@ page" is an operational decision, not ours.
 
 The defaults treat Information and below as noise - Zabbix installs generate a
 lot of it - Warning and Average as degraded, and High and Disaster as down.
+
+The mechanics are shared with every external monitor
+(:mod:`monitoring.external.state_map`); this module is Zabbix's vocabulary.
 """
 from __future__ import annotations
+
+from monitoring.external.state_map import StateMap
 
 #: Zabbix trigger severity, by its API value.
 SEVERITIES = [
@@ -34,7 +39,14 @@ DEFAULT_MAP = {
 #: states are its own bookkeeping - ``stale`` means nobody answered and
 #: ``skipped`` means we chose not to ask, neither of which Zabbix knows.
 MAPPABLE = ["up", "degraded", "down"]
-_ALLOWED = set(MAPPABLE)
+
+#: Zabbix's vocabulary on the shared map. Nothing is fixed: every severity is
+#: the operator's to place.
+STATE_MAP = StateMap(
+    source_values=tuple(SEVERITIES),
+    defaults=DEFAULT_MAP,
+    mappable=tuple(MAPPABLE),
+)
 
 
 def clean_map(raw) -> dict:
@@ -44,13 +56,7 @@ def clean_map(raw) -> dict:
     should degrade to the default for the severities it does not cover rather
     than leaving a hole that reads as ``up``.
     """
-    out = dict(DEFAULT_MAP)
-    if isinstance(raw, dict):
-        for value, _ in SEVERITIES:
-            status = raw.get(str(value))
-            if status in _ALLOWED:
-                out[str(value)] = status
-    return out
+    return STATE_MAP.clean(raw)
 
 
 def worst(severities, mapping) -> str:
@@ -59,10 +65,4 @@ def worst(severities, mapping) -> str:
     Worst wins: one Disaster among a dozen Warnings is a down host, and the
     reverse would hide it.
     """
-    order = {"up": 0, "degraded": 1, "down": 2}
-    status = "up"
-    for sev in severities:
-        mapped = mapping.get(str(sev), "up")
-        if order[mapped] > order[status]:
-            status = mapped
-    return status
+    return STATE_MAP.worst(severities, mapping)

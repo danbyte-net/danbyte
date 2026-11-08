@@ -9,8 +9,13 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.models import IPAddress
-from api.serializers import NumIdModelSerializer, StatusMiniSerializer
+from api.serializers import (
+    NumIdModelSerializer,
+    StatusMiniSerializer,
+    TenantScopedModelSerializer,
+)
 from api.viewsets import TenantScopedViewSet
 
 from .models import DnsDrift, DnsRecord, DnsZone
@@ -35,7 +40,7 @@ class DnsZoneSerializer(serializers.ModelSerializer):
                             if f not in ("sync", "auto_create")]
 
 
-class DnsZoneWriteSerializer(serializers.ModelSerializer):
+class DnsZoneWriteSerializer(TenantScopedModelSerializer):
     """Author a zone in Danbyte. DNS is Danbyte-authoritative for managed
     content (pushing to a DNS backend is a later phase), so this stores the zone
     locally - it is not created on the server."""
@@ -51,12 +56,19 @@ class DnsZoneWriteSerializer(serializers.ModelSerializer):
         return name
 
 
-class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+#: Why a synced zone stays, for the single and the bulk delete alike.
+MIRRORED_ZONE = ("Only zones authored in Danbyte can be deleted; this one is "
+                 "mirrored from the server.")
+
+
+class DnsZoneViewSet(BulkEditMixin, IntegrationToggleMixin, TenantScopedViewSet):
     """Zones are read from sync; the per-zone ``sync`` / ``auto_create`` opt-ins
     are PATCHable. A zone can also be **authored** here (POST) - stored as a
     Danbyte-owned ``managed`` zone that sync never prunes - and a managed zone
     can be removed (DELETE). Synced zones can't be deleted (sync would recreate
-    them)."""
+    them); the bulk delete keeps them with the same reason."""
+
+    bulk_edit = BulkEditSpec(fields=("sync", "auto_create"), tags=False)
 
     # No integration gate: zones are a first-class IPAM feature. The DNS
     # toggle only governs the Windows-sync machinery (connections, drift).
@@ -64,7 +76,7 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     http_method_names = ["get", "post", "patch", "delete"]
     queryset = DnsZone.objects.select_related("connection").order_by("name")
     serializer_class = DnsZoneSerializer
-    rbac_action_map = {"records": "view"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "records": "view"}
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -101,11 +113,11 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     def perform_destroy(self, instance):
         if not instance.managed:
-            raise ValidationError(
-                {"detail": "Only zones authored in Danbyte can be deleted; this "
-                           "one is mirrored from the server."}
-            )
+            raise ValidationError({"detail": MIRRORED_ZONE})
         instance.delete()
+
+    def bulk_blocker(self, obj) -> str | None:
+        return None if obj.managed else MIRRORED_ZONE
 
     def get_queryset(self):
         from django.db.models import Count, Q
@@ -179,6 +191,7 @@ class DnsRecordIPSerializer(NumIdModelSerializer):
         model = IPAddress
         fields = ["id", "ip_address", "status", "prefix", "prefix_cidr",
                   "assigned_to"]
+        read_only_fields = fields
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_assigned_to(self, obj):
@@ -208,7 +221,7 @@ class DnsRecordSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class DnsRecordWriteSerializer(serializers.ModelSerializer):
+class DnsRecordWriteSerializer(TenantScopedModelSerializer):
     """Create/edit an **authored** (managed) record. Per-type validation mirrors
     what netbox-dns enforces; the record lives in Danbyte as the source of truth
     (pushing to a DNS backend is a later phase)."""
@@ -362,15 +375,32 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"])
     def import_unmatched(self, request, pk=None):
-        """Import every unlinked record in a zone (``{"zone": "<id>"}``).
-        Returns how many were created and how many were skipped (no prefix)."""
+        """Import unlinked records: every one in a zone (``{"zone": "<id>"}``)
+        or the ones listed (``{"ids": [...]}``, at most 5000; ids outside the
+        tenant or already linked are left out). Returns how many were created
+        and how many were skipped (no prefix)."""
         from .dns_sync import DnsImportError, import_record
 
         self._require_ip_add(request)
-        zone_id = (request.data or {}).get("zone")
-        if not zone_id:
-            return Response({"detail": "zone is required."}, status=400)
-        qs = self.get_queryset().filter(zone_id=zone_id, ip_address__isnull=True)
+        data = request.data or {}
+        zone_id, ids = data.get("zone"), data.get("ids")
+        if ids is not None:
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                return Response({"ids": "A list of record ids."}, status=400)
+            if len(ids) > 5000:
+                return Response({"ids": "At most 5000 at a time."}, status=400)
+            import uuid
+
+            try:
+                ids = [uuid.UUID(i) for i in ids]
+            except ValueError:
+                return Response({"ids": "A list of record ids."}, status=400)
+            qs = self.get_queryset().filter(id__in=ids)
+        elif zone_id:
+            qs = self.get_queryset().filter(zone_id=zone_id)
+        else:
+            return Response({"detail": "zone or ids is required."}, status=400)
+        qs = qs.filter(ip_address__isnull=True)
         created, skipped = 0, 0
         for record in qs:
             try:

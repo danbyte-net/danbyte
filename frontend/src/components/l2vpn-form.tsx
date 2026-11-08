@@ -7,11 +7,11 @@ import {
   type L2VPN,
   type L2VPNType,
   type L2VPNWritePayload,
-  type Paginated,
   type RouteTargetMini,
   type Status,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Field,
   FormColumn,
@@ -115,20 +115,18 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
 
   const rts = useQuery({
     queryKey: ["rts-picker"],
-    queryFn: () =>
-      api<Paginated<RouteTargetMini>>("/api/route-targets/?picker=1"),
+    queryFn: () => apiAll<RouteTargetMini>("/api/route-targets/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const isEvpn = EVPN_TYPES.includes(type)
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
     enabled: isEvpn,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "l2vpn"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=l2vpn&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=l2vpn&picker=1"),
     staleTime: 5 * 60_000,
   })
 

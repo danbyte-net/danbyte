@@ -106,6 +106,8 @@ export function LegendFrame({
       <Button
         variant="outline"
         size="xs"
+        // Folded, an export of the picture leaves it out.
+        data-export-skip=""
         onClick={() => toggle(true)}
         className="bg-background text-muted-foreground shadow-none"
       >
@@ -137,6 +139,8 @@ export function LegendFrame({
                 size="icon-xs"
                 className="-mr-1.5"
                 aria-label="Hide legend"
+                // A PNG of the picture carries the legend, not its button.
+                data-export-skip=""
                 onClick={() => toggle(false)}
               >
                 <X />

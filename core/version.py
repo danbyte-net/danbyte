@@ -224,6 +224,16 @@ def pending_migrations() -> list[str]:
     return pending
 
 
+def sbom_path():
+    """Where a release keeps Danbyte's own SBOM: ``sbom.cdx.json`` in the app
+    directory (the bundle and the container image write it there; a source
+    checkout has one only after ``make sbom``)."""
+    from pathlib import Path
+
+    return Path(getattr(settings, "DANBYTE_SBOM_PATH", None)
+                or Path(settings.BASE_DIR) / "sbom.cdx.json")
+
+
 def system_info() -> dict:
     """Local, network-free runtime facts for the Updates/About page.
 
@@ -250,6 +260,8 @@ def system_info() -> dict:
         "migration_drift": migration_drift(),
         # Non-empty = this code ships migrations the database has not run.
         "pending_migrations": pending_migrations(),
+        # Danbyte's own SBOM ships with this release (/api/system/sbom/).
+        "sbom_available": sbom_path().is_file(),
     }
 
 

@@ -182,7 +182,11 @@ serializer knobs keep that honest:
 - `@detail_only(default)` from `api.serializers` on a `get_*` method that only
   the detail page needs - on a list it returns `default` without running, and
   the field is not offered as a column (it would read 0 on every row).
-  Branching on `view.action == "list"` by hand is rejected by a test.
+  Branching on `view.action == "list"` by hand is rejected by a test. Off the
+  list, a `<field>_annotated` value on the row wins over the getter, so a
+  detail viewset can annotate the figure (as `api.detail_counts` does for
+  the device and VM tab counts) and the getter's own query runs only for a
+  row read without it.
 - `list_columns_exclude = ("field", …)` on the serializer for real fields that
   are render settings, flags or sets of figures rather than something to read
   in a table - and for a getter that answers only for a single object

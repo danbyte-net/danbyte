@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { DeviceRole, Paginated, TopologyCardSettings } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { DeviceRole, TopologyCardSettings } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { openingScope } from "@/lib/settings-catalog"
 import { useMe } from "@/lib/use-me"
@@ -152,7 +153,7 @@ function CardLines({ tier }: { tier: Tier }) {
   })
   const roles = useQuery({
     queryKey: ["device-roles"],
-    queryFn: () => api<Paginated<DeviceRole>>("/api/device-roles/"),
+    queryFn: () => apiAll<DeviceRole>("/api/device-roles/"),
   })
   // Hidden custom fields never reach a card, so they are not offered.
   const cfMeta = useCustomFieldMeta(CF_MODELS, { skipHidden: true })

@@ -7,11 +7,12 @@ import {
   api,
   INVENTORY_KIND_OPTIONS,
   type InventoryItemKind,
-  type Paginated,
   type SnmpSensor,
   type Status,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import { Input } from "@/components/ui/input"
 import { Section } from "@/components/ui/section"
 import { EmptyState } from "@/components/empty-state"
@@ -73,7 +74,7 @@ export function DeviceSensorsCard({
   const sensors = useQuery({
     queryKey: ["snmp-sensors", deviceTypeId, typeScoped ?? false],
     queryFn: () =>
-      api<Paginated<SnmpSensor>>(
+      apiAll<SnmpSensor>(
         `/api/monitoring/snmp-sensors/${
           deviceTypeId
             ? typeScoped
@@ -189,14 +190,16 @@ export function DeviceSensorsCard({
                   </span>
                 )}
                 {canWrite && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="ml-auto h-6 w-6"
-                    onClick={() => setEditing(s)}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </Button>
+                  <IconTip label="Edit">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="ml-auto h-6 w-6"
+                      onClick={() => setEditing(s)}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  </IconTip>
                 )}
               </div>
             ))}
@@ -321,9 +324,7 @@ export function SensorDialog({
   const statuses = useQuery({
     queryKey: ["statuses", "inventoryitem"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=inventoryitem&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=inventoryitem&picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })
@@ -481,21 +482,23 @@ export function SensorDialog({
                       emptyText="No statuses."
                     />
                   </div>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() =>
-                      setRows((cur) =>
-                        cur.length === 1
-                          ? [{ raw: "", slug: "" }]
-                          : cur.filter((_, k) => k !== i)
-                      )
-                    }
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                  <IconTip label="Remove row">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() =>
+                        setRows((cur) =>
+                          cur.length === 1
+                            ? [{ raw: "", slug: "" }]
+                            : cur.filter((_, k) => k !== i)
+                        )
+                      }
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </IconTip>
                 </div>
               ))}
               <Button

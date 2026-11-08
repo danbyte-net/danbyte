@@ -11,11 +11,13 @@ import type {
   Cluster,
   Contact,
   ContactGroup,
+  CoolingFeed,
   IPAddress,
   L2VPN,
   Paginated,
   PowerFeed,
   Rack,
+  Room,
   BGPSession,
   StaticRoute,
   Tunnel,
@@ -34,6 +36,8 @@ import { buildClusterColumns } from "@/components/columns/cluster-columns"
 import { buildContactColumns } from "@/components/columns/contact-columns"
 import type { ContactColumnId } from "@/components/columns/contact-columns"
 import { buildContactGroupColumns } from "@/components/columns/contact-group-columns"
+import { buildCoolingFeedColumns } from "@/components/columns/cooling-feed-columns"
+import type { CoolingFeedColumnId } from "@/components/columns/cooling-feed-columns"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { buildL2VPNColumns } from "@/components/columns/l2vpn-columns"
 import type { L2VPNColumnId } from "@/components/columns/l2vpn-columns"
@@ -43,6 +47,8 @@ import {
   buildRackColumns,
   type RackColumnId,
 } from "@/components/columns/rack-columns"
+import { buildRoomColumns } from "@/components/columns/room-columns"
+import type { RoomColumnId } from "@/components/columns/room-columns"
 import {
   buildBGPSessionColumns,
   buildStaticRouteColumns,
@@ -59,6 +65,7 @@ import { buildVmGroupColumns } from "@/components/columns/vm-group-columns"
 import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
 import type { WirelessLANColumnId } from "@/components/columns/wireless-lan-columns"
+import { CoolingFeedBulkBar } from "@/components/cooling-bulk-bars"
 import { Loading } from "@/components/loading"
 import { PowerFeedBulkBar } from "@/components/power-bulk-bars"
 import { QueryError } from "@/components/query-error"
@@ -211,6 +218,7 @@ export function EmbeddedCabinetTable({
           "name",
           "site",
           "location",
+          "room",
           "role",
           "type",
           "status",
@@ -229,6 +237,52 @@ export function EmbeddedCabinetTable({
       flexColumn="name"
       tableId="embedded-cabinets"
       search={searchable ? "Search cabinets…" : undefined}
+    />
+  )
+}
+
+/** Rooms scoped by location / site. Reuses the one room column factory -
+ * the same row the /rooms list draws. `omit` drops the column that repeats
+ * the page's own object (Location on a location's page). */
+export function EmbeddedRoomTable({
+  filter,
+  omit = [],
+  emptyText = "No rooms.",
+  searchable = true,
+}: {
+  filter: Record<string, string>
+  omit?: RoomColumnId[]
+  emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
+}) {
+  const q = useEmbed<Room>("embedded-rooms", "/api/rooms/", filter)
+  const omitKey = omit.join(",")
+  const columns = useMemo<ColumnDef<Room>[]>(
+    () =>
+      buildRoomColumns({
+        include: [
+          "name",
+          "code",
+          "site",
+          "location",
+          "status",
+          "devices",
+          "racks",
+          "cabinets",
+        ],
+        omit: omitKey ? (omitKey.split(",") as RoomColumnId[]) : [],
+      }),
+    [omitKey]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="name"
+      tableId="embedded-rooms"
+      search={searchable ? "Search rooms…" : undefined}
     />
   )
 }
@@ -342,6 +396,74 @@ export function EmbeddedPowerFeedTable({
         selection={{ rows: selected, onChange: setSelected }}
       />
       <PowerFeedBulkBar
+        selected={selected}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+      />
+    </>
+  )
+}
+
+/** Cooling feeds (#434) scoped by source / rack. Reuses the one cooling-feed
+ * column factory - the same row the /cooling-feeds list draws. `omitSource`
+ * and `omitRack` drop the column that repeats the page's own object. */
+export function EmbeddedCoolingFeedTable({
+  filter,
+  omitSource = false,
+  omitRack = false,
+  emptyText = "No cooling feeds.",
+  searchable = true,
+}: {
+  filter: Record<string, string>
+  omitSource?: boolean
+  omitRack?: boolean
+  emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
+}) {
+  const q = useEmbed<CoolingFeed>(
+    "embedded-cooling-feeds",
+    "/api/cooling-feeds/",
+    filter
+  )
+  const { canDo } = useMe()
+  const canEdit = canDo("coolingfeed", "change")
+  const canDelete = canDo("coolingfeed", "delete")
+  const [selected, setSelected] = useState<CoolingFeed[]>([])
+  const columns = useMemo<ColumnDef<CoolingFeed>[]>(() => {
+    const include: CoolingFeedColumnId[] = [
+      "name",
+      "source",
+      "rack",
+      "status",
+      "type",
+      "rated",
+      "max",
+      "flow",
+      "supply",
+      "return",
+      "load",
+    ]
+    return buildCoolingFeedColumns({
+      include: include.filter(
+        (id) => !(omitSource && id === "source") && !(omitRack && id === "rack")
+      ),
+      selection: canEdit || canDelete,
+    })
+  }, [omitSource, omitRack, canEdit, canDelete])
+  return (
+    <>
+      <Frame
+        q={q}
+        emptyText={emptyText}
+        columns={columns}
+        flexColumn="name"
+        tableId="embedded-cooling-feeds"
+        search={searchable ? "Search cooling feeds…" : undefined}
+        selection={{ rows: selected, onChange: setSelected }}
+      />
+      <CoolingFeedBulkBar
         selected={selected}
         onCleared={() => setSelected([])}
         canEdit={canEdit}

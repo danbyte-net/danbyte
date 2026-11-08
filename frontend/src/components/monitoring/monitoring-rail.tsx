@@ -1,6 +1,8 @@
+import { useId } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CheckStatus,
   FacetBucket,
@@ -11,6 +13,7 @@ import type {
   VRFOption,
 } from "@/lib/api"
 import { Combobox } from "@/components/ui/combobox"
+import { CaptionControl } from "@/components/ui/field-control"
 import { Input } from "@/components/ui/input"
 import { FacetGroup, FilterRail } from "@/components/filter-rail"
 import type { FacetOption } from "@/components/filter-rail"
@@ -124,12 +127,12 @@ export function MonitoringRail({
 
   const regions = useQuery({
     queryKey: ["regions-picker"],
-    queryFn: () => api<Paginated<RegionOption>>("/api/regions/?picker=1"),
+    queryFn: () => apiAll<RegionOption>("/api/regions/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const tags = useQuery({
@@ -308,12 +311,17 @@ function RailPick({
   label: string
   children: React.ReactNode
 }) {
+  // The heading names the picker under it (#461).
+  const labelId = useId()
   return (
     <div>
-      <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+      <h3
+        id={labelId}
+        className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase"
+      >
         {label}
       </h3>
-      {children}
+      <CaptionControl labelId={labelId}>{children}</CaptionControl>
     </div>
   )
 }

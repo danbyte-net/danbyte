@@ -12,6 +12,7 @@ inventory, so a template and a playbook read the same shape.
 """
 from __future__ import annotations
 
+import contextvars
 import ipaddress
 import re
 from collections.abc import Callable
@@ -352,14 +353,136 @@ def _template_environment_class():
     return _Environment
 
 
+# ─── Several files from one template ─────────────────────────────────────────
+# A device template whose target path ends in ``/`` is a directory: its
+# output is the files its ``{% file "name" %}…{% endfile %}`` blocks write,
+# each landing at ``<target path><name>`` (one systemd ``.link`` per NIC,
+# one WireGuard config per tunnel). The blocks go to a sink set for the
+# length of one render; a render without one (a single-file template, a
+# list export) refuses a file block.
+
+#: Longest name one file block may carry, and most files one render may write.
+MAX_FILE_NAME = 128
+MAX_FILES = 256
+#: The path a file is keyed by is stored in a 255-character column.
+MAX_FILE_PATH = 255
+
+_FILE_SINK: contextvars.ContextVar = contextvars.ContextVar("danbyte_file_sink", default=None)
+
+
+def _file_block_error(message: str):
+    from jinja2 import TemplateRuntimeError
+
+    return TemplateRuntimeError(message)
+
+
+def is_directory_target(template) -> bool:
+    """Whether ``template`` renders a directory of files (its target path
+    ends in ``/``) rather than one file."""
+    return (getattr(template, "target_path", "") or "").endswith("/")
+
+
+def check_file_name(name) -> str:
+    """The plain file name a ``{% file %}`` block names, or a
+    ``TemplateRuntimeError`` saying why not. A push tool writes these paths
+    to disk, so nothing that leaves the directory gets through: no ``/`` or
+    backslash, no ``.`` or ``..``, no control characters (NUL above all), no
+    leading or trailing space."""
+    if isinstance(name, bool) or not isinstance(name, (str, int)):
+        raise _file_block_error("A file block's name must be text.")
+    name = str(name)
+    shown = repr(name[:60])
+    if not name:
+        raise _file_block_error("A file block's name is empty.")
+    if name in (".", ".."):
+        raise _file_block_error(f"{shown} is not a file name.")
+    if "/" in name or "\\" in name:
+        raise _file_block_error(
+            f"File name {shown} has a path separator; a file block names a file in "
+            "the template's directory, not a path."
+        )
+    if any(ord(c) < 32 or ord(c) == 127 for c in name):
+        raise _file_block_error(f"File name {shown} has a control character.")
+    if name != name.strip():
+        raise _file_block_error(f"File name {shown} starts or ends with a space.")
+    if len(name) > MAX_FILE_NAME:
+        raise _file_block_error(
+            f"File name {shown} is longer than {MAX_FILE_NAME} characters."
+        )
+    return name
+
+
+class _FileSink:
+    """The files one directory render writes, in the order it writes them."""
+
+    def __init__(self, directory: str):
+        self.directory = directory
+        self.files: dict[str, str] = {}
+        self.open = False
+
+    def add(self, name, caller) -> None:
+        if self.open:
+            raise _file_block_error("A file block cannot sit inside another.")
+        name = check_file_name(name)
+        if name in self.files:
+            raise _file_block_error(f"Two file blocks are both named {name!r}.")
+        if len(self.files) >= MAX_FILES:
+            raise _file_block_error(f"More than {MAX_FILES} file blocks in one render.")
+        if len(self.directory) + len(name) > MAX_FILE_PATH:
+            raise _file_block_error(
+                f"{self.directory}{name} is longer than {MAX_FILE_PATH} characters."
+            )
+        self.open = True
+        try:
+            self.files[name] = str(caller())
+        finally:
+            self.open = False
+
+
+@cache
+def _file_extension_class():
+    from jinja2 import nodes
+    from jinja2.ext import Extension
+
+    class FileBlockExtension(Extension):
+        """``{% file "11-gi1.link" %}…{% endfile %}``: the body is one file
+        of a directory template, named by the expression."""
+
+        tags = {"file"}
+
+        def parse(self, parser):
+            lineno = next(parser.stream).lineno
+            name = parser.parse_expression()
+            body = parser.parse_statements(("name:endfile",), drop_needle=True)
+            self.environment.file_blocks = True
+            return nodes.CallBlock(
+                self.call_method("_file", [name]), [], [], body
+            ).set_lineno(lineno)
+
+        def _file(self, name, caller):
+            sink = _FILE_SINK.get()
+            if sink is None:
+                raise _file_block_error(
+                    "A file block needs a device template whose target path ends "
+                    "in / (a directory)."
+                )
+            sink.add(name, caller)
+            return ""
+
+    return FileBlockExtension
+
+
 def _env(tenant=None, user=None):
     """The sandbox for rendering. ``tenant`` fences every row a template
     reaches to that tenant; ``user`` further cuts each relation to the rows
-    that user may view. Compiling a template (no render) needs neither."""
+    that user may view. Compiling a template (no render) needs neither.
+    After compiling, ``env.file_blocks`` says whether the source used a
+    ``{% file %}`` block."""
     env = _template_environment_class()(
         trim_blocks=True, lstrip_blocks=True, autoescape=False,
-        tenant=tenant, user=user,
+        tenant=tenant, user=user, extensions=[_file_extension_class()],
     )
+    env.file_blocks = False
     env.filters.update(FILTERS)
     env.tests.update(TESTS)
     return env
@@ -485,14 +608,17 @@ def safe_mime_type(declared: str | None) -> str:
     return base if base in INERT_MIME_TYPES else "text/plain"
 
 
-def link_peer_of(iface) -> dict | None:
+def link_peer_of(iface, visible=None) -> dict | None:
     """The far end of ``iface``'s cable, as a template may read it.
 
-    ``{"device", "interface", "description", "custom_fields"}`` - the peer's
-    name, its port, and its own fields (a ``frr_name`` custom field, say), or
+    ``{"device", "interface", "description", "mac_address", "mtu",
+    "custom_fields"}`` - the peer's name, its port, the port's MAC and MTU,
+    and its own fields (a ``frr_name`` custom field, say), or
     ``None`` when the port is uncabled or the cable ends off-device. Read-only
     by construction: it is a plain dict, so a template cannot reach the peer
-    row or anything hanging off it.
+    row or anything hanging off it. ``visible`` is the device ids the reader
+    may view (None = all): a peer outside it names nothing and carries
+    ``hidden`` (#473).
     """
     for term in iface.terminations.all():
         for other in term.cable.terminations.all():
@@ -501,10 +627,17 @@ def link_peer_of(iface) -> dict | None:
             peer = other.interface
             if peer is None:
                 return None
+            if visible is not None and peer.device_id not in visible:
+                return {
+                    "device": "", "interface": "", "description": "",
+                    "mac_address": "", "mtu": None, "custom_fields": {}, "hidden": True,
+                }
             return {
                 "device": peer.device.name,
                 "interface": peer.name,
                 "description": peer.description or "",
+                "mac_address": peer.mac_address or "",
+                "mtu": peer.mtu,
                 "custom_fields": dict(peer.custom_fields or {}),
             }
     return None
@@ -515,11 +648,17 @@ def link_peer_of(iface) -> dict | None:
 LINK_PEER_PREFETCH = "terminations__cable__terminations__interface__device"
 
 
-def device_render_interfaces(device) -> list:
-    """The device's interfaces with ``link_peer`` attached to each."""
+def device_render_interfaces(device, tenant=None, user=None) -> list:
+    """The device's interfaces with ``link_peer`` attached to each; for a
+    render run by ``user``, a peer they may not view is hidden."""
+    visible = None
+    if user is not None:
+        from .port_state import visible_device_ids
+
+        visible = visible_device_ids(user, tenant or device.tenant)
     rows = list(device.interfaces.prefetch_related(LINK_PEER_PREFETCH))
     for iface in rows:
-        iface.link_peer = link_peer_of(iface)
+        iface.link_peer = link_peer_of(iface, visible)
     return rows
 
 
@@ -534,11 +673,62 @@ def _render_ips(obj, tenant, user) -> list:
     return list(rbac.restrict_queryset(ips, user, tenant, "ipaddress", "view"))
 
 
+def _backing_vm(device, tenant, user):
+    """The build spec of the VM ``device`` runs as (``api.vm_build``), when
+    there is one the reader may view; else ``None``."""
+    from .models import VirtualMachine
+    from .vm_build import vm_build_spec
+
+    qs = VirtualMachine.objects.filter(represents_device=device, tenant=tenant)
+    if user is not None:
+        from auth_api import rbac
+
+        qs = rbac.restrict_queryset(qs, user, tenant, "virtualmachine", "view")
+    vm = qs.select_related("cluster", "device", "represents_device").first()
+    return vm_build_spec(vm, user, tenant) if vm is not None else None
+
+
 def render_device_config(template, device, tenant, user=None) -> str:
+    """One device's render of a single-file template, as text. A directory
+    template (target path ending in ``/``) writes several files: render it
+    with :func:`render_device_files` instead."""
+    if is_directory_target(template):
+        raise ValueError(
+            f"{template.name} renders a directory of files (its target path ends "
+            "in /); render it per file."
+        )
+    return _render_device(template, device, tenant, user)
+
+
+def render_device_files(template, device, tenant, user=None) -> list[tuple[str, str]]:
+    """The files a directory template writes for one device, as ``(name,
+    text)`` in the order its blocks ran. Text outside every file block is an
+    error unless it is only whitespace: it would otherwise vanish without a
+    word, and is most often a forgotten ``{% file %}``. No file blocks at all
+    is an empty list - a device with nothing to write."""
+    if not is_directory_target(template):
+        raise ValueError(f"{template.name} renders one file, not a directory.")
+    sink = _FileSink(template.target_path)
+    token = _FILE_SINK.set(sink)
+    try:
+        rest = _render_device(template, device, tenant, user)
+    finally:
+        _FILE_SINK.reset(token)
+    stray = (rest or "").strip()
+    if stray:
+        raise _file_block_error(
+            f"Text outside a file block: {stray[:40]!r}. In a directory template "
+            "everything goes inside {% file %} … {% endfile %}."
+        )
+    return list(sink.files.items())
+
+
+def _render_device(template, device, tenant, user=None) -> str:
     """Render an export template for a single device - the per-device
     intended-config generator. Context: ``device``, its merged ``config_context``,
     ``interfaces`` (each with ``link_peer``, the cable's far end),
-    ``ip_addresses`` (and ``objects``/``count`` for parity), plus every
+    ``ip_addresses`` (and ``objects``/``count`` for parity), ``backing_vm``
+    (the build spec of the VM the device runs as, or ``None``), plus every
     registered provider's key (``routing``).
 
     ``user`` is who the render is for: relations a template walks hold only
@@ -551,8 +741,9 @@ def render_device_config(template, device, tenant, user=None) -> str:
     return tmpl.render(
         device=device,
         config_context=render_config_context(device)["rendered"],
-        interfaces=device_render_interfaces(device),
+        interfaces=device_render_interfaces(device, tenant, user),
         ip_addresses=_render_ips(device, tenant, user),
+        backing_vm=_backing_vm(device, tenant, user),
         objects=[device],
         count=1,
         **provider_context(device),
@@ -563,19 +754,147 @@ def render_vm_config(template, vm, tenant, user=None) -> str:
     """Render an export template for a single virtual machine - the per-VM
     generator behind the Terraform-for-VMs flow (the template author writes
     tfvars/HCL). Context mirrors the device renderer: ``vm`` (also exposed as
-    ``device`` for template parity), merged ``config_context``, ``interfaces``,
-    ``ip_addresses``. ``user`` limits what the template sees, as for devices."""
+    ``device`` for template parity), merged ``config_context``, ``interfaces``
+    (in slot order), ``disks``, ``ip_addresses``, ``represents_device``
+    (``{id, name}`` or ``None``) and ``build``, the plain build spec a
+    provision sends (``api.vm_build``). ``user`` limits what the template
+    sees, as for devices."""
     from .config_context import render_config_context
+    from .vm_build import _iface_order, vm_build_spec
 
     tenant = tenant or vm.tenant
     tmpl = _env(tenant, user).from_string(template.template_code or "")
+    build = vm_build_spec(vm, user, tenant)
     return tmpl.render(
         vm=vm,
         device=vm,  # parity: templates can use the same `device.*` accessor
         config_context=render_config_context(vm)["rendered"],
-        interfaces=list(vm.interfaces.all()),
+        interfaces=sorted(vm.interfaces.all(), key=_iface_order),
+        disks=list(vm.disks.all()),
         ip_addresses=_render_ips(vm, tenant, user),
+        represents_device=build["represents_device"],
+        build=build,
         objects=[vm],
         count=1,
         **provider_context(vm),
+    )
+
+
+# ─── Per-object render for any template type (C1) ────────────────────────────
+# A list render loops over every row of the type; these render one object.
+# Device and VM keep their own renderers above; any other type gets the
+# object under its type name plus whatever context hook the type registers.
+
+def _restricted(qs, user, tenant, slug):
+    """``qs`` narrowed to what ``user`` may view (``None`` = a system
+    render, unnarrowed)."""
+    if user is None:
+        return qs
+    from auth_api import rbac
+
+    return rbac.restrict_queryset(qs, user, tenant, slug, "view")
+
+
+def _cluster_context(cluster, tenant, user) -> dict:
+    """``hosts`` (devices in the cluster, and hosts its VMs run on),
+    ``virtual_machines``, ``vm_groups``: each only the rows ``user`` may view."""
+    from django.db.models import Q
+
+    from .models import Device, VirtualMachine, VirtualMachineGroup
+
+    vms = list(
+        _restricted(
+            VirtualMachine.objects.filter(tenant=tenant, cluster=cluster),
+            user, tenant, "virtualmachine",
+        ).select_related("device", "group", "role", "platform", "status", "primary_ip")
+        .order_by("name")
+    )
+    hosts = list(
+        _restricted(
+            Device.objects.filter(tenant=tenant).filter(
+                Q(cluster=cluster) | Q(virtual_machines__cluster=cluster)
+            ).distinct(),
+            user, tenant, "device",
+        ).select_related("role", "platform", "status", "primary_ip")
+        .order_by("name")
+    )
+    groups = list(
+        _restricted(
+            VirtualMachineGroup.objects.filter(tenant=tenant, cluster=cluster),
+            user, tenant, "virtualmachinegroup",
+        ).order_by("name")
+    )
+    return {"hosts": hosts, "virtual_machines": vms, "vm_groups": groups}
+
+
+#: object_type slug -> fn(obj, tenant, user) -> extra render context. A
+#: plugin may add its own with :func:`register_object_context`.
+_OBJECT_CONTEXTS = {"cluster": _cluster_context}
+
+
+def register_object_context(slug: str, fn) -> None:
+    _OBJECT_CONTEXTS[slug] = fn
+
+
+def object_for(template, tenant, user, object_id):
+    """The one row of the template's type that ``object_id`` names, when
+    ``user`` may view it - the same tenant, row, site and field gates a list
+    render applies. ``None`` when it is unknown or out of reach; a
+    ``ValueError`` when the type cannot be a template's subject."""
+    import uuid
+
+    from auth_api.object_types import model_for
+
+    model = model_for(template.object_type)
+    if model is None:
+        raise ValueError(f"Unknown object type: {template.object_type}")
+    if has_secret_fields(model):
+        raise ValueError(
+            f"{template.object_type} carries credentials and cannot be exported by template."
+        )
+    if not template_subject_allowed(model):
+        raise ValueError(f"{template.object_type} cannot be exported by template.")
+    try:
+        pk = uuid.UUID(str(object_id))
+    except (TypeError, ValueError):
+        return None
+    if user is None:
+        return None
+    qs = model.objects.filter(pk=pk)
+    if any(f.name == "tenant" for f in model._meta.concrete_fields):
+        qs = qs.filter(tenant=tenant)
+    elif model._meta.label_lower == "core.tenant":
+        qs = qs.filter(pk=getattr(tenant, "pk", None))
+    else:
+        # A type with no tenant of its own has no per-object render: there
+        # is no fence to hold it to the caller's tenant.
+        return None
+    from auth_api import rbac
+    from core.hidden_fields import RowFieldGate
+
+    qs = rbac.restrict_queryset(qs, user, tenant, template.object_type, "view")
+    qs = RowFieldGate(user, tenant).narrow(qs)
+    return qs.first()
+
+
+def render_object_config(template, obj, tenant, user=None) -> str:
+    """Render ``template`` for the one object ``obj``. Devices and VMs use
+    their own renderers; any other type sees ``obj`` under its type name
+    (``cluster``) and as ``object``, ``objects=[obj]``, ``count=1``, and the
+    keys its context hook adds."""
+    slug = template.object_type
+    if slug == "device":
+        return render_device_config(template, obj, tenant, user)
+    if slug == "virtualmachine":
+        return render_vm_config(template, obj, tenant, user)
+    env = _env(tenant, user)
+    if env._gate is not None:
+        env._gate.prime([obj])
+    extra = {}
+    hook = _OBJECT_CONTEXTS.get(slug)
+    if hook is not None:
+        extra = hook(obj, tenant, user)
+    tmpl = env.from_string(template.template_code or "")
+    return tmpl.render(
+        **{slug: obj}, object=obj, objects=[obj], queryset=[obj], count=1, **extra,
     )

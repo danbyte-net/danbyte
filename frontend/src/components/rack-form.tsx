@@ -3,10 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   LocationOption,
-  Paginated,
   Rack,
   RackRoleOption,
   RackType,
@@ -31,6 +30,9 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { FormRoomCombobox } from "@/components/room-field"
+import { CoolingFields } from "@/components/cooling-fields"
+import { kwToWatts, wattsToKw } from "@/lib/rack-capacity"
 import { useSaveObject } from "@/lib/save-object"
 import { invalidateSiteViews } from "@/lib/site-cache"
 
@@ -71,6 +73,7 @@ export function RackForm({
   const [locationId, setLocationId] = useState<string | null>(
     rack?.location?.id ?? null
   )
+  const [roomId, setRoomId] = useState<string | null>(rack?.room?.id ?? null)
   const [statusId, setStatusId] = useState<string | null>(
     rack?.status?.id ?? null
   )
@@ -104,6 +107,14 @@ export function RackForm({
   const [maxPower, setMaxPower] = useState(
     rack?.max_power_w != null ? String(rack.max_power_w) : ""
   )
+  // What the rack's cooling takes, and the heat it removes - entered in kW,
+  // stored in watts (#434).
+  const [coolingCapability, setCoolingCapability] = useState<string | null>(
+    rack?.cooling_capability || null
+  )
+  const [coolingCapacity, setCoolingCapacity] = useState(
+    wattsToKw(rack?.cooling_capacity_w)
+  )
   const [maxWeightUnit, setMaxWeightUnit] = useState(
     rack?.max_weight_unit || "kg"
   )
@@ -123,6 +134,7 @@ export function RackForm({
     setRoleId(rack.role?.id ?? null)
     setRackTypeId(rack.rack_type?.id ?? null)
     setLocationId(rack.location?.id ?? null)
+    setRoomId(rack.room?.id ?? null)
     setStatusId(rack.status?.id ?? null)
     setWidth(rack.width)
     setUHeight(String(rack.u_height))
@@ -137,6 +149,8 @@ export function RackForm({
     setMaxWeight(rack.max_weight ?? "")
     setMaxWeightUnit(rack.max_weight_unit || "kg")
     setMaxPower(rack.max_power_w != null ? String(rack.max_power_w) : "")
+    setCoolingCapability(rack.cooling_capability || null)
+    setCoolingCapacity(wattsToKw(rack.cooling_capacity_w))
     setDescription(rack.description)
     setTagIds(rack.tags.map((t) => t.id))
     setCustomFields(rack.custom_fields ?? {})
@@ -154,14 +168,14 @@ export function RackForm({
   // (untouched) API type.
   const roles = useQuery({
     queryKey: ["rack-roles-picker"],
-    queryFn: () => api<Paginated<RackRoleOption>>("/api/rack-roles/?picker=1"),
+    queryFn: () => apiAll<RackRoleOption>("/api/rack-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Full shape (not ?picker=1): the accessory list drives the stamping
   // checkbox, and the dims drive the client-side prefill.
   const rackTypes = useQuery({
     queryKey: ["rack-types", "form"],
-    queryFn: () => api<Paginated<RackType>>("/api/rack-types/"),
+    queryFn: () => apiAll<RackType>("/api/rack-types/"),
     staleTime: 5 * 60_000,
   })
   const chosenType =
@@ -181,6 +195,9 @@ export function RackForm({
     setOuterDepth(t.outer_depth_mm != null ? String(t.outer_depth_mm) : "")
     setMaxWeight(t.max_weight ?? "")
     setMaxWeightUnit(t.max_weight_unit || "kg")
+    setMaxPower(t.max_power_w != null ? String(t.max_power_w) : "")
+    setCoolingCapability(t.cooling_capability || null)
+    setCoolingCapacity(wattsToKw(t.cooling_capacity_w))
   }
   // Arriving from a rack type ("Add rack" on its page) pre-picks the model
   // before its dims have loaded - apply the profile once they land, and only
@@ -197,15 +214,14 @@ export function RackForm({
   }, [isEdit, initialRackTypeId, rackTypes.data, applyTypeProfile])
   const statuses = useQuery({
     queryKey: ["statuses", "rack"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=rack&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=rack&picker=1"),
     staleTime: 5 * 60_000,
   })
   // Locations are per-site - the list follows the chosen site.
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
     queryFn: () =>
-      api<Paginated<LocationOption>>(`/api/locations/?picker=1&site=${siteId}`),
+      apiAll<LocationOption>(`/api/locations/?picker=1&site=${siteId}`),
     enabled: !!siteId,
     staleTime: 5 * 60_000,
   })
@@ -221,6 +237,7 @@ export function RackForm({
         create_accessories:
           !isEdit && createAccessories && !!rackTypeId && canStamp,
         location_id: locationId,
+        room_id: roomId,
         status_id: statusId,
         width,
         u_height: uHeight.trim() === "" ? 42 : Number(uHeight),
@@ -231,6 +248,8 @@ export function RackForm({
         max_weight: maxWeight.trim() === "" ? null : maxWeight.trim(),
         max_weight_unit: maxWeight.trim() === "" ? "" : maxWeightUnit,
         max_power_w: maxPower.trim() === "" ? null : Number(maxPower),
+        cooling_capability: coolingCapability ?? "",
+        cooling_capacity_w: kwToWatts(coolingCapacity),
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -301,6 +320,7 @@ export function RackForm({
               onChange={(v) => {
                 setSiteId(v)
                 setLocationId(null) // locations are per-site
+                setRoomId(null)
               }}
               disabled={siteLocked}
               options={sites.options.map((s) => ({
@@ -328,7 +348,10 @@ export function RackForm({
               label="Location"
               hint="optional · within the site"
               value={locationId}
-              onChange={setLocationId}
+              onChange={(v) => {
+                setLocationId(v)
+                setRoomId(null) // rooms are per-location
+              }}
               options={(locations.data?.results ?? []).map((l) => ({
                 value: l.id,
                 label: l.name,
@@ -339,6 +362,13 @@ export function RackForm({
               emptyText="No locations in this site."
               disabled={!siteId}
               error={fieldErrors.location_id}
+            />
+
+            <FormRoomCombobox
+              locationId={locationId}
+              value={roomId}
+              onChange={setRoomId}
+              error={fieldErrors.room_id}
             />
 
             <FormCombobox
@@ -523,6 +553,16 @@ export function RackForm({
               value={maxPower}
               onChange={setMaxPower}
               error={fieldErrors.max_power_w}
+            />
+          </FormSection>
+
+          <FormSection title="Cooling" card>
+            <CoolingFields
+              capability={coolingCapability}
+              onCapability={setCoolingCapability}
+              capacityKw={coolingCapacity}
+              onCapacityKw={setCoolingCapacity}
+              errors={fieldErrors}
             />
           </FormSection>
         </FormColumn>

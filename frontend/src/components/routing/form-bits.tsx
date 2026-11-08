@@ -34,10 +34,12 @@ export const ROUTING_OBJECT_TYPES = {
   routingkeychain: "routing.routingkeychain",
   bfdprofile: "routing.bfdprofile",
   staticroute: "routing.staticroute",
+  policyrule: "routing.policyrule",
   bgpinstance: "routing.bgpinstance",
   bgpaddressfamily: "routing.bgpaddressfamily",
   bgppeergroup: "routing.bgppeergroup",
   bgpsession: "routing.bgpsession",
+  bgpneighboraf: "routing.bgpneighboraf",
   ospfarea: "routing.ospfarea",
   ospfinstance: "routing.ospfinstance",
   ospfinterface: "routing.ospfinterface",
@@ -49,6 +51,8 @@ export const ROUTING_OBJECT_TYPES = {
   vtepmembership: "routing.vtepmembership",
   ethernetsegment: "routing.ethernetsegment",
   ldpinstance: "routing.ldpinstance",
+  rpkicache: "routing.rpkicache",
+  roa: "routing.roa",
 } as const
 
 /** Save a routing object through the plan-aware helper; invalidates the
@@ -123,15 +127,21 @@ export function CellSelect({
   onChange,
   options,
   width = "w-24",
+  "aria-label": ariaLabel,
 }: {
   value: string
   onChange: (v: string) => void
   options: { value: string; label: string }[]
   width?: string
+  /** The column header - a cell select has no label of its own. */
+  "aria-label": string
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={cn("h-7 px-2 text-xs", width)}>
+      <SelectTrigger
+        aria-label={ariaLabel}
+        className={cn("h-7 px-2 text-xs", width)}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

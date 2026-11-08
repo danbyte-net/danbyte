@@ -6,6 +6,9 @@ import { useCallback, useState } from "react"
 
 import { api, type DeviceType } from "@/lib/api"
 import { PROFILE_LABELS, fmtMm } from "@/lib/din-geometry"
+import { choiceLabel, useDcimChoices } from "@/lib/use-dcim-choices"
+import { formatWatts } from "@/lib/rack-capacity"
+import { CoolingMethodText } from "@/components/cells/cooling-cell"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { Loading } from "@/components/loading"
@@ -31,13 +34,16 @@ import {
 } from "@/components/locality-badge"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import { NamedIcon } from "@/components/dynamic-icon"
 import { LifecycleCard } from "@/components/lifecycle-card"
 import { LifecycleBadge } from "@/components/cells/lifecycle-cell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
-import { useMe } from "@/lib/use-me"
+import { objCan, useMe } from "@/lib/use-me"
+import { Model3DCard } from "@/components/model-3d-card"
+import { ModelViewerCard } from "@/components/model-viewer-card"
 
 const DEVICE_TYPE_TABS = [
   "overview",
@@ -267,6 +273,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
  * tables. Only the identifying manufacturer/model stay up top. */
 function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
   const { humanIds, canDo } = useMe()
+  const choices = useDcimChoices()
 
   const hardware: KvRow[] = [
     ...(humanIds && d.numid != null
@@ -301,8 +308,44 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     },
     { label: "Part number", value: d.part_number || dash },
     {
+      label: "Icon",
+      value: d.icon ? (
+        <span className="inline-flex items-center gap-1.5">
+          <NamedIcon name={d.icon} className="size-4" />
+          <span className="font-mono text-[13px]">{d.icon}</span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    {
       label: "Rack units",
       value: <span className="num">{d.u_height}U</span>,
+    },
+    {
+      label: "Airflow",
+      value: d.airflow ? choiceLabel(choices.airflow, d.airflow) : dash,
+    },
+    {
+      // A blank method reads as air for the type's devices (#434).
+      label: "Cooling",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          <CoolingMethodText value={d.cooling_method || "air"} />
+          {!d.cooling_method && (
+            <span className="text-[11px] text-muted-foreground">(default)</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "Heat output",
+      value:
+        d.heat_output_w != null ? (
+          <span className="num">{formatWatts(d.heat_output_w)}</span>
+        ) : (
+          dash
+        ),
     },
   ]
 
@@ -366,6 +409,7 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
       label: "SNMP profile",
       value: (
         <SnmpBindingControl
+          aria-label="SNMP profile"
           scope="device_type"
           objectId={d.id}
           canEdit={canDo("devicetype", "change")}
@@ -400,9 +444,34 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
         )}
       </div>
       <div className="grid gap-6">
+        {d.model_3d && (
+          <ModelViewerCard
+            source={{
+              model: {
+                url: d.model_3d,
+                fit: d.model_3d_fit ?? "auto",
+                up: d.model_3d_up ?? "y",
+                front: d.model_3d_front ?? "+z",
+              },
+              sizeMm: d,
+              templatePorts: d.model_ports ?? null,
+            }}
+          />
+        )}
         <KvCard title="Usage" rows={usage} />
         <KvCard title="Monitoring" rows={monitoring} />
         <LifecycleCard item={d} />
+        <Model3DCard
+          kind="device-types"
+          id={d.id}
+          own={d.model_3d ?? null}
+          fit={d.model_3d_fit ?? "auto"}
+          up={d.model_3d_up ?? "y"}
+          front={d.model_3d_front ?? "+z"}
+          canEdit={objCan(d, "change", canDo("devicetype", "change"))}
+          queryKey={["device-type", d.id]}
+          typeId={d.id}
+        />
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Check, KeyRound, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   IdentityProvider,
   IdentityProviderWritePayload,
@@ -120,7 +121,7 @@ function IdentityProviders() {
   // Keep the tenant map handy so the list can name a provider's tenant scope.
   const tenantsQ = useQuery({
     queryKey: ["tenants-picker"],
-    queryFn: () => api<Paginated<TenantPicker>>("/api/tenants/?picker=1"),
+    queryFn: () => apiAll<TenantPicker>("/api/tenants/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const tenantName = useMemo(() => {
@@ -341,7 +342,7 @@ function ProviderDialog({
 
   const tenantsQ = useQuery({
     queryKey: ["tenants-picker"],
-    queryFn: () => api<Paginated<TenantPicker>>("/api/tenants/?picker=1"),
+    queryFn: () => apiAll<TenantPicker>("/api/tenants/?picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })
@@ -351,7 +352,7 @@ function ProviderDialog({
   }))
   const groupsQ = useQuery({
     queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    queryFn: () => apiAll<RBACGroup>("/api/groups/"),
     enabled: open,
     staleTime: 5 * 60_000,
   })
@@ -705,13 +706,13 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
   const mappings = useQuery({
     queryKey: mappingsKey,
     queryFn: () =>
-      api<Paginated<SsoGroupMapping>>(
+      apiAll<SsoGroupMapping>(
         `/api/sso-group-mappings/?provider=${provider.id}`
       ),
   })
   const groups = useQuery({
     queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    queryFn: () => apiAll<RBACGroup>("/api/groups/"),
     staleTime: 5 * 60_000,
   })
 

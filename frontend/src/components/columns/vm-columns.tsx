@@ -1,7 +1,11 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
-import type { BulkStatusEntry, VirtualMachine } from "@/lib/api"
+import type {
+  BulkStatusEntry,
+  PrtgDeviceState,
+  VirtualMachine,
+} from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { PowerBadge } from "@/components/cells/power-badge"
@@ -11,15 +15,22 @@ import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { platformColumn } from "@/components/cells/platform-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
+import { lifecycleNextColumn } from "@/components/cells/lifecycle-cell"
+import {
+  softwareTargetColumn,
+  softwareVersionColumn,
+} from "@/components/cells/software-version-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
+import { deviceProfilesColumn } from "@/components/columns/device-profile-columns"
 import {
   monitoringBucket,
   monitoringFacet,
 } from "@/components/columns/monitoring-facet"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { prtgColumn } from "@/components/columns/prtg-columns"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
@@ -48,6 +59,7 @@ export type VmColumnId =
   | "group"
   | "status"
   | "monitoring"
+  | "prtg"
   | "sla"
   | "availability"
   | "power"
@@ -59,7 +71,11 @@ export type VmColumnId =
   | "role"
   | "platform"
   | "eol"
+  | "lifecycle_next"
+  | "software_version"
+  | "software_target"
   | "synced_from"
+  | "profiles"
   | "tags"
   | "updated"
 
@@ -70,6 +86,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "group",
   "status",
   "monitoring",
+  "prtg",
   "sla",
   "availability",
   "power",
@@ -81,7 +98,11 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "role",
   "platform",
   "eol",
+  "lifecycle_next",
+  "software_version",
+  "software_target",
   "synced_from",
+  "profiles",
   "tags",
   "updated",
 ]
@@ -102,6 +123,9 @@ export interface VmColumnOpts<T extends VirtualMachine = VirtualMachine> {
   /** Bulk monitoring roll-ups keyed by VM id; the column only exists when a
    * page fetched them, exactly as on the device list. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** PRTG roll-up per VM id, from `usePrtgVmStates()` - enables the hidden
+   * "PRTG" column, as on the device list. */
+  prtg?: Record<string, PrtgDeviceState>
   /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
   sla?: SlaColumnOpts
   /** End-of-life column from the platform's mapping (#8) - pass
@@ -114,6 +138,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
 ): ColumnDef<T, unknown>[] {
   const omit = new Set(opts.omit ?? [])
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.prtg) omit.add("prtg")
   if (!opts.sla) {
     omit.add("sla")
     omit.add("availability")
@@ -213,6 +238,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
         },
       },
     }),
+    prtg: () => prtgColumn<T>(opts.prtg!),
     sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
     availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     monitoring: () => ({
@@ -379,6 +405,17 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     platform: () =>
       platformColumn<T>({ get: (r) => r.platform, className: "text-xs" }),
     eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
+    // The platform's effective end of life (#436); hidden by default.
+    lifecycle_next: () =>
+      lifecycleNextColumn<T>({ get: (r) => r.lifecycle_next }),
+    software_version: () =>
+      softwareVersionColumn<T>({ get: (r) => r.software_version }),
+    software_target: () =>
+      softwareTargetColumn<T>({
+        target: (r) => r.platform?.target_version,
+        version: (r) => r.software_version,
+      }),
+    profiles: () => deviceProfilesColumn<T>(),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

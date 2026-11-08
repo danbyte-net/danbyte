@@ -11,6 +11,7 @@ import {
   type PlanningSemanticGroup,
   type PlanningStatus,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -109,7 +110,7 @@ export function TaskStatusManager() {
 
   const boardsQ = useQuery({
     queryKey: ["planning-boards"],
-    queryFn: () => api<Paginated<PlanningBoard>>("/api/planning/boards/"),
+    queryFn: () => apiAll<PlanningBoard>("/api/planning/boards/"),
   })
   const boards = boardsQ.data?.results ?? []
   const boardName = useMemo(
@@ -446,6 +447,7 @@ function StatusDialog({
             <div className="flex-1 space-y-1.5">
               <label className="text-xs text-muted-foreground">Name</label>
               <Input
+                aria-label="Name"
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -472,6 +474,7 @@ function StatusDialog({
             <div className="w-24 space-y-1.5">
               <label className="text-xs text-muted-foreground">Weight</label>
               <Input
+                aria-label="Weight"
                 type="number"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}

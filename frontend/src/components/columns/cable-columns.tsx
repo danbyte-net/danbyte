@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeftRight, ChevronDown } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { Cable, Paginated, Status, Termination } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Cable, Status, Termination } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { fiberColor } from "@/lib/fiber"
 import { asRecord } from "@/lib/utils"
@@ -53,8 +54,7 @@ function CableStatusCell({
   const qc = useQueryClient()
   const statuses = useQuery({
     queryKey: ["statuses", "cable"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=cable&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=cable&picker=1"),
     enabled: canEdit,
     staleTime: 5 * 60_000,
   })

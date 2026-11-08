@@ -31,7 +31,7 @@ const { apiMock, toastMock, successMock, canDo } = vi.hoisted(() => ({
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<typeof Api>()),
-  api: apiMock,
+  api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
 }))
 vi.mock("@/lib/api-toast", () => ({ apiErrorToast: toastMock }))
 vi.mock("sonner", () => ({ toast: { success: successMock, error: vi.fn() } }))

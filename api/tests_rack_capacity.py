@@ -417,6 +417,10 @@ class SiteCapacityTests(_Base):
             "racks": 2, "devices": 6, "u_height": 84, "u_used": 4, "u_pct": 5,
             "power": {"available_w": 7360, "allocated_w": 800, "maximum_w": 1600,
                       "pdu_rating": 2, "no_supply": 0, "budget": 0},
+            # The servers' draw is their heat; the PDUs add none (#434).
+            "cooling": {"available_w": 0, "heat_allocated_w": 800,
+                        "heat_maximum_w": 1600, "budget": 0, "no_supply": 2,
+                        "mismatched": 0},
             "ports": _row(0), "panel_ports": _row(0),
         })
         self.assertEqual([r["name"] for r in body["unplaced"]["racks"]], ["R4"])
@@ -431,10 +435,10 @@ class SiteCapacityTests(_Base):
             if r["id"] == str(self.r1.id)
         )
         self.assertEqual(
-            (entry["u_used"], entry["u_height"], entry["power"], entry["ports"],
-             entry["panel_ports"], entry["device_count"]),
-            (row["used_units"], row["u_height"], row["power"], row["ports"],
-             row["panel_ports"], row["device_count"]),
+            (entry["u_used"], entry["u_height"], entry["power"], entry["cooling"],
+             entry["ports"], entry["panel_ports"], entry["device_count"]),
+            (row["used_units"], row["u_height"], row["power"], row["cooling"],
+             row["ports"], row["panel_ports"], row["device_count"]),
         )
         self.assertEqual(entry["u_pct"], round(row["used_units"] / row["u_height"] * 100))
 

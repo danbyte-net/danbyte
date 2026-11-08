@@ -28,13 +28,18 @@ The page is a mosaic of tiles:
 - **Support coverage** - devices per [coverage status](support-coverage.md),
   narrowed by site and manufacturer, and the support contracts that end
   soonest. A count opens the devices list filtered to it.
+- **PRTG widgets** - **Sensor** (one channel of one [PRTG sensor](prtg.md#sensors)
+  as a gauge, lookup bar, value or sparkline over 1h, 24h or 7d) and
+  **Sensor alarms** (the down and degraded sensors). See
+  [Sensor widgets](#sensor-widgets).
 - **Activity widgets** - **Changelog** (the latest audit changes across the
   tenant: who changed what, each linking to the full change and out to the audit
   log) and **Recent activity** (latest monitoring status changes).
 - **Monitoring widgets** - **Availability** (seven days, time reachable over
   time measured, as a gauge), **Alerts per day** (opened against resolved, the
   last seven days), **Latency** (median and 95th percentile per hour over
-  the week, one check kind at a time, busiest first), **Flapping** (the checks currently flagged, with a
+  the week, one check kind at a time, busiest first; past a week, one point
+  a day), **Flapping** (the checks currently flagged, with a
   link to confirm them) and **Status history** (the status strips of the
   addresses and devices you pick - the same strip and availability figure
   their Monitoring tabs draw, over 1h to 90d, refreshed every minute; pick
@@ -64,6 +69,36 @@ work the same way. The other charts open where their data lives:
 
 Over a time frame longer than a week, time axes show the date, not the
 weekday, so every point has its own label.
+
+Availability and Latency read the hourly and daily
+[rollups](monitoring.md#rollups), the same records as Explore and the
+Latency view they open, so the figures agree:
+
+- availability is time up over time measured, with stale counted as
+  unmeasured;
+- a latency point is the probe-weighted mean of each check's own median
+  and 95th percentile for that hour;
+- the open hour is as the rollup timer last wrote it, at most five minutes
+  behind.
+
+### What a page load asks for
+
+The dashboard reads its figures in one request, and only the figures the
+widgets on show need. A widget you have not placed costs nothing. Adding one
+while editing fetches its figures; the rest stay on screen meanwhile. Your
+first visit with no layout of your own reads everything once, since the
+tenant's starting layout comes with it.
+
+The rest of the page loads lazily as well:
+
+- the dashboard switcher reads the list of dashboards when you open it;
+- a **Floor plan** widget reads the one plan it shows, and the full list of
+  plans only while you edit the layout, for its picker.
+
+API clients can do the same: `GET /api/dashboard/?include=recent_ips,latency_by_kind`
+computes only those keys and returns the others empty. Without `include`
+every key is computed. The counts, the check and alert totals and the
+reachable share always come. An unknown key is a 400.
 
 ## Customizing it
 
@@ -113,6 +148,11 @@ dashboard**, so that the Dashboard link opens it instead of their own layout.
 When that dashboard is deleted, the Dashboard link opens their own layout
 again.
 
+On **All dashboards**, tick rows to reveal the bulk bar. **Delete** first shows
+what would happen: your own dashboards go, and one someone else shared with
+you stays, named with the reason - only its owner deletes it
+(`POST /api/dashboards/bulk-delete/`, `{ids, dry_run}`).
+
 Every widget loads its data with the **viewer's** permissions, never the
 owner's. A shared dashboard shows each viewer only what they could already
 see.
@@ -150,6 +190,22 @@ stays up for `every` seconds, 10 at the least.
 
 The figure widgets read the [rollups](monitoring.md#rollups), so they cover
 the whole time frame even beyond the raw results' thirty days.
+
+### Sensor widgets
+
+Both need [PRTG monitoring](prtg.md) to be on.
+
+| Widget | What it shows |
+|---|---|
+| **Sensor** | One channel of one PRTG sensor, with the sensor's state pill and a link to its device's or VM's Sensors tab with the panel open. While editing, pick a **Device** or **VM**, the **Sensor**, the **Channel** (*Primary* by default), the display - **Gauge**, **Lookup bar**, **Value** or **Sparkline** with its range (1h, 24h, 7d) - and an optional **Title** that replaces the widget's. Add it more than once for several. |
+| **Sensor alarms** | The down and degraded sensors, worst and newest first, for every connection or one: sensor, device or VM, state and since when, capped to 5, 10 or 20 rows, with a link to the PRTG page's **Alarms** tab. |
+
+The widgets keep only ids and read the sensor live on every refresh of the
+dashboard, with the viewer's permissions: a sensor that is gone, or PRTG
+switched off, reads *No data*; a device or VM the viewer cannot see reads
+*No access*. A sparkline follows the sensor panel's rule: a number that did
+not move reads *Steady over the last …*, a lookup channel shows its state
+timeline.
 
 ## Related
 

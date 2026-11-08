@@ -4,11 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type {
-  Paginated,
-  TagOption,
-  VirtualChassisBulkUpdateFields,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { TagOption, VirtualChassisBulkUpdateFields } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
@@ -47,7 +44,7 @@ function BulkEditVirtualChassisPage() {
 
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 

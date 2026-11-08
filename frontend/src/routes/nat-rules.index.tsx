@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { useCallback, useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 
-import { api } from "@/lib/api"
-import type { NATRule, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { NATRule } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { buildNATRuleColumns } from "@/components/columns/nat-rule-columns"
 import {
@@ -30,7 +30,7 @@ function NATRulesPage() {
   const query = useQuery({
     queryKey: ["nat-rules-list", q],
     queryFn: () =>
-      api<Paginated<NATRule>>(
+      apiAll<NATRule>(
         `/api/nat-rules/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

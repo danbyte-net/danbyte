@@ -18,7 +18,7 @@ Usage:
 """
 from __future__ import annotations
 
-from .context import current_request_id, current_user
+from .context import current_cause, current_request_id, current_user
 from .models import ChangeAction, ChangeLogEntry
 from .signals import _diff, _ser
 
@@ -38,12 +38,16 @@ def _entry(instance, action, changes, user, rid):
         object_site_id=entry_site_id(instance),
         changes=changes,
         request_id=rid,
+        cause=current_cause(),
     )
 
 
-def log_bulk_update(rows, updates: dict) -> None:
+def log_bulk_update(rows, updates: dict, per_row: dict | None = None) -> None:
     """One UPDATE entry per row whose value actually changed. ``updates`` keys
-    are model attnames (``status``, ``vrf_id``, …) as passed to ``.update()``."""
+    are model attnames (``status``, ``vrf_id``, …) as passed to ``.update()``.
+    ``per_row`` adds what differs per row (``{pk: {attname: value}}``) - a
+    merged ``custom_fields``, a group dropped by a cluster move - to that
+    row's one entry. ``rows`` hold the values from before the write."""
     user = current_user()
     rid = current_request_id()
     entries = []
@@ -53,7 +57,8 @@ def log_bulk_update(rows, updates: dict) -> None:
         # resolves it to a name.
         names = {f.attname: f.name for f in r._meta.concrete_fields}
         changes = {}
-        for k, v in updates.items():
+        extra = (per_row or {}).get(r.pk) or {}
+        for k, v in {**updates, **extra}.items():
             old = _ser(getattr(r, k, None))
             new = _ser(v)
             if old != new:
@@ -99,6 +104,8 @@ _TEMPLATE_RELATIONS = (
     ("antennas", "antenna_templates"),
     ("power_ports", "power_port_templates"),
     ("power_outlets", "power_outlet_templates"),
+    ("cooling_outflows", "cooling_outflow_templates"),
+    ("cooling_intakes", "cooling_intake_templates"),
     ("rear_ports", "rear_port_templates"),
     ("front_ports", "front_port_templates"),
     ("module_bays", "module_bay_templates"),
@@ -145,6 +152,26 @@ def log_tag_change(instance, added=(), removed=()) -> None:
     _entry(instance, ChangeAction.UPDATE, changes, user, current_request_id()).save()
 
 
+def log_tag_merge(moved, dropped, source_name: str, target_name: str) -> None:
+    """One UPDATE entry per object a tag merge touched, shaped like
+    :func:`log_tag_change`: ``moved`` objects swapped ``source`` for
+    ``target``; ``dropped`` ones already carried ``target`` and only lost
+    ``source``."""
+    user = current_user()
+    rid = current_request_id()
+    entries = [
+        _entry(obj, ChangeAction.UPDATE,
+               {"tags": {"old": [source_name], "new": [target_name]}}, user, rid)
+        for obj in moved
+    ] + [
+        _entry(obj, ChangeAction.UPDATE,
+               {"tags": {"old": [source_name], "new": None}}, user, rid)
+        for obj in dropped
+    ]
+    if entries:
+        ChangeLogEntry.objects.bulk_create(entries)
+
+
 def log_rail_change(instance, old, new) -> None:
     """Record a change to a cabinet's or cabinet type's DIN rails. They are
     written as a set through their parent, so the change lands on its entry;
@@ -155,7 +182,9 @@ def log_rail_change(instance, old, new) -> None:
     _entry(instance, ChangeAction.UPDATE, changes, current_user(), current_request_id()).save()
 
 
-def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> None:
+def apply_and_log_bulk_tags(
+    qs, add_tag_ids, remove_tag_ids, tenant=None, request=None
+) -> None:
     """Resolve tag ids → Tag rows, apply add/remove across ``qs``, and record
     one changelog entry per object whose tag set actually changed.
 
@@ -166,7 +195,12 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
 
     Pass ``tenant`` so foreign-tenant tag ids are silently dropped - tags are
     tenant-scoped now, and this raw path bypasses the serializer's scoped
-    field (legacy NULL-tenant tags stay attachable)."""
+    field (legacy NULL-tenant tags stay attachable).
+
+    Pass ``request`` as well and ``add_tag_ids`` is checked as the
+    ``tag_ids`` field checks it: an id that is not a tag the request may use
+    (another tenant's, another site's local tag, not an id at all) is a 400
+    on ``add_tag_ids`` instead of being dropped (#456)."""
     if not add_tag_ids and not remove_tag_ids:
         return
     from django.db.models import Q
@@ -174,11 +208,32 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
     from core.models import Tag
     from core.tags import TAGS, tags_of
 
+    if request is not None and add_tag_ids:
+        from api.serializers import resolve_tag_ids
+
+        add = list(dict.fromkeys(resolve_tag_ids(request, add_tag_ids, "add_tag_ids")))
+        add_tag_ids = []
+    else:
+        add = None
+
+    def _ids(raw):
+        # Tag ids are integers; anything else names no tag here (and would
+        # make the id lookup raise).
+        if not isinstance(raw, (list, tuple)):
+            return []
+        return [
+            int(i) for i in raw
+            if not isinstance(i, bool)
+            and (isinstance(i, int) or (isinstance(i, str) and i.strip().isdigit()))
+        ]
+
+    add_tag_ids, remove_tag_ids = _ids(add_tag_ids), _ids(remove_tag_ids)
     tag_qs = Tag.objects.filter(id__in={*add_tag_ids, *remove_tag_ids})
     if tenant is not None:
         tag_qs = tag_qs.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
     tags = {t.id: t for t in tag_qs}
-    add = [tags[i] for i in add_tag_ids if i in tags]
+    if add is None:
+        add = [tags[i] for i in add_tag_ids if i in tags]
     remove = [tags[i] for i in remove_tag_ids if i in tags]
     for obj in qs.prefetch_related(TAGS):
         current = {t.id for t in tags_of(obj)}

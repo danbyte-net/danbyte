@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import hashlib
 import json
 import uuid
 
@@ -18,8 +19,13 @@ from django.contrib.auth import get_user_model
 from django.db.models.fields.files import FieldFile
 from django.db.models.signals import post_delete, post_save, pre_save
 
-
-from .context import current_request_id, current_user, current_via, is_suspended
+from .context import (
+    current_cause,
+    current_request_id,
+    current_user,
+    current_via,
+    is_suspended,
+)
 from .models import ChangeAction, ChangeLogEntry
 
 _SKIP_FIELDS = {"created_at", "updated_at"}
@@ -45,6 +51,13 @@ def _ser(v):
     # (which isn't JSON serializable).
     if isinstance(v, FieldFile):
         return v.name or None
+    # A binary column (a tenant's report cover image) logs its size and a
+    # short digest: enough to see that it changed, never the bytes.
+    if isinstance(v, (bytes, bytearray, memoryview)):
+        data = bytes(v)
+        if not data:
+            return None
+        return f"{len(data):,} bytes, sha256 {hashlib.sha256(data).hexdigest()[:12]}"
     return v
 
 
@@ -171,6 +184,7 @@ def _record(instance, action, changes, pre=None, post=None):
         post_change=post,
         request_id=current_request_id(),
         via=current_via() or "system",
+        cause=current_cause(),
     )
 
 

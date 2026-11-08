@@ -6,13 +6,10 @@ import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type ModuleInterfaceTemplate,
-  type ModuleType,
-  type Paginated,
-} from "@/lib/api"
+import { api, type ModuleInterfaceTemplate, type ModuleType } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import {
   Dialog,
   DialogContent,
@@ -42,6 +39,8 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
 import { QueryError } from "@/components/query-error"
 import { ModuleTypeDeleteDialog } from "@/routes/module-types.index"
+import { CoolingMethodText } from "@/components/cells/cooling-cell"
+import { Loading } from "@/components/loading"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -57,8 +56,7 @@ function ModuleTypeDetail() {
     queryKey: ["module-type", id],
     queryFn: () => api<ModuleType>(`/api/module-types/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -94,6 +92,7 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
       ),
     },
     { label: "Part number", value: mono(m.part_number) },
+    { label: "Cooling", value: <CoolingMethodText value={m.cooling_method} /> },
     {
       label: "Installed",
       value: <span className="num">{m.module_count}</span>,
@@ -194,7 +193,7 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
   const q = useQuery({
     queryKey: ["mt-interface-templates", moduleTypeId],
     queryFn: () =>
-      api<Paginated<ModuleInterfaceTemplate>>(
+      apiAll<ModuleInterfaceTemplate>(
         `/api/module-interface-templates/?module_type=${moduleTypeId}`
       ),
   })
@@ -264,22 +263,26 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
                   <TableCell>
                     {canWrite && (
                       <div className="flex justify-end gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={() => setEditing(t)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => del.mutate(t.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <IconTip label="Edit">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() => setEditing(t)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </IconTip>
+                        <IconTip label="Delete">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => del.mutate(t.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </IconTip>
                       </div>
                     )}
                   </TableCell>

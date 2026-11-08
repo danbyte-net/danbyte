@@ -2,14 +2,20 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, bytesToUnit, INVENTORY_KIND_OPTIONS, unitToBytes } from "@/lib/api"
+import {
+  api,
+  bytesToUnit,
+  INVENTORY_KIND_OPTIONS,
+  unitToBytes,
+} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   ComponentTemplateBase,
   ComponentTemplateWritePayload,
+  CoolingIntakeTemplate,
   DcimChoice,
   FrontPortTemplate,
   InterfaceTemplate,
-  Paginated,
   PowerOutletTemplate,
   PowerPortTemplate,
   RearPortTemplate,
@@ -41,6 +47,8 @@ export type TemplateKind =
   | "console-server-port"
   | "power-port"
   | "power-outlet"
+  | "cooling-intake"
+  | "cooling-outflow"
   | "rear-port"
   | "front-port"
   | "aux-port"
@@ -55,6 +63,8 @@ export const TEMPLATE_ENDPOINT: Record<TemplateKind, string> = {
   "console-server-port": "console-server-port-templates",
   "power-port": "power-port-templates",
   "power-outlet": "power-outlet-templates",
+  "cooling-intake": "cooling-intake-templates",
+  "cooling-outflow": "cooling-outflow-templates",
   "rear-port": "rear-port-templates",
   "front-port": "front-port-templates",
   "aux-port": "aux-port-templates",
@@ -70,6 +80,8 @@ export const TEMPLATE_QUERY_KEY: Record<TemplateKind, string> = {
   "console-server-port": "dt-console-server-port-templates",
   "power-port": "dt-power-port-templates",
   "power-outlet": "dt-power-outlet-templates",
+  "cooling-intake": "dt-cooling-intake-templates",
+  "cooling-outflow": "dt-cooling-outflow-templates",
   "rear-port": "dt-rear-port-templates",
   "front-port": "dt-front-port-templates",
   "aux-port": "dt-aux-port-templates",
@@ -85,6 +97,8 @@ export const TEMPLATE_NOUN: Record<TemplateKind, string> = {
   "console-server-port": "console server port template",
   "power-port": "power port template",
   "power-outlet": "power outlet template",
+  "cooling-intake": "cooling intake template",
+  "cooling-outflow": "cooling outflow template",
   "rear-port": "rear port template",
   "front-port": "front port template",
   "aux-port": "aux port template",
@@ -120,7 +134,13 @@ export type AnyTemplate = ComponentTemplateBase &
   Partial<{
     manufacturer: { id: string; name: string } | null
     part_id: string
-  }> // inventory-item
+  }> & // inventory-item
+  Partial<{
+    connector_display: string
+    diameter_mm: number | null
+    max_flow_lpm: string | null
+    intake_template: { id: string; name: string } | null
+  }> // cooling intake / outflow
 
 const FEED_LEG_OPTIONS = [
   { value: "A", label: "Leg A" },
@@ -202,6 +222,10 @@ export function ComponentTemplateDialog({
   const [antPolarization, setAntPolarization] = useState("")
   const [antConnector, setAntConnector] = useState("")
   const [antDirectMount, setAntDirectMount] = useState(false)
+  // Cooling intake / outflow extras (#434)
+  const [coolDiameter, setCoolDiameter] = useState("")
+  const [coolFlow, setCoolFlow] = useState("")
+  const [intakeTemplateId, setIntakeTemplateId] = useState<string | null>(null)
 
   // Seed from the template being edited (or blank) every time the dialog opens.
   useEffect(() => {
@@ -256,6 +280,11 @@ export function ComponentTemplateDialog({
     setAntPolarization(template?.polarization ?? "")
     setAntConnector(template?.connector ?? "")
     setAntDirectMount(template?.direct_mount ?? false)
+    setCoolDiameter(
+      template?.diameter_mm != null ? String(template.diameter_mm) : ""
+    )
+    setCoolFlow(template?.max_flow_lpm ?? "")
+    setIntakeTemplateId(template?.intake_template?.id ?? null)
     reset()
   }, [open, template, reset])
 
@@ -263,24 +292,30 @@ export function ComponentTemplateDialog({
   const powerPorts = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY["power-port"], deviceTypeId],
     queryFn: () =>
-      api<Paginated<PowerPortTemplate>>(
+      apiAll<PowerPortTemplate>(
         `/api/power-port-templates/?device_type=${deviceTypeId}`
       ),
     enabled: open && kind === "power-outlet",
   })
+  const intakeTemplates = useQuery({
+    queryKey: [TEMPLATE_QUERY_KEY["cooling-intake"], deviceTypeId],
+    queryFn: () =>
+      apiAll<CoolingIntakeTemplate>(
+        `/api/cooling-intake-templates/?device_type=${deviceTypeId}`
+      ),
+    enabled: open && kind === "cooling-outflow",
+  })
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/manufacturers/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/manufacturers/?picker=1"),
     enabled: open && kind === "inventory-item",
     staleTime: 10 * 60_000,
   })
   const rearPorts = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY["rear-port"], deviceTypeId],
     queryFn: () =>
-      api<Paginated<RearPortTemplate>>(
+      apiAll<RearPortTemplate>(
         `/api/rear-port-templates/?device_type=${deviceTypeId}`
       ),
     enabled: open && kind === "front-port",
@@ -289,9 +324,7 @@ export function ComponentTemplateDialog({
   const moduleTypes = useQuery({
     queryKey: ["module-types-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/module-types/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/module-types/?picker=1"),
     enabled: open && kind === "module-bay",
     staleTime: 10 * 60_000,
   })
@@ -327,6 +360,13 @@ export function ComponentTemplateDialog({
         payload.type = type
         payload.power_port_template_id = powerPortTemplateId
         payload.feed_leg = feedLeg
+      } else if (kind === "cooling-intake" || kind === "cooling-outflow") {
+        payload.connector = antConnector
+        payload.diameter_mm =
+          coolDiameter.trim() === "" ? null : Number(coolDiameter)
+        payload.max_flow_lpm = coolFlow.trim() === "" ? null : coolFlow.trim()
+        if (kind === "cooling-outflow")
+          payload.intake_template_id = intakeTemplateId
       } else if (kind === "rear-port") {
         payload.type = type.trim()
         payload.positions = Number(positions || 1)
@@ -564,6 +604,55 @@ export function ComponentTemplateDialog({
                 mono
                 error={fieldErrors.part_id}
               />
+            </div>
+          ) : kind === "cooling-intake" || kind === "cooling-outflow" ? (
+            <div className="grid gap-3">
+              <div className="grid grid-cols-3 gap-3">
+                <FormCombobox
+                  label="Connector"
+                  value={antConnector || null}
+                  onChange={(v) => setAntConnector(v ?? "")}
+                  noneLabel="None"
+                  placeholder="None"
+                  searchPlaceholder="Search connectors…"
+                  emptyText="No connectors."
+                  options={choices.cooling_connectors ?? []}
+                  error={fieldErrors.connector}
+                />
+                <FormText
+                  label="Diameter (mm)"
+                  type="number"
+                  min={0}
+                  value={coolDiameter}
+                  onChange={setCoolDiameter}
+                  error={fieldErrors.diameter_mm}
+                />
+                <FormText
+                  label="Max flow (L/min)"
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={coolFlow}
+                  onChange={setCoolFlow}
+                  error={fieldErrors.max_flow_lpm}
+                />
+              </div>
+              {kind === "cooling-outflow" && (
+                <FormCombobox
+                  label="Fed by intake"
+                  value={intakeTemplateId}
+                  onChange={setIntakeTemplateId}
+                  noneLabel="None"
+                  placeholder="Pick an intake"
+                  searchPlaceholder="Search intakes…"
+                  emptyText="No intake templates."
+                  options={(intakeTemplates.data?.results ?? []).map((t) => ({
+                    value: t.id,
+                    label: t.name,
+                  }))}
+                  error={fieldErrors.intake_template_id}
+                />
+              )}
             </div>
           ) : kind === "device-bay" ? null : kind === "module-bay" ? (
             <div className="grid gap-4">

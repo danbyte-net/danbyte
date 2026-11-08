@@ -2,12 +2,8 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type PlanningBoard,
-  type TagOption,
-} from "@/lib/api"
+import { api, type PlanningBoard, type TagOption } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -49,7 +45,7 @@ export function BoardDialog({
 
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 

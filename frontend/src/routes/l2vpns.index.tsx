@@ -4,13 +4,15 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type L2VPN, type Paginated } from "@/lib/api"
+import { type L2VPN } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildL2VPNColumns } from "@/components/columns/l2vpn-columns"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { L2vpnDeleteDialog } from "@/components/l2vpn-delete-dialog"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -23,11 +25,13 @@ function L2vpnsPage() {
   const canAdd = canDo("l2vpn", "add")
   const canEdit = canDo("l2vpn", "change")
   const canDelete = canDo("l2vpn", "delete")
+  const selectable = canEdit || canDelete
+  const [selected, setSelected] = useState<L2VPN[]>([])
 
   const query = useQuery({
     queryKey: ["l2vpns", q],
     queryFn: () =>
-      api<Paginated<L2VPN>>(
+      apiAll<L2VPN>(
         `/api/l2vpns/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
@@ -38,17 +42,24 @@ function L2vpnsPage() {
     () =>
       buildL2VPNColumns({
         humanIds,
+        selection: selectable,
         actions: {
           editTo: canEdit ? "/l2vpns/$id/edit" : undefined,
           editParams: (r) => ({ id: r.id }),
           onDelete: canDelete ? onDelete : undefined,
         },
       }),
-    [onDelete, humanIds, canEdit, canDelete]
+    [onDelete, humanIds, canEdit, canDelete, selectable]
   )
 
-  const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useUrlTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: facetColumns,
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -77,6 +88,18 @@ function L2vpnsPage() {
         columns={facetColumns}
         flexColumn="description"
         tableId="l2vpns"
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/l2vpns/"
+        noun={["L2VPN", "L2VPNs"]}
+        invalidate={[["l2vpns"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="l2vpn"
       />
       <L2vpnDeleteDialog
         item={deleting}

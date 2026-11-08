@@ -111,6 +111,7 @@ function photoData(data: FacedData = base): DiagramCardData {
           anchor: "start",
           w: 0,
         },
+        titleRows: [],
         lines: [],
         pill: null,
         stacked: false,

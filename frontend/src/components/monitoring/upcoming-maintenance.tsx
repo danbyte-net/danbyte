@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { Wrench, Zap } from "lucide-react"
 
-import { api, type MaintenanceEvent, type Paginated } from "@/lib/api"
+import { type MaintenanceEvent } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useDateFormat } from "@/lib/datetime"
 import { StatusBadge } from "@/components/status-badge"
 
@@ -23,7 +24,7 @@ export function UpcomingMaintenancePanel({
   const q = useQuery({
     queryKey: ["maintenance-events", "for", objectType, objectId],
     queryFn: () =>
-      api<Paginated<MaintenanceEvent>>(
+      apiAll<MaintenanceEvent>(
         `/api/monitoring/maintenance-events/?open=1&object_type=${objectType}&object_id=${objectId}`
       ),
     staleTime: 60_000,

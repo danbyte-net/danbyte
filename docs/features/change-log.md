@@ -26,6 +26,21 @@ diff, the snapshots and the API. In the API its value is `null`, with
 `hidden_related`. For a user with limited access, a deleted related object
 also shows as hidden, since its scope can no longer be checked.
 
+A generated application flow is named after the hosts at its ends, and
+keeps that name after it is detached or released until someone renames it.
+When you can't view one of them, its entries name it as the flow's API does
+- *WMS to Broker: wms-1 → Hidden* - in the entry, its `name` diff and
+snapshots, and a search of the log, and its `binding_key` (which names the
+ends by id) is `null`; see
+[application flows](application-flows.md#permissions).
+
+A support coverage entry is titled after its device (*Coverage of edge-01*;
+older entries read *contract → device*). When you can't view that device -
+it has since moved to another site, or is gone - the entry reads *Coverage
+of Hidden*, on the global page and the object's tab, and a search of the
+log does not match the device's name; an older title leaves out a contract
+you can't view. The stored entry is unchanged.
+
 !!! note "Change log vs. journal"
     The change log is the *automatic* record of what changed. A
     [journal](journals.md) is where people write *their own* notes about an
@@ -68,6 +83,19 @@ A saved topology view's layout can run to megabytes, so its entries summarise
 it - the top-level parts that changed and the size before and after - rather
 than copying the whole layout. Its name still diffs as usual. See
 [saved views](topology.md#saved-views).
+
+### Cause
+
+A change Danbyte derives from another one says why. The flows an
+[application flow requirement](application-flows.md#requirements) writes
+carry a **cause** - *Requirement 'WMS to Broker': WMS client installed on
+wms-07* - shown under the entry's changes, with the user and request of the
+change that triggered them, so the install and the flows it documented
+group together. The nightly sweep's entries read *nightly sweep* and are
+written by the system. Ordinary edits have no cause. The API returns it as
+`cause` on `/api/changelog/`. A reader who can't view every address, range
+and prefix reads a flow's cause as just *Requirement 'WMS to Broker'*: what
+set it off may be a host at another site.
 
 Not every writer is a person. An [Outpost](../monitoring/outposts.md) writes as
 itself, and is named that way - `outpost:probe-1` - with no linked user account,

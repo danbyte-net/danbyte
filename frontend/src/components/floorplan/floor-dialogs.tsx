@@ -1,0 +1,821 @@
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import type { DragEndEvent } from "@dnd-kit/core"
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
+import { GripVertical, MoreHorizontal } from "lucide-react"
+import { useEffect, useState } from "react"
+import { toast } from "sonner"
+
+import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type {
+  FloorPlan,
+  FloorPlanFloor,
+  FloorPlanStack,
+  LocationOption,
+} from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { Field, FormCombobox } from "@/components/forms"
+import { Loading } from "@/components/loading"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { cn } from "@/lib/utils"
+import { WHOLE_SITE } from "@/lib/floor-plan-scope"
+
+import { elevationLabel, nextBasementName, nextFloorName } from "./levels"
+
+/** Refresh everything that shows floors: the stack, the plan, the lists. */
+function useInvalidateFloors() {
+  const qc = useQueryClient()
+  return () => {
+    void qc.invalidateQueries({ queryKey: ["floor-plan-stack"] })
+    void qc.invalidateQueries({ queryKey: ["floor-plan-stacks"] })
+    void qc.invalidateQueries({ queryKey: ["floor-plan"] })
+    void qc.invalidateQueries({ queryKey: ["floor-plans"] })
+  }
+}
+
+const TOP = "top"
+const BOTTOM = "bottom"
+
+/** "+ Add floor": a floor above or a basement below, where it goes, and
+ * whether it shares the footprint of the floor on screen - a level of one
+ * building, with its outer walls and background copied. */
+export function AddFloorDialog({
+  open,
+  onOpenChange,
+  stack,
+  current,
+  onAdded,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  stack: FloorPlanStack
+  /** The floor on screen - the one whose grid and scale may be copied. */
+  current?: FloorPlan
+  onAdded: (plan: FloorPlan) => void
+}) {
+  const [side, setSide] = useState<"above" | "below">("above")
+  const [name, setName] = useState("")
+  const [named, setNamed] = useState(false)
+  const [position, setPosition] = useState(TOP)
+  const [copy, setCopy] = useState(true)
+  const [same, setSame] = useState(true)
+  const [walls, setWalls] = useState(true)
+  const [background, setBackground] = useState(true)
+  const levels = stack.floors.filter((f) => f.kind !== "view")
+  const canAlign = !!current && current.kind !== "view"
+  const reset = (to: "above" | "below") => {
+    setSide(to)
+    setPosition(to === "above" ? TOP : BOTTOM)
+    setBackground(to === "above")
+    if (!named)
+      setName(
+        to === "below"
+          ? nextBasementName(stack.floors)
+          : stack.aligned
+            ? nextFloorName(stack.floors)
+            : ""
+      )
+  }
+  useEffect(() => {
+    if (open) {
+      setNamed(false)
+      setSide("above")
+      setPosition(TOP)
+      setCopy(true)
+      // On by default on an aligned floor plan, or for its first added floor.
+      setSame(!!stack.aligned || levels.length <= 1)
+      setWalls(true)
+      setBackground(true)
+      setName(stack.aligned ? nextFloorName(stack.floors) : "")
+    }
+    // Only on open: the floors may refresh while the dialog is up.
+  }, [open])
+  const invalidate = useInvalidateFloors()
+  const sameOn = canAlign && same
+  const add = useMutation({
+    mutationFn: () =>
+      api<FloorPlan>(`/api/floor-plan-stacks/${stack.id}/floors/`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim(),
+          ...(position === TOP || position === BOTTOM
+            ? {}
+            : { position: Number(position) }),
+          ...(side === "below" ? { below: true } : {}),
+          ...((copy || sameOn) && current ? { copy_from: current.id } : {}),
+          ...(sameOn
+            ? {
+                same_footprint: true,
+                copy_walls: walls,
+                copy_background: background,
+              }
+            : {}),
+        }),
+      }),
+    onSuccess: (plan) => {
+      invalidate()
+      onOpenChange(false)
+      onAdded(plan)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const floors = stack.floors
+  const firstAbove = floors.findIndex((f) => f.floor_order >= 0)
+  const ground = firstAbove < 0 ? floors.length : firstAbove
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {side === "below" ? "Add basement" : "Add floor"}
+          </DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (name.trim()) add.mutate()
+          }}
+        >
+          <SegmentedTabs<"above" | "below">
+            value={side}
+            onValueChange={reset}
+            items={[
+              { value: "above", label: "Above" },
+              { value: "below", label: "Below" },
+            ]}
+          />
+          <Field label="Name">
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => {
+                setNamed(true)
+                setName(e.target.value)
+              }}
+              placeholder={side === "below" ? "B1" : "2, Ground, Roof…"}
+              className="h-9"
+              maxLength={128}
+            />
+          </Field>
+          <Field label="Position">
+            <Select value={position} onValueChange={(v) => v && setPosition(v)}>
+              <SelectTrigger className="h-9 w-full" aria-label="Position">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {side === "above" ? (
+                  <>
+                    <SelectItem value={TOP}>On top</SelectItem>
+                    {floors.map((f, i) =>
+                      i >= ground ? (
+                        <SelectItem key={f.id} value={String(i)}>
+                          Below {f.name}
+                        </SelectItem>
+                      ) : null
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <SelectItem value={BOTTOM}>At the bottom</SelectItem>
+                    {floors.map((f, i) =>
+                      i < ground ? (
+                        <SelectItem key={f.id} value={String(i + 1)}>
+                          Above {f.name}
+                        </SelectItem>
+                      ) : null
+                    )}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          </Field>
+          {current && canAlign && (
+            <div className="grid gap-2">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={same}
+                  onCheckedChange={(v) => setSame(v === true)}
+                />
+                <span className="whitespace-nowrap">
+                  Same footprint as {current.name}
+                </span>
+              </label>
+              {same && (
+                <div className="grid gap-2 pl-6">
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={walls}
+                      onCheckedChange={(v) => setWalls(v === true)}
+                    />
+                    <span className="whitespace-nowrap">Copy outer walls</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={background}
+                      onCheckedChange={(v) => setBackground(v === true)}
+                    />
+                    <span className="whitespace-nowrap">Copy background</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+          {current && !sameOn && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={copy}
+                onCheckedChange={(v) => setCopy(v === true)}
+              />
+              <span className="whitespace-nowrap">
+                Same grid and scale as {current.name}
+              </span>
+            </label>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!name.trim() || add.isPending}>
+              {add.isPending
+                ? "Adding…"
+                : side === "below"
+                  ? "Add basement"
+                  : "Add floor"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Rename the floor plan (the stack), set its location - one of its site's,
+ * or the whole site - and edit its description. */
+export function RenameStackDialog({
+  open,
+  onOpenChange,
+  stack,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  stack: FloorPlanStack
+}) {
+  const [name, setName] = useState(stack.name)
+  const [description, setDescription] = useState(stack.description)
+  const [locationId, setLocationId] = useState<string | null>(
+    stack.location?.id ?? null
+  )
+  useEffect(() => {
+    if (open) {
+      setName(stack.name)
+      setDescription(stack.description)
+      setLocationId(stack.location?.id ?? null)
+    }
+  }, [open, stack.name, stack.description, stack.location?.id])
+  const locations = useQuery({
+    queryKey: ["locations-picker", stack.site.id],
+    queryFn: () =>
+      apiAll<LocationOption>(`/api/locations/?picker=1&site=${stack.site.id}`),
+    enabled: open,
+  })
+  const invalidate = useInvalidateFloors()
+  const save = useMutation({
+    mutationFn: () =>
+      api<FloorPlanStack>(`/api/floor-plan-stacks/${stack.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: name.trim(),
+          description,
+          location_id: locationId,
+        }),
+      }),
+    onSuccess: () => {
+      invalidate()
+      onOpenChange(false)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Edit floor plan</DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (name.trim()) save.mutate()
+          }}
+        >
+          <Field label="Name">
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-9"
+              maxLength={128}
+            />
+          </Field>
+          <FormCombobox
+            label="Location"
+            value={locationId}
+            onChange={setLocationId}
+            noneLabel={WHOLE_SITE}
+            options={(locations.data?.results ?? []).map((l) => ({
+              value: l.id,
+              label: l.name,
+            }))}
+            placeholder={WHOLE_SITE}
+            searchPlaceholder="Search locations…"
+            emptyText="No locations."
+          />
+          <Field label="Description">
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+            />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!name.trim() || save.isPending}>
+              {save.isPending ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** The other floor plans at the stack's site - targets for a move or a
+ * merge. */
+function useSiteStacks(stack: FloorPlanStack, enabled: boolean) {
+  return useQuery({
+    queryKey: ["floor-plan-stacks", { site: stack.site.id }],
+    queryFn: () =>
+      apiAll<FloorPlanStack>(`/api/floor-plan-stacks/?site=${stack.site.id}`),
+    enabled,
+    select: (d) => d.results.filter((s) => s.id !== stack.id),
+  })
+}
+
+/** Manage floors: drag to reorder, rename inline, move to another floor
+ * plan, make a floor its own floor plan, delete. */
+export function ManageFloorsDialog({
+  open,
+  onOpenChange,
+  stack,
+  currentId,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  stack: FloorPlanStack
+  /** The floor on screen; deleting it opens another floor. */
+  currentId: string
+}) {
+  const nav = useNavigate()
+  const invalidate = useInvalidateFloors()
+  const [order, setOrder] = useState<FloorPlanFloor[]>(stack.floors)
+  useEffect(() => setOrder(stack.floors), [stack.floors])
+  const [moving, setMoving] = useState<FloorPlanFloor | null>(null)
+  const [deleting, setDeleting] = useState<FloorPlanFloor | null>(null)
+
+  const reorder = useMutation({
+    mutationFn: (ids: string[]) =>
+      api<FloorPlanStack>(`/api/floor-plan-stacks/${stack.id}/reorder/`, {
+        method: "POST",
+        body: JSON.stringify({ order: ids }),
+      }),
+    onSuccess: invalidate,
+    onError: (e) => {
+      setOrder(stack.floors)
+      apiErrorToast(e)
+    },
+  })
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      api<FloorPlan>(`/api/floor-plans/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: invalidate,
+    onError: (e) => {
+      setOrder(stack.floors)
+      apiErrorToast(e)
+    },
+  })
+  const split = useMutation({
+    mutationFn: (f: FloorPlanFloor) =>
+      api<FloorPlanStack>(`/api/floor-plans/${f.id}/split/`, {
+        method: "POST",
+        body: "{}",
+      }),
+    onSuccess: (created) => {
+      invalidate()
+      toast.success(`${created.name} is a floor plan of its own`)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const remove = useMutation({
+    mutationFn: (f: FloorPlanFloor) =>
+      api<void>(`/api/floor-plans/${f.id}/`, { method: "DELETE" }),
+    onSuccess: (_, f) => {
+      invalidate()
+      setDeleting(null)
+      toast.success(`Deleted ${f.name}`)
+      if (f.id !== currentId) return
+      const next = stack.floors.find((x) => x.id !== f.id)
+      onOpenChange(false)
+      if (next) void nav({ to: "/floorplans/$id", params: { id: next.id } })
+      else void nav({ to: "/floorplans" })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
+  )
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const from = order.findIndex((f) => f.id === active.id)
+    const to = order.findIndex((f) => f.id === over.id)
+    const next = arrayMove(order, from, to)
+    setOrder(next)
+    reorder.mutate(next.map((f) => f.id))
+  }
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Floors of {stack.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">Lowest first.</p>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
+            <SortableContext
+              items={order.map((f) => f.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="grid gap-1.5" aria-label="Floors">
+                {order.map((f) => (
+                  <li key={f.id}>
+                    <FloorRow
+                      floor={f}
+                      current={f.id === currentId}
+                      onRename={(name) => {
+                        setOrder((o) =>
+                          o.map((x) => (x.id === f.id ? { ...x, name } : x))
+                        )
+                        rename.mutate({ id: f.id, name })
+                      }}
+                      onMove={() => setMoving(f)}
+                      onSplit={
+                        order.length > 1 ? () => split.mutate(f) : undefined
+                      }
+                      onDelete={() => setDeleting(f)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </SortableContext>
+          </DndContext>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <MoveFloorDialog
+        stack={stack}
+        floor={moving}
+        onClose={() => setMoving(null)}
+        onMoved={invalidate}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={`Delete floor ${deleting?.name ?? ""}?`}
+        description={
+          order.length === 1
+            ? "Removes the floor and everything drawn on it, and the floor plan with it. Linked racks and devices are untouched."
+            : "Removes the floor and everything drawn on it. Linked racks and devices are untouched."
+        }
+        pending={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting)}
+      />
+    </>
+  )
+}
+
+function FloorRow({
+  floor,
+  current,
+  onRename,
+  onMove,
+  onSplit,
+  onDelete,
+}: {
+  floor: FloorPlanFloor
+  current: boolean
+  onRename: (name: string) => void
+  onMove: () => void
+  onSplit?: () => void
+  onDelete: () => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: floor.id })
+  const [draft, setDraft] = useState(floor.name)
+  useEffect(() => setDraft(floor.name), [floor.name])
+  const commit = () => {
+    const name = draft.trim()
+    if (!name) setDraft(floor.name)
+    else if (name !== floor.name) onRename(name)
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        "flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1",
+        isDragging && "opacity-60"
+      )}
+    >
+      <button
+        type="button"
+        aria-label={`Reorder ${floor.name}`}
+        className="cursor-grab text-muted-foreground active:cursor-grabbing"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="size-3.5" />
+      </button>
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            commit()
+          }
+          if (e.key === "Escape") setDraft(floor.name)
+        }}
+        aria-label={`Name of ${floor.name}`}
+        className={cn("h-8 flex-1", current && "font-medium")}
+        maxLength={128}
+      />
+      {floor.elevation != null && (
+        <span
+          className="num w-16 shrink-0 text-right text-xs text-muted-foreground"
+          aria-label={`Elevation of ${floor.name}`}
+        >
+          {elevationLabel(floor.elevation)}
+        </span>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Actions for ${floor.name}`}
+          >
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={onMove}>
+            Move to floor plan…
+          </DropdownMenuItem>
+          {onSplit && (
+            <DropdownMenuItem onSelect={onSplit}>
+              Make its own floor plan
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+            Delete…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+/** Pick another floor plan at the same site for one floor. */
+function MoveFloorDialog({
+  stack,
+  floor,
+  onClose,
+  onMoved,
+}: {
+  stack: FloorPlanStack
+  floor: FloorPlanFloor | null
+  onClose: () => void
+  onMoved: () => void
+}) {
+  const others = useSiteStacks(stack, !!floor)
+  const [target, setTarget] = useState("")
+  useEffect(() => setTarget(""), [floor])
+  const move = useMutation({
+    mutationFn: () =>
+      api<FloorPlan>(`/api/floor-plans/${floor!.id}/move/`, {
+        method: "POST",
+        body: JSON.stringify({ stack_id: target }),
+      }),
+    onSuccess: (plan) => {
+      onMoved()
+      toast.success(`Moved ${plan.name} to ${plan.stack?.name ?? ""}`)
+      onClose()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const rows = others.data ?? []
+  return (
+    <Dialog open={!!floor} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Move {floor?.name}</DialogTitle>
+        </DialogHeader>
+        {others.isLoading ? (
+          <Loading />
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No other floor plan at {stack.site.name}.
+          </p>
+        ) : (
+          <Field label="Floor plan">
+            <Select value={target} onValueChange={setTarget}>
+              <SelectTrigger className="h-9 w-full" aria-label="Floor plan">
+                <SelectValue placeholder="Pick a floor plan" />
+              </SelectTrigger>
+              <SelectContent>
+                {rows.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name} · {s.location?.name ?? WHOLE_SITE}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!target || move.isPending}
+            onClick={() => move.mutate()}
+          >
+            {move.isPending ? "Moving…" : "Move"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Merge other floor plans at the same site into this one: their floors
+ * move here, after this one's, and the emptied floor plans go. */
+export function MergeStacksDialog({
+  open,
+  onOpenChange,
+  stack,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  stack: FloorPlanStack
+}) {
+  const others = useSiteStacks(stack, open)
+  const [picked, setPicked] = useState<string[]>([])
+  useEffect(() => {
+    if (open) setPicked([])
+  }, [open])
+  const invalidate = useInvalidateFloors()
+  const merge = useMutation({
+    mutationFn: () =>
+      api<FloorPlanStack>(`/api/floor-plan-stacks/${stack.id}/merge/`, {
+        method: "POST",
+        body: JSON.stringify({ stacks: picked }),
+      }),
+    onSuccess: () => {
+      invalidate()
+      toast.success(`Merged into ${stack.name}`)
+      onOpenChange(false)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const rows = others.data ?? []
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Merge into {stack.name}</DialogTitle>
+        </DialogHeader>
+        {others.isLoading ? (
+          <Loading />
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No other floor plan at {stack.site.name}.
+          </p>
+        ) : (
+          <ul className="grid max-h-72 gap-1 overflow-y-auto">
+            {rows.map((s) => (
+              <li key={s.id}>
+                <label className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60">
+                  <Checkbox
+                    checked={picked.includes(s.id)}
+                    onCheckedChange={(v) =>
+                      setPicked((p) =>
+                        v === true ? [...p, s.id] : p.filter((x) => x !== s.id)
+                      )
+                    }
+                  />
+                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                  <span className="num text-xs text-muted-foreground">
+                    {s.floor_count} {s.floor_count === 1 ? "floor" : "floors"}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={picked.length === 0 || merge.isPending}
+            onClick={() => merge.mutate()}
+          >
+            {merge.isPending ? "Merging…" : "Merge"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}

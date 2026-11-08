@@ -44,6 +44,7 @@ import {
   monthCells,
 } from "@/components/planning/calendar-month"
 import { CalendarTimeGrid } from "@/components/planning/calendar-timegrid"
+import { AddTaskButton } from "@/components/planning/add-task"
 import { usePageTitle } from "@/lib/page-title"
 
 const VIEWS = ["month", "week", "day"] as const
@@ -68,6 +69,12 @@ export const Route = createFileRoute("/planning/calendar")({
 })
 
 const ALL_BOARDS = "__all__"
+
+const VIEW_ITEMS: { value: CalView; label: string }[] = [
+  { value: "month", label: "Month" },
+  { value: "week", label: "Week" },
+  { value: "day", label: "Day" },
+]
 
 function parseDay(day: string): Date {
   const [y, m, d] = day.split("-").map(Number)
@@ -227,7 +234,9 @@ function CalendarPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
+      {/* Below sm (a phone) both bars wrap and the controls grow to 44px
+          touch targets; from sm up they are one row each, as before. */}
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2 sm:h-14 sm:flex-nowrap sm:py-0 lg:px-6">
         <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Button variant="ghost" size="sm" asChild className="h-6 px-1">
             <Link to="/planning">
@@ -238,7 +247,7 @@ function CalendarPage() {
           <h1 className="text-sm font-semibold text-foreground">Calendar</h1>
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 max-sm:w-full">
           {counts && (
             <span className="hidden items-center gap-3 text-[11px] text-muted-foreground sm:flex">
               <Tooltip>
@@ -301,7 +310,10 @@ function CalendarPage() {
               setSearch({ board: v === ALL_BOARDS ? undefined : v })
             }
           >
-            <SelectTrigger className="h-8 w-44 text-xs">
+            <SelectTrigger
+              aria-label="Board"
+              className="h-8 w-44 text-xs max-sm:h-11 max-sm:min-w-0 max-sm:flex-1"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -313,14 +325,21 @@ function CalendarPage() {
               ))}
             </SelectContent>
           </Select>
+          {/* A new task lands on the day in view and the board filtered to. */}
+          <AddTaskButton
+            defaultBoard={board ?? null}
+            defaultDueDate={anchorDay}
+            className="max-sm:h-11"
+          />
         </div>
       </header>
 
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
+      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-4 py-1 sm:h-11 sm:flex-nowrap sm:py-0 lg:px-6">
         <Button
           size="icon-sm"
           variant="ghost"
           aria-label="Previous"
+          className="max-sm:size-11"
           onClick={() => shift(-1)}
         >
           <ChevronLeft className="h-4 w-4" />
@@ -329,6 +348,7 @@ function CalendarPage() {
           size="icon-sm"
           variant="ghost"
           aria-label="Next"
+          className="max-sm:size-11"
           onClick={() => shift(1)}
         >
           <ChevronRight className="h-4 w-4" />
@@ -338,20 +358,32 @@ function CalendarPage() {
           size="sm"
           variant="ghost"
           onClick={goToday}
-          className="text-muted-foreground"
+          className="text-muted-foreground max-sm:h-11"
         >
           Today
         </Button>
         <div className="ml-auto flex items-center gap-2">
           <SegmentedTabs
+            className="max-sm:hidden"
             value={view}
             onValueChange={(v) => setSearch({ view: v })}
-            items={[
-              { value: "month", label: "Month" },
-              { value: "week", label: "Week" },
-              { value: "day", label: "Day" },
-            ]}
+            items={VIEW_ITEMS}
           />
+          <Select
+            value={view}
+            onValueChange={(v) => setSearch({ view: v as CalView })}
+          >
+            <SelectTrigger aria-label="View" className="h-11 w-28 sm:hidden">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VIEW_ITEMS.map((i) => (
+                <SelectItem key={i.value} value={i.value}>
+                  {i.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Badge variant="secondary" className="font-normal">
             {settings.timezone}
           </Badge>

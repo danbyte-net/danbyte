@@ -4,13 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import {
-  api,
-  MONITORING_STATES,
-  STATUSABLE_MODELS,
-  type Status,
-  type Paginated,
-} from "@/lib/api"
+import { MONITORING_STATES, STATUSABLE_MODELS, type Status } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -103,7 +98,7 @@ function IpStatusesPage() {
   const query = useQuery({
     queryKey: ["statuses", q],
     queryFn: () =>
-      api<Paginated<Status>>(
+      apiAll<Status>(
         `/api/statuses/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

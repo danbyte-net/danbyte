@@ -5,6 +5,8 @@ import type {
   SiteMapConnection,
   SiteMapDevice,
   SiteMapMarker,
+  SiteMapOutline,
+  SiteMapProviderNetwork,
   SiteMapRegion,
   SiteMapSite,
 } from "@/lib/api"
@@ -47,6 +49,8 @@ export type MapSelected =
   | { kind: "marker"; id: string }
   | { kind: "connection"; id: string }
   | { kind: "cable"; id: string }
+  | { kind: "outline"; id: string }
+  | { kind: "provider_network"; id: string }
 
 /**
  * What the sidebar's eye toggles have switched off, by name/id.
@@ -56,8 +60,14 @@ export type MapSelected =
  * stays hidden too. Sites are the exception - they are the map's top-level
  * objects and few enough to hide one at a time.
  */
-export const MAP_HIDDEN_KEYS = ["roles", "regions", "sites"] as const
-/** Device role names, region names (as the site groups are titled), site ids. */
+export const MAP_HIDDEN_KEYS = [
+  "roles",
+  "regions",
+  "sites",
+  "providers",
+] as const
+/** Device role names, region names (as the site groups are titled), site
+ * ids, provider network ids (#466). */
 export type MapHidden = HiddenSet<(typeof MAP_HIDDEN_KEYS)[number]>
 
 export const NO_HIDDEN: MapHidden = emptyHidden(MAP_HIDDEN_KEYS)
@@ -134,6 +144,18 @@ function checkRank(check: string | null | undefined): number {
   return check === "down" ? 0 : check === "degraded" ? 1 : 2
 }
 
+/** Whether the Objects panel opens with the page. Below md (a phone) it
+ *  starts closed, since it would cover the map; wider screens keep the
+ *  choice stored under `storageKey`. */
+export function objectsStartOpen(storageKey: string): boolean {
+  if (window.matchMedia?.("(max-width: 767px)").matches) return false
+  try {
+    return localStorage.getItem(storageKey) !== "closed"
+  } catch {
+    return true
+  }
+}
+
 export function MapObjectsSidebar({
   sites,
   devices,
@@ -150,6 +172,10 @@ export function MapObjectsSidebar({
   onFocusConnection,
   onPickRoute,
   onFocusRegion,
+  outlines = [],
+  onPickOutline,
+  providerNetworks = [],
+  onClose,
 }: {
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
@@ -170,6 +196,14 @@ export function MapObjectsSidebar({
   onPickRoute: (routeId: string, cableId: string | null) => void
   /** Fit the map to a region's boundary. */
   onFocusRegion: (region: SiteMapRegion) => void
+  /** Building outlines (what the map draws), listed by label. */
+  outlines?: SiteMapOutline[]
+  /** Fit the map to an outline and select it. */
+  onPickOutline?: (outline: SiteMapOutline) => void
+  /** The provider networks the map's circuits meet at (#466). */
+  providerNetworks?: SiteMapProviderNetwork[]
+  /** Closes the panel; below md it is an overlay with a close button. */
+  onClose?: () => void
 }) {
   const typeLabel = useCableTypeLabel()
   const [q, setQ] = useState("")
@@ -206,6 +240,19 @@ export function MapObjectsSidebar({
     match(m.label || m.device?.name || m.type?.name || "")
   )
   const shownRegions = regions.filter((r) => match(r.name))
+  const shownOutlines = outlines
+    .filter(
+      (o) =>
+        match(o.display_label) ||
+        match(o.location?.name ?? "") ||
+        match(o.location?.code ?? "")
+    )
+    .sort((a, b) =>
+      naturalCompare(
+        a.display_label || a.location?.name || "",
+        b.display_label || b.location?.name || ""
+      )
+    )
 
   // Sites fold by region - the same treatment devices get by role.
   const siteGroups = useMemo(() => {
@@ -234,6 +281,9 @@ export function MapObjectsSidebar({
   const shownConnections = connections.filter(
     (c) => match(c.name) || match(c.site_a.name) || match(c.site_z.name)
   )
+  const shownNetworks = providerNetworks
+    .filter((pn) => match(pn.name) || match(pn.provider.name))
+    .sort((a, b) => naturalCompare(a.name, b.name))
   const shownRoutes = routes.filter(
     (r) => match(r.name) || r.cables.some((c) => match(c.label))
   )
@@ -333,7 +383,8 @@ export function MapObjectsSidebar({
       : shownMarkers.length +
         shownConnections.length +
         shownRoutes.length +
-        shownRegions.length)
+        shownRegions.length +
+        shownOutlines.length)
 
   const enterFirst = () => {
     // Enter jumps straight to the first hit.
@@ -363,6 +414,7 @@ export function MapObjectsSidebar({
       statusCounts={statusCounts}
       hiddenCount={hiddenCount(hidden)}
       onShowAll={() => onHiddenChange(NO_HIDDEN)}
+      onClose={onClose}
     >
       {total === 0 && <ObjectsEmpty filtered={!!filter || !!status} />}
 
@@ -549,6 +601,35 @@ export function MapObjectsSidebar({
         </ObjectsSection>
       )}
 
+      {shownOutlines.length > 0 && !status && (
+        <ObjectsSection heading="Outlines">
+          {shownOutlines.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => onPickOutline?.(o)}
+              className={cn(
+                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
+                selected?.kind === "outline" && selected.id === o.id
+                  ? "bg-muted font-medium"
+                  : "hover:bg-muted/60"
+              )}
+            >
+              <ColorBadge
+                name={o.display_label || o.location?.name || "Outline"}
+                color={o.display_color || undefined}
+                className="max-w-44"
+              />
+              {o.location && o.display_label !== o.location.name && (
+                <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                  {o.location.name}
+                </span>
+              )}
+            </button>
+          ))}
+        </ObjectsSection>
+      )}
+
       {shownRoutes.length > 0 && !status && (
         <ObjectsSection heading="Cable routes">
           {shownRoutes.map((r) => (
@@ -597,6 +678,52 @@ export function MapObjectsSidebar({
               ))}
             </FoldableGroup>
           ))}
+        </ObjectsSection>
+      )}
+
+      {shownNetworks.length > 0 && !status && (
+        <ObjectsSection heading="Provider networks">
+          {shownNetworks.map((pn) => {
+            const shown = !hidden.providers.includes(pn.id)
+            return (
+              <ObjectRow
+                key={pn.id}
+                onClick={() => {
+                  onFocus(pn.latitude, pn.longitude)
+                  onSelect({ kind: "provider_network", id: pn.id })
+                }}
+                selected={
+                  selected?.kind === "provider_network" && selected.id === pn.id
+                }
+                trailing={
+                  <>
+                    <VisibilityToggle
+                      vis={{
+                        shown,
+                        onChange: (v) => toggle("providers", pn.id, v),
+                        what: pn.name,
+                      }}
+                    />
+                    <span className="num text-[11px] text-muted-foreground/70">
+                      {pn.circuits.length}
+                    </span>
+                  </>
+                }
+              >
+                <span
+                  className={cn(
+                    "min-w-0 truncate",
+                    !shown && "text-muted-foreground/60"
+                  )}
+                >
+                  {pn.name}
+                </span>
+                <span className="min-w-0 truncate text-[10px] text-muted-foreground/70">
+                  {pn.provider.name}
+                </span>
+              </ObjectRow>
+            )
+          })}
         </ObjectsSection>
       )}
 

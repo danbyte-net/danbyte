@@ -1,10 +1,15 @@
 import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import {
+  SoftwareVersionSourceText,
+  SoftwareVersionText,
+} from "@/components/cells/software-version-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { SpecSheetButton } from "@/components/spec-sheet-button"
+import { ObjectReportButton } from "@/components/object-report"
 import { ShowOnSiteMap } from "@/components/show-on-site-map"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -25,6 +30,7 @@ import { api, DEFAULT_DEVICE_FIELD_VISIBILITY } from "@/lib/api"
 import { PROFILE_LABELS, fmtMm } from "@/lib/din-geometry"
 import type {
   Device,
+  Model3DEffective,
   DeviceType,
   DeviceFieldVisibility,
   Interface,
@@ -47,10 +53,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { TagList } from "@/components/cells/tag-list"
 import { SiteCell } from "@/components/cells/site-cell"
+import { RoomCell } from "@/components/cells/room-cell"
 import {
   LifecycleBar,
   LifecycleFlag,
-  lifecyclePct,
+  hasLifetime,
 } from "@/components/cells/lifecycle-cell"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
@@ -62,7 +69,16 @@ import {
   useDeviceMacs,
 } from "@/lib/mac-tracking"
 import type { UplinkMode } from "@/lib/mac-tracking"
+import { MACSEC_CIPHER_OPTIONS } from "@/lib/macsec"
 import { KvCard, mono, dash } from "@/components/kv-card"
+import { Model3DCard } from "@/components/model-3d-card"
+import { ModelViewerFrame } from "@/components/model-viewer-card"
+import { usePreviewKind } from "@/lib/preview-kind"
+import { DeviceProfilesCard } from "@/components/device-profiles-card"
+import {
+  SoftwareSummaryCard,
+  useSoftwareSummary,
+} from "@/components/software-summary-card"
 import {
   PortUtilizationCard,
   type PortKind,
@@ -87,7 +103,7 @@ import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceSyncTypeDialog } from "@/components/device-sync-type-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { ViolationBadge } from "@/components/compliance/violation-badge"
+import { DeviceViolationBadge } from "@/components/compliance/violation-badge"
 import {
   DeviceDriftBadge,
   DriftDot,
@@ -104,6 +120,8 @@ import { DeviceDriftPanel } from "@/components/device-drift-panel"
 import { DeviceInventoryPanel } from "@/components/device-inventory-panel"
 import { DeviceHardwareHealth } from "@/components/device-hardware-health"
 import { useDateFormat } from "@/lib/datetime"
+import { choiceLabel, useDcimChoices } from "@/lib/use-dcim-choices"
+import { CoolingMethodText } from "@/components/cells/cooling-cell"
 import {
   CoverageSummary,
   DeviceCoverageCard,
@@ -139,6 +157,8 @@ import {
 } from "@/components/vc-stack-interfaces"
 import { DeviceConsolePane } from "@/components/device-console-pane"
 import { DevicePowerPane } from "@/components/device-power-pane"
+import { DeviceCoolingPane } from "@/components/device-cooling-pane"
+import { DeviceCoolingPathCard } from "@/components/device-cooling-path-card"
 import { portTint } from "@/components/cable-status-control"
 import {
   buildInterfaceColumns,
@@ -149,6 +169,7 @@ import {
 } from "@/components/columns/interface-columns"
 import { Loading } from "@/components/loading"
 import { apiErrorToast } from "@/lib/api-toast"
+import { listRowFromCache } from "@/lib/list-row-cache"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceMiniTopology } from "@/components/device-mini-topology"
 import { MiniMap } from "@/components/site-map/mini-map"
@@ -169,12 +190,14 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { DeviceConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
+import { InstalledSoftwarePane } from "@/components/installed-software-pane"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
-  DeviceMonitoring,
-  DeviceMonitoringBadge,
-} from "@/components/monitoring/device-monitoring"
+  MonitoringBar,
+  MonitoringHeaderBadge,
+} from "@/components/monitoring/monitoring-bar"
 import { AssignIpDialog } from "@/components/assign-ip-dialog"
 import { AssignedIpsPane } from "@/components/assigned-ips-pane"
 import type { AssignIpTarget } from "@/components/assign-ip-dialog"
@@ -184,7 +207,14 @@ import { Switch } from "@/components/ui/switch"
 import { DeviceConnectMenu } from "@/components/device-connect-menu"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import {
+  PrtgSensorsTab,
+  linkedSensorCount,
+  usePrtgLinks,
+} from "@/components/prtg/sensors-tab"
+import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import { naturalCompare } from "@/lib/natural-sort"
+import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
 
 const DEVICE_TABS = [
   "overview",
@@ -193,8 +223,11 @@ const DEVICE_TABS = [
   "images",
   "photo-ports",
   "monitoring",
+  "sensors",
   "snmp",
   "services",
+  "software",
+  "flows",
   "routing",
   "certificates",
   "contacts",
@@ -213,6 +246,7 @@ const DEVICE_COMPONENT_SUBS = [
   "interfaces",
   "console",
   "power",
+  "cooling",
   "front-ports",
   "rear-ports",
   "hardware",
@@ -226,7 +260,13 @@ export const Route = createFileRoute("/devices/$id")({
   // search and the page falls back to its default instead of an empty pane.
   validateSearch: (
     s: Record<string, unknown>
-  ): { tab?: DeviceTab; sub?: DeviceComponentSub; cabled?: CableState } => ({
+  ): {
+    tab?: DeviceTab
+    sub?: DeviceComponentSub
+    cabled?: CableState
+    sensor?: string
+    state?: string
+  } => ({
     ...(typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
       ? { tab: s.tab as DeviceTab }
       : {}),
@@ -239,24 +279,32 @@ export const Route = createFileRoute("/devices/$id")({
     CABLE_STATES.includes(s.cabled as CableState)
       ? { cabled: s.cabled as CableState }
       : {}),
+    // A PRTG sensor whose panel the Sensors tab opens.
+    ...(typeof s.sensor === "string" ? { sensor: s.sensor } : {}),
+    // The monitoring bar's filter: `problem` or one state, on the
+    // Monitoring tab's addresses and the Sensors tab's cards.
+    ...(typeof s.state === "string" && s.state ? { state: s.state } : {}),
   }),
   component: DeviceDetail,
 })
 
 function DeviceDetail() {
   const { id } = Route.useParams()
+  const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["device", id],
     queryFn: () => api<Device>(`/api/devices/${id}/`),
+    // Opened from the device list: its row draws the page at once, and the
+    // detail read fills in the tab counts and the stack when it lands.
+    placeholderData: () => listRowFromCache<Device>(qc, ["devices"], id),
   })
-  if (q.isLoading) return <Loading />
+  if (q.isPending) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
         <QueryError error={q.error} />
       </div>
     )
-  if (!q.data) return null
   return <Body device={q.data} />
 }
 
@@ -274,7 +322,39 @@ function Body({ device: d }: { device: Device }) {
   // Shared with the header badge and the drift inbox - one request, and the
   // tab markers can never disagree with what the inbox lists.
   const deviceDrift = useDeviceDrift(d.id)
+  // The Overview's Software card query, live after an edit on the tab; the
+  // payload's figure stands in until it lands.
+  const software = useSoftwareSummary({ kind: "device", id: d.id })
   const goBack = useCallback(() => nav({ to: "/devices" }), [nav])
+  // PRTG's sensors get a tab once PRTG has a device for this one; the links
+  // come back empty while the integration is off.
+  const prtgLinks = usePrtgLinks({ device: d.id })
+  // With the integration on, the tab also says what PRTG will do: planned,
+  // excluded, or what is missing.
+  const prtgOn = usePrtgEnabled()
+  const hasPrtg = (prtgLinks.data ?? []).length > 0 || prtgOn
+  const search = Route.useSearch()
+  const openSensor = search.sensor
+  const selectSensor = useCallback(
+    (sensor: string | null) =>
+      nav({
+        to: "/devices/$id",
+        params: { id: d.id },
+        search: { ...search, sensor: sensor ?? undefined },
+        replace: true,
+      }),
+    [nav, search, d.id]
+  )
+  const setStateFilter = useCallback(
+    (state: string | null) =>
+      nav({
+        to: "/devices/$id",
+        params: { id: d.id },
+        search: { ...search, state: state ?? undefined },
+        replace: true,
+      }),
+    [nav, search, d.id]
+  )
 
   return (
     <DetailShell
@@ -302,6 +382,7 @@ function Body({ device: d }: { device: Device }) {
             roleId={d.role?.id}
           />
           <SpecSheetButton kind="device" id={d.id} />
+          <ObjectReportButton kind="device" id={d.id} name={d.name} />
           {canEdit && d.device_type && (
             <Button
               variant="outline"
@@ -344,7 +425,7 @@ function Body({ device: d }: { device: Device }) {
           mono
           badges={
             <>
-              <ViolationBadge objectId={d.id} objectType="device" prominent />
+              <DeviceViolationBadge deviceId={d.id} />
               <DeviceDriftBadge deviceId={d.id} prominent />
               {/* The planned-change pill renders in the DetailShell header,
                   route-derived - same as every other detail page. */}
@@ -353,7 +434,7 @@ function Body({ device: d }: { device: Device }) {
           subtitle={
             <>
               <StatusBadge status={d.status} />
-              <DeviceMonitoringBadge deviceId={d.id} />
+              <MonitoringHeaderBadge target={{ device: d.id }} />
               {d.virtual_chassis && (
                 <Badge variant="secondary" asChild>
                   <Link
@@ -390,6 +471,7 @@ function Body({ device: d }: { device: Device }) {
               (d.hardware_count || 0) +
               (d.console_count || 0) +
               (d.power_count || 0) +
+              (d.cooling_count || 0) +
               (d.front_port_count || 0) +
               (d.rear_port_count || 0) || undefined,
         },
@@ -399,6 +481,15 @@ function Body({ device: d }: { device: Device }) {
           ? [{ value: "photo-ports", label: "Photo ports" }]
           : []),
         { value: "monitoring", label: "Monitoring" },
+        ...(hasPrtg
+          ? [
+              {
+                value: "sensors",
+                label: "Sensors",
+                count: linkedSensorCount(prtgLinks.data) || undefined,
+              },
+            ]
+          : []),
         // The value stays "snmp" so every ?tab=snmp link keeps landing here;
         // the label says what the tab holds now that checks have their own.
         {
@@ -415,6 +506,14 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
+        {
+          value: "software",
+          label: "Software",
+          count: (software.data?.count ?? d.install_count) || undefined,
+        },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows" }]
+          : []),
         {
           value: "routing",
           label: "Routing",
@@ -456,8 +555,22 @@ function Body({ device: d }: { device: Device }) {
       <DetailTab value="monitoring">
         <div className="space-y-6">
           <ObjectSlaPanel objectType="api.device" objectId={d.id} />
-          <DeviceChecksPanel deviceId={d.id} />
+          <DeviceChecksPanel
+            deviceId={d.id}
+            prtgSync={d.prtg_sync}
+            state={search.state}
+            onState={setStateFilter}
+          />
         </div>
+      </DetailTab>
+      <DetailTab value="sensors">
+        <PrtgSensorsTab
+          parent={{ device: d.id }}
+          selected={openSensor}
+          onSelect={selectSensor}
+          state={search.state}
+          onState={setStateFilter}
+        />
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">
@@ -489,17 +602,34 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="config">
         <div className="space-y-6">
+          <DeviceConfigRender
+            deviceId={d.id}
+            roleId={d.role?.id}
+            bound={d.config_template}
+          />
           <DeviceConfigBackups deviceId={d.id} />
           <ConfigContextPanel endpoint="devices" id={d.id} />
           <DeviceInventoryPanel deviceId={d.id} />
-          <DeviceConfigRender deviceId={d.id} bound={d.config_template} />
-          <DeviceDeployPanel deviceId={d.id} />
+          <DeviceDeployPanel
+            deviceId={d.id}
+            deviceName={d.name}
+            roleId={d.role?.id}
+          />
           <DeviceDriftPanel deviceId={d.id} />
         </div>
       </DetailTab>
       <DetailTab value="ips">
         <AssignedIpsPane
-          scope={{ kind: "device", deviceId: d.id, deviceName: d.name }}
+          scope={{
+            kind: "device",
+            deviceId: d.id,
+            deviceName: d.name,
+            slots: {
+              primary: d.primary_ip?.id,
+              secondary: d.secondary_ip?.id,
+              oob: d.oob_ip?.id,
+            },
+          }}
           canAddIp={canDo("ipaddress", "add")}
           canAssignIp={canDo("ipaddress", "change")}
           canChangeDevice={canDo("device", "change")}
@@ -526,6 +656,12 @@ function Body({ device: d }: { device: Device }) {
           parent={{ kind: "device", id: d.id }}
           parentHasPrimaryIp={!!d.primary_ip}
         />
+      </DetailTab>
+      <DetailTab value="software">
+        <InstalledSoftwarePane parent={{ kind: "device", id: d.id }} />
+      </DetailTab>
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "device", id: d.id }} />
       </DetailTab>
       <DetailTab value="routing">
         <RoutingPanel owner={{ kind: "device", id: d.id, name: d.name }} />
@@ -660,6 +796,11 @@ function DeviceComponents({
                 count: d.power_count || undefined,
               },
               {
+                value: "cooling",
+                label: "Cooling",
+                count: d.cooling_count || undefined,
+              },
+              {
                 value: "front-ports",
                 label: "Front ports",
                 count: d.front_port_count || undefined,
@@ -728,6 +869,7 @@ function DeviceComponents({
             )}
             {sub === "console" && <DeviceConsolePane deviceId={d.id} />}
             {sub === "power" && <DevicePowerPane deviceId={d.id} />}
+            {sub === "cooling" && <DeviceCoolingPane deviceId={d.id} />}
             {sub === "front-ports" && (
               <DeviceFrontPortsPane deviceId={d.id} initialCabled={cabled} />
             )}
@@ -756,7 +898,7 @@ function DeviceOverview({
   device: Device
   onTab: (tab: "ips" | "components" | "routing") => void
 }) {
-  const { humanIds } = useMe()
+  const { humanIds, canDo } = useMe()
   const nav = useNavigate({ from: "/devices/$id" })
   // Hovered utilization-card state - lights matching ports on the panel.
   const [portGlow, setPortGlow] = useState<CableState | null>(null)
@@ -785,6 +927,7 @@ function DeviceOverview({
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
   const { formatDate } = useDateFormat()
+  const choices = useDcimChoices()
 
   // How many VMs run on this device (a hypervisor host). One cheap count -
   // page_size=1 and read the total.
@@ -820,18 +963,43 @@ function DeviceOverview({
         <span className="inline-flex items-center gap-2">
           <PlatformCell platform={d.platform} />
           <LifecycleFlag state={d.platform.lifecycle_state} />
+          <SoftwareVersionText
+            version={d.software_version}
+            target={d.platform.target_version}
+          />
+          <SoftwareVersionSourceText
+            source={d.software_version_source}
+            seenAt={d.software_version_seen_at}
+          />
         </span>
       ) : d.effective_platform ? (
         // No platform of its own - inherited from the device type.
         <span className="inline-flex items-center gap-2">
           {d.effective_platform.name}
           <span className="text-[11px] text-muted-foreground">(from type)</span>
+          <SoftwareVersionText
+            version={d.software_version}
+            target={d.effective_platform.target_version}
+          />
+          <SoftwareVersionSourceText
+            source={d.software_version_source}
+            seenAt={d.software_version_seen_at}
+          />
+        </span>
+      ) : d.software_version ? (
+        <span className="inline-flex items-center gap-2">
+          <SoftwareVersionText version={d.software_version} />
+          <SoftwareVersionSourceText
+            source={d.software_version_source}
+            seenAt={d.software_version_seen_at}
+          />
         </span>
       ) : (
         dash
       ),
     },
-    ...(d.platform && lifecyclePct(d.platform) !== null
+    // Its effective dates: entered, else the end-of-life mapping (#436).
+    ...(hasLifetime(d.platform)
       ? [
           {
             label: "OS support",
@@ -905,7 +1073,7 @@ function DeviceOverview({
         dash
       ),
     },
-    ...(d.device_type && lifecyclePct(d.device_type) !== null
+    ...(hasLifetime(d.device_type)
       ? [
           {
             label: "Hardware support",
@@ -916,9 +1084,7 @@ function DeviceOverview({
     // Support & warranty coverage (#421), next to the vendor lifecycle.
     {
       label: "Support coverage",
-      value: (
-        <CoverageSummary status={d.coverage?.status} end={d.coverage?.end} />
-      ),
+      value: <CoverageSummary deviceId={d.id} status={d.coverage?.status} />,
     },
     {
       label: "Serial number",
@@ -939,14 +1105,72 @@ function DeviceOverview({
       ),
     },
     { label: "Height", value: <span className="num">{d.u_height} U</span> },
+    // The body size, W × H × D: its own, else its type's - what floor
+    // plans and the 3D room size it by.
+    ...(d.effective_width_mm != null ||
+    d.effective_height_mm != null ||
+    d.effective_depth_mm != null
+      ? [
+          {
+            label: "Size",
+            value: (
+              <span className="inline-flex items-center gap-2">
+                <span className="num">
+                  {[
+                    d.effective_width_mm,
+                    d.effective_height_mm,
+                    d.effective_depth_mm,
+                  ]
+                    .map((v) => (v != null ? fmtMm(v) : "–"))
+                    .join(" × ")}{" "}
+                  mm
+                </span>
+                {d.width_mm == null &&
+                  d.height_mm == null &&
+                  d.depth_mm == null && (
+                    <span className="text-[11px] text-muted-foreground">
+                      (from type)
+                    </span>
+                  )}
+              </span>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
     ...(visibility.airflow
       ? [
           {
             label: "Airflow",
-            value: d.airflow ? (
-              <span className="capitalize">{d.airflow.replace(/-/g, " ")}</span>
+            value: d.effective_airflow ? (
+              <span className="inline-flex items-center gap-2">
+                {choiceLabel(choices.airflow, d.effective_airflow)}
+                {/* No airflow of its own - inherited from the device type. */}
+                {!d.airflow && (
+                  <span className="text-[11px] text-muted-foreground">
+                    (from type)
+                  </span>
+                )}
+              </span>
             ) : (
               dash
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
+    ...(visibility.cooling_method && d.effective_cooling_method
+      ? [
+          {
+            label: "Cooling",
+            value: (
+              <span className="inline-flex items-center gap-2">
+                <CoolingMethodText value={d.effective_cooling_method} />
+                {/* Its own, else its type's - whose blank reads as air (#434). */}
+                {!d.cooling_method && (
+                  <span className="text-[11px] text-muted-foreground">
+                    (from type)
+                  </span>
+                )}
+              </span>
             ),
           } satisfies KvRow,
         ]
@@ -973,6 +1197,11 @@ function DeviceOverview({
             ) : (
               dash
             ),
+          } satisfies KvRow,
+          {
+            label: "Room",
+            value: <RoomCell room={d.room} />,
+            copy: d.room?.name || undefined,
           } satisfies KvRow,
         ]
       : []),
@@ -1032,6 +1261,23 @@ function DeviceOverview({
                 className="link num"
               >
                 {hostedVms} hosted
+              </Link>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
+    // The VM this device runs as - a virtual router modelled as a device.
+    ...(d.backing_vm
+      ? [
+          {
+            label: "Backing VM",
+            value: (
+              <Link
+                to="/virtual-machines/$id"
+                params={{ id: d.backing_vm.id }}
+                className="link"
+              >
+                {d.backing_vm.name}
               </Link>
             ),
           } satisfies KvRow,
@@ -1112,9 +1358,11 @@ function DeviceOverview({
   // photo. When it does, the overview is two explicit columns so the Panel can
   // sit at the top of the second column (half-width - readable) rather than
   // wherever a balanced masonry would drop it.
-  const showPanel =
-    d.interface_count > 0 ||
-    !!(d.device_type?.front_image || d.device_type?.rear_image)
+  const photo = !!(d.device_type?.front_image || d.device_type?.rear_image)
+  // The 3D model is one of the Panel card's views (its default when there is
+  // no photo), so the overview stays two columns.
+  const model = d.model_3d_effective ?? null
+  const showPanel = d.interface_count > 0 || photo || !!model
 
   const locationMap = d.latitude !== null && d.longitude !== null && (
     <div className="rounded-lg border border-border bg-card">
@@ -1135,13 +1383,44 @@ function DeviceOverview({
     </div>
   )
 
+  // All clear, the monitoring card is one line in the grid, beside the
+  // first attribute card.
+  const monitoringCompact = (
+    <MonitoringBar
+      target={{ device: d.id }}
+      notify={{ device: d.id }}
+      slot="compact"
+    />
+  )
+
   const attributeCards = (
     <>
       <KvCard title="Device" rows={deviceRows} />
       <KvCard title="Management" rows={managementRows} />
       <KvCard title="Hardware" rows={hardwareRows} />
-      <DeviceCoverageCard deviceId={d.id} />
+      <DeviceCoverageCard
+        deviceId={d.id}
+        expected={(d.coverage?.contracts ?? 0) > 0}
+      />
+      <SoftwareSummaryCard parent={{ kind: "device", id: d.id }} />
+      <DeviceProfilesCard host={{ kind: "device", id: d.id }} />
+      {(d.cooling_count ?? 0) > 0 && <DeviceCoolingPathCard deviceId={d.id} />}
       <KvCard title="Location" rows={locationRows} />
+      <Model3DCard
+        kind="devices"
+        id={d.id}
+        own={d.model_3d ?? null}
+        inherited={
+          d.model_3d_effective?.source === "type" ? d.model_3d_effective : null
+        }
+        fit={d.model_3d_fit ?? "auto"}
+        up={d.model_3d_up ?? "y"}
+        front={d.model_3d_front ?? "+z"}
+        canEdit={objCan(d, "change", canDo("device", "change"))}
+        queryKey={["device", d.id]}
+        typeId={d.device_type?.id ?? null}
+        ownImagePorts={d.image_ports ?? null}
+      />
       <CustomFieldValues
         model="device"
         values={d.custom_fields}
@@ -1152,20 +1431,58 @@ function DeviceOverview({
 
   return (
     <div className="space-y-6">
-      {/* Monitoring roll-up first, mirroring the IP detail page. */}
-      <DeviceMonitoring deviceId={d.id} />
+      {/* Monitoring first: with problems, full width above the cards. */}
+      <MonitoringBar
+        target={{ device: d.id }}
+        notify={{ device: d.id }}
+        slot="banner"
+      />
+      <PinnedSensorsCard
+        parent={{ device: d.id }}
+        sensorLink={(sensor, children) => (
+          <Link
+            to="/devices/$id"
+            params={{ id: d.id }}
+            search={{ tab: "sensors", sensor }}
+            className="block h-full"
+          >
+            {children}
+          </Link>
+        )}
+      />
 
-      {showPanel ? (
-        // Two columns: attributes left, the Panel at the top of the right
-        // column (then the map / topology / rack under it).
-        <div className="grid items-start gap-6 lg:grid-cols-2">
-          <div className="min-w-0 space-y-6">{attributeCards}</div>
-          <div className="min-w-0 space-y-6">
-            <DeviceFrontPanel device={d} glow={portGlow} />
+      <>
+        {showPanel ? (
+          // Two columns: attributes left, the Panel at the top of the right
+          // column (then the map / topology / rack under it).
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <div className="min-w-0 space-y-6">{attributeCards}</div>
+            <div className="min-w-0 space-y-6">
+              {monitoringCompact}
+              <DeviceFrontPanel device={d} glow={portGlow} model={model} />
+              <PortUtilizationCard
+                deviceId={d.id}
+                onHoverState={setPortGlow}
+                onPick={openPorts}
+                expected={d.interface_count > 0}
+              />
+              {locationMap}
+              <DeviceMiniTopology deviceId={d.id} />
+              <DeviceTunnelsCard deviceId={d.id} />
+              <DeviceRackCard device={d} />
+              <DeviceCabinetCard device={d} />
+            </div>
+          </div>
+        ) : (
+          // No panel - the original auto-balanced masonry.
+          <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
+            {monitoringCompact}
+            {attributeCards}
             <PortUtilizationCard
               deviceId={d.id}
               onHoverState={setPortGlow}
               onPick={openPorts}
+              expected={d.interface_count > 0}
             />
             {locationMap}
             <DeviceMiniTopology deviceId={d.id} />
@@ -1173,23 +1490,8 @@ function DeviceOverview({
             <DeviceRackCard device={d} />
             <DeviceCabinetCard device={d} />
           </div>
-        </div>
-      ) : (
-        // No panel - the original auto-balanced masonry.
-        <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
-          {attributeCards}
-          <PortUtilizationCard
-            deviceId={d.id}
-            onHoverState={setPortGlow}
-            onPick={openPorts}
-          />
-          {locationMap}
-          <DeviceMiniTopology deviceId={d.id} />
-          <DeviceTunnelsCard deviceId={d.id} />
-          <DeviceRackCard device={d} />
-          <DeviceCabinetCard device={d} />
-        </div>
-      )}
+        )}
+      </>
     </div>
   )
 }
@@ -1281,18 +1583,24 @@ function DeviceRackCard({ device }: { device: Device }) {
     staleTime: 60_000,
   })
   if (!rackId || device.position == null) return null
+  const title = (
+    <span>
+      Rack ·{" "}
+      <Link to="/racks/$id" params={{ id: rackId }} className="link">
+        {device.rack!.name}
+      </Link>
+    </span>
+  )
+  // Known from the device: the card holds its place while the rack loads.
+  if (q.isPending)
+    return (
+      <Section title={title} boxed>
+        <Loading />
+      </Section>
+    )
   if (!q.data) return null
   return (
-    <Section
-      title={
-        <span>
-          Rack ·{" "}
-          <Link to="/racks/$id" params={{ id: rackId }} className="link">
-            {device.rack!.name}
-          </Link>
-        </span>
-      }
-    >
+    <Section title={title}>
       <div className="flex gap-6 overflow-x-auto pb-1">
         {(["front", "rear"] as const).map((face) => (
           <div key={face} className="flex flex-col items-center gap-1.5">
@@ -1317,15 +1625,20 @@ function DeviceRackCard({ device }: { device: Device }) {
 /** The device drawn as hardware - its ports laid out at mm-true scale,
  * colored by state/speed. Uses the device type's saved faceplate layout when
  * one exists (with a Front/Rear toggle when the layout has a rear side);
- * hidden when the device has no physical interfaces. */
-type PanelView = "photo" | "rendered" | "bare"
+ * hidden when the device has no physical interfaces. Beside a photo, the
+ * device's 3D model is its "3D" view; which leads follows `previewKind`
+ * (the photo, unless the reader last picked 3D). */
+type PanelView = "photo" | "rendered" | "bare" | "model"
 
 function DeviceFrontPanel({
   device,
   glow,
+  model = null,
 }: {
   device: Device
   glow?: CableState | null
+  /** The model to offer as the "3D" view; null: none. */
+  model?: Model3DEffective | null
 }) {
   const deviceId = device.id
   const dt = device.device_type
@@ -1333,7 +1646,17 @@ function DeviceFrontPanel({
   const rearImg = dt?.rear_image ?? ""
   const hasTypeImage = !!frontImg || !!rearImg
   const [side, setSide] = useState<"front" | "rear">("front")
-  const [view, setView] = useState<PanelView>("photo")
+  const [view, setFaceView] = useState<PanelView>("photo")
+  const [lead, setLead] = usePreviewKind("device", {
+    photo: hasTypeImage,
+    model,
+    // The Rendered schematic is a view beside the model too.
+    other: device.interface_count > 0,
+  })
+  const setView = (v: PanelView) => {
+    setLead(v === "model" ? "model" : "photo")
+    if (v !== "model") setFaceView(v)
+  }
   const { faceplatePortLabels } = useMe()
   const portLabelsShown = usePortLabelsShown()
   const q = useQuery({
@@ -1355,8 +1678,16 @@ function DeviceFrontPanel({
     () => (q.data?.results ?? []).filter((i) => !i.virtual),
     [q.data]
   )
-  // Nothing to draw at all - no ports and no type photo.
-  if (physical.length === 0 && !hasTypeImage) return null
+  // The device says it has ports (or its type a photo): the panel holds its
+  // place while they load instead of popping in and pushing the column down.
+  if (q.isPending)
+    return device.interface_count > 0 || hasTypeImage || model ? (
+      <Section title="Panel" boxed>
+        <Loading className="min-h-32" />
+      </Section>
+    ) : null
+  // Nothing to draw at all - no ports, no type photo, no model.
+  if (physical.length === 0 && !hasTypeImage && !model) return null
 
   // The views this device actually offers: Photo (image + live port markers),
   // Rendered (mm-true schematic), Bare (the plain rack-face photo). Chosen view
@@ -1367,11 +1698,20 @@ function DeviceFrontPanel({
       ? [{ value: "rendered" as const, label: "Rendered" }]
       : []),
     ...(hasTypeImage ? [{ value: "bare" as const, label: "Bare" }] : []),
+    ...(model ? [{ value: "model" as const, label: "3D" }] : []),
   ]
   const effView: PanelView =
-    views.find((v) => v.value === view)?.value ?? views[0]?.value ?? "rendered"
+    model && lead === "model"
+      ? "model"
+      : (views.find((v) => v.value === view && v.value !== "model")?.value ??
+        views[0]?.value ??
+        "rendered")
   const hasRear =
-    effView === "rendered" ? (savedDoc?.rear?.length ?? 0) > 0 : !!rearImg
+    effView === "model"
+      ? false
+      : effView === "rendered"
+        ? (savedDoc?.rear?.length ?? 0) > 0
+        : !!rearImg
   const showRear = side === "rear"
   const bareSrc = showRear ? rearImg : frontImg
 
@@ -1397,7 +1737,7 @@ function DeviceFrontPanel({
               ]}
             />
           )}
-          {faceplatePortLabels && (
+          {faceplatePortLabels && effView !== "model" && (
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
               Labels
               <Switch
@@ -1410,50 +1750,59 @@ function DeviceFrontPanel({
         </div>
       }
     >
-      <div
-        className="fp-glow rounded-lg border border-border bg-card p-4 lg:p-5"
-        data-glow={glow ?? undefined}
-      >
-        {showRear && !hasRear ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No rear panel defined for this device type.
-          </p>
-        ) : effView === "bare" ? (
-          bareSrc ? (
-            <div className="flex aspect-[6/1] w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-              <img
-                src={bareSrc}
-                alt={`${side} of ${dt?.name ?? "device"}`}
-                className="h-full w-full object-contain"
-              />
-            </div>
-          ) : (
+      {effView === "model" && model ? (
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <ModelViewerFrame
+            source={{ model, sizeMm: dt, deviceId }}
+            note={model.source === "type" ? "From type" : "Own model"}
+          />
+        </div>
+      ) : (
+        <div
+          className="fp-glow rounded-lg border border-border bg-card p-4 lg:p-5"
+          data-glow={glow ?? undefined}
+        >
+          {showRear && !hasRear ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              No {side} image for this device type.
+              No rear panel defined for this device type.
             </p>
-          )
-        ) : (
-          <>
-            <FaceplateView
-              mode={effView === "photo" ? "image" : "rendered"}
-              deviceTypeId={dt?.id}
-              deviceId={deviceId}
-              interfaces={physical}
-              vcPosition={device.vc_position}
-              side={side}
-              fit="container"
-              observed={observed}
-              onLegend={onLegend}
-              portLabels={device.port_labels}
-            />
-            <FaceplateLegend
-              className="mt-2"
-              observed={!!observed}
-              content={legend}
-            />
-          </>
-        )}
-      </div>
+          ) : effView === "bare" ? (
+            bareSrc ? (
+              <div className="flex aspect-[6/1] w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
+                <img
+                  src={bareSrc}
+                  alt={`${side} of ${dt?.name ?? "device"}`}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No {side} image for this device type.
+              </p>
+            )
+          ) : (
+            <>
+              <FaceplateView
+                mode={effView === "photo" ? "image" : "rendered"}
+                deviceTypeId={dt?.id}
+                deviceId={deviceId}
+                interfaces={physical}
+                vcPosition={device.vc_position}
+                side={side}
+                fit="container"
+                observed={observed}
+                onLegend={onLegend}
+                portLabels={device.port_labels}
+              />
+              <FaceplateLegend
+                className="mt-2"
+                observed={!!observed}
+                content={legend}
+              />
+            </>
+          )}
+        </div>
+      )}
     </Section>
   )
 }
@@ -1816,6 +2165,25 @@ function DeviceInterfacesPane({
             kind: "options",
             options: UPLINK_OPTIONS,
             expand: (v) => uplinkFields(v as UplinkMode),
+          },
+          { key: "macsec_enabled", label: "MACsec", kind: "bool" },
+          {
+            key: "macsec_cipher",
+            label: "MACsec cipher",
+            kind: "options",
+            options: MACSEC_CIPHER_OPTIONS,
+          },
+          {
+            key: "macsec_keychain_id",
+            label: "MACsec keychain",
+            kind: "object",
+            object_model: "routingkeychain",
+            endpoint: "/api/routing/keychains/",
+          },
+          {
+            key: "macsec_replay_window",
+            label: "MACsec replay window",
+            kind: "int",
           },
           { key: "description", label: "Description", kind: "text" },
         ]}

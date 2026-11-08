@@ -50,11 +50,13 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import type { TopoGroupData } from "./group-node"
 import {
   BGP_SESSIONS,
+  CIRCUITS,
   DISCOVERED,
   NO_LOCATION,
   NO_ROLE,
   NO_SITE,
   NO_TOPO_HIDDEN,
+  PROVIDER_NETWORKS,
   UNTYPED,
   edgeHidden,
   familyLabel,
@@ -67,6 +69,7 @@ import { typeColor } from "./topology-canvas"
 import { ZONE_COLORS } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { isRow, isSide } from "./diagram/bands"
+import { isSiteCircuit } from "./edge-style"
 import { bandLook } from "./diagram/band-node"
 import { naturalCompare } from "@/lib/natural-sort"
 
@@ -209,6 +212,27 @@ export function TopologyObjectsSidebar({
     .filter((n) => n.type === "group")
     .filter((n) => matchNode(n.data))
     .sort((a, b) => byName(a.data, b.data))
+  // The provider networks the map's circuits meet at (#466).
+  const networkRows = graph.nodes
+    .filter((n) => n.type === "provider_network")
+    .filter((n) => matchNode(n.data))
+    .sort((a, b) => byName(a.data, b.data))
+  // The circuits between two sites, drawn device to device.
+  const circuitRows = graph.edges
+    .filter((e) => e.type === "circuit" && isSiteCircuit(e.data))
+    .filter(
+      (e) =>
+        !filter ||
+        (e.data?.circuit?.cid ?? "").toLowerCase().includes(filter) ||
+        (e.data?.circuit?.provider.name ?? "").toLowerCase().includes(filter)
+    )
+    .sort((a, b) =>
+      (a.data?.circuit?.cid ?? "").localeCompare(
+        b.data?.circuit?.cid ?? "",
+        undefined,
+        { numeric: true }
+      )
+    )
 
   const deviceGroups = (() => {
     const map = new Map<
@@ -582,6 +606,95 @@ export function TopologyObjectsSidebar({
               />
             </FoldableGroup>
           ))}
+        </ObjectsSection>
+      )}
+
+      {networkRows.length > 0 && !status && (
+        <ObjectsSection heading="Provider networks">
+          <FoldableGroup
+            name={PROVIDER_NETWORKS}
+            count={networkRows.length}
+            storageId={FOLDS}
+            visibility={{
+              shown: !hidden.kinds.includes(PROVIDER_NETWORKS),
+              onChange: (v) => toggle("kinds", PROVIDER_NETWORKS, v),
+              what: PROVIDER_NETWORKS,
+            }}
+          >
+            {networkRows.map((n) => (
+              <ObjectRow
+                key={n.id}
+                onClick={() => onPickNode(n)}
+                className={cn("pl-6", !shown(n) && "text-muted-foreground/60")}
+                trailing={
+                  <>
+                    <VisibilityToggle
+                      vis={{
+                        shown: !hidden.devices.includes(n.id),
+                        onChange: (v) => toggle("devices", n.id, v),
+                        what: n.data.name,
+                      }}
+                    />
+                    <span className="num text-[11px] text-muted-foreground/70">
+                      {n.data.circuit_count ?? 0}
+                    </span>
+                  </>
+                }
+              >
+                <span className="min-w-0 truncate">{n.data.name}</span>
+                {n.data.provider && (
+                  <span className="min-w-0 truncate text-[10px] text-muted-foreground/70">
+                    {n.data.provider.name}
+                  </span>
+                )}
+              </ObjectRow>
+            ))}
+          </FoldableGroup>
+        </ObjectsSection>
+      )}
+
+      {circuitRows.length > 0 && !status && (
+        <ObjectsSection heading="Circuits">
+          <FoldableGroup
+            name={CIRCUITS}
+            count={circuitRows.length}
+            storageId={FOLDS}
+            visibility={{
+              shown: !hidden.kinds.includes(CIRCUITS),
+              onChange: (v) => toggle("kinds", CIRCUITS, v),
+              what: CIRCUITS,
+            }}
+          >
+            {circuitRows.map((e) => (
+              <ObjectRow
+                key={e.id}
+                onClick={() => onPickEdge(e)}
+                selected={selectedEdgeId === e.id}
+                className={cn(
+                  "pl-6 text-[12px]",
+                  edgeDim(e) && "text-muted-foreground/60"
+                )}
+                trailing={
+                  <VisibilityToggle
+                    vis={{
+                      shown: !hidden.edges.includes(e.id),
+                      onChange: (v) => toggle("edges", e.id, v),
+                      what: e.data?.circuit?.cid ?? edgeEnds(e),
+                    }}
+                  />
+                }
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-mono">
+                    {e.data?.circuit?.cid}
+                  </span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {edgeEnds(e)}
+                  </span>
+                </span>
+              </ObjectRow>
+            ))}
+          </FoldableGroup>
         </ObjectsSection>
       )}
 

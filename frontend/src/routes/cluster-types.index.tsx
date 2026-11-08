@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type ClusterType, type Paginated } from "@/lib/api"
+import { type ClusterType } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
@@ -31,7 +32,7 @@ function ClusterTypesPage() {
   const query = useQuery({
     queryKey: ["cluster-types", q],
     queryFn: () =>
-      api<Paginated<ClusterType>>(
+      apiAll<ClusterType>(
         `/api/cluster-types/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

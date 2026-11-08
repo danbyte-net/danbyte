@@ -100,9 +100,10 @@ will never be redirected to dial some arbitrary hostname.
 
 ### Credentials are encrypted and write-only
 
-SNMP communities, SSH passwords and keys, and SNMP v3 keys are stored encrypted
-at rest. You can set them, but they're **never** shown again or returned through
-the API - the UI only tells you whether a credential is saved.
+SNMP communities, SSH passwords and keys, SNMP v3 keys, and notification channel
+credentials (webhook URLs, PagerDuty routing keys, Telegram bot tokens) are
+stored encrypted at rest. You can set them, but they're **never** shown again or
+returned through the API - the UI only tells you whether a credential is saved.
 
 ### Script and exec checks
 
@@ -558,16 +559,14 @@ The prefix Monitoring tab shows:
 ### On a device
 
 Checks attach to IPs, not to devices - but the device page rolls them up for
-you in three places:
+you in these places (a virtual machine's page has the same card and pill):
 
-- A **roll-up badge** in the device header, next to the status badge (the same
-  mixed-status badge as the list column).
+- A **monitoring pill** in the header, next to the status badge: the worst
+  state across every source (Danbyte's checks, Zabbix and PRTG). Hovering it
+  shows each source's state and counts.
 - The **IPs tab** has a **Monitoring** column showing each IP's status badge.
-- The **Overview** has a **Monitoring** summary: the roll-up badge + breakdown
-  across every IP assigned to the device (worst status winning) and a per-IP
-  status grid linking to each monitored IP. What an external system reports -
-  open problems, protocols it cannot reach the host on - shows as chips beside
-  the badge, and in the badge's hover, the same way the lists show it.
+- The **Overview** carries the **monitoring card** (see
+  [The monitoring bar](#the-monitoring-bar) below).
 - The **Monitoring** tab: the roll-up with seven days of status to scale, one
   row per monitored address with its own strip and chips, a **Zabbix** panel
   when the device is a Zabbix host (what Zabbix reports - problems,
@@ -578,8 +577,77 @@ you in three places:
   system facts, interfaces, sensors, drift.
 
 Because a service's check lives on the service's IP, service monitoring rolls
-up here too. The summary only appears when the device has at least one
-monitored IP. Manage the actual checks on each IP's Monitoring section.
+up here too. Manage the actual checks on each IP's Monitoring section.
+
+### The monitoring bar
+
+Monitoring shows on a device's and a virtual machine's page twice: a simple
+version and a detailed one. Both are left out when nothing monitors the
+object.
+
+Every state on these surfaces is the shared state pill, and a source with
+things in several states is the shared mixed badge (one colour band per
+state present) - the same badges the device and prefix lists use. A source
+whose items are all in one state shows that state's pill alone (*Up*),
+never a count beside it. Every badge has the same hover - the shared
+tooltip with the counts, then the items worst first, ten at most - and the
+same click: the tab the items live on, filtered.
+
+**In the header**, beside the status and the other badges, is the overall
+state as one pill: worst wins across Danbyte's checks, Zabbix and PRTG.
+Hovering it lists each source with its badge and counts, then whatever is in
+a problem state; clicking it opens the worst source's tab, filtered to
+problems.
+
+**On the Overview** is the monitoring card. Its header line carries the
+state; the body is only the problem rows:
+
+```
+MONITORING [Down] since 2h | Checks [mixed] · Zabbix [Up] · PRTG [mixed]   read 45s ago  Notify me
+[Down]      HTTPS 10.0.0.41             Danbyte check   timeout                        2h
+[Down]      Ping 10.0.0.41              Danbyte check                                  2h
+[Degraded]  SSL Certificate (Port 443)  PRTG            Root authority not trusted     5m
+View all 8 →
+```
+
+- **The header line**: the overall state; *since* how long the
+  longest-standing problem has been so; each source the object has, its
+  name and its badge (left out when the object has one source in one state:
+  the overall pill already says it); when the sources were last read; and
+  **Notify me** (on a VM it watches the primary address).
+- **The problems**: up to three, worst first, across all the sources, one
+  32px row each: the state's pill, the item (a check with its address, a
+  PRTG sensor, a Zabbix host or the protocol Zabbix cannot reach it on), the
+  source, the source's own words (a check's last error, PRTG's message, the
+  Zabbix trigger; the full text in the tooltip) and how long it has been so.
+  On a phone the source and the words give way. **View all N** opens the
+  Monitoring tab filtered to problems.
+
+When nothing is in a problem state the card is the header line alone, in
+the Overview's grid beside the first attribute card: *Checks [Up] · Zabbix
+[Up] · PRTG [Up] · read 45s ago*, with Notify me. With problems it is full
+width above the cards.
+
+Everything on the card is a link into the page:
+
+| Click | Opens |
+| --- | --- |
+| A check | The **Monitoring** tab filtered to its state (`?tab=monitoring&state=down`) |
+| A PRTG sensor | The **Sensors** tab with that sensor's panel open (`?tab=sensors&sensor=…`) |
+| Anything from Zabbix | The **Zabbix** section of the Monitoring tab (`#zabbix`) |
+| A source's name or badge | Its tab, filtered to problems when it has any |
+| The overall pill | The worst source's tab, filtered to problems |
+| **View all N** | The **Monitoring** tab filtered to problems (`?state=problem`) |
+
+The `state` filter on the Monitoring tab and the Sensors tab takes `problem`
+(anything not up, skipped or paused) or one state; *Show all* clears it.
+
+The card reads `POST /api/monitoring/status/` with `detail: true` (the checks
+behind the roll-up, worst first, at most 50, each with the last run's `error`
+when it is not up, for up to 25 devices or VMs per call),
+`/api/zabbix/host-status/` and `/api/prtg/links/` with the object's PRTG
+sensors - the same requests the page's tabs make, so they share one fetch.
+It refreshes every minute.
 
 ### In list pages
 
@@ -708,7 +776,8 @@ The records keep what actually happened: an
 [availability reset](#excluding-an-address) is applied when they are read,
 never written into them, so moving or clearing a reset needs no rebuild.
 Figures read from the records (the checks list, Explore, the SLA status
-columns and latency objectives) count an address from the first whole hour
+columns and latency objectives, and the home dashboard's Availability and
+Latency widgets) count an address from the first whole hour
 after its reset, and from the first whole UTC day for daily records - the
 rest of the reset day comes from its hourly records (a reset on UTC midnight
 counts that day's daily record whole). Hourly records are kept 30 days, so
@@ -1105,6 +1174,19 @@ Supported channels:
 | **Telegram** | A bot token and a chat ID | Posts the alert summary as plain text; optionally into one group topic. |
 | **Webhook** | A URL | POSTs the alert as JSON to your own endpoint. |
 | **Email** | Recipient addresses | Sent via the deployment mail server (below). |
+
+The webhook URL, the routing key and the bot token are credentials - whoever
+has one can post into the channel or open incidents - so they are stored
+encrypted and are **write-only**, for every role including superusers. The
+channel form shows *Stored - type to replace*; leave the field blank to keep the
+stored value.
+
+Through the API, send the URL as `config.url` and the routing key as
+`config.routing_key` (the Telegram token as top-level `bot_token`). Reads leave
+them out of `config` and report `url_set`, `routing_key_set` and `bot_token_set`
+instead. On `PATCH`, a key that is present replaces the stored value, an empty
+string clears it, and an absent key keeps it. A **Send test** error never quotes
+the URL.
 
 Notifications are best-effort: a failing channel is logged and never breaks a
 check run. When a **public base URL** is configured (see below), messages include

@@ -1,8 +1,9 @@
 """Floor plans as PDF: ``POST /api/floor-plans/{id}/export/pdf/``.
 
 The page draws the plan as an SVG (``frontend/src/components/floorplan/
-plan-svg.ts``: tiles, zones, raised floors, walls and trays, light-themed)
-and posts it with the paper and the Color by legend. The plan's CAD drawing
+plan-svg.ts``: tiles, zones, raised floors, walls, trays and the cables in
+their lanes and bundles, light-themed) and posts it with the paper, the
+Color by legend, the cables' legend and the area types'. The plan's CAD drawing
 is not posted: it is read here from the plan's own rendered file, in vector,
 with the layers and text the plan hides left out, and laid under the posted
 drawing at its placement - the transform the canvas uses
@@ -35,7 +36,6 @@ from html import escape
 
 from django.http import HttpResponse
 from django.urls import reverse
-from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from lxml import etree
@@ -59,6 +59,7 @@ from .drawing_pdf import (
     detail,
     file_name,
     kept_pdf,
+    reader_now,
     render_guarded,
     run_with_deadline,
     stamp,
@@ -220,17 +221,49 @@ def _bar_html(bar: dict) -> str:
     )
 
 
+#: A cable legend row's line: (border width mm, style, opacity).
+_LINES = {
+    "solid": (0.4, "solid", 1),
+    "dashed": (0.4, "dashed", 1),
+    "thin": (0.25, "solid", 0.6),
+    "bundle": (0.9, "solid", 0.85),
+}
+
+
+#: An area legend row's fill pattern, as stripes over its tint.
+_PATTERNS = {
+    "hatched": "repeating-linear-gradient(45deg,{c} 0 0.25mm,transparent 0.25mm 0.9mm)",
+    "crosshatched": (
+        "repeating-linear-gradient(45deg,{c} 0 0.25mm,transparent 0.25mm 0.9mm),"
+        "repeating-linear-gradient(-45deg,{c} 0 0.25mm,transparent 0.25mm 0.9mm)"
+    ),
+    "dotted": "radial-gradient({c} 0.2mm,transparent 0.25mm) 0 0/0.8mm 0.8mm",
+}
+
+
 def _legend_html(legend: dict | None) -> str:
     if not legend or not legend.get("items"):
         return ""
-    def swatch(c: str) -> str:
-        # Validated #rrggbb (the serializer); the fill at a tile's strength.
+    def swatch(c: str, pattern: str = "") -> str:
+        # Validated #rrggbb (the serializer); the fill at a tile's strength,
+        # an area type's pattern (a validated choice) drawn over it.
         r, g, b = (int(c[i : i + 2], 16) for i in (1, 3, 5))
-        return f"background:rgba({r},{g},{b},0.35);border-color:{c}"
+        tint = f"rgba({r},{g},{b},0.35)"
+        if pattern in _PATTERNS:
+            return f"background:{_PATTERNS[pattern].format(c=c)},{tint};border-color:{c}"
+        return f"background:{tint};border-color:{c}"
+
+    def line(c: str, kind: str) -> str:
+        # A cable's line style, keyed as a line (validated choices only).
+        width, style, opacity = _LINES[kind]
+        return (f"<i class='ln' style='border-top:{width}mm {style} {c};"
+                f"opacity:{opacity}'></i>")
 
     rows = "".join(
-        f"<span class='li'><i style='{swatch(row['color'])}'></i>"
-        f"{escape(row['label'])}</span>"
+        "<span class='li'>"
+        + (line(row["color"], row["line"]) if row.get("line")
+           else f"<i style='{swatch(row['color'], row.get('pattern') or '')}'></i>")
+        + f"{escape(row['label'])}</span>"
         for row in legend["items"]
     )
     return (
@@ -240,7 +273,8 @@ def _legend_html(legend: dict | None) -> str:
 
 
 def sheet_html(sheet: dict, *, title: str, subtitle: str, credit: str, bar: dict | None,
-               legend: dict | None, generated: dt.datetime, title_block: bool) -> str:
+               legend: dict | None, generated: dt.datetime, title_block: bool,
+               cable_legend: dict | None = None, area_legend: dict | None = None) -> str:
     from danbyte import __version__
 
     pw, ph = sheet["page"]
@@ -250,7 +284,12 @@ def sheet_html(sheet: dict, *, title: str, subtitle: str, credit: str, bar: dict
     footer = ""
     if title_block:
         small = " · ".join((stamp(generated), f"Danbyte {__version__}", "Page 1 / 1"))
-        left = (_bar_html(bar) if bar else "") + _legend_html(legend)
+        left = (
+            (_bar_html(bar) if bar else "")
+            + _legend_html(legend)
+            + _legend_html(cable_legend)
+            + _legend_html(area_legend)
+        )
         if credit:
             left += f"<div class='credit'>{escape(credit)}</div>"
         footer = (
@@ -287,6 +326,7 @@ def sheet_html(sheet: dict, *, title: str, subtitle: str, credit: str, bar: dict
         ".li{display:inline-block;margin-right:3mm;white-space:nowrap}"
         ".li i{display:inline-block;width:3.5mm;height:2.2mm;border:0.25mm solid;"
         "border-radius:0.5mm;margin-right:1mm;vertical-align:-0.3mm}"
+        ".li i.ln{height:0;border:0;border-radius:0;vertical-align:0.6mm}"
         ".credit{margin-top:0.8mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
         f".block{{position:absolute;right:0;bottom:0;"
         f"width:{mm(min(TITLE_W_MM, aw))};height:{mm(14)};"
@@ -450,6 +490,12 @@ def compose(plan_svg: bytes, *, width: float, height: float, cad: etree._Element
 class _LegendItemSerializer(serializers.Serializer):
     label = serializers.CharField(max_length=80)
     color = serializers.RegexField(_HEX, max_length=7)
+    #: A cable legend row keys a line style rather than a fill.
+    line = serializers.ChoiceField(choices=sorted(_LINES), required=False)
+    #: An area legend row's fill pattern (an area type's).
+    pattern = serializers.ChoiceField(
+        choices=["solid", *sorted(_PATTERNS)], required=False
+    )
 
     def validate_color(self, v):
         r, g, b = (round(c * 255) for c in _rgb(v))
@@ -475,6 +521,14 @@ class FloorPlanPdfRequestSerializer(serializers.Serializer):
         required=False, default=True, help_text="Lay the plan's CAD drawing under it."
     )
     legend = _LegendSerializer(required=False, allow_null=True)
+    cable_legend = _LegendSerializer(
+        required=False, allow_null=True,
+        help_text="The cables' colours and line styles, as the plan's legend reads.",
+    )
+    area_legend = _LegendSerializer(
+        required=False, allow_null=True,
+        help_text="The area types on the plan: colour and fill pattern.",
+    )
 
 
 class FloorPlanPdfLinkSerializer(serializers.Serializer):
@@ -483,7 +537,8 @@ class FloorPlanPdfLinkSerializer(serializers.Serializer):
 
 def plan_title(plan, tenant_name: str) -> tuple[str, str]:
     loc = plan.location
-    parts = [loc.name, loc.site.name if loc.site_id else "", tenant_name]
+    site = plan.site if plan.site_id else (loc.site if loc is not None else None)
+    parts = [loc.name if loc is not None else "", site.name if site else "", tenant_name]
     return plan.name, " · ".join(p for p in parts if p)
 
 
@@ -492,8 +547,12 @@ def _print_key(user_id, tenant_id) -> str:
 
 
 def _ready_drawing(plan):
+    from . import floor_plan_snapshots as snaps
     from .models import FloorPlanDrawing
 
+    if snaps.is_view(plan):
+        # A live view: the server render of its part of the source's drawing.
+        return snaps.view_drawing_for_pdf(plan)
     d = FloorPlanDrawing.objects.filter(floor_plan=plan, tenant_id=plan.tenant_id).first()
     if d is None or d.status != "ready" or not d.rendered:
         return None
@@ -512,6 +571,9 @@ def export_pdf(request, plan) -> HttpResponse | Response:
     size = paper.get("size", "a3")
     orientation = paper.get("orientation", "landscape")
     title_block = data["title_block"]
+    from . import floor_plan_snapshots as snaps
+
+    snaps.frame(plan)
     title, subtitle = plan_title(plan, plan.tenant.name)
     width = plan.grid_width * CELL
     height = plan.grid_height * CELL
@@ -520,7 +582,7 @@ def export_pdf(request, plan) -> HttpResponse | Response:
     bar = scale_bar(sheet["scale"] * px_per_mm)
     drawing = _ready_drawing(plan) if data["drawing"] else None
     credit = ""
-    generated = timezone.now()
+    generated = reader_now(request.user, plan.tenant)
     state = {"text_dropped": False}
 
     def sanitize(text: str) -> bytes:
@@ -551,6 +613,8 @@ def export_pdf(request, plan) -> HttpResponse | Response:
             credit=line,
             bar=bar,
             legend=data.get("legend"),
+            cable_legend=data.get("cable_legend"),
+            area_legend=data.get("area_legend"),
             generated=generated,
             title_block=title_block,
         )
@@ -593,7 +657,8 @@ pdf_schema = extend_schema(
         "Tabloid (A3 landscape by default), fitted to the page, with the plan's "
         "CAD drawing laid under it in vector (unless `drawing` is false) and a "
         "footer written on the server: a scale bar from the plan's cell size, "
-        "the posted Color by legend, the drawing's source file, and a title "
+        "the posted Color by, cables' and area types' legends, the drawing's "
+        "source file, and a title "
         "block with the plan, its location, site and tenant, the date, the "
         "Danbyte version and the page. Needs view on floor plans. The SVG is "
         "sanitized as the topology PDF's is, under the same limits; the CAD "

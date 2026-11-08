@@ -51,12 +51,19 @@ export interface DiagramPhoto extends Rect {
 
 /** A card's resolved text positions (`cardLayout` on the canvas). */
 export interface DiagramPlace {
+  /** The name's first row. */
   title: Pt
+  /** Every row of a name wrapped onto several, top to bottom (the first
+   * is `title`): a name is never cut, it wraps past the card's widest. */
+  titleRows?: (Pt & { text: string })[]
   lines: Pt[]
   pill?: Rect
   /** A photo's caption: its card lines after the name, as drawn - cut to
    * fit, `text-anchor: start` at `x`, on baseline `y`. */
   tail?: Pt & { text: string }
+  /** A photo's role badge (`DiagramNode.badge`): its box, after the name
+   * on the caption's row. */
+  badge?: Rect
   /** A photo's whole caption - the name and every card line - when the
    * drawn one is cut: its tooltip, where the format has one. */
   full?: string
@@ -71,20 +78,25 @@ export interface DiagramNode extends Rect {
   fill: string
   /** Text colour on the fill - `readableText(fill)`. */
   ink: string
-  /** The device name. */
+  /** The device name, whole. */
   title: string
   /** Card lines, values only, in order (IP, loopback, serial…). A photo
    * carries them whole (its card, when drawn as one, shows those that fit);
    * its caption draws them from `place.tail`. */
   lines: string[]
   pill?: DiagramPill
+  /** A photo whose card lines show its role: the role as a badge after
+   * its name, filled with the role colour (a photo has no card fill).
+   * Drawn at `place.badge`. */
+  badge?: { text: string; fill: string; ink: string }
   /** Detailed mode only; absent or empty in Simple. */
   nubs?: DiagramNub[]
   /** `kind: "photo"`: the image box inside the node box. */
   photo?: DiagramPhoto
   /** Where the canvas card layout put the text: baselines (centre x) and
-   * the pill box, absolute, with `title`, `lines` and the pill text already
-   * cut to fit. Absent = the writer lays the card out by the same rule. */
+   * the pill box, absolute, with `lines` and the pill text already cut to
+   * fit and the name in rows (`titleRows`) when it wraps. Absent = the
+   * writer lays the card out by the same rule. */
   place?: DiagramPlace
   /** Absolute link back to the object in Danbyte. */
   link?: string
@@ -150,6 +162,12 @@ export interface DiagramLink {
   /** The cable this line is part of - a breakout's trunk and legs share
    * it. */
   cable?: string
+  /** Arrowheads: at the target (`end`), at both ends, or none (absent =
+   * none). An application flow's direction (#163). */
+  arrow?: "end" | "both" | "none"
+  /** The draw.io layer it goes on, by name (absent = by `sem`: the page's
+   * own layer, LLDP or BGP sessions). */
+  layer?: string
 }
 
 /** Where a breakout cable splits: its trunk ends here and each leg leaves

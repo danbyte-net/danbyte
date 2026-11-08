@@ -76,6 +76,12 @@ any row is read. The same goes for the API's other checks on the type, such
 as an administrator-only type: what the API refuses for a create or an
 update, the import refuses for those rows.
 
+The list of types you may import or export (`GET /api/io/types/`, behind the
+**Import / Export** button on every table) is cached per user and tenant for
+a minute, so a new role or a switched integration can take up to a minute to
+change which types are offered. The import and export themselves check access
+on every request.
+
 **An unchanged export imports back as a no-op.** Re-uploading a file you didn't
 edit changes nothing, for every type.
 

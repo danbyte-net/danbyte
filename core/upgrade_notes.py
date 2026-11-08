@@ -67,8 +67,22 @@ def host_sync_command() -> str:
     same bundle - ``--host-only`` changes no code."""
     from danbyte import __version__
 
-    return (f"# as root, in the unpacked bundle of {__version__}, not in the app directory:\n"
-            "sudo ./install.sh --host-only")
+    from .version import DEFAULT_RELEASE_REPO
+
+    # An upgrade from the app deletes its bundle when it is done, so the
+    # command fetches a copy root owns rather than send anyone looking.
+    v = __version__
+    name = f"danbyte-{v}-linux-x86_64"
+    return (
+        f"# as root, outside the app directory (an upgrade from the app keeps no bundle);\n"
+        f"# offline, copy {name}.tar.gz and its .sha256 here instead of curl:\n"
+        f"cd /root\n"
+        f"curl -fLO {DEFAULT_RELEASE_REPO}/releases/download/v{v}/{name}.tar.gz\n"
+        f"curl -fLO {DEFAULT_RELEASE_REPO}/releases/download/v{v}/{name}.tar.gz.sha256\n"
+        f"sha256sum -c {name}.tar.gz.sha256\n"
+        f"sudo tar xzf {name}.tar.gz && cd {name}\n"
+        "sudo ./install.sh --host-only"
+    )
 
 
 # The block as the installer renders it today - with buffering on (0.16.12),
@@ -368,6 +382,22 @@ def _no_kept_access_grant() -> bool:
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
     UpgradeNote(
+        id="0.19.0-nginx-assets",
+        version="0.19.0",
+        title="Let nginx serve the frontend's build files",
+        body=(
+            "nginx now serves the hashed files under /assets/ from disk, cached "
+            "for a year, with the compressed copies the build writes. Until "
+            "the site is re-rendered they still come from the frontend server, "
+            "revalidated on every page load. Root runs this from the bundle "
+            "of this release, never from the app directory."
+        ),
+        docs="getting-started/upgrading/#after-an-upgrade",
+        platforms=("systemd",),
+        check=_host_files_applied,
+        host=True,
+    ),
+    UpgradeNote(
         id="0.17.0-host-files",
         version="0.17.0",
         title="Apply this release's nginx, logrotate and certificate-unit files",
@@ -621,7 +651,8 @@ def _host_card(notes: list[UpgradeNote]) -> dict:
         "title": "Run this release's root steps",
         "body": (
             "These need root, so an upgrade from the app cannot run them. One "
-            "command applies them all from this release's bundle."
+            "command applies them all from this release's bundle. An upgrade "
+            "from the app deletes its bundle, so fetch it again as root."
         ),
         "snippet": host_sync_command(),
         "docs": "getting-started/upgrading/#after-an-upgrade",

@@ -2,8 +2,8 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, Filter } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type { MonitoringPolicy, Paginated, TagOption } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { MonitoringPolicy, TagOption } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -131,7 +131,7 @@ function FilterForm({
   const [part, setPart] = useState(hardware)
   const options = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   // The filter stores slugs; the shared tag picker works in ids and draws each

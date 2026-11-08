@@ -25,7 +25,6 @@ from dataclasses import dataclass
 
 from django.http import HttpResponse
 from django.urls import reverse
-from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import serializers
@@ -42,6 +41,7 @@ from .drawing_pdf import (
     detail,
     file_name,
     kept_pdf,
+    reader_now,
     render_guarded,
     render_pdf,
     run_with_deadline,
@@ -153,8 +153,8 @@ def export_pdf(request, obj, kind: str) -> HttpResponse | Response:
     data = ser.validated_data
     paper = data.get("paper") or {}
     title, subtitle = spec.title(obj)
-    # The server's clock: the date on paper is when the PDF was made.
-    generated = timezone.now()
+    # The server's clock, in the reader's zone: when the PDF was made.
+    generated = reader_now(request.user, getattr(obj, "tenant", None))
 
     def render(svg: bytes) -> bytes:
         return render_with_deadline(

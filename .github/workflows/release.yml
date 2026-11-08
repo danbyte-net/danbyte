@@ -113,6 +113,8 @@ jobs:
           # The offline bundle must migrate + pass system checks on a clean DB.
           /tmp/venv/bin/python manage.py migrate --noinput
           /tmp/venv/bin/python manage.py check
+          # The bundle carries its SBOM where /api/system/sbom/ serves it from.
+          python3 -c "import json,sys; b=json.load(open(sys.argv[1])); assert b['bomFormat'] == 'CycloneDX' and b['components']" sbom.cdx.json
       - name: The bundled DWG converter runs and is the default
         run: |
           set -euo pipefail
@@ -173,3 +175,4 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
+            dist/*.cdx.json

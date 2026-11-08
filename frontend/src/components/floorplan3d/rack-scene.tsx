@@ -189,7 +189,6 @@ function RackView({
             target: start.target,
             maxDistance: dist * 2,
             minDistance: 0.15,
-            roomDiag: size,
             requestRef: flyToRef,
             keyboard: false,
             dollyThrough: false,
@@ -228,7 +227,7 @@ function RackView({
                       ...at,
                       deviceId: sel.deviceId,
                       marker: sel.portName,
-                      side: sel.portSide,
+                      side: sel.portSide === "model" ? undefined : sel.portSide,
                     })
                 : undefined
             }

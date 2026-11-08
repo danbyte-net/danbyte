@@ -6,14 +6,13 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 
 import {
-  api,
   type Location,
-  type Paginated,
   type Prefix,
   type PrefixWritePayload,
   type Status,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { VlanPicker } from "@/components/vlan-picker"
 import {
@@ -88,6 +87,9 @@ export function PrefixForm({
   const [allocateFromRanges, setAllocateFromRanges] = useState<boolean>(
     seed?.allocate_from_ranges ?? false
   )
+  const [autoGateway, setAutoGateway] = useState<boolean>(
+    seed?.auto_gateway ?? true
+  )
   const [vlanId, setVlanId] = useState<string | null>(
     seed?.vlan?.id ?? initial?.vlanId ?? null
   )
@@ -110,6 +112,7 @@ export function PrefixForm({
     setLocationId(prefix.location?.id ?? null)
     setAutoAssignSite(prefix.auto_assign_site)
     setAllocateFromRanges(prefix.allocate_from_ranges)
+    setAutoGateway(prefix.auto_gateway)
     setVlanId(prefix.vlan?.id ?? null)
     setGateway(prefix.gateway ?? "")
     setDescription(prefix.description)
@@ -121,12 +124,12 @@ export function PrefixForm({
   const statuses = useQuery({
     queryKey: ["statuses", "prefix"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=prefix&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=prefix&picker=1"),
     staleTime: 5 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
     staleTime: 10 * 60_000,
   })
   const sites = useSiteOptions()
@@ -139,8 +142,7 @@ export function PrefixForm({
   // Locations belong to a site - only offer ones in the selected site.
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
-    queryFn: () =>
-      api<Paginated<Location>>(`/api/locations/?site=${siteId ?? ""}`),
+    queryFn: () => apiAll<Location>(`/api/locations/?site=${siteId ?? ""}`),
     enabled: !!siteId,
     staleTime: 5 * 60_000,
   })
@@ -161,6 +163,7 @@ export function PrefixForm({
         description: description.trim(),
         auto_assign_site: autoAssignSite,
         allocate_from_ranges: allocateFromRanges,
+        auto_gateway: autoGateway,
         tag_ids: tagIds,
         custom_fields: customFields,
       }
@@ -310,6 +313,12 @@ export function PrefixForm({
               hint="Next available, free rows, pools and utilisation come from the IP ranges inside this prefix; an address outside them is refused. For a provider's slice of a subnet that isn't yours."
               checked={allocateFromRanges}
               onChange={setAllocateFromRanges}
+            />
+            <FormCheckbox
+              label="Automatic gateway"
+              hint="The site's gateway policy adds a gateway when the prefix is created. Off for loopback blocks and point-to-point links."
+              checked={autoGateway}
+              onChange={setAutoGateway}
             />
           </FormSection>
 

@@ -17,6 +17,7 @@ from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
 from integrations.toggles import IntegrationToggleMixin, integration_enabled
+from monitoring.external.queue import ChangeQueueMixin
 
 from .models import (
     ZabbixAdoptionRule,
@@ -154,9 +155,10 @@ class ZabbixHostLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         forget(conn, device)
 
 
-class ZabbixChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+class ZabbixChangeViewSet(IntegrationToggleMixin, ChangeQueueMixin, TenantScopedViewSet):
     """The review queue. Changes are proposed by a sync pass, never created
-    here - so this offers apply, dismiss, and nothing else."""
+    here - so this offers apply, dismiss, restore and apply-all (the shared
+    queue actions), and nothing else."""
 
     integration_keys = ("zabbix",)
     http_method_names = ["get", "post", "head", "options"]
@@ -165,71 +167,23 @@ class ZabbixChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         .order_by("kind", "-created_at")
     )
     serializer_class = ZabbixChangeSerializer
+    change_model = ZabbixChange
+    connection_model = ZabbixConnection
 
-    def get_queryset(self):
-        qs = super().get_queryset()
-        params = self.request.query_params if self.request else {}
-        conn = params.get("connection")
-        if conn:
-            qs = qs.filter(connection_id=conn)
-        # The queue by default; `?ignored=1` is the dismissed pile, which
-        # exists so a mis-click is not a permanent silence.
-        return qs.filter(ignored=params.get("ignored") in ("1", "true"))
-
-    @action(detail=True, methods=["post"])
-    def restore(self, request, pk=None):
-        """Un-dismiss. Back in the queue; the next pass re-checks it anyway."""
-        change = ZabbixChange.objects.filter(
-            pk=pk, tenant=_get_active_tenant(request), ignored=True
-        ).first()
-        if change is None:
-            return Response({"detail": "Not found."}, status=404)
-        change.ignored = False
-        change.save(update_fields=["ignored"])
-        return Response({"ok": True})
-
-    @action(detail=True, methods=["post"])
-    def apply(self, request, pk=None):
-        """Do this one write. The operator's act, not Danbyte's."""
-        from .client import ZabbixError
+    def apply_change(self, change) -> str:
         from .provision import apply_change
 
-        change = self.get_object()
-        try:
-            return Response({"ok": True, "detail": apply_change(change)})
-        except ValueError as exc:
-            return Response({"ok": False, "detail": str(exc)}, status=400)
-        except ZabbixError as exc:
-            return Response({"ok": False, "detail": str(exc)}, status=502)
+        return apply_change(change)
 
-    @action(detail=True, methods=["post"])
-    def dismiss(self, request, pk=None):
-        """Not now. Kept, so the next pass does not raise it again."""
-        change = self.get_object()
-        change.ignored = True
-        change.save(update_fields=["ignored"])
-        return Response({"ok": True})
-
-    @action(detail=False, methods=["post"], url_path="apply-all")
-    def apply_all(self, request):
-        """Apply every applicable proposal for one connection.
-
-        Ambiguous ones are skipped - they need a person, and "apply all" must
-        not quietly resolve them by guessing.
-        """
-        from api.views import _get_active_tenant
-
+    def apply_pending(self, conn) -> dict:
         from .provision import apply_pending
 
-        # Scoped to the active tenant, not just looked up by id: a connection
-        # id is a UUID somebody could have from anywhere.
-        conn = ZabbixConnection.objects.filter(
-            pk=request.data.get("connection"),
-            tenant=_get_active_tenant(request),
-        ).first()
-        if conn is None:
-            return Response({"detail": "Unknown connection."}, status=404)
-        return Response(apply_pending(conn))
+        return apply_pending(conn)
+
+    def remote_errors(self) -> tuple:
+        from .client import ZabbixError
+
+        return (ZabbixError,)
 
 
 class ZabbixProvisionRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):

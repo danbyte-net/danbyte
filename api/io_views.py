@@ -111,14 +111,17 @@ def _refused(handler, request, action):
 
 def _refused_filters(handler, model, visibility, tenant) -> set[str]:
     """Model fields an export may not filter on: the ones it never writes
-    (secrets and their store paths) and the ones the API hides from this
-    user (#387). Filtering on either would answer a yes/no question about a
+    (secrets and their store paths), the ones the API hides from this user
+    (#387) and the ones it may show this user masked (a generated flow's
+    name, #453). Filtering on any would answer a yes/no question about a
     value the user is not shown."""
     from core.secret_fields import is_secret_field
 
     from .bulk_import import _SECRET_REF_FIELDS
 
     out = handler.hidden_columns(visibility, tenant)
+    if visibility is not None:
+        out |= visibility.masked_columns()
     for f in model._meta.concrete_fields:
         if is_secret_field(model, f) or f.name in _SECRET_REF_FIELDS:
             out.add(f.name)
@@ -140,7 +143,38 @@ def _refused_filters(handler, model, visibility, tenant) -> set[str]:
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def io_types_view(request):
+    """Types this user may export or import in the active tenant. The answer
+    is cached per user and tenant for ``IO_TYPES_TTL`` seconds (#488): the
+    table toolbars ask on every page and it took ~65 queries. It only decides
+    which controls show; every export and import re-checks access itself. A
+    token request is never cached (its scopes vary per token)."""
+    from django.core.cache import cache
+
     tenant = _get_active_tenant(request)
+    key = None
+    if IO_TYPES_TTL and getattr(request, "auth", None) is None:
+        key = f"io-types:{request.user.pk}:{getattr(tenant, 'pk', None)}"
+        try:
+            hit = cache.get(key)
+        except Exception:  # noqa: BLE001 - the cache is a shortcut here
+            hit = None
+        if hit is not None:
+            return Response({"object_types": hit})
+    out = _io_types_for(request, tenant)
+    if key is not None:
+        try:
+            cache.set(key, out, IO_TYPES_TTL)
+        except Exception:  # noqa: BLE001
+            pass
+    return Response({"object_types": out})
+
+
+#: Seconds a user's import/export type list is reused. Short, because a role
+#: or integration change should show up without a sign-out.
+IO_TYPES_TTL = 60
+
+
+def _io_types_for(request, tenant) -> list[dict]:
     out = []
     for t in io_types():
         slug = t["slug"]
@@ -159,7 +193,7 @@ def io_types_view(request):
             )
         if can_export or can_import:
             out.append({**t, "can_export": can_export, "can_import": can_import})
-    return Response({"object_types": out})
+    return out
 
 
 @extend_schema(
@@ -196,8 +230,9 @@ def io_fields_view(request, slug):
 
 
 def _scoped_qs(request, tenant, handler, model, action):
-    qs = model._default_manager.filter(tenant=tenant)
+    qs = handler.tenant_rows(tenant)
     qs = rbac.restrict_queryset(qs, request.user, tenant, handler.slug, action)
+    qs = handler.visible_rows(qs, request.user)
     return handler.export_queryset(qs)
 
 
@@ -601,14 +636,14 @@ def io_import_view(request, slug):
         )
 
     # Row scope for update-target / create-target enforcement.
-    change_qs = rbac.restrict_queryset(
+    change_qs = handler.visible_rows(rbac.restrict_queryset(
         model._default_manager.filter(tenant=tenant), request.user, tenant,
         slug, "change",
-    )
-    add_qs = rbac.restrict_queryset(
+    ), request.user)
+    add_qs = handler.visible_rows(rbac.restrict_queryset(
         model._default_manager.filter(tenant=tenant), request.user, tenant,
         slug, "add",
-    )
+    ), request.user)
 
     created = updated = 0
     errors, preview = [], []

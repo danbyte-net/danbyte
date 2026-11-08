@@ -26,6 +26,7 @@ type IntegrationSettings = {
   ai_writes_enabled: boolean
   ai_chat_enabled: boolean
   zabbix_enabled: boolean
+  prtg_enabled: boolean
   oxidized_enabled: boolean
 }
 
@@ -102,6 +103,16 @@ const CARDS: IntegrationCard[] = [
     description:
       "Let an existing Zabbix answer for a site's monitoring status, alongside or instead of Danbyte's own engine.",
     configure: { to: "/zabbix", label: "Connection" },
+  },
+  {
+    key: "prtg_enabled",
+    label: "PRTG monitoring",
+    vendor: "prtg",
+    names: ["prtg"],
+    info: "Reads over the PRTG classic HTTP API with an API key. Danbyte does not run the sensors - it reads what PRTG already knows.",
+    description:
+      "Connect an existing PRTG core server and test what Danbyte can read from it.",
+    configure: { to: "/prtg", label: "Connection" },
   },
   {
     key: "oxidized_enabled",

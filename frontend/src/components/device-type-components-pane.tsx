@@ -10,8 +10,10 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,6 +79,8 @@ const TEMPLATE_BULK_FIELDS: Record<string, BulkFieldSpec[]> = {
   "console-server-port": [DESC],
   "power-port": [DESC],
   "power-outlet": [DESC],
+  "cooling-intake": [DESC],
+  "cooling-outflow": [DESC],
   "rear-port": [DESC],
   "front-port": [DESC],
   "aux-port": [DESC],
@@ -101,6 +105,42 @@ const typeCol: ColumnDef<AnyTemplate> = {
       dash
     ),
 }
+
+// Cooling intakes and outflows (#434): connector, bore and rated flow.
+const coolingCols: ColumnDef<AnyTemplate>[] = [
+  {
+    id: "connector",
+    header: "Connector",
+    cell: ({ row }) =>
+      row.original.connector ? (
+        <span className="text-xs">{row.original.connector_display}</span>
+      ) : (
+        dash
+      ),
+  },
+  {
+    id: "diameter_mm",
+    header: "Diameter",
+    cell: ({ row }) =>
+      row.original.diameter_mm != null ? (
+        <span className="num text-xs">{row.original.diameter_mm} mm</span>
+      ) : (
+        dash
+      ),
+  },
+  {
+    id: "max_flow_lpm",
+    header: "Max flow",
+    cell: ({ row }) =>
+      row.original.max_flow_lpm != null ? (
+        <span className="num text-xs">
+          {Number(row.original.max_flow_lpm)} L/min
+        </span>
+      ) : (
+        dash
+      ),
+  },
+]
 
 // Per-kind middle columns, spliced between Name and Description.
 const EXTRA_COLUMNS: Record<TemplateKind, ColumnDef<AnyTemplate>[]> = {
@@ -250,6 +290,22 @@ const EXTRA_COLUMNS: Record<TemplateKind, ColumnDef<AnyTemplate>[]> = {
         ),
     },
   ],
+  "cooling-intake": coolingCols,
+  "cooling-outflow": [
+    ...coolingCols,
+    {
+      id: "intake",
+      header: "Fed by",
+      cell: ({ row }) =>
+        row.original.intake_template ? (
+          <span className="font-mono text-xs">
+            {row.original.intake_template.name}
+          </span>
+        ) : (
+          dash
+        ),
+    },
+  ],
   "rear-port": [
     typeCol,
     {
@@ -303,6 +359,16 @@ const SECTIONS: { kind: TemplateKind; title: string; empty: string }[] = [
     kind: "power-outlet",
     title: "Power outlets",
     empty: "No power outlet templates. Outlets can feed from a power port.",
+  },
+  {
+    kind: "cooling-intake",
+    title: "Cooling intakes",
+    empty: "No cooling intake templates.",
+  },
+  {
+    kind: "cooling-outflow",
+    title: "Cooling outflows",
+    empty: "No cooling outflow templates.",
   },
   {
     kind: "rear-port",
@@ -376,7 +442,7 @@ export function DeviceTypeComponentsPane({
     queries: SECTIONS.map((s) => ({
       queryKey: [TEMPLATE_QUERY_KEY[s.kind], deviceTypeId],
       queryFn: () =>
-        api<Paginated<AnyTemplate>>(
+        apiAll<AnyTemplate>(
           `/api/${TEMPLATE_ENDPOINT[s.kind]}/?device_type=${deviceTypeId}`
         ),
     })),
@@ -384,9 +450,7 @@ export function DeviceTypeComponentsPane({
   const serviceCount = useQuery({
     queryKey: ["dt-service-templates", deviceTypeId],
     queryFn: () =>
-      api<Paginated<unknown>>(
-        `/api/device-type-services/?device_type=${deviceTypeId}`
-      ),
+      apiAll<unknown>(`/api/device-type-services/?device_type=${deviceTypeId}`),
   })
 
   const items = [
@@ -506,7 +570,7 @@ function TemplateSection({
   const q = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY[kind], deviceTypeId],
     queryFn: () =>
-      api<Paginated<AnyTemplate>>(
+      apiAll<AnyTemplate>(
         `/api/${TEMPLATE_ENDPOINT[kind]}/?device_type=${deviceTypeId}`
       ),
   })
@@ -541,22 +605,26 @@ function TemplateSection({
         cell: ({ row }) =>
           canWrite ? (
             <div className="flex justify-end gap-1">
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                onClick={() => setEditing(row.original)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={() => setDeleting(row.original)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              <IconTip label="Edit">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => setEditing(row.original)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </IconTip>
+              <IconTip label="Delete">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-destructive hover:text-destructive"
+                  onClick={() => setDeleting(row.original)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </IconTip>
             </div>
           ) : null,
       },
@@ -650,6 +718,10 @@ function TemplateDeleteDialog({
       if (kind === "power-port")
         qc.invalidateQueries({
           queryKey: [TEMPLATE_QUERY_KEY["power-outlet"], deviceTypeId],
+        })
+      if (kind === "cooling-intake")
+        qc.invalidateQueries({
+          queryKey: [TEMPLATE_QUERY_KEY["cooling-outflow"], deviceTypeId],
         })
       onOpenChange(false)
     },

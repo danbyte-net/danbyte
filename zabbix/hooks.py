@@ -1,8 +1,10 @@
 """What the Zabbix app does when monitoring's workflow moves.
 
-Connected in :mod:`zabbix.apps`. Every handler only *queues* work, after the
-surrounding transaction commits: the window or the acknowledgement is the
-decision, and talking to Zabbix about it is a job with its own re-checks.
+Registered in :mod:`zabbix.apps` with the shared registries in
+:mod:`monitoring.external.hooks`, which own the signal handlers. Every
+function here only *queues* work, after the surrounding transaction commits:
+the window or the acknowledgement is the decision, and talking to Zabbix about
+it is a job with its own re-checks.
 """
 from __future__ import annotations
 
@@ -11,20 +13,20 @@ from django.db import transaction
 
 from .checker import KIND
 
+#: The system name Zabbix writes acknowledgements as; an acknowledgement whose
+#: ``source`` is this never travels back to Zabbix.
+SYSTEM = "zabbix"
 
-def on_window_changed(sender, event, **kwargs) -> None:
+
+def window_changed(tenant_id) -> None:
+    """A window of this tenant changed or its event went: reconcile."""
     from .maintenance import schedule_for_tenant
 
-    schedule_for_tenant(event.tenant_id)
+    schedule_for_tenant(tenant_id)
 
 
-def on_event_deleted(sender, instance, **kwargs) -> None:
-    from .maintenance import schedule_for_tenant
-
-    schedule_for_tenant(instance.tenant_id)
-
-
-def on_alert_acknowledged(sender, alert, acknowledged, actor=None, **kwargs) -> None:
+def write_back(alert, acknowledged, actor=None, **kwargs) -> None:
+    """Queue the acknowledgement write-back for a Zabbix alert."""
     if alert.kind != KIND:
         return
     from .acks import write_ack
@@ -41,3 +43,17 @@ def on_alert_acknowledged(sender, alert, acknowledged, actor=None, **kwargs) -> 
         )
 
     transaction.on_commit(_go)
+
+
+# The signal-receiver shapes these had before the registries, kept for any
+# caller that still connects or calls them directly.
+def on_window_changed(sender, event, **kwargs) -> None:
+    window_changed(event.tenant_id)
+
+
+def on_event_deleted(sender, instance, **kwargs) -> None:
+    window_changed(instance.tenant_id)
+
+
+def on_alert_acknowledged(sender, alert, acknowledged, actor=None, **kwargs) -> None:
+    write_back(alert, acknowledged, actor=actor)

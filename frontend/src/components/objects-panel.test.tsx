@@ -31,6 +31,28 @@ describe("checkCounts", () => {
   })
 })
 
+describe("ObjectsPanel on a phone (#476)", () => {
+  it("has a close button only when the page can close it", () => {
+    const onClose = vi.fn()
+    panel({ onClose })
+    const close = screen.getByRole("button", { name: "Close objects" })
+    expect(close.className).toContain("md:hidden")
+    expect(close.className).toContain("size-11")
+    fireEvent.click(close)
+    expect(onClose).toHaveBeenCalledOnce()
+    // Below md it floats over the map instead of taking a column.
+    expect(close.closest("aside")!.className).toContain("max-md:absolute")
+  })
+
+  it("stays a plain column without onClose", () => {
+    panel()
+    expect(screen.queryByRole("button", { name: "Close objects" })).toBeNull()
+    expect(document.querySelector("aside")!.className).not.toContain(
+      "max-md:absolute"
+    )
+  })
+})
+
 describe("ObjectsPanel", () => {
   it("is titled Objects with its count and a Search… box", () => {
     panel()
