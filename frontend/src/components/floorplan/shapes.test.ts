@@ -7,6 +7,8 @@ import {
   areaLabelColor,
   areaName,
   areaNameHalo,
+  areaNameHaloColor,
+  PAGE_DARK,
   areaFallbackName,
   areaSquareMetres,
   areaPattern,
@@ -239,6 +241,21 @@ describe("an area's name ink", () => {
         fill_opacity: 80,
       })
     ).toBe("#fff")
+  })
+  it("judges black or white against the fill over the page", () => {
+    // A 50 % emerald reads light green on a white page, dark on a dark one.
+    const emerald = {
+      room: null,
+      location: null,
+      color: "#10b981",
+      fill_opacity: 50,
+    }
+    expect(areaLabelColor(emerald)).toBe("#0a0a0a")
+    expect(areaLabelColor(emerald, PAGE_DARK)).toBe("#fff")
+  })
+  it("halos a black or white name in the other one", () => {
+    expect(areaNameHaloColor("#0a0a0a")).toBe("#ffffff")
+    expect(areaNameHaloColor("#fff")).toBe("#0a0a0a")
   })
 })
 
