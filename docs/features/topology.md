@@ -631,7 +631,10 @@ or a device at the far end of a BGP session or a static route's next hop
 from one; such a far end has a dashed edge. Cards are the Diagram's: the role's color, the name bold and
 never cut (see [Names are never cut](#diagram-view)), and under it the
 card lines - by default the **router ID** (`RID 10.255.0.1`), the **ASNs**
-(the local AS of each BGP instance, a VRF's AS with its VRF in brackets)
+(the local AS of each BGP instance, each AS once: an AS the global table
+runs is just `AS65100` even when its VRFs run it too, an AS only VRFs run
+names them, `AS65200 (VRF red)`; the router's panel lists every table,
+`AS65100 (global, VRF TENANT-A)`)
 and the **loopback** (the global table's address on an interface named
 `lo`/`Loopback…`, or one whose IP role is *Loopback*; IPv4 first). The
 header's **Simple | Detailed** switches between the name and its AS only,
@@ -682,7 +685,24 @@ line stands for every adjacency between two routers in one table and area
 the router (or any device or VM of the map's set) its next hop is an
 address of - looked up in the route's next-hop table when it leaks, else
 its own; one line per pair and table. Several lines between the same two
-cards run side by side. Cables are off until you switch them on; each
+cards run side by side.
+
+**Line labels.** A label never sits on a card or on another label. Lines
+inside one AS box that would all say the same thing - every leaf's
+session to the route reflectors `evpn · RR client · cluster 10.255.0.0`,
+every IS-IS adjacency `L2` - lose their own label and the **Legend** says
+it once for the box, with the line's look (`AS65100 · iBGP · RR clients
+of spine1, spine2 · evpn · cluster 10.255.0.0`, `AS65100 · IS-IS · L2`);
+a line that says something different keeps its label. Each label left
+sits on its own line at the first free spot - the middle, then a little
+either side, then nearer the ends - clear of the other lines if it can,
+else with them passing under it; of two lines side by side (a session
+and an adjacency between the same two cards) each takes its label on its
+own side. A label with no free spot is left off the line. Hovering or
+selecting a line shows its whole label, and its panel has the same
+facts. The exports place every label where the canvas does.
+
+Cables are off until you switch them on; each
 layer's eye in the **Objects** sidebar (and **Display ▸ Layers**) switches
 it, saved with the view, and a line's own eye hides that one line. A layer
 you may not see is not offered.
@@ -744,7 +764,8 @@ sessions, so a session's panel shows no monitoring state.
 and zones** (click to frame one), then the **Routers** by AS, each with an
 eye; *Show all* brings back what was hidden. **H** hides the selected card
 or line, **Shift+H** shows everything. The **Legend** keys the layers drawn
-and each AS pair's color.
+and each AS pair's color, then what the lines of each AS box share
+(see *Line labels*).
 
 **Saved views.** A view keeps the Routing tab's arrangement apart from the
 other tabs' (`positions_by_style.routing`, `zones_by_style.routing`) and
@@ -757,7 +778,7 @@ follows every routing line drawn - BGP, OSPF, IS-IS and static.
 **Export.** The second bar's [Export](#export) draws the tab as **SVG**,
 **PNG**, **PDF**, **Print** and **draw.io**, titled *Routing topology*
 (the view's or site's name joins the filters line and the file name): the
-cards, the AS boxes, each line in its layer's look with its label, the
+cards, the AS boxes, each line in its layer's look with its label where the canvas puts it, the
 route reflector's and static routes' arrowheads, and the legend. In
 draw.io each routing layer is a layer of its own - *eBGP*, *iBGP*,
 *OSPF*, *IS-IS*, *Static*, *Circuits*, *Cables* - to switch on and off

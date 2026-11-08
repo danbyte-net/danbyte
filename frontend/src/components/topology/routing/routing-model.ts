@@ -297,7 +297,7 @@ export function routingEdgeLabel(e: RoutingEdge): string[] {
 export const isisLevel = (level: string | null | undefined) =>
   level ? `L${level}` : "L?"
 
-const KIND_NAME: Record<RoutingEdge["type"], string> = {
+export const KIND_NAME: Record<RoutingEdge["type"], string> = {
   ebgp: "eBGP",
   ibgp: "iBGP",
   ospf: "OSPF",
@@ -416,6 +416,28 @@ export function routingEdgeLook(e: RoutingEdge): RoutingEdgeLook {
 
 // ── Cards ──────────────────────────────────────────────────────────────────
 
+/** A router's ASNs, each once: `AS65100` for an AS its global table runs
+ * (its VRF instances of the same AS add nothing to a card), `AS65200 (VRF
+ * red)` for one only VRFs run. `full` (the panel) names those VRFs too:
+ * `AS65100 (global, VRF red)`. */
+export function asnsText(
+  asns: readonly { asn: number; vrf: string | null }[],
+  full = false
+): string {
+  const by = new Map<number, (string | null)[]>()
+  for (const a of asns) by.set(a.asn, [...(by.get(a.asn) ?? []), a.vrf])
+  return [...by]
+    .map(([asn, vrfs]) => {
+      const named = vrfs.filter((v): v is string => !!v)
+      const global = named.length < vrfs.length
+      if (!named.length) return `AS${asn}`
+      if (global && !full) return `AS${asn}`
+      const list = named.map((v) => `VRF ${v}`).join(", ")
+      return global ? `AS${asn} (global, ${list})` : `AS${asn} (${list})`
+    })
+    .join(", ")
+}
+
 /** A router card's lines in the order the fields list them; Simple keeps
  * the name and its AS. */
 export function routerLines(
@@ -431,9 +453,7 @@ export function routerLines(
     else if (f === "router_id") text = d.router_id ? `RID ${d.router_id}` : null
     else if (f === "asn")
       text = d.asns.length
-        ? d.asns
-            .map((a) => (a.vrf ? `AS${a.asn} (${a.vrf})` : `AS${a.asn}`))
-            .join(", ")
+        ? asnsText(d.asns)
         : d.as_group !== null
           ? `AS${d.as_group}`
           : null
