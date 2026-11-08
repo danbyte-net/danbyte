@@ -75,12 +75,18 @@ import { RackMesh } from "./rack-mesh"
 import type { Sel, ShellMode } from "./rack-mesh"
 import { RackHud } from "./rack-hud"
 import { roomStamp } from "./room-stamp"
-import type { AreaShape } from "@/components/floorplan/shapes"
+import type { AreaShape, LabelShape } from "@/components/floorplan/shapes"
+import { useTheme } from "@/components/theme-provider"
 
 import { AreaFloorMesh } from "./area-floor-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { NoWebGL, Stage, roomLights } from "./stage"
 import { ReadableNames3D, sceneTileName } from "./readable-names"
+import { planTexts } from "./plan-text"
+import type { PlanTextShow } from "./plan-text"
+import { createPlanTextBus } from "./plan-text-bus"
+import { PlanTextDriver, PlanTextLayer } from "./plan-text-layer"
+import { LevelPlanText } from "./level-plan-text"
 import { SummaryMembers3D, createSummaryStore } from "./summary-picker"
 import { TileGhostMesh } from "./tile-ghost-mesh"
 import { FloorDevicesLayer, isPlacedDevice } from "./floor-device-mesh"
@@ -103,6 +109,9 @@ import {
   type SceneTile,
   type SceneTray,
 } from "./world"
+
+const NO_AREAS: AreaShape[] = []
+const NO_LABELS: LabelShape[] = []
 
 /** The building around the active level of an aligned floor plan. */
 export interface Building3D {
@@ -150,7 +159,11 @@ export default function FloorScene3D({
   pointTileIds,
   focusRack = null,
   drawingFloor = null,
-  areas = [],
+  areas = NO_AREAS,
+  labels = NO_LABELS,
+  showPlanLabels = true,
+  showAreaNames = true,
+  showZoneLabels = true,
   readableNames = false,
   readableIcons = true,
   readableCallouts = true,
@@ -211,8 +224,17 @@ export default function FloorScene3D({
   focusRack?: { tileId: string; n: number } | null
   /** The plan's CAD drawing as the floor texture (room.tsx). */
   drawingFloor?: DrawingFloor | null
-  /** Rooms and areas drawn on the plan: flat tints on the floor. */
+  /** Rooms and areas drawn on the plan: flat tints on the floor, and
+   * their names on it. */
   areas?: AreaShape[]
+  /** The labels placed on the plan, written on the floor (plan-text.ts). */
+  labels?: LabelShape[]
+  /** Display > Labels (3D): the placed labels and the trays' names. */
+  showPlanLabels?: boolean
+  /** Display > Room & area names (3D). */
+  showAreaNames?: boolean
+  /** Display > Zone labels: the zones' names, as on the 2D plan. */
+  showZoneLabels?: boolean
   /** Display > Object size: Readable - every object's name at one size on
    * screen, thinned (readable-names.tsx). */
   readableNames?: boolean
@@ -283,6 +305,35 @@ export default function FloorScene3D({
   const [hoverStore] = useState(createHoverStore)
   // Readable's summary plates: the one hovered and the one opened.
   const [summaryStore] = useState(createSummaryStore)
+  // The plan's own text and the Readable plates share one collision pass.
+  const [textBus] = useState(createPlanTextBus)
+  const dark = useTheme().theme === "dark"
+  const textShow = useMemo<PlanTextShow>(
+    () => ({
+      labels: showPlanLabels,
+      areaNames: showAreaNames,
+      zoneNames: showZoneLabels,
+      readable: readableNames,
+    }),
+    [showPlanLabels, showAreaNames, showZoneLabels, readableNames]
+  )
+  const sceneData = scene.data
+  const activeTexts = useMemo(
+    () =>
+      sceneData
+        ? planTexts({
+            scene: {
+              ...sceneData,
+              tiles: sceneData.tiles.filter((t) => !hiddenTileIds?.has(t.id)),
+            },
+            areas,
+            labels,
+            show: textShow,
+            dark,
+          })
+        : [],
+    [sceneData, hiddenTileIds, areas, labels, textShow, dark]
+  )
   // The same for a device inside an open cabinet, keyed tile/device.
   const [deviceHover] = useState(createHoverStore)
   const hoverCabinetDevice = useCallback(
@@ -955,6 +1006,12 @@ export default function FloorScene3D({
           pointed: pointTileIds,
           readableNames,
           readableCallouts,
+          planText: [
+            showPlanLabels,
+            showAreaNames,
+            showZoneLabels,
+            activeTexts.length,
+          ].join(),
         })}
         invalidateRef={invalidateRef}
         onPointerMissed={() => {
@@ -1240,8 +1297,30 @@ export default function FloorScene3D({
           }}
           onTooDetailed={setTooDetailed}
         />
+        <PlanTextDriver bus={textBus} />
+        <PlanTextLayer
+          bus={textBus}
+          items={activeTexts}
+          plan={plan}
+          readable={readableNames}
+        />
+        {building &&
+          levels.length > 1 &&
+          building.mode !== "only" &&
+          levels
+            .filter((lv) => lv.look === "solid")
+            .map((lv) => (
+              <LevelPlanText
+                key={`text-${lv.floor.id}`}
+                placement={lv}
+                bus={textBus}
+                show={textShow}
+                readable={readableNames}
+              />
+            ))}
         {readableNames && (
           <ReadableNames3D
+            textBus={textBus}
             plan={plan}
             tiles={namedTiles}
             icons={readableIcons}

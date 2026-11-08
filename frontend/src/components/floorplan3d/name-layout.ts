@@ -63,6 +63,8 @@ export interface NameLayout3D {
   callouts: Map<string, { box: Box; leader: [Pt, Pt] }>
   /** Crowds named by one plate. */
   summaries: Summary3D[]
+  /** The `extras` (the plan's own text) that show. */
+  extras: Set<string>
 }
 
 /** A crowd bigger than this is summarised, not called out. */
@@ -83,6 +85,9 @@ export function plateBox(n: Pick<Name3D, "x" | "y" | "w" | "h">): Box {
 /**
  * Lay out the names. `callouts` false (Display > Callouts: Off) keeps
  * the plain thinning alone. `plateSize` measures a summary's plate.
+ * `extras` - the plan's labels, area, zone and tray names (plan-text.ts) -
+ * take part at their own priority: never moved, called out or summarised,
+ * only shown or not, and the callouts and summaries keep off those shown.
  */
 export function layoutNames3D(
   names: readonly Name3D[],
@@ -90,6 +95,7 @@ export function layoutNames3D(
     view: Box
     callouts: boolean
     plateSize: (name: string, icon: string) => { w: number; h: number }
+    extras?: readonly NameCandidate[]
   }
 ): NameLayout3D {
   const box = new Map(names.map((n) => [n.id, plateBox(n)]))
@@ -98,9 +104,19 @@ export function layoutNames3D(
     ...box.get(n.id)!,
     priority: n.pinned ? Infinity : n.priority,
   })
-  const plain = thinNames(names.map(cand))
+  const extras = opts.extras ?? []
+  const first = thinNames([...names.map(cand), ...extras])
+  const plain = new Set(names.filter((n) => first.has(n.id)).map((n) => n.id))
+  const extrasKept = new Set(
+    extras.filter((e) => first.has(e.id)).map((e) => e.id)
+  )
   const thinned = new Set(plain)
-  const out: NameLayout3D = { plain, callouts: new Map(), summaries: [] }
+  const out: NameLayout3D = {
+    plain,
+    callouts: new Map(),
+    summaries: [],
+    extras: extrasKept,
+  }
   if (!opts.callouts || plain.size === names.length) return out
 
   // Crowds: plates touching, chained. Only those that lost a name change.
@@ -125,6 +141,8 @@ export function layoutNames3D(
   // What stays put: the plain names of the calm crowds.
   const fixed = new Occupancy(64)
   for (const n of names) if (plain.has(n.id)) fixed.add(box.get(n.id)!)
+  for (const e of extras)
+    if (extrasKept.has(e.id)) fixed.add({ x: e.x, y: e.y, w: e.w, h: e.h })
 
   const toSummary: Name3D[][] = []
   const items: CalloutItem[] = []
@@ -249,8 +267,10 @@ export function layoutNames3D(
       priority: PLACED,
     })),
     ...names.filter((n) => plain.has(n.id)).map(cand),
+    ...extras.filter((e) => extrasKept.has(e.id)),
   ]
   const kept = thinNames(finals)
+  for (const id of [...extrasKept]) if (!kept.has(id)) extrasKept.delete(id)
   for (const id of [...plain]) if (!kept.has(id)) plain.delete(id)
   for (const id of [...out.callouts.keys()])
     if (!kept.has(id)) out.callouts.delete(id)

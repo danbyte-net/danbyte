@@ -39,8 +39,8 @@ export function PlanScene3D({
 }: {
   /** An aligned floor plan: the building around this level. */
   building?: Building3D | null
-  /** The plan's areas (and labels, left out here) on show: flat tints on
-   * the floor. */
+  /** The plan's areas and labels on show: flat tints on the floor, with
+   * their names and the labels written on it. */
   areas?: PlanShape[]
   plan: FloorPlan
   liveState: FloorPlanLiveState | null
@@ -91,6 +91,10 @@ export function PlanScene3D({
           pointTileIds={capacity.highlightTileIds}
           focusRack={rackFocus}
           areas={areas?.filter((s) => s.kind === "area")}
+          labels={areas?.filter((s) => s.kind === "label")}
+          showPlanLabels={prefs.show3dLabels}
+          showAreaNames={prefs.show3dAreaNames}
+          showZoneLabels={prefs.showZoneLabels}
           readableNames={prefs.objectSize === "readable"}
           readableIcons={prefs.iconTiles}
           readableCallouts={prefs.callouts === "auto"}

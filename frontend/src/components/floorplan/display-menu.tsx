@@ -67,6 +67,8 @@ export function DisplayMenu({
     floorPeek,
     show3dWalls,
     show3dCeiling,
+    show3dLabels,
+    show3dAreaNames,
     shell3d,
     setShellMode,
     cableScale,
@@ -305,6 +307,18 @@ export function DisplayMenu({
               label="Ceiling"
               checked={show3dCeiling}
               onChange={(v) => setViewPref("show_3d_ceiling", v)}
+              className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+            />
+            <FormCheckbox
+              label="Labels"
+              checked={show3dLabels}
+              onChange={(v) => setViewPref("show_3d_labels", v)}
+              className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+            />
+            <FormCheckbox
+              label="Room & area names"
+              checked={show3dAreaNames}
+              onChange={(v) => setViewPref("show_3d_area_names", v)}
               className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
             />
             <div className="px-2 pt-1.5 pb-1">
