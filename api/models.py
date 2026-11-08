@@ -10494,7 +10494,7 @@ class FloorPlanRaisedFloorArea(TimestampedModel):
     )
     # [[x, y], ...] in cell units, rounded to 0.001 cell; empty = the
     # rectangle above.
-    points = models.JSONField(default=list, blank=True)
+    points = models.JSONField(default=list, blank=True, db_default=[])
     label = models.CharField(max_length=64, blank=True, default="")
     color = models.CharField(max_length=7, blank=True, default="")
 
