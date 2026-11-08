@@ -30,6 +30,7 @@ from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
 from routing.models import RoutingKeychain
+from . import raised_floor_geometry as rfg
 from .rooms import reconcile_room
 from .models import (
     Antenna, AntennaTemplate, Application,
@@ -12572,37 +12573,90 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
 
 
 class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):
-    """A raised-floor rectangle on a plan. Areas may not overlap - the plenum
-    under any grid point must be unambiguous, because it drives underfloor
-    tray depth in the 3D room and the drop term in route-length estimates."""
+    """A raised floor on a plan: a whole-cell rectangle, or a polygon
+    (``points``, cell units) whose ``x``/``y``/``width``/``height`` are then
+    the cells it covers, set here. Areas may not overlap (sharing an edge is
+    fine) - the plenum under any grid point must be unambiguous, because it
+    drives underfloor tray depth in the 3D room and the drop term in
+    route-length estimates."""
+
+    #: Points one polygon may carry.
+    POINTS_MAX = 500
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
         source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
 
+    def validate_points(self, value):
+        if not value:
+            return []
+        if not isinstance(value, list) or len(value) > self.POINTS_MAX:
+            raise serializers.ValidationError(
+                f"A list of at most {self.POINTS_MAX} [x, y] points."
+            )
+        out = []
+        for p in value:
+            if not (
+                isinstance(p, (list, tuple)) and len(p) == 2
+                and all(
+                    isinstance(v, (int, float)) and not isinstance(v, bool)
+                    and math.isfinite(v) for v in p
+                )
+            ):
+                raise serializers.ValidationError("Each point is [x, y] in cells.")
+            q = [round(float(p[0]), 3), round(float(p[1]), 3)]
+            if not out or q != out[-1]:
+                out.append(q)
+        if len(out) > 1 and out[0] == out[-1]:
+            out.pop()
+        if len(out) < 3:
+            raise serializers.ValidationError("A polygon needs at least three points.")
+        if abs(rfg.area_of(out)) < 1e-3:
+            raise serializers.ValidationError("The polygon has no area.")
+        if not polygon_is_simple(out):
+            raise serializers.ValidationError("The outline must not cross itself.")
+        return out
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        get = lambda k: attrs.get(  # noqa: E731 - tiny create-or-update getter
+            k, getattr(self.instance, k, None) if self.instance else None
+        )
+        points = get("points") or []
+        if points:
+            # The polygon is the shape; its box follows it.
+            bx, by, bw, bh = rfg.cell_box(points)
+            if bx < 0 or by < 0:
+                raise serializers.ValidationError(
+                    {"points": "The area must fit inside the plan grid."}
+                )
+            attrs.update(x=bx, y=by, width=bw, height=bh)
+        elif self.instance is None:
+            missing = {
+                k: "This field is required."
+                for k in ("x", "y", "width", "height") if k not in attrs
+            }
+            if missing:
+                raise serializers.ValidationError(missing)
         # A plan's bulk save names the plan in the context, not the body.
         plan = attrs.get("floor_plan") or (
             self.instance.floor_plan if self.instance else None
         ) or self.context.get("floor_plan")
         if plan is None:
             return attrs
-        get = lambda k: attrs.get(  # noqa: E731 - tiny create-or-update getter
-            k, getattr(self.instance, k, None) if self.instance else None
-        )
         x, y = get("x") or 0, get("y") or 0
         w, h = get("width") or 1, get("height") or 1
         if x + w > plan.grid_width or y + h > plan.grid_height:
             raise serializers.ValidationError(
                 "The area must fit inside the plan grid."
             )
+        mine = rfg.outline_of({"points": points, "x": x, "y": y, "width": w, "height": h})
         siblings = plan.raised_floor_areas.all()
         if self.instance:
             siblings = siblings.exclude(pk=self.instance.pk)
         for s in siblings:
-            if x < s.x + s.width and s.x < x + w and y < s.y + s.height and s.y < y + h:
+            if rfg.overlaps(mine, rfg.outline_of(s)):
                 raise serializers.ValidationError(
                     f"Overlaps {s.label or 'another raised-floor area'} - "
                     "areas must not overlap so the plenum depth under any "
@@ -12612,9 +12666,11 @@ class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):
 
     class Meta:
         model = FloorPlanRaisedFloorArea
-        fields = ["id", "floor_plan_id", "x", "y", "width", "height",
+        fields = ["id", "floor_plan_id", "x", "y", "width", "height", "points",
                   "plenum_mm", "label", "color", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+        # A polygon's box is set from its points; a rectangle needs all four.
+        extra_kwargs = {k: {"required": False} for k in ("x", "y", "width", "height")}
 
 
 def _in_plan(serializer, attrs, x, y, w=0.0, h=0.0, key="x"):

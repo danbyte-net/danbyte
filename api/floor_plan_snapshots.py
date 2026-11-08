@@ -27,11 +27,13 @@ import math
 import os
 from dataclasses import dataclass
 
+from .raised_floor_geometry import cell_box
+
 EPS = 1e-6
 
 #: The contents kinds and the keys holding their coordinates.
 XY_KINDS = ("tiles", "areas", "labels", "raised_floors")
-POINT_KINDS = ("areas", "walls", "trays")
+POINT_KINDS = ("areas", "walls", "trays", "raised_floors")
 
 
 @dataclass(frozen=True)
@@ -284,6 +286,8 @@ def label_box(lb):
 
 
 def raised_box(r):
+    if r.points:
+        return points_box(r.points)
     return (r.x, r.y, r.x + r.width, r.y + r.height)
 
 
@@ -789,6 +793,15 @@ def copy_contents(src, dst, crop: Crop) -> list[dict]:
 
     for r in src.raised_floor_areas.order_by("y", "x", "id"):
         if classify("raised_floors", r, crop) is None:
+            continue
+        if r.points:
+            # A polygon pad: cut to the crop, its cell box from what is left.
+            pts = clip_polygon(r.points, crop)
+            if len(pts) < 3:
+                continue
+            moved = [[_r(x + dx), _r(y + dy)] for x, y in pts]
+            bx, by, bw, bh = cell_box(moved)
+            _new(r, dst, points=moved, x=bx, y=by, width=bw, height=bh)
             continue
         x, y, w, h = _clip_rect(r.x, r.y, r.width, r.height, crop)
         _new(r, dst, x=x + dx, y=y + dy, width=w, height=h)

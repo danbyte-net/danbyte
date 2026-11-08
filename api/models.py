@@ -10461,10 +10461,13 @@ class FloorPlanTray(TimestampedModel):
 
 
 class FloorPlanRaisedFloorArea(TimestampedModel):
-    """A raised-floor region of a plan: a rectangle of grid cells standing on
-    pedestals with a cable plenum underneath. Rooms are rarely uniformly
-    raised - the DC pad is, the adjoining corridor isn't - so the raised
-    floor is per-area, and an L-shaped pad is simply two rectangles.
+    """A raised-floor region of a plan standing on pedestals with a cable
+    plenum underneath: a rectangle of grid cells, or - when ``points`` is
+    set - a polygon in cell units (a hall turned on the plan, an L-shaped
+    pad). Rooms are rarely uniformly raised - the DC pad is, the adjoining
+    corridor isn't - so the raised floor is per-area. A polygon's
+    ``x``/``y``/``width``/``height`` are the whole cells it covers, kept for
+    readers that only need a box.
 
     The plenum depth drives two things: how deep underfloor trays/cables sit
     (in the 3D room and in route-length estimation's vertical-drop term), and
@@ -10489,6 +10492,9 @@ class FloorPlanRaisedFloorArea(TimestampedModel):
         help_text="Void depth under the finished floor - how far below 0 the "
         "structural slab sits here.",
     )
+    # [[x, y], ...] in cell units, rounded to 0.001 cell; empty = the
+    # rectangle above.
+    points = models.JSONField(default=list, blank=True)
     label = models.CharField(max_length=64, blank=True, default="")
     color = models.CharField(max_length=7, blank=True, default="")
 
