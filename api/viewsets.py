@@ -13060,10 +13060,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         trays = list(plan.trays.all())
         # Plenum-aware drops: an underfloor run dives as deep as the raised
         # floor beneath it, not a constant.
-        area_rects = [
-            (r.x, r.y, r.width, r.height, r.plenum_mm)
-            for r in plan.raised_floor_areas.all()
-        ]
+        from .raised_floor_geometry import outline_of
+
+        area_rects = [(outline_of(r), r.plenum_mm) for r in plan.raised_floor_areas.all()]
         # Runs crossing at different heights do not join.
         result = route_through_trays(
             a, b, [t.points for t in trays],
@@ -13994,6 +13993,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             {
                 "id": str(a.id),
                 "x": a.x, "y": a.y, "w": a.width, "h": a.height,
+                "points": a.points or [],
                 "plenum_mm": a.plenum_mm,
                 "label": a.label, "color": a.color,
             }

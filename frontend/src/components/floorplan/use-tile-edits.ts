@@ -120,6 +120,7 @@ function raisedBody(r: RaisedRow) {
     y: r.y,
     width: r.width,
     height: r.height,
+    points: r.points ?? [],
     plenum_mm: r.plenum_mm,
     label: r.label,
     color: r.color,

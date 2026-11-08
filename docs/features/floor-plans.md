@@ -1882,7 +1882,7 @@ floor**, and with the trays tool a tray the same as a wall, less the door.
 | ++d++ | The Door tool |
 | ++f++ | Flip the selected door's swing |
 | ++j++ | Join the two walls (or trays) picked with Shift or Ctrl/⌘ |
-| Arrows (structure) | Move the selected wall or tray half a cell, a raised floor a cell; slide a selected door 100 mm |
+| Arrows (structure) | Move the selected wall or tray half a cell, a raised floor (rectangle or polygon) a cell; slide a selected door 100 mm |
 | ++ctrl+bracketleft++ / ++ctrl+bracketright++ | Send back / bring forward |
 | ++h++ / ++shift+h++ | Hide the selection / show everything |
 | ++enter++ / ++backspace++ | Close the polygon / take back its last point |
@@ -2424,16 +2424,24 @@ selection.
 
 The **Walls and raised floors** tool (++w++, the Structure tab before 0.19)
 models the room itself. Draw **raised-floor areas** -
-rectangles of tiles standing on pedestals with a cable plenum underneath -
-and give each one its **plenum depth** (default 300 mm). Rooms are rarely
-uniformly raised, so the raised floor is per-area: the DC pad is, the
-corridor isn't, and an L-shaped pad is simply two abutting rectangles
-(areas may share edges but never overlap, so the depth under any point is
-unambiguous).
+tiles standing on pedestals with a cable plenum underneath - and give each
+one its **plenum depth** (default 300 mm). Rooms are rarely uniformly
+raised, so the raised floor is per-area: the DC pad is, the corridor isn't.
+A raised floor is a rectangle of whole cells or a **polygon** - a hall
+turned on the plan, an L-shaped pad - and areas may share edges but never
+overlap, so the depth under any point is unambiguous.
+
+Raised floors that touch and have the same plenum depth and colour are
+**drawn as one pad**: filled once, with the dashed outline only round the
+outside and one caption - in 2D, in the PDF/SVG export and in 3D, where
+they are one finished floor with skirts on the outer edge only. A pad
+pieced together from strips reads as one pad, not a stack of boxes.
 
 In 3D the finished floor draws its **600 mm tile grid** (the grid every
-operator actually addresses), and each area can be **lifted on its own**:
-click an area's edge skirt and its floor fades out over a beat so the
+operator actually addresses), cut to the pad and turned with it - the
+grid runs along the pad's longest outer edge, so a turned hall's tiles
+turn with the hall. Each pad can be **lifted on its own**:
+click its edge skirt and its floor fades out over a beat so the
 plenum contents read; click again to close it. The global **Lift raised
 floor** toggle (View menu) still lifts everything at once. Zone tile types
 marked **Perforated floor (3D)** (Customize → Floor tiles) render their
@@ -2445,22 +2453,46 @@ bird's-eye view.
 The plenum is data, not decoration:
 
 - **Underfloor trays** with no explicit elevation dive to the plenum of the
-  area beneath them (still 300 mm outside any area, as before).
+  area beneath them (still 300 mm outside any area, as before). A point on
+  a raised floor's outline counts as on it, and a polygon answers by its
+  outline, not its bounding box.
 - **Route-length estimates** use the same depth for their vertical-drop
   term, so a 600 mm plenum genuinely lengthens the cables that dive into it.
 - The **3D room** draws the finished floor and the void below; the **Lift
   raised floor** toggle (View menu, 3D) turns the floor translucent so the
   underfloor runs read through it.
 
-Areas are drawn with the same drag-a-rectangle gesture as tiles. A selected
-one drags to move and has a handle on each corner and side to resize it, in
-whole cells; its edges pull onto the other raised floors' edges, with a
-guide line (++alt++ turns the pull off). A drop onto another raised floor
-is refused - they may share edges, never overlap. The arrows move it a
-cell, ++delete++ removes it, and its label, plenum depth and colour are in
-the inspector. A labelled raised floor shows its label and plenum depth in
-its bottom-left corner, clear of the name of a room it covers. Raised
-floors save with the plan's **Save** and undo like everything else.
+**Draw area** draws a rectangle with the same drag gesture as tiles.
+**Polygon** draws one corner per click, like the polygon area tool:
+++enter++, a double-click or a click on the first point closes it,
+++backspace++ takes back the last point and ++esc++ cancels. Or let a room
+or area give its outline: **Raised floor from this** on an area's
+right-click menu or its toolbar makes a polygon raised floor exactly on
+its outline (a turned rectangle's four corners, a polygon's points),
+named after it. Raised floors whose middle lies inside that outline are
+replaced in the same step and lend it their depth, colour and name - the
+way to turn a hall approximated by strips into one polygon; undo brings
+them back. Anything else it would overlap refuses it.
+
+A selected rectangle drags to move and has a handle on each corner and side
+to resize it, in whole cells; its edges pull onto the other raised floors'
+edges, with a guide line (++alt++ turns the pull off). A selected polygon
+drags to move by whole cells (half cells with ++alt++); reshape it by
+drawing it again. A drop onto another raised floor is refused - they may
+share edges, never overlap. The arrows move it a cell, ++delete++ removes
+it, and its label, plenum depth and colour are in the inspector. A
+labelled raised floor shows its label and plenum depth in its bottom-left
+corner, clear of the name of a room it covers (a polygon pad: just inside
+its lowest-left corner). Raised floors save with the plan's **Save** and
+undo like everything else.
+
+`/api/floor-plan-raised-floors/` rows carry `x`, `y`, `width`, `height`
+(whole cells) and `points` (`[[x, y], ...]` in cell units, to 0.001 cell;
+empty for a rectangle). A row with `points` - at least three, at most 500,
+a simple outline with an area, inside the grid - is that polygon, and its
+`x`/`y`/`width`/`height` are set to the whole cells it covers; without
+`points` all four box fields are required. Rows from before 0.19 are
+rectangles and keep working unchanged.
 
 ## Walls & doors (Structure mode)
 
@@ -3459,7 +3491,7 @@ What crosses the rectangle's edge is cut where its shape allows it:
 | Crossing the edge | Copied |
 |---|---|
 | Unlinked tile at a quarter turn, raised floor, upright room or area | Cut to the rectangle |
-| Polygon area | Cut to the rectangle |
+| Polygon area, polygon raised floor | Cut to the rectangle |
 | Wall, cable tray | Cut where it crosses; a part that leaves and comes back becomes two runs (a tray's second run is named `<name> (2)`). A door is kept when it lies wholly inside |
 | Linked tile, tile at any other angle, turned area, label | Copied whole, past the edge, and listed after the copy is made |
 

@@ -350,13 +350,18 @@ def underfloor_plenum_mm(
     of its points sits in, else the default. ``areas`` are
     ``(x, y, width, height, plenum_mm)`` rects in cell units; the max wins
     when a run crosses areas because a cable dressed to the deeper void
-    needs the longer drop."""
+    needs the longer drop. An area may also be ``(outline, plenum_mm)``,
+    the outline a polygon of ``(x, y)`` points (``raised_floor_geometry``)."""
+    from .raised_floor_geometry import contains, rect_outline
+
+    shapes = [
+        (rect_outline(*a[:4]), a[4]) if len(a) == 5 else (a[0], a[1]) for a in areas
+    ]
     best = 0.0
     for px, py in points or []:
-        for ax, ay, aw, ah, plenum in areas:
-            if ax <= px <= ax + aw and ay <= py <= ay + ah:
-                if plenum > best:
-                    best = float(plenum)
+        for poly, plenum in shapes:
+            if plenum > best and contains(poly, (px, py)):
+                best = float(plenum)
     return best or float(DEFAULT_PLENUM_MM)
 
 
@@ -431,6 +436,16 @@ def _strictly_in(p: Pt, r: Rect) -> bool:
 def _closed_in(p: Pt, r: Rect) -> bool:
     x, y, w, h = r
     return x - _E <= p[0] <= x + w + _E and y - _E <= p[1] <= y + h + _E
+
+
+def _inside_area(p: Pt, r) -> bool:
+    """``p`` in a ``within`` area: an ``(x, y, w, h)`` rectangle or a
+    polygon of ``(x, y)`` points, its outline included."""
+    if len(r) == 4 and not isinstance(r[0], (list, tuple)):
+        return _closed_in(p, r)
+    from .raised_floor_geometry import contains
+
+    return contains(r, p, _E)
 
 
 def _along(p: Pt, s: Pt, e: Pt) -> float | None:
@@ -546,8 +561,8 @@ def suggest_run(
     wall's door spans (``{"seg", "from", "to"}``, cells from the segment's
     start): a run crosses a wall only inside an opening. ``trays`` are
     polylines a run is cheaper along. ``within``, when given, are the
-    rectangles every point must stay inside (an underfloor run: the raised
-    floors). Answers the polyline from ``a`` to ``b``, its middle points on
+    rectangles (or polygons) every point must stay inside (an underfloor
+    run: the raised floors). Answers the polyline from ``a`` to ``b``, its middle points on
     the lattice, straight runs as one segment."""
     step = SUGGEST_STEP
     cols = math.ceil(max(width, a[0], b[0]) / step) + 1
@@ -589,7 +604,7 @@ def suggest_run(
             hit = (
                 (ix, iy) in on_wall
                 or occupied(p)
-                or (within is not None and not any(_closed_in(p, r) for r in within))
+                or (within is not None and not any(_inside_area(p, r) for r in within))
             )
             v = node_state[i] = 2 if hit else 1
         return v == 2

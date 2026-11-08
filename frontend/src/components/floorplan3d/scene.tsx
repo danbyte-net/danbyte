@@ -82,6 +82,7 @@ import { AreaFloorMesh } from "./area-floor-mesh"
 import { CameraFanMeshes } from "./camera-fan-mesh"
 import type { CameraView } from "@/components/floorplan/camera-view"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
+import { raisedRegions } from "../floorplan/raised-floor-shape"
 import { NoWebGL, Stage, roomLights } from "./stage"
 import { ReadableNames3D, sceneTileName } from "./readable-names"
 import { planTexts } from "./plan-text"
@@ -105,6 +106,7 @@ import {
   floorDeviceBoxM,
   rackFootprintM,
   rackViewpoint,
+  sceneRaised,
   trayElevationM,
   trayJunctions,
   webglSupported,
@@ -326,6 +328,11 @@ export default function FloorScene3D({
     [showPlanLabels, showAreaNames, showZoneLabels, readableNames]
   )
   const sceneData = scene.data
+  // Touching raised floors of one depth and colour are one pad.
+  const raisedPads = useMemo(
+    () => raisedRegions((sceneData?.raised_floors ?? []).map(sceneRaised)),
+    [sceneData?.raised_floors]
+  )
   const activeTexts = useMemo(
     () =>
       sceneData
@@ -1233,18 +1240,24 @@ export default function FloorScene3D({
             />
           )
         })}
-        {(scene.data.raised_floors ?? []).map((a) => (
+        {raisedPads.map((rg) => (
           <RaisedFloorMesh
-            key={a.id}
+            key={rg.rows[0].id}
             plan={plan}
-            area={a}
+            region={rg}
             // X-ray lifts every raised floor - the plenum is half the point.
-            peek={floorPeek || shellMode === "xray" || liftedIds.has(a.id)}
-            onToggleLift={(id) =>
+            peek={
+              floorPeek ||
+              shellMode === "xray" ||
+              rg.rows.some((r) => liftedIds.has(r.id))
+            }
+            onToggleLift={(ids) =>
               setLiftedIds((prev) => {
                 const next = new Set(prev)
-                if (next.has(id)) next.delete(id)
-                else next.add(id)
+                const lifted = ids.some((id) => next.has(id))
+                for (const id of ids)
+                  if (lifted) next.delete(id)
+                  else next.add(id)
                 return next
               })
             }

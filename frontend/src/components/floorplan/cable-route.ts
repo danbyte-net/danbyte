@@ -15,6 +15,8 @@
 //
 // All coordinates are in cell units (the same units tray.points use).
 
+import { raisedContains } from "./raised-floor-shape"
+
 export type Pt = [number, number]
 
 /** Crossing runs this close in elevation (mm) join; pathfinding.py's
@@ -31,6 +33,8 @@ export interface PlenumRect {
   y: number
   width: number
   height: number
+  /** A polygon outline; absent or empty: the rectangle. */
+  points?: readonly (readonly [number, number])[] | null
   plenum_mm: number
 }
 
@@ -52,13 +56,7 @@ export function trayElevationMm(
     let best = 0
     for (const [px, py] of tray.points)
       for (const a of areas)
-        if (
-          a.x <= px &&
-          px <= a.x + a.width &&
-          a.y <= py &&
-          py <= a.y + a.height &&
-          a.plenum_mm > best
-        )
+        if (a.plenum_mm > best && raisedContains(a, [px, py]))
           best = a.plenum_mm
     return -(best || DEFAULT_PLENUM_MM)
   }

@@ -313,6 +313,8 @@ def shift_contents(plan, dx: int, dy: int) -> dict:
     for r in plan.raised_floor_areas.all().order_by("pk"):
         r.x += dx
         r.y += dy
+        if r.points:
+            r.points = _shift_pts(r.points, dx, dy)
         r.save()
         moved["raised_floors"] = moved.get("raised_floors", 0) + 1
     for a in plan.areas.all().order_by("pk"):
@@ -396,8 +398,10 @@ def _object_boxes(plan):
 
     for x, y, w, h, link in plan.tiles.values_list("x", "y", "width", "height", "link_kind"):
         emit(link if link in ("rack", "cabinet", "device") else "tile", box(x, y, w, h))
-    for x, y, w, h in plan.raised_floor_areas.values_list("x", "y", "width", "height"):
-        emit("raised floor", box(x, y, w, h))
+    for x, y, w, h, points in plan.raised_floor_areas.values_list(
+        "x", "y", "width", "height", "points"
+    ):
+        emit("raised floor", pts(points) if points else box(x, y, w, h))
     for x, y, w, h, rot, points in plan.areas.values_list(
         "x", "y", "width", "height", "rotation", "points"
     ):

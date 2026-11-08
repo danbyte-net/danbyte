@@ -13892,10 +13892,13 @@ export interface FloorPlanTray {
 
 export interface RaisedFloorArea {
   id: string
+  /** The whole cells it covers; a polygon's are set from its points. */
   x: number
   y: number
   width: number
   height: number
+  /** A polygon outline in cell units; empty for the rectangle above. */
+  points: [number, number][]
   /** Void depth under the finished floor (mm). */
   plenum_mm: number
   label: string
@@ -13910,6 +13913,7 @@ export interface RaisedFloorAreaWritePayload {
   y?: number
   width?: number
   height?: number
+  points?: [number, number][]
   plenum_mm?: number
   label?: string
   color?: string

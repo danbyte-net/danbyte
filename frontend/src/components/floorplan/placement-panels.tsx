@@ -7,6 +7,7 @@ import {
   Cable,
   Crop,
   DoorOpen,
+  Grid3x3,
   Image as ImageIcon,
   Link2,
   Lock,
@@ -442,6 +443,7 @@ export function SelectionToolbar({
   onSnapshotShape,
   onShapeBackLabel,
   onWallsAround,
+  onRaisedFromArea,
   areaPicks = [],
   onConnect,
 }: {
@@ -449,6 +451,8 @@ export function SelectionToolbar({
   onConnect?: (tile: FloorPlanTile) => void
   /** Walls round these areas (one, or the ones picked). */
   onWallsAround?: (areaIds: string[]) => void
+  /** A raised floor with the area's outline. */
+  onRaisedFromArea?: (areaId: string) => void
   /** The areas picked with Ctrl/⌘. */
   areaPicks?: string[]
   /** A shape's Back button label changed on the server. */
@@ -628,6 +632,15 @@ export function SelectionToolbar({
           onClick={() => onWallsAround([shape.id])}
         >
           <BrickWall />
+        </BarIconButton>
+      )}
+      {shape.kind === "area" && onRaisedFromArea && (
+        <BarIconButton
+          label="Raised floor from this"
+          tipSide="top"
+          onClick={() => onRaisedFromArea(shape.id)}
+        >
+          <Grid3x3 />
         </BarIconButton>
       )}
       {shape.kind === "area" && onSnapshotShape && (

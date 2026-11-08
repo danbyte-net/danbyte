@@ -12,6 +12,12 @@ import {
   polygonPatch,
 } from "./shapes"
 import type { AreaShape, Pt } from "./shapes"
+import {
+  isRaisedPolygon,
+  outlinesOverlap,
+  raisedOutline,
+} from "./raised-floor-shape"
+import type { RaisedLike } from "./raised-floor-shape"
 
 // Walls, raised floors and trays in the editor's draft, and the geometry the
 // canvas edits them with: walls from an area's outline, doors placed,
@@ -1211,11 +1217,11 @@ export function snapRect(
   }
 }
 
-/** Whether two raised floors overlap (they may share edges). */
-export function rectsOverlap(
-  a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number }
-): boolean {
+/** Whether two raised floors overlap (they may share edges); a polygon
+ * one by its outline. */
+export function rectsOverlap(a: RaisedLike, b: RaisedLike): boolean {
+  if (isRaisedPolygon(a) || isRaisedPolygon(b))
+    return outlinesOverlap(raisedOutline(a), raisedOutline(b))
   return (
     a.x < b.x + b.width &&
     b.x < a.x + a.width &&

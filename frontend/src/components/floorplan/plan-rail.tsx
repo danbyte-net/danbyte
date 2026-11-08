@@ -83,12 +83,12 @@ export function PlanRail({
           setSelectedAreaId(aid)
           if (aid) setSelectedWallId(null)
         }}
-        onStartDraw={() => {
+        onStartDraw={(shape) => {
           setSelectedAreaId(null)
           setSelectedWallId(null)
           setDrawPoints(null)
           setDoorArmed(false)
-          setAreaArmed(true)
+          setAreaArmed(shape)
         }}
         onCancelDraw={() => setAreaArmed(false)}
         walls={walls}

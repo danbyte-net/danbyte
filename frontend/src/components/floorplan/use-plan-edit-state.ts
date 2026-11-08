@@ -82,7 +82,8 @@ export function usePlanEditState(
   const [tool, setTool] = useState<EditorTool>("select")
   const [armed, setArmed] = useState<PaletteEntry | null>(null)
   // Structure mode: arm-to-draw a raised-floor rectangle + selection.
-  const [areaArmed, setAreaArmed] = useState(false)
+  // "rect" drags a rectangle, "polygon" clicks an outline point by point.
+  const [areaArmed, setAreaArmed] = useState<false | "rect" | "polygon">(false)
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null)
   // Structure mode: wall selection + "Add door" arm-and-click.
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null)

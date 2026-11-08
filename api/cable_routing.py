@@ -36,6 +36,7 @@ from .pathfinding import (
     route_through_trays,
     tray_elevations,
 )
+from .raised_floor_geometry import contains, outline_of
 
 #: A preview or a save routes at most this many cables (as bulk-create).
 ROUTE_MAX = 256
@@ -162,10 +163,8 @@ class PlanRouter:
         self.trays = []
         self.tray_by_id = {}
         self.elevation = {}
-        self.areas = [
-            (r.x, r.y, r.width, r.height, r.plenum_mm)
-            for r in plan.raised_floor_areas.all()
-        ]
+        # (outline, plenum_mm) - a rectangle's corners or the polygon.
+        self.areas = [(outline_of(r), r.plenum_mm) for r in plan.raised_floor_areas.all()]
         over = {str(t.pk): t for t in extra_trays or ()}
         gone_trays = {str(r) for r in removed_trays or ()}
         saved = []
@@ -541,7 +540,7 @@ class PlanRouter:
         return self._walls
 
     def _in_raised_floor(self, p) -> bool:
-        return any(x <= p[0] <= x + w and y <= p[1] <= y + h for x, y, w, h, _ in self.areas)
+        return any(contains(poly, p) for poly, _ in self.areas)
 
     def suggest(self, a_end, b_end, *, level: str | None = None, runs=()) -> dict | None:
         """A suggested run between two ends' tiles where no tray connects
@@ -587,7 +586,7 @@ class PlanRouter:
                 a, b,
                 width=max(plan.grid_width or 0, 1), height=max(plan.grid_height or 0, 1),
                 obstacles=obstacles, walls=self.walls, trays=along,
-                within=[(x, y, w, h) for x, y, w, h, _ in self.areas]
+                within=[poly for poly, _ in self.areas]
                 if lv == "underfloor" else None,
             )
             if pts is None:

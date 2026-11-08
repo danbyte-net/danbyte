@@ -16,6 +16,13 @@ import type { PlanViewPrefs } from "./use-plan-view-prefs"
 import type { StructureEdits } from "./use-structure-edits"
 import type { TileEdits } from "./use-tile-edits"
 import { slideDoor, translatePoints } from "./structure"
+import {
+  cellBox,
+  isRaisedPolygon,
+  outlineBounds,
+  raisedOutline,
+  translateOutline,
+} from "./raised-floor-shape"
 
 /** The drawing tools: Esc puts them down before it clears a selection. */
 const DRAW_TOOLS: EditorTool[] = ["rect", "polygon", "outline", "label", "door"]
@@ -465,6 +472,16 @@ export function structureKey(
     return true
   }
   if (!arrow) return false
+  if (row.part === "raised_floor" && isRaisedPolygon(row)) {
+    const b = outlineBounds(raisedOutline(row))
+    const mx = Math.max(-b.minX, Math.min(grid.w - b.maxX, dx))
+    const my = Math.max(-b.minY, Math.min(grid.h - b.maxY, dy))
+    if (mx || my) {
+      const points = translateOutline(row.points, mx, my)
+      structure.patchArea(row.id, { points, ...cellBox(points) })
+    }
+    return true
+  }
   if (row.part === "raised_floor") {
     const x = Math.max(0, Math.min(grid.w - row.width, row.x + dx))
     const y = Math.max(0, Math.min(grid.h - row.height, row.y + dy))

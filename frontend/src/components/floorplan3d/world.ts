@@ -6,6 +6,8 @@ import {
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
 
+import { raisedContains } from "../floorplan/raised-floor-shape"
+
 /**
  * World-space conventions for the 3D room view.
  *
@@ -164,13 +166,26 @@ export interface SceneTray {
 
 export interface SceneRaisedFloor {
   id: string
+  /** The whole cells it covers. */
   x: number
   y: number
   w: number
   h: number
+  /** A polygon outline in cell units; absent or empty: the rectangle. */
+  points?: [number, number][]
   plenum_mm: number
   label: string
   color: string
+}
+
+/** A scene raised floor in the editor's shape (width/height), for the
+ * shared outline helpers. */
+export function sceneRaised(a: SceneRaisedFloor) {
+  return {
+    ...a,
+    width: a.w,
+    height: a.h,
+  }
 }
 
 export interface SceneWallOpening {
@@ -290,8 +305,8 @@ export function underfloorMM(
   let best = 0
   for (const [px, py] of points) {
     for (const a of areas ?? []) {
-      if (a.x <= px && px <= a.x + a.w && a.y <= py && py <= a.y + a.h)
-        if (a.plenum_mm > best) best = a.plenum_mm
+      if (a.plenum_mm > best && raisedContains(sceneRaised(a), [px, py]))
+        best = a.plenum_mm
     }
   }
   return best || -UNDERFLOOR_MM
@@ -1419,8 +1434,8 @@ export function floorDeviceBoxM(
 export function floorTopM(scene: ScenePayload, tile: SceneTile): number {
   const cx = tile.x + tile.w / 2
   const cy = tile.y + tile.h / 2
-  const on = (scene.raised_floors ?? []).some(
-    (a) => a.x <= cx && cx <= a.x + a.w && a.y <= cy && cy <= a.y + a.h
+  const on = (scene.raised_floors ?? []).some((a) =>
+    raisedContains(sceneRaised(a), [cx, cy])
   )
   return on ? RAISED_FLOOR_TOP_M : 0
 }

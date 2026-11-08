@@ -277,7 +277,11 @@ export function PlanCanvas({
         editable={canEdit}
         showGrid={showGrid}
         armed={
-          mode === "structure" ? (areaArmed ? AREA_PSEUDO_ENTRY : null) : armed
+          mode === "structure"
+            ? areaArmed === "rect"
+              ? AREA_PSEUDO_ENTRY
+              : null
+            : armed
         }
         onSelect={(id) => {
           setSelectedId(id)
@@ -330,6 +334,8 @@ export function PlanCanvas({
         onGestureEnd={draft.endGesture}
         onCreateRect={mode === "structure" ? createAreaAt : createAt}
         raisedFloors={areas}
+        raisedPolygonTool={mode === "structure" && areaArmed === "polygon"}
+        onCreateRaisedPolygon={structure.createRaisedPolygon}
         selectedAreaId={selectedAreaId}
         onSelectArea={(aid) => {
           setSelectedAreaId(aid)
@@ -374,6 +380,7 @@ export function PlanCanvas({
           deleteRow: structure.deleteRow,
           removePoint: structure.removePoint,
           wallsAround: structure.wallsAroundAreas,
+          raisedFromArea: structure.raisedFromArea,
         }}
         structureToolbar={structureToolbar}
         areaSel={areaSel}

@@ -23,6 +23,13 @@ import {
   translatePoints,
 } from "./structure"
 import type { RaisedRow, RunRow, StructShape } from "./structure"
+import {
+  cellBox,
+  isRaisedPolygon,
+  outlineBounds,
+  raisedOutline,
+  translateOutline,
+} from "./raised-floor-shape"
 
 /** Screen pixels a snap reaches - the same pull areas and labels have. */
 const SNAP_PX = 8
@@ -308,6 +315,28 @@ export function useStructureGestures({
       const row = structure.find((r) => r.id === d.id)
       if (!row || row.part !== "raised_floor") return true
       const o = d.orig
+      if (d.type === "rect" && isRaisedPolygon(row)) {
+        // A polygon moves by whole cells (half a cell with Alt), kept on
+        // the plan; its box follows.
+        const step = e.altKey ? 0.5 : 1
+        const clamp = (v: number, lo: number, hi: number) =>
+          Math.min(Math.max(v, lo), hi)
+        const span = outlineBounds(raisedOutline(row))
+        const dx = clamp(
+          Math.round((p[0] - d.start[0]) / step) * step,
+          -span.minX,
+          grid.w - span.maxX
+        )
+        const dy = clamp(
+          Math.round((p[1] - d.start[1]) / step) * step,
+          -span.minY,
+          grid.h - span.maxY
+        )
+        const points = translateOutline(row.points, dx, dy)
+        preview({ ...row, points, ...cellBox(points) })
+        setGuides(null)
+        return true
+      }
       let next: Rect
       if (d.type === "rect")
         next = {

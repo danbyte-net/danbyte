@@ -119,6 +119,14 @@ import {
   tileQuarter,
 } from "./shapes"
 import type { LabelShape, PlanShape } from "./shapes"
+import {
+  isRaisedPolygon,
+  outlinePath,
+  raisedContains,
+  raisedOutline,
+  raisedRegions,
+  regionCaptionAnchor,
+} from "./raised-floor-shape"
 import { snapshotAreaLabel } from "./snapshot"
 import { TrayShape } from "./tray-layer"
 import { CableLayer } from "./cable-layer"
@@ -299,8 +307,12 @@ export interface FloorCanvasProps {
    * toward the page (background-look.tsx), so the plan reads over it. */
   muteBackground?: boolean
   // ── Raised floors and walls (Structure mode) ───────────────────────────
-  /** Raised-floor rectangles, drawn UNDER every tile in all modes. */
+  /** Raised floors, drawn UNDER every tile in all modes. */
   raisedFloors?: RaisedFloorArea[]
+  /** Structure mode: a raised floor is being drawn as a polygon - the
+   * area polygon tool, its outline handed to `onCreateRaisedPolygon`. */
+  raisedPolygonTool?: boolean
+  onCreateRaisedPolygon?: (points: [number, number][]) => void
   /** Another level of an aligned floor plan, drawn faintly under this one. */
   onion?: OnionSkin | null
   selectedAreaId?: string | null
@@ -474,6 +486,8 @@ export interface StructureActions {
   removePoint?: (id: string, index: number) => void
   /** Walls round these areas. */
   wallsAround?: (areaIds: string[]) => void
+  /** A raised floor with this area's outline. */
+  raisedFromArea?: (areaId: string) => void
 }
 
 /** What a right-click on structure hit. */
@@ -568,6 +582,8 @@ export function FloorCanvas({
   showGrid,
   armed,
   raisedFloors,
+  raisedPolygonTool = false,
+  onCreateRaisedPolygon,
   selectedAreaId,
   onSelectArea,
   walls = [],
@@ -982,12 +998,25 @@ export function FloorCanvas({
     plan,
     shapes,
     tiles,
-    tool: mode === "layout" ? shapeTool : null,
+    tool:
+      mode === "layout"
+        ? shapeTool
+        : mode === "structure" && raisedPolygonTool
+          ? "polygon"
+          : null,
     editable,
     selectedShapeId,
     onSelectShape,
     onChangeShape,
-    onCreateArea,
+    onCreateArea:
+      mode === "structure"
+        ? (geom) => {
+            if (geom.shape === "polygon")
+              onCreateRaisedPolygon?.(
+                geom.points.map((p) => [p[0], p[1]] as [number, number])
+              )
+          }
+        : onCreateArea,
     onCreateLabel,
     onOpenShape,
     onChangeTile,
@@ -1025,6 +1054,22 @@ export function FloorCanvas({
     const r = structure.find((x) => x.id === id)
     return r ? shownRow(r) : undefined
   }
+  // The raised floors as shown (a dragged one where it will drop), and the
+  // regions they draw as.
+  const previewRows = structG.preview.rows
+  const raisedSaved = useMemo(
+    () => raisedRegions(raisedFloors ?? []),
+    [raisedFloors]
+  )
+  const raisedShown = useMemo(() => {
+    const saved = raisedFloors ?? []
+    if (!saved.some((r) => previewRows.has(r.id)))
+      return { rows: saved, regions: raisedSaved }
+    const rows = saved.map(
+      (r) => (previewRows.get(r.id) as RaisedFloorArea | undefined) ?? r
+    )
+    return { rows, regions: raisedRegions(rows) }
+  }, [raisedFloors, raisedSaved, previewRows])
   const showHint = (text: string | null, e?: React.PointerEvent) => {
     const rect = svgRef.current?.getBoundingClientRect()
     if (!text || !e || !rect || structG.active() || drag.current) {
@@ -1097,12 +1142,19 @@ export function FloorCanvas({
       trayWidth: Math.max(10 * k, readable ? 6 : 4),
       areas,
       areaFontPx: 12 * (readable ? fontGrow(12, k) : 1),
-      raised: (raisedFloors ?? []).map((a) => ({
-        id: a.id,
-        box: { x: a.x, y: a.y, w: a.width, h: a.height },
-        text: `${a.label || "Raised floor"} · ${a.plenum_mm} mm`,
-        fontPx: 10 * (readable ? fontGrow(10, k) : 1),
-      })),
+      // One caption per drawn region, its box's bottom-left where the
+      // canvas starts it.
+      raised: raisedSaved.map((rg) => {
+        const named = rg.rows.find((r) => r.label) ?? rg.rows[0]
+        const [ax, ay] = regionCaptionAnchor(rg.pieces)
+        const h = Math.max(ay - rg.bounds.minY, 0.01)
+        return {
+          id: named.id,
+          box: { x: ax, y: ay - h, w: rg.bounds.maxX - ax, h },
+          text: `${named.label || "Raised floor"} · ${rg.plenum_mm} mm`,
+          fontPx: 10 * (readable ? fontGrow(10, k) : 1),
+        }
+      }),
       planLabels: labels,
       cellMm: plan.cell_mm,
       callouts: callouts === "auto" ? { lines: calloutLines } : null,
@@ -1143,7 +1195,7 @@ export function FloorCanvas({
     showTrays,
     trays,
     shapes,
-    raisedFloors,
+    raisedSaved,
     plan.cell_mm,
     cablesShown,
     cablePaths,
@@ -1280,8 +1332,8 @@ export function FloorCanvas({
   })
   // Putting the tool down drops a drawing it left open.
   useEffect(() => {
-    if (shapeTool !== "polygon") shapeG.cancelDraw()
-  }, [shapeTool])
+    if (shapeTool !== "polygon" && !raisedPolygonTool) shapeG.cancelDraw()
+  }, [shapeTool, raisedPolygonTool])
 
   const toCell = (e: React.PointerEvent): CellPoint => {
     const w = toWorld(svgRef.current!, e.clientX, e.clientY)
@@ -1372,7 +1424,7 @@ export function FloorCanvas({
       return
     }
     // A drawing tool (area, polygon, label) draws wherever it is pressed.
-    if (mode === "layout" && shapeG.drawDown(e)) return
+    if ((mode === "layout" || raisedPolygonTool) && shapeG.drawDown(e)) return
     e.currentTarget.setPointerCapture(e.pointerId)
     if (snapshotting) {
       const c = toCell(e)
@@ -1779,14 +1831,7 @@ export function FloorCanvas({
       }
       const rf =
         mode === "structure"
-          ? raised.find(
-              (r) =>
-                !isLocked(r.id) &&
-                wx >= r.x &&
-                wx <= r.x + r.width &&
-                wy >= r.y &&
-                wy <= r.y + r.height
-            )
+          ? raised.find((r) => !isLocked(r.id) && raisedContains(r, [wx, wy]))
           : undefined
       if (rf) {
         setStructMenu({ x: e.clientX, y: e.clientY, id: rf.id, part: rf.part })
@@ -2206,7 +2251,8 @@ export function FloorCanvas({
             drawing ||
             (doorArmed && editable && mode === "structure") ||
             onPickPoint ||
-            (editable && mode === "layout" && shapeTool)
+            (editable && mode === "layout" && shapeTool) ||
+            (editable && raisedPolygonTool)
               ? "crosshair"
               : "grab",
         }}
@@ -2294,10 +2340,14 @@ export function FloorCanvas({
 
           {/* Raised-floor areas - construction context under everything.
               Interactive (selectable) only in Structure mode. */}
-          {(raisedFloors ?? []).map((raw) => {
-            // While dragged or resized, as it will drop.
-            const a = shownRow(raw)
-            const labelText = `${a.label || "Raised floor"} · ${a.plenum_mm} mm`
+          {/* Touching raised floors of one depth and colour are one pad:
+              filled once, outlined only outside (raised-floor-shape.ts). */}
+          {raisedShown.regions.map((rg) => {
+            const color = rg.color || "#71717a"
+            const named = rg.rows.find((r) => r.label) ?? rg.rows[0]
+            const picked = rg.rows.some((r) => r.id === selectedAreaId)
+            const labelText = `${named.label || "Raised floor"} · ${rg.plenum_mm} mm`
+            const [ax, ay] = regionCaptionAnchor(rg.pieces)
             // ~5.6 px/char at 10px - hide the label when it would spill past
             // the area's edge (the rail always shows the full name).
             // Readable: never under READABLE_FONT_PX on screen, and shown
@@ -2305,14 +2355,65 @@ export function FloorCanvas({
             const rfGrow = readable ? fontGrow(10, t.k) : 1
             const labelFits =
               readable ||
-              (a.width * CELL - 12 >= labelText.length * 5.6 &&
-                a.height * CELL >= 20)
-            const live = mode === "structure" && !isLocked(a.id) && !drawing
+              ((rg.bounds.maxX - ax) * CELL - 12 >= labelText.length * 5.6 &&
+                (rg.bounds.maxY - rg.bounds.minY) * CELL >= 20)
+            return (
+              <g
+                key={rg.rows[0].id}
+                data-raised-region={rg.rows.map((r) => r.id).join(" ")}
+                opacity={
+                  rg.rows.every((r) => isLocked(r.id))
+                    ? LOCKED_OPACITY
+                    : undefined
+                }
+                pointerEvents="none"
+              >
+                <path
+                  d={outlinePath(rg.pieces, CELL)}
+                  fill={color}
+                  fillOpacity={0.1}
+                  stroke="none"
+                />
+                <path
+                  d={outlinePath(rg.outline, CELL, false)}
+                  fill="none"
+                  stroke={color}
+                  strokeOpacity={0.35}
+                  strokeWidth={1.5}
+                  strokeDasharray="7 4"
+                  strokeLinejoin="round"
+                />
+                {(named.label || picked) &&
+                  labelFits &&
+                  !planLabels.hiddenRaised.has(named.id) && (
+                    // Bottom-left: a room's name sits at its top-left, and a
+                    // raised floor usually covers the room exactly.
+                    <text
+                      data-raised-label={named.id}
+                      x={ax * CELL + 6 * rfGrow}
+                      y={ay * CELL - 6 * rfGrow}
+                      className="fill-muted-foreground"
+                      fontSize={10 * rfGrow}
+                      pointerEvents="none"
+                    >
+                      {labelText}
+                    </text>
+                  )}
+              </g>
+            )
+          })}
+          {raisedShown.rows.map((a) => {
+            const live =
+              mode === "structure" &&
+              !isLocked(a.id) &&
+              !drawing &&
+              !raisedPolygonTool
+            const picked = a.id === selectedAreaId
+            if (!live && !picked) return null
             return (
               <g
                 key={a.id}
                 data-raised={a.id}
-                opacity={isLocked(a.id) ? LOCKED_OPACITY : undefined}
                 onPointerDown={
                   live
                     ? (e) => {
@@ -2330,35 +2431,17 @@ export function FloorCanvas({
                   pointerEvents: live ? "auto" : "none",
                 }}
               >
-                <rect
-                  x={a.x * CELL}
-                  y={a.y * CELL}
-                  width={a.width * CELL}
-                  height={a.height * CELL}
-                  fill={a.color || "#71717a"}
-                  fillOpacity={0.1}
-                  stroke={a.color || "#71717a"}
-                  strokeOpacity={a.id === selectedAreaId ? 0.9 : 0.35}
-                  strokeWidth={a.id === selectedAreaId ? 2.5 : 1.5}
+                {/* The row's own outline: the press target, drawn only
+                    while selected - the region above is the picture. */}
+                <path
+                  d={outlinePath([raisedOutline(a)], CELL)}
+                  fill="transparent"
+                  stroke={picked ? a.color || "#71717a" : "none"}
+                  strokeOpacity={0.9}
+                  strokeWidth={2.5}
                   strokeDasharray="7 4"
-                  rx={3}
+                  strokeLinejoin="round"
                 />
-                {(a.label || a.id === selectedAreaId) &&
-                  labelFits &&
-                  !planLabels.hiddenRaised.has(a.id) && (
-                    // Bottom-left: a room's name sits at its top-left, and a
-                    // raised floor usually covers the room exactly.
-                    <text
-                      data-raised-label={a.id}
-                      x={a.x * CELL + 6 * rfGrow}
-                      y={(a.y + a.height) * CELL - 6 * rfGrow}
-                      className="fill-muted-foreground"
-                      fontSize={10 * rfGrow}
-                      pointerEvents="none"
-                    >
-                      {labelText}
-                    </text>
-                  )}
               </g>
             )
           })}
@@ -2773,7 +2856,12 @@ export function FloorCanvas({
                 mode === "structure" && selectedAreaId
                   ? structRow(selectedAreaId)
                   : undefined
-              if (rf?.part === "raised_floor" && !isLocked(rf.id))
+              // A polygon is reshaped by drawing it again; it only moves.
+              if (
+                rf?.part === "raised_floor" &&
+                !isLocked(rf.id) &&
+                !isRaisedPolygon(rf)
+              )
                 out.push(
                   <RectHandles
                     key="rf"
@@ -3164,6 +3252,13 @@ export function FloorCanvas({
                   {areaSel && areaSel.size > 1 && areaSel.has(s.id)
                     ? `Add walls around these (${areaSel.size})`
                     : "Add walls around this"}
+                </DropdownMenuItem>
+              )}
+              {s.kind === "area" && structureActions?.raisedFromArea && (
+                <DropdownMenuItem
+                  onSelect={() => structureActions.raisedFromArea!(s.id)}
+                >
+                  Raised floor from this
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
