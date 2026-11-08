@@ -884,6 +884,9 @@ export function FloorCanvas({
     id: string
     x: number
     y: number
+    /** A row's name or a crowd's plate: what it names. */
+    heading?: string
+    members?: readonly string[]
   } | null>(null)
 
   // The cable layer is memoised; its callbacks must hold still while the
@@ -1069,6 +1072,7 @@ export function FloorCanvas({
         members: c.members,
       })),
       labelFit,
+      angleOf: free ? (tile) => tileBox(tile).rotation : undefined,
       zoneGrow: readable ? fontGrow(10, k) : 1,
       pinnedTiles: hoveredTile
         ? new Set([...pinnedNames, hoveredTile])
@@ -1118,6 +1122,7 @@ export function FloorCanvas({
     clusterBox,
     clusterFaces,
     labelFit,
+    free,
     pinnedNames,
     hoveredTile,
     showTrays,
@@ -1372,6 +1377,12 @@ export function FloorCanvas({
   /** A press on a tile's callout: what a click on the tile does, but a
    * drag - the callout never moves its tile. */
   const pressCallout = (id: string, e: React.PointerEvent) => {
+    // A crowd's plate or a cluster's box: zoom to what it names.
+    const plate = planLabels.callouts.find((c) => c.id === id)
+    if (plate?.members) {
+      fitCluster({ members: [...plate.members] })
+      return
+    }
     const tile = tileById.get(id)
     if (!tile) return
     if (tilePick) {
@@ -1883,7 +1894,7 @@ export function FloorCanvas({
 
   /** A click on a cluster: zoom to its members, close enough that they
    * part or turn back into tiles. */
-  const fitCluster = (c: IconCluster) => {
+  const fitCluster = (c: Pick<IconCluster, "members">) => {
     const rect = svgRef.current?.getBoundingClientRect()
     const members = c.members
       .map((id) => tileById.get(id))
@@ -2596,7 +2607,26 @@ export function FloorCanvas({
           {/* Every text the label pass places: cable names along their
               runs, trays' names, a focused cable's ends, Readable's tile
               names - one pass, the cables first (plan-label-pass.ts). */}
-          <PlanLabelsLayer labels={planLabels} k={t.k} trays={trays} />
+          <PlanLabelsLayer
+            labels={planLabels}
+            k={t.k}
+            trays={trays}
+            onRowHover={(row, e) => {
+              const rect = svgRef.current?.getBoundingClientRect()
+              if (!row || !e || !rect || drag.current) {
+                setClusterHint(null)
+                return
+              }
+              setClusterHint({
+                id: `row:${row.id}`,
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+                heading: row.text,
+                members: row.members,
+              })
+            }}
+            onRowPress={(row) => fitCluster({ members: [...row.members] })}
+          />
 
           {/* Callouts: names that would not sit cleanly by their tiles,
               in boxes off to the side with a leader each - hovered or
@@ -2610,8 +2640,24 @@ export function FloorCanvas({
               const tile = tileById.get(id)
               return tile ? tileFill(tile) : undefined
             }}
-            onHover={(id) => {
-              if (!drag.current) setCalloutHot(id)
+            onHover={(id, e) => {
+              if (drag.current) return
+              const plate = id
+                ? planLabels.callouts.find((c) => c.id === id)
+                : null
+              const rect = svgRef.current?.getBoundingClientRect()
+              if (plate?.members && e && rect) {
+                setClusterHint({
+                  id: plate.id,
+                  x: e.clientX - rect.left,
+                  y: e.clientY - rect.top,
+                  heading: plate.name,
+                  members: plate.members,
+                })
+                return
+              }
+              setClusterHint(null)
+              setCalloutHot(id)
             }}
             onPress={pressCallout}
           />
@@ -2860,12 +2906,14 @@ export function FloorCanvas({
         (() => {
           const c = iconLayout.clusters.find((x) => x.id === clusterHint.id)
           const face = c && clusterFaces.get(c.id)
-          if (!c || !face) return null
+          const heading = clusterHint.heading ?? face?.name
+          const ids = clusterHint.members ?? c?.members
+          if (!heading || !ids) return null
           return (
             <ClusterHoverCard
               at={clusterHint}
-              heading={face.name}
-              members={clusterMembersOf(c.members, (id) => {
+              heading={heading}
+              members={clusterMembersOf(ids, (id) => {
                 const tl = tileById.get(id)
                 return tl ? tileMember(tl) : null
               })}

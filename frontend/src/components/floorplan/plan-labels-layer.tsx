@@ -4,7 +4,7 @@ import type { FloorPlanTray } from "@/lib/api"
 
 import { CELL } from "./canvas-geometry"
 import { CHIP_FONT_PX, LABEL_FONT_PX, textSize } from "./plan-labels"
-import type { PlanLabels } from "./plan-label-pass"
+import type { PlanLabels, RowLabel } from "./plan-label-pass"
 
 const TRAY_DEFAULT = "#71717a"
 
@@ -35,10 +35,15 @@ export function PlanLabelsLayer({
   labels,
   k,
   trays,
+  onRowHover,
+  onRowPress,
 }: {
   labels: PlanLabels
   k: number
   trays?: readonly FloorPlanTray[]
+  /** A row's name hovered (null: left), at the pointer. */
+  onRowHover?: (row: RowLabel | null, e?: React.PointerEvent) => void
+  onRowPress?: (row: RowLabel) => void
 }) {
   const s = 1 / k
   const trayColor = new Map(
@@ -89,6 +94,39 @@ export function PlanLabelsLayer({
         >
           {l.text}
         </text>
+      ))}
+      {labels.rows.map((r) => (
+        // A row's name along it, on a plate: hovering lists the row, a
+        // press zooms to it.
+        <g
+          key={r.id}
+          data-row-name={r.id}
+          transform={at(r.at, r.angle)}
+          pointerEvents={onRowHover || onRowPress ? "auto" : undefined}
+          className={onRowPress ? "cursor-pointer" : undefined}
+          onPointerEnter={(e) => onRowHover?.(r, e)}
+          onPointerLeave={() => onRowHover?.(null)}
+          onPointerDown={(e) => {
+            if (e.button !== 0 || !onRowPress) return
+            e.stopPropagation()
+            onRowPress(r)
+          }}
+        >
+          <rect
+            data-part="row-plate"
+            x={(-r.size.w / 2) * s}
+            y={(-r.size.h / 2) * s}
+            width={r.size.w * s}
+            height={r.size.h * s}
+            rx={3 * s}
+            fill="var(--background)"
+            stroke="var(--border)"
+            strokeWidth={s}
+          />
+          <text fontSize={LABEL_FONT_PX * s} fontWeight={600} {...halo}>
+            {r.text}
+          </text>
+        </g>
       ))}
       {labels.bundles.map((l) => (
         <g key={l.key} transform={at(l.at, l.angle)}>

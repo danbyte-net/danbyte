@@ -39,8 +39,9 @@ function tabTip(w: number, h: number, side: CalloutSide): [number, number] {
  * in a plain bordered box, and a thin muted leader from the box's edge to
  * a small dot on the tile, on a casing of the background so it reads over
  * a map, a photo or a dark plan. A callout answers the pointer as its tile does:
- * hovering either lights the pair - a thicker leader in the primary colour
- * - and dims the other callouts; a press opens the tile.
+ * hovering either lights the pair - a thicker leader in the primary colour,
+ * drawn over the rest; the others stay as they are (a name is shown at full
+ * ink or not at all). A press opens the tile.
  */
 export function PlanCalloutsLayer({
   callouts,
@@ -58,20 +59,19 @@ export function PlanCalloutsLayer({
   selected?: ReadonlySet<string>
   /** Unused since boxes dropped their accent; kept for callers. */
   colorOf?: (id: string) => string | undefined
-  onHover?: (id: string | null) => void
+  /** Hovered (null: left), at the pointer. */
+  onHover?: (id: string | null, e?: React.PointerEvent) => void
   onPress?: (id: string, e: React.PointerEvent) => void
 }) {
   if (!callouts.length) return null
   const s = 1 / k
   const isLit = (id: string) => id === hot || !!selected?.has(id)
-  // One hovered: the rest step back.
-  const focus = !!hot && callouts.some((c) => c.id === hot)
   // Lit last, over the rest.
   const order = [...callouts].sort(
     (a, b) => Number(isLit(a.id)) - Number(isLit(b.id))
   )
   const handlers = (id: string) => ({
-    onPointerEnter: () => onHover?.(id),
+    onPointerEnter: (e: React.PointerEvent) => onHover?.(id, e),
     onPointerLeave: () => onHover?.(null),
     onPointerDown: (e: React.PointerEvent) => {
       if (e.button !== 0) return
@@ -88,7 +88,6 @@ export function PlanCalloutsLayer({
       cx,
       cy,
       lit: isLit(c.id),
-      dim: focus && c.id !== hot,
       from: [cx + tx * s, cy + ty * s] as [number, number],
       to: [c.leader[1][0] * CELL, c.leader[1][1] * CELL] as [number, number],
     }
@@ -97,12 +96,11 @@ export function PlanCalloutsLayer({
     <g data-layer="callouts">
       {/* The leaders under the boxes: casing, line, the dot on the tile. */}
       <g data-part="leaders">
-        {geo.map(({ c, lit, dim, from, to }) => (
+        {geo.map(({ c, lit, from, to }) => (
           <g
             key={c.id}
             data-callout-leader={c.id}
             data-lit={lit ? "" : undefined}
-            opacity={dim ? 0.3 : 1}
             className="cursor-pointer"
             {...handlers(c.id)}
           >
@@ -136,7 +134,7 @@ export function PlanCalloutsLayer({
           </g>
         ))}
       </g>
-      {geo.map(({ c, cx, cy, lit, dim }) => {
+      {geo.map(({ c, cx, cy, lit }) => {
         const { w, h } = c.size
         const left = -w / 2 + CALLOUT_ACCENT_PX + CALLOUT_PAD_X
         return (
@@ -144,7 +142,6 @@ export function PlanCalloutsLayer({
             key={c.id}
             data-callout={c.id}
             data-lit={lit ? "" : undefined}
-            opacity={dim ? 0.3 : 1}
             className="cursor-pointer"
             {...handlers(c.id)}
           >

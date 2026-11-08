@@ -927,3 +927,199 @@ export function boxGap(a: Box, b: Box): number {
   const dy = Math.max(0, b.y - (a.y + a.h), a.y - (b.y + b.h))
   return Math.hypot(dx, dy)
 }
+
+// ── Crowds: one tidy stack each ─────────────────────────────────────────────
+
+/** A crowd bigger than this is named by one summary plate, not a box per
+ * tile: past it the boxes and their leaders read as noise. */
+export const MAX_CROWD_CALLOUTS = 6
+/** How far off its tile (or its crowd) a box may sit, in its own heights:
+ * a box farther off reads as no one's. */
+export const NEAR_LEADER_PLATES = 2
+
+/** The box round `boxes`. */
+export function unionBox(boxes: readonly Box[]): Box {
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const b of boxes) {
+    x0 = Math.min(x0, b.x)
+    y0 = Math.min(y0, b.y)
+    x1 = Math.max(x1, b.x + b.w)
+    y1 = Math.max(y1, b.y + b.h)
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+}
+
+/**
+ * Callouts placed crowd by crowd on one board: what is placed stays, the
+ * next crowd keeps off it. A crowd's boxes go in one stack on one side of
+ * it - in the order of their tiles along that side, so no two leaders
+ * cross - as near as the stack fits and never farther out than `reach`; a
+ * lone tile's box takes the nearest free spot round it, no farther. No
+ * leader crosses another, a box, or a tile outside its own crowd. What
+ * finds no place is left out (`stack` and `near` return null, nothing
+ * taken).
+ */
+export class CalloutBoard {
+  private taken = new ShapeGrid<Box>()
+  private leaders = new ShapeGrid<[Pt, Pt]>()
+  constructor(
+    private opts: {
+      /** Clear of what was placed before (tiles, icons, fixed text). */
+      free: (b: Box) => boolean
+      bounds?: Box | null
+      /** The tiles as drawn: no leader over one outside its crowd. */
+      bodies?: Pick<BoxIndex, "some">
+    }
+  ) {}
+
+  private inBounds(b: Box): boolean {
+    const o = this.opts.bounds
+    return (
+      !o ||
+      (b.x >= o.x &&
+        b.y >= o.y &&
+        b.x + b.w <= o.x + o.w &&
+        b.y + b.h <= o.y + o.h)
+    )
+  }
+
+  /** A box is free: in bounds, a little air round it clear of what was
+   * placed, no leader through it. */
+  boxFree(b: Box): boolean {
+    const aired = {
+      x: b.x - BOX_GAP / 2,
+      y: b.y - BOX_GAP / 2,
+      w: b.w + BOX_GAP,
+      h: b.h + BOX_GAP,
+    }
+    return (
+      this.inBounds(aired) &&
+      this.opts.free(aired) &&
+      !this.taken.some(aired, (t) => boxesHit(t, aired)) &&
+      !this.leaders.some(b, (l) => segmentHitsBox(l[0], l[1], b))
+    )
+  }
+
+  /** A leader is free: through no box placed, across no leader, over no
+   * tile but those of `own`. */
+  leaderFree(l: [Pt, Pt], own: ReadonlySet<string>): boolean {
+    const lb = segmentBox(l)
+    if (this.taken.some(lb, (t) => segmentHitsBox(l[0], l[1], t))) return false
+    if (this.leaders.some(lb, (o) => segmentsCross(l, o))) return false
+    const bodies = this.opts.bodies
+    return (
+      !bodies ||
+      !bodies.some(
+        lb,
+        (o) => !own.has(o.id) && segmentHitsBox(l[0], l[1], o.box)
+      )
+    )
+  }
+
+  /** Take a box (and its leader) for good. */
+  take(box: Box, leader?: [Pt, Pt]): void {
+    this.taken.add(box, box)
+    if (leader) this.leaders.add(leader, segmentBox(leader))
+  }
+
+  /**
+   * One stack for a crowd: on the side of the crowd that keeps its leaders
+   * shortest, the boxes in a line along that side in the order of their
+   * tiles, out a step at a time but never past `reach` from the crowd.
+   * Returns the boxes placed (and takes them), or null with nothing taken.
+   */
+  stack(
+    items: readonly CalloutItem[],
+    reach: number
+  ): Map<string, PlacedCallout> | null {
+    if (!items.length) return new Map()
+    const c = unionBox(items.map((it) => it.anchor))
+    const own = new Set(items.map((it) => it.id))
+    let best: {
+      side: CalloutSide
+      boxes: Box[]
+      ls: [Pt, Pt][]
+      row: CalloutItem[]
+      cost: number
+    } | null = null
+    for (const side of ["top", "bottom", "left", "right"] as const) {
+      const h = horizontal(side)
+      const row = [...items].sort(
+        (p, q) =>
+          (h ? cx(p.anchor) - cx(q.anchor) : cy(p.anchor) - cy(q.anchor)) ||
+          (h ? cy(p.anchor) - cy(q.anchor) : cx(p.anchor) - cx(q.anchor)) ||
+          (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)
+      )
+      const starts = packRow(
+        row.map((it) => (h ? cx(it.anchor) : cy(it.anchor))),
+        row.map((it) => (h ? it.size.w : it.size.h)),
+        BOX_GAP
+      )
+      // The longest a leader may run: across the crowd, along the stack
+      // to its box, and `reach` out.
+      const across = h ? c.h : c.w
+      let spread = 0
+      row.forEach((it, i) => {
+        const mid = starts[i] + (h ? it.size.w : it.size.h) / 2
+        spread = Math.max(
+          spread,
+          Math.abs(mid - (h ? cx(it.anchor) : cy(it.anchor)))
+        )
+      })
+      // Never more than three reaches, however big the crowd: a long
+      // leader reads as no one's.
+      const cap = Math.min(Math.hypot(across + reach, spread), reach * 3) + 1e-6
+      for (
+        let d = Math.min(ROW_GAP, reach);
+        d <= reach + 1e-6;
+        d += NEAR_STEP
+      ) {
+        const boxes = row.map((it, i) => boxAt(c, side, d, starts[i], it.size))
+        const ls = boxes.map((b, i) => leaderFor(b, row[i].anchor, side))
+        if (ls.some((l) => leaderLength(l) > cap)) break
+        if (!boxes.every((b) => this.boxFree(b))) continue
+        if (!ls.every((l) => this.leaderFree(l, own))) continue
+        if (
+          ls.some(
+            (l, i) =>
+              boxes.some((b, j) => j !== i && segmentHitsBox(l[0], l[1], b)) ||
+              ls.some((o, j) => j > i && segmentsCross(l, o))
+          )
+        )
+          continue
+        const cost = ls.reduce((s, l) => s + leaderLength(l), 0)
+        if (!best || cost < best.cost - 1e-6)
+          best = { side, boxes, ls, row, cost }
+        break
+      }
+    }
+    if (!best) return null
+    const { side, boxes, ls, row } = best
+    const out = new Map<string, PlacedCallout>()
+    row.forEach((it, i) => {
+      this.take(boxes[i], ls[i])
+      out.set(it.id, { id: it.id, box: boxes[i], side, leader: ls[i] })
+    })
+    return out
+  }
+
+  /** A lone box at the free spot nearest its tile, its leader no longer
+   * than `max`; null (nothing taken) when there is none. `own`: the tiles
+   * its leader may cross (its crowd's). */
+  near(
+    it: CalloutItem,
+    max: number,
+    own?: ReadonlySet<string>
+  ): PlacedCallout | null {
+    const mine = own ?? new Set([it.id])
+    for (const s of nearSpots(it, max)) {
+      if (!this.boxFree(s.box) || !this.leaderFree(s.leader, mine)) continue
+      this.take(s.box, s.leader)
+      return { id: it.id, box: s.box, side: s.side, leader: s.leader }
+    }
+    return null
+  }
+}

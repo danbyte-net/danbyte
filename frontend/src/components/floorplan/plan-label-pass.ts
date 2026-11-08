@@ -15,6 +15,8 @@ import {
   alongSlots,
   aroundSpots,
   besideSpots,
+  boxesHit,
+  turnedBox,
   cableLegs,
   endChipSpots,
   insideSpots,
@@ -33,15 +35,19 @@ import type {
 import {
   BoxIndex,
   CALLOUT_MAX_LINES,
-  boxGap,
-  CALLOUT_MAX_LEADER,
+  CalloutBoard,
+  MAX_CROWD_CALLOUTS,
+  NEAR_LEADER_PLATES,
   calloutClusters,
-  calloutGroups,
   calloutSize,
-  layoutCallouts,
   leaderBoxes,
+  nearSpots,
+  unionBox,
 } from "./plan-callouts"
 import type { CalloutItem, CalloutLine, CalloutSide } from "./plan-callouts"
+import { clusterNameOf } from "./icon-layout"
+import { findRows, rowAngle, rowName } from "./plan-rows"
+import type { RowTile } from "./plan-rows"
 import { READABLE_SYMBOL_PX, clipName, namePriority } from "./readable"
 import type { ShapeOf } from "./readable"
 import { areaIcon, areaName, polygonCentroid, shapeBounds } from "./shapes"
@@ -143,6 +149,9 @@ export interface PlanLabelInput {
   zoneGrow?: number
   /** Tile names scaled to fill their tile (Display > Fit labels). */
   labelFit?: boolean
+  /** The turn a tile is drawn with about its centre (degrees; a free
+   * plan's tiles): rows run along it. 0 when absent. */
+  angleOf?: (t: FloorPlanTile) => number
   /** Tiles whose name always shows: the selection, the hovered. */
   pinnedTiles?: ReadonlySet<string>
   trays?: readonly FloorPlanTray[]
@@ -171,9 +180,10 @@ export interface PlanLabelInput {
     /** Their ends' ports in chips beside the tiles. */
     ends: boolean
   }
-  /** Callouts (the canvas, Display > Callouts: Auto): a tile whose name
-   * will not sit cleanly by it is named in a box set off to the side, a
-   * leader back to it, its `lines` under the name. */
+  /** Callouts (the canvas, Display > Callouts: Auto): a name that does
+   * not fit in its tile is named once along its row, or in a box set off
+   * beside it with a short leader back to it, its `lines` under the name -
+   * never as loose text by the tile. */
   callouts?: {
     lines?: ReadonlyMap<string, readonly CalloutLine[]>
   } | null
@@ -190,6 +200,19 @@ export interface CalloutLabel {
   size: { w: number; h: number }
   side: CalloutSide
   leader: [Pt, Pt]
+  /** A summary plate: the tiles of the crowd it names. */
+  members?: readonly string[]
+}
+
+/** A row named along it: its text's centre (cells), its angle (upright),
+ * its plate's size (units) and the tiles it names. */
+export interface RowLabel {
+  id: string
+  text: string
+  at: Pt
+  angle: number
+  size: { w: number; h: number }
+  members: readonly string[]
 }
 
 /** A cluster tile, for the label pass. */
@@ -216,6 +239,8 @@ export interface PlanLabels {
   hiddenRaised: Set<string>
   /** The tiles named in a callout instead (their name not drawn). */
   callouts: CalloutLabel[]
+  /** Rows named along them (their tiles' names not drawn). */
+  rows: RowLabel[]
   /** Every box taken (units), for a caller laying out more. */
   taken: readonly Box[]
 }
@@ -270,25 +295,74 @@ function inTileNameBox(
   }
 }
 
-/** The rooms a callout goes round (units): the areas linked to a room -
- * a plain area (an aisle, a zone) or a building outline is no room. */
-function roomBoxes(
-  areas: readonly AreaShape[],
-  cellMm: number,
-  scale: number
-): { id: string; box: Box }[] {
-  return areas
-    .filter((a) => !!a.room)
-    .map((a) => {
-      const b = shapeBounds(a, cellMm)
-      return {
-        id: a.id,
-        box: boxOfCells(
-          { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY },
-          scale
-        ),
-      }
-    })
+/** Does a tile's name read whole in its tile at `u` units per plan px -
+ * as TileShape draws it, untrimmed and big enough to read? */
+export function nameFitsTile(
+  t: Pick<FloorPlanTile, "width" | "height">,
+  name: string,
+  labelFit: boolean,
+  u: number
+): boolean {
+  const w = t.width * CELL
+  const h = t.height * CELL
+  if (labelFit) {
+    const font = Math.max(
+      5,
+      Math.min(h * 0.55, (w - 8) / (Math.max(1, name.length) * 0.62))
+    )
+    return (
+      font * u >= MIN_IN_TILE_NAME_PX &&
+      name.length * font * 0.62 <= w - 8 + 0.5
+    )
+  }
+  return (
+    11 * u >= MIN_IN_TILE_NAME_PX &&
+    name.length <= Math.max(3, Math.floor(w / 7))
+  )
+}
+
+/** A text turned by `angle` about `at` (units) as small upright boxes
+ * along it, about as long as it is tall: its bounds would claim a wide
+ * square of the plan round a slanted name. */
+export function alongBoxes(
+  at: Pt,
+  angle: number,
+  size: { w: number; h: number }
+): Box[] {
+  const r = (angle * Math.PI) / 180
+  const d: Pt = [Math.cos(r), Math.sin(r)]
+  const n = Math.max(1, Math.ceil(size.w / size.h))
+  const step = size.w / n
+  const out: Box[] = []
+  for (let i = 0; i < n; i++) {
+    const s = -size.w / 2 + step * (i + 0.5)
+    out.push(turnedBox(at[0] + d[0] * s, at[1] + d[1] * s, step, size.h, angle))
+  }
+  return out
+}
+
+/** Where a turned area draws its name (shape-layer.tsx: its top left,
+ * turned with the area), as boxes along it (units). */
+function turnedAreaName(
+  a: AreaShape,
+  name: string,
+  fontPx: number,
+  scale: number,
+  u: number
+): Box[] {
+  const g = fontPx / 12
+  const w = name.length * fontPx * 0.6 + (areaIcon(a) ? fontPx * 1.4 : 0)
+  const h = fontPx * 1.2
+  // Its middle before the turn (plan px), then turned about the area's.
+  const mx = a.x * CELL + 6 * g + w / 2
+  const my = a.y * CELL + 15 * g - h * 0.35
+  const cx = (a.x + a.width / 2) * CELL
+  const cy = (a.y + a.height / 2) * CELL
+  const r = (a.rotation * Math.PI) / 180
+  const px = cx + (mx - cx) * Math.cos(r) - (my - cy) * Math.sin(r)
+  const py = cy + (mx - cx) * Math.sin(r) + (my - cy) * Math.cos(r)
+  const k = scale / CELL
+  return alongBoxes([px * k, py * k], a.rotation, { w: w * u, h: h * u })
 }
 
 const contains = (o: Box, b: Box) =>
@@ -324,8 +398,17 @@ export function preferInside<T>(
 const CALLOUT_CACHE = 4
 const calloutCache = new Map<
   string,
-  { callouts: CalloutLabel[]; calledOut: string[]; taken: Box[] }
+  {
+    callouts: CalloutLabel[]
+    rows: RowLabel[]
+    calledOut: string[]
+    taken: Box[]
+  }
 >()
+
+/** A crowd within this many leader reaches reads as one; a bigger one's
+ * leftovers are summed up by regions this size. */
+const REGION_PLATES = 4
 
 /** A name drawn in its tile below this on screen (px) can't be read. */
 export const MIN_IN_TILE_NAME_PX = 8
@@ -391,15 +474,22 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     const box = input.shapeOf?.(t)?.box
     if (box) icons.add(boxOfCells(box, scale))
   }
-  // Callouts: every tile whose name we place, wherever it is, tried as a
-  // plain name first (`trial`), with its drawn box (units).
+  // Callouts (Auto): a name that does not fit in its tile is never loose
+  // text by it - its row's name says it, or a box beside it.
   const wantCallouts = !!input.callouts
-  // With callouts, a name kept by its tile was cleared against the fixed
-  // text, the other names and the callouts: it outranks the trays' and the
-  // cables' names, which would otherwise hide it there.
-  const named = wantCallouts ? RANK.cableStored + 5e5 : RANK.tile
-  const trial: LabelRequest<{ at: Pt }>[] = []
-  const ours: { id: string; box: Box; home: Box; text: string }[] = []
+  const named = RANK.tile
+  /** A name of ours under Auto: its drawn box (units), its row geometry
+   * (a tile drawn at its own place), its rank among the crowds. */
+  const ours: {
+    id: string
+    box: Box
+    text: string
+    kind: string
+    rank: number
+    grow: number
+    row: RowTile | null
+    members?: readonly string[]
+  }[] = []
   const bodies = new BoxIndex(Math.max(16, font * 6))
   // What `bodies` holds, for the callouts' cache key.
   const bodyList: [string, Box][] = []
@@ -423,12 +513,12 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     if (!zone) addBody(t.id, boxOfCells(drawn, scale))
     if (!name) continue
     const b = inTileNameBox(t, name, !!input.labelFit, input.zoneGrow)
-    // Icons off and zoomed out: a name drawn in its tile is too small to
-    // read, so with callouts on it is placed (and called out) like an
-    // icon's - beside its tile, or in a box.
-    const tiny = wantCallouts && !zone && b.h * u < MIN_IN_TILE_NAME_PX
+    // Callouts on: a name that does not read whole in its tile at this
+    // zoom - too small, or cut short - is named outside it instead.
+    const outside =
+      wantCallouts && !zone && !nameFitsTile(t, name, !!input.labelFit, u)
     const ours_ =
-      tiny ||
+      outside ||
       (!!shape &&
         !zone &&
         (shape.changed || (t.display === "photo" && !!t.photo)))
@@ -451,26 +541,40 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     const text = clipName(name)
     tileText.set(t.id, text)
     const icon = !!input.iconIds?.has(t.id)
+    if (wantCallouts) {
+      const kind = t.linked?.kind ?? ""
+      ours.push({
+        id: t.id,
+        box: boxOfCells(drawn, scale),
+        text,
+        kind,
+        // Infrastructure (a cooling unit, a UPS) first, then racks, then
+        // devices.
+        rank:
+          kind === "rack" || kind === "cabinet" ? 2 : kind === "device" ? 1 : 3,
+        grow: shape?.changed ? shape.grow : 1,
+        // An icon is drawn off its place: no row of its own.
+        row: icon
+          ? null
+          : {
+              id: t.id,
+              x: t.x,
+              y: t.y,
+              w: t.width,
+              h: t.height,
+              angle: input.angleOf?.(t) ?? 0,
+              kind: kind || (t.tile_type?.id ?? t.role_type?.id ?? ""),
+              name,
+            },
+      })
+      continue
+    }
     const all = (icon ? aroundSpots : besideSpots)(
       drawn,
       textSize(text, font),
       gap / 2,
       scale
     )
-    if (wantCallouts) {
-      ours.push({
-        id: t.id,
-        box: boxOfCells(drawn, scale),
-        home: boxOfCells({ x: t.x, y: t.y, w: t.width, h: t.height }, scale),
-        text,
-      })
-      trial.push({
-        id: `tile:${t.id}`,
-        priority: RANK.tile + namePriority(t),
-        spots: preferInside(all, bounds, null, input.boundsOnly),
-        block: icon ? icons : undefined,
-      })
-    }
     const spots = inside(all)
     if (!spots.some((s) => inView(s.box))) continue
     const pinned = !!input.pinnedTiles?.has(t.id)
@@ -485,188 +589,324 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   for (const c of input.iconClusters ?? []) {
     const text = clipName(c.name)
     tileText.set(c.id, text)
+    if (wantCallouts) {
+      ours.push({
+        id: c.id,
+        box: boxOfCells(c.box, scale),
+        text,
+        kind: "cluster",
+        rank: 2,
+        grow: 1,
+        row: null,
+        members: c.members,
+      })
+      continue
+    }
     const all = aroundSpots(c.box, textSize(text, font), gap / 2, scale)
     // Over a single rack's name: it stands for several.
     const priority = named + 1000 + Math.min(999, c.members.length)
-    if (wantCallouts)
-      trial.push({
-        id: `tile:${c.id}`,
-        priority,
-        spots: preferInside(all, bounds, null, input.boundsOnly),
-        block: icons,
-      })
     const spots = inside(all)
     if (!spots.some((s) => inView(s.box))) continue
     tileReqs.push({ id: `tile:${c.id}`, priority, spots, block: icons })
   }
+  // The rooms' names keep their place: a turned area's name is drawn
+  // where it is (shape-layer.tsx), an upright one's first spot is its top
+  // left corner - rows and callouts keep off both.
+  const areaFont = input.areaFontPx ?? 12
+  const roomNames: Box[] = []
+  if (wantCallouts)
+    for (const a of input.areas ?? []) {
+      if (!a.show_name || a.shape === "polygon") continue
+      const name = areaName(a)
+      if (!name) continue
+      if (a.rotation) {
+        const boxes = turnedAreaName(a, name, areaFont, scale, u)
+        roomNames.push(...boxes)
+        for (const bx of boxes) occ.add(bx)
+      } else {
+        const shift = areaIcon(a) ? areaFont * 1.4 : 0
+        const pad = 6 * u * (areaFont / 12)
+        roomNames.push({
+          x: a.x * scale + pad,
+          y: a.y * scale + pad,
+          w: (name.length * areaFont * 0.6 + shift) * u,
+          h: areaFont * 1.2 * u,
+        })
+      }
+    }
 
-  // Callouts: a name with no place by its tile, or one as near another
-  // tile as its own (which could be either's), goes in a box off to the
-  // side. Decided and laid out over the whole plan, not the view - a few
-  // rounds, as the boxes and their leaders can crowd out a name that sat
-  // clear before.
+  // Under Auto: rows named along them, then a box per name for the rest,
+  // crowd by crowd. Decided over the whole plan, not the view, so a pan
+  // never moves one.
   const callouts: CalloutLabel[] = []
+  const rowLabels: RowLabel[] = []
   const calledOut = new Set<string>()
   const lines = input.callouts?.lines
-  const rooms = wantCallouts
-    ? roomBoxes(input.areas ?? [], input.cellMm, scale)
-    : []
-  // Fills `callouts` and `calledOut`; returns the boxes taken (the boxes
-  // and their leaders).
+  const linesOf = (id: string) =>
+    (lines?.get(id) ?? []).slice(0, CALLOUT_MAX_LINES)
+  // Fills `callouts`, `rowLabels` and `calledOut`; returns the boxes taken
+  // (the boxes, their leaders, the rows' names).
   const layOut = (): Box[] => {
     const cell = Math.max(16, font * 6)
-    // Nearer another tile than this (units) beyond its own: ambiguous.
-    const margin = font
     const join = READABLE_SYMBOL_PX * 1.5
     const toCells = (p: Pt): Pt => [p[0] / scale, p[1] / scale]
-    // Boxes and leaders placed so far.
     const taken: Box[] = []
-    const calloutBoxes: Box[] = []
     // Clear of every tile, icon and fixed text.
     const solid = new Occupancy(cell)
-    for (const b of fixedBoxes) solid.add(b)
+    // The fixed text alone: a row's name may run over an aisle's tiles.
+    const text = new Occupancy(cell)
+    for (const b of [...fixedBoxes, ...roomNames]) {
+      solid.add(b)
+      text.add(b)
+    }
     for (const b of tileBodies) solid.add(b)
     for (const cl of input.iconClusters ?? [])
       solid.add(boxOfCells(cl.box, scale))
-    const gaveUp = new Set<string>()
-    const leaders: [Pt, Pt][] = []
-    // Tiles near each other read as one cluster: when one of them is
-    // named in a callout, all of them are - never boxes and plain names
-    // mixed in one cluster.
-    const clusterOf = calloutClusters(ours, join)
-    const place = (items: CalloutItem[], maxLeader: number) =>
-      layoutCallouts(items, {
-        free: (b) => solid.free(b),
-        bounds: input.boundsOnly ? bounds : null,
-        prior: calloutBoxes,
-        priorLeaders: leaders,
-        bodies,
-        maxLeader,
+    const within = (b: Box) =>
+      !input.boundsOnly || !bounds || contains(bounds, b)
+
+    // Rows: one name along each, beside it on either side, else over it.
+    const inRow = new Set<string>()
+    const oursById = new Map(ours.map((o) => [o.id, o]))
+    const rows = findRows(ours.flatMap((o) => (o.row ? [o.row] : [])))
+    rows.sort((a, b) => b.length - a.length || (a.id < b.id ? -1 : 1))
+    for (const r of rows) {
+      const nm = rowName(r.names)
+      if (!nm.text) continue
+      const lenPx = r.length * scale
+      let label = nm.text
+      let size = textSize(label, font)
+      if (size.w > lenPx + size.h * 2 && nm.short !== nm.text) {
+        label = nm.short
+        size = textSize(label, font)
+      }
+      const angle = rowAngle(r.dir)
+      const nrm: Pt = [-r.dir[1], r.dir[0]]
+      const grow = Math.max(...r.members.map((id) => oursById.get(id)!.grow))
+      const off = (r.depth * grow * scale) / 2 + gap / 2 + size.h / 2
+      const range = Math.max(0, (lenPx - size.w) / 2)
+      const own = new Set(r.members)
+      const c0: Pt = [r.centre[0] * scale, r.centre[1] * scale]
+      let pick: { at: Pt; boxes: Box[] } | null = null
+      for (const side of [off, -off, 0])
+        for (const f of side ? [0, -0.5, 0.5, -1, 1] : [0]) {
+          if (pick) break
+          const s = f * range
+          if (f && !range) continue
+          const at: Pt = [
+            c0[0] + r.dir[0] * s + nrm[0] * side,
+            c0[1] + r.dir[1] * s + nrm[1] * side,
+          ]
+          const boxes = alongBoxes(at, angle, size)
+          if (
+            boxes.every(
+              (bx) =>
+                within(bx) &&
+                text.free(bx) &&
+                !bodies.some(bx, (o) => !own.has(o.id) && boxesHit(o.box, bx))
+            )
+          )
+            pick = { at, boxes }
+        }
+      if (!pick) continue
+      for (const bx of pick.boxes) {
+        text.add(bx)
+        solid.add(bx)
+        taken.push(bx)
+      }
+      for (const id of r.members) {
+        inRow.add(id)
+        calledOut.add(id)
+      }
+      rowLabels.push({
+        id: r.id,
+        text: label,
+        at: toCells(pick.at),
+        angle,
+        size,
+        members: r.members,
       })
-    type Placed = NonNullable<
-      ReturnType<typeof place> extends Map<string, infer V> ? V : never
-    >
-    const commit = (it: CalloutItem, p: Placed) => {
-      calledOut.add(it.id)
-      leaders.push(p.leader)
-      const lb = leaderBoxes(p.leader)
-      taken.push(p.box, ...lb)
-      calloutBoxes.push(p.box)
-      solid.add(p.box)
-      for (const b of lb) solid.add(b)
+    }
+
+    // The rest in callouts, crowd by crowd: a crowd of a few in one stack
+    // beside it; a bigger one split into its tighter crowds, each stacked
+    // the same way; what still finds no room named by one summary plate.
+    type Ours = (typeof ours)[number]
+    const rest = ours.filter((o) => !inRow.has(o.id))
+    // The crowd as a whole, then its huddles: things nearer than this
+    // stay one crowd however big, so a dense knot is summarised, not
+    // boxed name by name.
+    const joins = [join, join / 3]
+    const crowdsOf = (list: readonly Ours[], j: number): Ours[][] => {
+      const clusterOf = calloutClusters(list, j)
+      const crowds = new Map<number, Ours[]>()
+      for (const o of list) {
+        const k = clusterOf.get(o.id)!
+        const l = crowds.get(k)
+        if (l) l.push(o)
+        else crowds.set(k, [o])
+      }
+      // Infrastructure first, then the smaller crowds.
+      return [...crowds.values()].sort(
+        (a, b) =>
+          Math.max(...b.map((o) => o.rank)) -
+            Math.max(...a.map((o) => o.rank)) ||
+          a.length - b.length ||
+          (a[0].id < b[0].id ? -1 : 1)
+      )
+    }
+    const board = new CalloutBoard({
+      free: (bx) => solid.free(bx),
+      bounds: input.boundsOnly ? bounds : null,
+      bodies,
+    })
+    const reach = NEAR_LEADER_PLATES * calloutSize("", []).h
+    /** A crowd no wider or taller than this many reaches reads as one. */
+    const small = (list: readonly Ours[]) => {
+      const b = unionBox(list.map((o) => o.box))
+      return b.w <= REGION_PLATES * reach && b.h <= REGION_PLATES * reach
+    }
+    const commit = (
+      id: string,
+      name: string,
+      p: { box: Box; side: CalloutSide; leader: [Pt, Pt] },
+      members?: readonly string[]
+    ) => {
+      taken.push(p.box, ...leaderBoxes(p.leader))
       callouts.push({
-        id: it.id,
-        name: tileText.get(it.id) ?? "",
-        lines: (lines?.get(it.id) ?? []).slice(0, CALLOUT_MAX_LINES),
+        id,
+        name,
+        lines: members ? [] : linesOf(id),
         at: toCells([p.box.x + p.box.w / 2, p.box.y + p.box.h / 2]),
         size: { w: p.box.w, h: p.box.h },
         side: p.side,
         leader: [toCells(p.leader[0]), toCells(p.leader[1])],
+        ...(members ? { members } : {}),
       })
     }
-    for (let round = 0; round < 3; round++) {
-      const fixed = new Occupancy(cell)
-      for (const b of fixedBoxes) fixed.add(b)
-      for (const b of taken) fixed.add(b)
-      const tried = placeLabels(
-        trial.filter((r) => !calledOut.has(r.id.slice(5))),
-        fixed
-      )
-      const unclear = ours.filter((o) => {
-        if (calledOut.has(o.id) || gaveUp.has(o.id)) return false
-        const spot = tried.get(`tile:${o.id}`)
-        if (!spot) return true
-        const own = boxGap(spot.box, o.box)
-        return bodies.near(spot.box, own + margin, o.id).length > 0
-      })
-      // Their clusters whole, and the rest of a cluster called out before.
-      const boxed = new Set(
-        [...unclear.map((o) => o.id), ...calledOut].map((id) =>
-          clusterOf.get(id)
-        )
-      )
-      const want = ours.filter(
-        (o) =>
-          !calledOut.has(o.id) &&
-          !gaveUp.has(o.id) &&
-          boxed.has(clusterOf.get(o.id))
-      )
-      if (!want.length) break
-      const groups = calloutGroups(
-        want.map((o) => ({ id: o.id, anchor: o.box, home: o.home })),
-        rooms,
-        join,
-        gap * 2
-      )
-      const items: CalloutItem[] = want.map((o) => {
-        const g = groups.get(o.id)!
-        return {
-          id: o.id,
-          anchor: o.box,
-          size: calloutSize(
-            o.text,
-            (lines?.get(o.id) ?? []).slice(0, CALLOUT_MAX_LINES)
-          ),
-          group: g.group,
-          container: g.container,
+    const itemOf = (o: Ours): CalloutItem => ({
+      id: o.id,
+      anchor: o.box,
+      size: calloutSize(o.text, linesOf(o.id)),
+      group: "crowd",
+      container: o.box,
+    })
+    // Places what it can of a crowd; returns what found no place.
+    const place = (crowd: readonly Ours[], level: number): Ours[] => {
+      if (crowd.length === 1) {
+        const p = board.near(itemOf(crowd[0]), reach)
+        if (!p) return [...crowd]
+        calledOut.add(crowd[0].id)
+        commit(crowd[0].id, crowd[0].text, p, crowd[0].members)
+        return []
+      }
+      if (crowd.length <= MAX_CROWD_CALLOUTS) {
+        const placed = board.stack(crowd.map(itemOf), reach)
+        if (placed) {
+          for (const o of crowd) {
+            calledOut.add(o.id)
+            commit(o.id, o.text, placed.get(o.id)!, o.members)
+          }
+          return []
         }
-      })
-      const placed = place(items, CALLOUT_MAX_LEADER)
-      for (const it of items) {
-        const p = placed.get(it.id)
+      }
+      // Its tighter crowds, each on its own.
+      for (let l = level + 1; l < joins.length; l++) {
+        const parts = crowdsOf(crowd, joins[l])
+        if (parts.length > 1) return parts.flatMap((part) => place(part, l))
+      }
+      // A tight knot: one plate says it.
+      if (crowd.length <= MAX_CROWD_CALLOUTS || small(crowd)) return [...crowd]
+      // A building's worth, all touching: each where it has room close
+      // by, infrastructure first; the rest in plates by region.
+      const left: Ours[] = []
+      for (const o of [...crowd].sort(
+        (a, b) => b.rank - a.rank || (a.id < b.id ? -1 : 1)
+      )) {
+        const p = board.near(itemOf(o), reach)
         if (!p) {
-          // Nowhere for a box either: its plain name, if it fits.
-          gaveUp.add(it.id)
+          left.push(o)
           continue
         }
-        commit(it, p)
+        calledOut.add(o.id)
+        commit(o.id, o.text, p, o.members)
+      }
+      return left
+    }
+    // What found no place, in one plate per region: its range or its
+    // count, a leader to it - never a name lost without a word.
+    const summarise = (left: readonly Ours[]) => {
+      const regions = new Map<string, Ours[]>()
+      const size = REGION_PLATES * reach
+      for (const o of left) {
+        const k = small(left)
+          ? "all"
+          : `${Math.floor((o.box.x + o.box.w / 2) / size)},${Math.floor((o.box.y + o.box.h / 2) / size)}`
+        const l = regions.get(k)
+        if (l) l.push(o)
+        else regions.set(k, [o])
+      }
+      for (const part of regions.values()) {
+        const ids = part.map((o) => o.id).sort()
+        const one = part.length === 1 && !part[0].members
+        const name = one
+          ? part[0].text
+          : clusterNameOf(
+              part.flatMap((o) =>
+                o.members
+                  ? o.members.map(() => ({ name: "", kind: "" }))
+                  : [{ name: o.text, kind: o.kind }]
+              )
+            )
+        const box = unionBox(part.map((o) => o.box))
+        const it: CalloutItem = one
+          ? itemOf(part[0])
+          : {
+              id: `crowd:${ids[0]}`,
+              anchor: box,
+              size: calloutSize(name, []),
+              group: "crowd",
+              container: box,
+            }
+        const p = board.near(it, reach * 2, new Set(ids))
+        if (!p) continue
+        for (const id of ids) calledOut.add(id)
+        commit(
+          it.id,
+          name,
+          p,
+          one ? undefined : part.flatMap((o) => o.members ?? [o.id])
+        )
       }
     }
-    // A cluster called out with one of its tiles left without a box: one
-    // more try for each, with a longer leader, before it goes unnamed.
-    const boxedNow = new Set([...calledOut].map((id) => clusterOf.get(id)))
-    for (const o of ours) {
-      if (!gaveUp.has(o.id) || !boxedNow.has(clusterOf.get(o.id))) continue
-      const it: CalloutItem = {
-        id: o.id,
-        anchor: o.box,
-        size: calloutSize(
-          o.text,
-          (lines?.get(o.id) ?? []).slice(0, CALLOUT_MAX_LINES)
-        ),
-        group: `lone:${o.id}`,
-        container: o.box,
-      }
-      const p = place([it], CALLOUT_MAX_LEADER * 4).get(o.id)
-      if (!p) continue
-      gaveUp.delete(o.id)
-      commit(it, p)
+    for (const crowd of crowdsOf(rest, joins[0])) {
+      const left = place(crowd, 0)
+      if (left.length) summarise(left)
     }
-    // A tile whose box found no place even with a long leader keeps its
-    // plain name where it fits: better a name beside it than none.
-    // (Rare: the row and the nearest-spot passes both failed.)
     return taken
   }
   if (wantCallouts && ours.length) {
     // The layout depends on the zoom and the plan only - never the view,
-    // a hover or the cables - and costs hundreds of ms on a hall of racks:
-    // a pan, a hover or a second settle at the same zoom reuses it.
+    // a hover or the cables - and can cost a lot on a hall of racks: a
+    // pan, a hover or a second settle at the same zoom reuses it.
     const key = JSON.stringify([
       scale,
       font,
       gap,
       input.boundsOnly ? bounds : null,
       fixedBoxes,
+      roomNames,
       tileBodies,
       bodyList,
-      icons.boxes(),
-      rooms,
-      ours.map((o) => [o.id, o.box, o.home, o.text, lines?.get(o.id)]),
-      trial.map((r) => [
-        r.id,
-        r.priority,
-        !!r.block,
-        r.spots.map((s) => s.box),
+      ours.map((o) => [
+        o.id,
+        o.box,
+        o.text,
+        o.kind,
+        o.grow,
+        o.row,
+        o.members,
+        lines?.get(o.id),
       ]),
     ])
     let hit = calloutCache.get(key)
@@ -676,18 +916,58 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       calloutCache.set(key, hit)
     } else {
       const taken = layOut()
-      hit = { callouts: [...callouts], calledOut: [...calledOut], taken }
+      hit = {
+        callouts: [...callouts],
+        rows: [...rowLabels],
+        calledOut: [...calledOut],
+        taken,
+      }
       callouts.length = 0
+      rowLabels.length = 0
       calledOut.clear()
       calloutCache.set(key, hit)
       while (calloutCache.size > CALLOUT_CACHE)
         calloutCache.delete(calloutCache.keys().next().value!)
     }
     callouts.push(...hit.callouts)
+    rowLabels.push(...hit.rows)
     for (const id of hit.calledOut) calledOut.add(id)
     // Taken before anything else is placed: the lower ranked keep off the
-    // boxes and their leaders.
+    // boxes, their leaders and the rows' names.
     for (const b of hit.taken) occ.add(b)
+    // The selected or hovered named by its row (or by no one): its own box
+    // too, beside it, for as long as it is pinned.
+    const shown = new Set(callouts.map((c) => c.id))
+    for (const id of input.pinnedTiles ?? []) {
+      const o = ours.find((x) => x.id === id)
+      if (!o || shown.has(id) || o.members) continue
+      const it: CalloutItem = {
+        id,
+        anchor: o.box,
+        size: calloutSize(o.text, linesOf(id)),
+        group: "pinned",
+        container: o.box,
+      }
+      const reach = NEAR_LEADER_PLATES * calloutSize("", []).h
+      const spots = nearSpots(it, reach * 2)
+      const fits = (s: (typeof spots)[number]) =>
+        occ.free(s.box) && leaderBoxes(s.leader).every((bx) => occ.free(bx))
+      const s = spots.find(fits) ?? spots.at(0)
+      if (!s) continue
+      occ.add(s.box)
+      callouts.push({
+        id,
+        name: o.text,
+        lines: linesOf(id),
+        at: [(s.box.x + s.box.w / 2) / scale, (s.box.y + s.box.h / 2) / scale],
+        size: { w: s.box.w, h: s.box.h },
+        side: s.side,
+        leader: [
+          [s.leader[0][0] / scale, s.leader[0][1] / scale],
+          [s.leader[1][0] / scale, s.leader[1][1] / scale],
+        ],
+      })
+    }
   }
   // A tile named in a callout has no plain name.
   const tileReqsShown = calledOut.size
@@ -914,6 +1194,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     areas: new Map(),
     hiddenRaised: new Set(),
     callouts,
+    rows: rowLabels,
     taken: occ.boxes(),
   }
   for (const [key, spot] of placed) {
