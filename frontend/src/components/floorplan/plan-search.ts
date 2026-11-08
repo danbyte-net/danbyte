@@ -9,6 +9,7 @@ import type {
 import { searchTiles } from "./selection"
 import { areaName } from "./shapes"
 import type { AreaShape, PlanShape } from "./shapes"
+import { tileOpen } from "./tile-open"
 
 /** One hit of "Find on plan…": an object (tile), a cable, a tray or an
  * area. */
@@ -92,6 +93,8 @@ export interface PickActions {
   showTile: (tile: FloorPlanTile) => void
   /** Open a device, rack or cabinet tile's panel. */
   openTilePanel: (tile: FloorPlanTile) => void
+  /** Pin the popover of a tile without a panel (power, cooling…). */
+  pinTile: (tile: FloorPlanTile) => void
 }
 
 /** A pick from "Find on plan…": a cable traces, frames and opens its
@@ -114,13 +117,11 @@ export function applyPick(
       return
     case "object": {
       act.showTile(h.tile)
-      const l = h.tile.linked
-      if (
-        !editing &&
-        !l?.hidden &&
-        (l?.kind === "device" || l?.kind === "rack" || l?.kind === "cabinet")
-      )
-        act.openTilePanel(h.tile)
+      if (editing) return
+      // Viewing, a pick opens the object the way a click on it does: its
+      // panel, or its pinned popover for the kinds without one.
+      if (tileOpen(h.tile).kind === "panel") act.openTilePanel(h.tile)
+      else act.pinTile(h.tile)
     }
   }
 }

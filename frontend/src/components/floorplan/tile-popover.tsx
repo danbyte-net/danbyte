@@ -844,11 +844,24 @@ export function useTilePopover(delayMs = 250) {
     return true
   }
 
+  /** Pin this tile's popover: at the pointer while it is over the tile,
+   * else at `at` (the tile on screen - a pick from Find or the Objects
+   * list, a callout). Returns false when it has nowhere to anchor. */
+  const pinTile = (tile: FloorPlanTile, at?: { x: number; y: number }) => {
+    const hit = lastHover.current
+    const point = hit?.tile.id === tile.id ? hit : at
+    if (!point) return false
+    clearTimer()
+    pinned.current = true
+    setTarget({ tile, x: point.x, y: point.y, pinned: true })
+    return true
+  }
+
   const close = () => {
     clearTimer()
     pinned.current = false
     setTarget(null)
   }
 
-  return { target, onHover, pinCurrent, close }
+  return { target, onHover, pinCurrent, pinTile, close }
 }
