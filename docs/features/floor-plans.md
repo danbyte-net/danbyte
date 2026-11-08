@@ -105,7 +105,7 @@ order:
 
 | Layer | What | Controls |
 |---|---|---|
-| **Map** | A snapshot of the [Site map](site-map.md) at true scale: street map or satellite, stretched over the grid. On a building's levels it is one map, shared - see [Building levels](#building-levels). **Display → Muted background** greys the street map; satellite imagery keeps its colours, with its opacity only. | **From site map…**, or with a map: **Map captured** *date*, **Map** / **Satellite**, **Update snapshot**, **Remove**; the eye; **Opacity**. |
+| **Map** | A snapshot of the [Site map](site-map.md) at true scale: street map or satellite, stretched over the grid. On a building's levels it is one map, shared - see [Building levels](#building-levels). **Display → Muted background** greys the street map; satellite imagery keeps its colours, with its opacity only. | **From site map…**, or with a map: **Map captured** *date*, **Map** / **Satellite**, **Update snapshot**, **Edit area…**, **Remove**; the eye; **Opacity**. |
 | **Floor drawing** | The floor's own picture (PNG, JPEG…) or [CAD drawing](#cad-drawings), over the map. One or the other: a drawing replaces the picture and a picture the drawing, each after a confirm. | **Upload image…** / **Replace image…**, **Remove**; **Upload drawing…** / **Replace drawing…**, **Remove**; the eye; **Opacity** (the picture's, or the drawing's placement opacity). |
 
 The eye hides or shows a layer on this floor and is saved with it, like the
@@ -177,6 +177,36 @@ basemap. The line above reads **Map captured** *date* (and, on a building,
 the number of levels drawing it). **Remove** deletes the map from every
 floor it lies under, and their geo anchor with it: the next **From site
 map…** frames the floor anew, opening on where it was.
+
+**Edit area…** (on a plan with a [geo anchor](#the-geo-anchor)) grows or
+shrinks the area the plan covers without moving anything on the ground -
+for when the site grows next door and the plan should take in the new
+building. It opens the same framing map, titled **Edit area**, on the
+plan's box in the plan's own cells, with what is drawn (on every level
+that goes with it) dashed inside. Only the handles move: the frame and the
+dashed box can't be dragged and a double-click does nothing, so the plan
+stays where it is on the map. Each edge moves in whole cells, outwards to
+grow or inwards to trim empty cells, never past the dashed box. The line
+under the map reads the frame, the map's detail, the cells added or trimmed
+on each side (*N +3 · W +5*) and, on a building, **Grows all N levels**;
+past 2,048 cells a side **Capture** is disabled, and it stays disabled until
+an edge has moved.
+
+**Capture** renders the new box from the tile server in your browser, as
+above, and only then sends it: the server holds the frame to the plan's own
+cells (`keep_anchor`), grows or trims the grid on the sides you moved,
+moves everything on the plan by the cells added or trimmed on the west and
+north - tiles, areas, labels, walls, trays, raised floors, cable routes, a
+CAD drawing's placement and live views, as Expand does - and makes the
+render the map, in one transaction. Every object keeps its real-world
+position, so other buildings' plans, their footprints on the Site map and
+the site's outlines stay aligned with it. On an aligned floor plan every
+level of the same grid grows with it and shares the one map. The change log
+records it with the cause *Grew <plan> to W × H cells from the Site map*
+(or *Shrank …*). A trim that would cut something is refused naming what,
+and on which level (*The frame would cut 2 racks, 1 wall on Level 1.*); if
+the tiles can't be read, or anything is refused, the plan and its map stay
+as they were.
 
 ### Site-wide floor plans
 
@@ -394,7 +424,7 @@ A floor (`/api/floor-plans/<id>/`) reads and writes its two
 | Call | What it does |
 |---|---|
 | `POST /api/floor-plans/<id>/background/` | Multipart `background_image` sets the floor's picture; `clear=1` removes it. The map is not touched. |
-| `POST /api/floor-plans/<id>/map/` | Multipart `image` (the browser's render: PNG, JPEG or WebP, at most 20 MB, 8,192 pixels a side and 40 megapixels), `basemap` (`map`/`sat`), `zoom`. On a plan with a geo anchor it renders the anchor's box: the map's picture is replaced (Update snapshot), or a new map is made. On a plan with none, `bbox` (`[south, west, north, east]`, JSON text) is required and must be the grid's real size - `grid_width` × `grid_height` cells of `cell_mm` - within 2%, else 400; it becomes the plan's anchor. With `grid` (`[width, height]`, JSON text) and `offset` (`[x, y]`, the cells everything moves by; negative trims cells off the west or north) the frame is free, anchored plan or not: larger, smaller or elsewhere. `bbox` must be `grid` cells of `cell_mm` within 2%, `grid` 1 to 2,048 a side, and everything drawn on each level that goes with it, moved by `offset`, must lie inside `grid` (else 400 on `grid` or `offset`; the read's `frame_extent` `{x, y, w, h}` gives the whole cells it covers, null when empty). The grid takes `grid`, everything on it moves by `offset`, a floor picture is padded or cut, and the frame becomes the anchor and the one map - on the plan and the levels of the same grid and cell size (`map_levels` on the floor's read counts them).
+| `POST /api/floor-plans/<id>/map/` | Multipart `image` (the browser's render: PNG, JPEG or WebP, at most 20 MB, 8,192 pixels a side and 40 megapixels), `basemap` (`map`/`sat`), `zoom`. On a plan with a geo anchor it renders the anchor's box: the map's picture is replaced (Update snapshot), or a new map is made. On a plan with none, `bbox` (`[south, west, north, east]`, JSON text) is required and must be the grid's real size - `grid_width` × `grid_height` cells of `cell_mm` - within 2%, else 400; it becomes the plan's anchor. With `grid` (`[width, height]`, JSON text) and `offset` (`[x, y]`, the cells everything moves by; negative trims cells off the west or north) the frame is free, anchored plan or not: larger, smaller or elsewhere. `bbox` must be `grid` cells of `cell_mm` within 2%, `grid` 1 to 2,048 a side, and everything drawn on each level that goes with it, moved by `offset`, must lie inside `grid` (else 400 on `grid`, or on `offset` naming what would be cut and on which level; the read's `frame_extent` `{x, y, w, h}` gives the whole cells it covers, null when empty). The grid takes `grid`, everything on it moves by `offset`, a floor picture is padded or cut, and the frame becomes the anchor and the one map - on the plan and the levels of the same grid and cell size (`map_levels` on the floor's read counts them). `keep_anchor=1` (Edit area, a plan with a geo anchor only) pins the frame to the plan's own cells: `bbox` must be the anchor's box grown or trimmed by whole cells - its north-west corner `offset` cells out from the anchor's - within a quarter cell on each edge, else 400 on `bbox`; the exact box is stored, so nothing placed moves on the map.
  `floorplan · change` is needed on each of them (else 403); `version` (the floor's `updated_at`) answers 409 when it changed since. Answers the floor with `grown`: `{left, top, right, bottom, levels, moved}`. A new map on a level of an aligned floor plan lies under the other levels of the same grid and cell size that have none (they take the anchor too, when they have none). Answers the floor. 400 on a live view. |
 | `DELETE /api/floor-plans/<id>/map/` | Removes the map from every floor drawing it and deletes its picture, and clears those floors' geo anchor (`state.from_map.bbox` keeps the old box, where From site map opens next). 204. |
 

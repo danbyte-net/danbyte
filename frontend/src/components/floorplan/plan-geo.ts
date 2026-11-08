@@ -409,3 +409,47 @@ export function frameError(f: CellFrame): string | undefined {
     return `At most ${MAX_GRID} cells a side`
   return undefined
 }
+
+/**
+ * The frame Edit area opens with: the plan's own box in its own cells (so
+ * the frame's edges stay on the plan's cell lines and everything placed
+ * keeps its place on the map), with `extent` - what is drawn on it and the
+ * levels that go with it - as the dashed box it may shrink to. An empty
+ * plan's dashed box is a point in the middle, so any side can come in.
+ */
+export function areaFrame(
+  plan: AnchoredPlan,
+  extent: Extent | null | undefined
+): CellFrame {
+  const f = frameOfPlan(plan)
+  const e =
+    extent === undefined
+      ? { x: 0, y: 0, w: plan.grid_width, h: plan.grid_height }
+      : (extent ?? {
+          x: Math.floor(plan.grid_width / 2),
+          y: Math.floor(plan.grid_height / 2),
+          w: 0,
+          h: 0,
+        })
+  return { ...f, ix: e.x, iy: e.y, iw: e.w, ih: e.h, ex: e.x, ey: e.y }
+}
+
+/** "N +1 · W +2 · E −3": the cells frame `f` adds (or trims) on each side
+ * of a `gridWidth` × `gridHeight` grid; "" when none. */
+export function sidesReadout(
+  f: CellFrame,
+  gridWidth: number,
+  gridHeight: number
+): string {
+  const [ox, oy] = frameOffset(f)
+  const sides: [string, number][] = [
+    ["N", oy],
+    ["E", f.w - gridWidth - ox],
+    ["S", f.h - gridHeight - oy],
+    ["W", ox],
+  ]
+  return sides
+    .filter(([, n]) => n !== 0)
+    .map(([s, n]) => `${s} ${n > 0 ? "+" : "−"}${Math.abs(n)}`)
+    .join(" · ")
+}

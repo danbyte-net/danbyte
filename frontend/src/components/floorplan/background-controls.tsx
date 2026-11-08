@@ -144,6 +144,7 @@ function MapLayer({
   const tiles = useMapTiles(!!m)
   const refetch = useRefetchBackgrounds()
   const [pick, setPick] = useState(false)
+  const [editArea, setEditArea] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState<"update" | "remove" | null>(null)
   const shown = !!plan.map_visible
@@ -213,7 +214,7 @@ function MapLayer({
               items={BASEMAPS}
             />
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {plan.geo && (
               <Button
                 variant="outline"
@@ -222,6 +223,16 @@ function MapLayer({
                 onClick={() => void update(m.basemap)}
               >
                 {busy === "update" ? "Updating…" : "Update snapshot"}
+              </Button>
+            )}
+            {plan.geo && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!!busy}
+                onClick={() => setEditArea(true)}
+              >
+                Edit area…
               </Button>
             )}
             <Button
@@ -249,6 +260,12 @@ function MapLayer({
         </div>
       )}
       <MapSnapshotDialog plan={plan} open={pick} onOpenChange={setPick} />
+      <MapSnapshotDialog
+        plan={plan}
+        mode="area"
+        open={editArea}
+        onOpenChange={setEditArea}
+      />
       <ConfirmDialog
         open={confirm}
         onOpenChange={setConfirm}

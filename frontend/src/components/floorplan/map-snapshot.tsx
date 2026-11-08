@@ -29,12 +29,14 @@ import type { Bbox } from "@/components/site-map/plan-from-map"
 
 import { frameLayer } from "./frame-layer"
 import {
+  areaFrame,
   bboxOf,
   centreInner,
   frameBbox,
   frameError,
   frameOffset,
   moveFrame,
+  sidesReadout,
   snapshotFrame,
 } from "./plan-geo"
 import type { CellFrame } from "./plan-geo"
@@ -86,6 +88,9 @@ export interface GrowTo {
   grid: [number, number]
   offset: [number, number]
   version?: string
+  /** Edit area: the server holds the frame to the plan's own box, so
+   * nothing placed moves on the map. */
+  keepAnchor?: boolean
 }
 
 /** Render `bbox` and send it as the plan's map. `frame` sends the box (a
@@ -114,6 +119,7 @@ export async function captureMap(
     fd.append("grid", JSON.stringify(grow.grid))
     fd.append("offset", JSON.stringify(grow.offset))
     if (grow.version) fd.append("version", grow.version)
+    if (grow.keepAnchor) fd.append("keep_anchor", "1")
   }
   fd.append(
     "image",
@@ -177,29 +183,42 @@ export function MapSnapshotDialog({
   plan,
   open,
   onOpenChange,
+  mode = "frame",
 }: {
   plan: FloorPlan
   open: boolean
   onOpenChange: (open: boolean) => void
+  mode?: SnapshotMode
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         {open && (
-          <SnapshotForm plan={plan} onClose={() => onOpenChange(false)} />
+          <SnapshotForm
+            plan={plan}
+            mode={mode}
+            onClose={() => onOpenChange(false)}
+          />
         )}
       </DialogContent>
     </Dialog>
   )
 }
 
+/** `frame`: From site map - the frame goes anywhere. `area`: Edit area on
+ * a plan tied to the map - the frame only grows or shrinks around the
+ * plan's box, so everything placed keeps its place on the map. */
+export type SnapshotMode = "frame" | "area"
+
 export function SnapshotForm({
   plan,
   onClose,
+  mode = "frame",
   renderMap = (p) => <FrameMap {...p} />,
 }: {
   plan: FloorPlan
   onClose: () => void
+  mode?: SnapshotMode
   /** The small map (tests swap it: Leaflet needs a real layout). */
   renderMap?: (p: FrameMapProps) => ReactNode
 }) {
@@ -212,6 +231,8 @@ export function SnapshotForm({
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const anchored = !!plan.geo
+  // Edit area needs the plan's box; without one it is From site map.
+  const area = mode === "area" && !!plan.geo
   // Start on the plan's box, else the box it had, else its site, else any
   // site with a position (a site not placed on the map yet).
   const sites = siteMap.data?.sites
@@ -231,8 +252,10 @@ export function SnapshotForm({
   }, [plan.geo, plan.state, site?.latitude, site?.longitude])
   const initial = useMemo(() => {
     if (!start) return null
+    if (area && plan.geo)
+      return areaFrame({ ...plan, geo: plan.geo }, plan.frame_extent)
     return snapshotFrame(plan, start, plan.frame_extent)
-  }, [plan, start])
+  }, [plan, start, area])
   const [edited, setEdited] = useState<CellFrame | null>(null)
   // On a plan with no anchor the dashed box stays in the middle of a
   // resized frame until it is dragged.
@@ -257,6 +280,8 @@ export function SnapshotForm({
   )
 
   const onFrame = (f: CellFrame, what: "resize" | "move" | "inner") => {
+    // Edit area: only the edges move; the plan stays where it is.
+    if (area && what !== "resize") return
     if (what === "inner") setPlaced(true)
     setEdited(what === "resize" && !anchored && !placed ? centreInner(f) : f)
   }
@@ -279,6 +304,7 @@ export function SnapshotForm({
               grid: [frame.w, frame.h],
               offset: [ox, oy],
               version: plan.updated_at,
+              keepAnchor: area,
             }
           : undefined
       )
@@ -302,7 +328,7 @@ export function SnapshotForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>From site map</DialogTitle>
+        <DialogTitle>{area ? "Edit area" : "From site map"}</DialogTitle>
       </DialogHeader>
       <div className="grid gap-3">
         <Field label="Basemap">
@@ -321,6 +347,7 @@ export function SnapshotForm({
             startZoom: plan.geo?.zoom ?? 18,
             frame,
             anchored,
+            locked: area,
             tiles,
             basemap,
             onFrame,
@@ -341,6 +368,11 @@ export function SnapshotForm({
             </span>
             {detail != null && Number.isFinite(detail) && (
               <span className="num">{detailReadout(detail)}</span>
+            )}
+            {area && changed && (
+              <span className="num" data-testid="frame-sides">
+                {sidesReadout(frame, plan.grid_width, plan.grid_height)}
+              </span>
             )}
             {error ? (
               <span className="text-destructive">{error}</span>
@@ -366,7 +398,7 @@ export function SnapshotForm({
         </Button>
         <Button
           type="button"
-          disabled={busy || !frame || !tiles || !!error}
+          disabled={busy || !frame || !tiles || !!error || (area && !changed)}
           onClick={() => void capture()}
         >
           {busy ? "Capturing…" : "Capture"}
@@ -381,6 +413,8 @@ export interface FrameMapProps {
   startZoom: number
   frame: CellFrame
   anchored: boolean
+  /** Edit area: only the handles - the frame and the dashed box stay. */
+  locked?: boolean
   tiles: SiteMapPayload["tiles"]
   basemap: Basemap
   onFrame: (f: CellFrame, what: "resize" | "move" | "inner") => void
@@ -394,6 +428,7 @@ function FrameMap({
   start,
   startZoom,
   frame,
+  locked = false,
   tiles,
   basemap,
   onFrame,
@@ -429,6 +464,7 @@ function FrameMap({
     map.on("zoomend", () => zoomed.current(Math.round(map.getZoom())))
     zoomed.current(Math.round(map.getZoom()))
     map.on("dblclick", (e: L.LeafletMouseEvent) => {
+      if (locked) return
       // The frame's middle to where it was double-clicked.
       const f = frameRef.current
       const fb = frameBbox(f)
@@ -441,8 +477,8 @@ function FrameMap({
     })
     mapRef.current = map
     layerRef.current = frameLayer(map, frame, {
-      movable: true,
-      innerMovable: true,
+      movable: !locked,
+      innerMovable: !locked,
 
       onChange: (f, what) => change.current(f, what),
     })
