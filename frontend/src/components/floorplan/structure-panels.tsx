@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
+import { isRaisedPolygon } from "./raised-floor-shape"
 import { WALL_DEFAULT_MM } from "./structure"
 
 /** A row's delete in the walls, trays and raised-floor lists. */
@@ -67,9 +68,10 @@ export function StructureRail({
   onDeleteWall?: (id: string) => void
   areas: RaisedFloorArea[]
   selectedAreaId: string | null
-  drawing: boolean
+  /** The raised floor being drawn: a dragged rectangle or a polygon. */
+  drawing: false | "rect" | "polygon"
   onSelectArea: (id: string | null) => void
-  onStartDraw: () => void
+  onStartDraw: (shape: "rect" | "polygon") => void
   onCancelDraw: () => void
   walls: FloorPlanWall[]
   selectedWallId: string | null
@@ -97,13 +99,29 @@ export function StructureRail({
               Cancel drawing
             </Button>
             <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-              Drag a rectangle on the grid. Esc cancels.
+              {drawing === "polygon"
+                ? "Click each corner; Enter or the first point closes it. Esc cancels."
+                : "Drag a rectangle on the grid. Esc cancels."}
             </p>
           </>
         ) : (
-          <Button size="sm" className="w-full" onClick={onStartDraw}>
-            Draw area
-          </Button>
+          <div className="flex gap-1.5">
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={() => onStartDraw("rect")}
+            >
+              Draw area
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1"
+              onClick={() => onStartDraw("polygon")}
+            >
+              Polygon
+            </Button>
+          </div>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
@@ -136,7 +154,10 @@ export function StructureRail({
                 {a.label || "Raised floor"}
               </span>
               <span className="num text-[10px] text-muted-foreground">
-                {a.width}×{a.height} · {a.plenum_mm} mm
+                {isRaisedPolygon(a)
+                  ? `${a.points.length} pts`
+                  : `${a.width}×${a.height}`}{" "}
+                · {a.plenum_mm} mm
               </span>
             </button>
             {onDeleteArea && (
@@ -570,7 +591,9 @@ export function AreaInspector({
         />
       </div>
       <div className="num text-[11px] text-muted-foreground">
-        {area.width}×{area.height} cells at ({area.x}, {area.y})
+        {isRaisedPolygon(area)
+          ? `Polygon, ${area.points.length} points`
+          : `${area.width}×${area.height} cells at (${area.x}, ${area.y})`}
       </div>
       <div className="mt-auto">
         <Button

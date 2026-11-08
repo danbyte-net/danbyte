@@ -55,6 +55,7 @@ const raised = (p: Partial<RaisedRow> = {}): RaisedRow => ({
   y: 6,
   width: 4,
   height: 4,
+  points: [],
   plenum_mm: 300,
   label: "",
   color: "",
@@ -363,5 +364,77 @@ describe("raised floors by mouse", () => {
     fireEvent.pointerMove(svg, at(140, 260))
     fireEvent.pointerUp(svg, at(140, 260))
     expect(onCommitStructure).not.toHaveBeenCalled()
+  })
+
+  it("abutting strips draw as one region: one fill, one outline", () => {
+    const { container } = draw([
+      raised({ id: "a", x: 0, y: 0, width: 6, height: 2 }),
+      raised({ id: "b", x: 1, y: 2, width: 6, height: 2 }),
+      raised({ id: "c", x: 2, y: 4, width: 6, height: 2 }),
+    ])
+    const regions = container.querySelectorAll("[data-raised-region]")
+    expect(regions).toHaveLength(1)
+    expect(regions[0].getAttribute("data-raised-region")).toBe("a b c")
+    // Fill and dashed outline only - no per-strip rectangles.
+    expect(regions[0].querySelectorAll("rect")).toHaveLength(0)
+    const [, stroke] = regions[0].querySelectorAll("path")
+    // A single run round the staircase: one M.
+    expect(stroke.getAttribute("d")!.match(/M/g)).toHaveLength(1)
+  })
+
+  it("moves a polygon by whole cells, its box following", () => {
+    const poly = raised({
+      id: "p",
+      x: 2,
+      y: 2,
+      width: 4,
+      height: 3,
+      points: [
+        [2, 2],
+        [6, 2],
+        [4, 5],
+      ],
+    })
+    const { svg, q, onCommitStructure } = draw([poly], {
+      selectedAreaId: "p",
+    })
+    // A polygon has no resize handles.
+    expect(
+      svg.querySelector('[data-handles="raised"] [data-handle="se"]')
+    ).toBeNull()
+    fireEvent.pointerDown(q('[data-raised="p"]'), at(160, 110))
+    fireEvent.pointerMove(svg, at(242, 150))
+    fireEvent.pointerUp(svg, at(242, 150))
+    expect(onCommitStructure.mock.calls[0][0].update[0]).toMatchObject({
+      points: [
+        [4, 3],
+        [8, 3],
+        [6, 6],
+      ],
+      x: 4,
+      y: 3,
+      width: 4,
+      height: 3,
+    })
+  })
+
+  it("the polygon tool hands its closed outline over", () => {
+    const onCreateRaisedPolygon = vi.fn()
+    const { svg } = draw([], {
+      raisedPolygonTool: true,
+      onCreateRaisedPolygon,
+    })
+    for (const [x, y] of [
+      [80, 80],
+      [320, 80],
+      [320, 240],
+    ])
+      fireEvent.pointerDown(svg, at(x, y))
+    fireEvent.pointerDown(svg, at(80, 80))
+    expect(onCreateRaisedPolygon).toHaveBeenCalledWith([
+      [2, 2],
+      [8, 2],
+      [8, 6],
+    ])
   })
 })

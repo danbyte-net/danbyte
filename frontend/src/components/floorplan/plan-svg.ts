@@ -98,6 +98,7 @@ import {
   squareAt,
 } from "./icon-layout"
 import type { ClusterFace, IconLayout } from "./icon-layout"
+import { outlinePath, raisedRegions } from "./raised-floor-shape"
 import { CHECK_COLOR, rackFigures, tileFill, tilePaint } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
@@ -126,11 +127,14 @@ export interface PlanSvgInput {
   tiles: FloorPlanTile[]
   walls?: FloorPlanWall[]
   trays?: FloorPlanTray[]
+  /** The raised floors; touching ones of one depth and colour draw as
+   * one region (raised-floor-shape.ts), as on the canvas. */
   areas?: {
     x: number
     y: number
     width: number
     height: number
+    points?: [number, number][]
     label: string
     color: string
     plenum_mm: number
@@ -1474,21 +1478,23 @@ export function planSvg({
   })
   const isZone = (t: FloorPlanTile) => t.tile_type?.is_zone ?? false
   const body: string[] = []
-  for (const a of areas) {
-    const color = a.color || AREA_DEFAULT
+  for (const rg of raisedRegions(areas)) {
+    const color = rg.color || AREA_DEFAULT
     body.push(
-      el("rect", {
-        x: a.x * CELL,
-        y: a.y * CELL,
-        width: a.width * CELL,
-        height: a.height * CELL,
-        rx: 3,
+      el("path", {
+        d: outlinePath(rg.pieces, CELL),
         fill: color,
         "fill-opacity": 0.1,
+        stroke: "none",
+      }),
+      el("path", {
+        d: outlinePath(rg.outline, CELL, false),
+        fill: "none",
         stroke: color,
         "stroke-opacity": 0.35,
         "stroke-width": 1.5,
         "stroke-dasharray": "7 4",
+        "stroke-linejoin": "round",
       })
     )
   }

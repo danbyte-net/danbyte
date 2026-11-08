@@ -1571,6 +1571,9 @@ export function FloorPlanEditor({
                     onWallsAround={
                       liveView ? undefined : structure.wallsAroundAreas
                     }
+                    onRaisedFromArea={
+                      liveView ? undefined : structure.raisedFromArea
+                    }
                     areaPicks={[...ed.areaSel]}
                     onConnect={canConnect ? connectFromTile : undefined}
                   />

@@ -157,6 +157,75 @@ describe("walls round areas", () => {
   })
 })
 
+describe("a raised floor from an area", () => {
+  const strip = (id: string, y: number) => ({
+    id,
+    x: 2,
+    y,
+    width: 4,
+    height: 1,
+    points: [] as [number, number][],
+    plenum_mm: 450,
+    label: id === "s1" ? "Hall pad" : "",
+    color: "#336699",
+    created_at: "",
+    updated_at: "2026-10-30T10:00:00Z",
+  })
+
+  it("takes the area's outline and replaces the strips under it", async () => {
+    apiMock.mockResolvedValue({
+      tiles: [],
+      areas: [],
+      labels: [],
+      walls: [],
+      raised_floors: [],
+      tray_rows: [],
+    })
+    const { result } = setup(
+      structureOf([], [], [strip("s1", 2), strip("s2", 3), strip("s3", 4)])
+    )
+    act(() => result.current.s.raisedFromArea("a1"))
+    const raised = result.current.ed.structure.filter(
+      (r) => r.part === "raised_floor"
+    )
+    expect(raised).toHaveLength(1)
+    expect(raised[0]).toMatchObject({
+      points: [
+        [2, 2],
+        [6, 2],
+        [6, 5],
+        [2, 5],
+      ],
+      x: 2,
+      y: 2,
+      width: 4,
+      height: 3,
+      plenum_mm: 450,
+      color: "#336699",
+      label: "Hall pad",
+    })
+    act(() => result.current.edits.save.mutate())
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1))
+    const body = sent(0)
+    expect(body.raised_floors?.create?.[0].points).toHaveLength(4)
+    expect(body.raised_floors?.delete).toHaveLength(3)
+  })
+
+  it("is refused where it would overlap a pad it does not replace", () => {
+    const { result } = setup(
+      structureOf(
+        [],
+        [],
+        [{ ...strip("big", 0), y: 0, height: 3, x: 0, width: 10 }]
+      )
+    )
+    act(() => result.current.s.raisedFromArea("a1"))
+    expect(
+      result.current.ed.structure.filter((r) => r.part === "raised_floor")
+    ).toHaveLength(1)
+  })
+})
+
 describe("doors, splits and joins in the draft", () => {
   it("adds a door, flips it, and undoes each as a step", async () => {
     const { result } = setup()

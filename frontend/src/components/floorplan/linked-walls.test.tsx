@@ -602,6 +602,7 @@ describe("delete on the toolbar and on each row", () => {
         y: 0,
         width: 2,
         height: 2,
+        points: [],
         plenum_mm: 300,
         label: "",
         color: "",

@@ -45,6 +45,12 @@ import type {
   WallRing,
   WallRow,
 } from "./structure"
+import {
+  cellBox,
+  outlineContains,
+  raisedOutline,
+  signedArea,
+} from "./raised-floor-shape"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
 import type { PlanEditState } from "./use-plan-edit-state"
 import { isTemp, tempId } from "./use-tile-edits"
@@ -245,7 +251,7 @@ export function useStructureEdits({
     w: number
     h: number
   }) => {
-    if (!areaArmed || !plan) return
+    if (areaArmed !== "rect" || !plan) return
     const row: RaisedRow = {
       part: "raised_floor",
       id: tempId(),
@@ -253,6 +259,7 @@ export function useStructureEdits({
       y: rect.y,
       width: rect.w,
       height: rect.h,
+      points: [],
       plenum_mm: 300,
       label: "",
       color: "",
@@ -266,6 +273,74 @@ export function useStructureEdits({
     commit({ create: [row] })
     setSelectedAreaId(row.id)
     setAreaArmed(false)
+  }
+  /** A polygon raised floor from its outline (cell units), kept on the
+   * plan. `replace`: raised floors standing mostly inside it go in the
+   * same step - a pad pieced together from strips becomes the one
+   * polygon - and lend it their depth, colour and name. */
+  const newRaisedPolygon = (
+    outline: readonly Pt[],
+    { replace = false, label = "" }: { replace?: boolean; label?: string } = {}
+  ): RaisedRow | null => {
+    if (!plan) return null
+    const r = (v: number) => Math.round(v * 1000) / 1000
+    const points = outline.map(
+      ([x, y]) =>
+        [
+          r(Math.min(Math.max(x, 0), plan.grid_width)),
+          r(Math.min(Math.max(y, 0), plan.grid_height)),
+        ] as [number, number]
+    )
+    if (points.length < 3 || Math.abs(signedArea(points)) < 1e-3) return null
+    const others = structureLists(structure).raised
+    const under = replace
+      ? others.filter((o) => {
+          const ring = raisedOutline(o)
+          const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length
+          const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length
+          return outlineContains(points, [cx, cy])
+        })
+      : []
+    const first = under.at(0)
+    const row: RaisedRow = {
+      part: "raised_floor",
+      id: tempId(),
+      ...cellBox(points),
+      points,
+      plenum_mm: first?.plenum_mm ?? 300,
+      label: label || first?.label || "",
+      color: first?.color ?? "",
+      created_at: now(),
+      updated_at: "",
+    }
+    const gone = new Set(under.map((o) => o.id))
+    if (others.some((o) => !gone.has(o.id) && rectsOverlap(o, row))) {
+      toast.error("Raised floors must not overlap.")
+      return null
+    }
+    commit({ create: [row], remove: [...gone] })
+    setSelectedAreaId(row.id)
+    if (gone.size)
+      toast.success(
+        `Replaced ${gone.size} raised floor${gone.size === 1 ? "" : "s"} under it.`
+      )
+    return row
+  }
+  /** Structure mode: a closed polygon becomes a raised floor. */
+  const createRaisedPolygon = (outline: readonly Pt[]) => {
+    if (areaArmed !== "polygon") return
+    if (newRaisedPolygon(outline)) setAreaArmed(false)
+  }
+  /** An area's outline as a raised floor ("Raised floor from this area"). */
+  const raisedFromArea = (areaId: string) => {
+    const area = ed.shapes.find(
+      (s): s is AreaShape => s.kind === "area" && s.id === areaId
+    )
+    if (!area) return
+    newRaisedPolygon(areaOutline(area), {
+      replace: true,
+      label: areaName(area) || "",
+    })
   }
 
   // ── Walls and doors ────────────────────────────────────────────────────
@@ -808,6 +883,8 @@ export function useStructureEdits({
     patchArea,
     deleteArea,
     createAreaAt,
+    createRaisedPolygon,
+    raisedFromArea,
     patchWall,
     deleteWall,
     createWall,
