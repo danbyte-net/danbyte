@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react"
+import { Suspense } from "react"
 import type { ReactNode } from "react"
 import { X } from "lucide-react"
 
@@ -12,10 +12,11 @@ import type { PlanShape } from "./shapes"
 import type { PlanCapacity } from "./use-plan-capacity"
 import type { CadDrawingState } from "./use-cad-drawing"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
+import { lazyChunk } from "@/lib/lazy-chunk"
 
 // The 3D room view - the only consumer of the three.js stack, lazy-loaded so
 // it lives in its own chunk and costs nothing until someone opens it.
-const FloorScene3D = lazy(() => import("@/components/floorplan3d/scene"))
+const FloorScene3D = lazyChunk(() => import("@/components/floorplan3d/scene"))
 
 /** The 3D room in place of the 2D canvas, with the Color by key and the
  * controls hint. */

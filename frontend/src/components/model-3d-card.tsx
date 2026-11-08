@@ -26,10 +26,13 @@ import {
   FRONT_CHOICES,
   UP_CHOICES,
 } from "@/components/model-3d-choice"
+import { lazyChunk } from "@/lib/lazy-chunk"
 
 // three.js stays in the 3D chunk: the converter and the port editor load
 // only when their dialog opens.
-const ModelUpload = lazy(() => import("@/components/floorplan3d/model-upload"))
+const ModelUpload = lazyChunk(
+  () => import("@/components/floorplan3d/model-upload")
+)
 const ModelPortsEditor = lazy(
   () => import("@/components/floorplan3d/model-ports-editor")
 )

@@ -8,7 +8,6 @@ import { useQuery } from "@tanstack/react-query"
 import { Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import {
   Suspense,
-  lazy,
   useCallback,
   useLayoutEffect,
   useMemo,
@@ -54,6 +53,7 @@ import { setLivePortsShown, useLivePortsShown } from "@/lib/live-ports-pref"
 import { RackExportMenu } from "@/components/rack-export-menu"
 import { Loading } from "@/components/loading"
 import { useMe } from "@/lib/use-me"
+import { lazyChunk } from "@/lib/lazy-chunk"
 
 export const Route = createFileRoute("/racks/$id")({
   component: RackDetail,
@@ -551,7 +551,7 @@ const DEFAULT_ZOOM: Record<RackDisplayMode, number> = {
 }
 
 // The rack in 3D - three.js and all, in its own chunk.
-const RackScene = lazy(() => import("@/components/floorplan3d/rack-scene"))
+const RackScene = lazyChunk(() => import("@/components/floorplan3d/rack-scene"))
 
 const VIZ = ["2d", "3d"] as const
 type Viz = (typeof VIZ)[number]

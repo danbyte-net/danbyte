@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
-import { Suspense, lazy, useCallback, useState } from "react"
+import { Suspense, useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { Cabinet } from "@/lib/api"
@@ -33,13 +33,14 @@ import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { lazyChunk } from "@/lib/lazy-chunk"
 
 export const Route = createFileRoute("/cabinets/$id")({
   component: CabinetDetail,
 })
 
 // The 3D view of the plate - three.js and all, in its own chunk.
-const CabinetScene = lazy(() => import("@/components/cabinet-scene"))
+const CabinetScene = lazyChunk(() => import("@/components/cabinet-scene"))
 
 const VIZ = ["2d", "3d"] as const
 type Viz = (typeof VIZ)[number]
