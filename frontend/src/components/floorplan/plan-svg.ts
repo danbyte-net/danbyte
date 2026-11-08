@@ -48,6 +48,7 @@ import {
   tileQuarter,
 } from "./shapes"
 import type { AreaShape, LabelShape, PlanShape } from "./shapes"
+import { facingBarRect, figureBarRect, figureLift } from "./tile-marks"
 import { planTilePose, residualTransform } from "./tile-pose"
 import {
   CABLE_LINE,
@@ -780,19 +781,6 @@ function zoneMarkup(t: FloorPlanTile, showLabel: boolean, grow = 1): string {
   )
 }
 
-function facingBar(w: number, h: number, orientation: number) {
-  const t = 3
-  const edge = 1.5
-  const inset = 7
-  if (orientation === 90)
-    return { x: w - edge - t, y: inset, width: t, height: h - inset * 2 }
-  if (orientation === 180)
-    return { x: inset, y: h - edge - t, width: w - inset * 2, height: t }
-  if (orientation === 270)
-    return { x: edge, y: inset, width: t, height: h - inset * 2 }
-  return { x: inset, y: edge, width: w - inset * 2, height: t }
-}
-
 function tileMarkup(
   t: FloorPlanTile,
   colorBy: ColorBy,
@@ -828,11 +816,12 @@ function tileMarkup(
       "stroke-dasharray": dashed ? "6 3" : undefined,
     })
   )
-  const bar = facingBar(iw, ih, t.orientation)
+  // tile-marks.ts keeps the facing bar clear of the figure bar.
+  const bar = facingBarRect(w, h, t.orientation, !!paint.figure)
   parts.push(
     el("rect", {
-      x: bar.x + GUTTER,
-      y: bar.y + GUTTER,
+      x: bar.x,
+      y: bar.y,
       width: bar.width,
       height: bar.height,
       rx: 1.5,
@@ -844,11 +833,12 @@ function tileMarkup(
   const wide = w >= CELL * 2
   const figureText = figure && (wide || figure.always) ? figure.text : null
   const stacked = !!figureText && (!wide || (!!figure?.always && h < CELL * 2))
+  const lift = figure ? figureLift(t.orientation) : 0
   const name = hideName ? "" : tileName(t)
   if (name) {
     const room = stacked ? h - 14 : h
     const size = stacked ? Math.min(11, room * 0.45) : 11
-    const y = stacked ? (h - 14) / 2 + size / 3 : h / 2 + size / 3
+    const y = stacked ? (h - 14 - lift) / 2 + size / 3 : h / 2 + size / 3
     parts.push(
       text(clip(name, w - 8, size), {
         x: w / 2,
@@ -861,13 +851,14 @@ function tileMarkup(
     )
   }
   if (figure) {
-    const bw = w - GUTTER * 2 - 6
+    const fb = figureBarRect(w, h, t.orientation)
+    const bw = fb.width
     parts.push(
       el("rect", {
-        x: GUTTER + 3,
-        y: h - GUTTER - 7,
+        x: fb.x,
+        y: fb.y,
         width: bw,
-        height: 4,
+        height: fb.height,
         rx: 2,
         fill: PAPER_INK,
         "fill-opacity": 0.1,
@@ -876,10 +867,10 @@ function tileMarkup(
     if (figure.ratio != null)
       parts.push(
         el("rect", {
-          x: GUTTER + 3,
-          y: h - GUTTER - 7,
+          x: fb.x,
+          y: fb.y,
           width: Math.max(2, bw * Math.min(1, figure.ratio)),
-          height: 4,
+          height: fb.height,
           rx: 2,
           fill: figure.color,
         })
@@ -888,7 +879,7 @@ function tileMarkup(
       parts.push(
         text(figureText, {
           x: wide ? w - GUTTER - 4 : w / 2,
-          y: h - GUTTER - 10,
+          y: h - GUTTER - 10 - lift,
           "text-anchor": wide ? "end" : "middle",
           "font-size": 8,
           fill: PAPER_INK,

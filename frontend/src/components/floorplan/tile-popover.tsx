@@ -61,6 +61,14 @@ export type LinkedDetail = Partial<Rack> &
 /** A field's `render` is called as a plain function, so it cannot hold a
  * hook - the timestamp gets its own component to read the viewer's timezone
  * from. */
+/** A plan position or size in cells: a free plan stores fractions, so at
+ * most two decimals, trailing zeros dropped. */
+export function formatCells(v: number): string {
+  if (!Number.isFinite(v)) return "—"
+  const r = Math.round(v * 100) / 100
+  return String(Object.is(r, -0) ? 0 : r)
+}
+
 function Stamp({ iso }: { iso: string }) {
   const { formatDateTime } = useDateFormat()
   return <span className="num text-[11px]">{formatDateTime(iso)}</span>
@@ -240,7 +248,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     label: "Position",
     render: ({ tile }) => (
       <span className="num">
-        {tile.x}, {tile.y}
+        {formatCells(tile.x)}, {formatCells(tile.y)}
       </span>
     ),
   },
@@ -248,7 +256,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     label: "Size",
     render: ({ tile }) => (
       <span className="num">
-        {tile.width}×{tile.height}
+        {formatCells(tile.width)}×{formatCells(tile.height)}
       </span>
     ),
   },
@@ -319,7 +327,8 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
       if (!c) return null
       const ratio = capacityRatio(c.heat_allocated_w, c.available_w)
       return (
-        <span className="flex items-center gap-2 whitespace-nowrap">
+        // Wraps onto a second line rather than clipping at the popover edge.
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <CapacityBar ratio={ratio} className="w-10" />
           <span className="num text-[11px]">
             {formatWatts(c.heat_allocated_w)}
@@ -720,6 +729,9 @@ export function TilePopover({
         side="top"
         align="start"
         sideOffset={12}
+        // Pinned near the canvas edge it stays wholly on screen.
+        collisionPadding={8}
+        sticky="always"
         // A faceplate at w-80 was an unreadable postage stamp - the wide
         // variant gets real room, capped to the viewport.
         className={
