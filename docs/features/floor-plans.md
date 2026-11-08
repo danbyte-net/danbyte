@@ -1959,6 +1959,13 @@ the foot of the tool rail switches the plan to free at once. On a free plan:
 - tiles may overlap;
 - arrows nudge a cell, ++alt++ + arrow a tenth of one.
 
+A turned tile is stored at its nearest quarter turn (a quarter turn swaps
+its width and height, as on the grid) and drawn turned about its centre by
+the rest of its angle. The canvas, the zoomed-out symbols, the SVG/PDF
+export and the 3D room all place every tile - racks, cabinets, devices,
+zones and planning tiles alike - by that one rule, so a turned row, its
+aisles and the gear beside it line up the same in each.
+
 The way back is **Back to the grid…** (the same button): **Snap all to the
 grid?** shows how many tiles move - each to the nearest whole cells and the
 nearest quarter turn - and lists any that would then stand on another tile.

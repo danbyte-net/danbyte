@@ -17,6 +17,7 @@ import {
   rotatePoint,
 } from "@/components/floorplan/shapes"
 import type { AreaShape, LabelShape, Pt } from "@/components/floorplan/shapes"
+import { tilePose } from "@/components/floorplan/tile-pose"
 import { CELL } from "@/components/floorplan/canvas-geometry"
 import {
   READABLE_FONT_PX,
@@ -260,6 +261,12 @@ export function labelText(
 export function zoneText(t: SceneTile, dark: boolean): PlanTextItem | null {
   if (!t.is_zone || !t.label) return null
   const pad = cells(ZONE_NAME_PX) * FLAT_PAD_EM
+  // Its top-left corner turned with it, as the 2D canvas draws it.
+  const pose = tilePose(t)
+  const corner: Pt = [
+    t.x + cells(ZONE_NAME_LEFT_PX) - pad,
+    t.y + cells(ZONE_NAME_TOP_PX) - pad,
+  ]
   return {
     id: `zone:${t.id}`,
     kind: "zone",
@@ -267,12 +274,9 @@ export function zoneText(t: SceneTile, dark: boolean): PlanTextItem | null {
     fontCells: cells(ZONE_NAME_PX),
     weight: 500,
     align: "left",
-    at: [
-      t.x + cells(ZONE_NAME_LEFT_PX) - pad,
-      t.y + cells(ZONE_NAME_TOP_PX) - pad,
-    ],
+    at: rotatePoint(corner, [pose.cx, pose.cy], pose.residual),
     pivot: [0, 0],
-    rotation: 0,
+    rotation: pose.residual,
     elevation: FLOOR_TEXT_Y,
     ink: {
       color: t.color || "#71717a",

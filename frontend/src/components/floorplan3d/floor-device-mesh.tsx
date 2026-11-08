@@ -32,8 +32,7 @@ import { TextSprite } from "./text-sprite"
 import { TileGhostMesh } from "./tile-ghost-mesh"
 import {
   TRANSPARENT_ORDER,
-  cellM,
-  cellToWorld,
+  tileWorldPose,
   deviceViewpoint,
   floorBoxAsRackBox,
   floorDeviceBoxM,
@@ -85,23 +84,18 @@ export function isPlacedDevice(t: SceneTile): boolean {
 export function placedOf(scene: ScenePayload, tile: SceneTile): Placed | null {
   const dev = tile.device
   if (!dev) return null
-  const [cx, cz] = cellToWorld(
-    scene.plan,
-    tile.x + tile.w / 2,
-    tile.y + tile.h / 2
-  )
-  const c = cellM(scene.plan)
-  const turned = ((tile.orientation % 180) + 180) % 180 === 90
+  // Its size facing 0°, turned by its whole facing about its centre - the
+  // place and turn the 2D canvas draws it at (tile-pose.ts). A 118° tile is
+  // stored at its 90° footprint, so its own width is the stored height.
+  const pose = tileWorldPose(scene.plan, tile)
   return {
     tile,
     dev,
-    footprint: turned
-      ? { w: tile.h * c, d: tile.w * c }
-      : { w: tile.w * c, d: tile.h * c },
+    footprint: pose.local,
     box: floorDeviceBoxM(dev),
     floorY: floorTopM(scene, tile),
-    centre: [cx, cz],
-    rotY: (-tile.orientation * Math.PI) / 180,
+    centre: pose.centre,
+    rotY: pose.rotY,
   }
 }
 

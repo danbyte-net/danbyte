@@ -1,4 +1,4 @@
-import { cellToWorld } from "./world"
+import { tileWorldPose } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
 import { TextSprite } from "./text-sprite"
@@ -26,16 +26,19 @@ export function TileGhostMesh({
   /** Off when Readable draws the room's names (readable-names.tsx). */
   showName?: boolean
 }) {
-  const [x0, z0] = cellToWorld(plan, tile.x, tile.y)
-  const [x1, z1] = cellToWorld(plan, tile.x + tile.w, tile.y + tile.h)
-  const w = x1 - x0
-  const d = z1 - z0
+  // Its stored footprint, turned about its centre by its residual - the
+  // same place and turn the 2D canvas draws it at (tile-pose.ts).
+  const pose = tileWorldPose(plan, tile)
+  const { w, d } = pose.footprint
   const tint = tile.color || "#71717a"
   // Same fallback as the 2D canvas: manual label, else the linked device's
   // name, else the tile type ("build in advance" massing).
   const name = tile.label || tile.device_name || tile.type_name || ""
   return (
-    <group position={[x0 + w / 2, 0, z0 + d / 2]}>
+    <group
+      position={[pose.centre[0], 0, pose.centre[1]]}
+      rotation={[0, pose.residualRotY, 0]}
+    >
       <mesh position={[0, GHOST_H / 2, 0]} raycast={() => null}>
         <boxGeometry args={[w * 0.94, GHOST_H, d * 0.94]} />
         <meshStandardMaterial

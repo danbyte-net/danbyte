@@ -8,6 +8,7 @@ import { gridFade, roomLook } from "./room-look"
 
 import {
   cellToWorld,
+  tileWorldPose,
   cellM,
   mm,
   type ScenePayload,
@@ -262,8 +263,10 @@ function ZonePatch({
   plan: ScenePayload["plan"]
   tile: SceneTile
 }) {
-  const [x, z] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
-  const [w, d] = cellToWorld(plan, tile.w, tile.h)
+  // Turned by its residual about its centre, as the 2D canvas draws it.
+  const pose = tileWorldPose(plan, tile)
+  const [x, z] = pose.centre
+  const { w, d } = pose.footprint
   // Perforated zones draw the grate pattern at one repeat per 600 mm tile -
   // the cold-aisle supply floor, legible without a heat map.
   const grate = useMemo(() => {
@@ -280,7 +283,10 @@ function ZonePatch({
   // 0.015 sits ABOVE a raised-floor slab top (0.012): a cold aisle drawn on
   // a raised pad must tint the pad, not vanish inside it.
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.015, z]}>
+    <mesh
+      rotation={[-Math.PI / 2, 0, pose.residualRotY]}
+      position={[x, 0.015, z]}
+    >
       <planeGeometry args={[w, d]} />
       {grate ? (
         <meshBasicMaterial
