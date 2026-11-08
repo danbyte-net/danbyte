@@ -53,46 +53,61 @@ export function boxesHit(a: Box, b: Box): boolean {
 
 /** The boxes taken so far, bucketed in a grid: near-linear for thousands. */
 export class Occupancy {
-  private grid = new Map<string, Box[]>()
+  private grid = new Map<number, Box[]>()
+  /** Boxes too big to bucket: checked against every query. */
+  private big: Box[] = []
   private all: Box[] = []
   constructor(private cell = 64) {}
 
-  private keys(b: Box): string[] {
-    const out: string[] = []
+  /** The cells a box covers, or null for a huge one (a plan label across
+   * the plan), which checks the list instead. */
+  private span(b: Box): [number, number, number, number] | null {
     const c = this.cell
     const x0 = Math.floor(b.x / c)
     const x1 = Math.floor((b.x + b.w) / c)
     const y0 = Math.floor(b.y / c)
     const y1 = Math.floor((b.y + b.h) / c)
-    // A huge box (a plan label across the plan) checks the list instead.
-    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) return ["*"]
-    for (let gx = x0; gx <= x1; gx++)
-      for (let gy = y0; gy <= y1; gy++) out.push(`${gx},${gy}`)
-    return out
+    if (!((x1 - x0 + 1) * (y1 - y0 + 1) <= 400)) return null
+    return [x0, x1, y0, y1]
   }
 
   free(b: Box): boolean {
-    const big = this.grid.get("*")
-    if (big?.some((o) => boxesHit(b, o))) return false
-    const ks = this.keys(b)
-    if (ks[0] === "*") return !this.all.some((o) => boxesHit(b, o))
-    for (const k of ks)
-      if (this.grid.get(k)?.some((o) => boxesHit(b, o))) return false
+    for (const o of this.big) if (boxesHit(b, o)) return false
+    const s = this.span(b)
+    if (!s) return !this.all.some((o) => boxesHit(b, o))
+    for (let gx = s[0]; gx <= s[1]; gx++)
+      for (let gy = s[2]; gy <= s[3]; gy++) {
+        const l = this.grid.get(cellKey(gx, gy))
+        if (l) for (const o of l) if (boxesHit(b, o)) return false
+      }
     return true
   }
 
   add(b: Box): void {
     this.all.push(b)
-    for (const k of this.keys(b)) {
-      const list = this.grid.get(k)
-      if (list) list.push(b)
-      else this.grid.set(k, [b])
+    const s = this.span(b)
+    if (!s) {
+      this.big.push(b)
+      return
     }
+    for (let gx = s[0]; gx <= s[1]; gx++)
+      for (let gy = s[2]; gy <= s[3]; gy++) {
+        const k = cellKey(gx, gy)
+        const list = this.grid.get(k)
+        if (list) list.push(b)
+        else this.grid.set(k, [b])
+      }
   }
 
   boxes(): readonly Box[] {
     return this.all
   }
+}
+
+/** A grid cell as one number (no string per lookup): unique for cells
+ * within ±2^20 of the origin on each axis, far past any plan. */
+export function cellKey(gx: number, gy: number): number {
+  return gx * 2097152 + gy
 }
 
 /** One place a label may go: its box (units) and what draws it there. */

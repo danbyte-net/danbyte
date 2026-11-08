@@ -319,6 +319,14 @@ export function preferInside<T>(
   return out
 }
 
+/** Callout layouts kept, by what they were laid out from (the canvas and
+ * the paper export each keep theirs). */
+const CALLOUT_CACHE = 4
+const calloutCache = new Map<
+  string,
+  { callouts: CalloutLabel[]; calledOut: string[]; taken: Box[] }
+>()
+
 /** A name drawn in its tile below this on screen (px) can't be read. */
 export const MIN_IN_TILE_NAME_PX = 8
 
@@ -393,8 +401,14 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   const trial: LabelRequest<{ at: Pt }>[] = []
   const ours: { id: string; box: Box; home: Box; text: string }[] = []
   const bodies = new BoxIndex(Math.max(16, font * 6))
+  // What `bodies` holds, for the callouts' cache key.
+  const bodyList: [string, Box][] = []
+  const addBody = (id: string, b: Box) => {
+    bodies.add(id, b)
+    bodyList.push([id, b])
+  }
   for (const c of input.iconClusters ?? [])
-    bodies.add(c.id, boxOfCells(c.box, scale))
+    addBody(c.id, boxOfCells(c.box, scale))
   for (const t of input.tiles) {
     const name = tileName(t)
     const shape = input.shapeOf?.(t)
@@ -406,7 +420,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       tileNamesHere.add(t.id)
       continue
     }
-    if (!zone) bodies.add(t.id, boxOfCells(drawn, scale))
+    if (!zone) addBody(t.id, boxOfCells(drawn, scale))
     if (!name) continue
     const b = inTileNameBox(t, name, !!input.labelFit, input.zoneGrow)
     // Icons off and zoomed out: a name drawn in its tile is too small to
@@ -493,12 +507,16 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   // clear before.
   const callouts: CalloutLabel[] = []
   const calledOut = new Set<string>()
-  if (wantCallouts && ours.length) {
+  const lines = input.callouts?.lines
+  const rooms = wantCallouts
+    ? roomBoxes(input.areas ?? [], input.cellMm, scale)
+    : []
+  // Fills `callouts` and `calledOut`; returns the boxes taken (the boxes
+  // and their leaders).
+  const layOut = (): Box[] => {
     const cell = Math.max(16, font * 6)
     // Nearer another tile than this (units) beyond its own: ambiguous.
     const margin = font
-    const lines = input.callouts?.lines
-    const rooms = roomBoxes(input.areas ?? [], input.cellMm, scale)
     const join = READABLE_SYMBOL_PX * 1.5
     const toCells = (p: Pt): Pt => [p[0] / scale, p[1] / scale]
     // Boxes and leaders placed so far.
@@ -624,12 +642,52 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       gaveUp.delete(o.id)
       commit(it, p)
     }
-    // Taken before anything else is placed: the lower ranked keep off the
-    // boxes and their leaders.
-    for (const b of taken) occ.add(b)
     // A tile whose box found no place even with a long leader keeps its
     // plain name where it fits: better a name beside it than none.
     // (Rare: the row and the nearest-spot passes both failed.)
+    return taken
+  }
+  if (wantCallouts && ours.length) {
+    // The layout depends on the zoom and the plan only - never the view,
+    // a hover or the cables - and costs hundreds of ms on a hall of racks:
+    // a pan, a hover or a second settle at the same zoom reuses it.
+    const key = JSON.stringify([
+      scale,
+      font,
+      gap,
+      input.boundsOnly ? bounds : null,
+      fixedBoxes,
+      tileBodies,
+      bodyList,
+      icons.boxes(),
+      rooms,
+      ours.map((o) => [o.id, o.box, o.home, o.text, lines?.get(o.id)]),
+      trial.map((r) => [
+        r.id,
+        r.priority,
+        !!r.block,
+        r.spots.map((s) => s.box),
+      ]),
+    ])
+    let hit = calloutCache.get(key)
+    if (hit) {
+      // Most recent last.
+      calloutCache.delete(key)
+      calloutCache.set(key, hit)
+    } else {
+      const taken = layOut()
+      hit = { callouts: [...callouts], calledOut: [...calledOut], taken }
+      callouts.length = 0
+      calledOut.clear()
+      calloutCache.set(key, hit)
+      while (calloutCache.size > CALLOUT_CACHE)
+        calloutCache.delete(calloutCache.keys().next().value!)
+    }
+    callouts.push(...hit.callouts)
+    for (const id of hit.calledOut) calledOut.add(id)
+    // Taken before anything else is placed: the lower ranked keep off the
+    // boxes and their leaders.
+    for (const b of hit.taken) occ.add(b)
   }
   // A tile named in a callout has no plain name.
   const tileReqsShown = calledOut.size
