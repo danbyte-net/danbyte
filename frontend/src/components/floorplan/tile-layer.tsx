@@ -16,6 +16,7 @@ import {
   tileRoleIcon,
 } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
+import { facingBarRect, figureBarRect, figureLift } from "./tile-marks"
 
 /** Native hover tooltip text: name · type · linked · (rack) used-U/%. */
 function tileTooltip(
@@ -153,8 +154,11 @@ export function TileShape({
       ? stackedLabel(labelLayout(name, w, h - 14, labelFit), h)
       : labelLayout(name, w, h, labelFit)
     : null
+  // A front facing down takes the foot: the figure lifts clear of it.
+  const lift = figure ? figureLift(tile.orientation) : 0
+  const figBar = figureBarRect(w, h, tile.orientation)
   const labelY = stacked
-    ? (h - 14) / 2 + (label?.fontSize ?? 0) / 3
+    ? (h - 14 - lift) / 2 + (label?.fontSize ?? 0) / 3
     : h / 2 + (label?.fontSize ?? 0) / 3
 
   if (zone) {
@@ -376,14 +380,13 @@ export function TileShape({
       {/* Facing is the tile's own property (build-in-advance): every
           non-zone tile shows its front edge, linked or not - otherwise the
           bulk facing arrows change unlinked tiles invisibly. */}
-      <g transform={`translate(${GUTTER},${GUTTER})`}>
-        <FacingEdge
-          w={w - GUTTER * 2}
-          h={h - GUTTER * 2}
-          orientation={tile.orientation}
-          color={fill}
-        />
-      </g>
+      <FacingEdge
+        w={w}
+        h={h}
+        orientation={tile.orientation}
+        withFigure={!!figure}
+        color={fill}
+      />
       {/* Typed tiles stay clean (colour, label, live state); a tile placed
           straight from an object wears that object's role icon. */}
       {RoleIcon && iconSize >= 6 && (
@@ -431,23 +434,11 @@ export function TileShape({
         // Rack tiles: a thin bar along the bottom edge - space, or the
         // measure the plan is coloured by - and its figure.
         <g pointerEvents="none" data-part="figure">
-          <rect
-            x={GUTTER + 3}
-            y={h - GUTTER - 7}
-            width={w - GUTTER * 2 - 6}
-            height={4}
-            rx={2}
-            className="fill-foreground/10"
-          />
+          <rect {...figBar} rx={2} className="fill-foreground/10" />
           {figure.ratio != null && (
             <rect
-              x={GUTTER + 3}
-              y={h - GUTTER - 7}
-              width={Math.max(
-                2,
-                (w - GUTTER * 2 - 6) * Math.min(1, figure.ratio)
-              )}
-              height={4}
+              {...figBar}
+              width={Math.max(2, figBar.width * Math.min(1, figure.ratio))}
               rx={2}
               fill={figure.color}
             />
@@ -455,7 +446,7 @@ export function TileShape({
           {figureText && (
             <text
               x={wide ? w - GUTTER - 4 : w / 2}
-              y={h - GUTTER - 10}
+              y={h - GUTTER - 10 - lift}
               textAnchor={wide ? "end" : "middle"}
               fontSize={8}
               fill="currentColor"
@@ -566,8 +557,8 @@ function CabinetCount({
  * A rack tile's facing indicator: a thin accent bar hugging the INSIDE of the
  * edge the cabinet's FRONT (door) points at - a door threshold on an
  * architectural plan. Inside the rect because adjacent tiles share edges: the
- * old outside placement bled straight into the neighbouring cell. It renders
- * before the utilization bar/label, so those draw over it where they meet.
+ * old outside placement bled straight into the neighbouring cell. It never
+ * meets the utilization bar: tile-marks.ts lays the two out apart.
  * Orientation matches the 3D room: 0 = up (north), 90 = right, 180 = down,
  * 270 = left.
  */
@@ -575,26 +566,27 @@ function FacingEdge({
   w,
   h,
   orientation,
+  withFigure,
   color,
 }: {
   w: number
   h: number
   orientation: number
+  withFigure: boolean
   color: string
 }) {
-  const t = 3 // bar thickness
-  const edge = 1.5 // sits just inside the tile's stroke
-  const inset = 7 // corner clearance (keeps the rounded corners clean)
-  const bar =
-    orientation === 90
-      ? { x: w - edge - t, y: inset, width: t, height: h - inset * 2 }
-      : orientation === 180
-        ? { x: inset, y: h - edge - t, width: w - inset * 2, height: t }
-        : orientation === 270
-          ? { x: edge, y: inset, width: t, height: h - inset * 2 }
-          : { x: inset, y: edge, width: w - inset * 2, height: t }
+  // tile-marks.ts keeps it clear of the figure bar along the foot.
+  const bar = facingBarRect(w, h, orientation, withFigure)
+  if (bar.width <= 0 || bar.height <= 0) return null
   return (
-    <rect {...bar} rx={t / 2} fill={color} opacity={0.9} pointerEvents="none" />
+    <rect
+      data-part="facing"
+      {...bar}
+      rx={1.5}
+      fill={color}
+      opacity={0.9}
+      pointerEvents="none"
+    />
   )
 }
 

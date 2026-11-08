@@ -9,6 +9,7 @@ import {
   POPOVER_FIELDS,
   TilePopover,
   fieldsForTile,
+  formatCells,
 } from "./tile-popover"
 
 // A cabinet tile's popover: the cabinet it links to, and - where a rack's
@@ -348,5 +349,24 @@ describe("TilePopover on a cooling source tile (#434)", () => {
         ?.querySelector("[data-level]")
         ?.getAttribute("data-level")
     ).toBe("critical")
+  })
+})
+
+describe("formatCells", () => {
+  it("rounds a free plan's fractions to two decimals", () => {
+    expect(formatCells(586.1320000000001)).toBe("586.13")
+    expect(formatCells(1.5)).toBe("1.5")
+    expect(formatCells(4)).toBe("4")
+    expect(formatCells(0.005)).toBe("0.01")
+    expect(formatCells(-0.001)).toBe("0")
+  })
+
+  it("writes a tile's position and size that way", () => {
+    const rows = open(tile({ x: 586.1320000000001, y: 12.3456 }), [
+      "position",
+      "size",
+    ])
+    expect(rows.Position.textContent).toBe("586.13, 12.35")
+    expect(rows.Size.textContent).toBe("1×1")
   })
 })
