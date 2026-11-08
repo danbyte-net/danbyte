@@ -127,7 +127,7 @@ export function areaNameHaloColor(ink: string): string {
 }
 
 /** `a` over `b` at opacity `t` (both #rrggbb). */
-function mixHex(a: string, b: string, t: number): string {
+export function mixHex(a: string, b: string, t: number): string {
   const rgb = (c: string) => {
     const v = parseInt(c.slice(1), 16)
     return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff]

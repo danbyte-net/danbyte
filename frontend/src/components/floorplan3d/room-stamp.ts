@@ -24,6 +24,7 @@ export function roomStamp({
   pointed,
   readableNames = false,
   readableCallouts = true,
+  planText = "",
 }: {
   showWalls: boolean
   showCables: boolean
@@ -44,6 +45,8 @@ export function roomStamp({
   readableCallouts?: boolean
   /** Display > Object size: Readable. */
   readableNames?: boolean
+  /** The plan text on show: its toggles and its count. */
+  planText?: string
 }): string {
   return [
     showWalls,
@@ -60,5 +63,6 @@ export function roomStamp({
     tints ? tintStamp(tints) : "",
     pointed ? [...pointed].sort().join(",") : "",
     readableNames ? (readableCallouts ? "readable" : "readable:thin") : "",
+    planText,
   ].join("|")
 }

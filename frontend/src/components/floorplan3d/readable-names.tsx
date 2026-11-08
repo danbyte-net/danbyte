@@ -17,6 +17,8 @@ import { roomLook } from "./room-look"
 import type { RoomLook } from "./room-look"
 import { ROOM_FONT, textTexture } from "./text-sprite"
 import type { SummaryStore } from "./summary-picker"
+import { applyPlanText, collectPlanText } from "./plan-text-bus"
+import type { PlanTextBus } from "./plan-text-bus"
 import { cellToWorld, floorDeviceBoxM } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
@@ -140,7 +142,11 @@ export function ReadableNames3D({
   icons = true,
   callouts = true,
   summaries,
+  textBus,
 }: {
+  /** The plan's own text (plan-text-layer.tsx): laid out in the same pass,
+   * so a plate never covers a label nor a label a plate. */
+  textBus?: PlanTextBus
   /** Where a summary plate's hover and click go (summary-picker.tsx);
    * without it the plates take no pointer. */
   summaries?: SummaryStore
@@ -254,6 +260,15 @@ export function ReadableNames3D({
     [leaders]
   )
 
+  // While mounted the plates run the plan text's pass.
+  useEffect(() => {
+    if (!textBus) return
+    textBus.driven++
+    return () => {
+      textBus.driven--
+    }
+  }, [textBus])
+
   const v = useMemo(() => new THREE.Vector3(), [])
   const reach = nameReach(plan)
   useFrame(({ camera, size }) => {
@@ -293,7 +308,9 @@ export function ReadableNames3D({
       view: { x: 0, y: 0, w: size.width, h: size.height },
       callouts,
       plateSize: platePx,
+      extras: textBus ? collectPlanText(textBus, camera, size) : undefined,
     })
+    if (textBus) applyPlanText(textBus, layout.extras)
     // The hovered plate gone (the camera moved on): its card goes too.
     const hovered = summaries?.get().hover
     if (hovered && !layout.summaries.some((s) => s.id === hovered.id))
@@ -435,15 +452,20 @@ export function ReadableNames3D({
   )
 }
 
-/** An icon as an SVG data URL, white strokes - drawn onto a plate. */
-export function iconDataUrl(name: string, px: number): string | null {
+/** An icon as an SVG data URL, white strokes (or `color`'s) - drawn onto
+ * a plate. */
+export function iconDataUrl(
+  name: string,
+  px: number,
+  color = "#ffffff"
+): string | null {
   const Icon = name ? getLucideIcon(name) : null
   if (!Icon) return null
   const svg = renderToStaticMarkup(
     createElement(Icon, {
       width: px,
       height: px,
-      color: "#ffffff",
+      color,
       strokeWidth: 2.25,
     })
   ).replace(/\sclass="[^"]*"/g, "")

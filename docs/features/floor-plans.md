@@ -778,6 +778,30 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   or are focused on, and **Names off the gear** starts each plate at the
   rail edge so it runs over the frame and past the cabinet instead of
   covering the faceplate.
+- **Labels** and **Room & area names** (Display menu, 3D, both on by
+  default and saved on the plan like the other display settings): the
+  plan's own text, written in the room as the 2D plan writes it.
+  **Labels** draws every placed label at its real size, rotation, weight,
+  alignment and colour (on its plate when it has one), lying flat on the
+  floor like painted floor text, and each tray's name and cable count as
+  a small plate over its longest run. **Room & area names** writes each
+  room's and area's name where 2D puts it - in a rectangle's top left,
+  turned with it, or centred in a polygon - in the same ink as 2D (the
+  area's own colour over a light fill, black or white over a strong one,
+  on a halo where the fill is light), with its type's icon first; an area
+  with **Show the name** off stays unnamed. The 2D **Zone labels** switch
+  also writes the zones' names on the 3D floor. What the eyes hide is
+  hidden here too. Seen from low down, where flat text no longer reads,
+  each piece stands up and faces the camera instead, lying back down as
+  the camera rises. In a building each level's text sits on that level's
+  floor, moves with **Explode** and is gone with its level; levels drawn
+  as ghosts carry none. The text takes part in the room's one name layout
+  (see [Readable](#one-label-pass)): it never overlaps a name plate or
+  other text - labels give way only to the selected or hovered object's
+  plate, then come the other plates, the trays', the zones' names and
+  last the rooms' and areas' names. Under **Readable** no text is drawn
+  smaller than a readable size on screen; at Real size text too small to
+  read is left out.
 - **Cable thickness** (View menu, 3D): a slider from a quarter to double
   life size. Real jacket diameters are right up close and vanish across a
   hall; pick what reads at the distance you work at. Under it, **Auto /
@@ -1114,7 +1138,11 @@ The level on screen is the full, interactive room. Each other level loads
 its own scene when first shown, and stays cached. Clicking anything on
 another level makes it the level on screen; clicking a rack, cabinet or
 device there flies to it. **Explode** pulls the levels apart vertically,
-for seeing the runs between them. With cables on, a cable routed between
+for seeing the runs between them. Each level below writes its own labels
+and room, area, zone and tray names on its floor (as the **Labels** and
+**Room & area names** switches say, leaving out what that level's eyes
+hide), so they move with Explode; ghosted and hidden levels write none.
+With cables on, a cable routed between
 two shown levels through a riser draws as one continuous run - this
 level's part, the climb in the shaft, the other level's part - and each
 riser's shaft shows as a faint column. With cables on, the walls of the
@@ -1369,7 +1397,11 @@ where picking one selects it and flies to its front and **Zoom to these**
 frames the whole crowd.
 No plate ever draws over another. The layout follows the camera, so it
 changes as you orbit and zoom. With Callouts off the names only thin. The
-objects themselves stay their real size in 3D.
+objects themselves stay their real size in 3D. The plan's labels, tray,
+zone, room and area names (**Labels** and **Room & area names**, Display
+menu) take part in the same layout: labels outrank every plate but the
+selected or hovered one, the other names rank under the plates, and
+callouts and summary plates keep off the text that shows.
 
 The **Export PDF** follows the setting at the sheet's scale: on paper
 objects are at least **5 mm** and names **2 mm** (about 5.7 pt), thinned the

@@ -42,6 +42,8 @@ export type ViewPrefKey =
   | "show_3d_floor_peek"
   | "show_3d_walls"
   | "show_3d_ceiling"
+  | "show_3d_labels"
+  | "show_3d_area_names"
   | "show_3d_names_scope"
   | "show_3d_names_edge"
   | "color_by"
@@ -99,6 +101,14 @@ export function usePlanViewPrefs({
   const [show3dCeilingLocal, setShow3dCeilingLocal] = useState<boolean | null>(
     null
   )
+  // The plan's own text in the room: its labels (and trays' names), and
+  // its rooms' and areas' names.
+  const [show3dLabelsLocal, setShow3dLabelsLocal] = useState<boolean | null>(
+    null
+  )
+  const [show3dAreaNamesLocal, setShow3dAreaNamesLocal] = useState<
+    boolean | null
+  >(null)
   // Cabinet shell (3D): solid / cutaway / x-ray - a mode, not a checkbox.
   const [shell3dLocal, setShell3dLocal] = useState<ShellMode3D | null>(null)
   // Color by (#247) and the rack table it opens - plan prefs like the rest.
@@ -248,6 +258,15 @@ export function usePlanViewPrefs({
     show3dCeilingLocal ??
     (plan?.state.show_3d_ceiling as boolean | undefined) ??
     false
+  // On unless the plan turned them off: text someone placed must show.
+  const show3dLabels =
+    show3dLabelsLocal ??
+    (plan?.state.show_3d_labels as boolean | undefined) ??
+    true
+  const show3dAreaNames =
+    show3dAreaNamesLocal ??
+    (plan?.state.show_3d_area_names as boolean | undefined) ??
+    true
   const shell3dRaw =
     shell3dLocal ?? (plan?.state.shell_3d as string | undefined) ?? "cutaway"
   const shell3d: ShellMode3D = SHELL_MODES_3D.includes(
@@ -329,6 +348,9 @@ export function usePlanViewPrefs({
     else if (key === "show_3d_floor_peek") setFloorPeekLocal(value as boolean)
     else if (key === "show_3d_walls") setShow3dWallsLocal(value as boolean)
     else if (key === "show_3d_ceiling") setShow3dCeilingLocal(value as boolean)
+    else if (key === "show_3d_labels") setShow3dLabelsLocal(value as boolean)
+    else if (key === "show_3d_area_names")
+      setShow3dAreaNamesLocal(value as boolean)
     else if (key === "show_3d_names_scope")
       setNames3dScopeLocal(value as "all" | "selected")
     else if (key === "show_3d_names_edge") setNames3dEdgeLocal(value as boolean)
@@ -359,6 +381,8 @@ export function usePlanViewPrefs({
     floorPeek,
     show3dWalls,
     show3dCeiling,
+    show3dLabels,
+    show3dAreaNames,
     shell3d,
     setShellMode,
     colorBy,
