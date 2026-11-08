@@ -20,6 +20,7 @@ import {
   floorDeviceBoxM,
   mm,
   rackFootprintM,
+  tileWorldPose,
 } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
@@ -156,7 +157,11 @@ export function Slab({
 function tileBox(
   plan: ScenePayload["plan"],
   t: SceneTile
-): { at: [number, number, number]; size: [number, number, number] } | null {
+): {
+  at: [number, number, number]
+  size: [number, number, number]
+  rotY: number
+} | null {
   const h = t.rack
     ? rackFootprintM(t.rack).height
     : t.cabinet
@@ -165,9 +170,14 @@ function tileBox(
         ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
         : null
   if (h == null || t.is_zone) return null
-  const c = cellM(plan)
-  const [x, z] = cellToWorld(plan, t.x + t.w / 2, t.y + t.h / 2)
-  return { at: [x, h / 2, z], size: [t.w * c * 0.92, h, t.h * c * 0.92] }
+  // Its footprint turned by its residual, as the 2D canvas draws it.
+  const pose = tileWorldPose(plan, t)
+  const [x, z] = pose.centre
+  return {
+    at: [x, h / 2, z],
+    size: [pose.footprint.w * 0.92, h, pose.footprint.d * 0.92],
+    rotY: pose.residualRotY,
+  }
 }
 
 /** A level below the active one: slab, walls, and boxes for what stands
@@ -221,6 +231,7 @@ function SimpleLevel({
         <mesh
           key={t.id}
           position={box!.at}
+          rotation={[0, box!.rotY, 0]}
           castShadow
           onClick={(e) => {
             e.stopPropagation()

@@ -47,6 +47,7 @@ import {
   tileQuarter,
 } from "./shapes"
 import type { AreaShape, LabelShape, PlanShape } from "./shapes"
+import { planTilePose, residualTransform } from "./tile-pose"
 import {
   CABLE_LINE,
   CABLE_NONE_PAPER,
@@ -1135,14 +1136,20 @@ function labelsMarkup(
 function symbolMarkup(
   t: FloorPlanTile,
   box: CellBox,
-  iconTile = false
+  iconTile = false,
+  rotation = 0
 ): string {
   const r = (n: number) => +n.toFixed(2)
   const w = box.w * CELL
   const h = box.h * CELL
   const side = Math.min(w, h) * (iconTile ? 0.6 : 0.7)
+  // A slender tile's symbol lies turned with it (its icon stays upright).
+  const turn = rotation
+    ? `rotate(${r(rotation)},${r(box.x * CELL + w / 2)},${r(box.y * CELL + h / 2)})`
+    : undefined
   return (
     el("rect", {
+      transform: turn,
       x: r(box.x * CELL),
       y: r(box.y * CELL),
       width: r(w),
@@ -1512,12 +1519,17 @@ export function planSvg({
     )
   }
   const zoneGrow = readable ? fontGrow(10, paperMmPerPx, READABLE_FONT_MM) : 1
+  const free = plan.layout_mode === "free"
   for (const t of tiles)
-    if (isZone(t)) body.push(zoneMarkup(t, showZoneLabels, zoneGrow))
+    if (isZone(t)) {
+      // Turned past its quarter turn on a free plan, as the canvas draws it.
+      const turn = free ? residualTransform(planTilePose(t), CELL) : ""
+      const markup = zoneMarkup(t, showZoneLabels, zoneGrow)
+      body.push(turn ? `<g transform="${turn}">${markup}</g>` : markup)
+    }
   // Rooms and areas: over the zones, under the tiles.
   for (const s of shapes.filter((x) => x.kind === "area").sort(byZ))
     body.push(areaMarkup(s, pat, areaGrow, labels.areas.get(s.id)))
-  const free = plan.layout_mode === "free"
   // Readable: the grown symbols over the rest.
   const solid = tiles.filter((t) => !isZone(t))
   const ordered = anyShape
@@ -1547,7 +1559,9 @@ export function planSvg({
     // Too thin to read: its symbol at the drawn size.
     const shape = shapeOf(t)
     if (shape?.symbol) {
-      body.push(symbolMarkup(t, shape.box, iconIds.has(t.id)))
+      body.push(
+        symbolMarkup(t, shape.box, iconIds.has(t.id), iconIds.has(t.id) ? 0 : r)
+      )
       continue
     }
     const g = growOf(t)

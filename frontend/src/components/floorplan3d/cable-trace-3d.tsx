@@ -18,6 +18,7 @@ import {
   cableLane,
   cableRadiusM,
   cellToWorld,
+  tileWorldPose,
   deviceBoxM,
   filletPath,
   floorBoxAsRackBox,
@@ -198,12 +199,10 @@ function worldOf(
   y: number,
   z: number
 ): Vec3 {
-  const [cx, cz] = cellToWorld(
-    scene.plan,
-    tile.x + tile.w / 2,
-    tile.y + tile.h / 2
-  )
-  const th = (-tile.orientation * Math.PI) / 180
+  const {
+    centre: [cx, cz],
+    rotY: th,
+  } = tileWorldPose(scene.plan, tile)
   return [
     cx + x * Math.cos(th) + z * Math.sin(th),
     y,

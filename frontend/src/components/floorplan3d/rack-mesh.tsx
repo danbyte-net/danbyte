@@ -19,7 +19,7 @@ import {
   RACK_BASE_M,
   RACK_CAP_M,
   TRANSPARENT_ORDER,
-  cellToWorld,
+  tileWorldPose,
   deviceBoxM,
   deviceViewpoint,
   deviceYM,
@@ -187,8 +187,11 @@ export function RackMesh({
   // BOTH tiers (one box each - a PDU that pops in/out reads as a glitch).
   const positioned = rack.devices.filter((d) => d.position != null)
   const mounted = rack.devices.filter((d) => d.mount && d.position == null)
-  const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
-  const rotY = (-tile.orientation * Math.PI) / 180
+  // Turned by its whole facing about the tile's centre (tile-pose.ts).
+  const {
+    centre: [cx, cz],
+    rotY,
+  } = tileWorldPose(plan, tile)
   const [hovered, setHovered] = useState(false)
   const xray = shellMode === "xray"
 

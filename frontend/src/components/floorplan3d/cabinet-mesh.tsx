@@ -34,7 +34,7 @@ import {
   TRANSPARENT_ORDER,
   boxEdgesM,
   cabinetBoxM,
-  cellToWorld,
+  tileWorldPose,
   occludesSightLine,
   rackViewpoint,
 } from "./world"
@@ -190,8 +190,11 @@ export function CabinetMesh({
   const cabinet = tile.cabinet!
   const box = useMemo(() => cabinetBoxM(cabinet), [cabinet])
   const { width, depth, height } = box
-  const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
-  const rotY = (-tile.orientation * Math.PI) / 180
+  // Turned by its whole facing about the tile's centre (tile-pose.ts).
+  const {
+    centre: [cx, cz],
+    rotY,
+  } = tileWorldPose(plan, tile)
   const [hovered, setHovered] = useState(false)
   const invalidate = useThree((s) => s.invalidate)
 

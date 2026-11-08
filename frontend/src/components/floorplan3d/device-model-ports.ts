@@ -9,7 +9,7 @@ import {
 } from "@/lib/model-ports"
 import type { ModelPort, ModelPortsDoc, V3 } from "@/lib/model-ports"
 
-import { cellM, modelRotation, modelScale, modelTargetM } from "./world"
+import { modelRotation, modelScale, modelTargetM, tileWorldPose } from "./world"
 import type {
   ScenePayload,
   SceneFloorDevice,
@@ -31,11 +31,7 @@ export function tileFootprintM(
   plan: ScenePayload["plan"],
   tile: Pick<SceneTile, "w" | "h" | "orientation">
 ): { w: number; d: number } {
-  const c = cellM(plan)
-  const turned = ((tile.orientation % 180) + 180) % 180 === 90
-  return turned
-    ? { w: tile.h * c, d: tile.w * c }
-    : { w: tile.w * c, d: tile.h * c }
+  return tileWorldPose(plan, { x: 0, y: 0, ...tile }).local
 }
 
 /** The fitted model's upright size (m) from its mapping's bounds. */

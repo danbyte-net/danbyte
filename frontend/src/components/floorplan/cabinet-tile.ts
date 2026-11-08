@@ -3,6 +3,7 @@ import type {
   FloorPlanLiveState,
   FloorTileCabinetState,
 } from "@/lib/api"
+import { tileQuarter } from "./shapes"
 
 // A floor plan tile linked to a DIN-rail cabinet (#277): what the plan reads
 // off the cabinet - its box, the cells it covers, its live state.
@@ -35,7 +36,8 @@ export function cabinetTileSize(
     Math.max(1, Math.ceil(mm / Math.max(1, cellMm) - 1e-9))
   const across = cells(width)
   const deep = cells(depth)
-  return orientation % 180 === 0
+  // The footprint is stored at its quarter turn (tile-pose.ts): 118° lies as 90°.
+  return tileQuarter(orientation) % 180 === 0
     ? { width: across, height: deep }
     : { width: deep, height: across }
 }

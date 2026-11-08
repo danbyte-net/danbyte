@@ -7,6 +7,12 @@ import {
 } from "@/lib/faceplate-geometry"
 
 import { raisedContains } from "../floorplan/raised-floor-shape"
+import {
+  planAngleToRotY,
+  poseContains,
+  poseLocal,
+  tilePose,
+} from "../floorplan/tile-pose"
 
 /**
  * World-space conventions for the 3D room view.
@@ -292,6 +298,73 @@ export function cellToWorld(
 ): [number, number] {
   const c = cellM(plan)
   return [x * c, y * c]
+}
+
+/**
+ * Where a tile stands in the room - the 3D twin of the 2D canvas's tile
+ * transform (floorplan/tile-pose.ts), so the two can never disagree.
+ *
+ * - `footprint`: the stored rectangle (m), drawn axis-aligned and turned by
+ *   `residualRotY` - for symmetric boxes (zones, planning ghosts).
+ * - `local`: the size facing 0° (width along the front, depth front to back),
+ *   turned by `rotY` (the whole facing) - for anything with a front.
+ *
+ * Both turn about the tile's centre, as the canvas does.
+ */
+export function tileWorldPose(
+  plan: ScenePayload["plan"],
+  tile: Pick<SceneTile, "x" | "y" | "w" | "h" | "orientation">
+): {
+  centre: [number, number]
+  footprint: { w: number; d: number }
+  local: { w: number; d: number }
+  rotY: number
+  residualRotY: number
+} {
+  const p = tilePose(tile)
+  const c = cellM(plan)
+  return {
+    centre: cellToWorld(plan, p.cx, p.cy),
+    footprint: { w: p.w * c, d: p.h * c },
+    local: { w: p.local.w * c, d: p.local.h * c },
+    rotY: planAngleToRotY(p.orientation),
+    residualRotY: planAngleToRotY(p.residual),
+  }
+}
+
+type TileRect = Pick<SceneTile, "x" | "y" | "w" | "h" | "orientation">
+
+/** Whether a tile stands in a zone: their rectangles overlap on a plan
+ * where neither is turned; else the tile's centre lies on the zone as drawn
+ * (a turned aisle's bounding box would swallow the neighbouring rows). */
+export function tileStandsIn(t: TileRect, zone: TileRect): boolean {
+  const tp = tilePose(t)
+  const zp = tilePose(zone)
+  if (!tp.residual && !zp.residual)
+    return (
+      t.x < zone.x + zone.w &&
+      zone.x < t.x + t.w &&
+      t.y < zone.y + zone.h &&
+      zone.y < t.y + t.h
+    )
+  return poseContains(zp, [tp.cx, tp.cy])
+}
+
+/** Which of the anchor's two lines a tile stands on: the same row (`sameY`,
+ * along the anchor's stored width) or column (`sameX`). On a turned free
+ * plan the lines run along the anchor's own turned axes. */
+export function rowAxes(
+  anchor: TileRect
+): (t: TileRect) => { sameX: boolean; sameY: boolean } {
+  const ap = tilePose(anchor)
+  return (t) => {
+    const tp = tilePose(t)
+    if (!ap.residual && !tp.residual)
+      return { sameX: t.x === anchor.x, sameY: t.y === anchor.y }
+    const [lx, ly] = poseLocal(ap, [tp.cx, tp.cy])
+    const tol = 0.25
+    return { sameX: Math.abs(lx) < tol, sameY: Math.abs(ly) < tol }
+  }
 }
 
 /** The plenum depth (mm, positive) under a tray run: the deepest raised-floor
@@ -786,8 +859,10 @@ export function rackViewpoint(
   heightM: number,
   side: "front" | "rear"
 ): { target: [number, number, number]; position: [number, number, number] } {
-  const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
-  const rotY = (-tile.orientation * Math.PI) / 180
+  const {
+    centre: [cx, cz],
+    rotY,
+  } = tileWorldPose(plan, tile)
   // Local −Z is the rack's front; +Z its rear. Rotate about Y by rotY.
   const sign = side === "front" ? -1 : 1
   const dist = Math.max(heightM * 1.3, 2.2)
@@ -823,8 +898,10 @@ export function deviceViewpoint(
     mountedRear: boolean
   }
 ): { target: [number, number, number]; position: [number, number, number] } {
-  const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
-  const rotY = (-tile.orientation * Math.PI) / 180
+  const {
+    centre: [cx, cz],
+    rotY,
+  } = tileWorldPose(plan, tile)
   const sign = box.mountedRear ? 1 : -1
   // Close enough to read port labels, far enough that a 10U chassis fits -
   // measured from the rack's centre line, as tuned on 1 m racks, where a 1U

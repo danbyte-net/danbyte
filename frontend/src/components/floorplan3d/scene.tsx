@@ -98,6 +98,7 @@ import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
 import { BuildingLevels, RiserRuns, Roofline, Slab } from "./building"
 import { placeLevels } from "./building-math"
+import { poseBounds, tilePose } from "../floorplan/tile-pose"
 import type { LevelMode } from "./building-math"
 import {
   cabinetBoxM,
@@ -106,7 +107,9 @@ import {
   floorDeviceBoxM,
   rackFootprintM,
   rackViewpoint,
+  rowAxes,
   sceneRaised,
+  tileStandsIn,
   trayElevationM,
   trayJunctions,
   webglSupported,
@@ -693,9 +696,10 @@ export default function FloorScene3D({
       : t.device
         ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
         : 1
+    const b = poseBounds(tilePose(t))
     navRef.current?.frame(
-      [t.x * c, 0, t.y * c],
-      [(t.x + t.w) * c, h, (t.y + t.h) * c]
+      [b.minX * c, 0, b.minY * c],
+      [b.maxX * c, h, b.maxY * c]
     )
   }, [focusTarget, scene.data, focusPaths.data])
 
@@ -832,15 +836,7 @@ export default function FloorScene3D({
   const nonZoneTiles = data.tiles.filter((t) => !t.is_zone)
   const isolateZone = (zone: SceneTile) => {
     const ids = new Set(
-      nonZoneTiles
-        .filter(
-          (t) =>
-            t.x < zone.x + zone.w &&
-            zone.x < t.x + t.w &&
-            t.y < zone.y + zone.h &&
-            zone.y < t.y + t.h
-        )
-        .map((t) => t.id)
+      nonZoneTiles.filter((t) => tileStandsIn(t, zone)).map((t) => t.id)
     )
     if (ids.size === 0) {
       toast.info("Nothing stands in that zone yet.")
@@ -856,14 +852,7 @@ export default function FloorScene3D({
   const zonesAround = (tile: SceneTile | null) =>
     tile
       ? data.tiles
-          .filter(
-            (z) =>
-              z.is_zone &&
-              tile.x < z.x + z.w &&
-              z.x < tile.x + tile.w &&
-              tile.y < z.y + z.h &&
-              z.y < tile.y + tile.h
-          )
+          .filter((z) => z.is_zone && tileStandsIn(tile, z))
           .sort((a, b) => a.w * a.h - b.w * b.h)
       : []
   const zonesForSelected = zonesAround(selTile)
@@ -871,11 +860,13 @@ export default function FloorScene3D({
   const isolateRow = (anchor: SceneTile) => {
     // A row is whichever axis the hall actually runs: the alignment
     // (same-y vs same-x) that catches more racks wins.
-    const sameY = rackTiles.filter((t) => t.y === anchor.y).length
-    const sameX = rackTiles.filter((t) => t.x === anchor.x).length
+    // A turned row (free plan) runs along the anchor's own axes.
+    const along = rowAxes(anchor)
+    const sameY = rackTiles.filter((t) => along(t).sameY).length
+    const sameX = rackTiles.filter((t) => along(t).sameX).length
     const ids = new Set(
       nonZoneTiles
-        .filter((t) => (sameY >= sameX ? t.y === anchor.y : t.x === anchor.x))
+        .filter((t) => (sameY >= sameX ? along(t).sameY : along(t).sameX))
         .map((t) => t.id)
     )
     setIsolation({
@@ -940,16 +931,18 @@ export default function FloorScene3D({
           : t.device
             ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
             : 1
+    // The tiles as drawn: a turned tile's corners reach past its rect.
+    const bs = ts.map((t) => poseBounds(tilePose(t)))
     navRef.current?.frame(
       [
-        Math.min(...ts.map((t) => t.x)) * c,
+        Math.min(...bs.map((b) => b.minX)) * c,
         0,
-        Math.min(...ts.map((t) => t.y)) * c,
+        Math.min(...bs.map((b) => b.minY)) * c,
       ],
       [
-        Math.max(...ts.map((t) => t.x + t.w)) * c,
+        Math.max(...bs.map((b) => b.maxX)) * c,
         Math.max(...ts.map(top)),
-        Math.max(...ts.map((t) => t.y + t.h)) * c,
+        Math.max(...bs.map((b) => b.maxY)) * c,
       ]
     )
     invalidateRef.current?.()
