@@ -96,15 +96,54 @@ export function areaIcon(a: AreaLook): string {
   return areaTypeOf(a)?.icon ?? ""
 }
 
+/** The page an area is drawn on, for its name's ink: paper and the light
+ * theme's background, and the dark theme's (`--background`, as hex). */
+export const PAGE_LIGHT = "#ffffff"
+export const PAGE_DARK = "#121214"
+
 /** The ink for an area's name: its own colour over a light fill, or black
- * or white - whichever reads - once the fill is strong enough to swallow it. */
+ * or white - whichever reads - once the fill is strong enough to swallow
+ * it. That is judged against the fill as it reads over `page` (a 50 %
+ * emerald over a white page is a light green: black reads, white does
+ * not). */
 export function areaLabelColor(
-  a: AreaLook & Pick<FloorPlanArea, "fill_opacity">
+  a: AreaLook & Pick<FloorPlanArea, "fill_opacity">,
+  page: string = PAGE_LIGHT
 ): string {
   const color = areaColor(a)
   return a.fill_opacity >= 50 && /^#[0-9a-f]{6}$/i.test(color)
-    ? readableText(color)
+    ? readableText(mixHex(color, page, a.fill_opacity / 100))
     : color
+}
+
+/** The halo under a black or white name: the other one, so the glyphs
+ * keep their edges over a map, a pattern or a neighbour. */
+export function areaNameHaloColor(ink: string): string {
+  const hex = /^#[0-9a-f]{3}$/i.test(ink)
+    ? "#" + [...ink.slice(1)].map((c) => c + c).join("")
+    : ink
+  // White reads on a dark ink: the ink is dark, its halo white.
+  return readableText(hex) === "#fff" ? "#ffffff" : "#0a0a0a"
+}
+
+/** `a` over `b` at opacity `t` (both #rrggbb). */
+function mixHex(a: string, b: string, t: number): string {
+  const rgb = (c: string) => {
+    const v = parseInt(c.slice(1), 16)
+    return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff]
+  }
+  const x = rgb(a)
+  const y = rgb(b)
+  return (
+    "#" +
+    x
+      .map((c, i) =>
+        Math.round(c * t + y[i] * (1 - t))
+          .toString(16)
+          .padStart(2, "0")
+      )
+      .join("")
+  )
 }
 
 /** Whether an area's name needs a halo of the background to read: over

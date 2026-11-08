@@ -16,6 +16,9 @@ import {
   areaLabelColor,
   areaName,
   areaNameHalo,
+  areaNameHaloColor,
+  PAGE_DARK,
+  PAGE_LIGHT,
   areaPattern,
   boxCenter,
   handlePoint,
@@ -88,6 +91,21 @@ function PatternStrokes({
   )
 }
 
+/** A black-or-white area name's ink and halo for each theme, as CSS
+ * variables the name's group reads (`AREA_INK_CLASS`). */
+function areaNameInks(area: AreaShape): React.CSSProperties {
+  const light = areaLabelColor(area, PAGE_LIGHT)
+  const dark = areaLabelColor(area, PAGE_DARK)
+  return {
+    "--area-ink": light,
+    "--area-ink-dark": dark,
+    "--area-halo": areaNameHaloColor(light),
+    "--area-halo-dark": areaNameHaloColor(dark),
+  } as React.CSSProperties
+}
+const AREA_INK_CLASS =
+  "text-(--area-ink) stroke-(--area-halo) dark:text-(--area-ink-dark) dark:stroke-(--area-halo-dark)"
+
 /** An area's name with its type's icon before it: from (x, y) in its top
  * left (`start`, y the baseline), or centred on (x, y) (`middle`, y the
  * middle). A patterned area's name reads over its lines through a halo of
@@ -121,15 +139,24 @@ function AreaName({
   const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
   const mid = anchor === "middle" ? y : y - namePx * 0.35
   // Grown, it spills over tiles and lines: always on its halo.
+  const own = ink === areaColor(area)
   const halo = areaNameHalo(area) || grow > 1
   // In the area's own colour, a name keeps some of the page's ink, so a
-  // pale colour still reads; over a strong fill it is black or white.
-  const fill =
-    ink === areaColor(area)
-      ? `color-mix(in oklab, ${ink} ${AREA_INK_SHARE * 100}%, var(--foreground))`
-      : ink
+  // pale colour still reads, on a halo of the page. Over a strong fill it
+  // is black or white - judged against the fill as it reads over each
+  // theme's page - on a halo of the other one, so the glyphs keep their
+  // edges (a white name on a white halo smears).
+  const fill = own
+    ? `color-mix(in oklab, ${ink} ${AREA_INK_SHARE * 100}%, var(--foreground))`
+    : "currentColor"
+  const inks = own ? undefined : areaNameInks(area)
   return (
-    <g pointerEvents="none" data-part="area-name">
+    <g
+      pointerEvents="none"
+      data-part="area-name"
+      style={inks}
+      className={inks ? AREA_INK_CLASS : undefined}
+    >
       {Icon && (
         <Icon
           data-part="area-icon"
@@ -149,9 +176,10 @@ function AreaName({
         fontSize={namePx}
         fontWeight={600}
         fill={fill}
-        className={halo ? "stroke-background" : undefined}
+        className={halo && own ? "stroke-background" : undefined}
+        stroke={halo ? undefined : "none"}
         strokeWidth={halo ? 3.5 * grow : undefined}
-        strokeOpacity={halo ? 0.9 : undefined}
+        strokeOpacity={halo ? (own ? 0.9 : 0.75) : undefined}
         strokeLinejoin={halo ? "round" : undefined}
         paintOrder={halo ? "stroke" : undefined}
       >
@@ -164,18 +192,37 @@ function AreaName({
 /** The link mark of an area or label that opens a plan: a small Lucide
  * link icon at (x, y), its top left (world px). */
 const LINK_PX = 12
-function OpensMark({ x, y, ink }: { x: number; y: number; ink: string }) {
-  return (
+function OpensMark({
+  x,
+  y,
+  ink,
+  area,
+}: {
+  x: number
+  y: number
+  ink: string
+  /** An area's mark: black or white over a strong fill, as its name. */
+  area?: AreaShape
+}) {
+  const inks = area && ink !== areaColor(area) ? areaNameInks(area) : null
+  const mark = (
     <Link2
       data-part="opens-mark"
       x={x}
       y={y}
       width={LINK_PX}
       height={LINK_PX}
-      color={ink}
+      color={inks ? "currentColor" : ink}
       strokeWidth={2.25}
       pointerEvents="none"
     />
+  )
+  return inks ? (
+    <g style={inks} className={AREA_INK_CLASS}>
+      {mark}
+    </g>
+  ) : (
+    mark
   )
 }
 
@@ -293,6 +340,7 @@ export function AreaShapeView({
           <OpensMark
             x={px(cx) - LINK_PX / 2}
             y={px(cy) + (name ? NAME_PX : -LINK_PX / 2)}
+            area={area}
             ink={ink}
           />
         )}
@@ -352,6 +400,7 @@ export function AreaShapeView({
         <OpensMark
           x={px(area.x) + w - LINK_PX - 4}
           y={px(area.y) + 4}
+          area={area}
           ink={ink}
         />
       )}

@@ -32,6 +32,7 @@ import {
   areaLabelColor,
   areaName,
   areaNameHalo,
+  areaNameHaloColor,
   areaPattern,
   patternRuns,
   boxCenter,
@@ -494,6 +495,8 @@ function areaNameMarkup(
 ): string {
   const icon = getLucideIcon(areaIcon(a)) ? areaIcon(a) : ""
   const shift = icon ? 16 * grow : 0
+  // A black or white name (a strong fill) is haloed in the other one.
+  const halo = areaNameHalo(a) ? "#ffffff" : areaNameHaloColor(ink)
   const textW = name.length * 12 * grow * 0.6
   const tx = anchor === "middle" ? x + shift / 2 : x + shift
   const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
@@ -509,8 +512,8 @@ function areaNameMarkup(
     (areaNameHalo(a) || grow > 1
       ? text(name, {
           ...font,
-          fill: "#ffffff",
-          stroke: "#ffffff",
+          fill: halo,
+          stroke: halo,
           "stroke-width": 3.5 * grow,
           "stroke-linejoin": "round",
         })

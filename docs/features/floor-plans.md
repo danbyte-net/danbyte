@@ -1545,7 +1545,12 @@ to **Select** and the inspector shows the new area:
 - **Fill** (opacity), **Border** (solid, dashed or none), **Show the name**,
   and the **Rotation** of a rectangle in degrees. The name is drawn in the
   area's colour over a light fill, and in black or white - whichever reads -
-  from 50 % fill up, so it never disappears into the fill.
+  from 50 % fill up, so it never disappears into the fill. Which of the two
+  is judged against the fill as it reads over the page in each theme - a
+  50 % emerald over a light page is a pale green, so its name is black
+  there and white in the dark theme. Where a black or white name sits on a
+  halo (a Readable name grown far out), the halo is the other one, so the
+  letters keep a sharp edge over the map or the plan.
 
 Areas draw over the background, the drawing and the zone tiles, and under
 every other tile. They may overlap - a cage inside a hall is real. Each has a
@@ -2417,24 +2422,33 @@ A wall linked to an area (its room's shell, say) keeps up with it:
 
 - **Moving the area** moves its linked walls and their doors with it, in
   the same undo step.
-- **Reshaping or turning the area** leaves the walls where they are and
-  offers **Update walls** on a card over the plan while the area is
-  selected. It rebuilds the walls along the new outline - the same walls,
-  with their labels, heights, thickness and colour - and keeps each door at
-  its place along its stretch (the same share of the run's length, slid
-  inside its segment at a corner). Doors that no longer fit are listed
-  first and go only on **Update and drop**. Dismiss the card to leave the
-  walls as they are.
-- **Editing a linked wall by hand** keeps the link. A move of the area
-  still carries the wall as edited. With the wall (or the area) selected,
-  the card offers **Update area**: it redraws the area's outline along its
-  linked walls, joined end to end into one closed ring - a corner for each
-  turn, points on a straight stretch left out. A rectangle stays a
-  rectangle (at the nearest turn) when the walls draw one, else the area
-  becomes a polygon. The walls and their doors are left as they are, and
-  it is one undo step. Walls that don't close into one ring (or cross, or
-  have over 200 corners) offer no **Update area**; with a wall selected the
-  card says why. A locked area keeps its outline.
+- **Reshaping or turning the area** rebuilds walls that ran along its old
+  outline along the new one, in the same undo step - the same walls, with
+  their labels, heights, thickness and colour - and keeps each door at its
+  place along its stretch (the same share of the run's length, slid inside
+  its segment at a corner). When a door would no longer fit, when the new
+  outline needs more or fewer walls, or when the walls were already off
+  the old outline, the walls stay where they are and a card over the plan
+  offers **Update walls** while the area is selected; doors that no longer
+  fit are listed first and go only on **Update and drop**. Dismiss the
+  card to leave the walls as they are.
+- **Editing a linked wall** - moving it or a segment, dragging a point,
+  adding a bend, taking a point out, splitting or joining - redraws the
+  area's outline along its linked walls in the same undo step: joined end
+  to end into one closed ring, a corner for each turn, points on a
+  straight stretch left out. The walls sit on the area's outline (that is
+  how they were made), so the area's edge is the walls' centre line. A
+  rectangle stays a rectangle (at the nearest turn) when the walls draw
+  one, else the area becomes a polygon. A closed wall's first and last
+  point are one corner: dragging it, moving a segment that ends there or
+  taking it out keeps the wall closed.
+- **Walls that no longer close** (an end dragged away, a wall of the loop
+  deleted or unlinked), that cross, or that have over 200 corners keep
+  the link but leave the area as it was; with a wall selected the card
+  says why (*Walls don't close*). The area follows again as soon as the
+  walls close into a ring. A locked area keeps its outline. The card's
+  **Update area** remains for walls edited before this rule, or when
+  both sides changed.
 - **When both changed** - the area reshaped and a wall edited - the card
   offers both: **Update area** first with a wall selected, **Update walls**
   first with the area selected. Dismiss leaves both as they are, until the

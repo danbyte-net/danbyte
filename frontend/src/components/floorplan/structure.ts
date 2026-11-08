@@ -344,6 +344,24 @@ export function outlineShift(before: Pt[], after: Pt[]): Pt | null {
 export const isClosedRun = (p: readonly Pt[], tol = 2e-3) =>
   p.length >= 4 && same(p[0], p[p.length - 1], tol)
 
+/**
+ * A closed run edited at its seam stays closed: its first and last points
+ * are one corner, so when an edit (a dragged point, a moved segment) moved
+ * only one of them, the other goes with it. Anything else is returned as
+ * it is.
+ */
+export function keepRingClosed(before: readonly Pt[], after: Pt[]): Pt[] {
+  const n = after.length
+  if (!isClosedRun(before) || n !== before.length || n < 4) return after
+  const first = !same(before[0], after[0])
+  const last = !same(before[n - 1], after[n - 1])
+  if (first === last) return after
+  const out = after.map((p) => [p[0], p[1]] as Pt)
+  if (first) out[n - 1] = [out[0][0], out[0][1]]
+  else out[0] = [out[n - 1][0], out[n - 1][1]]
+  return out
+}
+
 /** A polyline's corners alone: repeats and points on a straight stretch
  * go. `closed`: the points are a ring (no repeated first point), and its
  * seam is a corner like any other. */
@@ -545,6 +563,69 @@ export function areaFromRing(
     if (box) return { ...box, points: [] }
   }
   return { shape: "polygon", rotation: 0, ...polygonPatch([...ring]) }
+}
+
+/**
+ * Areas after their linked walls changed: each area in `areaIds` whose
+ * linked walls close into one valid ring takes that ring as its outline
+ * (the walls run exactly on it, as "Add walls around this" made them).
+ * A locked area, an area already on its walls and an area whose walls are
+ * open, crossed or too many keep their outline - the link stays, and the
+ * area follows again once the walls close. Returns the same array when
+ * nothing changed.
+ */
+export function areasFollowingWalls<
+  TShape extends { id: string; kind: string },
+>(
+  shapes: readonly TShape[],
+  structure: readonly StructShape[],
+  areaIds: Iterable<string>
+): { shapes: TShape[]; changed: string[] } {
+  const ids = new Set(areaIds)
+  const changed: string[] = []
+  if (!ids.size) return { shapes: shapes as TShape[], changed }
+  const walls = structureLists(structure).walls
+  const next = shapes.map((s) => {
+    if (s.kind !== "area" || !ids.has(s.id)) return s
+    const area = s as unknown as AreaShape
+    if (area.locked) return s
+    const linked = walls.filter((w) => w.source_area === area.id)
+    if (!linked.length) return s
+    const r = wallRing(linked)
+    if (!("ring" in r) || outlineIsRing(areaOutline(area), r.ring)) return s
+    changed.push(area.id)
+    return { ...s, ...areaFromRing(area, r.ring) }
+  })
+  return { shapes: changed.length ? next : (shapes as TShape[]), changed }
+}
+
+/**
+ * An area's linked walls after the area was reshaped or turned: rebuilt
+ * along the new outline when they ran along the old one - the same walls,
+ * new points, each door at its place along its stretch. Null (the walls
+ * stay; the card offers "Update walls") when they did not follow the old
+ * outline, when the rebuild needs more or fewer walls, or when a door
+ * would no longer fit.
+ */
+export function wallsFollowingArea(
+  before: Pt[],
+  after: Pt[],
+  linked: readonly WallRow[],
+  others: readonly { points: readonly Pt[] }[],
+  grid: GridSize
+): WallRow[] | null {
+  if (!linked.length) return null
+  const was = outlineWalls([before], others, grid).map((r) => r.points)
+  if (!runsMatch(linked, was)) return null
+  const runs = outlineWalls([after], others, grid).map((r) => r.points)
+  if (runs.length !== linked.length || runsMatch(linked, runs)) return null
+  const { openings, dropped } = rebuildWalls(linked, runs)
+  if (dropped.length) return null
+  return linked.map((w, i) => ({
+    ...w,
+    points: runs[i],
+    openings: openings[i],
+  }))
 }
 
 /** A four-corner ring as a box turned about its centre (clockwise degrees,
