@@ -1106,6 +1106,29 @@ export class CalloutBoard {
     return out
   }
 
+  /** A summary's box over the things it names, no leader - when there is
+   * no room beside them: in bounds, clear of every box and leader placed
+   * and of every tile but `own`. Its leader is a point (none drawn). */
+  over(it: CalloutItem, own: ReadonlySet<string>): PlacedCallout | null {
+    const a = it.anchor
+    const box = {
+      x: a.x + a.w / 2 - it.size.w / 2,
+      y: a.y + a.h / 2 - it.size.h / 2,
+      w: it.size.w,
+      h: it.size.h,
+    }
+    if (
+      !this.inBounds(box) ||
+      this.taken.some(box, (t) => boxesHit(t, box)) ||
+      this.leaders.some(box, (l) => segmentHitsBox(l[0], l[1], box)) ||
+      this.opts.bodies?.some(box, (o) => !own.has(o.id) && boxesHit(o.box, box))
+    )
+      return null
+    this.take(box)
+    const c: Pt = [box.x + box.w / 2, box.y + box.h / 2]
+    return { id: it.id, box, side: "top", leader: [c, c] }
+  }
+
   /** A lone box at the free spot nearest its tile, its leader no longer
    * than `max`; null (nothing taken) when there is none. `own`: the tiles
    * its leader may cross (its crowd's). */

@@ -7,6 +7,7 @@ import { tileIcon } from "@/components/object-icon"
 import { tileMarkerCells } from "./cable-draw"
 import { CELL, GUTTER, tileIsZone, tileName } from "./canvas-geometry"
 import type { ClusterFace } from "./icon-layout"
+import { HALL_FONT_PX } from "./plan-lod"
 import {
   CHECK_COLOR,
   rackFigures,
@@ -973,6 +974,184 @@ export function ClusterTile({
           {text}
         </text>
       </g>
+    </g>
+  )
+}
+
+/** What a symbol (a row, a room's summary) does when pointed at: as a
+ * cluster - a click zooms in, hovering lists its members. */
+interface SymbolProps {
+  id: string
+  k: number
+  face: ClusterFace
+  onActivate: () => void
+  onPointerEnter?: (e: React.PointerEvent) => void
+  onPointerLeave?: (e: React.PointerEvent) => void
+}
+
+function symbolHandlers({
+  onActivate,
+  onPointerEnter,
+  onPointerLeave,
+}: SymbolProps) {
+  return {
+    role: "button",
+    tabIndex: 0,
+    style: { cursor: "zoom-in", outline: "none" },
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.button !== 0) return
+      e.stopPropagation()
+    },
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation()
+      onActivate()
+    },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault()
+        onActivate()
+      }
+    },
+    onPointerEnter,
+    onPointerLeave,
+  } as const
+}
+
+/** A row of icons from afar (plan-lod.ts): one bar along its line, the
+ * row's length and at least its depth thick, in its racks' colour (else
+ * zinc), a seam between racks while they are wide enough to show. Its
+ * name is the label pass's, along it. */
+export function RowSymbolTile(
+  props: SymbolProps & {
+    /** Its middle (cells). */
+    at: readonly [number, number]
+    row: { dir: readonly [number, number]; length: number }
+    /** Its thickness (cells). */
+    thick: number
+  }
+) {
+  const { id, k, face, at, row, thick } = props
+  const l = row.length * CELL
+  const t = thick * CELL
+  const angle = (Math.atan2(row.dir[1], row.dir[0]) * 180) / Math.PI
+  const alarm = face.check ? CHECK_COLOR[face.check] : undefined
+  const step = l / Math.max(1, face.count)
+  const seams = step * k >= 5 ? face.count - 1 : 0
+  return (
+    <g
+      data-row-symbol={id}
+      className="animate-in duration-150 fade-in"
+      aria-label={`${face.name}, ${face.count} objects`}
+      transform={`translate(${at[0] * CELL},${at[1] * CELL}) rotate(${angle})`}
+      {...symbolHandlers(props)}
+    >
+      {alarm && (
+        <rect
+          data-part="alarm"
+          x={-l / 2 - 3 / k}
+          y={-t / 2 - 3 / k}
+          width={l + 6 / k}
+          height={t + 6 / k}
+          rx={Math.min(t / 2, 3 / k) + 3 / k}
+          fill="none"
+          stroke={alarm}
+          strokeOpacity={0.35}
+          strokeWidth={4 / k}
+          pointerEvents="none"
+        />
+      )}
+      <rect
+        data-part="bar"
+        x={-l / 2}
+        y={-t / 2}
+        width={l}
+        height={t}
+        rx={Math.min(t / 2, 3 / k)}
+        fill={face.fill}
+        fillOpacity={0.9}
+        stroke={alarm ?? "var(--background)"}
+        strokeWidth={(alarm ? 2 : 1.25) / k}
+      />
+      {seams > 0 && (
+        <path
+          data-part="seams"
+          d={Array.from({ length: seams }, (_, i) => {
+            const x = -l / 2 + step * (i + 1)
+            return `M${x},${-t / 2}V${t / 2}`
+          }).join("")}
+          stroke="var(--background)"
+          strokeOpacity={0.55}
+          strokeWidth={1 / k}
+          pointerEvents="none"
+        />
+      )}
+    </g>
+  )
+}
+
+/** A room's rows folded into one plate on the room (plan-lod.ts): the
+ * racks' icon in their colour, then "Data Hall 1 · 120 racks". */
+export function HallSymbolTile(
+  props: SymbolProps & { box: { x: number; y: number; w: number; h: number } }
+) {
+  const { id, k, face, box } = props
+  const x = box.x * CELL
+  const y = box.y * CELL
+  const w = box.w * CELL
+  const h = box.h * CELL
+  const pad = 3 / k
+  const sq = h - pad * 2
+  const alarm = face.check ? CHECK_COLOR[face.check] : undefined
+  const Icon = face.icon ? getLucideIcon(face.icon) : null
+  return (
+    <g
+      data-hall-symbol={id}
+      className="animate-in duration-150 fade-in"
+      aria-label={face.name}
+      {...symbolHandlers(props)}
+    >
+      <rect
+        data-part="plate"
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={4 / k}
+        fill="var(--popover)"
+        stroke={alarm ?? "var(--border)"}
+        strokeWidth={(alarm ? 2 : 1) / k}
+      />
+      <rect
+        x={x + pad}
+        y={y + pad}
+        width={sq}
+        height={sq}
+        rx={3 / k}
+        fill={face.fill}
+      />
+      {Icon && (
+        <Icon
+          x={x + pad + sq * 0.2}
+          y={y + pad + sq * 0.2}
+          width={sq * 0.6}
+          height={sq * 0.6}
+          color="#ffffff"
+          strokeWidth={2.25}
+          pointerEvents="none"
+          aria-hidden="true"
+        />
+      )}
+      <text
+        x={x + pad * 2 + sq + 2 / k}
+        y={y + h / 2}
+        dominantBaseline="central"
+        fontSize={HALL_FONT_PX / k}
+        fontWeight={600}
+        fill="var(--popover-foreground)"
+        pointerEvents="none"
+      >
+        {face.name}
+      </text>
     </g>
   )
 }

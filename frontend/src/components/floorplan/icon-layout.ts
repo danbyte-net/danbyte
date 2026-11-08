@@ -44,6 +44,18 @@ export interface IconCluster {
   id: string
   members: string[]
   anchor: Pt
+  /** A row or a room drawn as one symbol (plan-lod.ts), not a crowd: a
+   * row along its line, a room's summary on its room. */
+  form?: "row" | "hall"
+  /** A row's line: its direction, length and depth (cells), and whether
+   * it draws as a bar (else one icon). */
+  row?: { dir: Pt; length: number; depth: number; bar: boolean }
+  /** What a symbol says ("Row F · F01–F12"), and its shorter form ("Row
+   * F · 12"). */
+  text?: string
+  short?: string
+  /** A room summary's room (an area id). */
+  room?: string
 }
 
 export interface IconLayout {
@@ -81,6 +93,8 @@ export interface IconLayoutOptions {
   /** Past the bounds when nothing fits inside (the canvas); false folds
    * into a cluster instead (paper, whose frame clips). */
   spill?: boolean
+  /** Its room (or null): a cluster never takes icons of two rooms. */
+  groupOf?: (id: string) => string | null | undefined
 }
 
 /** A box in units. */
@@ -330,6 +344,7 @@ export function layoutIcons(
     iterations = 40,
     bounds = null,
     spill = true,
+    groupOf,
   }: IconLayoutOptions,
   pinned: ReadonlySet<string> = new Set()
 ): IconLayout {
@@ -345,8 +360,10 @@ export function layoutIcons(
     const ca = prev?.clusterOf.get(a)
     return !!ca && ca === prev?.clusterOf.get(b)
   }
+  const group = sorted.map((it) => groupOf?.(it.id) ?? null)
   const uf = new UnionFind(sorted.length)
   for (const [i, j] of nearPairs(homes, spacing * CLUSTER_EXIT)) {
+    if (group[i] !== group[j]) continue
     const d = cheb(homes[i], homes[j])
     if (d < spacing || wasWith(sorted[i].id, sorted[j].id)) uf.union(i, j)
   }
@@ -399,13 +416,16 @@ export function layoutIcons(
     if (!bad.size) return emit(nodes, scale)
     const pin = (i: number) =>
       groups[i].length === 1 && pinned.has(groups[i][0].id)
+    const apart = (i: number, j: number) =>
+      groupOf !== undefined &&
+      (groupOf(groups[i][0].id) ?? null) !== (groupOf(groups[j][0].id) ?? null)
     const merge = new UnionFind(nodes.length)
     const maxSide = Math.max(...nodes.map((n) => n.side))
     // Collisions where they ended, then where they started.
     for (const pts of [nodes.map((n) => n.p), nodes.map((n) => n.home)])
       for (const [i, j] of nearPairs(pts, maxSide + gap)) {
         if (!bad.has(i) && !bad.has(j)) continue
-        if (pin(i) || pin(j)) continue
+        if (pin(i) || pin(j) || apart(i, j)) continue
         const d = (nodes[i].side + nodes[j].side) / 2 + gap * 0.5
         if (cheb(pts[i], pts[j]) < d) merge.union(i, j)
       }
@@ -423,7 +443,7 @@ export function layoutIcons(
       let best = -1
       let bd = Infinity
       nodes.forEach((n, j) => {
-        if (j === i || pin(j)) return
+        if (j === i || pin(j) || apart(i, j)) return
         const d = cheb(n.home, nodes[i].home)
         if (d < bd) {
           bd = d
@@ -485,7 +505,8 @@ export function pullOut(
       for (const id of members) clusterOf.set(id, c)
       continue
     }
-    if (members.length === 1) {
+    // A row or a room keeps its symbol: the one pulled out drawn over it.
+    if (members.length === 1 && !c.form) {
       // The one left stays where the cluster was drawn.
       const o = layout.offsets.get(c.id)
       if (o) offsets.set(members[0], o)

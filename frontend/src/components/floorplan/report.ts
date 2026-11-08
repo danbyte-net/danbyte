@@ -1,4 +1,3 @@
-import { readableText } from "@/lib/color"
 import { api } from "@/lib/api"
 import type {
   FloorPlan,
@@ -19,20 +18,14 @@ import {
   typePalette,
 } from "./cable-draw"
 import type { CableColorBy } from "./cable-draw"
-import {
-  CALLOUT_FONT_PX,
-  CALLOUT_LINE_FONT_PX,
-  CALLOUT_LINE_PX,
-  CALLOUT_PAD_X,
-  CALLOUT_PAD_Y,
-  calloutValue,
-} from "./plan-callouts"
-import type { CalloutLabel } from "./plan-label-pass"
-import { PAPER_INK, planSvg } from "./plan-svg"
+import { planSvg } from "./plan-svg"
 import type { PlanBox } from "./plan-svg"
 import type { ObjectSize } from "./readable"
 import { shapeBounds, shapesOf } from "./shapes"
 import type { AreaShape, PlanShape } from "./shapes"
+
+// The callouts on paper moved to plan-svg.ts; their callers import them here.
+export { calloutsMarkup } from "./plan-svg"
 
 // The floor-plan report (api/floor_plan_report.py): one PDF of what the
 // screen shows, the whole floor, a room or area, or every level of the
@@ -176,93 +169,6 @@ export function reportBody(
   }
 }
 
-// ─── The callouts on paper ──────────────────────────────────────────────
-
-const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-const r2 = (n: number) => +n.toFixed(2)
-
-/** The screen's callouts (plan-callouts-layer.tsx) as paper markup: each a
- * plain bordered box at the size it has on screen at zoom `k`, its name,
- * its lines (a status or role as its badge) and a muted leader to a dot on
- * its tile - light-themed, in plan px. */
-export function calloutsMarkup(
-  callouts: readonly CalloutLabel[],
-  k: number
-): string {
-  if (!callouts.length || !(k > 0)) return ""
-  const s = 1 / k
-  const out: string[] = ['<g data-layer="callouts">']
-  for (const c of callouts) {
-    const cx = c.at[0] * CELL
-    const cy = c.at[1] * CELL
-    const { w, h } = c.size
-    const tip: [number, number] =
-      c.side === "top"
-        ? [0, h / 2]
-        : c.side === "bottom"
-          ? [0, -h / 2]
-          : c.side === "left"
-            ? [w / 2, 0]
-            : [-w / 2, 0]
-    const fx = cx + tip[0] * s
-    const fy = cy + tip[1] * s
-    const tx = c.leader[1][0] * CELL
-    const ty = c.leader[1][1] * CELL
-    out.push(
-      `<line x1="${r2(fx)}" y1="${r2(fy)}" x2="${r2(tx)}" y2="${r2(ty)}" ` +
-        `stroke="#71717a" stroke-width="${r2(1.25 * s)}" stroke-linecap="round"/>` +
-        `<circle cx="${r2(tx)}" cy="${r2(ty)}" r="${r2(2.25 * s)}" fill="#71717a"/>`
-    )
-  }
-  for (const c of callouts) {
-    const cx = c.at[0] * CELL
-    const cy = c.at[1] * CELL
-    const { w, h } = c.size
-    const left = -w / 2 + CALLOUT_PAD_X
-    const parts = [
-      `<rect x="${r2(-w / 2)}" y="${r2(-h / 2)}" width="${r2(w)}" height="${r2(h)}" ` +
-        `rx="4" fill="#ffffff" stroke="#d4d4d8" stroke-width="1"/>`,
-      `<text x="${r2(left)}" y="${r2(-h / 2 + CALLOUT_PAD_Y + CALLOUT_FONT_PX * 0.95)}" ` +
-        `font-size="${CALLOUT_FONT_PX}" font-weight="500" fill="${PAPER_INK}">` +
-        `${esc(c.name)}</text>`,
-    ]
-    c.lines.forEach((l, i) => {
-      const y =
-        -h / 2 +
-        CALLOUT_PAD_Y +
-        CALLOUT_FONT_PX * 1.3 +
-        i * CALLOUT_LINE_PX +
-        CALLOUT_LINE_PX / 2
-      const text = esc(calloutValue(l.value))
-      const base = r2(y + CALLOUT_LINE_FONT_PX * 0.35)
-      if (l.color === undefined) {
-        parts.push(
-          `<text x="${r2(left)}" y="${base}" font-size="${CALLOUT_LINE_FONT_PX}" ` +
-            `fill="#71717a">${text}</text>`
-        )
-        return
-      }
-      const bg = /^#[0-9a-f]{6}$/i.test(l.color) ? l.color : "#f4f4f5"
-      const fg = bg === "#f4f4f5" ? "#3f3f46" : readableText(bg)
-      const tw = calloutValue(l.value).length * CALLOUT_LINE_FONT_PX * 0.6 + 8
-      parts.push(
-        `<rect x="${r2(left)}" y="${r2(y - 6.5)}" width="${r2(tw)}" height="13" ` +
-          `rx="3" fill="${bg}"/>` +
-          `<text x="${r2(left + 4)}" y="${base}" font-size="${CALLOUT_LINE_FONT_PX}" ` +
-          `font-weight="500" fill="${fg}">${text}</text>`
-      )
-    })
-    out.push(
-      `<g transform="translate(${r2(cx)},${r2(cy)}) scale(${+s.toFixed(5)})">` +
-        parts.join("") +
-        "</g>"
-    )
-  }
-  out.push("</g>")
-  return out.join("")
-}
-
 /** `svg` with `markup` drawn over everything in it. */
 export function withOverlay(svg: string, markup: string): string {
   if (!markup) return svg
@@ -286,6 +192,8 @@ export interface LevelLook {
   /** Display > Camera FOV cones, and whether racks block them. */
   showFov?: boolean
   fovRacksBlock?: boolean
+  /** Display > Callouts is Auto (plan-svg.ts `callouts`). */
+  callouts?: boolean
 }
 
 /** A level of the building drawn for its sheet, from the server's rows -
@@ -331,6 +239,7 @@ export async function drawLevel(
     showTrays: look.showTrays,
     objectSize: look.objectSize,
     iconTiles: look.iconTiles,
+    callouts: look.callouts ?? true,
     cameras: look.showFov
       ? { racksBlock: look.fovRacksBlock ?? false }
       : undefined,

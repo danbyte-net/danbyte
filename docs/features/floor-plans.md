@@ -1458,9 +1458,13 @@ up:
   sides** from where they really are. Each one moved keeps a thin
   **leader** back to its true place, with a small dot there. Cables and
   stubs leave the icon where it is drawn.
+- **Rows stay rows.** Racks in a [row](#row-names) never spread or cluster:
+  the row draws as one [row symbol](#rows-from-afar) along its line, and
+  a room's rows fold into one room summary further out.
 - **Cluster.** A crowd of more than **6**, or one that cannot spread within
   that reach, folds into one **cluster tile** at the members' centroid, a
-  little larger than an icon, like markers on a map. It shows the members'
+  little larger than an icon, like markers on a map. Only what is in no
+  row clusters, and a cluster never takes icons from two rooms. It shows the members'
   shared icon and colour (a stack icon in grey when they differ), a count
   badge on its corner, and the worst monitoring state among them as its
   outline and ring (down over stale over degraded).
@@ -1536,6 +1540,33 @@ Hover it to list the row's members; click it to zoom until they read.
 The selected or hovered rack of a named row gets its own callout. Rows
 are found from the tiles' places alone; nothing is stored.
 
+##### Rows from afar {#rows-from-afar}
+
+A row keeps reading as a row however far you zoom out. With **Icons when
+zoomed out** on, each step has its own threshold on screen and a wider
+one back, so a zoom that rests near one does not flicker:
+
+| On screen | The row draws as |
+| --- | --- |
+| Racks big enough to draw | the racks, the row named along them |
+| Racks turned into icons | one **row symbol**: a bar along the row at its angle, its true length and at least its depth (6 px) thick, in the racks' colour, a seam between racks while they are 5 px wide. Named along it, **Row F · F01–F12**, or **Row F · 12** when the full name is longer than the bar |
+| Row under **56 px** long (back at 72 px) | one icon with the row's count, named **Row F · 12** |
+| A room's rows closer than **26 px** centre to centre (apart again at 34 px), or all down to icons | one **room summary** on the room: a plate with the racks' icon and **Data Hall 1 · 120 racks** |
+
+- A row never breaks into map-marker clusters of a few racks.
+- A room summary takes the room's rows and its loose racks and cabinets,
+  and stands in for the room's own name, which is not drawn under it. It
+  sits at the room's middle (a polygon's centroid). Two summaries that
+  would touch fold into the smallest room round both - the cages in a
+  hall read as the hall - and part again only once clearly apart.
+- Devices, cooling units and the rest stay as they are: icons, clusters
+  within their room, and their [callouts](#callouts).
+- Hover a row symbol or a summary to list its members; click it to zoom
+  until they read. The selected or hovered rack draws over its row on its
+  own.
+- Worked out when a zoom settles, for its zoom level, never for where you
+  are panned to. The PDF does the same at the paper's scale.
+
 ##### The callouts
 
 - **A few together.** Objects close together form a **crowd**. Up to **6**
@@ -1546,15 +1577,20 @@ are found from the tiles' places alone; nothing is stored.
   from its object (or its crowd), and no leader in a stack runs longer
   than three times that. Leaders never cross each other, a box, or an
   object outside their crowd.
+- **Room by room.** A crowd never spans two rooms (areas): objects on
+  either side of a wall are named apart.
 - **Bigger crowds.** A crowd of more than 6, or one whose stack finds no
   room, is split into its tighter huddles, each stacked the same way. A
   tight knot that still has more than 6 is named by **one plate** - its
   range (`R-A01–R-A08`) or count (`15 racks`) - with a leader to it. A
   whole building of touching objects seen from afar names what has room
-  close by (infrastructure first) and sums up the rest in one plate per
-  region (`13 objects`). Hover a plate to list its members; click it to
-  zoom in. Where even a plate finds no room the names wait for you to
-  zoom.
+  close by (infrastructure first) and sums up the rest on their room: one
+  plate per wall of the room and per kind of name, `CRAH-DH1 ×6` for
+  `CRAH-DH1-01` … `CRAH-DH1-06` along one wall (outside any room, one
+  plate per region). A plate keeps the same short leader as a box, or
+  sits over what it names when there is no room beside it - never across
+  the plan. Hover a plate to list its members; click it to zoom in. Where
+  even a plate finds no room the names wait for you to zoom.
 - **Order.** Selected and hovered first, then room and area names (kept
   clear), row names, infrastructure (cooling units, UPS, panels), racks,
   then devices.
@@ -1577,9 +1613,14 @@ are found from the tiles' places alone; nothing is stored.
 - Lower-ranked texts - tray, room and area names, raised-floor captions -
   keep off the boxes, their leaders and the row names.
 
-Callouts and row names are on the canvas under **Auto**; the
+Callouts and row names are on the canvas under **Auto**, and in the
+**Export PDF** too: the same row names, callouts, row symbols and room
+summaries, laid out at the paper's scale at the sizes they have on screen
+(names 2 mm), so a turned row prints **Row D · D01–D12** along it instead
+of a name cut short in every rack. A sheet of the current view prints the
+callouts as they are on screen instead. The
 [3D view](#one-label-pass) has its own callouts and summary plates (no row
-names yet); the PDF keeps plain names. **Off** draws names as before:
+names yet). **Off** draws names as before:
 inside the tile, or beside it where it fits. The choice is saved on the
 plan with the other Display choices; a viewer can switch it for the
 session.
