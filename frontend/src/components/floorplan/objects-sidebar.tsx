@@ -38,13 +38,12 @@ import {
   areaName,
 } from "@/components/floorplan/shapes"
 import type { PlanShape } from "@/components/floorplan/shapes"
+import { LINK_KIND_NAME } from "@/components/floorplan/tile-open"
 
 /** A placed object with no role: grouped by its kind. */
-const KIND_TITLE: Partial<Record<string, string>> = {
-  device: "Devices",
-  rack: "Racks",
-  cabinet: "Cabinets",
-}
+const KIND_TITLE: Partial<Record<string, string>> = Object.fromEntries(
+  Object.entries(LINK_KIND_NAME).map(([k, n]) => [k, n.many])
+)
 
 interface Group {
   key: string

@@ -70,6 +70,7 @@ describe("applyPick", () => {
     showArea: vi.fn(),
     showTile: vi.fn(),
     openTilePanel: vi.fn(),
+    pinTile: vi.fn(),
   })
 
   it("traces, frames and opens a cable", () => {

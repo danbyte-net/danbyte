@@ -138,6 +138,7 @@ import { useShapeGestures } from "./use-shape-gestures"
 import type { ShapeTool } from "./use-shape-gestures"
 import type { NewAreaGeometry } from "./use-shape-edits"
 import { WallShape, wallStrokePx } from "./wall-layer"
+import { LINK_KIND_NAME } from "./tile-open"
 import {
   DoorHandles,
   RectHandles,
@@ -180,7 +181,15 @@ const NO_STRUCT: StructShape[] = []
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
 export interface FloorCanvasApi {
   fit: () => void
-  focusTile: (tile: FloorPlanTile, zoom?: number) => void
+  /** Centre and zoom onto the tile; returns where it now stands on screen
+   * (as `tilePoint`), null before the canvas has a size. */
+  focusTile: (
+    tile: FloorPlanTile,
+    zoom?: number
+  ) => { x: number; y: number } | null
+  /** The tile's centre on screen, in the canvas's own pixels (where the
+   * tile popover anchors). */
+  tilePoint?: (tile: FloorPlanTile) => { x: number; y: number } | null
   /** Fit the view to a set of cell-unit points (e.g. a cable's route). */
   focusPoints: (points: Pt[]) => void
   /** The polygon being drawn: close it (Enter), take back its last point
@@ -1167,12 +1176,13 @@ export function FloorCanvas({
       focusTile: (tile, zoom) => {
         setFocusedTile(tile.id)
         const svg = svgRef.current
-        if (!svg) return
+        if (!svg) return null
         const rect = svg.getBoundingClientRect()
         const k = zoom ?? 1.4
         const tx = (tile.x + tile.width / 2) * CELL
         const ty = (tile.y + tile.height / 2) * CELL
         setT({ k, x: rect.width / 2 - tx * k, y: rect.height / 2 - ty * k })
+        return { x: rect.width / 2, y: rect.height / 2 }
       },
       focusPoints: (points) => {
         const svg = svgRef.current
@@ -1235,6 +1245,13 @@ export function FloorCanvas({
       return [w.x / CELL, w.y / CELL]
     }
     apiRef.current.pointerCell = () => pointerAt.current
+    apiRef.current.tilePoint = (tile) =>
+      svgRef.current
+        ? {
+            x: t.x + (tile.x + tile.width / 2) * CELL * t.k,
+            y: t.y + (tile.y + tile.height / 2) * CELL * t.k,
+          }
+        : null
     apiRef.current.screen = () => {
       const svg = svgRef.current
       if (!svg) return null
@@ -3243,10 +3260,7 @@ export function FloorCanvas({
                         setCtxMenu(null)
                       }}
                     >
-                      Open{" "}
-                      {ctxMenu.tile.linked.kind === "floorplan"
-                        ? "plan"
-                        : ctxMenu.tile.linked.kind}
+                      Open {LINK_KIND_NAME[ctxMenu.tile.linked.kind].one}
                     </DropdownMenuItem>
                   )}
                 {editable &&

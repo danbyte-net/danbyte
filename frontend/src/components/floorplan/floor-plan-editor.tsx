@@ -122,6 +122,7 @@ import { areaName, shapeBounds } from "./shapes"
 import { SnapAllDialog } from "./snap-all-dialog"
 import { edgeIds, isLiveView } from "./snapshot"
 import { SnapshotDialog } from "./snapshot-dialogs"
+import { tileOpen } from "./tile-open"
 import { DEFAULT_POPOVER_FIELDS, useTilePopover } from "./tile-popover"
 import { ToolRail } from "./tool-rail"
 import { useCableRoutes } from "./use-cable-routes"
@@ -1031,24 +1032,32 @@ export function FloorPlanEditor({
   }
 
   const openTile = (tile: FloorPlanTile) => {
-    // A Hidden link (another site's object) opens nothing: the tile selects.
-    const linked = shownLink(tile.linked)
-    if (linked?.kind === "floorplan") {
-      nav({ to: "/floorplans/$id", params: { id: linked.id } })
+    const how = tileOpen(tile)
+    if (how.kind === "plan") {
+      nav({ to: "/floorplans/$id", params: { id: how.id } })
       return
     }
     // Rack/device tiles open the detail panel (a click while viewing, a
     // double-click or the menu while editing); its Paths / Contents open
     // the end-to-end trace sheet.
-    if (
-      linked?.kind === "rack" ||
-      linked?.kind === "device" ||
-      linked?.kind === "cabinet"
-    ) {
+    if (how.kind === "panel") {
       openTilePanel(tile)
       return
     }
+    // Power, cooling, unlinked and Hidden tiles: selected, their popover
+    // pinned - it names the object, its figures and links to its page.
     setSelectedId(tile.id)
+    pinTile(tile)
+  }
+
+  /** Pin a tile's popover: at the pointer while it is over the tile, else
+   * at `at` (where a focus just put it), else where the tile stands. */
+  function pinTile(tile: FloorPlanTile, at?: { x: number; y: number } | null) {
+    if (view3d) return
+    popover.pinTile(
+      tile,
+      at ?? canvasApi.current?.tilePoint?.(tile) ?? undefined
+    )
   }
 
   /** Open the detail panel on a device or rack tile (`deviceId`: one of a
@@ -1141,6 +1150,10 @@ export function FloorPlanEditor({
           canvasApi.current?.focusTile(tile)
         },
         openTilePanel: (tile) => openTilePanel(tile),
+        // showTile has just centred it: the popover anchors there.
+        pinTile: (tile) => {
+          if (!view3d) pinTile(tile, canvasApi.current?.focusTile(tile))
+        },
       },
       { editing }
     )
@@ -1882,7 +1895,11 @@ export function FloorPlanEditor({
             onPick={(tile) => {
               if (hiddenTileIds.has(tile.id)) return
               setSelectedId(tile.id)
-              canvasApi.current?.focusTile(tile)
+              const at = canvasApi.current?.focusTile(tile)
+              // Viewing, a tile without a panel opens its popover there, as
+              // a click on it does (power, cooling…).
+              if (!editing && tileOpen(tile).kind === "popover")
+                pinTile(tile, at)
             }}
             hidden={hidden}
             onHiddenChange={setHiddenPref}

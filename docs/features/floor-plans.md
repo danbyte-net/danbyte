@@ -2361,7 +2361,11 @@ A click on a rack or device tile opens its [detail panel](#detail-panels);
 a pinned popover's **Details** does the same. A cabinet
 tile opens its panel on a click; a tile linked to **another floor
 plan** navigates into it on click - use this to nest a cage or suite plan
-inside a hall plan.
+inside a hall plan. Every other tile - a power panel, power feed or cooling
+source (a CRAH, CRAC or chiller), or a tile with no link - selects and pins
+its popover on a click: the object's name, its figures (a cooling source's
+load over its capacity) and the link to its page. A pick from **Find on
+plan…**, the **Objects** list or the pointer menu's **Open** does the same.
 
 ### Working many tiles at once
 
@@ -3299,7 +3303,8 @@ floors.
     Every word must match, in any order (`r12 core`); hits by name come
     before hits by type. ++up++ / ++down++ move through the list and
     ++enter++ picks. An object is framed (and, while viewing, a device or
-    rack opens its [panel](#detail-panels)); a cable is traced, framed and
+    rack opens its [panel](#detail-panels), any other tile its pinned
+    popover); a cable is traced, framed and
     opens the [cable panel](#the-cable-panel); a tray lights up and is
     framed; an area is selected or opened. In 3D the room flies to the pick.
     Hidden tiles and ends are not offered.
@@ -3324,7 +3329,8 @@ floors.
   covers each tile's label, linked object and type (Enter jumps to the first
   hit), the **All · Down · Degraded · Up** tabs narrow the list to one
   monitoring state, and a labelled tile shows its linked object's real name as
-  a muted second line. Click a row to select and zoom to that tile. Editors'
+  a muted second line. Click a row to select and zoom to that tile (while
+  viewing, a power or cooling tile also pins its popover). Editors'
   toggle state is saved with the plan. While the plan is
   [coloured by its racks](#color-by), the rack table under it lists the racks
   and the sidebar keeps the rest.
