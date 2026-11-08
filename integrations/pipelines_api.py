@@ -217,7 +217,7 @@ class DeployPipelineViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = DeployPipeline.objects.all().order_by("name")
     serializer_class = DeployPipelineSerializer
     bulk_edit = BulkEditSpec(fields=("enabled", "auto_on_change"), tags=False)
-    rbac_action_map = {"export": "view", "import_code": "add"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "export": "view", "import_code": "add"}
 
     def get_queryset(self):
         qs = super().get_queryset().prefetch_related(
