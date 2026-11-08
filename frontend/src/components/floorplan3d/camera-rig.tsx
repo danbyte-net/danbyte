@@ -155,8 +155,9 @@ export function CameraRig({
   requestRef: React.MutableRefObject<FlyToRequest | null>
   /** Filled with the framing calls - see `NavApi`. */
   navRef?: React.MutableRefObject<NavApi | null>
-  /** The whole plan, for Fit all (0 / Home). */
-  bounds?: { min: Vec3; max: Vec3 }
+  /** The whole plan, for Fit all (0 / Home) - or a reader, for bounds that
+   * move without a render (the building's explode). */
+  bounds?: { min: Vec3; max: Vec3 } | (() => { min: Vec3; max: Vec3 } | null)
   /** Closest the camera may come to the surface it zooms at (m). */
   minDistance?: number
   /** Arrows / WASD / Space / C move the camera (listeners on `window`). */
@@ -555,7 +556,8 @@ export function CameraRig({
         )
       },
       fitAll() {
-        const b = opts.current.bounds
+        const raw = opts.current.bounds
+        const b = typeof raw === "function" ? raw() : raw
         if (!b) return
         request(
           frameBox(
