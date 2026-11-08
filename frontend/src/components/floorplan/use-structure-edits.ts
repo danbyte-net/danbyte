@@ -17,9 +17,11 @@ import type { AreaShape, PlanShape, Pt } from "./shapes"
 import {
   areaFromRing,
   areaOutline,
+  areasFollowingWalls,
   doorFromDrag,
   fitOpenings,
   flipDoor,
+  isClosedRun,
   joinRuns,
   linkedWallLabel,
   outlineIsRing,
@@ -28,10 +30,12 @@ import {
   rebuildWalls,
   rectsOverlap,
   runsMatch,
+  segLength,
   splitRun,
   structureLists,
   translatePoints,
   wallRing,
+  wallsFollowingArea,
 } from "./structure"
 import type {
   RaisedRow,
@@ -124,9 +128,6 @@ export function useStructureEdits({
   const via = viaQuery(plan)
   const {
     structure,
-    setStructure,
-    setDirtyIds,
-    setDeletedIds,
     areaArmed,
     setAreaArmed,
     setSelectedAreaId,
@@ -143,22 +144,14 @@ export function useStructureEdits({
   // "Update walls" would drop, waiting for a yes.
   const [linkChoice, setLinkChoice] = useState<WallLinkChoice | null>(null)
   const [updateDrops, setUpdateDrops] = useState<WallUpdateDrops | null>(null)
+  const applyDraft = ed.draft.apply
   const grid = plan
     ? { w: plan.grid_width, h: plan.grid_height }
     : { w: 0, h: 0 }
 
-  const markDirty = useCallback(
-    (ids: string[]) =>
-      setDirtyIds((prev) => {
-        if (ids.every((x) => prev.has(x))) return prev
-        const next = new Set(prev)
-        for (const x of ids) next.add(x)
-        return next
-      }),
-    [setDirtyIds]
-  )
-
-  /** Rows changed, made and removed together - one undo step. */
+  /** Rows changed, made and removed together - one undo step. An area
+   * whose linked walls changed follows them in the same step (see
+   * {@link areasFollowingWalls}). */
   const commit = useCallback(
     ({
       update = [],
@@ -171,28 +164,38 @@ export function useStructureEdits({
     }) => {
       const byId = new Map(update.map((r) => [r.id, r]))
       const gone = new Set(remove)
-      setStructure((prev) => [
-        ...prev.filter((r) => !gone.has(r.id)).map((r) => byId.get(r.id) ?? r),
-        ...create,
-      ])
-      markDirty([...update, ...create].map((r) => r.id))
-      if (gone.size) {
-        const rows = structure.filter((r) => gone.has(r.id))
-        setDirtyIds((prev) => {
-          const next = new Set(prev)
-          for (const x of gone) next.delete(x)
-          return next
-        })
-        const saved = rows.filter((r) => !isTemp(r.id))
-        if (saved.length)
-          setDeletedIds((prev) => {
-            const next = new Set(prev)
-            for (const r of saved) next.add(`${r.part}:${r.id}`)
-            return next
-          })
-      }
+      applyDraft((d) => {
+        const linkedArea = (r: StructShape | undefined) =>
+          r?.part === "wall" && r.source_area ? [r.source_area] : []
+        // The areas whose walls this touches: before and after the edit.
+        const areaIds = new Set<string>([
+          ...d.structure
+            .filter((r) => byId.has(r.id) || gone.has(r.id))
+            .flatMap(linkedArea),
+          ...[...update, ...create].flatMap(linkedArea),
+        ])
+        const rows = [
+          ...d.structure
+            .filter((r) => !gone.has(r.id))
+            .map((r) => byId.get(r.id) ?? r),
+          ...create,
+        ]
+        const synced = areasFollowingWalls(d.shapes, rows, areaIds)
+        const dirty = new Set(d.dirty)
+        for (const r of [...update, ...create]) dirty.add(r.id)
+        for (const x of synced.changed) dirty.add(x)
+        for (const x of gone) dirty.delete(x)
+        let deleted = d.deleted
+        const saved = d.structure.filter((r) => gone.has(r.id) && !isTemp(r.id))
+        if (saved.length) {
+          const next = new Set(d.deleted)
+          for (const r of saved) next.add(`${r.part}:${r.id}`)
+          deleted = next
+        }
+        return { ...d, structure: rows, shapes: synced.shapes, dirty, deleted }
+      })
     },
-    [structure, setStructure, markDirty, setDirtyIds, setDeletedIds]
+    [applyDraft]
   )
 
   const find = useCallback(
@@ -429,27 +432,47 @@ export function useStructureEdits({
 
   /**
    * An area about to take `patch`: when that only moves it, its linked
-   * walls (and their doors) move with it - in the same step as the area,
-   * read from the draft itself so a drag never runs ahead of it.
+   * walls (and their doors) move with it; when it reshapes or turns it,
+   * walls that ran along the old outline are rebuilt along the new one
+   * (see `wallsFollowingArea`) - in the same step as the area, read from
+   * the draft itself so a drag never runs ahead of it.
    */
   const followArea = (areaId: string, patch: Partial<PlanShape>) => {
     ed.draft.apply((d) => {
       const before = d.shapes.find((s) => s.id === areaId)
       if (!isArea(before)) return d
-      const shift = outlineShift(
-        areaOutline(before),
-        areaOutline({ ...before, ...patch } as AreaShape)
-      )
-      if (!shift) return d
+      const was = areaOutline(before)
+      const after = areaOutline({ ...before, ...patch } as AreaShape)
+      const shift = outlineShift(was, after)
       const moved: string[] = []
-      const next = d.structure.map((r) => {
-        if (r.part !== "wall" || r.source_area !== areaId) return r
-        moved.push(r.id)
-        return {
-          ...r,
-          points: translatePoints(r.points, shift[0], shift[1], grid),
-        }
-      })
+      let next: StructShape[]
+      if (shift) {
+        next = d.structure.map((r) => {
+          if (r.part !== "wall" || r.source_area !== areaId) return r
+          moved.push(r.id)
+          return {
+            ...r,
+            points: translatePoints(r.points, shift[0], shift[1], grid),
+          }
+        })
+      } else {
+        const { walls } = structureLists(d.structure)
+        const rebuilt = wallsFollowingArea(
+          was,
+          after,
+          walls.filter((w) => w.source_area === areaId),
+          walls.filter((w) => w.source_area !== areaId),
+          grid
+        )
+        if (!rebuilt) return d
+        const byId = new Map(rebuilt.map((w) => [w.id, w]))
+        next = d.structure.map((r) => {
+          const w = byId.get(r.id)
+          if (!w) return r
+          moved.push(r.id)
+          return w
+        })
+      }
       if (!moved.length) return d
       const dirty = new Set(d.dirty)
       for (const x of moved) dirty.add(x)
@@ -703,6 +726,27 @@ export function useStructureEdits({
   const removePoint = (rowId: string, index: number) => {
     const row = find(rowId)
     if (!row || row.part === "raised_floor" || row.points.length <= 2) return
+    const last = row.points.length - 1
+    // A closed wall's seam is one corner (its first and last point): taken
+    // out, the ring closes on the next corner, a triangle at least.
+    if (
+      row.part === "wall" &&
+      (index === 0 || index === last) &&
+      isClosedRun(row.points)
+    ) {
+      if (row.points.length <= 4) return
+      const points = [...row.points.slice(1, last), row.points[1]]
+      const lastLen = segLength(row.points, last - 1)
+      const openings = row.openings.map((o) =>
+        o.seg === 0
+          ? { ...o, seg: last - 2, from: o.from + lastLen, to: o.to + lastLen }
+          : o.seg === last - 1
+            ? { ...o, seg: last - 2 }
+            : { ...o, seg: o.seg - 1 }
+      )
+      change(rowId, { points, openings: fitOpenings(points, openings) })
+      return
+    }
     const points = row.points.filter((_, i) => i !== index)
     if (row.part === "tray") {
       change(rowId, { points })

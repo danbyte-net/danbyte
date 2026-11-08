@@ -205,17 +205,14 @@ describe("walls named after their area and linked", () => {
     expect(wallsOf(result.current.ed)[0].points[0]).toEqual([2, 2])
   })
 
-  it("a reshape offers Update walls, which keeps the door along its stretch", async () => {
+  it("a reshape rebuilds the walls, keeping the door along its stretch", async () => {
     const { result } = setup([area()])
     await act(async () => result.current.s.wallsAroundAreas(["a1"]))
     const id = wallsOf(result.current.ed)[0].id
     await act(async () => result.current.s.placeDoor(id, 0, 2))
     expect(result.current.s.wallsOffOutline("a1")).toBe(false)
     await act(async () => result.current.changeShape("a1", { width: 8 }))
-    // A reshape does not move the walls; it offers to rebuild them.
-    expect(wallsOf(result.current.ed)[0].points[1]).toEqual([6, 2])
-    expect(result.current.s.wallsOffOutline("a1")).toBe(true)
-    await act(async () => result.current.s.updateLinkedWalls("a1"))
+    // The walls follow the new outline in the same step.
     const w = wallsOf(result.current.ed)[0]
     expect(w.id).toBe(id)
     expect(w.label).toBe("Cage walls")
@@ -224,6 +221,11 @@ describe("walls named after their area and linked", () => {
     const o = w.openings[0]
     expect((o.from + o.to) / 2).toBeCloseTo((2 / 14) * 22, 2)
     expect(result.current.s.wallsOffOutline("a1")).toBe(false)
+    act(() => {
+      result.current.ed.draft.undo()
+    })
+    expect(result.current.ed.shapes[0]).toMatchObject({ width: 4 })
+    expect(wallsOf(result.current.ed)[0].points[1]).toEqual([6, 2])
   })
 
   it("asks before dropping a door that no longer fits", async () => {
@@ -234,6 +236,9 @@ describe("walls named after their area and linked", () => {
     await act(async () =>
       result.current.changeShape("a1", { width: 1, height: 1 })
     )
+    // A door would go: the walls stay and the card offers Update walls.
+    expect(wallsOf(result.current.ed)[0].points[1]).toEqual([6, 2])
+    expect(result.current.s.wallsOffOutline("a1")).toBe(true)
     await act(async () => result.current.s.updateLinkedWalls("a1"))
     expect(result.current.s.updateDrops?.doors).toEqual(["Cage walls: door 1"])
     // Nothing changed yet.
@@ -290,7 +295,7 @@ describe("walls named after their area and linked", () => {
 })
 
 describe("an area following its walls", () => {
-  it("a wall edited by hand offers Update area, one undo step, doors kept", async () => {
+  it("a wall edited by hand moves the area with it, one undo step, doors kept", async () => {
     const { result } = setup([area()])
     await act(async () => result.current.s.wallsAroundAreas(["a1"]))
     const id = wallsOf(result.current.ed)[0].id
@@ -309,16 +314,6 @@ describe("an area following its walls", () => {
       })
     )
     const edited = wallsOf(result.current.ed)[0]
-    expect(result.current.s.wallsOffOutline("a1")).toBe(true)
-    expect(result.current.s.areaFromWalls("a1")).toMatchObject({
-      ring: [
-        [2, 2],
-        [9, 2],
-        [9, 5],
-        [2, 5],
-      ],
-    })
-    await act(async () => result.current.s.updateAreaFromWalls("a1"))
     expect(result.current.ed.shapes[0]).toMatchObject({
       shape: "rect",
       x: 2,
@@ -328,15 +323,15 @@ describe("an area following its walls", () => {
       rotation: 0,
     })
     expect(result.current.ed.dirtyIds.has("a1")).toBe(true)
-    // The wall and its door as they were; the two agree now.
-    expect(wallsOf(result.current.ed)[0]).toEqual(edited)
+    // The wall and its door as edited; the two agree.
+    expect(edited.openings).toHaveLength(1)
     expect(result.current.s.wallsOffOutline("a1")).toBe(false)
     expect(result.current.s.areaFromWalls("a1")).toBeNull()
     act(() => {
       result.current.ed.draft.undo()
     })
     expect(result.current.ed.shapes[0]).toMatchObject({ width: 4 })
-    expect(wallsOf(result.current.ed)[0]).toEqual(edited)
+    expect(wallsOf(result.current.ed)[0].points[1]).toEqual([6, 2])
   })
 
   it("an outline no rectangle can draw makes the area a polygon", async () => {
@@ -355,7 +350,6 @@ describe("an area following its walls", () => {
         ],
       })
     )
-    await act(async () => result.current.s.updateAreaFromWalls("a1"))
     expect(result.current.ed.shapes[0]).toMatchObject({
       shape: "polygon",
       points: [
@@ -368,7 +362,7 @@ describe("an area following its walls", () => {
     })
   })
 
-  it("walls that don't close offer no Update area", async () => {
+  it("walls that don't close keep the link and leave the area", async () => {
     const { result } = setup([area()])
     await act(async () => result.current.s.wallsAroundAreas(["a1"]))
     const id = wallsOf(result.current.ed)[0].id
@@ -376,15 +370,124 @@ describe("an area following its walls", () => {
       result.current.s.patchWall(id, {
         points: [
           [2, 2],
-          [6, 2],
+          [7, 2],
           [6, 5],
           [2, 5],
         ],
       })
     )
-    expect(result.current.s.areaFromWalls("a1")).toEqual({ error: "open" })
-    await act(async () => result.current.s.updateAreaFromWalls("a1"))
     expect(result.current.ed.shapes[0]).toMatchObject({ width: 4, height: 3 })
+    expect(wallsOf(result.current.ed)[0].source_area).toBe("a1")
+    expect(result.current.s.areaFromWalls("a1")).toEqual({ error: "open" })
+    // Closed again, the area follows.
+    await act(async () =>
+      result.current.s.patchWall(id, {
+        points: [
+          [2, 2],
+          [7, 2],
+          [7, 5],
+          [2, 5],
+          [2, 2],
+        ],
+      })
+    )
+    expect(result.current.ed.shapes[0]).toMatchObject({ width: 5, height: 3 })
+  })
+
+  it("a locked area keeps its outline", async () => {
+    const { result } = setup([area({ locked: true })])
+    await act(async () => result.current.s.wallsAroundAreas(["a1"]))
+    const id = wallsOf(result.current.ed)[0].id
+    await act(async () =>
+      result.current.s.patchWall(id, {
+        points: [
+          [2, 2],
+          [9, 2],
+          [9, 5],
+          [2, 5],
+          [2, 2],
+        ],
+      })
+    )
+    expect(result.current.ed.shapes[0]).toMatchObject({ width: 4 })
+  })
+
+  it("a bend added to a wall becomes a corner of the area", async () => {
+    const { result } = setup([area()])
+    await act(async () => result.current.s.wallsAroundAreas(["a1"]))
+    const id = wallsOf(result.current.ed)[0].id
+    // A bend on the top side: no change until it is dragged.
+    await act(async () => result.current.s.addBend(id, 0, 2))
+    expect(result.current.ed.shapes[0]).toMatchObject({ shape: "rect" })
+    const w = wallsOf(result.current.ed)[0]
+    const k = w.points.findIndex((p) => p[0] === 4 && p[1] === 2)
+    expect(k).toBeGreaterThan(0)
+    await act(async () =>
+      result.current.s.patchWall(id, {
+        points: w.points.map((p, i) => (i === k ? [4, 1] : p)),
+      })
+    )
+    const a = result.current.ed.shapes[0] as AreaShape
+    expect(a.shape).toBe("polygon")
+    expect(a.points).toContainEqual([4, 1])
+    expect(a.points).toHaveLength(5)
+  })
+
+  it("a point taken out of a wall is taken out of the area, at the seam too", async () => {
+    const poly = area({
+      shape: "polygon",
+      points: [
+        [2, 2],
+        [6, 2],
+        [6, 5],
+        [4, 6],
+        [2, 5],
+      ],
+    })
+    const { result } = setup([poly])
+    await act(async () => result.current.s.wallsAroundAreas(["a1"]))
+    const id = wallsOf(result.current.ed)[0].id
+    const k = wallsOf(result.current.ed)[0].points.findIndex(
+      (p) => p[0] === 4 && p[1] === 6
+    )
+    await act(async () => result.current.s.removePoint(id, k))
+    expect((result.current.ed.shapes[0] as AreaShape).points).toHaveLength(4)
+    expect(result.current.ed.shapes[0]).toMatchObject({ shape: "polygon" })
+    // The seam: the wall's first (and last) point.
+    const before = wallsOf(result.current.ed)[0].points
+    const seam = before[0]
+    await act(async () => result.current.s.removePoint(id, 0))
+    const after = wallsOf(result.current.ed)[0].points
+    expect(after[0]).toEqual(after[after.length - 1])
+    expect(after).not.toContainEqual(seam)
+    const pts = (result.current.ed.shapes[0] as AreaShape).points
+    expect(pts).toHaveLength(3)
+    expect(pts).not.toContainEqual(seam)
+  })
+
+  it("area to walls to area is stable", async () => {
+    const poly = area({
+      shape: "polygon",
+      points: [
+        [2.125, 2.5],
+        [6.333, 2.1],
+        [7, 5.25],
+        [4.5, 6.75],
+        [2, 5],
+      ],
+    })
+    const turned = area({ id: "a2", x: 10, rotation: 30 })
+    const { result } = setup([poly, turned])
+    await act(async () => result.current.s.wallsAroundAreas(["a1", "a2"]))
+    const shapes = result.current.ed.shapes
+    // A wall's label or height changed: the areas stay exactly as they were.
+    for (const w of wallsOf(result.current.ed))
+      await act(async () =>
+        result.current.s.patchWall(w.id, { height_mm: 1200 })
+      )
+    expect(result.current.ed.shapes).toEqual(shapes)
+    expect(result.current.s.areaFromWalls("a1")).toBeNull()
+    expect(result.current.s.areaFromWalls("a2")).toBeNull()
   })
 })
 

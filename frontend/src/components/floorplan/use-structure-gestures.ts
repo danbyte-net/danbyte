@@ -10,6 +10,7 @@ import {
   dropRepeats,
   fitOpenings,
   joinRuns,
+  keepRingClosed,
   lengthText,
   moveSegment,
   projectOnSegment,
@@ -270,8 +271,9 @@ export function useStructureGestures({
         free,
         skip: row.id,
       })
-      const points = row.points.map((q, i): Pt =>
-        i === d.index ? snap.p : [q[0], q[1]]
+      const points = keepRingClosed(
+        row.points,
+        row.points.map((q, i): Pt => (i === d.index ? snap.p : [q[0], q[1]]))
       )
       preview(
         row.part === "wall"
@@ -290,12 +292,9 @@ export function useStructureGestures({
         runsLike(row.part),
         { grid, reach, free, skip: row.id }
       )
-      const points = moveSegment(
+      const points = keepRingClosed(
         row.points,
-        d.seg,
-        snap.p[0] - a[0],
-        snap.p[1] - a[1],
-        grid
+        moveSegment(row.points, d.seg, snap.p[0] - a[0], snap.p[1] - a[1], grid)
       )
       preview(
         row.part === "wall"
