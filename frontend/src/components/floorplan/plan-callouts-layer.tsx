@@ -96,43 +96,47 @@ export function PlanCalloutsLayer({
     <g data-layer="callouts">
       {/* The leaders under the boxes: casing, line, the dot on the tile. */}
       <g data-part="leaders">
-        {geo.map(({ c, lit, from, to }) => (
-          <g
-            key={c.id}
-            data-callout-leader={c.id}
-            data-lit={lit ? "" : undefined}
-            className="cursor-pointer"
-            {...handlers(c.id)}
-          >
-            <line
-              data-part="casing"
-              x1={from[0]}
-              y1={from[1]}
-              x2={to[0]}
-              y2={to[1]}
-              stroke="var(--background)"
-              strokeWidth={(lit ? 4.5 : 3) * s}
-              strokeLinecap="round"
-            />
-            <line
-              data-part="leader"
-              x1={from[0]}
-              y1={from[1]}
-              x2={to[0]}
-              y2={to[1]}
-              stroke={lit ? "var(--primary)" : "var(--muted-foreground)"}
-              strokeWidth={(lit ? 2 : 1.25) * s}
-              strokeLinecap="round"
-            />
-            <circle
-              data-part="anchor"
-              cx={to[0]}
-              cy={to[1]}
-              r={(lit ? 2.75 : 2.25) * s}
-              fill={lit ? "var(--primary)" : "var(--muted-foreground)"}
-            />
-          </g>
-        ))}
+        {geo.map(({ c, lit, from, to }) =>
+          // A summary over what it names: no leader.
+          c.leader[0][0] === c.leader[1][0] &&
+          c.leader[0][1] === c.leader[1][1] ? null : (
+            <g
+              key={c.id}
+              data-callout-leader={c.id}
+              data-lit={lit ? "" : undefined}
+              className="cursor-pointer"
+              {...handlers(c.id)}
+            >
+              <line
+                data-part="casing"
+                x1={from[0]}
+                y1={from[1]}
+                x2={to[0]}
+                y2={to[1]}
+                stroke="var(--background)"
+                strokeWidth={(lit ? 4.5 : 3) * s}
+                strokeLinecap="round"
+              />
+              <line
+                data-part="leader"
+                x1={from[0]}
+                y1={from[1]}
+                x2={to[0]}
+                y2={to[1]}
+                stroke={lit ? "var(--primary)" : "var(--muted-foreground)"}
+                strokeWidth={(lit ? 2 : 1.25) * s}
+                strokeLinecap="round"
+              />
+              <circle
+                data-part="anchor"
+                cx={to[0]}
+                cy={to[1]}
+                r={(lit ? 2.75 : 2.25) * s}
+                fill={lit ? "var(--primary)" : "var(--muted-foreground)"}
+              />
+            </g>
+          )
+        )}
       </g>
       {geo.map(({ c, cx, cy, lit }) => {
         const { w, h } = c.size

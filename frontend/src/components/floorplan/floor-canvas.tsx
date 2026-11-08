@@ -40,7 +40,9 @@ import { CELL, gridLineStep, tileIsZone, tileName } from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import {
   ClusterTile,
+  HallSymbolTile,
   IconLeader,
+  RowSymbolTile,
   ReadableSymbol,
   TileMarkers,
   TileShape,
@@ -118,7 +120,18 @@ import {
   tileBox,
   tileQuarter,
 } from "./shapes"
-import type { LabelShape, PlanShape } from "./shapes"
+import type { AreaShape, LabelShape, PlanShape } from "./shapes"
+import {
+  EMPTY_LOD,
+  barThickness,
+  planLod,
+  planRooms,
+  planRows,
+  roomAt,
+  symbolBox,
+  withSymbols,
+} from "./plan-lod"
+import type { PlanLod } from "./plan-lod"
 import {
   isRaisedPolygon,
   outlinePath,
@@ -795,16 +808,53 @@ export function FloorCanvas({
     () => keepBoxOf(plan.grid_width, plan.grid_height, maskOutline),
     [plan.grid_width, plan.grid_height, maskOutline]
   )
+  // Rows from afar (plan-lod.ts): a row of icons is one symbol along
+  // it, a room's rows one summary once they run together - found once
+  // per plan, chosen per zoom bucket with hysteresis.
+  const rooms = useMemo(
+    () => planRooms(shapes.filter((s): s is AreaShape => s.kind === "area")),
+    [shapes]
+  )
+  const freePlan = plan.layout_mode === "free"
+  const planRowList = useMemo(
+    () =>
+      iconTiles
+        ? planRows(
+            tiles,
+            rooms,
+            freePlan ? (tile) => tileBox(tile).rotation : undefined
+          )
+        : [],
+    [iconTiles, tiles, rooms, freePlan]
+  )
+  const lastLod = useRef<PlanLod>(EMPTY_LOD)
+  const rowLod = useMemo(
+    () =>
+      planLod(planRowList, {
+        tiles,
+        iconIds,
+        rooms,
+        scale: CELL * layoutK,
+        prev: lastLod.current,
+      }),
+    [planRowList, tiles, iconIds, rooms, layoutK]
+  )
+  useEffect(() => {
+    lastLod.current = rowLod
+  }, [rowLod])
   const lastIconLayout = useRef<IconLayout>(EMPTY_ICON_LAYOUT)
-  const baseIconLayout = useMemo(() => {
+  const looseIconLayout = useMemo(() => {
     if (iconIds.size < 1) return EMPTY_ICON_LAYOUT
     const items = tiles
-      .filter((tl) => iconIds.has(tl.id))
+      .filter((tl) => iconIds.has(tl.id) && !rowLod.ownerOf.has(tl.id))
       .map((tl) => ({
         id: tl.id,
         c: [tl.x + tl.width / 2, tl.y + tl.height / 2] as Pt,
       }))
     const scale = CELL * layoutK
+    const roomOf = new Map(
+      items.map((it) => [it.id, roomAt(rooms, it.c)?.id ?? null])
+    )
     return layoutIcons(
       items,
       scale,
@@ -812,20 +862,26 @@ export function FloorCanvas({
         side: READABLE_SYMBOL_PX,
         prev: lastIconLayout.current,
         bounds: scaleBox(keepBox, scale),
+        groupOf: (id) => roomOf.get(id),
       },
       pinnedNames
     )
-  }, [iconIds, tiles, layoutK, pinnedNames, keepBox])
+  }, [iconIds, tiles, layoutK, pinnedNames, keepBox, rowLod, rooms])
   useEffect(() => {
-    lastIconLayout.current = baseIconLayout
-  }, [baseIconLayout])
+    lastIconLayout.current = looseIconLayout
+  }, [looseIconLayout])
+  const baseIconLayout = useMemo(
+    () => withSymbols(looseIconLayout, rowLod),
+    [looseIconLayout, rowLod]
+  )
   // The tile the camera was last sent to (a search pick, a panel's Show
   // on plan, ?tile=): drawn on its own until the next.
   const [focusedTile, setFocusedTile] = useState<string | null>(null)
   // Hovered, found, or pointed at from outside (the rack table, a pick):
   // out of its cluster, on its own.
   const iconLayout = useMemo(() => {
-    const out = new Set<string>(highlightTileIds ?? [])
+    // The selection too: a row or a room symbol keeps it on its own.
+    const out = new Set<string>([...(highlightTileIds ?? []), ...pinnedNames])
     if (hoveredTile) out.add(hoveredTile)
     if (focusedTile) out.add(focusedTile)
     for (const id of tilePick?.picked ?? []) out.add(id)
@@ -833,6 +889,7 @@ export function FloorCanvas({
   }, [
     baseIconLayout,
     highlightTileIds,
+    pinnedNames,
     hoveredTile,
     focusedTile,
     tilePick?.picked,
@@ -843,19 +900,19 @@ export function FloorCanvas({
   )
   const clusterFaces = useMemo(() => {
     const m = new Map<string, ClusterFace>()
-    for (const c of iconLayout.clusters)
-      m.set(
-        c.id,
-        clusterFace(
-          c.members.map((id) => tileById.get(id)!).filter(Boolean),
-          (tl) => liveState?.tiles[tl.id]?.check
-        )
+    for (const c of iconLayout.clusters) {
+      const face = clusterFace(
+        c.members.map((id) => tileById.get(id)!).filter(Boolean),
+        (tl) => liveState?.tiles[tl.id]?.check
       )
+      m.set(c.id, c.text ? { ...face, name: c.text } : face)
+    }
     return m
   }, [iconLayout, tileById, liveState])
   /** A cluster's drawn box (cells) at `perCell` px per cell. */
   const clusterBox = useCallback(
     (c: IconCluster, perCell: number) =>
+      symbolBox(c, perCell) ??
       squareAt(
         drawnCentre(iconLayout, c.id, c.anchor, perCell),
         READABLE_SYMBOL_PX * CLUSTER_SIDE,
@@ -874,6 +931,14 @@ export function FloorCanvas({
             if (!iconIds.has(tl.id))
               return readable ? readableShape(tl, perCell) : null
             const c = iconLayout.clusterOf.get(tl.id)
+            // A row's bar: each rack where it is, under it.
+            if (c?.row?.bar)
+              return {
+                box: { x: tl.x, y: tl.y, w: tl.width, h: tl.height },
+                grow: 1,
+                changed: true,
+                symbol: true,
+              }
             const box = c
               ? clusterBox(c, perCell)
               : squareAt(
@@ -1133,9 +1198,26 @@ export function FloorCanvas({
       iconClusters: iconLayout.clusters.map((c) => ({
         id: c.id,
         box: clusterBox(c, scale),
-        name: clusterFaces.get(c.id)?.name ?? "",
+        // A row drawn as one icon: its short name by it.
+        name:
+          c.form === "row" && !c.row?.bar
+            ? (c.short ?? "")
+            : (clusterFaces.get(c.id)?.name ?? ""),
         members: c.members,
+        row:
+          c.row?.bar && c.text
+            ? {
+                centre: c.anchor,
+                dir: c.row.dir,
+                length: c.row.length,
+                thick: barThickness(c.row.depth, scale),
+                text: c.text,
+                short: c.short ?? c.text,
+              }
+            : undefined,
+        hall: c.form === "hall" ? c.room : undefined,
       })),
+      roomOf: (p) => roomAt(rooms, p),
       labelFit,
       angleOf: free ? (tile) => tileBox(tile).rotation : undefined,
       zoneGrow: readable ? fontGrow(10, k) : 1,
@@ -1211,6 +1293,7 @@ export function FloorCanvas({
     cableFocus,
     callouts,
     calloutLines,
+    rooms,
   ])
   const selectedShape = shapes.find((s) => s.id === selectedShapeId) ?? null
   const selectedTile =
@@ -2707,24 +2790,46 @@ export function FloorCanvas({
             {iconLayout.clusters.map((c) => {
               const face = clusterFaces.get(c.id)
               if (!face) return null
+              const props = {
+                id: c.id,
+                k: t.k,
+                face,
+                onActivate: () => fitCluster(c),
+                onPointerEnter: (e: React.PointerEvent) => {
+                  const rect = svgRef.current?.getBoundingClientRect()
+                  if (!rect || drag.current) return
+                  setClusterHint({
+                    id: c.id,
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                  })
+                },
+                onPointerLeave: () => setClusterHint(null),
+              }
+              // A row along its line; a room's summary on the room.
+              if (c.form === "row" && c.row?.bar)
+                return (
+                  <RowSymbolTile
+                    key={c.id}
+                    {...props}
+                    at={c.anchor}
+                    row={c.row}
+                    thick={barThickness(c.row.depth, pxPerCell)}
+                  />
+                )
+              if (c.form === "hall")
+                return (
+                  <HallSymbolTile
+                    key={c.id}
+                    {...props}
+                    box={clusterBox(c, pxPerCell)}
+                  />
+                )
               return (
                 <ClusterTile
                   key={c.id}
-                  id={c.id}
+                  {...props}
                   box={clusterBox(c, pxPerCell)}
-                  k={t.k}
-                  face={face}
-                  onActivate={() => fitCluster(c)}
-                  onPointerEnter={(e) => {
-                    const rect = svgRef.current?.getBoundingClientRect()
-                    if (!rect || drag.current) return
-                    setClusterHint({
-                      id: c.id,
-                      x: e.clientX - rect.left,
-                      y: e.clientY - rect.top,
-                    })
-                  }}
-                  onPointerLeave={() => setClusterHint(null)}
                 />
               )
             })}

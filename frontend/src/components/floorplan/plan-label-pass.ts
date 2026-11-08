@@ -48,6 +48,8 @@ import type { CalloutItem, CalloutLine, CalloutSide } from "./plan-callouts"
 import { clusterNameOf } from "./icon-layout"
 import { findRows, rowAngle, rowName } from "./plan-rows"
 import type { RowTile } from "./plan-rows"
+import { wallOf } from "./plan-lod"
+import type { PlanRoom } from "./plan-lod"
 import { READABLE_SYMBOL_PX, clipName, namePriority } from "./readable"
 import type { ShapeOf } from "./readable"
 import { areaIcon, areaName, polygonCentroid, shapeBounds } from "./shapes"
@@ -145,6 +147,9 @@ export interface PlanLabelInput {
   /** Icons folded into one cluster tile: its drawn box (cells), its name
    * and its members - who name no more on their own. */
   iconClusters?: readonly IconClusterLabel[]
+  /** The room a point (cells) is in (plan-lod.ts): callouts crowd and
+   * sum up room by room, wall by wall. */
+  roomOf?: (p: Pt) => PlanRoom | null
   /** A zone's name grown by this much (Readable from afar). */
   zoneGrow?: number
   /** Tile names scaled to fill their tile (Display > Fit labels). */
@@ -221,6 +226,19 @@ export interface IconClusterLabel {
   box: Box
   name: string
   members: readonly string[]
+  /** A row drawn as one bar (plan-lod.ts): its line and thickness
+   * (cells), named along it - its full name, else its short one. */
+  row?: {
+    centre: Pt
+    dir: Pt
+    length: number
+    thick: number
+    text: string
+    short: string
+  }
+  /** A room's summary (plan-lod.ts): it names itself, and its room (this
+   * area id) - whose own name it says, so that is not drawn. */
+  hall?: string
 }
 
 export interface PlanLabels {
@@ -251,6 +269,17 @@ const boxOfCells = (b: Box, scale: number): Box => ({
   w: b.w * scale,
   h: b.h * scale,
 })
+
+/** What a cluster covers (units): a row bar as boxes along it, so its
+ * upright bounds do not claim the aisles round a turned row. */
+function clusterBodies(c: IconClusterLabel, scale: number): Box[] {
+  if (!c.row) return [boxOfCells(c.box, scale)]
+  return alongBoxes(
+    [c.row.centre[0] * scale, c.row.centre[1] * scale],
+    rowAngle(c.row.dir),
+    { w: c.row.length * scale, h: c.row.thick * scale }
+  )
+}
 
 /** A tile's name drawn inside its tile (TileShape): roughly where. */
 function inTileNameBox(
@@ -406,6 +435,21 @@ const calloutCache = new Map<
   }
 >()
 
+/** A name's stem: past its trailing number and separators ("CRAH-DH1-04"
+ * → "CRAH-DH1", "UPS-A1" → "UPS-A"). */
+export function nameStem(name: string): string {
+  return name.replace(/\d+$/, "").replace(/[\s\-_./·]+$/, "")
+}
+
+/** The stem `names` share, or "" when they share none worth saying. */
+export function sharedStem(names: readonly string[]): string {
+  if (!names.length) return ""
+  const stems = names.map(nameStem)
+  return stems.every((s) => s === stems[0]) && stems[0].length >= 2
+    ? stems[0]
+    : ""
+}
+
 /** A crowd within this many leader reaches reads as one; a bigger one's
  * leftovers are summed up by regions this size. */
 const REGION_PLATES = 4
@@ -468,7 +512,14 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     (input.iconClusters ?? []).flatMap((c) => c.members)
   )
   const icons = new Occupancy(Math.max(16, font * 6))
-  for (const c of input.iconClusters ?? []) icons.add(boxOfCells(c.box, scale))
+  const clusterBoxes = new Map(
+    (input.iconClusters ?? []).map((c) => [c.id, clusterBodies(c, scale)])
+  )
+  for (const bs of clusterBoxes.values()) for (const b of bs) icons.add(b)
+  // A room summed up names itself: its area's own name gives way.
+  const hallAreas = new Set(
+    (input.iconClusters ?? []).flatMap((c) => (c.hall ? [c.hall] : []))
+  )
   for (const t of input.tiles) {
     if (!input.iconIds?.has(t.id) || clustered.has(t.id)) continue
     const box = input.shapeOf?.(t)?.box
@@ -497,8 +548,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     bodies.add(id, b)
     bodyList.push([id, b])
   }
-  for (const c of input.iconClusters ?? [])
-    addBody(c.id, boxOfCells(c.box, scale))
+  for (const [id, bs] of clusterBoxes) for (const b of bs) addBody(id, b)
   for (const t of input.tiles) {
     const name = tileName(t)
     const shape = input.shapeOf?.(t)
@@ -587,6 +637,8 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     })
   }
   for (const c of input.iconClusters ?? []) {
+    // A row bar is named along it, a room's summary by itself.
+    if (c.row || c.hall) continue
     const text = clipName(c.name)
     tileText.set(c.id, text)
     if (wantCallouts) {
@@ -616,7 +668,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   const roomNames: Box[] = []
   if (wantCallouts)
     for (const a of input.areas ?? []) {
-      if (!a.show_name || a.shape === "polygon") continue
+      if (!a.show_name || a.shape === "polygon" || hallAreas.has(a.id)) continue
       const name = areaName(a)
       if (!name) continue
       if (a.rotation) {
@@ -660,32 +712,67 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       text.add(b)
     }
     for (const b of tileBodies) solid.add(b)
-    for (const cl of input.iconClusters ?? [])
-      solid.add(boxOfCells(cl.box, scale))
+    for (const bs of clusterBoxes.values()) for (const b of bs) solid.add(b)
     const within = (b: Box) =>
       !input.boundsOnly || !bounds || contains(bounds, b)
 
     // Rows: one name along each, beside it on either side, else over it.
     const inRow = new Set<string>()
     const oursById = new Map(ours.map((o) => [o.id, o]))
-    const rows = findRows(ours.flatMap((o) => (o.row ? [o.row] : [])))
-    rows.sort((a, b) => b.length - a.length || (a.id < b.id ? -1 : 1))
-    for (const r of rows) {
-      const nm = rowName(r.names)
-      if (!nm.text) continue
+    // The rows of tiles drawn, and the rows drawn as one bar from afar
+    // (plan-lod.ts): one name each, the longest first.
+    const toName = [
+      ...findRows(ours.flatMap((o) => (o.row ? [o.row] : []))).map((r) => {
+        const nm = rowName(r.names)
+        const grow = Math.max(...r.members.map((id) => oursById.get(id)!.grow))
+        return {
+          id: r.id,
+          text: nm.text,
+          short: nm.short,
+          // A tile row's name may run a little past its ends.
+          slack: 2,
+          centre: r.centre,
+          dir: r.dir,
+          length: r.length,
+          depth: r.depth * grow,
+          own: new Set(r.members),
+          members: r.members,
+        }
+      }),
+      ...(input.iconClusters ?? []).flatMap((c) =>
+        c.row
+          ? [
+              {
+                id: c.id,
+                text: c.row.text,
+                short: c.row.short,
+                slack: 0,
+                centre: c.row.centre,
+                dir: c.row.dir,
+                length: c.row.length,
+                depth: c.row.thick,
+                own: new Set([c.id, ...c.members]),
+                members: c.members,
+              },
+            ]
+          : []
+      ),
+    ]
+    toName.sort((a, b) => b.length - a.length || (a.id < b.id ? -1 : 1))
+    for (const r of toName) {
+      if (!r.text) continue
       const lenPx = r.length * scale
-      let label = nm.text
+      let label = r.text
       let size = textSize(label, font)
-      if (size.w > lenPx + size.h * 2 && nm.short !== nm.text) {
-        label = nm.short
+      if (size.w > lenPx + size.h * r.slack && r.short && r.short !== r.text) {
+        label = r.short
         size = textSize(label, font)
       }
       const angle = rowAngle(r.dir)
       const nrm: Pt = [-r.dir[1], r.dir[0]]
-      const grow = Math.max(...r.members.map((id) => oursById.get(id)!.grow))
-      const off = (r.depth * grow * scale) / 2 + gap / 2 + size.h / 2
+      const off = (r.depth * scale) / 2 + gap / 2 + size.h / 2
       const range = Math.max(0, (lenPx - size.w) / 2)
-      const own = new Set(r.members)
+      const own = r.own
       const c0: Pt = [r.centre[0] * scale, r.centre[1] * scale]
       let pick: { at: Pt; boxes: Box[] } | null = null
       for (const side of [off, -off, 0])
@@ -718,6 +805,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         inRow.add(id)
         calledOut.add(id)
       }
+      inRow.add(r.id)
       rowLabels.push({
         id: r.id,
         text: label,
@@ -746,15 +834,18 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         if (l) l.push(o)
         else crowds.set(k, [o])
       }
-      // Infrastructure first, then the smaller crowds.
-      return [...crowds.values()].sort(
-        (a, b) =>
-          Math.max(...b.map((o) => o.rank)) -
-            Math.max(...a.map((o) => o.rank)) ||
-          a.length - b.length ||
-          (a[0].id < b[0].id ? -1 : 1)
-      )
+      return [...crowds.values()].sort(crowdOrder)
     }
+    // Infrastructure first, then the smaller crowds.
+    const crowdOrder = (a: readonly Ours[], b: readonly Ours[]) =>
+      Math.max(...b.map((o) => o.rank)) - Math.max(...a.map((o) => o.rank)) ||
+      a.length - b.length ||
+      (a[0].id < b[0].id ? -1 : 1)
+    const centreOf = (o: Ours): Pt => [
+      (o.box.x + o.box.w / 2) / scale,
+      (o.box.y + o.box.h / 2) / scale,
+    ]
+    const roomOf = (o: Ours) => input.roomOf?.(centreOf(o)) ?? null
     const board = new CalloutBoard({
       free: (bx) => solid.free(bx),
       bounds: input.boundsOnly ? bounds : null,
@@ -833,31 +924,48 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       }
       return left
     }
-    // What found no place, in one plate per region: its range or its
-    // count, a leader to it - never a name lost without a word.
+    // What found no place, in one plate per room wall and kind ("CRAH ×
+    // 6"), else per region: a short leader to it, or over them when there
+    // is no room beside - never a name lost without a word, never a plate
+    // across the plan.
+    const kindOf = new Map(input.tiles.map((t) => [t.id, t.linked?.kind ?? ""]))
     const summarise = (left: readonly Ours[]) => {
       const regions = new Map<string, Ours[]>()
       const size = REGION_PLATES * reach
       for (const o of left) {
-        const k = small(left)
-          ? "all"
-          : `${Math.floor((o.box.x + o.box.w / 2) / size)},${Math.floor((o.box.y + o.box.h / 2) / size)}`
+        const room = roomOf(o)
+        const k = room
+          ? `${room.id}:${wallOf(room, centreOf(o))}:${o.members ? "" : nameStem(o.text)}`
+          : small(left)
+            ? "all"
+            : `${Math.floor((o.box.x + o.box.w / 2) / size)},${Math.floor((o.box.y + o.box.h / 2) / size)}`
         const l = regions.get(k)
         if (l) l.push(o)
         else regions.set(k, [o])
       }
       for (const part of regions.values()) {
         const ids = part.map((o) => o.id).sort()
-        const one = part.length === 1 && !part[0].members
+        // One alone - a tile, or a cluster - by its own name.
+        const one = part.length === 1
+        // On its wall of a room, by what they are: "CRAH-DH1 ×6".
+        const stem =
+          roomOf(part[0]) && part.every((o) => !o.members)
+            ? sharedStem(part.map((o) => o.text))
+            : ""
         const name = one
           ? part[0].text
-          : clusterNameOf(
-              part.flatMap((o) =>
-                o.members
-                  ? o.members.map(() => ({ name: "", kind: "" }))
-                  : [{ name: o.text, kind: o.kind }]
+          : stem
+            ? `${stem} ×${part.length}`
+            : clusterNameOf(
+                part.flatMap((o) =>
+                  o.members
+                    ? o.members.map((id) => ({
+                        name: "",
+                        kind: kindOf.get(id) ?? "",
+                      }))
+                    : [{ name: o.text, kind: o.kind }]
+                )
               )
-            )
         const box = unionBox(part.map((o) => o.box))
         const it: CalloutItem = one
           ? itemOf(part[0])
@@ -868,24 +976,37 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
               group: "crowd",
               container: box,
             }
-        const p = board.near(it, reach * 2, new Set(ids))
+        const own = new Set([...ids, ...part.flatMap((o) => o.members ?? [])])
+        const p = board.near(it, reach * 2, own) ?? board.over(it, own)
         if (!p) continue
         for (const id of ids) calledOut.add(id)
         commit(
           it.id,
           name,
           p,
-          one ? undefined : part.flatMap((o) => o.members ?? [o.id])
+          one ? part[0].members : part.flatMap((o) => o.members ?? [o.id])
         )
       }
     }
-    for (const crowd of crowdsOf(rest, joins[0])) {
+    // Crowds room by room: a callout's crowd never spans two rooms.
+    const byRoom = new Map<string, Ours[]>()
+    for (const o of rest) {
+      const k = roomOf(o)?.id ?? ""
+      const l = byRoom.get(k)
+      if (l) l.push(o)
+      else byRoom.set(k, [o])
+    }
+    const crowds = [...byRoom.values()]
+      .flatMap((list) => crowdsOf(list, joins[0]))
+      .sort(crowdOrder)
+    for (const crowd of crowds) {
       const left = place(crowd, 0)
       if (left.length) summarise(left)
     }
     return taken
   }
-  if (wantCallouts && ours.length) {
+  const barRows = (input.iconClusters ?? []).filter((c) => c.row)
+  if ((wantCallouts && ours.length) || barRows.length) {
     // The layout depends on the zoom and the plan only - never the view,
     // a hover or the cables - and can cost a lot on a hall of racks: a
     // pan, a hover or a second settle at the same zoom reuses it.
@@ -908,6 +1029,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         o.members,
         lines?.get(o.id),
       ]),
+      barRows.map((c) => [c.id, c.row, c.members.length]),
     ])
     let hit = calloutCache.get(key)
     if (hit) {
@@ -1107,10 +1229,16 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
 
   // Areas: the name in its corner, else a free spot inside, off the racks.
   const areaReqs = new Map<string, "fixed" | "move">()
+  const hiddenAreas: string[] = []
   for (const a of input.areas ?? []) {
     if (!a.show_name) continue
     const name = areaName(a)
     if (!name) continue
+    // Its rows summed up on it: the summary says its name.
+    if (hallAreas.has(a.id)) {
+      hiddenAreas.push(a.id)
+      continue
+    }
     const fpx = input.areaFontPx ?? 12
     const shift = areaIcon(a) ? fpx * 1.4 : 0
     const size = {
@@ -1246,6 +1374,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     if (!placed.has(`tilefix:${id}`)) tileNamesHere.add(id)
   for (const [id] of areaReqs)
     if (!placed.has(`area:${id}`)) out.areas.set(id, null)
+  for (const id of hiddenAreas) out.areas.set(id, null)
   for (const r of input.raised ?? [])
     if (
       !placed.has(`raised:${r.id}`) &&
