@@ -2075,6 +2075,7 @@ export function FloorCanvas({
             colorBy={colorBy}
             figures={figures?.get(tile.id)}
             iconTile={iconIds.has(tile.id)}
+            rotation={iconIds.has(tile.id) ? 0 : residual}
             highlighted={
               !!highlightTileIds?.has(tile.id) ||
               !!tilePick?.picked.has(tile.id) ||

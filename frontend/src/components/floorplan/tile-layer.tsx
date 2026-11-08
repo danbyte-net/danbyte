@@ -709,6 +709,7 @@ export function ReadableSymbol({
   figures,
   iconTile = false,
   highlighted = false,
+  rotation = 0,
   onPointerDown,
   onDoubleClick,
   onPointerEnter,
@@ -716,6 +717,10 @@ export function ReadableSymbol({
 }: {
   tile: FloorPlanTile
   box: { x: number; y: number; w: number; h: number }
+  /** Degrees the symbol lies turned about its centre - a free tile's turn
+   * past its quarter turn, so a slender row does not stand upright. Its
+   * icon stays upright. */
+  rotation?: number
   /** The canvas zoom: screen px per plan px. */
   k: number
   selected: boolean
@@ -747,6 +752,9 @@ export function ReadableSymbol({
   const Icon = iconName ? getLucideIcon(iconName) : null
   // An icon tile is a square: the icon a little smaller, so it reads.
   const icon = Math.min(w, h) * (iconTile ? 0.6 : 0.7)
+  const turn = rotation
+    ? `rotate(${rotation},${x + w / 2},${y + h / 2})`
+    : undefined
   return (
     <g
       data-tile={tile.id}
@@ -769,6 +777,7 @@ export function ReadableSymbol({
       {paint.alarm && (
         <rect
           data-part="alarm"
+          transform={turn}
           x={x - 3 / k}
           y={y - 3 / k}
           width={w + 6 / k}
@@ -782,6 +791,7 @@ export function ReadableSymbol({
         />
       )}
       <rect
+        transform={turn}
         x={x}
         y={y}
         width={w}
@@ -799,6 +809,7 @@ export function ReadableSymbol({
       {highlighted && (
         <rect
           data-part="highlight"
+          transform={turn}
           x={x - 2.5 / k}
           y={y - 2.5 / k}
           width={w + 5 / k}
