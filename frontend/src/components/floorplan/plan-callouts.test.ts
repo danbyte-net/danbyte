@@ -6,6 +6,7 @@ import type { Pt } from "./cable-route"
 import {
   CALLOUT_MAX_LEADER,
   CALLOUT_TAB_PX,
+  NEAR_LEADER_PLATES,
   boxGap,
   calloutClusters,
   calloutGroups,
@@ -395,26 +396,41 @@ describe("layoutPlanLabels with callouts", () => {
     ).toBe(false)
   })
 
-  it("keeps a tile apart from the cluster plain", () => {
-    // R-A09 far along the row: a cluster of its own, its name clear.
+  it("names a tile apart from the cluster in its own box, beside it", () => {
+    // R-A09 far along the row: a crowd of its own, in a box of its own -
+    // never loose text by its icon.
     const tiles = [...serverRoom(0.75).tiles, rack("R-A09", 88, 206)]
     const got = layoutPlanLabels(serverRoom(0.75, { tiles }))
-    expect(got.callouts.map((c) => c.id)).not.toContain("R-A09")
-    expect(got.callouts.length).toBe(4)
-    expect(got.tiles.map((t) => t.id)).toEqual(["R-A09"])
+    expect(got.callouts.map((c) => c.id).sort()).toEqual([
+      "R-A01",
+      "R-A02",
+      "R-A03",
+      "R-A04",
+      "R-A09",
+    ])
+    expect(got.tiles).toEqual([])
   })
 
-  it("keeps plain names where they sit clearly", () => {
-    // Spread out (racks 5 cells apart): every name fits by its icon.
+  it("never leaves a name loose by its tile", () => {
+    // Spread out (racks 8 cells apart): each in its own box, a short
+    // leader to it - no plain name beside an icon.
     const tiles = ["R-A01", "R-A02"].map((id, i) => rack(id, 76 + i * 8, 206))
     const got = layoutPlanLabels(serverRoom(0.75, { tiles }))
-    expect(got.callouts).toEqual([])
-    expect(got.tiles.map((t) => t.id).sort()).toEqual(["R-A01", "R-A02"])
+    expect(got.tiles).toEqual([])
+    expect(got.callouts.map((c) => c.id).sort()).toEqual(["R-A01", "R-A02"])
+    const scale = 40 * 0.75
+    for (const c of got.callouts)
+      expect(
+        Math.hypot(
+          (c.leader[1][0] - c.leader[0][0]) * scale,
+          (c.leader[1][1] - c.leader[0][1]) * scale
+        )
+      ).toBeLessThanOrEqual(NEAR_LEADER_PLATES * calloutSize("", []).h + 1e-6)
   })
 
-  it("names tiles in callouts with icons off, when their own name is too small", () => {
+  it("names a row along it with icons off, when its names do not fit", () => {
     // Icons when zoomed out disabled: racks drawn at true size, far out,
-    // their in-tile names a few px tall - placed and called out instead.
+    // their in-tile names a few px tall - one name for the row instead.
     const k = 0.25
     const base = serverRoom(k, {
       unitsPerPx: k,
@@ -422,19 +438,34 @@ describe("layoutPlanLabels with callouts", () => {
       iconIds: new Set(),
     })
     const got = layoutPlanLabels(base)
-    // Every rack of the row named, each in its own box.
-    expect(got.callouts.map((c) => c.id).sort()).toEqual([
-      "R-A01",
-      "R-A02",
-      "R-A03",
-      "R-A04",
+    expect(got.callouts).toEqual([])
+    expect(got.rows.map((r) => [r.text, r.members])).toEqual([
+      // A short row: its letter alone, the range on hover.
+      ["Row A", ["R-A01", "R-A02", "R-A03", "R-A04"]],
     ])
-    for (const c of got.callouts) expect(got.tileNamesHere.has(c.id)).toBe(true)
-    // Close in, the in-tile names read: nothing called out.
+    expect(got.rows[0].angle).toBe(0)
+    for (const id of got.rows[0].members)
+      expect(got.tileNamesHere.has(id)).toBe(true)
+    // Close in, the in-tile names read: nothing named outside.
     const near = layoutPlanLabels(
       serverRoom(2, { unitsPerPx: 2, shapeOf: null, iconIds: new Set() })
     )
     expect(near.callouts).toEqual([])
+    expect(near.rows).toEqual([])
+  })
+
+  it("calls out the selected rack of a named row, beside it", () => {
+    const k = 0.25
+    const got = layoutPlanLabels(
+      serverRoom(k, {
+        unitsPerPx: k,
+        shapeOf: null,
+        iconIds: new Set(),
+        pinnedTiles: new Set(["R-A02"]),
+      })
+    )
+    expect(got.rows.length).toBe(1)
+    expect(got.callouts.map((c) => c.id)).toEqual(["R-A02"])
   })
 
   it("off: no callouts", () => {

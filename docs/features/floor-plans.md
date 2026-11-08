@@ -1370,8 +1370,9 @@ you zoom or pan. In order:
    bundle's **N cables**.
 4. **Tray names** with their counts.
 5. **Tile names** (a name drawn inside its tile stays there, and others
-   keep clear of it). With [Callouts](#callouts) on, a tile's name that
-   sits clear by its tile ranks above the cable and tray names.
+   keep clear of it). With [Callouts](#callouts) on, a name that does not
+   fit in its tile is named by its [row](#row-names) or in a callout,
+   placed before the cable and tray names, which keep off them.
 6. **Room and area names**. A rectangle's name starts in its top-left
    corner and moves to another free spot inside it - a corner, the middle -
    off the racks, rather than sit on a tray's name or a rack.
@@ -1508,56 +1509,78 @@ for, so a row of R-A01 to R-A04 still reads left to right.
 
 #### Callouts {#callouts}
 
-From afar a row of racks is a row of icons a few pixels apart, and a name
-beside one icon is as near the next. **Display → Callouts** (**Auto** unless
-the plan turns it **Off**) names such a tile in a small **callout** instead:
-a box with the name, set off in free space near the tile, with a
-**leader** back to it.
+From afar a row of racks is a row of shapes a few pixels apart, and a name
+beside one is as near the next. **Display → Callouts** (**Auto** unless
+the plan turns it **Off**) keeps every name in one of three clear forms:
 
-- **Which tiles.** A device, rack or cabinet drawn as an icon or grown
-  symbol whose name has no free place by it, or whose name would sit as
-  near another tile as its own. With **Icons when zoomed out** off, a
-  tile whose own name is too small to read on screen is treated the same
-  way: its name goes beside it, or in a callout. Tiles close together
-  form a **cluster**: when any name in a cluster needs a callout, every
-  name in it gets one, so a cluster reads one way. Only a tile whose box
-  finds no place even with a longer leader keeps a plain name instead.
-  A tile apart from the rest keeps its plain name when it fits.
+- **Inside its tile**, when the whole name reads there at this zoom -
+  not cut short, not too small. **Fit labels to tiles** lets a name shrink
+  to fit, so it moves inside sooner as you zoom in.
+- **Along its row** ([row names](#row-names)), for a row of tiles whose
+  names do not fit.
+- **In a callout**: a small box beside the object with a short **leader**
+  back to it. Never as loose text next to the object.
+
+##### Row names {#row-names}
+
+Tiles of one kind and one size, turned alike and side by side in a line
+(a seam between them, not a gap another rack would fit in) form a **row**
+of three or more. When their names do not fit, the row gets one name
+along it - **Row B · B01–B12** from names like `DH5-B01` … `DH5-B12`, or
+the first and last name when there is no row letter (`R01–R10`); a short
+row shows just **Row B**. The name runs along the row at its angle, never
+upside down, on a plate beside the row (the aisle side), else over it.
+Hover it to list the row's members; click it to zoom until they read.
+The selected or hovered rack of a named row gets its own callout. Rows
+are found from the tiles' places alone; nothing is stored.
+
+##### The callouts
+
+- **A few together.** Objects close together form a **crowd**. Up to **6**
+  get one tidy **stack** of boxes on one side of the crowd, in the order of
+  their objects along that side, so no two leaders cross. A lone object's
+  box takes the nearest free spot round it.
+- **Short leaders.** A box sits no farther out than twice its own height
+  from its object (or its crowd), and no leader in a stack runs longer
+  than three times that. Leaders never cross each other, a box, or an
+  object outside their crowd.
+- **Bigger crowds.** A crowd of more than 6, or one whose stack finds no
+  room, is split into its tighter huddles, each stacked the same way. A
+  tight knot that still has more than 6 is named by **one plate** - its
+  range (`R-A01–R-A08`) or count (`15 racks`) - with a leader to it. A
+  whole building of touching objects seen from afar names what has room
+  close by (infrastructure first) and sums up the rest in one plate per
+  region (`13 objects`). Hover a plate to list its members; click it to
+  zoom in. Where even a plate finds no room the names wait for you to
+  zoom.
+- **Order.** Selected and hovered first, then room and area names (kept
+  clear), row names, infrastructure (cooling units, UPS, panels), racks,
+  then devices.
 - **The leader.** A thin muted line on a casing of the background, so it
-  reads on a light map, a satellite photo or a dark plan. It leaves from
-  the middle of the box's edge that faces the tile and runs straight to
-  the tile's edge, aimed at its centre, ending in a small dot. Leaders never cross each other or a box and
-  keep off other tiles where they can; they are drawn over the map, trays
-  and cables, never under them.
+  reads on a light map, a satellite photo or a dark plan, from the middle
+  of the box's edge facing the object to the object's edge, ending in a
+  small dot. Drawn over the map, trays and cables.
 - **The box.** A plain bordered box, like the plan's other plates.
-- **Where.** Close to the tile: no leader is longer than about four icons.
-  The racks of a room first try a tidy row along the nearest side of the
-  room, in the order of their tiles; when that row would be too far, would
-  cover something or would cross a leader, each box takes the free spot
-  nearest its own tile - always so for tiles on a site-wide map outside
-  any room. A box never covers a tile, an icon, a label or another
-  callout. When nothing is free nearby a leader may run twice as long,
-  then cross another tile, rather than leave a name out. A tile with no
-  place anywhere hides its name (in a cluster of callouts) or keeps its
-  plain name.
-- **Steady.** Callouts are laid out for the whole plan at the settled
-  zoom, never for the view, so panning does not move them.
+- **Steady.** Laid out for the whole plan at the settled zoom, never for
+  the view, so panning does not move them.
 - **What they show.** The name, then up to three lines chosen per
   [panel layout](#panel-layouts) under **Callout**: a status or role as its
   badge, anything else as muted text. With none chosen it is the name alone.
 - **Hover and click.** Hovering a callout or its tile lights the pair - the
   box's border, a thicker leader and the dot in the accent colour, the
-  tile ringed - and dims the other callouts; selecting the tile lights its
-  callout. A click opens the
-  object's detail panel, as a click on the tile does (in Edit it selects
-  the tile).
+  tile ringed - and draws it over the rest; the others stay at full ink (a
+  name is shown in full or not at all). Selecting the tile lights its
+  callout. A click opens the object's detail panel, as a click on the tile
+  does (in Edit it selects the tile).
 - Lower-ranked texts - tray, room and area names, raised-floor captions -
-  keep off the boxes and their leaders.
+  keep off the boxes, their leaders and the row names.
 
-Callouts are on the canvas and in the [3D view](#one-label-pass) under
-Readable; the PDF keeps plain names. **Off** draws
-names as before. The choice is saved on the plan with the other Display
-choices; a viewer can switch it for the session.
+Callouts and row names are on the canvas under **Auto**; the
+[3D view](#one-label-pass) has its own callouts and summary plates (no row
+names yet); the PDF keeps plain names. **Off** draws names as before:
+inside the tile, or beside it where it fits. The choice is saved on the
+plan with the other Display choices; a viewer can switch it for the
+session.
 
 **Changing a tile's type.** Select a placed tile and pick another **Type**
 in the inspector - any tile type, or a device role standing in as one. The
