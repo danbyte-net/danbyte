@@ -36,17 +36,10 @@ import { cn } from "@/lib/utils"
 import { useTheme } from "@/components/theme-provider"
 
 import type { Pt } from "./cable-route"
-import {
-  CELL,
-  gridLineStep,
-  tileHasFov,
-  tileIsZone,
-  tileName,
-} from "./canvas-geometry"
+import { CELL, gridLineStep, tileIsZone, tileName } from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import {
   ClusterTile,
-  FovCone,
   IconLeader,
   ReadableSymbol,
   TileMarkers,
@@ -153,6 +146,8 @@ import {
 } from "./structure"
 import type { RunRow, StructShape } from "./structure"
 import { useStructureGestures } from "./use-structure-gestures"
+import { LiveCameraLayer } from "./camera-layer"
+import { coverageRegions } from "./camera-view"
 
 // The plan's geometry and its rules live in canvas-geometry.ts and each layer
 // in its own module; the canvas re-exports what its callers import from here.
@@ -276,8 +271,13 @@ export interface FloorCanvasProps {
   overlay?: React.ReactNode
   /** Auto-size labels to fit their tile instead of a fixed 11px + ellipsis. */
   labelFit?: boolean
-  /** Draw camera FOV cones for tiles whose type/role has them. */
+  /** Draw camera FOV cones for tiles whose type/role has them - each cut
+   * short by the walls (camera-view.ts). */
   showFov?: boolean
+  /** Display > Camera coverage: the floor no camera sees, tinted. */
+  showCoverage?: boolean
+  /** Display > Racks block view: racks and cabinets stop a camera's view. */
+  fovRacksBlock?: boolean
   /** Draw the name label on background zone tiles (Cold aisle, Hot aisle…). */
   showZoneLabels?: boolean
   /** Outline photo tiles that are not selected. */
@@ -606,6 +606,8 @@ export function FloorCanvas({
   overlay,
   labelFit = false,
   showFov = true,
+  showCoverage = false,
+  fovRacksBlock = false,
   showZoneLabels = true,
   photoOutlines = false,
   objectSize = "real",
@@ -1010,6 +1012,15 @@ export function FloorCanvas({
   })
   const shownRow = <R extends { id: string }>(r: R): R =>
     (structG.preview.rows.get(r.id) as R | undefined) ?? r
+  // The walls as shown - one mid-drag included - for the cameras' views.
+  const shownWalls = useMemo(
+    () => walls.map(shownRow),
+    [walls, structG.preview.rows]
+  )
+  const coverageFloor = useMemo(
+    () => (showCoverage ? coverageRegions(shapes, plan).outlines : []),
+    [showCoverage, shapes, plan]
+  )
   const structRow = (id: string) => {
     const r = structure.find((x) => x.id === id)
     return r ? shownRow(r) : undefined
@@ -2390,6 +2401,20 @@ export function FloorCanvas({
           </g>
           {/* On a free plan tiles may overlap: their z says which is on
               top. Readable's grown symbols draw in the overlays. */}
+          {/* Camera coverage: the blind floor, under the tiles. */}
+          {showCoverage && (
+            <LiveCameraLayer
+              part="coverage"
+              tiles={tiles}
+              walls={shownWalls}
+              cellMm={plan.cell_mm}
+              racksBlock={fovRacksBlock}
+              regions={coverageFloor}
+              width={plan.grid_width}
+              height={plan.grid_height}
+              showSeen={!showFov}
+            />
+          )}
           {solidTiles.real.map(renderTile)}
           {/* From afar a placed device, rack or cabinet keeps a marker in
               its colour where it would shrink to a dot - Readable grows
@@ -2406,15 +2431,15 @@ export function FloorCanvas({
             />
           )}
 
-          {showFov &&
-            tiles
-              .filter(
-                (tl) =>
-                  tileHasFov(tl) &&
-                  tl.fov_distance &&
-                  (tl.fov_ptz || tl.fov_deg)
-              )
-              .map((tl) => <FovCone key={`fov-${tl.id}`} tile={tl} />)}
+          {showFov && (
+            <LiveCameraLayer
+              part="cones"
+              tiles={tiles}
+              walls={shownWalls}
+              cellMm={plan.cell_mm}
+              racksBlock={fovRacksBlock}
+            />
+          )}
 
           {/* Walls - the structural print, in every mode: solid spans broken
               by door gaps with threshold ticks. Interactive (select / move /

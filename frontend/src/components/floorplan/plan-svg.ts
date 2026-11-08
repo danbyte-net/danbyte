@@ -99,6 +99,7 @@ import {
 } from "./icon-layout"
 import type { ClusterFace, IconLayout } from "./icon-layout"
 import { CHECK_COLOR, rackFigures, tileFill, tilePaint } from "./tile-paint"
+import { cameraViews, polygonPath } from "./camera-view"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
 // The 2D plan as a standalone, light-themed SVG for the PDF export
@@ -161,6 +162,9 @@ export interface PlanSvgInput {
   /** Paper mm per plan px of the sheet (planPaperScale) when the drawing
    * is not framed to its content; A3 landscape otherwise. */
   mmPerPx?: number
+  /** Display > Camera FOV cones: each camera's view, cut short by the
+   * walls (camera-view.ts) - `racksBlock` as Display > Racks block view. */
+  cameras?: { racksBlock: boolean }
 }
 
 /** A rectangle in plan px. */
@@ -1273,9 +1277,18 @@ export function planSvg({
   objectSize = "real",
   iconTiles = false,
   mmPerPx: sheetMmPerPx,
+  cameras,
 }: PlanSvgInput): string {
   const w = plan.grid_width * CELL
   const h = plan.grid_height * CELL
+  // Before a close-up drops the walls out of its box: one there still
+  // stops a view that reaches in.
+  const views = cameras
+    ? cameraViews(tiles, walls, {
+        cellMm: plan.cell_mm,
+        racksBlock: cameras.racksBlock,
+      })
+    : []
   // Framed to the content: the view box, and the paper scale it gives, so
   // hatches and cables are drawn for the paper and not for the full grid.
   const frame = fitContent
@@ -1554,6 +1567,21 @@ export function planSvg({
   for (const c of icons.clusters)
     body.push(
       clusterMarkup(c.id, clusterBoxOf(c), faces.get(c.id)!, paperMmPerPx)
+    )
+  // The cameras' views: over the tiles, under the walls, as on the canvas.
+  for (const v of views)
+    body.push(
+      el("path", {
+        d: polygonPath(v.polygon, CELL),
+        fill: v.color,
+        "fill-opacity": v.ring ? 0.08 : 0.12,
+        stroke: v.color,
+        "stroke-opacity": 0.45,
+        "stroke-width": 1,
+        "stroke-dasharray": "4 3",
+        "stroke-linejoin": "round",
+        "data-fov": v.id,
+      })
     )
   for (const wall of walls) body.push(wallMarkup(wall, plan.cell_mm))
   if (showTrays)

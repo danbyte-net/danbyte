@@ -240,6 +240,8 @@ export function PlanCanvas({
     colorBy,
     labelFit,
     showFov,
+    showCoverage,
+    fovRacksBlock,
     showZoneLabels,
     showPhotoOutlines,
     objectSize,
@@ -404,6 +406,8 @@ export function PlanCanvas({
         overlay={colorLegend}
         labelFit={labelFit}
         showFov={showFov}
+        showCoverage={showCoverage}
+        fovRacksBlock={fovRacksBlock}
         showZoneLabels={showZoneLabels}
         photoOutlines={showPhotoOutlines}
         objectSize={objectSize}

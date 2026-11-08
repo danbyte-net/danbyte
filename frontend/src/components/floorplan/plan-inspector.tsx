@@ -43,7 +43,10 @@ export function PlanInspector({
   openTile,
   onSelectWalls,
   onShowTrayCables,
+  coverage = null,
 }: {
+  /** The selected area's camera coverage (0-1), or null. */
+  coverage?: number | null
   /** A tray's Show cables: its cables in the chooser at a client point. */
   onShowTrayCables?: (trayId: string, at: { x: number; y: number }) => void
   /** The area's linked walls selected, in the walls tool. */
@@ -113,6 +116,7 @@ export function PlanInspector({
         key={shape.id}
         area={shape}
         {...common}
+        coverage={coverage}
         walls={
           linked.length > 0 && (
             <AreaWallsRow

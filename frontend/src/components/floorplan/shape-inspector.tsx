@@ -57,6 +57,7 @@ import {
   labelPresetMm,
   labelPresetOf,
 } from "./shapes"
+import { formatCoverage } from "./camera-view"
 import type { AreaShape, LabelShape, PlanShape } from "./shapes"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
 import { NEW_LABEL_TEXT } from "./use-shape-edits"
@@ -408,6 +409,19 @@ function AreaTypeField({
 
 /** An area's inspector: what it stands for (a room, a location or
  * nothing), its name and look. */
+/** How much of an area the plan's cameras see. */
+export function CoverageRow({ value }: { value: number }) {
+  return (
+    <div
+      data-part="area-coverage"
+      className="flex items-center justify-between gap-2 text-xs"
+    >
+      <span className="text-muted-foreground">Camera coverage</span>
+      <span className="num">{formatCoverage(value)}</span>
+    </div>
+  )
+}
+
 export function AreaInspector({
   plan,
   area,
@@ -418,9 +432,12 @@ export function AreaInspector({
   shapes = [],
   onBackLabel,
   walls,
+  coverage = null,
 }: {
   /** Its linked walls: how many, Select and Unlink. */
   walls?: React.ReactNode
+  /** Share of it the plan's cameras see (0-1); null with no cameras. */
+  coverage?: number | null
   plan: FloorPlan
   area: AreaShape
   onChange: Patch
@@ -479,6 +496,7 @@ export function AreaInspector({
         onDelete={onDelete}
       />
       {walls}
+      {coverage != null && <CoverageRow value={coverage} />}
       <Field label="Stands for">
         <SegmentedTabs<LinkKind>
           value={link}
