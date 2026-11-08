@@ -955,7 +955,10 @@ export function FloorPlanEditor({
     fitContent = false,
     closeup?: { box: PlanBox; mmPerPx: number },
     /** A report sheet framed to `closeup`: its cables' stubs drawn too. */
-    sheet = false
+    sheet = false,
+    /** Its own callouts and row names; false when the screen's are laid
+     * over it (a view's sheet). */
+    ownCallouts = true
   ) =>
     plan
       ? planSvg({
@@ -973,6 +976,7 @@ export function FloorPlanEditor({
           // Readable on paper as on screen, at the sheet's scale.
           objectSize: prefs.objectSize,
           iconTiles: prefs.iconTiles,
+          callouts: ownCallouts && prefs.callouts === "auto",
           cameras: prefs.showFov
             ? { racksBlock: prefs.fovRacksBlock }
             : undefined,
@@ -1025,6 +1029,7 @@ export function FloorPlanEditor({
         iconTiles: prefs.iconTiles,
         showFov: prefs.showFov,
         fovRacksBlock: prefs.fovRacksBlock,
+        callouts: prefs.callouts === "auto",
       })
     let box = gridBox(plan)
     let overlay = ""
@@ -1043,7 +1048,8 @@ export function FloorPlanEditor({
       prefs.showCableLinks,
       true,
       { box, mmPerPx: reportScale(box, paper) },
-      true
+      true,
+      scope !== "view"
     )
     return { floor: plan.id, svg: withOverlay(svg, overlay), ...sheetLegends() }
   }

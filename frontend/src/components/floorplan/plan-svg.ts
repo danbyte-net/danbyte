@@ -10,6 +10,7 @@ import type {
   FloorPlanWall,
 } from "@/lib/api"
 import { getLucideIcon } from "@/components/dynamic-icon"
+import { readableText } from "@/lib/color"
 import { attrs as markupAttrs, el, esc, text } from "@/lib/diagram/markup"
 import { PAPERS, SHEET } from "@/lib/diagram/sheet"
 import type { PaperChoice } from "@/lib/diagram/sheet"
@@ -68,11 +69,35 @@ import {
 import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import type { Pt } from "./cable-route"
 import { layoutPlanLabels } from "./plan-label-pass"
+import {
+  CALLOUT_FONT_PX,
+  CALLOUT_LINE_FONT_PX,
+  CALLOUT_LINE_PX,
+  CALLOUT_PAD_X,
+  CALLOUT_PAD_Y,
+  calloutValue,
+} from "./plan-callouts"
+import {
+  HALL_FONT_PX,
+  barThickness,
+  planLod,
+  planRooms,
+  planRows,
+  roomAt,
+  symbolBox,
+  withSymbols,
+} from "./plan-lod"
 import { TRAY_BED_OPACITY, TRAY_EDGE_OPACITY, TRAY_EDGE_PX } from "./tray-layer"
-import type { AlongLabel, PlanLabels } from "./plan-label-pass"
+import type {
+  AlongLabel,
+  CalloutLabel,
+  IconClusterLabel,
+  PlanLabels,
+} from "./plan-label-pass"
 import {
   CHIP_FONT_MM,
   LABEL_FONT_MM,
+  LABEL_FONT_PX,
   LABEL_REPEAT_MM,
   textSize,
 } from "./plan-labels"
@@ -98,7 +123,7 @@ import {
   scaleBox,
   squareAt,
 } from "./icon-layout"
-import type { ClusterFace, IconLayout } from "./icon-layout"
+import type { ClusterFace, IconCluster, IconLayout } from "./icon-layout"
 import { outlinePath, raisedRegions } from "./raised-floor-shape"
 import { CHECK_COLOR, rackFigures, tileFill, tilePaint } from "./tile-paint"
 import { cameraViews, polygonPath } from "./camera-view"
@@ -170,6 +195,12 @@ export interface PlanSvgInput {
   /** Display > Camera FOV cones: each camera's view, cut short by the
    * walls (camera-view.ts) - `racksBlock` as Display > Racks block view. */
   cameras?: { racksBlock: boolean }
+  /** Display > Callouts (Auto): names that do not fit in their tile go
+   * along their row or in a callout, and rows from afar into their row
+   * symbol or room summary, as on the canvas at the paper's scale. False
+   * keeps names in their tiles (a view's sheet lays the screen's callouts
+   * over it instead). */
+  callouts?: boolean
 }
 
 /** A rectangle in plan px. */
@@ -1130,6 +1161,229 @@ function labelsMarkup(
   )
 }
 
+// ─── The callouts on paper ──────────────────────────────────────────────
+
+const r2 = (n: number) => +n.toFixed(2)
+
+/** The screen's callouts (plan-callouts-layer.tsx) as paper markup: each a
+ * plain bordered box at the size it has on screen at zoom `k`, its name,
+ * its lines (a status or role as its badge) and a muted leader to a dot on
+ * its tile - light-themed, in plan px. */
+export function calloutsMarkup(
+  callouts: readonly CalloutLabel[],
+  k: number
+): string {
+  if (!callouts.length || !(k > 0)) return ""
+  const s = 1 / k
+  const out: string[] = ['<g data-layer="callouts">']
+  for (const c of callouts) {
+    // A summary over what it names: no leader.
+    if (c.leader[0][0] === c.leader[1][0] && c.leader[0][1] === c.leader[1][1])
+      continue
+    const cx = c.at[0] * CELL
+    const cy = c.at[1] * CELL
+    const { w, h } = c.size
+    const tip: [number, number] =
+      c.side === "top"
+        ? [0, h / 2]
+        : c.side === "bottom"
+          ? [0, -h / 2]
+          : c.side === "left"
+            ? [w / 2, 0]
+            : [-w / 2, 0]
+    const fx = cx + tip[0] * s
+    const fy = cy + tip[1] * s
+    const tx = c.leader[1][0] * CELL
+    const ty = c.leader[1][1] * CELL
+    out.push(
+      `<line x1="${r2(fx)}" y1="${r2(fy)}" x2="${r2(tx)}" y2="${r2(ty)}" ` +
+        `stroke="#71717a" stroke-width="${r2(1.25 * s)}" stroke-linecap="round"/>` +
+        `<circle cx="${r2(tx)}" cy="${r2(ty)}" r="${r2(2.25 * s)}" fill="#71717a"/>`
+    )
+  }
+  for (const c of callouts) {
+    const cx = c.at[0] * CELL
+    const cy = c.at[1] * CELL
+    const { w, h } = c.size
+    const left = -w / 2 + CALLOUT_PAD_X
+    const parts = [
+      `<rect x="${r2(-w / 2)}" y="${r2(-h / 2)}" width="${r2(w)}" height="${r2(h)}" ` +
+        `rx="4" fill="#ffffff" stroke="#d4d4d8" stroke-width="1"/>`,
+      `<text x="${r2(left)}" y="${r2(-h / 2 + CALLOUT_PAD_Y + CALLOUT_FONT_PX * 0.95)}" ` +
+        `font-size="${CALLOUT_FONT_PX}" font-weight="500" fill="${PAPER_INK}">` +
+        `${esc(c.name)}</text>`,
+    ]
+    c.lines.forEach((l, i) => {
+      const y =
+        -h / 2 +
+        CALLOUT_PAD_Y +
+        CALLOUT_FONT_PX * 1.3 +
+        i * CALLOUT_LINE_PX +
+        CALLOUT_LINE_PX / 2
+      const value = esc(calloutValue(l.value))
+      const base = r2(y + CALLOUT_LINE_FONT_PX * 0.35)
+      if (l.color === undefined) {
+        parts.push(
+          `<text x="${r2(left)}" y="${base}" font-size="${CALLOUT_LINE_FONT_PX}" ` +
+            `fill="#71717a">${value}</text>`
+        )
+        return
+      }
+      const bg = /^#[0-9a-f]{6}$/i.test(l.color) ? l.color : "#f4f4f5"
+      const fg = bg === "#f4f4f5" ? "#3f3f46" : readableText(bg)
+      const tw = calloutValue(l.value).length * CALLOUT_LINE_FONT_PX * 0.6 + 8
+      parts.push(
+        `<rect x="${r2(left)}" y="${r2(y - 6.5)}" width="${r2(tw)}" height="13" ` +
+          `rx="3" fill="${bg}"/>` +
+          `<text x="${r2(left + 4)}" y="${base}" font-size="${CALLOUT_LINE_FONT_PX}" ` +
+          `font-weight="500" fill="${fg}">${value}</text>`
+      )
+    })
+    out.push(
+      `<g transform="translate(${r2(cx)},${r2(cy)}) scale(${+s.toFixed(5)})">` +
+        parts.join("") +
+        "</g>"
+    )
+  }
+  out.push("</g>")
+  return out.join("")
+}
+
+/** A row of icons on paper (plan-lod.ts): one bar along its line in its
+ * racks' colour, as RowSymbolTile draws it; `k` units per plan px. */
+function rowBarMarkup(
+  c: IconCluster,
+  face: ClusterFace,
+  thick: number,
+  k: number
+): string {
+  const r = (n: number) => +n.toFixed(2)
+  const row = c.row!
+  const l = row.length * CELL
+  const t = thick * CELL
+  const angle = (Math.atan2(row.dir[1], row.dir[0]) * 180) / Math.PI
+  const alarm = face.check ? CHECK_COLOR[face.check] : undefined
+  return el("rect", {
+    "data-row-symbol": c.id,
+    transform: `translate(${r(c.anchor[0] * CELL)},${r(c.anchor[1] * CELL)}) rotate(${r(angle)})`,
+    x: r(-l / 2),
+    y: r(-t / 2),
+    width: r(l),
+    height: r(t),
+    rx: r(Math.min(t / 2, 3 / k)),
+    fill: face.fill,
+    "fill-opacity": 0.9,
+    stroke: alarm ?? "#ffffff",
+    "stroke-width": r((alarm ? 2 : 1.25) / k),
+  })
+}
+
+/** A room's summary on paper (plan-lod.ts): a plate with the racks' icon
+ * square and "Data Hall 1 · 120 racks", as HallSymbolTile draws it. */
+function hallMarkup(
+  id: string,
+  box: CellBox,
+  face: ClusterFace,
+  k: number
+): string {
+  const r = (n: number) => +n.toFixed(2)
+  const x = box.x * CELL
+  const y = box.y * CELL
+  const w = box.w * CELL
+  const h = box.h * CELL
+  const pad = 3 / k
+  const sq = h - pad * 2
+  const alarm = face.check ? CHECK_COLOR[face.check] : undefined
+  const Icon = face.icon ? getLucideIcon(face.icon) : null
+  const icon = Icon
+    ? renderToStaticMarkup(
+        createElement(Icon, {
+          x: r(x + pad + sq * 0.2),
+          y: r(y + pad + sq * 0.2),
+          width: r(sq * 0.6),
+          height: r(sq * 0.6),
+          color: "#ffffff",
+          strokeWidth: 2.25,
+        })
+      )
+    : ""
+  return (
+    `<g data-hall-symbol="${esc(id)}">` +
+    el("rect", {
+      x: r(x),
+      y: r(y),
+      width: r(w),
+      height: r(h),
+      rx: r(4 / k),
+      fill: "#ffffff",
+      stroke: alarm ?? "#d4d4d8",
+      "stroke-width": r((alarm ? 2 : 1) / k),
+    }) +
+    el("rect", {
+      x: r(x + pad),
+      y: r(y + pad),
+      width: r(sq),
+      height: r(sq),
+      rx: r(3 / k),
+      fill: face.fill,
+    }) +
+    icon +
+    text(face.name, {
+      x: r(x + pad * 2 + sq + 2 / k),
+      y: r(y + h / 2 + (HALL_FONT_PX / k) * 0.35),
+      "font-size": r(HALL_FONT_PX / k),
+      "font-weight": 600,
+      fill: PAPER_INK,
+    }) +
+    "</g>"
+  )
+}
+
+/** Rows named along them on paper: bold text on a white plate with a
+ * light border, as plan-labels-layer.tsx draws them; `k` units per plan
+ * px. */
+function rowNamesMarkup(
+  rows: readonly {
+    id: string
+    text: string
+    at: Pt
+    angle: number
+    size: { w: number; h: number }
+  }[],
+  k: number
+): string {
+  if (!rows.length) return ""
+  const r = (n: number) => +n.toFixed(2)
+  const s = 1 / k
+  const out = ['<g data-layer="row-names">']
+  for (const row of rows) {
+    const transform = `translate(${r(row.at[0] * CELL)},${r(row.at[1] * CELL)})${row.angle ? ` rotate(${r(row.angle)})` : ""}`
+    out.push(
+      `<g data-row-name="${esc(row.id)}" transform="${transform}">` +
+        el("rect", {
+          x: r((-row.size.w / 2) * s),
+          y: r((-row.size.h / 2) * s),
+          width: r(row.size.w * s),
+          height: r(row.size.h * s),
+          rx: r(3 * s),
+          fill: "#ffffff",
+          stroke: "#d4d4d8",
+          "stroke-width": r(s),
+        }) +
+        text(row.text, {
+          y: r(LABEL_FONT_PX * s * 0.35),
+          "text-anchor": "middle",
+          "font-size": r(LABEL_FONT_PX * s),
+          "font-weight": 600,
+          fill: PAPER_INK,
+        }) +
+        "</g>"
+    )
+  }
+  out.push("</g>")
+  return out.join("")
+}
+
 /** A tile too thin, or too small, to read on paper: its symbol - a
  * rounded box in its colour at the drawn size (`box`, cells) with its icon
  * in white (object-icon.ts), as the canvas draws it (ReadableSymbol). */
@@ -1289,6 +1543,7 @@ export function planSvg({
   iconTiles = false,
   mmPerPx: sheetMmPerPx,
   cameras,
+  callouts = false,
 }: PlanSvgInput): string {
   const w = plan.grid_width * CELL
   const h = plan.grid_height * CELL
@@ -1382,40 +1637,71 @@ export function planSvg({
   }
   // Icons that would overlap on paper: spread, or folded into clusters,
   // as on the canvas (icon-layout.ts) - at the paper's scale.
-  const icons: IconLayout = layoutIcons(
-    tiles
-      .filter((t) => iconIds.has(t.id))
-      .map((t) => ({
-        id: t.id,
-        c: [t.x + t.width / 2, t.y + t.height / 2] as Pt,
-      })),
-    mmPerCell,
-    {
-      side: READABLE_SYMBOL_MM,
-      bounds: scaleBox(pageCells, mmPerCell),
-      spill: false,
-    }
+  // The label pass's units on paper: screen px as the canvas has them,
+  // LABEL_FONT_PX to LABEL_FONT_MM - so callouts, row names and room
+  // summaries keep the canvas's proportions at the paper's scale.
+  const toPx = LABEL_FONT_PX / LABEL_FONT_MM
+  const unitPerCell = mmPerCell * toPx
+  // Rows from afar (plan-lod.ts), with Callouts: a row of icons as one
+  // symbol, a room's rows as one summary - never clusters of a few.
+  const areaShapes = shapes.filter((x): x is AreaShape => x.kind === "area")
+  const rooms = planRooms(areaShapes)
+  const rowLod =
+    callouts && iconIds.size
+      ? planLod(
+          planRows(
+            tiles,
+            rooms,
+            plan.layout_mode === "free" ? (t) => tileBox(t).rotation : undefined
+          ),
+          { tiles, iconIds, rooms, scale: unitPerCell }
+        )
+      : null
+  const looseIcons = tiles
+    .filter((t) => iconIds.has(t.id) && !rowLod?.ownerOf.has(t.id))
+    .map((t) => ({
+      id: t.id,
+      c: [t.x + t.width / 2, t.y + t.height / 2] as Pt,
+    }))
+  const roomOfIcon = new Map(
+    looseIcons.map((it) => [it.id, roomAt(rooms, it.c)?.id ?? null])
   )
+  const looseLayout: IconLayout = layoutIcons(looseIcons, mmPerCell, {
+    side: READABLE_SYMBOL_MM,
+    bounds: scaleBox(pageCells, mmPerCell),
+    spill: false,
+    groupOf: callouts ? (id) => roomOfIcon.get(id) : undefined,
+  })
+  const icons = rowLod ? withSymbols(looseLayout, rowLod) : looseLayout
   const tileById = new Map(tiles.map((t) => [t.id, t]))
-  const clusterBoxOf = (c: IconLayout["clusters"][number]) =>
+  const clusterBoxOf = (c: IconCluster) =>
+    symbolBox(c, unitPerCell) ??
     squareAt(
       drawnCentre(icons, c.id, c.anchor, mmPerCell),
       READABLE_SYMBOL_MM * CLUSTER_SIDE,
       mmPerCell
     )
   const faces = new Map<string, ClusterFace>(
-    icons.clusters.map((c) => [
-      c.id,
-      clusterFace(
+    icons.clusters.map((c) => {
+      const face = clusterFace(
         c.members.map((id) => tileById.get(id)!),
         (t) => liveState?.tiles[t.id]?.check
-      ),
-    ])
+      )
+      return [c.id, c.text ? { ...face, name: c.text } : face]
+    })
   )
   /** How a tile prints when not as itself, or null. */
   const shapeOf = (t: FloorPlanTile): ReadableShape | null => {
     if (!iconIds.has(t.id)) return readable ? readableOf(t) : null
     const c = icons.clusterOf.get(t.id)
+    // A row's bar: each rack where it is, under it.
+    if (c?.row?.bar)
+      return {
+        box: { x: t.x, y: t.y, w: t.width, h: t.height },
+        grow: 1,
+        changed: true,
+        symbol: true,
+      }
     if (!c && !icons.offsets.has(t.id))
       return iconTileShape(t, mmPerCell, READABLE_SYMBOL_MM)
     const box = c
@@ -1455,30 +1741,51 @@ export function planSvg({
   // names along their runs, the trays', the tiles', the areas'.
   const areaGrow = readable ? fontGrow(12, paperMmPerPx, READABLE_FONT_MM) : 1
   const paper = cables ? paperCables(cables) : null
+  const iconClusters: IconClusterLabel[] = icons.clusters.map((c) => ({
+    id: c.id,
+    box: clusterBoxOf(c),
+    name:
+      c.form === "row" && !c.row?.bar
+        ? (c.short ?? "")
+        : (faces.get(c.id)?.name ?? ""),
+    members: c.members,
+    row:
+      c.row?.bar && c.text
+        ? {
+            centre: c.anchor,
+            dir: c.row.dir,
+            length: c.row.length,
+            thick: barThickness(c.row.depth, unitPerCell),
+            text: c.text,
+            short: c.short ?? c.text,
+          }
+        : undefined,
+    hall: c.form === "hall" ? c.room : undefined,
+  }))
   const labels = layoutPlanLabels({
-    scale: mmPerCell,
-    unitsPerPx: paperMmPerPx,
-    font: LABEL_FONT_MM,
-    chipFont: CHIP_FONT_MM,
-    repeat: LABEL_REPEAT_MM,
-    gap: 0.6,
-    bounds: scaleBox(pageCells, mmPerCell),
+    scale: unitPerCell,
+    unitsPerPx: paperMmPerPx * toPx,
+    font: LABEL_FONT_MM * toPx,
+    chipFont: CHIP_FONT_MM * toPx,
+    repeat: LABEL_REPEAT_MM * toPx,
+    gap: 0.6 * toPx,
+    bounds: scaleBox(pageCells, unitPerCell),
     boundsOnly: true,
     tiles,
     shapeOf: anyShape ? shapeOf : null,
     iconIds,
-    iconClusters: icons.clusters.map((c) => ({
-      id: c.id,
-      box: clusterBoxOf(c),
-      name: faces.get(c.id)?.name ?? "",
-      members: c.members,
-    })),
+    iconClusters,
+    roomOf: (p) => roomAt(rooms, p),
+    callouts: callouts ? {} : null,
+    angleOf:
+      plan.layout_mode === "free" ? (t) => tileBox(t).rotation : undefined,
     zoneGrow: readable ? fontGrow(10, paperMmPerPx, READABLE_FONT_MM) : 1,
     trays: showTrays ? trays : [],
-    trayWidth: readable
-      ? Math.max(10 * paperMmPerPx, READABLE_TRAY_MM)
-      : 10 * paperMmPerPx,
-    areas: shapes.filter((x): x is AreaShape => x.kind === "area"),
+    trayWidth:
+      (readable
+        ? Math.max(10 * paperMmPerPx, READABLE_TRAY_MM)
+        : 10 * paperMmPerPx) * toPx,
+    areas: areaShapes,
     areaFontPx: 12 * areaGrow,
     planLabels: shapes.filter((x): x is LabelShape => x.kind === "label"),
     cellMm: plan.cell_mm,
@@ -1584,10 +1891,21 @@ export function planSvg({
       .join(" ")
     body.push(turns ? `<g transform="${turns}">${markup}</g>` : markup)
   }
-  for (const c of icons.clusters)
-    body.push(
-      clusterMarkup(c.id, clusterBoxOf(c), faces.get(c.id)!, paperMmPerPx)
-    )
+  for (const c of icons.clusters) {
+    const face = faces.get(c.id)!
+    if (c.form === "row" && c.row?.bar)
+      body.push(
+        rowBarMarkup(
+          c,
+          face,
+          barThickness(c.row.depth, unitPerCell),
+          toPx * paperMmPerPx
+        )
+      )
+    else if (c.form === "hall")
+      body.push(hallMarkup(c.id, clusterBoxOf(c), face, toPx * paperMmPerPx))
+    else body.push(clusterMarkup(c.id, clusterBoxOf(c), face, paperMmPerPx))
+  }
   // The cameras' views: over the tiles, under the walls, as on the canvas.
   for (const v of views)
     body.push(
@@ -1609,6 +1927,9 @@ export function planSvg({
       body.push(trayMarkup(tray, readable ? paperMmPerPx : null, true))
   if (cables) body.push(cablesMarkup(cables))
   body.push(labelsMarkup(labels, paperMmPerPx, showTrays ? trays : []))
+  // Row names and callouts, at the canvas's sizes for the paper's scale.
+  body.push(rowNamesMarkup(labels.rows, toPx * paperMmPerPx))
+  body.push(calloutsMarkup(labels.callouts, toPx * paperMmPerPx))
   // Labels over everything, as on the canvas.
   for (const s of shapes.filter((x) => x.kind === "label").sort(byZ))
     body.push(labelMarkup(s, plan.cell_mm, readable ? paperMmPerPx : null))

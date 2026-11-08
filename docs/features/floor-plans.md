@@ -1565,7 +1565,7 @@ one back, so a zoom that rests near one does not flicker:
   until they read. The selected or hovered rack draws over its row on its
   own.
 - Worked out when a zoom settles, for its zoom level, never for where you
-  are panned to. The PDF draws racks as before.
+  are panned to. The PDF does the same at the paper's scale.
 
 ##### The callouts
 
@@ -1613,9 +1613,14 @@ one back, so a zoom that rests near one does not flicker:
 - Lower-ranked texts - tray, room and area names, raised-floor captions -
   keep off the boxes, their leaders and the row names.
 
-Callouts and row names are on the canvas under **Auto**; the
+Callouts and row names are on the canvas under **Auto**, and in the
+**Export PDF** too: the same row names, callouts, row symbols and room
+summaries, laid out at the paper's scale at the sizes they have on screen
+(names 2 mm), so a turned row prints **Row D · D01–D12** along it instead
+of a name cut short in every rack. A sheet of the current view prints the
+callouts as they are on screen instead. The
 [3D view](#one-label-pass) has its own callouts and summary plates (no row
-names yet); the PDF keeps plain names. **Off** draws names as before:
+names yet). **Off** draws names as before:
 inside the tile, or beside it where it fits. The choice is saved on the
 plan with the other Display choices; a viewer can switch it for the
 session.
