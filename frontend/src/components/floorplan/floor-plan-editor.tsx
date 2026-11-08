@@ -90,6 +90,8 @@ import {
 import { PlanInspector } from "./plan-inspector"
 import { PlanRail } from "./plan-rail"
 import { PlanScene3D } from "./plan-scene-3d"
+import { CoverageLegend, useCameraViews } from "./camera-layer"
+import { coverage, coverageRegions } from "./camera-view"
 import { planPaperScale, planSvg } from "./plan-svg"
 import type { PlanBox } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
@@ -138,7 +140,7 @@ import { usePlanViewPrefs } from "./use-plan-view-prefs"
 import { useShapeEdits } from "./use-shape-edits"
 import { useOutlineDetect } from "./outline-tool"
 import { useStructureEdits } from "./use-structure-edits"
-import { structureLists, syncOffer } from "./structure"
+import { areaOutline, structureLists, syncOffer } from "./structure"
 import { StructureToolbar } from "./structure-toolbar"
 import { isTemp, tempId, useTileEdits } from "./use-tile-edits"
 import { shownLink } from "./shown-link"
@@ -498,6 +500,31 @@ export function FloorPlanEditor({
   )
   // The area types the shown plain areas wear: the plan's Areas legend.
   const areaTypes = useMemo(() => areaTypesInUse(shownShapes), [shownShapes])
+  // The cameras' views against the walls (camera-view.ts): the 3D room's
+  // fans, the PDF's, and the coverage figures - the floor's in the legend
+  // under Display > Camera coverage, an area's in its panel.
+  const camViews = useCameraViews(shownTiles, walls, {
+    cellMm: plan?.cell_mm ?? 0,
+    racksBlock: prefs.fovRacksBlock,
+    enabled: !!plan,
+  })
+  const floorCoverage = useMemo(() => {
+    if (!plan || !prefs.showCoverage || !camViews.length) return null
+    const r = coverageRegions(shownShapes, plan)
+    return coverage(
+      camViews.map((v) => v.polygon),
+      r.outlines
+    ).total
+  }, [plan, prefs.showCoverage, camViews, shownShapes])
+  const coverageAreaId = editing ? ed.selectedShapeId : openArea
+  const areaCoverage = useMemo(() => {
+    const a = shownShapes.find((s) => s.id === coverageAreaId)
+    if (!a || a.kind !== "area" || !camViews.length) return null
+    return coverage(
+      camViews.map((v) => v.polygon),
+      [areaOutline(a)]
+    ).regions[0]
+  }, [coverageAreaId, shownShapes, camViews])
 
   /** Pick a tool: its canvas mode, nothing selected or half drawn. */
   const selectTool = useCallback(
@@ -945,6 +972,9 @@ export function FloorPlanEditor({
           // Readable on paper as on screen, at the sheet's scale.
           objectSize: prefs.objectSize,
           iconTiles: prefs.iconTiles,
+          cameras: prefs.showFov
+            ? { racksBlock: prefs.fovRacksBlock }
+            : undefined,
           mmPerPx: planPaperScale(plan, paper),
           cables: withCables
             ? {
@@ -992,6 +1022,8 @@ export function FloorPlanEditor({
         showTrays: prefs.showTrays,
         objectSize: prefs.objectSize,
         iconTiles: prefs.iconTiles,
+        showFov: prefs.showFov,
+        fovRacksBlock: prefs.fovRacksBlock,
       })
     let box = gridBox(plan)
     let overlay = ""
@@ -1184,7 +1216,10 @@ export function FloorPlanEditor({
   const farIds = stubPlaceIds(stubs)
   // The 2D plan's keys - Color by, cables, area types - as one card that
   // folds to a chip (plan-legend.tsx), never three boxes stacked.
-  const planLegend = (rackLegend || cableKey || areaTypes.length > 0) && (
+  const planLegend = (rackLegend ||
+    cableKey ||
+    areaTypes.length > 0 ||
+    floorCoverage != null) && (
     <div className="pointer-events-none absolute bottom-3 left-3 z-10">
       <PlanLegend>
         {rackLegend && (
@@ -1211,6 +1246,7 @@ export function FloorPlanEditor({
           />
         )}
         {areaTypes.length > 0 && <AreaLegend bare types={areaTypes} />}
+        {floorCoverage != null && <CoverageLegend share={floorCoverage} />}
       </PlanLegend>
     </div>
   )
@@ -1377,6 +1413,7 @@ export function FloorPlanEditor({
           {view3d && (
             <PlanScene3D
               plan={plan}
+              cameraViews={prefs.showFov ? camViews : undefined}
               liveState={liveState.data ?? null}
               hiddenTileIds={hiddenTileIds}
               traceCableId={
@@ -1759,7 +1796,11 @@ export function FloorPlanEditor({
             (() => {
               const a = ed.shapes.find((s) => s.id === openArea)
               return a?.kind === "area" ? (
-                <AreaPanel area={a} onClose={() => setOpenArea(null)} />
+                <AreaPanel
+                  area={a}
+                  coverage={areaCoverage}
+                  onClose={() => setOpenArea(null)}
+                />
               ) : null
             })()}
           {/* The detail panel - out of the way of the edit panels that
@@ -1856,6 +1897,7 @@ export function FloorPlanEditor({
             tileTypes={tileTypes.data?.results ?? []}
             roles={roles.data?.results ?? []}
             openTile={openTile}
+            coverage={areaCoverage}
             onShowTrayCables={(tid, at) =>
               canvasApi.current?.showTrayCables?.(tid, at)
             }

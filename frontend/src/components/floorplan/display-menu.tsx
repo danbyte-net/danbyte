@@ -46,6 +46,8 @@ export function DisplayMenu({
     colorBy,
     labelFit,
     showFov,
+    showCoverage,
+    fovRacksBlock,
     showZoneLabels,
     showTrays,
     showCableLinks,
@@ -162,6 +164,26 @@ export function DisplayMenu({
             onChange={(v) => setViewPref("show_fov", v)}
             className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
           />
+          <FormCheckbox
+            label="Camera coverage"
+            checked={showCoverage}
+            onChange={(v) => setViewPref("show_fov_coverage", v)}
+            className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+          />
+          {(showFov || showCoverage) && (
+            <div className="flex items-center gap-1 pl-4">
+              <FormCheckbox
+                label="Racks block view"
+                checked={fovRacksBlock}
+                onChange={(v) => setViewPref("fov_racks_block", v)}
+                className="items-center rounded px-2 py-1 text-[13px] hover:bg-muted/60"
+              />
+              <InfoTip>
+                Walls always stop a camera's view; doorways let it through. With
+                this on, racks and cabinets stop it too.
+              </InfoTip>
+            </div>
+          )}
           <FormCheckbox
             label="Zone labels"
             checked={showZoneLabels}

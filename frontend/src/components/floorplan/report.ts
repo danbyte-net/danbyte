@@ -283,6 +283,9 @@ export interface LevelLook {
   showTrays: boolean
   objectSize: ObjectSize
   iconTiles: boolean
+  /** Display > Camera FOV cones, and whether racks block them. */
+  showFov?: boolean
+  fovRacksBlock?: boolean
 }
 
 /** A level of the building drawn for its sheet, from the server's rows -
@@ -328,6 +331,9 @@ export async function drawLevel(
     showTrays: look.showTrays,
     objectSize: look.objectSize,
     iconTiles: look.iconTiles,
+    cameras: look.showFov
+      ? { racksBlock: look.fovRacksBlock ?? false }
+      : undefined,
     mmPerPx,
     cables: look.showCableLinks
       ? {

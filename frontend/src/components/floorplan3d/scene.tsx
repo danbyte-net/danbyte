@@ -79,6 +79,8 @@ import type { AreaShape, LabelShape } from "@/components/floorplan/shapes"
 import { useTheme } from "@/components/theme-provider"
 
 import { AreaFloorMesh } from "./area-floor-mesh"
+import { CameraFanMeshes } from "./camera-fan-mesh"
+import type { CameraView } from "@/components/floorplan/camera-view"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { NoWebGL, Stage, roomLights } from "./stage"
 import { ReadableNames3D, sceneTileName } from "./readable-names"
@@ -133,6 +135,8 @@ export interface Building3D {
  * may be imported; the route loads it via `React.lazy` so the 3D stack stays
  * in its own chunk. Default export for `lazy()`.
  */
+const NO_VIEWS: readonly CameraView[] = []
+
 export default function FloorScene3D({
   planId,
   liveState,
@@ -169,7 +173,11 @@ export default function FloorScene3D({
   readableCallouts = true,
   muteBackground = true,
   building = null,
+  cameraViews = NO_VIEWS,
 }: {
+  /** The cameras' views, cut short by the walls (camera-view.ts): flat
+   * fans on the floor. Empty with Display > Camera FOV cones off. */
+  cameraViews?: readonly CameraView[]
   /** An aligned floor plan: its other levels drawn around this one, as
    * the level mode says (building.tsx). */
   building?: Building3D | null
@@ -1011,6 +1019,7 @@ export default function FloorScene3D({
             showAreaNames,
             showZoneLabels,
             activeTexts.length,
+            cameraViewsStamp(cameraViews),
           ].join(),
         })}
         invalidateRef={invalidateRef}
@@ -1058,6 +1067,9 @@ export default function FloorScene3D({
               />
             )}
           </>
+        )}
+        {cameraViews.length > 0 && (
+          <CameraFanMeshes plan={plan} views={cameraViews} />
         )}
         {areas.map((a) => (
           <AreaFloorMesh
@@ -1903,4 +1915,15 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
       )}
     </div>
   )
+}
+
+/** What the cameras' fans look like, for the frame stamp: a moved camera
+ * or wall changes it. */
+function cameraViewsStamp(views: readonly CameraView[]): string {
+  return views
+    .map((v) => {
+      const p = v.polygon[Math.floor(v.polygon.length / 2)] ?? [0, 0]
+      return `${v.id}:${v.polygon.length}:${v.color}:${p[0].toFixed(3)},${p[1].toFixed(3)}`
+    })
+    .join(";")
 }

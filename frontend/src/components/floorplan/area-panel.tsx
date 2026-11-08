@@ -9,6 +9,7 @@ import { OpenLink } from "@/components/open-link"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 
+import { formatCoverage } from "./camera-view"
 import { areaColor, areaName } from "./shapes"
 import type { AreaShape } from "./shapes"
 
@@ -17,9 +18,12 @@ import type { AreaShape } from "./shapes"
 export function AreaPanel({
   area,
   onClose,
+  coverage = null,
 }: {
   area: AreaShape
   onClose: () => void
+  /** Share of it the plan's cameras see (0-1); null with no cameras. */
+  coverage?: number | null
 }) {
   const roomId = area.room?.id
   const room = useQuery({
@@ -94,6 +98,11 @@ export function AreaPanel({
       )}
       {!roomId && !area.location && (
         <p className="text-muted-foreground">Not linked to a room.</p>
+      )}
+      {coverage != null && (
+        <PanelRow label="Camera coverage">
+          <span className="num">{formatCoverage(coverage)}</span>
+        </PanelRow>
       )}
     </PanelShell>
   )

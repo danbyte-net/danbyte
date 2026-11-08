@@ -55,6 +55,8 @@ export type ViewPrefKey =
   | "icon_tiles"
   | "callouts"
   | "mute_background"
+  | "show_fov_coverage"
+  | "fov_racks_block"
 
 /** The plan's view preferences: seeded from plan.state, a session override
  * on top, persisted back to the plan for editors. The 3D effects budget and
@@ -73,6 +75,8 @@ export function usePlanViewPrefs({
   // View prefs - seeded from plan.state, persisted back for editors.
   const [labelFitLocal, setLabelFitLocal] = useState<boolean | null>(null)
   const [showFovLocal, setShowFovLocal] = useState<boolean | null>(null)
+  const [coverageLocal, setCoverageLocal] = useState<boolean | null>(null)
+  const [racksBlockLocal, setRacksBlockLocal] = useState<boolean | null>(null)
   const [showZoneLabelsLocal, setShowZoneLabelsLocal] = useState<
     boolean | null
   >(null)
@@ -167,6 +171,8 @@ export function usePlanViewPrefs({
   useEffect(() => {
     setLabelFitLocal(null)
     setShowFovLocal(null)
+    setCoverageLocal(null)
+    setRacksBlockLocal(null)
     setShowTraysLocal(null)
     setShowLinksLocal(null)
     setShowPhotosLocal(null)
@@ -187,6 +193,15 @@ export function usePlanViewPrefs({
   const labelFit = labelFitLocal ?? Boolean(plan?.state.label_fit)
   const showFov =
     showFovLocal ?? (plan?.state.show_fov as boolean | undefined) ?? true
+  // Blind spots over the floor, and racks standing in the cameras' way.
+  const showCoverage =
+    coverageLocal ??
+    (plan?.state.show_fov_coverage as boolean | undefined) ??
+    false
+  const fovRacksBlock =
+    racksBlockLocal ??
+    (plan?.state.fov_racks_block as boolean | undefined) ??
+    false
   const showZoneLabels =
     showZoneLabelsLocal ??
     (plan?.state.show_zone_labels as boolean | undefined) ??
@@ -334,6 +349,8 @@ export function usePlanViewPrefs({
     else if (key === "color_by") setColorByLocal(value as ColorBy)
     else if (key === "show_racks") setShowRacksLocal(value as boolean)
     else if (key === "show_fov") setShowFovLocal(value as boolean)
+    else if (key === "show_fov_coverage") setCoverageLocal(value as boolean)
+    else if (key === "fov_racks_block") setRacksBlockLocal(value as boolean)
     else if (key === "show_zone_labels")
       setShowZoneLabelsLocal(value as boolean)
     else if (key === "show_trays") setShowTraysLocal(value as boolean)
@@ -362,6 +379,8 @@ export function usePlanViewPrefs({
   return {
     labelFit,
     showFov,
+    showCoverage,
+    fovRacksBlock,
     showZoneLabels,
     showTrays,
     showCableLinks,

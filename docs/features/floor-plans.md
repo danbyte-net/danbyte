@@ -46,6 +46,7 @@ Two ticks on a tile type change how its tiles behave:
   Per tile: a dice-style **anchor picker** sets where the cone emits from
   (center or any corner), and a **PTZ** toggle swaps the cone for a full
   **360° coverage ring** (radius = reach) for pan-tilt-zoom cameras.
+  Cones stop at walls - see [Camera views and coverage](#camera-views-and-coverage).
 
 Plain areas drawn on a plan - parking, fences, roads - have a catalog of
 their own, **Organization → Area types**: see [Area types](#area-types).
@@ -1316,7 +1317,9 @@ the plan reads over them - a satellite map keeps its colours
 (on unless the plan turns it off; see [Background image](#site-wide-floor-plans));
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;
-**Camera FOV cones** shows/hides the camera wedges; **Photos** draws
+**Camera FOV cones** shows/hides the camera views and **Camera coverage**
+tints the floor no camera sees (see
+[Camera views and coverage](#camera-views-and-coverage)); **Photos** draws
 every device and rack tile that has a photo as its photo, and **Photo
 outlines** gives photo tiles their coloured outline (see [Photos](#photos)).
 
@@ -1561,6 +1564,35 @@ in the inspector - any tile type, or a device role standing in as one. The
 tile keeps its position, size, label, color and object link; only the look
 (and the popover rows configured for that type) follow the new type. Zones
 stay zones.
+
+### Camera views and coverage
+
+A camera's cone (or PTZ ring) is cut short where a wall stands in the way,
+so the plan shows what it really sees - in 2D, as a flat fan on the 3D
+floor, and in the PDF export.
+
+- **Walls** block at any height, as their true outline (their thickness,
+  not just the centreline). Exterior walls block too.
+- **Doors and openings** are gaps in the wall and are seen through. The
+  plan has no closed-door state, so a door always counts as open. There
+  are no windows on the plan.
+- **Racks and cabinets** block only with **Display > Racks block view**
+  on (off by default, saved on the plan). The plan doesn't record how high
+  a camera hangs, so it can't tell whether one sees over a rack.
+- A camera whose anchor sits inside a wall (mounted on it) sees the room
+  it faces, not through the wall.
+
+The views follow along live while a camera or a wall is dragged.
+
+**Display > Camera coverage** tints every blind spot - floor no camera
+sees - red, and adds a **Camera coverage** section to the plan's legend
+with the share of the floor seen. The floor is the plan's areas (rooms and
+plain areas together, overlaps counted once), or the whole grid on a plan
+with no areas. Select an area (or click it while viewing) and its panel
+shows its own **Camera coverage** share. Coverage is measured by sampling
+the floor on a fine grid, so it's accurate to well under a percent. It
+uses the same views the plan draws, so **Racks block view** counts here
+too.
 
 ## Rooms, areas and labels
 
