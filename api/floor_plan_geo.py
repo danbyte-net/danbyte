@@ -357,66 +357,95 @@ def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
-def content_bounds(plan) -> tuple[float, float, float, float] | None:
-    """``(min_x, min_y, max_x, max_y)`` in cells of everything drawn on
-    ``plan`` - what a smaller frame may not cut: tiles, raised floors,
-    areas (a turned one by its corners), labels, walls, trays, a CAD
-    drawing's origin and the rectangles of its live views. None when the
-    plan is empty."""
+def _object_boxes(plan):
+    """``(kind, min_x, min_y, max_x, max_y)`` in cells for each thing drawn
+    on ``plan``: tiles (named by what they link to), raised floors, areas
+    (a turned one by its corners), labels, walls, trays, a CAD drawing's
+    origin and the rectangles of its live views."""
     from .models import FloorPlanDrawing
-
-    xs: list[float] = []
-    ys: list[float] = []
 
     def box(x, y, w=0, h=0, rot=0):
         if not (_num(x) and _num(y)):
-            return
+            return None
         w = w if _num(w) else 0
         h = h if _num(h) else 0
         if rot and _num(rot) and (w or h):
             cx, cy = x + w / 2, y + h / 2
             c, s = math.cos(math.radians(rot)), math.sin(math.radians(rot))
+            xs, ys = [], []
             for px, py in ((-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)):
                 xs.append(cx + px * c - py * s)
                 ys.append(cy + px * s + py * c)
-            return
-        xs.extend((x, x + w))
-        ys.extend((y, y + h))
+            return min(xs), min(ys), max(xs), max(ys)
+        return x, y, x + w, y + h
 
     def pts(points):
-        for p in points or []:
-            if isinstance(p, (list, tuple)) and len(p) >= 2 and _num(p[0]) and _num(p[1]):
-                xs.append(p[0])
-                ys.append(p[1])
+        good = [p for p in points or [] if isinstance(p, (list, tuple)) and len(p) >= 2
+                and _num(p[0]) and _num(p[1])]
+        if not good:
+            return None
+        xs = [p[0] for p in good]
+        ys = [p[1] for p in good]
+        return min(xs), min(ys), max(xs), max(ys)
 
-    for x, y, w, h in plan.tiles.values_list("x", "y", "width", "height"):
-        box(x, y, w, h)
+    out = []
+
+    def emit(kind, b):
+        if b is not None:
+            out.append((kind, *b))
+
+    for x, y, w, h, link in plan.tiles.values_list("x", "y", "width", "height", "link_kind"):
+        emit(link if link in ("rack", "cabinet", "device") else "tile", box(x, y, w, h))
     for x, y, w, h in plan.raised_floor_areas.values_list("x", "y", "width", "height"):
-        box(x, y, w, h)
+        emit("raised floor", box(x, y, w, h))
     for x, y, w, h, rot, points in plan.areas.values_list(
         "x", "y", "width", "height", "rotation", "points"
     ):
-        if points:
-            pts(points)
-        else:
-            box(x, y, w, h, rot)
+        emit("area", pts(points) if points else box(x, y, w, h, rot))
     for x, y in plan.labels.values_list("x", "y"):
-        box(x, y)
+        emit("label", box(x, y))
     for (points,) in plan.walls.values_list("points"):
-        pts(points)
+        emit("wall", pts(points))
     for (points,) in plan.trays.values_list("points"):
-        pts(points)
+        emit("tray", pts(points))
     d = FloorPlanDrawing.objects.filter(floor_plan=plan).only("placement").first()
     if d is not None and isinstance(d.placement, dict) and plan.cell_mm:
         x, y = d.placement.get("x_mm"), d.placement.get("y_mm")
         if _num(x) and _num(y):
-            box(x / plan.cell_mm, y / plan.cell_mm)
+            emit("drawing", box(x / plan.cell_mm, y / plan.cell_mm))
     for (c,) in FloorPlan.objects.filter(source=plan, kind="view").values_list("crop"):
         if isinstance(c, dict):
-            box(c.get("x"), c.get("y"), c.get("w"), c.get("h"))
-    if not xs:
+            emit("view", box(c.get("x"), c.get("y"), c.get("w"), c.get("h")))
+    return out
+
+
+def content_bounds(plan) -> tuple[float, float, float, float] | None:
+    """``(min_x, min_y, max_x, max_y)`` in cells of everything drawn on
+    ``plan`` (:func:`_object_boxes`) - what a smaller frame may not cut.
+    None when the plan is empty."""
+    boxes = _object_boxes(plan)
+    if not boxes:
         return None
-    return min(xs), min(ys), max(xs), max(ys)
+    return (min(b[1] for b in boxes), min(b[2] for b in boxes),
+            max(b[3] for b in boxes), max(b[4] for b in boxes))
+
+
+def cut_by(plan, gw: int, gh: int, ox: int, oy: int) -> dict[str, int]:
+    """What a ``gw`` × ``gh`` grid would cut off ``plan`` once everything
+    on it moves by (``ox``, ``oy``): a count of each kind."""
+    out: dict[str, int] = {}
+    for kind, x0, y0, x1, y1 in _object_boxes(plan):
+        if x0 + ox < -_EPS or y0 + oy < -_EPS or x1 + ox > gw + _EPS or y1 + oy > gh + _EPS:
+            out[kind] = out.get(kind, 0) + 1
+    return out
+
+
+def _counted(cut: dict[str, int]) -> str:
+    """``{"rack": 2, "wall": 1}`` as "2 racks, 1 wall"."""
+    return ", ".join(
+        f"{n} {k if n == 1 else k + 's'}"
+        for k, n in sorted(cut.items(), key=lambda kv: (-kv[1], kv[0]))
+    )
 
 
 def frame_extent(levels) -> dict | None:
@@ -624,7 +653,8 @@ _EPS = 1e-6
 
 def _check_holds(levels, gw: int, gh: int, ox: int, oy: int) -> None:
     """ValidationError unless everything on each level, moved by
-    (``ox``, ``oy``), lies inside a ``gw`` × ``gh`` grid."""
+    (``ox``, ``oy``), lies inside a ``gw`` × ``gh`` grid - naming what
+    would be cut, and on which level."""
     ext = frame_extent(levels)
     if ext is None:
         return
@@ -632,16 +662,39 @@ def _check_holds(levels, gw: int, gh: int, ox: int, oy: int) -> None:
         raise ValidationError({"grid": [
             f"At least {ext['w']} × {ext['h']} cells: what is drawn on the plan."
         ]})
+    cuts = []
     for f in levels:
-        b = content_bounds(f)
-        if b is None:
-            continue
-        if b[0] + ox < -_EPS or b[1] + oy < -_EPS or b[2] + ox > gw + _EPS \
-                or b[3] + oy > gh + _EPS:
-            raise ValidationError({"offset": [
-                "The frame must hold everything drawn on the plan"
-                + (f" ({f.name})." if len(levels) > 1 else ".")
-            ]})
+        cut = cut_by(f, gw, gh, ox, oy)
+        if cut:
+            cuts.append(_counted(cut) + (f" on {f.name}" if len(levels) > 1 else ""))
+    if cuts:
+        raise ValidationError({"offset": [
+            "The frame would cut " + "; ".join(cuts) + "."
+        ]})
+
+
+def keep_anchor_bbox(plan, gw: int, gh: int, ox: int, oy: int, bbox) -> list[float]:
+    """Edit area: the frame of ``gw`` × ``gh`` of ``plan``'s own cells with
+    the old grid ``ox``, ``oy`` cells in from its north-west corner - so
+    everything already placed keeps its place on the map. ``bbox`` (the
+    browser's frame) must be that box, give or take a quarter cell; the
+    exact box is answered."""
+    s, w, n, e = (float(v) for v in plan.geo_bbox)
+    x0, x1, y0, y1 = merc_x(w), merc_x(e), merc_y(n), merc_y(s)
+    cx = (x1 - x0) / max(1, plan.grid_width)
+    cy = (y1 - y0) / max(1, plan.grid_height)
+    nx, ny = x0 - ox * cx, y0 - oy * cy
+    exact = [lat_of(ny + gh * cy), lng_of(nx), lat_of(ny), lng_of(nx + gw * cx)]
+    bs, bw, bn, be = bbox
+    off = (
+        abs(merc_x(bw) - nx) / cx, abs(merc_y(bn) - ny) / cy,
+        abs(merc_x(be) - (nx + gw * cx)) / cx, abs(merc_y(bs) - (ny + gh * cy)) / cy,
+    )
+    if any(v > 0.25 for v in off):
+        raise ValidationError({"bbox": [
+            "The frame must keep the plan where it is on the map."
+        ]})
+    return exact
 
 
 def grow_and_map(view, request, plan):
@@ -658,6 +711,11 @@ def grow_and_map(view, request, plan):
     the levels that go with it (:func:`grow_levels`) - takes ``grid``,
     everything on each moves by ``offset`` (as Expand moves it), each takes
     ``bbox`` as its anchor and the render becomes their one map.
+
+    ``keep_anchor`` (Edit area) pins the frame to the plan's box: ``bbox``
+    must be the plan's own cells grown or trimmed by whole cells around
+    where they are (:func:`keep_anchor_bbox`), so nothing placed moves on
+    the map.
     """
     from audit.context import cause
 
@@ -682,6 +740,10 @@ def grow_and_map(view, request, plan):
         raise ValidationError({"grid": [f"At most {MAX_GRID} cells a side."]})
     if abs(ox) > MAX_GRID * 2 or abs(oy) > MAX_GRID * 2:
         raise ValidationError({"offset": ["The plan must lie inside the frame."]})
+    keep = str(body.get("keep_anchor") or "").lower() in ("1", "true", "yes")
+    if keep:
+        _anchored(plan)
+        bbox = keep_anchor_bbox(plan, gw, gh, ox, oy, bbox)
     check_frame(plan, bbox, (gw, gh))
     ext = check_image(upload)
     basemap = _parse_basemap(body.get("basemap"))

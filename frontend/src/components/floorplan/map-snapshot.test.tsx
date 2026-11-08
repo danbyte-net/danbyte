@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type * as Api from "@/lib/api"
 import type { FloorPlan, SiteMapPayload } from "@/lib/api"
 import type * as PlanFromMap from "@/components/site-map/plan-from-map"
-import { latOf, lngOf } from "@/components/site-map/plan-from-map"
+import { latOf, lngOf, mercX, mercY } from "@/components/site-map/plan-from-map"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 
 import { frameReadout, SnapshotForm } from "./map-snapshot"
@@ -96,6 +96,12 @@ function FakeMap(p: FrameMapProps) {
         onClick={() => p.onFrame(resizeFrame(f, "w", to(9, 0)), "resize")}
       >
         drag w in
+      </button>
+      <button
+        type="button"
+        onClick={() => p.onFrame(resizeFrame(f, "nw", to(-5, -3)), "resize")}
+      >
+        drag nw out
       </button>
       <button
         type="button"
@@ -232,6 +238,83 @@ describe("From site map", () => {
       const fd = apiMock.mock.calls[0][1]!.body as FormData
       expect(fd.get("grid")).toBe("[10,20]")
       expect(fd.get("offset")).toBe("[-2,0]")
+    })
+
+    describe("Edit area", () => {
+      const edit = () =>
+        wrap(
+          <SnapshotForm
+            plan={anchored}
+            mode="area"
+            onClose={vi.fn()}
+            renderMap={FakeMap}
+          />
+        )
+      const capture = () =>
+        screen.getByRole<HTMLButtonElement>("button", { name: "Capture" })
+
+      it("opens on the plan's box with what is drawn as the dashed box", () => {
+        edit()
+        expect(screen.getByText("Edit area")).toBeTruthy()
+        expect(props!.locked).toBe(true)
+        const f = props!.frame
+        expect(f.x).toBeCloseTo(mercX(geo.bbox[1]), 12)
+        expect(f.y).toBeCloseTo(mercY(geo.bbox[2]), 12)
+        expect([f.w, f.h, f.ix, f.iy, f.iw, f.ih]).toEqual([
+          30, 20, 2, 3, 10, 8,
+        ])
+        expect(size()).toContain("30 × 20 cells · 18 × 12 m")
+        // Nothing to save until an edge moves.
+        expect(capture().disabled).toBe(true)
+      })
+
+      it("never moves the frame or the dashed box", () => {
+        edit()
+        const before = { ...props!.frame }
+        fireEvent.click(screen.getByText("move frame"))
+        fireEvent.click(screen.getByText("drag grid"))
+        expect(props!.frame).toEqual(before)
+      })
+
+      it("grows on a corner, keeping the plan where it is", async () => {
+        edit()
+        fireEvent.click(screen.getByText("drag nw out"))
+        expect(size()).toContain("35 × 23 cells · 21 × 13.8 m")
+        expect(screen.getByTestId("frame-sides").textContent).toBe(
+          "N +3 · W +5"
+        )
+        expect(size()).toContain("Grows all 3 levels")
+        fireEvent.click(capture())
+        await waitFor(() => expect(apiMock).toHaveBeenCalled())
+        const fd = apiMock.mock.calls[0][1]!.body as FormData
+        expect(fd.get("keep_anchor")).toBe("1")
+        expect(fd.get("grid")).toBe("[35,23]")
+        expect(fd.get("offset")).toBe("[5,3]")
+        const [s, , , e] = JSON.parse(String(fd.get("bbox"))) as number[]
+        // The far corner stays put.
+        expect(s).toBeCloseTo(geo.bbox[0], 9)
+        expect(e).toBeCloseTo(geo.bbox[3], 9)
+      })
+
+      it("shrinks only to what is drawn", async () => {
+        edit()
+        fireEvent.click(screen.getByText("drag w in"))
+        expect(screen.getByTestId("frame-sides").textContent).toBe("W −2")
+        fireEvent.click(screen.getByText("drag w in"))
+        expect(props!.frame.ix).toBe(0)
+        expect(size()).toContain("28 × 20 cells")
+        fireEvent.click(capture())
+        await waitFor(() => expect(apiMock).toHaveBeenCalled())
+        const fd = apiMock.mock.calls[0][1]!.body as FormData
+        expect(fd.get("offset")).toBe("[-2,0]")
+      })
+
+      it("holds to the size limit", () => {
+        edit()
+        fireEvent.click(screen.getByText("drag e far"))
+        expect(size()).toContain("At most 2048 cells a side")
+        expect(capture().disabled).toBe(true)
+      })
     })
 
     it("refreshes its own box when the frame is left as it is", async () => {

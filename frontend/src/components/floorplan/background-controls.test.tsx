@@ -131,6 +131,7 @@ describe("BackgroundControls", () => {
     )
     expect(screen.getByText(/Map captured/).textContent).toContain("3")
     expect(screen.getByRole("button", { name: "Update snapshot" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Edit area…" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Remove" })).toBeTruthy()
     // Hidden: no opacity slider for it.
     expect(screen.queryByRole("slider", { name: "Map opacity" })).toBeNull()
@@ -141,6 +142,7 @@ describe("BackgroundControls", () => {
   it("has no Update snapshot for a map with no geo anchor", () => {
     controls(plan({ base_map: MAP, map_visible: true }))
     expect(screen.queryByText("Update snapshot")).toBeNull()
+    expect(screen.queryByText("Edit area…")).toBeNull()
     expect(screen.getByRole("button", { name: "Hide map" })).toBeTruthy()
   })
 
