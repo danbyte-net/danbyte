@@ -369,7 +369,13 @@ describe("IGP and static panels", () => {
 
 describe("exports", () => {
   const sizes = nodeSizes(map.nodes, "detailed", ["asn"], measure)
-  const { positions, zones } = arrangeByAs(map, sizes)
+  const { zones } = arrangeByAs(map, sizes)
+  // Far enough apart for every label to fit on its line.
+  const positions = {
+    "dev:r1": [0, 0],
+    "dev:r2": [400, 0],
+    "dev:r3": [0, 300],
+  } as Record<string, [number, number]>
   const doc = routingDocument(
     {
       map,

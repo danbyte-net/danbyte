@@ -36,11 +36,13 @@ import { PROVIDER_NETWORK, ProviderNetworkNode } from "../provider-network-node"
 import { ZONE_DRAG_HANDLE, ZoneNode } from "../zone-node"
 import { ZoomControls } from "../zoom-controls"
 import type { PosMap, Zone } from "../view-positions"
+import type { Rect } from "../diagram/types"
 import { RouterNode } from "./router-node"
 import type { RouterNodeData } from "./router-node"
 import { RoutingEdge } from "./routing-edge"
 import type { RoutingEdgeData } from "./routing-edge"
 import { routingDocument } from "./routing-document"
+import { placeRoutingLabels, routingLabels } from "./routing-labels"
 import {
   arrangeByAs,
   cardsInside,
@@ -48,7 +50,6 @@ import {
   isFlagged,
   nodeSizes,
   routerBox,
-  routingEdgeLabel,
   routingEdgeLook,
 } from "./routing-model"
 import type { RoutingSettings } from "./routing-model"
@@ -187,6 +188,17 @@ const Inner = forwardRef<RoutingCanvasHandle, RoutingCanvasProps>(
     const shownZones = useMemo(() => auto?.zones ?? zones ?? [], [zones, auto])
     useEffect(() => cb.current.onZonesShown?.(shownZones), [shownZones])
     const lanes = useMemo(() => edgeLanes(map.edges), [map.edges])
+    // What each line says and where: the exports work it out the same way
+    // from the same arrangement (routing-document.ts).
+    const labels = useMemo(() => routingLabels(map), [map])
+    const spots = useMemo(() => {
+      const rects = new Map<string, Rect>()
+      for (const [id, [x, y]] of Object.entries(centres)) {
+        const s = sizes.get(id)
+        if (s) rects.set(id, { x: x - s.w / 2, y: y - s.h / 2, w: s.w, h: s.h })
+      }
+      return placeRoutingLabels(map.edges, labels.own, rects, lanes)
+    }, [map.edges, labels, centres, sizes, lanes])
     /** Hands the arrangement back (`commit`, below). */
     const commitRef = useRef<() => void>(() => {})
 
@@ -268,7 +280,9 @@ const Inner = forwardRef<RoutingCanvasHandle, RoutingCanvasProps>(
             : {}),
           data: {
             look,
-            label: routingEdgeLabel(e),
+            label: labels.own.get(e.id) ?? [],
+            full: labels.full.get(e.id) ?? [],
+            spot: spots.get(e.id) ?? null,
             lane: lanes.get(e.id) ?? 0,
             dimmed,
             flagged: isFlagged(e, settings),
@@ -284,6 +298,8 @@ const Inner = forwardRef<RoutingCanvasHandle, RoutingCanvasProps>(
       zoneNodes,
       matchedIds,
       lanes,
+      labels,
+      spots,
       settings.mode,
       settings.fields,
       settings.checks,

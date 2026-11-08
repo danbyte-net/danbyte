@@ -6,6 +6,7 @@ import { routingDocument, routingLegendRows } from "./routing-document"
 import {
   DEFAULT_LAYERS,
   arrangeByAs,
+  asnsText,
   asPairColor,
   cardsInside,
   edgeLanes,
@@ -155,6 +156,18 @@ describe("cards and lines", () => {
     expect(routerLines(d, "simple", ["router_id", "asn"])).toEqual([
       { key: "asn", text: "AS65001" },
     ])
+  })
+
+  it("names each AS once on a card, a VRF-only AS with its VRF", () => {
+    const asns = [
+      { asn: 65100, vrf: null },
+      { asn: 65100, vrf: "TENANT-A" },
+      { asn: 65200, vrf: "red" },
+    ]
+    expect(asnsText(asns)).toBe("AS65100, AS65200 (VRF red)")
+    expect(asnsText(asns, true)).toBe(
+      "AS65100 (global, VRF TENANT-A), AS65200 (VRF red)"
+    )
   })
 
   it("labels eBGP with its ASes and iBGP only when it says something", () => {

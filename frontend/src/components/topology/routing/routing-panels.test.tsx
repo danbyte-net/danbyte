@@ -202,7 +202,7 @@ describe("RoutingNodePanel", () => {
         onFocus={() => {}}
       />
     )
-    expect(within(aside).getByText("AS65001, AS65100 (red)")).toBeTruthy()
+    expect(within(aside).getByText("AS65001, AS65100 (VRF red)")).toBeTruthy()
     expect(within(aside).getByText("BGP AS65001")).toBeTruthy()
     expect(within(aside).getByText("OSPF")).toBeTruthy()
     expect(

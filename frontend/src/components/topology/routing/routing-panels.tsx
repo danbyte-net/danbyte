@@ -22,7 +22,7 @@ import { PanelRow, PanelSection, PanelShell } from "@/components/map-panel"
 import { Badge } from "@/components/ui/badge"
 import { CircuitPanel, ProviderNetworkPanel } from "../detail-panels"
 import { maxPrefixText } from "@/components/routing/bgp-bits"
-import { CHECK_LABELS, afShort, isisLevel } from "./routing-model"
+import { CHECK_LABELS, afShort, asnsText, isisLevel } from "./routing-model"
 
 // The Routing tab's panels, in the shared map PanelShell: a router's
 // (router ID, ASes, loopback, the processes it runs) and a line's - for a
@@ -113,11 +113,7 @@ function RouterPanel({
         </PanelRow>
       )}
       {d.asns.length > 0 && (
-        <PanelRow label="ASN">
-          {d.asns
-            .map((a) => (a.vrf ? `AS${a.asn} (${a.vrf})` : `AS${a.asn}`))
-            .join(", ")}
-        </PanelRow>
+        <PanelRow label="ASN">{asnsText(d.asns, true)}</PanelRow>
       )}
       {d.loopback && (
         <PanelRow label="Loopback">
