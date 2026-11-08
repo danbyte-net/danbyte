@@ -77,6 +77,21 @@ export function storedRenderQuality(): RenderQuality {
   return setting === "auto" ? detectRenderQuality() : setting
 }
 
+/**
+ * The canvas's config, fixed. fiber re-runs `configure` on every render of
+ * the <Canvas> and re-applies these: a bare `shadows` means
+ * PCFSoftShadowMap, which three (r180+) swaps back to PCFShadowMap on the
+ * next shadow pass with a deprecation warning - so every render flagged
+ * the shadow map for a rebuild and warned again. PCFShadowMap, stated, is
+ * what three draws anyway and matches what is already set.
+ */
+export const STAGE_SHADOWS = {
+  enabled: true,
+  type: THREE.PCFShadowMap,
+} as const
+const DPR_LOW: [number, number] = [1, 1.5]
+const DPR_FULL: [number, number] = [1, 2]
+
 export function Stage({
   quality,
   camera,
@@ -111,23 +126,32 @@ export function Stage({
   onPointerMissed?: () => void
   children: ReactNode
 }) {
+  // One camera config per opening placement: an inline object would be a
+  // new prop to the canvas on every render of the scene.
+  const [px, py, pz] = camera.position
+  const { fov, near, far } = camera
+  const cameraConfig = useMemo(
+    () => ({
+      fov: fov ?? 45,
+      // Initial only - CameraRig re-fits `near` per frame to the orbit
+      // distance (1 cm nose-on, 0.5 m across the hall).
+      near: near ?? 0.05,
+      far,
+      position: [px, py, pz] as [number, number, number],
+    }),
+    [px, py, pz, fov, near, far]
+  )
   return (
     <Canvas
       frameloop="demand"
       // `shadows` costs nothing until a light casts - the quality tier
       // gates that per light, so Low never pays the shadow pass.
-      shadows
+      shadows={STAGE_SHADOWS}
       // Render at the display's real pixel ratio (capped at 2): 1.75 left a
       // HiDPI canvas rendering below native and reading softer than the 2D
       // faceplate beside it. Low quality caps at 1.5 instead.
-      dpr={quality === "low" || quality === "flat" ? [1, 1.5] : [1, 2]}
-      camera={{
-        fov: 45,
-        // Initial only - CameraRig re-fits `near` per frame to the orbit
-        // distance (1 cm nose-on, 0.5 m across the hall).
-        near: 0.05,
-        ...camera,
-      }}
+      dpr={quality === "low" || quality === "flat" ? DPR_LOW : DPR_FULL}
+      camera={cameraConfig}
       onPointerMissed={onPointerMissed}
     >
       {invalidateRef && <InvalidatorBridge apiRef={invalidateRef} />}

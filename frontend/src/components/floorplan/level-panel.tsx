@@ -1,8 +1,10 @@
-import { Layers } from "lucide-react"
+import { useSyncExternalStore } from "react"
+import { Layers, Play } from "lucide-react"
 
 import type { FloorPlanFloor, FloorPlanStack } from "@/lib/api"
 import { BarMenuTrigger, BarTip } from "@/components/map-toolbar"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +15,8 @@ import {
 import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
 
+import { ANIMATE_LEVELS_MS, nextAnimateTarget } from "./level-explode"
+import type { ExplodeStore } from "./level-explode"
 import { elevationLabel } from "./levels"
 
 /** Which other level the 2D onion skin draws under this one. */
@@ -34,7 +38,6 @@ export function LevelPanel({
   mode,
   onMode,
   explode,
-  onExplode,
 }: {
   stack: FloorPlanStack
   currentId: string
@@ -44,10 +47,11 @@ export function LevelPanel({
   onOnion: (side: OnionSide) => void
   mode: LevelMode
   onMode: (mode: LevelMode) => void
-  /** Extra gap between levels, 0-1 of a storey. */
-  explode: number
-  onExplode: (v: number) => void
+  /** Extra gap between levels, 0-1 of a storey - a store, so a slider
+   * step re-renders this panel only. */
+  explode: ExplodeStore
 }) {
+  const explodeValue = useSyncExternalStore(explode.subscribe, explode.get)
   const levels: FloorPlanFloor[] = [...stack.floors].reverse()
   return (
     <div
@@ -98,18 +102,39 @@ export function LevelPanel({
               ]}
             />
             {mode !== "only" && (
-              <BarTip tip="Explode" side="right">
-                <div className="flex h-7 items-center px-2">
-                  <Slider
-                    thumbProps={{ "aria-label": "Explode" }}
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={[Math.round(explode * 100)]}
-                    onValueChange={([v]) => onExplode(v / 100)}
-                  />
-                </div>
-              </BarTip>
+              <div className="flex h-7 items-center gap-1">
+                <BarTip tip="Animate levels" side="right">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Animate levels"
+                    className="size-7 shrink-0"
+                    onClick={() => {
+                      const to = nextAnimateTarget(explode)
+                      // The full travel takes ANIMATE_LEVELS_MS; part of
+                      // it, its share.
+                      const ms =
+                        ANIMATE_LEVELS_MS * Math.abs(to - explode.get())
+                      explode.animateTo(to, Math.max(ms, 300))
+                    }}
+                  >
+                    <Play />
+                  </Button>
+                </BarTip>
+                <BarTip tip="Explode" side="right">
+                  <div className="flex h-7 min-w-0 flex-1 items-center pr-2">
+                    <Slider
+                      thumbProps={{ "aria-label": "Explode" }}
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={[Math.round(explodeValue * 100)]}
+                      onValueChange={([v]) => explode.set(v / 100)}
+                    />
+                  </div>
+                </BarTip>
+              </div>
             )}
           </>
         ) : (

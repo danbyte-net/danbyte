@@ -15,6 +15,9 @@ export interface LevelPlacement {
   floor: FloorPlanFloor
   /** Its place in the stack, lowest first. */
   index: number
+  /** Storeys from the active level (negative below): what the explode
+   * multiplies. */
+  step: number
   /** Its floor's height over the active level's, in metres (explode in). */
   y: number
   /** The level's (0, 0) in the active level's world, metres, and its turn
@@ -60,6 +63,7 @@ export function placeLevels(
     return {
       floor: f,
       index: i,
+      step: i - ai,
       y: ((f.elevation ?? 0) - e0) / 1000 + explode * EXPLODE_M * (i - ai),
       x: ox * cellA,
       z: oz * cellA,
@@ -67,6 +71,31 @@ export function placeLevels(
       look,
     }
   })
+}
+
+/** The shown levels' box (a floor of `w` by `d` metres) with the
+ * levels spread by `explode`; null with one level or none on show. */
+export function levelsBounds(
+  levels: LevelPlacement[],
+  w: number,
+  d: number,
+  explode = 0
+): { min: [number, number, number]; max: [number, number, number] } | null {
+  const shown = levels.filter((l) => l.look !== "hidden")
+  if (shown.length < 2) return null
+  const y = (l: LevelPlacement) => l.y + explode * EXPLODE_M * l.step
+  return {
+    min: [
+      0,
+      Math.min(...shown.map((l) => y(l) - (l.floor.slab_mm ?? 300) / 1000)),
+      0,
+    ],
+    max: [
+      w,
+      Math.max(...shown.map((l) => y(l) + (l.floor.ceiling_mm ?? 3000) / 1000)),
+      d,
+    ],
+  }
 }
 
 type Pt = [number, number]

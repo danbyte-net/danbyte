@@ -76,6 +76,7 @@ import type { Sel, ShellMode } from "./rack-mesh"
 import { RackHud } from "./rack-hud"
 import { roomStamp } from "./room-stamp"
 import type { AreaShape, LabelShape } from "@/components/floorplan/shapes"
+import type { ExplodeStore } from "@/components/floorplan/level-explode"
 import { useTheme } from "@/components/theme-provider"
 
 import { AreaFloorMesh } from "./area-floor-mesh"
@@ -97,7 +98,8 @@ import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
 import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
 import { BuildingLevels, RiserRuns, Roofline, Slab } from "./building"
-import { placeLevels } from "./building-math"
+import { levelsBounds, placeLevels } from "./building-math"
+import { ExplodeDriver } from "./level-explode-3d"
 import { poseBounds, tilePose } from "../floorplan/tile-pose"
 import type { LevelMode } from "./building-math"
 import {
@@ -124,7 +126,9 @@ const NO_LABELS: LabelShape[] = []
 export interface Building3D {
   stack: FloorPlanStack
   mode: LevelMode
-  explode: number
+  /** The explode the levels ease toward (0-1 of a storey) - read in the
+   * frame loop, never through a render. */
+  explode: ExplodeStore
   /** Another level clicked: make it the active one, flying to `tileId`. */
   onGoLevel: (floorId: string, tileId?: string) => void
 }
@@ -263,18 +267,19 @@ export default function FloorScene3D({
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
+  // At explode 0: the explode lifts each level's group in the frame loop
+  // (level-explode-3d.tsx), so a slider step rebuilds nothing and leaves
+  // the camera's target alone.
+  const stackFloors = building?.stack.floors
+  const levelMode = building?.mode
   const levels = useMemo(
     () =>
-      building
-        ? placeLevels(
-            building.stack.floors,
-            planId,
-            building.mode,
-            building.explode
-          )
+      stackFloors && levelMode
+        ? placeLevels(stackFloors, planId, levelMode, 0)
         : [],
-    [building, planId]
+    [stackFloors, levelMode, planId]
   )
+  const explodeStore = building?.explode ?? null
   // Read once here; every rack and device gets the values as props. The
   // viewer's own switch (View menu) can clear the labels off this screen.
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
@@ -760,29 +765,13 @@ export default function FloorScene3D({
   // explicit Flat pick is already the cheapest and is left alone; an explicit
   // Low/Medium is the operator's call and is respected.
   const BIG_HALL_RACKS = 40
-  // The building: the levels on show, for the camera's fit and the roofline.
-  const shownLevels = levels.filter((l) => l.look !== "hidden")
-  const buildingBounds =
-    shownLevels.length > 1
-      ? {
-          min: [
-            0,
-            Math.min(
-              ...shownLevels.map((l) => l.y - (l.floor.slab_mm ?? 300) / 1000)
-            ),
-            0,
-          ] as [number, number, number],
-          max: [
-            w,
-            Math.max(
-              ...shownLevels.map(
-                (l) => l.y + (l.floor.ceiling_mm ?? 3000) / 1000
-              )
-            ),
-            d,
-          ] as [number, number, number],
-        }
-      : null
+  // The building: the levels on show, for the camera's opening view - at
+  // explode 0, so the explode never moves the orbit target. Fit all (0)
+  // reads the spread as it stands.
+  const buildingBounds = levelsBounds(levels, w, d)
+  const fitBounds = buildingBounds
+    ? () => levelsBounds(levels, w, d, explodeStore?.get() ?? 0)
+    : planBounds(plan)
   const activeLevel = levels.find((l) => l.look === "active")
   const roofLevel =
     building?.mode === "upto" && activeLevel
@@ -994,7 +983,7 @@ export default function FloorScene3D({
           maxDistance: diag * 8 + 20,
           requestRef: flyToRef,
           navRef,
-          bounds: buildingBounds ?? planBounds(plan),
+          bounds: fitBounds,
         }}
         // Every view setting, the racks' tints among them: a change the
         // demand frameloop doesn't see would leave the old picture.
@@ -1033,6 +1022,7 @@ export default function FloorScene3D({
           setFocusOn(false)
         }}
       >
+        <ExplodeDriver store={explodeStore} />
         <Room
           scene={data}
           xray={shellMode === "xray"}
@@ -1046,16 +1036,18 @@ export default function FloorScene3D({
             <Slab scene={data} sink />
             <BuildingLevels
               levels={levels}
+              explode={explodeStore}
               onGo={building.onGoLevel}
               ghostWalls={showCables}
               muted={muteBackground}
             />
             {roofLevel && roofLevel !== activeLevel && (
-              <Roofline placement={roofLevel} />
+              <Roofline placement={roofLevel} explode={explodeStore} />
             )}
             {showCables && (
               <RiserRuns
                 levels={levels}
+                explode={explodeStore}
                 selectedId={cableSel}
                 onSelect={(id) => {
                   setSelection(null)
@@ -1331,6 +1323,7 @@ export default function FloorScene3D({
               <LevelPlanText
                 key={`text-${lv.floor.id}`}
                 placement={lv}
+                explode={explodeStore}
                 bus={textBus}
                 show={textShow}
                 readable={readableNames}

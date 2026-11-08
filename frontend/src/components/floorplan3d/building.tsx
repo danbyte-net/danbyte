@@ -3,12 +3,14 @@ import { Line } from "@react-three/drei"
 import * as THREE from "three"
 
 import type { FloorPlanCablePath } from "@/lib/api"
+import type { ExplodeStore } from "@/components/floorplan/level-explode"
 import { useTheme } from "@/components/theme-provider"
 import { mutesBasemap } from "@/components/floorplan/background-look"
 
 import { slabOutline } from "./building-math"
 import type { LevelPlacement } from "./building-math"
 import { useCablePaths } from "./cable-trace-3d"
+import { ExplodedGroup, ExplodeStretch } from "./level-explode-3d"
 import { Blueprint } from "./room"
 import { roomLook } from "./room-look"
 import { useScene } from "./use-scene"
@@ -33,15 +35,18 @@ import type { ScenePayload, SceneTile } from "./world"
  * (the same query its own 3D view uses). A click on another level makes it
  * the active one (`onGo`, with the tile clicked to fly to). With
  * `ghostWalls` (cables shown) a level below draws its walls see-through,
- * so the runs climbing its shafts read.
+ * so the runs climbing its shafts read. `levels` sit at explode 0; each
+ * level's group rides the eased `explode` (level-explode-3d.tsx).
  */
 export function BuildingLevels({
   levels,
+  explode = null,
   onGo,
   ghostWalls = false,
   muted = true,
 }: {
   levels: LevelPlacement[]
+  explode?: ExplodeStore | null
   onGo: (floorId: string, tileId?: string) => void
   ghostWalls?: boolean
   /** Display > Muted background, as the active level draws it (a
@@ -52,10 +57,12 @@ export function BuildingLevels({
     <>
       {levels.map((lv) =>
         lv.look === "solid" || lv.look === "ghost" ? (
-          <group
+          <ExplodedGroup
             key={lv.floor.id}
+            explode={explode}
+            step={lv.step}
             position={[lv.x, lv.y, lv.z]}
-            rotation={[0, lv.rotY, 0]}
+            rotY={lv.rotY}
           >
             <OtherLevel
               placement={lv}
@@ -63,7 +70,7 @@ export function BuildingLevels({
               ghostWalls={ghostWalls}
               muted={muted}
             />
-          </group>
+          </ExplodedGroup>
         ) : null
       )}
     </>
@@ -292,7 +299,13 @@ function GhostLevel({
 
 /** "Up to": a faint roofline over the cut - the top level's outline at
  * its ceiling. */
-export function Roofline({ placement }: { placement: LevelPlacement }) {
+export function Roofline({
+  placement,
+  explode = null,
+}: {
+  placement: LevelPlacement
+  explode?: ExplodeStore | null
+}) {
   const scene = useScene(placement.floor.id)
   const look = roomLook(useTheme().theme === "dark")
   const pts = useMemo(() => {
@@ -307,9 +320,11 @@ export function Roofline({ placement }: { placement: LevelPlacement }) {
   }, [scene.data])
   if (!pts) return null
   return (
-    <group
+    <ExplodedGroup
+      explode={explode}
+      step={placement.step}
       position={[placement.x, placement.y, placement.z]}
-      rotation={[0, placement.rotY, 0]}
+      rotY={placement.rotY}
     >
       <Line
         points={pts}
@@ -321,7 +336,7 @@ export function Roofline({ placement }: { placement: LevelPlacement }) {
         transparent
         opacity={0.45}
       />
-    </group>
+    </ExplodedGroup>
   )
 }
 
@@ -395,10 +410,12 @@ function partToRiser(
  * levels a cable's riser joins. Also the risers' shafts, faint. */
 export function RiserRuns({
   levels,
+  explode = null,
   selectedId,
   onSelect,
 }: {
   levels: LevelPlacement[]
+  explode?: ExplodeStore | null
   selectedId?: string | null
   onSelect?: (cableId: string) => void
 }) {
@@ -410,6 +427,7 @@ export function RiserRuns({
           key={lv.floor.id}
           level={lv}
           levels={shown}
+          explode={explode}
           selectedId={selectedId ?? null}
           onSelect={onSelect}
         />
@@ -421,11 +439,13 @@ export function RiserRuns({
 function LevelRiserRuns({
   level,
   levels,
+  explode,
   selectedId,
   onSelect,
 }: {
   level: LevelPlacement
   levels: LevelPlacement[]
+  explode: ExplodeStore | null
   selectedId: string | null
   onSelect?: (cableId: string) => void
 }) {
@@ -447,6 +467,7 @@ function LevelRiserRuns({
           b={other}
           aScene={scene.data}
           aPaths={paths.data?.cables}
+          explode={explode}
           selectedId={selectedId}
           onSelect={onSelect}
         />
@@ -455,11 +476,34 @@ function LevelRiserRuns({
   )
 }
 
+/** A climb from `from` to `to`: where it starts, and its run with the
+ * rise normalised to 1 (ExplodeStretch scales y to the rise). */
+interface Climb {
+  from: V3
+  dy: number
+  pts: V3[]
+}
+
+function climb(from: V3, to: V3): Climb {
+  return {
+    from,
+    dy: to[1] - from[1],
+    pts: [
+      [0, 0, 0],
+      [to[0] - from[0], 1, to[2] - from[2]],
+    ],
+  }
+}
+
+/** The runs between two levels. Each level's part rides its own level's
+ * explode lift and the climb between them stretches with the gap, so
+ * the explode moves them without rebuilding a line. */
 function PairRuns({
   a,
   b,
   aScene,
   aPaths,
+  explode,
   selectedId,
   onSelect,
 }: {
@@ -467,6 +511,7 @@ function PairRuns({
   b: LevelPlacement
   aScene: ScenePayload | undefined
   aPaths: FloorPlanCablePath[] | undefined
+  explode: ExplodeStore | null
   selectedId: string | null
   onSelect?: (cableId: string) => void
 }) {
@@ -474,18 +519,26 @@ function PairRuns({
   const bPaths = useCablePaths(b.floor.id)
   const look = roomLook(useTheme().theme === "dark")
   const { runs, shafts } = useMemo(() => {
-    const out: { id: string; color: string; pts: V3[] }[] = []
-    const lines: V3[][] = []
+    const out: {
+      id: string
+      color: string
+      pa: V3[]
+      pb: V3[]
+      climb: Climb
+    }[] = []
+    const lines: Climb[] = []
     if (!aScene || !bScene.data) return { runs: out, shafts: lines }
     const bTiles = new Map(bScene.data.tiles.map((t) => [t.id, t]))
     for (const t of aScene.tiles) {
       for (const r of t.riser_to ?? []) {
         const u = r.floor_plan === b.floor.id ? bTiles.get(r.id) : null
         if (!u) continue
-        lines.push([
-          toWorld(a, aScene.plan, [t.x + t.w / 2, t.y + t.h / 2], 0),
-          toWorld(b, bScene.data.plan, [u.x + u.w / 2, u.y + u.h / 2], 0),
-        ])
+        lines.push(
+          climb(
+            toWorld(a, aScene.plan, [t.x + t.w / 2, t.y + t.h / 2], 0),
+            toWorld(b, bScene.data.plan, [u.x + u.w / 2, u.y + u.h / 2], 0)
+          )
+        )
       }
     }
     const far = new Map((bPaths.data?.cables ?? []).map((c) => [c.id, c]))
@@ -500,39 +553,72 @@ function PairRuns({
       out.push({
         id: cp.id,
         color: cp.color || "#0ea5e9",
-        pts: [...pa, ...[...pb].reverse()],
+        pa,
+        pb,
+        climb: climb(pa[pa.length - 1], pb[pb.length - 1]),
       })
     }
     return { runs: out, shafts: lines }
   }, [a, b, aScene, aPaths, bScene.data, bPaths.data])
+  const stretch = (c: Climb, node: React.ReactNode, key: string) => (
+    <ExplodeStretch
+      key={key}
+      explode={explode}
+      from={c.from}
+      dy={c.dy}
+      stepA={a.step}
+      stepB={b.step}
+    >
+      {node}
+    </ExplodeStretch>
+  )
   return (
     <>
-      {shafts.map((pts, i) => (
-        <Line
-          key={`s${i}`}
-          points={pts}
-          color={look.wallEdge}
-          lineWidth={6}
-          transparent
-          opacity={0.25}
-        />
-      ))}
-      {runs.map((r) => (
-        <Line
-          key={r.id}
-          points={r.pts}
-          color={r.color}
-          lineWidth={r.id === selectedId ? 4 : 2.5}
-          onClick={
-            onSelect
-              ? (e) => {
-                  e.stopPropagation()
-                  onSelect(r.id)
-                }
-              : undefined
-          }
-        />
-      ))}
+      {shafts.map((c, i) =>
+        stretch(
+          c,
+          <Line
+            points={c.pts}
+            color={look.wallEdge}
+            lineWidth={6}
+            transparent
+            opacity={0.25}
+          />,
+          `s${i}`
+        )
+      )}
+      {runs.map((r) => {
+        const line = (pts: V3[]) => (
+          <Line
+            points={pts}
+            color={r.color}
+            lineWidth={r.id === selectedId ? 4 : 2.5}
+            onClick={
+              onSelect
+                ? (e) => {
+                    e.stopPropagation()
+                    onSelect(r.id)
+                  }
+                : undefined
+            }
+          />
+        )
+        return (
+          <group key={r.id}>
+            {r.pa.length >= 2 && (
+              <ExplodedGroup explode={explode} step={a.step}>
+                {line(r.pa)}
+              </ExplodedGroup>
+            )}
+            {r.pb.length >= 2 && (
+              <ExplodedGroup explode={explode} step={b.step}>
+                {line(r.pb)}
+              </ExplodedGroup>
+            )}
+            {stretch(r.climb, line(r.climb.pts), "climb")}
+          </group>
+        )
+      })}
     </>
   )
 }
