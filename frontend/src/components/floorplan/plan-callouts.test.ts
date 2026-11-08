@@ -10,8 +10,11 @@ import {
   calloutClusters,
   calloutGroups,
   calloutSize,
+  BoxIndex,
+  ShapeGrid,
   layoutCallouts,
   packRow,
+  segmentBox,
   segmentHitsBox,
   segmentsCross,
   tileEnd,
@@ -19,7 +22,7 @@ import {
 import type { CalloutItem, PlacedCallout } from "./plan-callouts"
 import { layoutPlanLabels } from "./plan-label-pass"
 import type { PlanLabelInput } from "./plan-label-pass"
-import { boxesHit } from "./plan-labels"
+import { Occupancy, boxesHit } from "./plan-labels"
 import type { Box } from "./plan-labels"
 import type { AreaShape } from "./shapes"
 
@@ -522,5 +525,126 @@ describe("layoutPlanLabels with callouts", () => {
             h: 2,
           })
         ).toBe(false)
+  })
+})
+
+// A seeded random source, so a failing case can be run again.
+function seeded(seed: number) {
+  return () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32
+}
+
+describe("the grids the callouts check against", () => {
+  it("find every box a box or a segment meets, as a plain list does", () => {
+    const r = seeded(7)
+    const grid = new ShapeGrid<Box>(32)
+    const index = new BoxIndex(32)
+    const occ = new Occupancy(32)
+    const all: Box[] = []
+    for (let i = 0; i < 400; i++) {
+      // Now and then a huge one, which the grids keep in a list.
+      const big = r() < 0.03
+      const b = {
+        x: (r() - 0.2) * 2000,
+        y: (r() - 0.2) * 2000,
+        w: big ? r() * 4000 : r() * 60,
+        h: big ? r() * 4000 : r() * 30,
+      }
+      all.push(b)
+      grid.add(b, b)
+      index.add(`b${i}`, b)
+      occ.add(b)
+    }
+    for (let i = 0; i < 600; i++) {
+      const q = {
+        x: (r() - 0.2) * 2000,
+        y: (r() - 0.2) * 2000,
+        w: r() * 120,
+        h: r() * 60,
+      }
+      const hit = (b: Box) => boxesHit(b, q)
+      expect(grid.some(q, hit)).toBe(all.some(hit))
+      expect(occ.free(q)).toBe(!all.some(hit))
+      const p: Pt = [q.x, q.y]
+      const e: Pt = [q.x + (r() - 0.5) * 400, q.y + (r() - 0.5) * 400]
+      const crosses = (b: Box) => segmentHitsBox(p, e, b)
+      const lb = segmentBox([p, e])
+      expect(grid.some(lb, crosses)).toBe(all.some(crosses))
+      expect(index.some(lb, (o) => crosses(o.box))).toBe(all.some(crosses))
+    }
+  })
+})
+
+/** A hall of racks seen from afar: rows of ten-unit racks two apart, each
+ * row in a room of its own - most of them crowded out. */
+function hall(rows: number, perRow: number) {
+  const items: CalloutItem[] = []
+  const solid = new Occupancy(66)
+  const bodies = new BoxIndex(66)
+  for (let r = 0; r < rows; r++) {
+    const container = { x: 0, y: r * 40, w: perRow * 12 + 8, h: 36 }
+    for (let i = 0; i < perRow; i++) {
+      const id = `R-${String(r).padStart(2, "0")}-${String(i).padStart(2, "0")}`
+      const anchor = { x: 4 + i * 12, y: r * 40 + 8, w: 10, h: 20 }
+      solid.add(anchor)
+      bodies.add(id, anchor)
+      items.push({
+        id,
+        anchor,
+        size: calloutSize(id, []),
+        group: `room:${r}`,
+        container,
+      })
+    }
+  }
+  return { items, solid, bodies }
+}
+
+describe("layoutCallouts on a hall of racks", () => {
+  it("lays out hundreds of crowded racks without stalling the page", () => {
+    // 300 racks, most with no room: every spot of theirs is tried on each
+    // of the four tries. Checking each against everything placed took
+    // seconds; the grids and the spots worked out once keep it far less.
+    const { items, solid, bodies } = hall(15, 20)
+    const opts = {
+      free: (b: Box) => solid.free(b),
+      bodies,
+      maxLeader: CALLOUT_MAX_LEADER,
+    }
+    const t = performance.now()
+    const got = layoutCallouts(items, opts)
+    expect(performance.now() - t).toBeLessThan(3000)
+    expect(got.size).toBeGreaterThan(0)
+    const placed = [...got.values()]
+    expect(anyOverlap(placed.map((p) => p.box))).toBe(false)
+    expect(anyCross(placed.map((p) => p.leader))).toBe(false)
+    // The same again, in any order.
+    const again = layoutCallouts([...items].reverse(), opts)
+    expect([...again.entries()].sort()).toEqual([...got.entries()].sort())
+  })
+})
+
+describe("layoutPlanLabels reuses its callouts", () => {
+  it("across a pan and a hover; a moved tile lays them out anew", () => {
+    const scale = 40 * 0.75
+    const a = layoutPlanLabels(
+      serverRoom(0.75, {
+        view: { x: 70 * scale, y: 190 * scale, w: 800, h: 600 },
+      })
+    )
+    const b = layoutPlanLabels(
+      serverRoom(0.75, {
+        view: { x: 60 * scale, y: 180 * scale, w: 900, h: 700 },
+        pinnedTiles: new Set(["R-A02"]),
+      })
+    )
+    expect(a.callouts.length).toBe(4)
+    // The very same callouts: not laid out again.
+    expect(b.callouts.every((c, i) => c === a.callouts[i])).toBe(true)
+    const base = serverRoom(0.75)
+    const moved = layoutPlanLabels({
+      ...base,
+      tiles: base.tiles.map((t, i) => (i === 0 ? { ...t, y: t.y - 3 } : t)),
+    })
+    expect(moved.callouts).not.toEqual(a.callouts)
   })
 })

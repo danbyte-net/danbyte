@@ -1,5 +1,5 @@
 import type { Pt } from "./cable-route"
-import { boxesHit, textSize } from "./plan-labels"
+import { boxesHit, cellKey, textSize } from "./plan-labels"
 import type { Box } from "./plan-labels"
 
 // Callouts: a tile whose plain name will not sit cleanly by it - no room,
@@ -189,18 +189,22 @@ export function packRow(
 
 /** Does the segment p→q cross the box (units)? */
 export function segmentHitsBox(p: Pt, q: Pt, b: Box): boolean {
-  // Liang-Barsky clip.
+  // Liang-Barsky clip, its four edges unrolled - no arrays: it runs for
+  // every spot a callout tries.
   let t0 = 0
   let t1 = 1
   const dx = q[0] - p[0]
   const dy = q[1] - p[1]
-  const edges: [number, number][] = [
-    [-dx, p[0] - b.x],
-    [dx, b.x + b.w - p[0]],
-    [-dy, p[1] - b.y],
-    [dy, b.y + b.h - p[1]],
-  ]
-  for (const [pp, qq] of edges) {
+  for (let e = 0; e < 4; e++) {
+    const pp = e === 0 ? -dx : e === 1 ? dx : e === 2 ? -dy : dy
+    const qq =
+      e === 0
+        ? p[0] - b.x
+        : e === 1
+          ? b.x + b.w - p[0]
+          : e === 2
+            ? p[1] - b.y
+            : b.y + b.h - p[1]
     if (Math.abs(pp) < 1e-12) {
       if (qq < 0) return false
       continue
@@ -327,16 +331,17 @@ function boxBy(
 /** The places round a tile its box may take, shortest leader first: on
  * each side, straight out or shifted along it, out a step at a time -
  * none with a leader past `max`. Ties go top, bottom, left, right, then
- * the smaller shift. */
+ * the smaller shift. `d`: how far out the box is. */
 export function nearSpots(
   it: CalloutItem,
   max: number
-): { box: Box; side: CalloutSide; leader: [Pt, Pt]; len: number }[] {
+): { box: Box; side: CalloutSide; leader: [Pt, Pt]; len: number; d: number }[] {
   const out: {
     box: Box
     side: CalloutSide
     leader: [Pt, Pt]
     len: number
+    d: number
     rank: number
   }[] = []
   const sides = ["top", "bottom", "left", "right"] as const
@@ -351,7 +356,7 @@ export function nearSpots(
         const leader = leaderFor(box, it.anchor, side)
         const len = leaderLength(leader)
         if (len > max) return
-        out.push({ box, side, leader, len, rank: si * 10 + oi })
+        out.push({ box, side, leader, len, d, rank: si * 10 + oi })
       })
     }
   })
@@ -359,12 +364,116 @@ export function nearSpots(
   return out
 }
 
+type Spot = ReturnType<typeof nearSpots>[number]
+/** A spot as a call tries it: what it worked out about it, kept. */
+type TrySpot = Spot & {
+  aired?: Box
+  lb?: Box
+  /** In bounds, clear of `free`. */
+  open?: boolean
+  /** Its leader over another tile. */
+  crosses?: boolean
+  /** Taken by what was placed since. */
+  dead?: boolean
+}
+
+/** A segment's bounding box. */
+export function segmentBox(l: readonly [Pt, Pt]): Box {
+  const x = Math.min(l[0][0], l[1][0])
+  const y = Math.min(l[0][1], l[1][1])
+  return {
+    x,
+    y,
+    w: Math.max(l[0][0], l[1][0]) - x,
+    h: Math.max(l[0][1], l[1][1]) - y,
+  }
+}
+
+/** Would a box and leader placed now take a free near spot - is the spot
+ * no longer free after them? The spot's free check (`fits` below) less
+ * what held before: its box with its air on the new box, the new leader
+ * through its box, its leader through the new box or across the new
+ * leader. */
+export function spotBlockedBy(
+  s: Pick<Spot, "box" | "leader">,
+  box: Box,
+  leader: [Pt, Pt]
+): boolean {
+  const aired = {
+    x: s.box.x - BOX_GAP / 2,
+    y: s.box.y - BOX_GAP / 2,
+    w: s.box.w + BOX_GAP,
+    h: s.box.h + BOX_GAP,
+  }
+  return (
+    boxesHit(box, aired) ||
+    segmentHitsBox(leader[0], leader[1], s.box) ||
+    segmentHitsBox(s.leader[0], s.leader[1], box) ||
+    segmentsCross(s.leader, leader)
+  )
+}
+
+/** Things with a box, bucketed in a grid: `some` tests only those whose
+ * box shares a cell with the query's - every one that can touch it, as
+ * the cells are closed (a box, a segment's box, met at an edge or a
+ * corner shares that point's cell). */
+export class ShapeGrid<T> {
+  private grid = new Map<number, T[]>()
+  private big: T[] = []
+  private all: T[] = []
+  constructor(private cell = 64) {}
+
+  private span(b: Box): [number, number, number, number] | null {
+    const c = this.cell
+    const x0 = Math.floor(b.x / c)
+    const x1 = Math.floor((b.x + b.w) / c)
+    const y0 = Math.floor(b.y / c)
+    const y1 = Math.floor((b.y + b.h) / c)
+    // A huge one (or one past all numbers): kept in a list of its own.
+    if (!((x1 - x0 + 1) * (y1 - y0 + 1) <= 400)) return null
+    return [x0, x1, y0, y1]
+  }
+
+  add(item: T, b: Box): void {
+    this.all.push(item)
+    const s = this.span(b)
+    if (!s) {
+      this.big.push(item)
+      return
+    }
+    for (let gx = s[0]; gx <= s[1]; gx++)
+      for (let gy = s[2]; gy <= s[3]; gy++) {
+        const k = cellKey(gx, gy)
+        const l = this.grid.get(k)
+        if (l) l.push(item)
+        else this.grid.set(k, [item])
+      }
+  }
+
+  /** Does `test` hold for one near `b`? */
+  some(b: Box, test: (item: T) => boolean): boolean {
+    for (const o of this.big) if (test(o)) return true
+    const c = this.cell
+    const x0 = Math.floor(b.x / c)
+    const x1 = Math.floor((b.x + b.w) / c)
+    const y0 = Math.floor(b.y / c)
+    const y1 = Math.floor((b.y + b.h) / c)
+    if (!((x1 - x0 + 1) * (y1 - y0 + 1) <= 400)) return this.all.some(test)
+    for (let gx = x0; gx <= x1; gx++)
+      for (let gy = y0; gy <= y1; gy++) {
+        const l = this.grid.get(cellKey(gx, gy))
+        if (l) for (const o of l) if (test(o)) return true
+      }
+    return false
+  }
+}
+
 /**
  * Place the callouts. `free(box)` says a box is clear of what was placed
- * before (tiles, icons, labels); each box placed is taken for the rest.
- * Groups go in key order. A group's tiles first try one row per side of
- * their room (the nearest side), in the order of their tiles, out a step
- * at a time - kept only when no leader runs past `maxLeader`. A tile its
+ * before (tiles, icons, labels) - its answer must not change during the
+ * call; each box placed is taken for the rest. Groups go in key order. A
+ * group's tiles first try one row per side of their room (the nearest
+ * side), in the order of their tiles, out a step at a time - kept only when no leader runs past `maxLeader`. A tile its
  * row could not seat takes the free spot nearest it. A tile with no free
  * place within reach is left out (its name hides, as a plain name with
  * nowhere to go does).
@@ -381,14 +490,18 @@ export function layoutCallouts(
     priorLeaders?: readonly [Pt, Pt][]
     /** The tiles as drawn: a leader keeps off them where it can (a
      * second try lets it cross one rather than leave a name out). */
-    bodies?: { near: (b: Box, r: number) => { id: string; box: Box }[] }
+    bodies?: Pick<BoxIndex, "some">
     /** The longest leader (units); a last try allows twice as long. */
     maxLeader?: number
   }
 ): Map<string, PlacedCallout> {
   const out = new Map<string, PlacedCallout>()
-  const taken: Box[] = [...(opts.prior ?? [])]
-  const leaders: [Pt, Pt][] = [...(opts.priorLeaders ?? [])]
+  // The boxes and leaders placed so far, bucketed: a check looks only at
+  // those near it (a plan of hundreds of tiles tries thousands of spots).
+  const taken = new ShapeGrid<Box>()
+  for (const b of opts.prior ?? []) taken.add(b, b)
+  const leaders = new ShapeGrid<[Pt, Pt]>()
+  for (const l of opts.priorLeaders ?? []) leaders.add(l, segmentBox(l))
   const bounds = opts.bounds
   const inBounds = (b: Box) =>
     !bounds ||
@@ -397,35 +510,32 @@ export function layoutCallouts(
       b.x + b.w <= bounds.x + bounds.w &&
       b.y + b.h <= bounds.y + bounds.h)
   const clear = (b: Box) =>
-    inBounds(b) && opts.free(b) && !taken.some((t) => boxesHit(t, b))
+    inBounds(b) && opts.free(b) && !taken.some(b, (t) => boxesHit(t, b))
   let strict = !!opts.bodies
   let cap = opts.maxLeader ?? Infinity
   // A leader through a box placed already, across another leader or (on
   // the strict try) across another tile.
   const leaderOk = (l: [Pt, Pt], it: CalloutItem) => {
     if (leaderLength(l) > cap + 1e-6) return false
-    if (taken.some((t) => segmentHitsBox(l[0], l[1], t))) return false
-    if (leaders.some((o) => segmentsCross(l, o))) return false
+    const lb = segmentBox(l)
+    if (taken.some(lb, (t) => segmentHitsBox(l[0], l[1], t))) return false
+    if (leaders.some(lb, (o) => segmentsCross(l, o))) return false
     if (!strict || !opts.bodies) return true
-    const span = {
-      x: Math.min(l[0][0], l[1][0]),
-      y: Math.min(l[0][1], l[1][1]),
-      w: Math.abs(l[1][0] - l[0][0]),
-      h: Math.abs(l[1][1] - l[0][1]),
-    }
-    return !opts.bodies
-      .near(span, 0)
-      .some((o) => o.id !== it.id && segmentHitsBox(l[0], l[1], o.box))
+    return !opts.bodies.some(
+      lb,
+      (o) => o.id !== it.id && segmentHitsBox(l[0], l[1], o.box)
+    )
   }
-  const boxOk = (b: Box) => !leaders.some((l) => segmentHitsBox(l[0], l[1], b))
+  const boxOk = (b: Box) =>
+    !leaders.some(b, (l) => segmentHitsBox(l[0], l[1], b))
   const take = (
     it: CalloutItem,
     box: Box,
     side: CalloutSide,
     leader: [Pt, Pt]
   ) => {
-    taken.push(box)
-    leaders.push(leader)
+    taken.add(box, box)
+    leaders.add(leader, segmentBox(leader))
     out.set(it.id, { id: it.id, box, side, leader })
   }
 
@@ -485,6 +595,64 @@ export function layoutCallouts(
       }
     }
   }
+  // A spot is free: a little air round its box (two never read as one),
+  // no leader through it, its own leader clear. What does not change in
+  // the call - the spot's place in bounds and clear of `free`, its leader
+  // over another tile - is worked out once per spot.
+  const fits = (it: CalloutItem, s: TrySpot) => {
+    if (s.dead) return false
+    const aired = (s.aired ??= {
+      x: s.box.x - BOX_GAP / 2,
+      y: s.box.y - BOX_GAP / 2,
+      w: s.box.w + BOX_GAP,
+      h: s.box.h + BOX_GAP,
+    })
+    const lb = (s.lb ??= segmentBox(s.leader))
+    const l = s.leader
+    s.open ??= inBounds(aired) && opts.free(aired)
+    if (
+      !s.open ||
+      taken.some(aired, (t) => boxesHit(t, aired)) ||
+      !boxOk(s.box) ||
+      taken.some(lb, (t) => segmentHitsBox(l[0], l[1], t)) ||
+      leaders.some(lb, (o) => segmentsCross(l, o))
+    ) {
+      // Taken by what was placed: it only grows, so for good.
+      s.dead = true
+      return false
+    }
+    if (s.len > cap + 1e-6) return false
+    if (!strict || !opts.bodies) return true
+    s.crosses ??= opts.bodies.some(
+      lb,
+      (o) => o.id !== it.id && segmentHitsBox(l[0], l[1], o.box)
+    )
+    return !s.crosses
+  }
+  // A tile's spots, made once out to the longest try's reach; a shorter
+  // reach is those of them it allows (nearSpots' own cut: out no farther,
+  // no leader longer), in the same order - the same spots, so what a try
+  // found taken the next skips.
+  const reach = Math.max(cap, cap * 2)
+  const spotCache = new Map<
+    CalloutItem,
+    { all: TrySpot[]; max: number; byCap: Map<number, TrySpot[]> }
+  >()
+  const spotsOf = (it: CalloutItem, max: number): TrySpot[] => {
+    let c = spotCache.get(it)
+    if (!c || max > c.max) {
+      const top = Math.max(max, reach)
+      const all = nearSpots(it, top)
+      c = { all, max: top, byCap: new Map([[top, all]]) }
+      spotCache.set(it, c)
+    }
+    let s = c.byCap.get(max)
+    if (!s) {
+      s = c.all.filter((x) => x.d <= max && x.len <= max)
+      c.byCap.set(max, s)
+    }
+    return s
+  }
   // The rest, one by one, at the free spot nearest the tile.
   const placeNear = (list: readonly CalloutItem[]) => {
     const rest = list
@@ -495,30 +663,29 @@ export function layoutCallouts(
           cx(p.anchor) - cx(q.anchor) ||
           (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)
       )
-    // A spot is free: a little air round its box (two never read as
-    // one), no leader through it, its own leader clear.
-    const fits = (it: CalloutItem, s: ReturnType<typeof nearSpots>[number]) =>
-      clear({
-        x: s.box.x - BOX_GAP / 2,
-        y: s.box.y - BOX_GAP / 2,
-        w: s.box.w + BOX_GAP,
-        h: s.box.h + BOX_GAP,
-      }) &&
-      boxOk(s.box) &&
-      leaderOk(s.leader, it)
-    const spots = new Map(rest.map((it) => [it.id, nearSpots(it, cap)]))
+    const spots = new Map(rest.map((it) => [it.id, spotsOf(it, cap)]))
     // The tile with the fewest free spots goes first (a few at a time, in
     // a crowd: in order), so a crowded tile is not boxed in by its
     // neighbours' choices.
     const FEW = 400
+    // Once a few: each tile's free spots, kept. A spot only ever stops
+    // being free (what is placed only grows, `free` and the cap hold for
+    // the pass), so after a take only the new box and leader are checked
+    // against what was free - not every spot against everything again.
+    let live: Map<string, TrySpot[]> | null = null
     while (rest.length) {
       let pick = 0
-      if (rest.length <= 40) {
+      // One left: it goes first anyway, at its first free spot.
+      if (rest.length > 1 && rest.length <= 40) {
+        live ??= new Map(
+          rest.map((it) => [
+            it.id,
+            spots.get(it.id)!.filter((s) => fits(it, s)),
+          ])
+        )
         let fewest = Infinity
         rest.forEach((it, i) => {
-          let n = 0
-          for (const s of spots.get(it.id)!)
-            if (fits(it, s) && ++n >= FEW) break
+          const n = Math.min(live!.get(it.id)!.length, FEW)
           if (n < fewest) {
             fewest = n
             pick = i
@@ -526,8 +693,17 @@ export function layoutCallouts(
         })
       }
       const it = rest.splice(pick, 1)[0]
-      const s = spots.get(it.id)!.find((x) => fits(it, x))
-      if (s) take(it, s.box, s.side, s.leader)
+      const s = live
+        ? live.get(it.id)![0]
+        : spots.get(it.id)!.find((x) => fits(it, x))
+      if (!s) continue
+      take(it, s.box, s.side, s.leader)
+      if (live)
+        for (const o of rest)
+          live.set(
+            o.id,
+            live.get(o.id)!.filter((x) => !spotBlockedBy(x, s.box, s.leader))
+          )
     }
   }
   const keys = [...groups.keys()].sort()
@@ -679,7 +855,9 @@ export function calloutClusters(
 
 /** Boxes with ids, bucketed in a grid: which lie within `r` of a box. */
 export class BoxIndex {
-  private grid = new Map<string, number[]>()
+  private grid = new Map<number, number[]>()
+  /** Boxes too big to bucket: near every query. */
+  private big: number[] = []
   private list: { id: string; box: Box }[] = []
   constructor(private cell = 64) {}
 
@@ -697,28 +875,43 @@ export class BoxIndex {
     const i = this.list.push({ id, box }) - 1
     const [x0, x1, y0, y1] = this.span(box)
     if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) {
-      this.grid.set("*", [...(this.grid.get("*") ?? []), i])
+      this.big.push(i)
       return
     }
     for (let gx = x0; gx <= x1; gx++)
       for (let gy = y0; gy <= y1; gy++) {
-        const k = `${gx},${gy}`
+        const k = cellKey(gx, gy)
         const l = this.grid.get(k)
         if (l) l.push(i)
         else this.grid.set(k, [i])
       }
   }
 
+  /** Does `test` hold for one of the boxes that may touch `b`? It sees
+   * every box that touches `b`, and maybe a few near it that do not -
+   * for a test that itself needs them to meet (a line through a box), at
+   * no list or sort. */
+  some(b: Box, test: (o: { id: string; box: Box }) => boolean): boolean {
+    for (const i of this.big) if (test(this.list[i])) return true
+    const [x0, x1, y0, y1] = this.span(b)
+    if (!((x1 - x0 + 1) * (y1 - y0 + 1) <= 400)) return this.list.some(test)
+    for (let gx = x0; gx <= x1; gx++)
+      for (let gy = y0; gy <= y1; gy++)
+        for (const i of this.grid.get(cellKey(gx, gy)) ?? [])
+          if (test(this.list[i])) return true
+    return false
+  }
+
   /** The boxes within `r` of `b` (any part), but `skip`'s. */
   near(b: Box, r: number, skip?: string): { id: string; box: Box }[] {
-    const seen = new Set<number>(this.grid.get("*") ?? [])
+    const seen = new Set<number>(this.big)
     const [x0, x1, y0, y1] = this.span(b, r)
     if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400)
       this.list.forEach((_, i) => seen.add(i))
     else
       for (let gx = x0; gx <= x1; gx++)
         for (let gy = y0; gy <= y1; gy++)
-          for (const i of this.grid.get(`${gx},${gy}`) ?? []) seen.add(i)
+          for (const i of this.grid.get(cellKey(gx, gy)) ?? []) seen.add(i)
     const out: { id: string; box: Box }[] = []
     for (const i of [...seen].sort((p, q) => p - q)) {
       const o = this.list[i]
