@@ -140,7 +140,7 @@ class LinkPeerTests(_Base):
         peer = device_render_interfaces(self.dev)[0].link_peer
         self.assertEqual(
             set(peer), {"device", "interface", "description", "mac_address", "mtu",
-             "custom_fields"}
+             "custom_fields", "lag"}
         )
         self.assertIsInstance(peer["device"], str)
 
@@ -158,8 +158,8 @@ class LinkPeerTests(_Base):
             [r.link_peer for r in rows]
         self.assertEqual(len(rows), 9)
         # Interfaces, terminations, cables, far terminations, far interfaces,
-        # far devices: six IN queries whatever the port count.
-        self.assertLessEqual(len(ctx.captured_queries), 6)
+        # far devices, far LAGs: seven IN queries whatever the port count.
+        self.assertLessEqual(len(ctx.captured_queries), 7)
 
 
 class FilterTests(_Base):
