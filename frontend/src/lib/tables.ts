@@ -300,6 +300,8 @@ const ROWS: Row[] = [
   ["automation-targets", "Automation targets", "Integrations", "/api/automation-targets/", { ioType: "automationtarget" }],
   ["deploy-runs", "Deploy runs", "Integrations", "/api/deploy-runs/"],
   ["embedded-deploy-runs", "Deploy runs (embedded)", "Integrations", "/api/deploy-runs/", sub],
+  ["prefix-renumber-changes", "Renumber: changes", "IPAM", "/api/prefixes/", sub],
+  ["prefix-renumber-unchanged", "Renumber: left unchanged", "IPAM", "/api/prefixes/", sub],
   ["deploy-pipelines", "Pipelines", "Integrations", "/api/deploy-pipelines/"],
   ["deploy-pipeline-runs", "Pipeline runs", "Integrations", "/api/deploy-pipeline-runs/"],
   ["deploy-pipeline-runs-of-pipeline", "Pipeline runs (embedded)", "Integrations", "/api/deploy-pipeline-runs/", sub],
