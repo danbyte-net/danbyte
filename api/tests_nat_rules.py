@@ -192,3 +192,60 @@ class RegistrationTests(_Base):
         self.post()
         hits = self.client.get("/api/search/?q=CRM").json()["hits"]
         self.assertIn("natrule", [h["type"] for h in hits])
+
+
+class RenderContextTests(_Base):
+    """A device render reads its own NAT rules as ``nat_rules``."""
+
+    def test_device_render_lists_its_own_rules(self):
+        from .export_templates import _render_nat_rules, render_device_config
+        from .models import ExportTemplate, Interface
+
+        wan = Interface.objects.create(device=self.fw, name="wan0")
+        NATRule.objects.create(
+            tenant=self.tenant, device=self.fw, name="b-masq", kind="masquerade",
+            protocol="any", source_prefix=self.prefix, out_interface=wan,
+        )
+        NATRule.objects.create(
+            tenant=self.tenant, device=self.fw, name="a-web", kind="dnat",
+            external_ip=self.public, external_ports="443",
+            internal_ip=self.private, internal_ports="8443", description="web",
+        )
+        other = Device.objects.create(
+            tenant=self.tenant, name="fw2", device_type=self.fw.device_type,
+            role=self.fw.role, site=self.site,
+        )
+        NATRule.objects.create(tenant=self.tenant, device=other, name="elsewhere")
+        rows = _render_nat_rules(self.fw, self.tenant, None)
+        self.assertEqual([r["name"] for r in rows], ["a-web", "b-masq"])
+        web, masq = rows
+        self.assertEqual(web["destination"], "203.0.113.10")
+        self.assertEqual(web["to_address"], "10.10.20.15")
+        self.assertEqual(web["source"], "")
+        self.assertIsNone(web["out_interface"])
+        self.assertEqual(web["description"], "web")
+        self.assertEqual(masq["source"], "10.10.20.0/24")
+        self.assertEqual(masq["out_interface"], "wan0")
+        self.assertIsNone(masq["destination"])
+        self.assertIsNone(masq["to_address"])
+        self.assertIsInstance(masq["id"], str)
+
+        t = ExportTemplate.objects.create(
+            tenant=self.tenant, name="nat", object_type="device",
+            template_code=(
+                "{% for r in nat_rules %}{{ r.kind }} {{ r.source }} "
+                "{{ r.out_interface }} {{ r.to_address }};{% endfor %}"
+            ),
+        )
+        admin = User.objects.get(username="admin")
+        out = render_device_config(t, self.fw, self.tenant, admin)
+        self.assertEqual(
+            out, "dnat  None 10.10.20.15;masquerade 10.10.20.0/24 wan0 None;"
+        )
+
+    def test_a_reader_without_nat_view_gets_none(self):
+        from .export_templates import _render_nat_rules
+
+        NATRule.objects.create(tenant=self.tenant, device=self.fw, name="x")
+        nobody = User.objects.create_user("nobody", password="x")
+        self.assertEqual(_render_nat_rules(self.fw, self.tenant, nobody), [])

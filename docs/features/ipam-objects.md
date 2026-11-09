@@ -369,6 +369,9 @@ firewall could implement reads exactly like the truth:
 Rules are listed under **Services → NAT rules**, are found by global search on
 name, address or port, and carry the usual journal and change log.
 
+A device's rules reach its [export template renders](export-templates.md) as
+`nat_rules`.
+
 ## Service templates
 
 A **service template** is a reusable service definition - a name plus its ports
