@@ -58,7 +58,7 @@ falling back.
 | vApp | **VM group** on that cluster - *opt-in, on by default* |
 | Virtual machine | **Virtual machine** (vCPUs, memory, disk) |
 | VM description | **Description** (blank-filled, never overwrites yours) |
-| Network connection | **VM interface** (`nic0`, `nic1`…) with its MAC |
+| Network connection | **VM interface** (`nic0`, `nic1`…) with its MAC - matched by MAC first, then by name, as in [Proxmox](virt-proxmox.md#matching-nics-to-vm-interfaces) |
 | Org VDC network | **Virtual switch** + network - *opt-in* |
 | Reported address | **IP address** assigned to the interface |
 | External address | **NAT rule** - *opt-in, off by default* |

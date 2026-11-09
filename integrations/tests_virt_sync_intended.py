@@ -310,3 +310,88 @@ class InterfaceTests(_Base):
         self.sync()
         self.assertEqual(VirtualDisk.objects.get(vm=vm, key="scsi0").size_gb, 64)
         self.assertTrue(VirtualDisk.objects.filter(vm=vm, key="scsi1").exists())
+
+
+class NicMatchByMacTests(_Base):
+    """A NIC is matched by MAC before name, so an intended VM whose NICs are
+    named after the device port is not given a second netX set."""
+
+    def fake_get(self, source, path):
+        if path.startswith("cluster/sdn/"):
+            return []
+        return super().fake_get(source, path)
+
+    def port_named_vm(self):
+        vm = self.intended_vm()
+        VMInterface.objects.create(vm=vm, name="gi1", mac_address="aa-bb-cc-00-11-22")
+        VMInterface.objects.create(vm=vm, name="gi2", mac_address="AA:BB:CC:00:11:23")
+        return vm
+
+    def test_port_named_nics_are_not_duplicated(self):
+        vm = self.port_named_vm()
+        self.sync()
+        self.sync()
+        self.assertEqual(
+            sorted(VMInterface.objects.filter(vm=vm).values_list("name", flat=True)),
+            ["gi1", "gi2"],
+        )
+        self.assertFalse(VirtChange.objects.filter(vm=vm, kind="iface_extra").exists())
+
+    def test_hypervisor_facts_are_blank_filled_and_the_name_kept(self):
+        vm = self.port_named_vm()
+        gi2 = VMInterface.objects.get(vm=vm, name="gi2")
+        gi2.model, gi2.bridge = "vmxnet3", "vmbr9"
+        gi2.save(update_fields=["model", "bridge"])
+        self.sync()
+        gi1 = VMInterface.objects.get(vm=vm, name="gi1")
+        self.assertEqual((gi1.index, gi1.model, gi1.bridge), (0, "virtio", "vmbr0"))
+        self.assertEqual(gi1.mac_address, "aa-bb-cc-00-11-22")
+        gi2.refresh_from_db()
+        self.assertEqual((gi2.model, gi2.bridge), ("vmxnet3", "vmbr9"))
+        change = VirtChange.objects.get(vm=vm, kind="iface_change")
+        self.assertEqual(
+            change.detail["interfaces"]["gi2"]["bridge"],
+            {"danbyte": "vmbr9", "hypervisor": "vnet-wan"},
+        )
+
+    def test_vlan_reaches_the_mac_matched_nic(self):
+        vm = self.port_named_vm()
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()
+        gi1 = VMInterface.objects.get(vm=vm, name="gi1")
+        self.assertEqual(gi1.vlan.vlan_id, 10)
+
+    def test_a_shared_mac_is_not_guessed_and_is_reported(self):
+        vm = self.intended_vm()
+        VMInterface.objects.create(vm=vm, name="gi1", mac_address="AA:BB:CC:00:11:22")
+        VMInterface.objects.create(vm=vm, name="net0", mac_address="AA:BB:CC:00:11:22",
+                                   created_interface=True)
+        self.sync()
+        self.source.refresh_from_db()
+        notes = [n for n in self.source.last_sync_skipped if "more than one" in n]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("gi1, net0", notes[0])
+        self.assertIn("net0 was added by a sync", notes[0])
+        # Matched by name: nothing deleted, only net1 created.
+        self.assertEqual(VMInterface.objects.filter(vm=vm).count(), 3)
+        self.assertEqual(VMInterface.objects.get(vm=vm, name="net0").index, 0)
+        self.assertIsNone(VMInterface.objects.get(vm=vm, name="gi1").index)
+
+    def test_a_synced_nic_on_an_owned_vm_follows_a_hypervisor_rename(self):
+        self.sync()
+        vm = VirtualMachine.objects.get(name="edge-r1")
+        self.configs[100]["net2"] = self.configs[100].pop("net1")
+        self.sync()
+        names = sorted(VMInterface.objects.filter(vm=vm).values_list("name", flat=True))
+        self.assertEqual(names, ["net0", "net2"])
+
+    def test_an_operator_nic_on_an_owned_vm_keeps_its_name(self):
+        self.sync()
+        vm = VirtualMachine.objects.get(name="edge-r1")
+        VMInterface.objects.filter(vm=vm, name="net0").update(
+            name="uplink", created_interface=False,
+        )
+        self.sync()
+        names = sorted(VMInterface.objects.filter(vm=vm).values_list("name", flat=True))
+        self.assertEqual(names, ["net1", "uplink"])
