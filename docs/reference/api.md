@@ -388,6 +388,43 @@ the delete removes, including a cable left with no port on one end; `notes`
 name rows that go but
 are worth a look first, such as a power feed still cabled to a device.
 
+## Renumbering a prefix
+
+`POST /api/prefixes/<id>/renumber/` with `{"new_prefix":
+"2001:db8:1230::/60", "dry_run": true}` moves the prefix, everything inside it
+and the references to it to the new network (see
+[Prefixes](../features/prefix-crud.md#renumbering-a-prefix)). `dry_run`
+defaults to `true`; `false` applies it in one transaction. It needs change on
+the prefix.
+
+Both answer:
+
+```json
+{
+  "prefix": {"id": "…", "cidr": "2001:db8:abc0::/60"},
+  "new_prefix": "2001:db8:1230::/60",
+  "dry_run": true, "applied": false,
+  "counts": [{"kind": "ipaddress", "label": "IP addresses", "count": 12}],
+  "total": 31, "truncated": false,
+  "changes": [{"kind": "ipaddress", "id": "…", "label": "gw.v10",
+               "field": "ip_address", "old": "2001:db8:abc0:1::1",
+               "new": "2001:db8:1230:1::1"}],
+  "unchanged_counts": [{"kind": "dhcpscope", "label": "DHCP scopes", "count": 1}],
+  "unchanged_total": 1,
+  "unchanged": [{"kind": "dhcpscope", "id": "…", "label": "…", "value": "…",
+                 "reason": "On a DHCP server: change it there, the next sync follows."}],
+  "linked": [{"kind": "fhrpgroup", "label": "Fhrp groups", "count": 2}]
+}
+```
+
+`changes` has one row per changed field and `unchanged` one per reference;
+each list holds at most 2,000 rows, with the full figure in `total` and
+`unchanged_total`. A different family or length, a host address, the
+current network, a `vrf_id`, or a prefix, address or range already in the
+new network answers `400` under `new_prefix`. A kind the caller may not
+change, or a row outside their sites, answers `403` naming it - for the
+preview too. Nothing is written by a refusal.
+
 ## Generating the schema offline
 
 To export the schema to a file (for client generation, diffing, or CI):
