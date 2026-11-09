@@ -1,4 +1,4 @@
-import { Suspense } from "react"
+import { Suspense, useMemo } from "react"
 import type { ReactNode } from "react"
 import { X } from "lucide-react"
 
@@ -66,6 +66,45 @@ export function PlanScene3D({
   showHint: boolean
   onDismissHint: () => void
 }) {
+  // Stable while their inputs are: a background refetch or an unrelated
+  // editor render hands the scene the same arrays, so its text and floor
+  // memos hold.
+  const areaShapes = useMemo(
+    () => areas?.filter((s) => s.kind === "area"),
+    [areas]
+  )
+  const labelShapes = useMemo(
+    () => areas?.filter((s) => s.kind === "label"),
+    [areas]
+  )
+  const drawing = cad.drawing
+  const placement = cad.placement
+  const drawingFloor = useMemo(
+    () =>
+      cadFloorUrl && drawing
+        ? {
+            url: cadFloorUrl,
+            sizeMm: drawing.size_mm,
+            centreMm: {
+              x:
+                placement.x_mm +
+                (placement.rotation % 180
+                  ? drawing.size_mm.height
+                  : drawing.size_mm.width) /
+                  2,
+              y:
+                placement.y_mm +
+                (placement.rotation % 180
+                  ? drawing.size_mm.width
+                  : drawing.size_mm.height) /
+                  2,
+            },
+            rotation: placement.rotation,
+            opacity: placement.opacity / 100,
+          }
+        : null,
+    [cadFloorUrl, drawing, placement]
+  )
   return (
     <>
       <Suspense fallback={<Loading />}>
@@ -96,8 +135,8 @@ export function PlanScene3D({
           racks={capacity.rackById}
           pointTileIds={capacity.highlightTileIds}
           focusRack={rackFocus}
-          areas={areas?.filter((s) => s.kind === "area")}
-          labels={areas?.filter((s) => s.kind === "label")}
+          areas={areaShapes}
+          labels={labelShapes}
           showPlanLabels={prefs.show3dLabels}
           showAreaNames={prefs.show3dAreaNames}
           showZoneLabels={prefs.showZoneLabels}
@@ -105,30 +144,7 @@ export function PlanScene3D({
           readableIcons={prefs.iconTiles}
           readableCallouts={prefs.callouts === "auto"}
           muteBackground={prefs.muteBackground}
-          drawingFloor={
-            cadFloorUrl && cad.drawing
-              ? {
-                  url: cadFloorUrl,
-                  sizeMm: cad.drawing.size_mm,
-                  centreMm: {
-                    x:
-                      cad.placement.x_mm +
-                      (cad.placement.rotation % 180
-                        ? cad.drawing.size_mm.height
-                        : cad.drawing.size_mm.width) /
-                        2,
-                    y:
-                      cad.placement.y_mm +
-                      (cad.placement.rotation % 180
-                        ? cad.drawing.size_mm.width
-                        : cad.drawing.size_mm.height) /
-                        2,
-                  },
-                  rotation: cad.placement.rotation,
-                  opacity: cad.placement.opacity / 100,
-                }
-              : null
-          }
+          drawingFloor={drawingFloor}
         />
       </Suspense>
       {colorLegend}

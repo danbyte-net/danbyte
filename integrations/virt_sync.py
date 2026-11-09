@@ -273,10 +273,10 @@ def _network_group(source, cluster):
 
 
 def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
-                  kind=None):
+                  kind=None, mac=""):
     """Shared: upsert VirtualSwitch(bridge) + VirtNetwork(→VLAN) and blank-fill
     the VM interface's VLAN. Returns 1 if a network row was touched."""
-    from api.models import VLAN, VMInterface, VirtualSwitch
+    from api.models import VLAN, VirtualSwitch
     from api.vlan_scope import resolve_vid
 
     from .models import VirtNetwork
@@ -381,8 +381,8 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     # The direct NIC-to-network statement. The VM page renders from this, not
     # from a shared VLAN - vCenter never supplies a VLAN on the NIC, so the
     # VLAN inference left every vCenter VM looking unmapped (#46).
-    if iface_name:
-        iface = VMInterface.objects.filter(vm=guest.vm, name=iface_name).first()
+    if iface_name or mac:
+        iface = _find_vm_iface(guest.vm, iface_name, mac)
         if iface is not None:
             from .models import VirtNetworkLink
 
@@ -422,23 +422,22 @@ def _sync_networks_proxmox(source, cluster, guest, cfg, now, sdn=None) -> int:
         parsed = _parse_net(str(value))
         iface_name = parsed["name"] or str(key)
         if sdn is not None and parsed["bridge"] in sdn.vnets:
-            n += _link_vnet(sdn, cluster(), guest, iface_name, parsed["bridge"], now)
+            n += _link_vnet(sdn, cluster(), guest, iface_name, parsed["bridge"], now,
+                            mac=parsed["mac"])
             continue
         n += _link_network(
             source, cluster, guest, iface_name,
-            parsed["bridge"], parsed["tag"], "", now,
+            parsed["bridge"], parsed["tag"], "", now, mac=parsed["mac"],
         )
     return n
 
 
-def _link_vnet(sdn, cluster, guest, iface_name, vnet_id, now) -> int:
+def _link_vnet(sdn, cluster, guest, iface_name, vnet_id, now, mac="") -> int:
     """Link a VM interface to the SDN VNet its NIC sits on."""
-    from api.models import VMInterface
-
     from .models import VirtNetworkLink
 
     vn = sdn.network(cluster, vnet_id)
-    iface = VMInterface.objects.filter(vm=guest.vm, name=iface_name).first()
+    iface = _find_vm_iface(guest.vm, iface_name, mac)
     if iface is not None:
         VirtNetworkLink.objects.update_or_create(
             network=vn, vm_interface=iface, defaults={"last_seen_at": now},
@@ -832,7 +831,8 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                         and not _intended(guest.vm),
                     )
                 d = details.get(key) or {}
-                made, seen_ifaces = sync_ifaces(guest, d.get("ifaces"))
+                made, seen_ifaces = sync_ifaces(guest, d.get("ifaces"),
+                                                 warnings=warnings)
                 counts["interfaces"] += made
                 # An interface Danbyte has but the hypervisor doesn't is either
                 # stale bookkeeping or the operator's - see _reconcile_interfaces.
@@ -993,6 +993,80 @@ def _iface_drift(iface, reported: dict) -> dict:
 def _norm_mac(value) -> str:
     """Compare MACs by their digits - ``AA:BB`` and ``aa-bb`` are one address."""
     return "".join(c for c in str(value or "").lower() if c.isalnum())
+
+
+def _vm_iface_rows(vm) -> list:
+    """The VM's interfaces, loaded once per guest for :func:`_match_vm_iface`."""
+    from api.models import VMInterface
+
+    return list(VMInterface.objects.filter(vm=vm))
+
+
+def _match_vm_iface(guest, rows, claimed, name, mac, warnings=None):
+    """The VM interface a hypervisor NIC is: same MAC, else same name.
+
+    Returns ``(row, ok)``. ``row`` is None when nothing matches and a new row
+    may be created; ``ok`` is False when the NIC must be skipped because its
+    name belongs to a row another NIC of this pass already matched.
+
+    MAC first, so a NIC an operator named after the device port (``gi1``) is
+    the same row as the hypervisor's ``net0`` - otherwise every pass would add
+    a second NIC with the same MAC. Two rows sharing the MAC is not guessed
+    at: the name decides and the duplicate is reported for the operator to
+    remove; the sync never deletes it.
+    """
+    want = _norm_mac(mac)
+    if want:
+        hits = [r for r in rows
+                if r.pk not in claimed and _norm_mac(r.mac_address) == want]
+        if len(hits) == 1:
+            return hits[0], True
+        if len(hits) > 1 and warnings is not None:
+            names = ", ".join(sorted(r.name for r in hits))
+            dupes = sorted(r.name for r in hits if r.created_interface)
+            note = (f"{guest.vm.name}: MAC {mac} is on more than one interface "
+                    f"({names}); matched by name")
+            if dupes:
+                note += (f". {', '.join(dupes)} was added by a sync and is likely "
+                         "a duplicate to delete")
+            warnings.append(note)
+    for r in rows:
+        if r.name == name:
+            if r.pk in claimed:
+                if warnings is not None:
+                    warnings.append(
+                        f"{guest.vm.name}: NIC {name} skipped - that name is an "
+                        "interface already matched to another NIC by MAC"
+                    )
+                return None, False
+            return r, True
+    return None, True
+
+
+def _find_vm_iface(vm, name, mac=""):
+    """Lookup-only twin of :func:`_match_vm_iface` for the network linkers:
+    the one interface with this MAC, else the one with this name."""
+    from api.models import VMInterface
+
+    want = _norm_mac(mac)
+    if want:
+        hits = [i for i in VMInterface.objects.filter(vm=vm).exclude(mac_address="")
+                if _norm_mac(i.mac_address) == want]
+        if len(hits) == 1:
+            return hits[0]
+    if not name:
+        return None
+    return VMInterface.objects.filter(vm=vm, name=name).first()
+
+
+def _follow_name(guest, iface, name, rows) -> None:
+    """A sync-created NIC on a VM the sync owns follows the hypervisor's name
+    when it was matched by MAC; an intended VM's or operator's name is kept."""
+    if (iface.name == name or not iface.created_interface
+            or _intended(guest.vm) or any(r.name == name for r in rows)):
+        return
+    iface.name = name
+    iface.save(update_fields=["name"])
 
 
 def _reconcile_interfaces(guest, seen, now, fresh_changes, apply=False) -> None:
@@ -1917,7 +1991,7 @@ def _hypervisor_role(source):
     )
 
 
-def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
+def _sync_interfaces(guest, cfg: dict, warnings=None) -> tuple[int, list]:
     """Proxmox NICs → VMInterface. Returns (count, names the hypervisor has)."""
     from api.models import VMInterface
 
@@ -1941,6 +2015,8 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
     # The build fields (slot, model, bridge) are kept for an intended VM,
     # whose page and rebuild read them; other VMs behave as before.
     build = _intended(guest.vm)
+    rows = _vm_iface_rows(guest.vm)
+    claimed: set = set()
     for key, value in (cfg or {}).items():
         km = _NET_KEY.match(str(key))
         if not km:
@@ -1948,17 +2024,24 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
         parsed = _parse_net(str(value))
         mtu = parsed["mtu"] if keep_mtu else None
         name = parsed["name"] or key  # LXC names its NIC; QEMU keeps netX
+        iface, ok = _match_vm_iface(guest, rows, claimed, name, parsed["mac"],
+                                    warnings)
+        if not ok:
+            continue
+        if iface is not None:
+            claimed.add(iface.pk)
+            _follow_name(guest, iface, name, rows)
         # Report what the hypervisor actually said, so _reconcile_interfaces can
         # diff it. Absent keys mean "not reported" and are never treated as
         # disagreement - see _iface_drift.
-        seen.append({"name": name, "mac_address": parsed["mac"],
+        seen.append({"name": iface.name if iface else name,
+                     "mac_address": parsed["mac"],
                      "mtu": mtu, "vlan_vid": parsed["tag"],
                      "model": parsed["model"], "bridge": parsed["bridge"],
                      "index": int(km.group(1))})
-        iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
         slot = int(km.group(1))
         if build and VMInterface.objects.filter(vm=guest.vm, index=slot).exclude(
-            name=name
+            pk=iface.pk if iface else None
         ).exists():
             slot = None  # another NIC holds that slot in the intent: drift, not a clash
         if iface is None:
@@ -1970,6 +2053,8 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
                 vm=guest.vm, name=name, mac_address=parsed["mac"],
                 mtu=mtu, created_interface=True, **extra,
             )
+            rows.append(iface)
+            claimed.add(iface.pk)
             logger.info("created interface %s/%s (%s)", guest.vm.name, name,
                         parsed["mac"] or "no mac")
         else:
@@ -2076,7 +2161,7 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
     source_placement = vrf_placement.Placement.from_policy(source)
 
     by_mac = {
-        (i.mac_address or "").lower(): i
+        _norm_mac(i.mac_address): i
         for i in VMInterface.objects.filter(vm=guest.vm)
         if i.mac_address
     }
@@ -2095,7 +2180,7 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
     first_v4 = None
     for entry in entries:
         mac = (entry.get("mac") or "").lower()
-        iface = by_mac.get(mac)
+        iface = by_mac.get(_norm_mac(mac)) if mac else None
         if iface is not None and iface.sync_ignore_ips:
             # Operator said this NIC's guest IPs are noise (Docker bridge).
             continue
@@ -2548,11 +2633,12 @@ def _sync_networks_vcenter(source, cluster, guest, nics, now,
             source, cluster, guest, iface_name, network,
             int(tag) if isinstance(tag, int) else None, network, now,
             kind=(net_kinds or {}).get(network),
+            mac=nic.get("mac_address") or "",
         )
     return n
 
 
-def _sync_vcenter_interfaces(guest, nics) -> tuple[int, list]:
+def _sync_vcenter_interfaces(guest, nics, warnings=None) -> tuple[int, list]:
     """vCenter NICs → VMInterface. Returns (count, names the hypervisor has)."""
     from api.models import VMInterface
 
@@ -2560,6 +2646,8 @@ def _sync_vcenter_interfaces(guest, nics) -> tuple[int, list]:
         return 0, []
     n = 0
     seen: list = []
+    rows = _vm_iface_rows(guest.vm)
+    claimed: set = set()
     for key, nic in (nics or {}).items():
         nic = nic or {}
         name = nic.get("label") or f"nic-{key}"
@@ -2568,12 +2656,19 @@ def _sync_vcenter_interfaces(guest, nics) -> tuple[int, list]:
         # stay absent rather than being reported as empty - a field the
         # hypervisor never states must never read as disagreement. The VLAN
         # arrives separately, through the port group in _link_network.
-        seen.append({"name": name, "mac_address": mac})
-        iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
+        iface, ok = _match_vm_iface(guest, rows, claimed, name, mac, warnings)
+        if not ok:
+            continue
+        if iface is not None:
+            claimed.add(iface.pk)
+            _follow_name(guest, iface, name, rows)
+        seen.append({"name": iface.name if iface else name, "mac_address": mac})
         if iface is None:
-            VMInterface.objects.create(
+            iface = VMInterface.objects.create(
                 vm=guest.vm, name=name, mac_address=mac, created_interface=True
             )
+            rows.append(iface)
+            claimed.add(iface.pk)
             logger.info("created interface %s/%s (%s)", guest.vm.name, name,
                         mac or "no mac")
         elif mac and not iface.mac_address:
@@ -2720,7 +2815,7 @@ def _vcloud_nics(detail: dict) -> list:
     return out
 
 
-def _sync_vcloud_interfaces(guest, nics) -> tuple[int, list]:
+def _sync_vcloud_interfaces(guest, nics, warnings=None) -> tuple[int, list]:
     """Cloud Director NICs → VMInterface. Returns (count, what it reported)."""
     from api.models import VMInterface
 
@@ -2728,17 +2823,26 @@ def _sync_vcloud_interfaces(guest, nics) -> tuple[int, list]:
         return 0, []
     n = 0
     seen: list = []
+    rows = _vm_iface_rows(guest.vm)
+    claimed: set = set()
     for nic in nics:
         name = nic.get("name") or f"nic{nic.get('index', 0)}"
         mac = (nic.get("mac") or "").lower()
         # No MTU and no speed in the payload, so those keys stay absent - a
         # field the hypervisor never states must never read as disagreement.
-        seen.append({"name": name, "mac_address": mac})
-        iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
+        iface, ok = _match_vm_iface(guest, rows, claimed, name, mac, warnings)
+        if not ok:
+            continue
+        if iface is not None:
+            claimed.add(iface.pk)
+            _follow_name(guest, iface, name, rows)
+        seen.append({"name": iface.name if iface else name, "mac_address": mac})
         if iface is None:
-            VMInterface.objects.create(
+            iface = VMInterface.objects.create(
                 vm=guest.vm, name=name, mac_address=mac, created_interface=True
             )
+            rows.append(iface)
+            claimed.add(iface.pk)
             logger.info("created interface %s/%s (%s)", guest.vm.name, name,
                         mac or "no mac")
         elif mac and not iface.mac_address:
@@ -2775,7 +2879,7 @@ def _sync_networks_vcloud(source, cluster, guest, nics, now) -> int:
             continue
         n += _link_network(
             source, cluster, guest, nic.get("name") or "", network, None,
-            network, now, kind="standard",
+            network, now, kind="standard", mac=nic.get("mac") or "",
         )
     return n
 

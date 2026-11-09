@@ -1206,6 +1206,21 @@ class VCenterSyncTests(TestCase):
         vm.refresh_from_db()
         self.assertEqual(vm.primary_ip, ip)
 
+    def test_a_nic_is_matched_by_mac_before_name(self):
+        """An adapter whose MAC is on an interface the operator named
+        differently is that interface - not a second one with the same MAC."""
+        ctype = ClusterType.objects.create(tenant=self.tenant, name="Mine", slug="mine")
+        cluster = Cluster.objects.create(tenant=self.tenant, name="ops", type=ctype)
+        vm = VirtualMachine.objects.create(tenant=self.tenant, name="web01",
+                                           cluster=cluster)
+        eth0 = VMInterface.objects.create(vm=vm, name="eth0",
+                                          mac_address="00-50-56-AA-BB-CC")
+        self.sync()
+        self.sync()
+        self.assertEqual(list(VMInterface.objects.filter(vm=vm)), [eth0])
+        ip = IPAddress.objects.get(ip_address="10.77.0.40")
+        self.assertEqual(ip.assigned_vm_interface, eth0)
+
     def test_moref_becomes_integer_vmid(self):
         self.sync()
         self.assertTrue(VirtGuest.objects.filter(vmid=100, kind="vmware").exists())

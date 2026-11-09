@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import type { FloorPlan, FloorPlanContents } from "@/lib/api"
+import type { ExplodeStore } from "@/components/floorplan/level-explode"
 import { useTheme } from "@/components/theme-provider"
 import { readFloorHidden, visibleShapes } from "@/components/floorplan/hidden"
 import { shapesOf } from "@/components/floorplan/shapes"
@@ -10,6 +11,7 @@ import type { AreaShape, LabelShape } from "@/components/floorplan/shapes"
 import { floorPlanContentsKey } from "@/components/floorplan/use-floor-plan-data"
 
 import type { LevelPlacement } from "./building-math"
+import { ExplodedGroup } from "./level-explode-3d"
 import { planTexts } from "./plan-text"
 import type { PlanTextShow } from "./plan-text"
 import type { PlanTextBus } from "./plan-text-bus"
@@ -25,11 +27,14 @@ import { useScene } from "./use-scene"
  */
 export function LevelPlanText({
   placement,
+  explode = null,
   bus,
   show,
   readable,
 }: {
   placement: LevelPlacement
+  /** The building's explode: the text rides its level's group. */
+  explode?: ExplodeStore | null
   bus: PlanTextBus
   show: PlanTextShow
   readable: boolean
@@ -69,13 +74,15 @@ export function LevelPlanText({
   }, [data, contents.data, hiddenRaw, show, dark])
   if (!data) return null
   return (
-    <PlanTextLayer
-      bus={bus}
-      items={items}
-      plan={data.plan}
-      place={placement}
-      readable={readable}
-      idPrefix={`${id}:`}
-    />
+    <ExplodedGroup explode={explode} step={placement.step}>
+      <PlanTextLayer
+        bus={bus}
+        items={items}
+        plan={data.plan}
+        place={placement}
+        readable={readable}
+        idPrefix={`${id}:`}
+      />
+    </ExplodedGroup>
   )
 }

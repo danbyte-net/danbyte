@@ -30,6 +30,11 @@ and Danbyte renders it against your live data on demand. Templates live under
 3. Save. Danbyte checks the template compiles and that the object type is valid,
    so mistakes surface immediately rather than when you run it.
 
+The template body is stored exactly as sent - leading indentation, trailing
+spaces and the final newline included - so a client that writes a template
+over the API reads the same bytes back. Names are still trimmed. Label
+template HTML, CSS and QR content, and script source, are kept the same way.
+
 ## What you can use in a template
 
 When the template runs, it has access to the objects of its type within your
@@ -64,11 +69,12 @@ with a richer context:
 |---|---|
 | `device` | The device itself - `device.name`, `device.site`, `device.platform`, `device.custom_fields`, … |
 | `config_context` | The merged [config context](config-contexts.md) for the device. |
-| `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, mac_address, mtu, custom_fields}` (the far port's own MAC and MTU), or `None` on an uncabled port. A far end on a device the reader may not view names nothing: every field is empty and `hidden` is true. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
+| `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, mac_address, mtu, custom_fields, lag}` (the far port's own MAC and MTU), or `None` on an uncabled port. `lag` is `{name, mac_address}` when the far port is a LAG/bond member, else `None`; its `mac_address` is the bond interface's own recorded MAC, or `""` when none is recorded - Danbyte does not guess which member MAC the kernel picks, so record the bond MAC or fall back with `link_peer.lag.mac_address or link_peer.mac_address`. A far end on a device the reader may not view names nothing: every field is empty, `lag` is `None` and `hidden` is true. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
 | `ip_addresses` | Every address assigned to the device; `assigned_interface_id` says where. |
 | `routing` | What the device routes with - VRFs, static routes, policy rules, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
 | `tunnels` | Every tunnel end on the device, with its far end(s) resolved. See [Tunnels](#tunnels). |
 | `tunnels_by_interface` | The same rows keyed by the local port name (`tunnels_by_interface["wg0"]`). |
+| `nat_rules` | The device's own [NAT rules](ipam-objects.md#nat-rules) you may view, in name order, as plain dicts: `id`, `name`, `kind` (`dnat`, `snat`, `static`, `masquerade`), `protocol`, `source` (the source prefix's CIDR, else the source address, else `""`), `destination` (the outside address a `dnat`/`static` rule matches), `to_address` (the address translated to: the inside address of a `dnat`/`static` rule, the outside address of an `snat` rule), `out_interface` (port name), `external_ip`, `external_ports`, `internal_ip`, `internal_ports` and `description`. A missing end is `None`. |
 | `backing_vm` | When the device runs as an [intended VM](virtual-machines.md#intended-vms) you may view (**Is router**), that VM's build: `name`, `vmid`, `cluster`, `node`, `cpu_type`, `sockets`, `vcpus`, `memory_mb`, `disk_gb`, `image`, `storage`, `hypervisor_options`, `interfaces` (each with `index`, `model`, `bridge`, `mac_address`, `mtu`, `vlan`, …) and `disks`. A plain dict, the same shape a [provision](iac-runner.md#provisioning-an-intended-vm) sends. `None` otherwise. |
 
 #### Tunnels
@@ -167,6 +173,22 @@ interface {{ i.name }}
 {% elif i.description %}
  description {{ i.description }}
 {% endif %}
+{% endfor %}
+```
+
+The far end's MAC for a neighbour entry, preferring its bond's:
+
+```jinja
+{% for i in interfaces if i.link_peer and not i.link_peer.hidden %}
+{{ i.name }} {{ i.link_peer.lag.mac_address or i.link_peer.mac_address }}
+{% endfor %}
+```
+
+Masquerade rules as nftables:
+
+```jinja
+{% for r in nat_rules if r.kind == "masquerade" %}
+ip saddr {{ r.source }} oifname "{{ r.out_interface }}" masquerade
 {% endfor %}
 ```
 

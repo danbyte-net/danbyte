@@ -364,7 +364,7 @@ layers apart.
     container deployment from the host, with the commands here.
 
 ```bash
-git -C /opt/danbyte fetch --tags
+git -C /opt/danbyte fetch --tags --force
 git -C /opt/danbyte checkout <version>   # e.g. v0.12.0
 docker compose -f docker-compose.prod.yml --env-file .env build
 docker compose -f docker-compose.prod.yml --env-file .env stop scheduler workers fastlane ws

@@ -366,11 +366,18 @@ export function PlanTextLayer({
         const cfg = settings.current
         const c = cellM(cfg.plan)
         const reach = nameReach(cfg.plan)
-        world.compose(
-          offset.set(cfg.place?.x ?? 0, cfg.place?.y ?? 0, cfg.place?.z ?? 0),
-          quat.setFromAxisAngle(up, cfg.place?.rotY ?? 0),
-          one
-        )
+        // The layer's group as it stands this frame - its level's
+        // explode lift (level-explode-3d.tsx) included.
+        const g = group.current
+        if (g) {
+          g.updateWorldMatrix(true, false)
+          world.copy(g.matrixWorld)
+        } else
+          world.compose(
+            offset.set(cfg.place?.x ?? 0, cfg.place?.y ?? 0, cfg.place?.z ?? 0),
+            quat.setFromAxisAngle(up, cfg.place?.rotY ?? 0),
+            one
+          )
         const fov = (camera as THREE.PerspectiveCamera).isPerspectiveCamera
           ? (camera as THREE.PerspectiveCamera).fov
           : 50

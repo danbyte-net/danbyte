@@ -127,6 +127,8 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = ["owner", "last_run_at", "created_at", "updated_at", "trusted"]
+        # The code is stored exactly as sent; DRF would trim its last newline.
+        extra_kwargs = {"source": {"trim_whitespace": False}}
 
     def get_cadence_label(self, obj) -> str:
         if not obj.schedule_enabled:

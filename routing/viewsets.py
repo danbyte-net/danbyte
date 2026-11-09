@@ -988,6 +988,8 @@ class OSPFInterfaceViewSet(_RuleViewSet):
 class ISISInterfaceViewSet(_RuleViewSet):
     """Interfaces enrolled in an IS-IS instance. Filter with ``?instance=``,
     ``?interface=``."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"interface_id": "interface"}
 
     parent = "instance"
     queryset = ISISInterface.objects.select_related(
@@ -1020,6 +1022,8 @@ class EIGRPInstanceViewSet(_IGPInstanceViewSet):
 class EIGRPInterfaceViewSet(_RuleViewSet):
     """Interfaces enrolled in an EIGRP instance. Filter with ``?instance=``,
     ``?interface=``."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"interface_id": "interface"}
 
     parent = "instance"
     queryset = EIGRPInterface.objects.select_related(
@@ -1104,6 +1108,8 @@ class VTEPMembershipViewSet(_RuleViewSet):
 class EthernetSegmentViewSet(_CatalogViewSet):
     """Filter with ``?device=`` (segments with a port on that device) and
     ``?interface=``."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device", "interface_id": "interface"}
 
     queryset = EthernetSegment.objects.all().order_by(NATURAL_NAME)
     serializer_class = EthernetSegmentSerializer

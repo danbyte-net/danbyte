@@ -1141,7 +1141,13 @@ The level on screen is the full, interactive room. Each other level loads
 its own scene when first shown, and stays cached. Clicking anything on
 another level makes it the level on screen; clicking a rack, cabinet or
 device there flies to it. **Explode** pulls the levels apart vertically,
-for seeing the runs between them. Each level below writes its own labels
+for seeing the runs between them. The levels glide to the slider's value
+(dragging, or the arrow keys on the focused slider) rather than jumping,
+and the camera stays where it is; **0** (Fit all) frames the building as
+it is spread. The play button beside the slider, **Animate levels**,
+closes spread levels up over about four seconds, eased, and spreads them
+out again on the next press (pressed while running, it turns back).
+Each level below writes its own labels
 and room, area, zone and tray names on its floor (as the **Labels** and
 **Room & area names** switches say, leaving out what that level's eyes
 hide), so they move with Explode; ghosted and hidden levels write none.

@@ -77,6 +77,7 @@ import { BackLabelDeleteDialog } from "./opens-field"
 import { PlanCanvas } from "./plan-canvas"
 import { PlanDialogs } from "./plan-dialogs"
 import { PlanHeader } from "./plan-header"
+import { createExplodeStore } from "./level-explode"
 import { LevelPanel } from "./level-panel"
 import type { LevelMode, OnionSide } from "./level-panel"
 import { neighbours } from "./levels"
@@ -207,7 +208,9 @@ export function FloorPlanEditor({
   const aligned = !!stackData?.aligned && plan?.kind !== "view"
   const [onion, setOnion] = useState<OnionSide>("off")
   const [levelMode, setLevelMode] = useState<LevelMode>("all")
-  const [explode, setExplode] = useState(0)
+  // The 3D explode lives outside React state: the slider and Animate
+  // levels move it without re-rendering this editor or the 3D scene.
+  const [explode] = useState(createExplodeStore)
   const levelNb = useMemo(
     () => (stackData ? neighbours(stackData.floors, id) : null),
     [stackData, id]
@@ -1484,7 +1487,6 @@ export function FloorPlanEditor({
               mode={levelMode}
               onMode={setLevelMode}
               explode={explode}
-              onExplode={setExplode}
             />
           )}
           {!view3d && (

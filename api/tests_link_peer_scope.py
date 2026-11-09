@@ -11,6 +11,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from api import object_report as rep
+from api.export_templates import render_device_config
 from api.models import (
     Cable,
     CableTermination,
@@ -166,6 +167,70 @@ class LinkPeerScopeTests(_TwoSites):
             with self.subTest(label):
                 out = render_device_config(t, self.rtr_a1, self.tenant, self.user)
                 self.assertNotIn("52:54:00", out.lower())
+
+    def _lag_template(self):
+        return ExportTemplate.objects.create(
+            tenant=self.tenant, name="lag", object_type="device",
+            template_code=(
+                "{% for i in interfaces %}{% if i.link_peer %}{{ i.name }}="
+                "{% if i.link_peer.lag %}{{ i.link_peer.lag.name }}/"
+                "{{ i.link_peer.lag.mac_address or i.link_peer.mac_address }}"
+                "{% else %}none{% endif %};{% endif %}{% endfor %}"
+            ),
+        )
+
+    def test_link_peer_names_the_far_ports_lag(self):
+        from api.export_templates import device_render_interfaces
+
+        far = Interface.objects.get(device=self.rtr_a2, name="e9")
+        far.mac_address = "52:54:00:00:00:09"
+        bond = Interface.objects.create(
+            device=self.rtr_a2, name="bond0", mac_address="52:54:00:00:00:b0"
+        )
+        far.lag = bond
+        far.save()
+        rows = {i.name: i.link_peer for i in device_render_interfaces(self.rtr_a1)}
+        self.assertEqual(
+            rows["e2"]["lag"], {"name": "bond0", "mac_address": "52:54:00:00:00:b0"}
+        )
+        self.assertIsNone(rows["e1"]["lag"])  # e1's far port is in no LAG
+        admin = User.objects.create_superuser("root3", "r3@example.com", "x")
+        t = self._lag_template()
+        out = render_device_config(t, self.rtr_a1, self.tenant, admin)
+        self.assertIn("e2=bond0/52:54:00:00:00:b0;", out.lower())
+        self.assertIn("e1=none;", out)
+        # A bond with no recorded MAC: "" so the template's fallback applies.
+        bond.mac_address = ""
+        bond.save()
+        out = render_device_config(t, self.rtr_a1, self.tenant, admin)
+        self.assertIn("e2=bond0/52:54:00:00:00:09;", out.lower())
+        # The documented fallback works on a port with no LAG at all.
+        doc = ExportTemplate.objects.create(
+            tenant=self.tenant, name="lag-doc", object_type="device",
+            template_code=(
+                "{% for i in interfaces if i.link_peer %}{{ i.name }}="
+                "{{ i.link_peer.lag.mac_address or i.link_peer.mac_address }};"
+                "{% endfor %}"
+            ),
+        )
+        out = render_device_config(doc, self.rtr_a1, self.tenant, admin)
+        self.assertIn("e2=52:54:00:00:00:09;", out.lower())
+        self.assertIn("e1=;", out)  # lag None, no MAC: empty, not an error
+
+    def test_hidden_peer_carries_no_lag(self):
+        far = Interface.objects.get(device=self.secret, name="e1")
+        far.lag = Interface.objects.create(device=self.secret, name="SecretBond")
+        far.save()
+        t = self._lag_template()
+        for label in self._viewers():
+            with self.subTest(label):
+                out = render_device_config(t, self.rtr_a1, self.tenant, self.user)
+                self.assertNotIn("SecretBond", out)
+                self.assertIn("e1=none;", out)
+        from api.export_templates import link_peer_of
+
+        e1 = Interface.objects.get(pk=self.e1.pk)
+        self.assertIsNone(link_peer_of(e1, visible=set())["lag"])
 
     def _report_html(self):
         seen = {}

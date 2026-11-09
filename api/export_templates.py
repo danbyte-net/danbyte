@@ -612,8 +612,11 @@ def link_peer_of(iface, visible=None) -> dict | None:
     """The far end of ``iface``'s cable, as a template may read it.
 
     ``{"device", "interface", "description", "mac_address", "mtu",
-    "custom_fields"}`` - the peer's name, its port, the port's MAC and MTU,
-    and its own fields (a ``frr_name`` custom field, say), or
+    "custom_fields", "lag"}`` - the peer's name, its port, the port's MAC and
+    MTU, its own fields (a ``frr_name`` custom field, say) and, when the port
+    is a LAG/bond member, ``lag`` as ``{"name", "mac_address"}`` (the bond's
+    own recorded MAC, "" when blank - never a guess at the kernel's pick),
+    else ``None``; or
     ``None`` when the port is uncabled or the cable ends off-device. Read-only
     by construction: it is a plain dict, so a template cannot reach the peer
     row or anything hanging off it. ``visible`` is the device ids the reader
@@ -630,8 +633,12 @@ def link_peer_of(iface, visible=None) -> dict | None:
             if visible is not None and peer.device_id not in visible:
                 return {
                     "device": "", "interface": "", "description": "",
-                    "mac_address": "", "mtu": None, "custom_fields": {}, "hidden": True,
+                    "mac_address": "", "mtu": None, "custom_fields": {}, "lag": None,
+                    "hidden": True,
                 }
+            lag = peer.lag
+            if lag is not None and visible is not None and lag.device_id not in visible:
+                lag = None  # a virtual-chassis aggregate on a box out of view
             return {
                 "device": peer.device.name,
                 "interface": peer.name,
@@ -639,13 +646,20 @@ def link_peer_of(iface, visible=None) -> dict | None:
                 "mac_address": peer.mac_address or "",
                 "mtu": peer.mtu,
                 "custom_fields": dict(peer.custom_fields or {}),
+                "lag": (
+                    {"name": lag.name, "mac_address": lag.mac_address or ""}
+                    if lag is not None else None
+                ),
             }
     return None
 
 
 #: What ``link_peer_of`` reads, so a device's ports cost one query, not one
 #: per port.
-LINK_PEER_PREFETCH = "terminations__cable__terminations__interface__device"
+LINK_PEER_PREFETCH = (
+    "terminations__cable__terminations__interface__device",
+    "terminations__cable__terminations__interface__lag",
+)
 
 
 def device_render_interfaces(device, tenant=None, user=None) -> list:
@@ -656,9 +670,64 @@ def device_render_interfaces(device, tenant=None, user=None) -> list:
         from .port_state import visible_device_ids
 
         visible = visible_device_ids(user, tenant or device.tenant)
-    rows = list(device.interfaces.prefetch_related(LINK_PEER_PREFETCH))
+    rows = list(device.interfaces.prefetch_related(*LINK_PEER_PREFETCH))
     for iface in rows:
         iface.link_peer = link_peer_of(iface, visible)
+    return rows
+
+
+def _render_nat_rules(device, tenant, user) -> list:
+    """The device's own NAT rules as plain dicts, in name order: those
+    ``user`` may view, when the render runs for someone.
+
+    ``source`` is the source prefix's CIDR (else the source address, else
+    ""); ``destination`` is the address matched (the outside address of a
+    dnat/static rule), ``to_address`` the address translated to (the inside
+    address of a dnat/static rule, the outside address of an snat rule);
+    either is ``None`` when the rule records none. The raw ends ride along
+    as ``external_ip``/``internal_ip`` with their ports."""
+    from .models import NATRule
+
+    qs = NATRule.objects.filter(device=device, tenant=tenant)
+    if user is not None:
+        from auth_api import rbac
+
+        qs = rbac.restrict_queryset(qs, user, tenant, "natrule", "view")
+    qs = qs.select_related(
+        "external_ip", "internal_ip", "source_prefix", "source_ip", "out_interface"
+    ).order_by("name", "id")
+
+    def addr(ip):
+        return str(ip.ip_address) if ip is not None else None
+
+    rows = []
+    for r in qs:
+        ext, inside = addr(r.external_ip), addr(r.internal_ip)
+        if r.kind == "snat":
+            destination, to_address = None, ext
+        elif r.kind == "masquerade":
+            destination, to_address = None, None
+        else:  # dnat, static
+            destination, to_address = ext, inside
+        if r.source_prefix is not None:
+            source = str(r.source_prefix.cidr)
+        else:
+            source = addr(r.source_ip) or ""
+        rows.append({
+            "id": str(r.id),
+            "name": r.name,
+            "kind": r.kind,
+            "protocol": r.protocol,
+            "source": source,
+            "destination": destination,
+            "to_address": to_address,
+            "out_interface": r.out_interface.name if r.out_interface else None,
+            "external_ip": ext,
+            "external_ports": r.external_ports,
+            "internal_ip": inside,
+            "internal_ports": r.internal_ports,
+            "description": r.description or "",
+        })
     return rows
 
 
@@ -728,7 +797,8 @@ def _render_device(template, device, tenant, user=None) -> str:
     intended-config generator. Context: ``device``, its merged ``config_context``,
     ``interfaces`` (each with ``link_peer``, the cable's far end),
     ``ip_addresses`` (and ``objects``/``count`` for parity), ``backing_vm``
-    (the build spec of the VM the device runs as, or ``None``), plus every
+    (the build spec of the VM the device runs as, or ``None``),
+    ``nat_rules`` (the device's NAT rules as plain dicts), plus every
     registered provider's key (``routing``).
 
     ``user`` is who the render is for: relations a template walks hold only
@@ -744,6 +814,7 @@ def _render_device(template, device, tenant, user=None) -> str:
         interfaces=device_render_interfaces(device, tenant, user),
         ip_addresses=_render_ips(device, tenant, user),
         backing_vm=_backing_vm(device, tenant, user),
+        nat_rules=_render_nat_rules(device, tenant, user),
         objects=[device],
         count=1,
         **provider_context(device),

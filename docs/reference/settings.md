@@ -143,7 +143,11 @@ it from `shared_preload_libraries`.
 CORS_ALLOWED_ORIGINS = os.getenv(
     "CORS_ALLOWED_ORIGINS", "http://localhost:3000"
 ).split(",")
+CORS_EXPOSE_HEADERS = ["X-Danbyte-Unknown-Params", "Warning"]
 ```
+
+A cross-origin client can read the two headers a list sets for query
+parameters it ignored ([REST API](api.md#unknown-query-parameters)).
 
 ## DRF
 
@@ -197,6 +201,7 @@ through rather than refusing them.
 | `API_LARGE_PAGE_THRESHOLD` | `API_LARGE_PAGE_THRESHOLD` | `1000` | A request whose `page_size` is above this is a large page. A positive whole number between `API_PAGE_SIZE` and `API_MAX_PAGE_SIZE`; unset, it is 1,000 kept within those two. |
 | `API_LARGE_PAGE_CONCURRENCY` | `API_LARGE_PAGE_CONCURRENCY` | `2` | Large pages one user, all of their tokens together, may have in flight at once. A positive whole number. |
 | `API_MAX_TOKENS_PER_USER` | `API_MAX_TOKENS_PER_USER` | `25` | Unexpired API tokens one user may hold. Creating one more answers 400 until one is revoked or expires; tokens a script run mints don't count. A positive whole number. |
+| `API_STRICT_QUERY_PARAMS` | `API_STRICT_QUERY_PARAMS` | off | A query parameter a list does not understand answers `400` instead of an `X-Danbyte-Unknown-Params` header. `1`/`true`/`yes`/`on` turns it on; a request can still send `?strict=0`. Off in 0.19; the default becomes on in 0.20 ([REST API](api.md#unknown-query-parameters)). |
 
 A value that is not a positive whole number, a cap below the default page,
 or a threshold outside the default page and the cap stops the service at start with an error naming the setting, rather than

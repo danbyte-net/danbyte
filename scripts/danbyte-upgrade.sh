@@ -14,7 +14,7 @@
 # It never uses its own path, so a host on an older release can run the
 # target's launcher straight from git:
 #   systemd-run --user --unit danbyte-upgrade sh -c \
-#     'git -C ~/danbyte fetch --tags && git -C ~/danbyte show vX:scripts/danbyte-upgrade.sh | sh -s -- vX'
+#     'git -C ~/danbyte fetch --tags --force && git -C ~/danbyte show vX:scripts/danbyte-upgrade.sh | sh -s -- vX'
 set -u
 
 VERSION="${1:?usage: danbyte-upgrade.sh <version-tag>}"
@@ -77,7 +77,7 @@ case "$BR" in
   main|master|'(detached)') ;;
   *) fail preflight "refusing to upgrade the working branch '$BR' - deploy from main or a tag" ;;
 esac
-timeout 300 git fetch --tags -q origin 2>/dev/null || fail preflight "git fetch failed" true
+timeout 300 git fetch --tags --force -q origin 2>/dev/null || fail preflight "git fetch failed" true
 SHA=$(git rev-parse -q --verify "refs/tags/$VERSION^{commit}" 2>/dev/null \
   || git rev-parse -q --verify "$VERSION^{commit}" 2>/dev/null) \
   || fail preflight "version '$VERSION' not found in the repo"

@@ -208,6 +208,8 @@ def _slug_for(serializer, tenant):
 
 
 class ApplicationGroupViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device", "virtual_machine_id": "virtual_machine"}
     rbac_action_map = {"bulk_delete": "delete"}
     queryset = ApplicationGroup.objects.all().order_by(natural("name"))
     serializer_class = ApplicationGroupSerializer
