@@ -315,7 +315,7 @@ function UpdatesSettingsPage() {
               tabIndex={0}
               className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed"
             >
-              {`git -C /opt/danbyte fetch --tags
+              {`git -C /opt/danbyte fetch --tags --force
 git -C /opt/danbyte checkout <version>
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml stop scheduler workers fastlane ws

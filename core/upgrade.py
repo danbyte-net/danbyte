@@ -778,7 +778,7 @@ def _store_uploaded_bundle(upload) -> None:
 _CONTAINER_UPGRADE_MSG = (
     "This is a container (Docker) deployment, which can't upgrade itself - a "
     "process inside a container can't rebuild its image or recreate itself. "
-    "Upgrade from the host instead: `git -C /opt/danbyte fetch --tags && "
+    "Upgrade from the host instead: `git -C /opt/danbyte fetch --tags --force && "
     "git -C /opt/danbyte checkout <version>`, then `docker compose -f "
     "docker-compose.prod.yml build`, `docker compose -f docker-compose.prod.yml "
     "stop scheduler workers fastlane ws` (so the old release is not running "

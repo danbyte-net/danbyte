@@ -124,7 +124,7 @@ current `/opt` layout.
 
     ```bash
     cd ~/danbyte
-    git fetch --tags
+    git fetch --tags --force
     git checkout vX.Y.Z
 
     # Python deps (uv, or pip inside the venv)
@@ -466,7 +466,7 @@ git install, run 0.17's own launcher as the upgrade unit:
 ```bash
 sudo -u danbyte XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) systemd-run --user \
   --unit danbyte-upgrade sh -c \
-  'git -C ~/danbyte fetch --tags && git -C ~/danbyte show vX.Y.Z:scripts/danbyte-upgrade.sh | sh -s -- vX.Y.Z'
+  'git -C ~/danbyte fetch --tags --force && git -C ~/danbyte show vX.Y.Z:scripts/danbyte-upgrade.sh | sh -s -- vX.Y.Z'
 ```
 
 0.17.0-dev1's automatic updates do not see a newer pre-release; upgrade a
