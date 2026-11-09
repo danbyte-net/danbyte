@@ -165,6 +165,54 @@ curl -s -H "Authorization: Token $TOKEN" \
   "https://danbyte.example/api/devices/?view=table&page=2&page_size=50&ordering=site&f_status=$PLANNED&f_site=$SITE"
 ```
 
+## Unknown query parameters
+
+A list endpoint names every query parameter it did not use. Before 0.19.1 it
+ignored them silently: `GET /api/ips/?device_id=<id>` answered every
+address in the tenant, because the filter is called `device`. Now the
+response carries
+
+```
+X-Danbyte-Unknown-Params: device_id
+Warning: 299 - "Unknown query parameters ignored: device_id"
+```
+
+and the rows are the same as without the parameter. A list knows the
+parameters its filters, sorting, facets, search and paging read on that
+request, plus `page`, `page_size`, `format`, `strict` and the `_`
+cache-buster on every list. A parameter that only counts with another one
+(`with_vc` without `picker=1`, `include` without `view=table`) is unknown
+when it was ignored. Details, writes and actions (`facets/`, `table-ids/`,
+`report/`) are not checked, and neither is an error response.
+
+**Strict mode** turns an unknown parameter into a `400`:
+
+```json
+{"detail": "Unknown query parameters", "unknown": ["device_id"], "hint": {"device_id": "device"}}
+```
+
+`hint` names the parameter you probably meant: `<x>` for `<x>_id` when the
+list takes `<x>`, else the closest name the list knows. Turn it on per
+request with `?strict=1` or the `X-Danbyte-Strict: 1` header, or for the
+whole deployment with `API_STRICT_QUERY_PARAMS`
+([settings](settings.md)). `?strict=0` (or `X-Danbyte-Strict: 0`) turns it
+off for one request. The setting is off in 0.19; **from 0.20 it defaults to
+on**, so a client that sends extra parameters should send `strict=0` or
+stop sending them. API clients, the [scripts SDK](scripts-sdk.md) among them,
+can send `X-Danbyte-Strict: 1` today.
+
+Some lists also take `<x>_id` as an alias of an id filter `<x>`. Sending
+both with different values is a `400`.
+
+| List | Aliases |
+|---|---|
+| `/api/ips/` | `device_id`, `virtual_machine_id`, `assigned_interface_id`, `assigned_vm_id` |
+| `/api/interfaces/`, `/api/cables/`, `/api/front-ports/`, `/api/rear-ports/`, `/api/modules/`, `/api/tunnels/`, `/api/tunnel-terminations/`, `/api/port-reservations/`, `/api/virtual-machines/` (the host), `/api/deploy-runs/`, `/api/deploy-pipeline-runs/`, device config snapshots, SSH host keys, device credentials, connect protocols | `device_id` |
+| `/api/mac-addresses/`, routing Ethernet segments, PRTG sensors | `device_id`, `interface_id` |
+| IS-IS and EIGRP interfaces | `interface_id` |
+| `/api/virtual-disks/`, `/api/vm-interfaces/`, virtualization networks and changes | `vm_id`, `virtual_machine_id` |
+| Oxidized node links, PRTG device links, application groups | `device_id`, `virtual_machine_id` |
+
 ## Filtering by tag
 
 The device, IP address (`/api/ips/`) and prefix (`/api/prefixes/`) lists

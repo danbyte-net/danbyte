@@ -567,6 +567,8 @@ class DeployPipelineRunDetailSerializer(DeployPipelineRunSerializer):
 
 
 class DeployPipelineRunViewSet(TenantScopedViewSet):
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
     queryset = DeployPipelineRun.objects.select_related(
         "tenant", "triggered_by", "rerun_of"
     ).order_by("-created_at")

@@ -116,6 +116,8 @@ class OxidizedNodeLinkViewSet(SafeBulkDeleteMixin, IntegrationToggleMixin, Tenan
     ``bulk-delete`` unlinks the selection as the single unlink does, keeping
     the links of a connection the caller may not change; ``bulk-confirm``
     confirms each proposed link as ``confirm`` does."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device", "virtual_machine_id": "virtual_machine"}
 
     integration_keys = ("oxidized",)
     http_method_names = ["get", "post", "delete", "head", "options"]
