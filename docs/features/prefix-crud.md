@@ -70,6 +70,58 @@ the bar. Their addresses move the same way, onto prefixes that stay. More than
 prefix a later batch deletes moves on again, so it ends up where one call
 would have put it.
 
+## Renumbering a prefix
+
+When a block you don't control changes - a provider's DHCPv6-PD `/60`, a
+re-issued `/29` - everything under it has to move by the same offset. Open the
+prefix and click **Renumber…**, type the new network, and press **Preview**.
+The new prefix must be the same family and length, written as a network
+address; the dialog says so as you type. Renumbering stays in the prefix's VRF.
+
+The preview lists every change, grouped by kind, as old → new; badges count
+each kind, and the **linked** badges count records that point at a moved
+prefix or address and follow it without an edit. **Left unchanged** lists
+everything that carries an address inside the prefix but is not rewritten,
+with the reason. **Renumber** asks once more, then writes it all in one
+change: if any part is refused, nothing moves.
+
+What moves, by the difference between the new and old network:
+
+| Kind | What changes |
+|---|---|
+| Prefixes | The prefix and every prefix inside it in the same VRF; a prefix's gateway. |
+| IP addresses | Every address inside it in the VRF. Mask length, interface or VM assignment, role (gateway, anycast, VIP), status and DNS name stay. An address recorded on a prefix above the tree moves onto the tree prefix that holds it. |
+| IP ranges | Start and end. |
+| DHCP | Local scopes on a moved prefix: scope id, pool, options that hold an address, exclusions and reservations. |
+| DNS | A/AAAA records in local zones, linked to a moved address. |
+| Routing | Static route destinations and next hops, BGP neighbour addresses and EIGRP summary addresses in the prefix's VRF; prefix-list lines that name a moved prefix. |
+| Global table only | Prefix-list lines by text, policy-rule selectors, route-map next hops, the BGP VPN export next hop, the LDP transport address, RPKI cache addresses, SNMP binding targets, BMC (Redfish) hosts and watched endpoints - they have no VRF to match on. |
+| Monitoring | Deny subnets in the prefix's VRF. |
+
+FHRP virtual IPs, NAT rules, services, VTEP addresses, BGP local addresses,
+device primary IPs and anything else holding a moved address or prefix by
+reference follow it: they are counted as linked, not rewritten.
+
+Left unchanged, and listed: scopes, records and reservations on a Windows DHCP
+or DNS server (change them there; the next sync follows), reverse (PTR)
+records, observed leases, ARP sightings and DNS drift, Oxidized and PRTG
+addresses, an Outpost's own connection address, ROAs (issue one for the new
+prefix), aggregates, a gateway outside its prefix, and an address or range on
+a moved prefix that lies outside it. With the prefix in a VRF, the
+global-table-only references above are listed instead of rewritten.
+
+It is refused when a prefix, address or range already sits in the new
+network in that VRF, or an IP range crosses the edge of the old one. A prefix
+that contains the new network - a covering `/48` - is fine; site-scoped
+editors may not move into another site's or the shared space. You need
+change on every kind the preview lists, within your sites; the refusal names
+what is missing.
+
+Every changed object gets a change-log entry with the cause *Renumbered X to
+Y*, and the prefix's journal records *Renumbered from X to Y.* The API is
+`POST /api/prefixes/<id>/renumber/` - see
+[REST API](../reference/api.md#renumbering-a-prefix).
+
 ## What gets validated
 
 Danbyte checks a few things when you save, so your data stays clean:

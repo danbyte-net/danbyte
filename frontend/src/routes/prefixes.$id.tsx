@@ -5,7 +5,14 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { useUrlPatch, useUrlText } from "@/lib/use-url-state"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { ChevronRight, CopyPlus, Layers, Pencil, Plus } from "lucide-react"
+import {
+  ArrowRightLeft,
+  ChevronRight,
+  CopyPlus,
+  Layers,
+  Pencil,
+  Plus,
+} from "lucide-react"
 
 import {
   api,
@@ -59,6 +66,7 @@ import {
 import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
 import { IpRailToggles } from "@/components/ip-rail-toggles"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
+import { PrefixRenumberDialog } from "@/components/prefix-renumber-dialog"
 import {
   AutoDiscoverButton,
   PrefixScanGroup,
@@ -139,6 +147,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   // IP-level delete confirm.
   const [deletingIp, setDeletingIp] = useState<IPAddress | null>(null)
   const [showPool, setShowPool] = useState(false)
+  const [showRenumber, setShowRenumber] = useState(false)
   const [selectedIps, setSelectedIps] = useState<IPAddress[]>([])
 
   // IP table toggles (the facets live inside the table's own rail).
@@ -279,6 +288,15 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               >
                 <Plus className="h-3.5 w-3.5" /> Add child prefix
               </Link>
+            </Button>
+          )}
+          {canEditPrefix && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowRenumber(true)}
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" /> Renumber…
             </Button>
           )}
           {canAddIp && canShowAvailable && (
@@ -472,6 +490,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           prefix={deletingChild}
           onOpenChange={closeDeleteChild}
         />
+      )}
+      {showRenumber && (
+        <PrefixRenumberDialog prefix={p} onOpenChange={setShowRenumber} />
       )}
       {deletingIp && (
         <IpDeleteDialog ip={deletingIp} onOpenChange={closeDeleteIp} />
