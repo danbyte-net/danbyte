@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.19.0-dev12
+  version: 0.19.1
   description: 'REST API for Danbyte - IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -54207,6 +54207,46 @@ paths:
         prefix; addresses that already exist (per tenant + VRF) and the prefix's
         own network/broadcast are skipped. Capped at ``POOL_MAX`` per call so one
         request can't mint an unbounded number of rows.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this prefix.
+        required: true
+      tags:
+      - prefixes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prefix'
+          description: ''
+  /api/prefixes/{id}/renumber/:
+    post:
+      operationId: prefixes_renumber_create
+      description: |-
+        Move this prefix, everything inside it and the references to it
+        into ``new_prefix`` (same family and length, same VRF). ``dry_run``
+        (default true) returns the preview; false applies it in one
+        transaction. See api/renumber.py for what moves.
       parameters:
       - in: path
         name: id
