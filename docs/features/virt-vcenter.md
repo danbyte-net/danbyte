@@ -28,7 +28,7 @@ under **Integrations → Virtualization sources**; see
 | Virtual machine | **Virtual machine** (vCPUs, memory, disk, description) |
 | VM folder | **[VM group](vm-groups.md)** on the VM's cluster, kind *Folder* - on by default |
 | VM annotation | **Description** (blank-filled, never overwrites yours) |
-| Ethernet adapter | **VM interface** with its MAC |
+| Ethernet adapter | **VM interface** with its MAC - matched by MAC first, then by name, as in [Proxmox](virt-proxmox.md#matching-nics-to-vm-interfaces) |
 | Virtual disk device | **Virtual disk** (name, size, datastore, controller) - *opt-in* |
 | Port-group VLAN | **VLAN** (in the source's VLAN group) + the interface's access VLAN - *opt-in* |
 | Standard / distributed switch | **Virtual switch** - *opt-in* |

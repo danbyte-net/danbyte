@@ -42,6 +42,24 @@ source under **Integrations → Virtualization sources**; see
 
 Guest identity uses the Proxmox integer **VMID** as the stable id.
 
+### Matching NICs to VM interfaces
+
+A guest NIC is matched to an existing VM interface by **MAC** first (case and
+separator ignored, so `AA:BB:…` and `aa-bb-…` are one address), then by the
+hypervisor's name (`net0`, or the LXC NIC name), and only then created. An
+interface you named after the device port (`gi1`) with the NIC's MAC is
+therefore the same interface as `net0`: it keeps your name and is blank-filled
+and diffed as usual. A NIC the sync created on a VM it owns follows a rename
+on the hypervisor; an intended VM's and your own interface names are never
+changed.
+
+When two interfaces of one VM already share a NIC's MAC, the sync does not
+guess: it matches by name and the pass warns, naming the interfaces and
+which of them the sync added. The sync never deletes them - remove the
+duplicate (usually the `netN` one) yourself. Duplicates left by an earlier
+release, where a port-named interface was given a second `netN` twin, show
+up this way.
+
 
 ### Allowed networks - keeping container noise out
 
@@ -222,7 +240,7 @@ VM syncs exactly as above.
 | **Adopt** | A new guest links to the intended VM whose **VMID** is its own (one per cluster; a cluster of the same name breaks a tie), then to a VM of the same name. A VM without the flag is never matched by VMID. |
 | **Re-link on rebuild** | When the guest an intended VM was linked to has gone - absent from this pass, or flagged missing on another source - and a new guest matches it by VMID or name, the stale tracking row is dropped and the new guest linked. The VM itself is untouched. While the old guest is still reported, the new one is skipped with a warning, as for any duplicate name. Rebuilt with the same VMID, the link simply carries on. |
 | **Diff, never apply** | vCPU, memory, disk, name and VMID differences are raised as **Specs changed** for review - in Automatic mode too, and even for a VM the sync created. NIC **MAC**, **MTU**, **VLAN**, **model**, **bridge** and **index** differences are raised as **Interface fields differ**. Accepting one takes the hypervisor's value. |
-| **Blank-fill** | Empty fields are still filled: specs, host, VMID, and each NIC's model, bridge and index (from `netN`). Filling a blank is not a disagreement. |
+| **Blank-fill** | Empty fields are still filled: specs, host, VMID, and each NIC's model, bridge and index (from `netN`). Filling a blank is not a disagreement. A NIC is found by MAC first, so an interface named after the device port (`gi1`) is filled, not duplicated - see [Matching NICs](#matching-nics-to-vm-interfaces). |
 | **Never delete** | The VM is never deleted or offered for removal, whatever the mode, **Prune** setting or delay. Its tracking row stays with the time it went missing, and the VM page says **Not on any hypervisor**. A removal queued before the VM was ticked keeps the VM when accepted. |
 | **Never prune** | No NIC or disk of an intended VM is pruned, even one the sync created; a NIC the hypervisor no longer has is raised as **Interface not on hypervisor**. |
 
