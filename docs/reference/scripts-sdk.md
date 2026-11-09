@@ -46,6 +46,13 @@ A `429` (more large pages in flight than the run's token may have, see
 [Pagination](api.md#pagination)) is retried after the server's
 `Retry-After` before it reaches you as an `ApiError`.
 
+A filter the list does not know is ignored, not an error: `db.list("ips",
+device_id=…)` once answered every address, because the filter is `device`.
+To make a misspelt filter fail instead, pass `strict=1`
+(`db.list("ips", device=dev_id, strict=1)` raises `ApiError` with status
+`400` and a `hint`); see [Unknown query parameters](api.md#unknown-query-parameters).
+The SDK does not turn strict mode on for you in 0.19.
+
 ## `run` - the run
 
 | Call | Does |

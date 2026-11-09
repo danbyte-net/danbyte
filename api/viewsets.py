@@ -1785,6 +1785,13 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
 
 class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {
+        "device_id": "device",
+        "virtual_machine_id": "virtual_machine",
+        "assigned_interface_id": "assigned_interface",
+        "assigned_vm_id": "assigned_vm",
+    }
     # Mirrors this viewset's own bulk_update action (see PrefixViewSet).
     editable_str_fields = ("description",)
     editable_fk_fields = {"status_id": Status, "role_id": IPRole}
@@ -5230,6 +5237,8 @@ class InterfaceViewSet(
     TableListMixin, NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet,
 ):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     # Server paging, sorting, facets and the slim row (#482, #487).
     table_spec = list_specs.INTERFACE_TABLE
@@ -5601,6 +5610,8 @@ class InterfaceViewSet(
 class MACAddressViewSet(TenantScopedViewSet):
     """First-class MAC address objects. Filter by ``?interface=``, ``?device=``,
     or ``?search=`` (MAC substring)."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device", "interface_id": "interface"}
 
     queryset = (
         MACAddress.objects.select_related("assigned_interface__device")
@@ -5699,6 +5710,8 @@ def validate_cable_rows(rows, make):
 
 
 class CableViewSet(TableListMixin, TenantScopedViewSet):
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
     # Server paging, sorting, facets and the slim row (#482, #487).
     table_spec = list_specs.CABLE_TABLE
     queryset = (
@@ -6082,6 +6095,8 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
 class _DevicePortViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Shared base for FrontPort / RearPort - no direct tenant FK; scope via
     device.tenant, like interfaces."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     pagination_class = StandardPagination
     tenant_field = None
@@ -6718,6 +6733,8 @@ class ModuleViewSet(TenantScopedViewSet):
     """Installed modules. Creating one stamps the module type's interfaces
     onto the host device, owned by the module; changing its type, bay or
     device re-stamps them; deleting it (or its bay) removes exactly those."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     queryset = (
         Module.objects.select_related(
@@ -7116,6 +7133,8 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
 class VirtualMachineViewSet(
     TableListMixin, PrtgCleanupDeleteMixin, BulkEditMixin, CloneableMixin, TenantScopedViewSet,
 ):
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
     queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
     # Server paging, sorting, facets and the slim row (#482, #487).
@@ -7444,6 +7463,8 @@ class VirtualDiskViewSet(TenantScopedViewSet):
     """A VM's virtual disks. Tenant and site come through the VM, as for VM
     interfaces. Sync prunes only the rows it created, and never on an
     intended VM."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"vm_id": "vm", "virtual_machine_id": "vm"}
 
     queryset = VirtualDisk.objects.select_related("vm__status").order_by("vm__name", "key")
     serializer_class = VirtualDiskSerializer
@@ -7464,6 +7485,8 @@ class VirtualDiskViewSet(TenantScopedViewSet):
 
 
 class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"vm_id": "vm", "virtual_machine_id": "vm"}
     queryset = VMInterface.objects.select_related("parent").order_by(
         NATURAL_NAME
     )
@@ -10036,6 +10059,8 @@ class IPSecProfileViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
 
 
 class TunnelViewSet(TenantScopedViewSet):
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
     queryset = Tunnel.objects.all().order_by(NATURAL_NAME)
     serializer_class = TunnelSerializer
     pagination_class = StandardPagination
@@ -10089,6 +10114,8 @@ class TunnelViewSet(TenantScopedViewSet):
 class TunnelTerminationViewSet(TenantScopedViewSet):
     """Tunnel ends - no direct tenant FK; scoped via tunnel.tenant. Filter
     with ?tunnel=."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     queryset = (
         TunnelTermination.objects
@@ -16143,6 +16170,8 @@ class FloorPlanRaisedFloorAreaViewSet(_ViaViewMixin, TenantScopedViewSet):
 class PortReservationViewSet(TenantScopedViewSet):
     """Holds on single uncabled ports - the planning half of cabling that
     doesn't know its far end yet. Auto-released by CableTermination.save."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     queryset = PortReservation.objects.select_related(
         "claimed_by",

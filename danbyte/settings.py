@@ -192,6 +192,9 @@ MIDDLEWARE = [
     "core.middleware.LargePageGuardMiddleware",
     # Captures the request user for the change-log signals.
     "audit.middleware.AuditContextMiddleware",
+    # A list says which query parameters it ignored, or answers 400 in strict
+    # mode (core/query_params.py).
+    "core.middleware.UnknownQueryParamsMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -386,6 +389,14 @@ def api_max_tokens_per_user(env) -> int:
 
 API_MAX_TOKENS_PER_USER = api_max_tokens_per_user(os.environ)
 
+# A list endpoint names the query parameters it ignored in an
+# X-Danbyte-Unknown-Params header (core/query_params.py). With this on, an
+# unknown parameter is a 400 instead, unless the request sends ?strict=0.
+# Off in 0.19.x; the default becomes on in 0.20.
+API_STRICT_QUERY_PARAMS = (
+    os.getenv("API_STRICT_QUERY_PARAMS", "").strip().lower() in ("1", "true", "yes", "on")
+)
+
 
 # Application flow requirements (api.flow_requirements): the preview warns
 # above FLOW_REQUIREMENT_WARN_PAIRS generated flows for one requirement, and a
@@ -517,6 +528,8 @@ SPECTACULAR_SETTINGS = {
 CORS_ALLOWED_ORIGINS = os.getenv(
     "CORS_ALLOWED_ORIGINS", "http://localhost:3000"
 ).split(",")
+# Readable by a cross-origin client: the unknown-parameter notice on lists.
+CORS_EXPOSE_HEADERS = ["X-Danbyte-Unknown-Params", "Warning"]
 # CSRF trusted origins. In DEBUG, allow any RFC1918 host on port 3000
 # (matches the Vite dev server reachable from phones / other LAN boxes).
 # Django's CSRF_TRUSTED_ORIGINS doesn't support wildcards on the host

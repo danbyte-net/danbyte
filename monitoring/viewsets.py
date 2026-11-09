@@ -479,6 +479,8 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
 
     Filters: ``?device=<id>``, ``?origin=observed|uploaded|both``, ``?key_type=``.
     """
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     queryset = SSHHostKey.objects.select_related("device").all()
     serializer_class = SSHHostKeySerializer
@@ -555,6 +557,8 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
 
     Filter: ``?device=<id>``.
     """
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     queryset = DeviceCredential.objects.select_related("device").all()
     serializer_class = DeviceCredentialSerializer
@@ -713,6 +717,8 @@ class ConnectProtocolViewSet(TenantScopedViewSet):
 
     Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
     """
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     queryset = ConnectProtocol.objects.prefetch_related("device_types", "roles")
     serializer_class = ConnectProtocolSerializer

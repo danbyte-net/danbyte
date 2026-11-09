@@ -347,6 +347,8 @@ class PrtgDeviceLinkViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedV
     ``resume/`` pause or resume the PRTG device itself; ``sensors/``,
     ``scan/``, ``discover/`` and ``sensor-schema/`` add sensors to it by hand
     (:mod:`prtg.manual`) and need ``change`` on PRTG sensors."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device", "virtual_machine_id": "virtual_machine"}
 
     integration_keys = ("prtg",)
     # Adding a sensor changes PRTG sensors, not the link: the link needs
@@ -847,6 +849,8 @@ class PrtgSensorViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedReadV
     ``channels/`` and ``history/`` read PRTG on demand and need view on the
     device or VM as well; ``summary/`` counts per state in one query.
     """
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device", "interface_id": "interface"}
 
     integration_keys = ("prtg",)
     queryset = PrtgSensor.objects.select_related(

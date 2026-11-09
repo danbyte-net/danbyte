@@ -322,6 +322,8 @@ class DeployRunSerializer(serializers.ModelSerializer):
 
 
 class DeployRunViewSet(TenantScopedViewSet):
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
     queryset = DeployRun.objects.select_related("target", "script_run").order_by("-created_at")
     serializer_class = DeployRunSerializer
     # POST is enabled only for the `retry` detail action - the collection stays
@@ -516,6 +518,8 @@ class DeviceConfigSnapshotSerializer(serializers.ModelSerializer):
 
 class DeviceConfigSnapshotViewSet(TenantScopedViewSet):
     """Read-only drift-transition history. Filter to one device with ?device=."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"device_id": "device"}
 
     queryset = DeviceConfigSnapshot.objects.all().order_by("-created_at")
     serializer_class = DeviceConfigSnapshotSerializer

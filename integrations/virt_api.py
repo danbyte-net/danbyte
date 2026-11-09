@@ -164,6 +164,8 @@ class VirtNetworkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     but which routing context a network's addresses belong to is Danbyte's
     call, so PATCH is allowed for that one field.
     """
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"vm_id": "vm", "virtual_machine_id": "vm"}
 
     integration_keys = ("virtualization",)
     tenant_field = "source__tenant"
@@ -224,6 +226,8 @@ class VirtChangeSerializer(serializers.ModelSerializer):
 
 class VirtChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     """Read + accept/ignore. Rows are only ever created by the sync engine."""
+    # Unambiguous id aliases (core.query_params).
+    query_param_aliases = {"vm_id": "vm", "virtual_machine_id": "vm"}
 
     integration_keys = ("virtualization",)
     tenant_field = "source__tenant"

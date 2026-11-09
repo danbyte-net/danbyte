@@ -320,3 +320,41 @@ def _too_many_large_pages(page_size: int):
     )
     resp["Retry-After"] = str(LARGE_PAGE_RETRY_AFTER)
     return resp
+
+
+class UnknownQueryParamsMiddleware:
+    """Says which query parameters a list endpoint ignored (core.query_params):
+    an ``X-Danbyte-Unknown-Params`` and a ``Warning`` header, or a 400 in
+    strict mode. ``process_view`` finds the list route, rewrites declared
+    aliases and swaps ``request.GET`` for a dict that records what the view
+    reads; the response is checked on the way out."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        state = getattr(request, "_danbyte_query_check", None)
+        if state is None:
+            return response
+        from .query_params import check_response
+
+        view_cls, tracked, keys = state
+        return check_response(request, response, view_cls, tracked, keys)
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        if not (request.path or "").startswith("/api/"):
+            return None
+        from .query_params import TrackedQueryDict, apply_aliases, list_view_class
+
+        view_cls = list_view_class(view_func, request.method)
+        if view_cls is None:
+            return None
+        keys = list(request.GET.keys())
+        error = apply_aliases(view_cls, request)
+        if error is not None:
+            return error
+        tracked = TrackedQueryDict.wrap(request.GET)
+        request.GET = tracked
+        request._danbyte_query_check = (view_cls, tracked, keys)
+        return None
