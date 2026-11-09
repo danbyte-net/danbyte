@@ -30,6 +30,11 @@ and Danbyte renders it against your live data on demand. Templates live under
 3. Save. Danbyte checks the template compiles and that the object type is valid,
    so mistakes surface immediately rather than when you run it.
 
+The template body is stored exactly as sent - leading indentation, trailing
+spaces and the final newline included - so a client that writes a template
+over the API reads the same bytes back. Names are still trimmed. Label
+template HTML, CSS and QR content, and script source, are kept the same way.
+
 ## What you can use in a template
 
 When the template runs, it has access to the objects of its type within your

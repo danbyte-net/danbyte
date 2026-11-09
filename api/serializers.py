@@ -10670,6 +10670,9 @@ class ExportTemplateSerializer(NumIdModelSerializer):
                   "created_at", "updated_at"]
         read_only_fields = ["id", "object_type_label", "bundle_path", "is_directory",
                             "created_at", "updated_at"]
+        # A template body round-trips byte for byte: DRF trims a CharField by
+        # default, which dropped the last newline of every saved template.
+        extra_kwargs = {"template_code": {"trim_whitespace": False}}
 
 
 class ExportTemplateMiniSerializer(NumIdModelSerializer):
@@ -10811,6 +10814,9 @@ class LabelTemplateSerializer(NumIdModelSerializer):
                   "created_at", "updated_at"]
         read_only_fields = ["id", "object_type_label", "device_types_detail",
                             "roles_detail", "created_at", "updated_at"]
+        # Template bodies are stored exactly as sent - see ExportTemplateSerializer.
+        extra_kwargs = {f: {"trim_whitespace": False}
+                        for f in ("template_html", "css", "qr_content")}
 
 
 # ─── Virtual chassis (switch stacks) ─────────────────────────────────────────
