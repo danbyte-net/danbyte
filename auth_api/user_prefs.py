@@ -51,6 +51,11 @@ DEFAULTS: dict[str, Any] = {
     # per row, each cell under the block it splits.
     "space_map_layout": "grid",
 
+    # ─── Site map ────────────────────────────────────────────────────────
+    # Label language of the vector basemap (#467). "auto" = the deployment
+    # default (DeploymentSettings.map_label_language); else one of its keys.
+    "map_label_language": "auto",
+
     # ─── Navigation ──────────────────────────────────────────────────────
     "landing_page":   "/",         # Page to open on first load after login.
     "nav_one_open":   False,       # Sidebar: opening a category closes the

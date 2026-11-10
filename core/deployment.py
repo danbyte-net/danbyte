@@ -41,6 +41,33 @@ def clean_display_timezone(value: str) -> str:
     return canonical
 
 
+def clean_vector_url(value: str) -> str:
+    """One https TileJSON or style URL with a host, no credentials and no
+    tile placeholders; blank stays blank (the default source)."""
+    from urllib.parse import urlsplit
+
+    value = (value or "").strip()
+    if not value:
+        return ""
+    try:
+        parts = urlsplit(value)
+        parts.port  # noqa: B018 - raises on a port that is not a number
+    except ValueError:
+        raise serializers.ValidationError("Not a valid URL.") from None
+    if parts.scheme != "https":
+        raise serializers.ValidationError("Vector source URL must be https://.")
+    if not parts.hostname or parts.username or parts.password:
+        raise serializers.ValidationError(
+            "Give a host, without a user name or password in the URL."
+        )
+    if re.search(r"[{}<>\"'\\\s]", value):
+        raise serializers.ValidationError(
+            "One TileJSON or style URL, without {z}/{x}/{y} placeholders "
+            "(e.g. https://tiles.example.com/shortbread/tilejson.json)."
+        )
+    return value
+
+
 class DeploymentSettingsSerializer(serializers.ModelSerializer):
     # Write-only secret; never serialised back. A blank value on update leaves
     # the stored password untouched (so the form needn't re-enter it).
@@ -116,6 +143,10 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "map_tile_attribution",
             "map_satellite_url",
             "map_satellite_attribution",
+            "map_basemap",
+            "map_vector_url",
+            "map_vector_attribution",
+            "map_label_language",
             "enhanced_site_separation",
             "allow_site_settings",
             "allow_site_editor_delegation",
@@ -209,6 +240,12 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
 
     def validate_map_satellite_url(self, value):
         return self.validate_map_tile_url(value)
+
+    def validate_map_vector_url(self, value):
+        """Blank = the OSMF Shortbread tiles. Otherwise one https URL of a
+        TileJSON or a MapLibre style. The browser fetches it, not the server,
+        so the SSRF guard is not the rule here; scheme and host are (#467)."""
+        return clean_vector_url(value)
 
     def validate_display_timezone(self, value):
         return clean_display_timezone(value)

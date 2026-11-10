@@ -596,6 +596,37 @@ class DeploymentSettings(TimestampedModel):
     map_satellite_attribution = models.CharField(
         max_length=512, blank=True, default="",
     )
+    # Street basemap kind (#467). Raster = the tile URL above, labels baked
+    # into the images. Vector = tiles the browser draws with the style that
+    # ships with Danbyte, so it can pick the label language. The column
+    # default is raster, so an upgraded install keeps what it had; load()
+    # gives a brand-new install vector.
+    MAP_BASEMAP_CHOICES = [("raster", "Raster tiles"), ("vector", "Vector tiles")]
+    map_basemap = models.CharField(
+        max_length=8, choices=MAP_BASEMAP_CHOICES, default="raster", db_default="raster",
+    )
+    map_vector_url = models.URLField(
+        blank=True, default="", db_default="",
+        help_text="TileJSON (Shortbread schema) or MapLibre style URL. Blank = "
+        "the OpenStreetMap Foundation's Shortbread vector tiles.",
+    )
+    map_vector_attribution = models.CharField(
+        max_length=512, blank=True, default="", db_default="",
+        help_text="Attribution HTML for the vector tiles. Blank = the "
+        "OpenStreetMap attribution.",
+    )
+    MAP_LABEL_CHOICES = [
+        ("en", "English"),
+        ("en_local", "English and local"),
+        ("browser", "Browser language"),
+        ("browser_local", "Browser language and local"),
+        ("local", "Local"),
+    ]
+    map_label_language = models.CharField(
+        max_length=16, choices=MAP_LABEL_CHOICES, default="en", db_default="en",
+        help_text="Default label language of the vector basemap; each user "
+        "can override it in their preferences.",
+    )
 
     # ─── site separation (opt-in, off by default) ────────────────────────
     # Its own override group on TenantSettings (like the floor-plan popover):
@@ -822,12 +853,17 @@ class DeploymentSettings(TimestampedModel):
             # were installed at. An upgraded install keeps [] from the
             # migration, so its notes stay pending. Created with it in one
             # write, not created and then updated.
+            # Same rule for the basemap (#467): a new install starts on vector
+            # tiles; an upgraded one has its row and keeps raster.
             from .upgrade_notes import ids_up_to
             from .version import system_version
 
             obj, _ = cls.objects.get_or_create(
                 pk=1,
-                defaults={"upgrade_notes_done": ids_up_to(system_version()["version"])},
+                defaults={
+                    "upgrade_notes_done": ids_up_to(system_version()["version"]),
+                    "map_basemap": "vector",
+                },
             )
         return obj
 
