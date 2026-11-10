@@ -15,6 +15,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { buildVulnerabilityRecordColumns } from "@/components/columns/vulnerability-columns"
 import { buildVulnerabilityMatchColumns } from "@/components/columns/vulnerability-match-columns"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
+import { SuggestMappingsButton } from "@/components/vulnerabilities/suggest-mappings"
 
 // Vulnerabilities (#451): every record matched in the tenant, one row each,
 // or "By object" - one row per match (record × host × install). Both page,
@@ -64,18 +65,21 @@ function VulnerabilitiesPage() {
   // The rail's facets mean the same in both views, so they stay; the page
   // and the sort start over.
   const viewSwitch = (
-    <SegmentedTabs<View>
-      value={view}
-      onValueChange={(v) =>
-        write((prev) => ({
-          ...prev,
-          view: v === "objects" ? v : undefined,
-          page: undefined,
-          ordering: undefined,
-        }))
-      }
-      items={VIEWS}
-    />
+    <>
+      <SuggestMappingsButton />
+      <SegmentedTabs<View>
+        value={view}
+        onValueChange={(v) =>
+          write((prev) => ({
+            ...prev,
+            view: v === "objects" ? v : undefined,
+            page: undefined,
+            ordering: undefined,
+          }))
+        }
+        items={VIEWS}
+      />
+    </>
   )
   return view === "objects" ? (
     <MatchesView viewSwitch={viewSwitch} />
@@ -214,6 +218,9 @@ function NothingMatched() {
   return (
     <EmptyState title="No known vulnerabilities">
       Nothing you can see matches the vulnerability data.
+      <div className="mt-3 flex justify-center">
+        <SuggestMappingsButton />
+      </div>
     </EmptyState>
   )
 }
