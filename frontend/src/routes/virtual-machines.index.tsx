@@ -16,6 +16,7 @@ import { DataTable } from "@/components/data-table"
 import { buildVmColumns } from "@/components/columns/vm-columns"
 import { usePrtgVmStates } from "@/components/columns/prtg-columns"
 import { useEolSettings } from "@/components/cells/eol-cell"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import {
   AvailabilityFramePicker,
   useSlaStatus,
@@ -27,7 +28,7 @@ import { VmBulkBar } from "@/components/vm-bulk-bar"
 import { useCanApplyProfiles } from "@/components/device-profile-bulk"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
-import { useSbomExport } from "@/components/sbom-export"
+import { useSbomExport, useSbomVexExport } from "@/components/sbom-export"
 
 export const Route = createFileRoute("/virtual-machines/")({
   component: VirtualMachinesPage,
@@ -72,6 +73,8 @@ const VM_FACETS = [
   "eol",
   "software_version",
   "software_target",
+  "vulnerabilities",
+  "vuln_kev",
   "tags",
 ]
 
@@ -86,9 +89,13 @@ function VirtualMachinesPage() {
   const canProfiles = useCanApplyProfiles()
   const { device } = Route.useSearch()
   const { enabled: eolOn } = useEolSettings()
+  const { enabled: vulnsOn } = useVulnSettings()
 
   // One page at a time from the server (#482).
-  const facetColumns = useMemo(() => buildVmColumns({ eol: eolOn }), [eolOn])
+  const facetColumns = useMemo(
+    () => buildVmColumns({ eol: eolOn, vulns: vulnsOn }),
+    [eolOn, vulnsOn]
+  )
   const list = useServerList<VirtualMachine>({
     endpoint: "/api/virtual-machines/",
     queryKey: "virtual-machines",
@@ -123,6 +130,7 @@ function VirtualMachinesPage() {
           selection: true,
           humanIds,
           eol: eolOn,
+          vulns: vulnsOn,
           monitoring,
           prtg,
           sla: { entries: sla.entries, frame: sla.frame },
@@ -143,6 +151,7 @@ function VirtualMachinesPage() {
       canDelete,
       humanIds,
       eolOn,
+      vulnsOn,
       monitoring,
       prtg,
       sla.entries,
@@ -159,6 +168,7 @@ function VirtualMachinesPage() {
     [allIds]
   )
   const sbom = useSbomExport(sbomFilter, total === 0)
+  const sbomVex = useSbomVexExport(sbomFilter, total === 0)
 
   return (
     <ListPageShell
@@ -177,7 +187,7 @@ function VirtualMachinesPage() {
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
-          <TableActions ioType="virtualmachine" extraExports={[sbom]} />
+          <TableActions ioType="virtualmachine" extraExports={sbomVex ? [sbom, sbomVex] : [sbom]} />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/virtual-machines/new">Add VM</Link>

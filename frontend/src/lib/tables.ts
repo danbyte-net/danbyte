@@ -152,6 +152,10 @@ const ROWS: Row[] = [
   ["vm-vulnerabilities", "Virtual machine · Vulnerabilities", "Software & lifecycle", null, sub],
   ["platform-vulnerabilities", "Platform · Vulnerabilities", "Software & lifecycle", null, sub],
   ["application-vulnerabilities", "Application · Vulnerabilities", "Software & lifecycle", null, sub],
+  // Grouped and match rows of vulnerabilities/list_api.py, not a model list.
+  ["vulnerabilities", "Vulnerabilities", "Software & lifecycle", null],
+  ["vulnerability-matches", "Vulnerabilities · By object", "Software & lifecycle", null],
+  ["vulnerability-affected", "Vulnerability · Affected", "Software & lifecycle", null, sub],
   ["application-children", "Application · Child applications", "Software & lifecycle", "/api/applications/", sub],
   ["application-groups", "Application groups", "Software & lifecycle", "/api/application-groups/", { ioType: "applicationgroup" }],
   ["application-group-members", "Application group · Applications", "Software & lifecycle", "/api/application-groups/", sub],

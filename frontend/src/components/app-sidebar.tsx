@@ -72,6 +72,7 @@ import {
   Settings as SettingsIcon,
   Share2,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
   Snowflake,
@@ -154,6 +155,7 @@ import { apiAll } from "@/lib/api-all"
 import { cn } from "@/lib/utils"
 import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { useBookmarks } from "@/lib/use-bookmarks"
 import { usePluginUi } from "@/lib/plugins"
 import { useUserPrefs } from "@/lib/use-user-prefs"
@@ -192,6 +194,8 @@ type NavItem = {
   integration?: Array<
     "dhcp" | "dns" | "virtualization" | "ai" | "zabbix" | "prtg" | "oxidized"
   >
+  /** Also require this deployment-wide feature to be on. */
+  feature?: "vulnerabilities"
 }
 // A cluster is a labelled run of items inside a section (rendered as a small
 // sub-heading). `label` is optional - a single unlabelled cluster renders as a
@@ -254,7 +258,10 @@ export function useSidebarModel(): SidebarSection[] {
     queryFn: () => api<Record<string, boolean>>("/api/integrations/enabled/"),
     staleTime: 5 * 60_000,
   })
+  // Vulnerability data is deployment-wide and off by default (#451).
+  const vulns = useVulnSettings()
   const itemVisible = (item: NavItem): boolean => {
+    if (item.feature === "vulnerabilities" && !vulns.enabled) return false
     if (
       item.integration &&
       !item.integration.some((k) => integrations.data?.[k])
@@ -810,6 +817,13 @@ export const sections: NavSection[] = [
             url: "/lifecycle",
             icon: CalendarClock,
             anyOf: ["device", "virtualmachine"],
+          },
+          {
+            title: "Vulnerabilities",
+            url: "/vulnerabilities",
+            icon: ShieldAlert,
+            anyOf: ["device", "virtualmachine"],
+            feature: "vulnerabilities",
           },
           {
             title: "End-of-life products",

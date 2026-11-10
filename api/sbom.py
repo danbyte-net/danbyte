@@ -22,6 +22,12 @@ all-of across filters:
 listed hosts of each kind are in the document. ``POST`` takes the same
 filters as a JSON body, for a selection of more ids than a URL holds.
 
+``vex=1`` (``true``/``yes``; a JSON ``true`` in a ``POST`` body) adds a
+``vulnerabilities`` section while vulnerability data is on: each open
+vulnerability match on the document's hosts and installs, with its record's
+ratings and an analysis - a VEX for the same components
+(``vulnerabilities.vex``).
+
 A licence is the install's own, else its application's; the operating
 system's is its platform's. An unknown licence is left out, never guessed;
 ``metadata.properties`` counts the components without one
@@ -58,6 +64,7 @@ CONTENT_TYPE = "application/vnd.cyclonedx+json; version=1.6"
 #: The most ids one filter takes.
 MAX_IDS = 10_000
 FILTERS = ("site", "tag", "role", "device", "virtual_machine")
+_TRUE = ("1", "true", "yes", "on")
 
 
 # ─── parameters ──────────────────────────────────────────────────────────────
@@ -82,6 +89,13 @@ def _values(params, key) -> list[str] | None:
     if len(out) > MAX_IDS:
         raise ParseError(f"{key}: at most {MAX_IDS:,} values")
     return list(dict.fromkeys(out))
+
+
+def _flag(params, key) -> bool:
+    raw = params.get(key)
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE
 
 
 def _uuids(params, key) -> list[uuid.UUID] | None:
@@ -239,6 +253,10 @@ class _Builder:
         self.total = 0
         self.missing = 0
         self.unlicensed: dict[str, None] = {}
+        #: ``(kind, host pk)`` → the OS component's bom-ref; install pk → its
+        #: component's - what a VEX section may name.
+        self.os_refs: dict[tuple, str] = {}
+        self.install_refs: dict = {}
 
     def _software(self, kind, ref, name, *, license, **kw) -> dict:
         self.total += 1
@@ -264,6 +282,7 @@ class _Builder:
                                os_version=os_version),
                 properties=[_prop("platform", platform.slug)],
             ))
+            self.os_refs[(kind, obj.pk)] = f"{ref}:os"
         for inst in obj.installed_software.all():
             app = inst.application
             children.append(self._software(
@@ -273,6 +292,7 @@ class _Builder:
                 purl=inst.effective_purl, cpe=inst.effective_cpe,
                 properties=[_prop("application", app.slug), _prop("source", inst.source)],
             ))
+            self.install_refs[inst.pk] = f"danbyte:installedsoftware:{inst.pk}"
         props = [_prop("kind", kind), _prop("id", obj.pk)]
         if obj.site_id:
             props.append(_prop("site", obj.site.name))
@@ -304,6 +324,7 @@ def build_sbom(request, tenant, params) -> tuple[dict, str]:
     b = _Builder()
     site = None
     refs: list[str] = []
+    vex = None
     if tenant is not None:
         devices, vms, sites = _hosts(request, tenant, params)
         if sites is not None and len(sites) == 1:
@@ -316,6 +337,10 @@ def build_sbom(request, tenant, params) -> tuple[dict, str]:
         refs = [b.host(d, "device") for d in devices] + [
             b.host(vm, "virtual_machine") for vm in vms
         ]
+        if _flag(params, "vex"):
+            from vulnerabilities.vex import section
+
+            vex = section(tenant, devices, vms, b.os_refs, b.install_refs)
 
     if site is not None:
         subject = {"type": "platform", "bom-ref": f"danbyte:site:{site.pk}",
@@ -350,6 +375,9 @@ def build_sbom(request, tenant, params) -> tuple[dict, str]:
         "dependencies": [{"ref": subject["bom-ref"], "dependsOn": refs},
                          *b.dependencies],
     }
+    if vex is not None:
+        doc["metadata"]["properties"].append(_prop("vulnerabilities", len(vex)))
+        doc["vulnerabilities"] = vex
     return doc, f"sbom-{stem}-{now:%Y%m%d}.cdx.json"
 
 
@@ -374,6 +402,8 @@ class CycloneDXRenderer(JSONRenderer):
             ("device", "Device ids. Given this or virtual_machine, only the "
                        "listed hosts are included."),
             ("virtual_machine", "Virtual machine ids."),
+            ("vex", "1 adds the open vulnerability matches of these hosts and "
+                    "installs as a CycloneDX vulnerabilities section (VEX)."),
         )
     ],
     responses=OpenApiResponse(

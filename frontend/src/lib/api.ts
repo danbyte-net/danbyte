@@ -1907,6 +1907,9 @@ export interface Device {
   coverage?: DeviceCoverageBrief
   /** The soonest end across hardware, OS and coverage (#436). */
   lifecycle_next?: LifecycleNext | null
+  /** Open vulnerability records (#451): on table rows while the feature
+   * is on, else null. */
+  vulnerabilities?: HostVulnerabilities | null
   description: string
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
@@ -6630,6 +6633,8 @@ export interface VirtualMachine {
     | null
   /** The platform's effective end of life (#436). */
   lifecycle_next?: LifecycleNext | null
+  /** Open vulnerability records (#451), as on a device row. */
+  vulnerabilities?: HostVulnerabilities | null
   status: StatusMini | null
   /** The software version running (#395). */
   software_version?: string
@@ -12461,13 +12466,17 @@ export interface SbomFilter {
   role?: string[]
   device?: string[]
   virtual_machine?: string[]
+  /** Add the CycloneDX `vulnerabilities` section (#451). */
+  vex?: boolean
 }
 
 /** The CycloneDX SBOM URL for a GET download (a site's, a few hosts'). */
 export function sbomUrl(filter: SbomFilter = {}): string {
   const p = new URLSearchParams()
   for (const [k, ids] of Object.entries(filter)) {
-    if (ids?.length) p.set(k, ids.join(","))
+    if (typeof ids === "boolean") {
+      if (ids) p.set(k, "1")
+    } else if (ids?.length) p.set(k, ids.join(","))
   }
   const q = p.toString()
   return q ? `/api/sbom/?${q}` : "/api/sbom/"
@@ -17920,6 +17929,59 @@ export interface CpeSearchResult {
   remote_status: "ok" | "cached" | "off" | "limited" | "error"
   remote_error: string
   retry_after?: number
+}
+
+/** A device's or VM's open vulnerability records (the list column). */
+export interface HostVulnerabilities {
+  open: number
+  /** The worst priority among them; "" when none is open. */
+  priority: VulnPriority | ""
+  kev: boolean
+}
+
+/** GET /api/vulnerabilities/ - one row per record matched in the tenant. */
+export interface VulnRecordRow extends VulnRecordBrief {
+  /** The record id again, as every list row's key. */
+  id: string
+  priority: VulnPriority | ""
+  devices: number
+  virtual_machines: number
+  installs: number
+  matches: number
+  first_seen_at: string
+}
+
+/** GET /api/vulnerabilities/<id>/ - the record with its open matches. */
+export interface VulnRecordDetail extends VulnRecordBrief {
+  last_modified: string | null
+  vuln_status: string
+  rejected: boolean
+  cvss_vector: string
+  cvss_verified: boolean
+  cwes: string[]
+  references: { url: string; tags?: string[] }[]
+  fixed_in: { part?: string; vendor?: string; product?: string; version: string }[]
+  osv_fixed_in: { ecosystem: string; name: string; version: string }[]
+  kev_action: string
+  kev_ransomware: string
+  epss_date: string | null
+  source: string
+  fetched_at: string | null
+  priority: VulnPriority
+  affected_count: number
+  affected: VulnMatch[]
+}
+
+/** GET /api/vulnerabilities/summary/ - the dashboard widget's numbers. */
+export interface VulnSummary {
+  records: number
+  devices: number
+  virtual_machines: number
+  matches: number
+  kev: number
+  critical: number
+  new_this_week: number
+  by_priority: Record<VulnPriority, number>
 }
 
 export interface VulnPolicy {

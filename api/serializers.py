@@ -2624,6 +2624,20 @@ def _platform_lifecycle(platform, context) -> dict:
     }
 
 
+#: The ``vulnerabilities`` shape on device and VM table rows (#451).
+VULNERABILITIES_SCHEMA = inline_serializer("HostVulnerabilities", {
+    "open": serializers.IntegerField(),
+    "priority": serializers.CharField(),
+    "kev": serializers.BooleanField(),
+})
+
+
+def _host_vulnerabilities(obj):
+    from vulnerabilities.host_columns import payload
+
+    return payload(obj)
+
+
 #: The ``lifecycle_next`` shape on device and VM rows.
 LIFECYCLE_NEXT_SCHEMA = inline_serializer("LifecycleNext", {
     "source": serializers.ChoiceField(choices=["hardware", "os", "coverage", "software"]),
@@ -3280,6 +3294,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         "prtg_sync", "prtg_plan", "prtg_host",
         # Its own column, Profiles (device-columns.tsx).
         "device_profiles",
+        # Its own column, Vulnerabilities (device-columns.tsx, #451).
+        "vulnerabilities",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
@@ -3328,6 +3344,9 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     coverage = serializers.SerializerMethodField()
     # The soonest end across hardware, OS and coverage (#436).
     lifecycle_next = serializers.SerializerMethodField()
+    # Open vulnerability records (#451): on the table row while the
+    # feature is on (vulnerabilities.host_columns), else null.
+    vulnerabilities = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -3510,6 +3529,10 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     @extend_schema_field(LIFECYCLE_NEXT_SCHEMA)
     def get_lifecycle_next(self, obj):
         return _lifecycle_next(self, obj, device=True)
+
+    @extend_schema_field(VULNERABILITIES_SCHEMA)
+    def get_vulnerabilities(self, obj):
+        return _host_vulnerabilities(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -4059,7 +4082,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "status", "status_id",  "serial_number", "asset_tag",
                   "software_version", "software_version_seen_at",
                   "software_version_source",
-                  "warranty_end", "coverage", "lifecycle_next",
+                  "warranty_end", "coverage", "lifecycle_next", "vulnerabilities",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
                   "width_mm", "height_mm", "depth_mm",
@@ -6966,7 +6989,9 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
     cf_model = "virtualmachine"
     # Its own column, Next end of life (vm-columns.tsx).
     list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host",
-                            "device_profiles", "local_context_data")
+                            "device_profiles", "local_context_data",
+                            # Its own column, Vulnerabilities (#451).
+                            "vulnerabilities")
     cluster = ClusterMiniSerializer(read_only=True)
     #: What the PRTG plan made of a save that changed prtg_sync; else null.
     prtg_plan = serializers.SerializerMethodField()
@@ -7106,6 +7131,13 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
     def get_lifecycle_next(self, obj):
         return _lifecycle_next(self, obj, device=False)
 
+    # Open vulnerability records (#451), as on the device row.
+    vulnerabilities = serializers.SerializerMethodField()
+
+    @extend_schema_field(VULNERABILITIES_SCHEMA)
+    def get_vulnerabilities(self, obj):
+        return _host_vulnerabilities(obj)
+
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
     # Active and powered off at the same time. `power_state_at` ships with it
@@ -7215,7 +7247,7 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
         list_serializer_class = _VMListSerializer
         fields = ["id", "name", "cluster", "cluster_id", "group", "group_id",
                   "role", "role_id", "platform", "platform_id", "lifecycle_next",
-                  "device", "device_id",
+                  "vulnerabilities", "device", "device_id",
                   "site", "site_id", "status", "status_id",
                   "power_state", "power_state_at",
                   "synced_from", "synced_from_id", "drift_count",

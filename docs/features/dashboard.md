@@ -28,6 +28,11 @@ The page is a mosaic of tiles:
 - **Support coverage** - devices per [coverage status](support-coverage.md),
   narrowed by site and manufacturer, and the support contracts that end
   soonest. A count opens the devices list filtered to it.
+- **Vulnerabilities** - open [vulnerability records](vulnerabilities.md#the-vulnerabilities-page)
+  per priority (Fix first, High, Medium, Low), those known exploited (CISA
+  KEV) and those new this week (a match first seen in the last 7 days).
+  Counts follow your scope; each opens the Vulnerabilities page filtered to
+  it. Shows *Vulnerability data is off* while the feature is off.
 - **PRTG widgets** - **Sensor** (one channel of one [PRTG sensor](prtg.md#sensors)
   as a gauge, lookup bar, value or sparkline over 1h, 24h or 7d) and
   **Sensor alarms** (the down and degraded sensors). See

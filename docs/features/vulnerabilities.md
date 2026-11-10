@@ -16,10 +16,12 @@ tenant and site scope ([#451](https://github.com/danbyte-net/danbyte/issues/451)
     **product mappings** with their [picker](#map-your-products),
     **matching** against your inventory with a [priority](#priority), the
     [Vulnerabilities tab](#where-it-shows) on devices, VMs, platforms and
-    applications, and the API for them. The Vulnerabilities list page, a
-    page per record, exceptions and browser sync are still to come. Until a
-    mapping exists, an NVD or OSV upload keeps nothing and a server fetch
-    asks for nothing.
+    applications, the [Vulnerabilities page](#the-vulnerabilities-page) with
+    a [page per record](#a-records-page), [list columns](#on-the-devices-and-vms-lists),
+    a [dashboard widget](dashboard.md), the [VEX in the SBOM](sbom.md#vulnerabilities-vex)
+    and the API for them. Exceptions and browser sync are still to come.
+    Until a mapping exists, an NVD or OSV upload keeps nothing and a server
+    fetch asks for nothing.
 
 It is **off by default** and deployment-wide. By default nothing is fetched
 and nothing leaves the server: the update source is *upload* until a
@@ -421,7 +423,7 @@ object's matches, worst priority first:
 
 | Column | Shows |
 |---|---|
-| Record | The CVE or advisory id, linked to NVD (CVE) or OSV (others). |
+| Record | The CVE or advisory id, linked to [its page](#a-records-page). |
 | Priority | *Fix first*, *High*, *Medium*, *Low*. |
 | Severity, CVSS | From the record's score. |
 | KEV | *KEV* when CISA lists it; the date added and the due date on hover. |
@@ -437,6 +439,72 @@ history, which adds a Resolved column), priority, severity, KEV, confidence
 and via. The filters are in the address (`?vstatus=resolved&priority=fix_first`),
 so a link keeps them. The tab is gone entirely while the feature is off.
 
+### The Vulnerabilities page
+
+**Software & lifecycle → Vulnerabilities** (`/vulnerabilities`, next to
+Lifecycle) lists every record matched in the tenant, as far as you can see
+it. It is in the menu for anyone who may view devices or VMs, while the
+feature is on; while it is off the page says so and points a deployment
+admin to **Settings → General → Vulnerability data**.
+
+**Records** (the default) is one row per record:
+
+| Column | Shows |
+|---|---|
+| Record | The id, linked to [its page](#a-records-page). |
+| Priority, Severity, CVSS, KEV, EPSS | As on the tab. |
+| Devices, VMs, Installs | How many of each it affects - open matches you can see. |
+| First seen | When its first open match appeared. |
+| Summary | The record's description. |
+
+**By object** is one row per match - a record on a host, through a platform
+or an install - with the tab's columns. The rail and the search box work the
+same in both views:
+
+| Filter | |
+|---|---|
+| Priority, Severity, KEV | As on the tab; *No score* for a record without one. |
+| First seen | *Last 7 days*, *Last 30 days*, *Older*: when a match appeared. |
+| EPSS | A range, 0 to 1 (`0.5..` is 50 % and up). |
+| Site | The host's site. |
+| Platform, Application | The platform or application whose mapping matched. |
+| Confidence, Via | *By object* only. |
+
+Everything is paged, sorted and counted on the server, and kept in the
+address (`/vulnerabilities?priority=fix_first&kev=yes&view=objects`), so a
+link or a [saved view](saved-views.md) keeps it. **Download** exports
+every row the filters match (CSV, Excel, HTML, print), not just the page.
+
+### A record's page
+
+`/vulnerabilities/<id>` - a CVE id, an OSV id or one of its aliases - has two
+tabs:
+
+- **Overview** - the description, then the record (id, aliases, priority,
+  published and modified dates, NVD status, where the data came from), its
+  CVSS (score and severity, version, vector, whether Danbyte recomputed it,
+  attack vector, CWEs), exploitation (CISA KEV dates, required action and
+  ransomware use; EPSS with its percentile and date), the versions it is
+  fixed in, and the references. **NVD** (or **OSV**) opens the public
+  record. Links out open in a new tab.
+- **Affected** - every host and install it matched: host, application,
+  version tested, via, confidence, product and first seen. Tick *Resolved*
+  under Status for the history (with when each was resolved).
+
+The page opens for a record the tenant matched or maps a product of, and
+404s otherwise. Records are public data and not in the change log, so the
+page has no Journal or Change log.
+
+### On the Devices and VMs lists
+
+While the feature is on, the Devices and Virtual machines lists have a
+**Vulnerabilities** column: the worst open priority, how many records are
+open and *KEV* when one is known exploited (`Fix first · 4 · KEV`). It
+sorts worst first and its rail facet filters by worst priority (*None open*
+for a clean host); **Known exploited** (a hidden column) filters by the KEV
+flag. Both are computed on the server for the whole list, and the column is
+in the list's Download.
+
 ## API
 
 Every endpoint below answers 404 while vulnerability data is off and works
@@ -447,11 +515,12 @@ site role sees only its own sites' matches, everywhere.
 | Endpoint | Answers |
 |---|---|
 | `GET/POST /api/vulnerabilities/mappings/`, `GET/PATCH/DELETE …/<id>/` | Mappings. `POST {platform\|device_type\|application, identifier?, version_scheme?, enabled?}`. Filters `platform`, `device_type`, `application`, `kind`, `enabled`. |
-| `GET /api/vulnerabilities/` | One row per matched record: score, severity, KEV, EPSS, worst priority, devices and VMs affected, first seen. |
+| `GET /api/vulnerabilities/` | One row per matched record: score, severity, KEV, EPSS, worst priority, devices, VMs and installs affected, first seen. |
+| `GET /api/vulnerabilities/facets/`, `GET /api/vulnerabilities/matches/facets/` | The page's rail: `{facets: {id: [{value, label, count}]}, sortable: [...]}`. Each facet counts records (or matches) over what the other filters leave. |
 | `GET /api/vulnerabilities/<id>/` | The record (CVE id, OSV id or an alias) with its open matches (`affected`, first 1,000; `affected_count`). 404 unless the tenant matched it or maps one of its products. |
 | `GET /api/vulnerabilities/matches/` | Match rows, worst priority first. |
 | `GET /api/devices/<id>/vulnerabilities/` | One device's matches; likewise `virtual-machines`, `platforms` (through its mappings) and `applications`. |
-| `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, devices and VMs affected. |
+| `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, records new this week (`new_this_week`: a match first seen in the last 7 days), devices and VMs affected. |
 | `GET /api/vulnerabilities/coverage/` | Per mapping: objects tested, matched, with a blank version, with a version the scheme cannot read; and from the last run the records it could not decide (`unparsed_bounds`, `range_not_understood`). Filters `platform`, `device_type`, `application`. |
 | `GET/PATCH /api/vulnerabilities/policy/` | Priority thresholds. |
 
@@ -460,3 +529,27 @@ The record and match lists take `status` (`open` by default, `resolved`,
 `site`, `cve`, `priority`, `confidence`, `via` (`platform`/`application`),
 `severity`, `kev`, `epss_min` and `q` (id or description). Values of one
 filter are comma-separated or repeated.
+
+The two lists also take what the page sends: `search` (as `q`),
+`ordering=<column>` or `-<column>` (`record`, `priority`, `severity`,
+`score`, `kev`, `epss`, `first_seen`; records also `devices`,
+`virtual_machines`, `installs`; matches also `host`, `application`,
+`version`, `via`, `confidence`, `mapping`, `resolved`) and the rail's
+`f_<facet>=a,b` - `priority`, `severity` (`unscored` for no score), `kev`
+(`yes`/`no`), `first_seen` (`7d`/`30d`/`older`), `epss` (`min..max`), `site`,
+`platform`, `application`, and on matches `confidence` and `via`. An
+unknown facet or sort is a `400`.
+
+On `GET /api/devices/` and `GET /api/virtual-machines/`:
+
+| Parameter | Lists |
+|---|---|
+| `vuln_priority=fix_first,high` | Hosts whose worst open priority is one of these; `none` for hosts with none open. |
+| `vuln_kev=true` | Hosts with an open record in CISA KEV (`false`: without). |
+| `cve_severity=critical,high` | Hosts with an open record of that CVSS severity. |
+
+The table rows (`view=table`) carry `vulnerabilities: {open, priority,
+kev}` while the feature is on (`null` otherwise), and take
+`f_vulnerabilities` / `f_vuln_kev` and `ordering=vulnerabilities`. While the
+feature is off the parameters are accepted and do nothing. Counted like
+everything here: an application match needs `view` on its install.

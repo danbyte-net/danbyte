@@ -63,9 +63,18 @@ describe("app sidebar sections", () => {
       "/applications",
       "/application-groups",
       "/lifecycle",
+      "/vulnerabilities",
       "/eol-products",
       "/support-contracts",
     ])
+  })
+
+  it("shows Vulnerabilities only while the feature is on", () => {
+    const item = sections
+      .flatMap((s) => s.clusters.flatMap((c) => c.items))
+      .find((x) => x.url === "/vulnerabilities")!
+    expect(item.feature).toBe("vulnerabilities")
+    expect(item.anyOf).toEqual(["device", "virtualmachine"])
   })
 
   it("keeps each moved page's permission gate", () => {
