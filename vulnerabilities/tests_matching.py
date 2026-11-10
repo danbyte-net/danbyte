@@ -443,6 +443,47 @@ class SignalTests(Base):
         self.commit(inst.delete)
         self.assertEqual(len(self.pushed(push, jobs.run_objects)), 1)
 
+    @mock.patch("vulnerabilities.fetch.enqueue_products")
+    def test_new_mapping_fetches_its_product_in_server_mode(self, enqueue, push, _claim):
+        from django.core.cache import cache
+        from django.test import override_settings
+
+        override = override_settings(CACHES={"default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+        override.enable()
+        self.addCleanup(override.disable)
+        cache.clear()
+        app = Application.objects.create(tenant=self.tenant, name="App", slug="app")
+        dt = DeviceType.objects.create(tenant=self.tenant, name="C9300")
+        # Upload mode: nothing is asked for.
+        self.commit(lambda: ProductMapping.objects.create(
+            tenant=self.tenant, application=app, kind="purl", vendor="pypi", product="a0"))
+        self.assertEqual(enqueue.call_count, 0)
+        VulnerabilitySettings.objects.filter(pk=1).update(update_source="server")
+        m = ProductMapping(tenant=self.tenant, application=app, kind="purl", vendor="pypi",
+                           product="app")
+        self.commit(m.save)
+        enqueue.assert_called_once_with([("purl", "", "pypi", "app")])
+        # Re-saving it, or mapping the same product again soon: debounced.
+        m.version_scheme = "pep440"
+        self.commit(m.save)
+        other = Application.objects.create(tenant=self.other, name="App", slug="app")
+        self.commit(lambda: ProductMapping.objects.create(
+            tenant=self.other, application=other, kind="purl", vendor="pypi", product="app"))
+        self.assertEqual(enqueue.call_count, 1)
+        # Hardware context and disabled mappings are never fetched.
+        self.commit(lambda: ProductMapping.objects.create(
+            tenant=self.tenant, device_type=dt, kind="cpe", part="h", vendor="cisco",
+            product="catalyst_9300"))
+        off = ProductMapping(tenant=self.tenant, application=app, kind="purl",
+                             vendor="pypi", product="b", enabled=False)
+        self.commit(off.save)
+        self.assertEqual(enqueue.call_count, 1)
+        # Enabling one later asks for it.
+        off.enabled = True
+        self.commit(off.save)
+        enqueue.assert_called_with([("purl", "", "pypi", "b")])
+
     def test_policy_save_reprioritises(self, push, _claim):
         self.commit(lambda: VulnerabilityPolicy.for_tenant(self.tenant))
         self.assertEqual(self.pushed(push, jobs.run_reprioritise), [(str(self.tenant.pk),)])

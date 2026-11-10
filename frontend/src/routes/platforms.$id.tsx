@@ -22,6 +22,9 @@ import { EolBadge } from "@/components/cells/eol-cell"
 import { Loading } from "@/components/loading"
 import { dash } from "@/components/cells/dash"
 import { useMe } from "@/lib/use-me"
+import { VulnerabilityMappingCard } from "@/components/vulnerabilities/mapping-card"
+import { VulnerabilitiesTab } from "@/components/vulnerabilities/vulnerabilities-tab"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 
 export const Route = createFileRoute("/platforms/$id")({
   component: PlatformDetail,
@@ -46,12 +49,13 @@ function PlatformDetail() {
 
 function Body({ platform: p }: { platform: Platform }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "devices" | "vms" | "journal" | "history"
+    "overview" | "devices" | "vms" | "vulnerabilities" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Platform | null>(null)
   const goBack = useCallback(() => nav({ to: "/platforms" }), [nav])
   const { canDo, humanIds } = useMe()
+  const vuln = useVulnSettings()
 
   const rows: KvRow[] = [
     ...(humanIds && p.numid != null
@@ -159,6 +163,9 @@ function Body({ platform: p }: { platform: Platform }) {
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: p.device_count },
         { value: "vms", label: "Virtual machines", count: p.vm_count },
+        ...(vuln.enabled
+          ? [{ value: "vulnerabilities", label: "Vulnerabilities" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -170,6 +177,11 @@ function Body({ platform: p }: { platform: Platform }) {
           <KvCard title="Platform" rows={rows} />
           <LifecycleCard item={p} title="OS lifecycle" />
           <EolCard platform={p} canEdit={canDo("platform", "change")} />
+          <VulnerabilityMappingCard
+            subject="platform"
+            object={p}
+            canEdit={canDo("platform", "change")}
+          />
         </div>
       </DetailTab>
       <DetailTab value="devices">
@@ -181,6 +193,11 @@ function Body({ platform: p }: { platform: Platform }) {
           emptyText="No virtual machines run this platform."
         />
       </DetailTab>
+      {vuln.enabled && (
+        <DetailTab value="vulnerabilities">
+          <VulnerabilitiesTab kind="platform" id={p.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.platform" objectId={p.id} />
       </DetailTab>

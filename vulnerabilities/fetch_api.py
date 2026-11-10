@@ -1,11 +1,14 @@
-"""Server-mode endpoints (#451), deployment admin only.
+"""Server-mode endpoints (#451).
 
 * ``POST /api/vulnerabilities/refresh/``     start (or resume) a server fetch
-  now, in the background; answers the run (202).
+  now, in the background; answers the run (202). Deployment admin.
 * ``GET /api/vulnerabilities/cpe/search/?q=`` CPE names for the mapping
   picker: vendor:product pairs already in the store, a typed ``cpe:2.3:``
   name checked for syntax, and - in server mode only - NVD's CPE dictionary
-  (``keywordSearch``), cached 24 hours and rate limited.
+  (``keywordSearch``), cached 24 hours and rate limited. Open to the
+  deployment admin and to anyone who may change a platform, device type or
+  application in the active tenant (the picker's users): the answer is
+  public NVD data and never carries the key.
 """
 from __future__ import annotations
 
@@ -28,6 +31,9 @@ from .models import CveProduct, VulnerabilitySettings
 
 _OFF = {"detail": "Vulnerability data is off."}
 _ADMIN = {"detail": "users.manage required."}
+_PICKER = {"detail": "Needs change on platforms, device types or applications."}
+#: ``change`` on one of these in the active tenant opens the CPE search.
+PICKER_TYPES = ("platform", "devicetype", "application")
 
 CPE_CACHE_TTL = 24 * 3600
 #: Searches per user per minute (local and remote together).
@@ -80,6 +86,18 @@ def _bump(key: str, window: int) -> int:
         return 1
 
 
+def _may_search(request) -> bool:
+    if can_manage_deployment(request.user):
+        return True
+    from api.views import _get_active_tenant
+    from auth_api import rbac
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return False
+    return any(rbac.has_action(request.user, tenant, slug, "change") for slug in PICKER_TYPES)
+
+
 def _local(q: str, parsed) -> list[dict]:
     qs = CveProduct.objects.filter(kind="cpe")
     if parsed is not None:
@@ -87,7 +105,7 @@ def _local(q: str, parsed) -> list[dict]:
         qs = qs.filter(part=part, vendor=vendor, product=product)
     else:
         for token in q.lower().replace(":", " ").split()[:5]:
-            qs =qs.filter(Q(vendor__icontains=token) | Q(product__icontains=token))
+            qs = qs.filter(Q(vendor__icontains=token) | Q(product__icontains=token))
     rows = (qs.values("part", "vendor", "product")
             .annotate(cves=Count("cve_id", distinct=True))
             .order_by("-cves", "vendor", "product")[:LOCAL_MAX])
@@ -106,12 +124,12 @@ def _local(q: str, parsed) -> list[dict]:
 def vulnerability_cpe_search(request):
     """``remote`` is ``ok``, ``cached``, ``off`` (not server mode: NVD is not
     asked), ``limited`` (try again in ``retry_after`` seconds) or ``error``."""
-    if not can_manage_deployment(request.user):
-        return Response(_ADMIN, status=403)
+    if not _may_search(request):
+        return Response(_PICKER, status=403)
     row = VulnerabilitySettings.load()
     if not row.enabled:
         return Response(_OFF, status=409)
-    q = " ".join(str(request.query_params.get("q") or "").split())
+    q =" ".join(str(request.query_params.get("q") or "").split())
     if not Q_MIN <= len(q) <= Q_MAX:
         return Response({"q": f"Between {Q_MIN} and {Q_MAX} characters."}, status=400)
     now = int(time.time())

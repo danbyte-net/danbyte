@@ -17,6 +17,8 @@ type Base = Omit<FieldProps, "children">
 export interface SelectOption {
   value: string
   label: ReactNode
+  /** Shown but not pickable (a choice that is not available yet). */
+  disabled?: boolean
 }
 
 /** A labelled run of options, rendered after the flat `options`. */
@@ -95,7 +97,7 @@ export function FormSelect({
           {allowKeep && <SelectItem value={KEEP_VALUE}>(keep)</SelectItem>}
           {noneLabel && <SelectItem value={NONE}>{noneLabel}</SelectItem>}
           {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
+            <SelectItem key={o.value} value={o.value} disabled={o.disabled}>
               {o.label}
             </SelectItem>
           ))}

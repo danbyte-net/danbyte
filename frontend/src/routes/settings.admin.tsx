@@ -38,6 +38,7 @@ import {
 } from "@/components/settings/settings-card"
 import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
 import { EolSettingsCard } from "@/components/settings/eol-settings-card"
+import { VulnerabilitySettingsCard } from "@/components/settings/vulnerability-settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useTimezoneOptions } from "@/lib/use-timezones"
 
@@ -84,6 +85,7 @@ function AdminPage() {
         <FaceplatesCard />
         <MacVendorsCard />
         <EolSettingsCard />
+        <VulnerabilitySettingsCard />
       </SettingsGrid>
     </div>
   )
