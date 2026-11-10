@@ -19,10 +19,12 @@ import {
   buildDrawnCablesLayer,
 } from "@/components/site-map/cable-geo-route"
 import {
+  basemapConfig,
   markerZ,
   observeMapSize,
-  setBaseLayer,
+  setBasemap,
 } from "@/components/site-map/map-core"
+import { useTheme } from "@/components/theme-provider"
 import {
   applyDensityScaling,
   createMarkerGroup,
@@ -113,20 +115,30 @@ export function MiniMap({
     }
   }, [])
 
-  // Tiles (from the deployment config, same as the full map). setBaseLayer
-  // swaps in place - keyed on the URL, not the payload object, so a refetch
-  // doesn't stack another tile layer + attribution line.
-  const baseRef = useRef<L.TileLayer | null>(null)
-  const tileUrl = data?.tiles.url
-  const tileAttribution = data?.tiles.attribution
+  // Tiles (from the deployment config, same as the full map: raster, or
+  // vector with a raster fallback). setBasemap swaps in place - keyed on the
+  // settings, not the payload object, so a refetch doesn't stack another
+  // layer + attribution line.
+  const baseRef = useRef<L.Layer[]>([])
+  const { theme } = useTheme()
+  const tiles = data?.tiles
+  const tilesKey = tiles
+    ? [
+        tiles.url,
+        tiles.attribution,
+        tiles.basemap,
+        tiles.vector?.url,
+        tiles.vector?.attribution,
+        tiles.labels,
+        theme,
+      ].join("\n")
+    : ""
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !tileUrl) return
-    setBaseLayer(map, baseRef, {
-      url: tileUrl,
-      attribution: tileAttribution ?? "",
-    })
-  }, [tileUrl, tileAttribution])
+    if (!map || !tiles) return
+    return setBasemap(map, baseRef, basemapConfig(tiles, "map", theme))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tilesKey])
 
   // Draw everything + fit.
   useEffect(() => {

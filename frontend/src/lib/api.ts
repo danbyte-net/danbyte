@@ -1388,12 +1388,24 @@ export interface SiteMapLineCapacity {
   link_count: number
 }
 
+/** The vector basemap's label language (core DeploymentSettings
+ * MAP_LABEL_CHOICES). */
+export type MapLabelLanguage =
+  "en" | "en_local" | "browser" | "browser_local" | "local"
+
 export interface SiteMapPayload {
   tiles: {
     url: string
     attribution: string
     osm_default: boolean
     satellite: { url: string; attribution: string }
+    /** The street basemap kind (#467). `url` above stays the raster
+     * fallback for a browser without WebGL. */
+    basemap?: "raster" | "vector"
+    vector?: { url: string; attribution: string; osm_default: boolean }
+    /** The label language for this user (their preference, else the
+     * deployment default). */
+    labels?: MapLabelLanguage
   }
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
@@ -10639,6 +10651,10 @@ export interface DeploymentSettings {
   map_tile_attribution: string
   map_satellite_url: string
   map_satellite_attribution: string
+  map_basemap: "raster" | "vector"
+  map_vector_url: string
+  map_vector_attribution: string
+  map_label_language: MapLabelLanguage
   enhanced_site_separation: boolean
   allow_site_settings: boolean
   allow_site_editor_delegation: boolean

@@ -31,8 +31,52 @@ import {
   TileReadError,
 } from "./plan-from-map"
 import type { Bbox } from "./plan-from-map"
+import { loadVectorModule, webglAvailable } from "./map-core"
 
 type Basemap = "map" | "sat"
+
+type RenderArgs = Parameters<typeof renderMapImage>[0]
+
+/**
+ * The background image: the street map from vector tiles when the
+ * deployment draws it so (#467) - offscreen, in MapLibre - else from the
+ * raster tiles. A vector render that fails (no WebGL, tiles unreadable)
+ * falls back to the raster tiles once.
+ */
+export async function renderPlanImage(
+  tiles: SiteMapPayload["tiles"],
+  basemap: Basemap,
+  args: RenderArgs,
+  deps: {
+    webgl?: () => boolean
+    loadVector?: typeof loadVectorModule
+  } = {}
+) {
+  const vec = tiles.basemap === "vector" ? tiles.vector : undefined
+  const webgl = deps.webgl ?? webglAvailable
+  if (basemap === "map" && vec && webgl()) {
+    const load = deps.loadVector ?? loadVectorModule
+    try {
+      return await renderMapImage({
+        ...args,
+        attribution: vec.attribution,
+        vector: async (bbox, width, height) => {
+          const m = await load()
+          return m.renderVectorBox({
+            url: vec.url,
+            labels: tiles.labels ?? "en",
+            bbox,
+            width,
+            height,
+          })
+        },
+      })
+    } catch (e) {
+      if (!(e instanceof TileReadError)) throw e
+    }
+  }
+  return renderMapImage(args)
+}
 
 const fmtM = (m: number) =>
   m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`
@@ -138,7 +182,7 @@ function PlanFromMapForm({
             ? tiles.satellite
             : { url: tiles.url, attribution: tiles.attribution }
         try {
-          const img = await renderMapImage({
+          const img = await renderPlanImage(tiles, basemap, {
             bbox: pf.bbox,
             mapZoom: frame.zoom,
             template: cfg.url,
