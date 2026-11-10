@@ -6,8 +6,9 @@ import { CHECK_COLOR } from "./tile-paint"
 // Detail by zoom, from afar: each room's one label - its name centred on
 // it, a muted line of facts under it, its alarm's badge by the name. A
 // constant size on screen (world px over the zoom), on a halo of the page
-// so it reads over the room's tint and its walls. Takes no pointer: the
-// room under it does.
+// so it reads over the room's tint and its walls. Upright, wider than its
+// room where it must be (plan-detail.ts placeRoomLabels). Takes no
+// pointer: the room under it does.
 
 const BADGE_PX = 10
 
@@ -39,13 +40,12 @@ export function RoomLabelsLayer({
           paintOrder: "stroke" as const,
         }
         return (
-          <g
-            key={l.id}
-            data-room-label={l.id}
-            transform={l.angle ? `rotate(${l.angle},${x},${y})` : undefined}
-          >
+          <g key={l.id} data-room-label={l.id}>
+            {/* Only the name ever turns (along a narrow room, as the last
+                resort); its badge and facts stay upright. */}
             <text
               data-part="room-name"
+              transform={l.angle ? `rotate(${l.angle},${x},${y})` : undefined}
               x={nameX}
               y={nameY}
               textAnchor="middle"

@@ -150,7 +150,12 @@ const TRAY_DEFAULT = "#71717a"
 const MUTED_INK = "#71717a"
 const AREA_DEFAULT = "#71717a"
 
+/** A tile the plan's filter leaves out, on paper. */
+const RECEDE_OPACITY = 0.25
+
 export interface PlanSvgInput {
+  /** The plan's filter: the tiles it leaves out, printed faded. */
+  dimTileIds?: ReadonlySet<string>
   plan: Pick<FloorPlan, "grid_width" | "grid_height" | "cell_mm"> &
     Partial<Pick<FloorPlan, "layout_mode">>
   /** The tiles as shown - hidden ones already left out. */
@@ -1621,6 +1626,7 @@ function planSvgBody({
   mmPerPx: sheetMmPerPx,
   cameras,
   callouts = false,
+  dimTileIds,
 }: PlanSvgInput): string {
   const w = plan.grid_width * CELL
   const h = plan.grid_height * CELL
@@ -1938,6 +1944,9 @@ function planSvgBody({
   for (const t of ordered) {
     // Folded into a cluster: the cluster prints it.
     if (icons.clusterOf.has(t.id)) continue
+    // What the plan's filter leaves out prints faded, as on screen.
+    const recede = (m: string) =>
+      dimTileIds?.has(t.id) ? `<g opacity="${RECEDE_OPACITY}">${m}</g>` : m
     // A free plan's tile turned past its quarter turn (shapes.ts).
     const r = free ? tileBox(t).rotation : 0
     // Too thin to read: its symbol at the drawn size.
@@ -1945,22 +1954,24 @@ function planSvgBody({
     if (shape?.symbol) {
       const live = liveState?.tiles[t.id]
       body.push(
-        symbolMarkup(
-          t,
-          shape.box,
-          iconIds.has(t.id),
-          iconIds.has(t.id) ? 0 : r,
-          tileIcons
-            ? tilePaint({
-                tile: t,
-                colorBy,
-                rack:
-                  figures?.get(t.id) ??
-                  rackFigures(null, live?.kind === "rack" ? live : null),
-                check: live?.check ?? null,
-                solid: true,
-              })
-            : null
+        recede(
+          symbolMarkup(
+            t,
+            shape.box,
+            iconIds.has(t.id),
+            iconIds.has(t.id) ? 0 : r,
+            tileIcons
+              ? tilePaint({
+                  tile: t,
+                  colorBy,
+                  rack:
+                    figures?.get(t.id) ??
+                    rackFigures(null, live?.kind === "rack" ? live : null),
+                  check: live?.check ?? null,
+                  solid: true,
+                })
+              : null
+          )
         )
       )
       continue
@@ -1984,7 +1995,7 @@ function planSvgBody({
     ]
       .filter(Boolean)
       .join(" ")
-    body.push(turns ? `<g transform="${turns}">${markup}</g>` : markup)
+    body.push(recede(turns ? `<g transform="${turns}">${markup}</g>` : markup))
   }
   for (const c of icons.clusters) {
     const face = faces.get(c.id)!

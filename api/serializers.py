@@ -11928,6 +11928,10 @@ def _tile_photos_for(tiles, context) -> dict:
     return tile_photos(tiles, request.user, tenant)
 
 
+#: A linked device's, rack's or cabinet's type, by link kind.
+_LINK_TYPE_FIELD = {"device": "device_type", "rack": "rack_type", "cabinet": "cabinet_type"}
+
+
 class FloorPlanTileSerializer(NumIdModelSerializer):
     """A placed tile. The link is written as ``link_kind`` + ``link_id``
     (resolved to the right FK, tenant-checked, and to an object the writer
@@ -12046,6 +12050,20 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
             # A device's own icon, else its type's: it wins over the tile's
             # type and the role (linked.role.icon); "" when neither has one.
             out["icon"] = target.own_icon if obj.link_kind == "device" else ""
+            # What the plan's filter sorts by: the object's type, status and
+            # tags (tenant-scoped, as the object is).
+            kind_type = getattr(target, _LINK_TYPE_FIELD[obj.link_kind], None)
+            out["type"] = None if kind_type is None else {
+                "id": str(kind_type.pk), "name": kind_type.name,
+            }
+            status = target.status
+            out["status"] = None if status is None else {
+                "id": str(status.pk), "name": status.name, "color": status.color,
+            }
+            out["tags"] = [
+                {"id": tag.pk, "name": tag.name, "slug": tag.slug, "color": tag.color}
+                for tag in target.tags.all()
+            ]
             # A device's measured size (its own, else its type's): what the
             # editor's "Fit to size" resizes the tile to.
             if obj.link_kind == "device":

@@ -331,16 +331,17 @@ describe("a room too small for its name", () => {
       label: "Stair N",
       x: 30,
       y: 25,
-      width: 1,
-      height: 1,
+      // Under OVERHANG_MIN_PX on screen: named on hover only.
+      width: 0.5,
+      height: 0.5,
     } as AreaShape
     const c = draw(10000, { detail: "auto", shapes: [hall, stair] })
     expect(c.querySelector('[data-room-label="a2"]')).toBeNull()
     const svg = c.querySelector("svg")!
     // jsdom: the plan 40 px in, 40 px a cell.
     fireEvent.pointerMove(svg, {
-      clientX: 40 + 30.5 * 40,
-      clientY: 40 + 25.5 * 40,
+      clientX: 40 + 30.25 * 40,
+      clientY: 40 + 25.25 * 40,
     })
     expect(c.querySelector("[data-part=room-hint]")).not.toBeNull()
     expect(document.body.textContent).toContain("Stair N")

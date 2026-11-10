@@ -202,10 +202,16 @@ function OpensMark({
   y,
   ink,
   area,
+  size = LINK_PX,
+  onOpen,
 }: {
   x: number
   y: number
   ink: string
+  /** Its size (world px). */
+  size?: number
+  /** View, while a click on the area zooms: a click on the mark opens. */
+  onOpen?: () => void
   /** An area's mark: black or white over a strong fill, as its name. */
   area?: AreaShape
 }) {
@@ -215,19 +221,42 @@ function OpensMark({
       data-part="opens-mark"
       x={x}
       y={y}
-      width={LINK_PX}
-      height={LINK_PX}
+      width={size}
+      height={size}
       color={inks ? "currentColor" : ink}
       strokeWidth={2.25}
       pointerEvents="none"
     />
   )
-  return inks ? (
+  const drawn = inks ? (
     <g style={inks} className={AREA_INK_CLASS}>
       {mark}
     </g>
   ) : (
     mark
+  )
+  if (!onOpen) return drawn
+  return (
+    <g
+      data-part="opens-button"
+      role="link"
+      aria-label="Open the linked plan"
+      style={{ cursor: "pointer", pointerEvents: "auto" }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        onOpen()
+      }}
+    >
+      <rect
+        x={x - size * 0.2}
+        y={y - size * 0.2}
+        width={size * 1.4}
+        height={size * 1.4}
+        fill="transparent"
+      />
+      {drawn}
+    </g>
   )
 }
 
@@ -245,8 +274,23 @@ export function AreaShapeView({
   minNamePx,
   nameAt,
   pattern = "full",
+  recedes = false,
+  hot = false,
+  onActivate,
+  onFocusChange,
+  onOpens,
 }: {
+  /** View, while a click zooms to it: its Opens mark opens the plan. */
+  onOpens?: () => void
+  /** View, from afar: Enter or Space on the focused area zooms to it. */
+  onActivate?: () => void
+  onFocusChange?: (focused: boolean) => void
   area: AreaShape
+  /** The plan's filter leaves it out (its area type): faded. */
+  recedes?: boolean
+  /** View, from afar: under the pointer or focused, a click zooms to it -
+   * its outline lit. */
+  hot?: boolean
   /** Detail by zoom: the type's pattern as drawn, fine and faint, or left
    * out (a flat tint). */
   pattern?: "full" | "fine" | "none"
@@ -270,11 +314,14 @@ export function AreaShapeView({
   const ink = areaLabelColor(area)
   const name = area.show_name && nameAt !== null ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
-  const on = selected || multiSelected
+  const on = selected || multiSelected || hot
   const strokeOpacity =
     area.border === "none" && !on ? 0 : on ? 1 : AREA_STROKE_OPACITY
   const clipId = `area-pattern-${area.id}`
   const grow = minNamePx ? fontGrow(NAME_PX, zoom, minNamePx) : 1
+  // A mark that opens: big enough on screen to press.
+  const linkPx = onOpens ? Math.max(LINK_PX, 16 / zoom) : LINK_PX
+  const linkGap = onOpens ? 4 / zoom : 4
   const common = {
     fill: color,
     fillOpacity: area.fill_opacity / 100,
@@ -286,7 +333,24 @@ export function AreaShapeView({
   const style: React.CSSProperties = {
     cursor: interactive ? "pointer" : undefined,
     pointerEvents: interactive ? "auto" : "none",
+    opacity: recedes ? 0.35 : undefined,
+    outline: "none",
   }
+  // Focusable when a key can zoom to it; its lit outline is the ring.
+  const keys = onActivate
+    ? {
+        tabIndex: 0,
+        role: "button",
+        "aria-label": `Zoom to ${areaName(area) || "area"}`,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key !== "Enter" && e.key !== " ") return
+          e.preventDefault()
+          onActivate()
+        },
+        onFocus: () => onFocusChange?.(true),
+        onBlur: () => onFocusChange?.(false),
+      }
+    : {}
   if (area.shape === "polygon") {
     const pts = area.points
     if (pts.length < 3) return null
@@ -303,6 +367,7 @@ export function AreaShapeView({
         style={style}
         onPointerDown={onPointerDown}
         aria-label={name || "Area"}
+        {...keys}
       >
         <polygon points={outline} strokeLinejoin="round" {...common} />
         {pattern !== "none" && (
@@ -350,10 +415,12 @@ export function AreaShapeView({
         )}
         {(area.opens || area.opens_hidden) && (
           <OpensMark
-            x={px(cx) - LINK_PX / 2}
-            y={px(cy) + (name ? NAME_PX : -LINK_PX / 2)}
+            x={px(cx) - linkPx / 2}
+            y={px(cy) + (name ? NAME_PX : -linkPx / 2)}
             area={area}
             ink={ink}
+            size={linkPx}
+            onOpen={onOpens}
           />
         )}
       </g>
@@ -374,6 +441,7 @@ export function AreaShapeView({
           : undefined
       }
       aria-label={name || "Area"}
+      {...keys}
     >
       <rect
         x={px(area.x)}
@@ -411,12 +479,14 @@ export function AreaShapeView({
           grow={grow}
         />
       )}
-      {(area.opens || area.opens_hidden) && w > LINK_PX + 8 && (
+      {(area.opens || area.opens_hidden) && w > linkPx + linkGap * 2 && (
         <OpensMark
-          x={px(area.x) + w - LINK_PX - 4}
-          y={px(area.y) + 4}
+          x={px(area.x) + w - linkPx - linkGap}
+          y={px(area.y) + linkGap}
           area={area}
           ink={ink}
+          size={linkPx}
+          onOpen={onOpens}
         />
       )}
     </g>

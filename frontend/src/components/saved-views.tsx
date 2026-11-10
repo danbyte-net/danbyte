@@ -60,6 +60,12 @@ export interface SavedViewsProps {
     restore: (snapshot: FilterSnapshot | null | undefined) => void
     activeCount: number
   }
+  /** What the empty menu suggests, and the disabled save's tip - "the
+   * list" unless the page says otherwise (a floor plan). */
+  emptyHint?: string
+  filterFirstHint?: string
+  /** A map's bar: the bar's h-7 size. */
+  compact?: boolean
 }
 
 function useSavedViews(objectType: string) {
@@ -73,7 +79,15 @@ function useSavedViews(objectType: string) {
   })
 }
 
-export function SavedViews({ objectType, q, onQ, filters }: SavedViewsProps) {
+export function SavedViews({
+  objectType,
+  q,
+  onQ,
+  filters,
+  emptyHint = "No saved views yet. Filter the list, then save it as a view.",
+  filterFirstHint = "Filter the list first",
+  compact = false,
+}: SavedViewsProps) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState(false)
@@ -185,7 +199,10 @@ export function SavedViews({ objectType, q, onQ, filters }: SavedViewsProps) {
         <Button
           variant="outline"
           size="sm"
-          className="max-w-56 justify-start gap-1.5"
+          className={cn(
+            "max-w-56 justify-start gap-1.5",
+            compact && "h-7 px-2 text-xs"
+          )}
         >
           <ListFilter className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="truncate">{applied ? applied.name : "Views"}</span>
@@ -204,7 +221,7 @@ export function SavedViews({ objectType, q, onQ, filters }: SavedViewsProps) {
           {views.isLoading && <Loading className="min-h-16" />}
           {!views.isLoading && rows.length === 0 && (
             <p className="px-2 py-3 text-[13px] text-muted-foreground">
-              No saved views yet. Filter the list, then save it as a view.
+              {emptyHint}
             </p>
           )}
 
@@ -303,7 +320,7 @@ export function SavedViews({ objectType, q, onQ, filters }: SavedViewsProps) {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" variant="default">
-                    Filter the list first
+                    {filterFirstHint}
                   </TooltipContent>
                 </Tooltip>
               )}

@@ -24,6 +24,7 @@ export function PlanScene3D({
   plan,
   liveState,
   hiddenTileIds,
+  recedeTileIds = null,
   traceCableId,
   onOpenCable,
   onOpenDevice,
@@ -50,6 +51,8 @@ export function PlanScene3D({
   plan: FloorPlan
   liveState: FloorPlanLiveState | null
   hiddenTileIds: Set<string>
+  /** The plan's filter leaves these out: ghosted. */
+  recedeTileIds?: ReadonlySet<string> | null
   traceCableId: string | null
   /** A cable run clicked: the plan's cable panel (null: clicked away). */
   onOpenCable?: (cableId: string | null) => void
@@ -114,6 +117,7 @@ export function PlanScene3D({
           cameraViews={cameraViews}
           liveState={liveState}
           hiddenTileIds={hiddenTileIds}
+          recedeTileIds={recedeTileIds}
           traceCableId={traceCableId}
           onOpenCable={onOpenCable}
           onOpenDevice={onOpenDevice}

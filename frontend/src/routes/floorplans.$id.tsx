@@ -16,6 +16,10 @@ export const Route = createFileRoute("/floorplans/$id")({
     ...(typeof s.tile === "string" ? { tile: s.tile } : {}),
     // ?area=<id> - arrive with a room / area opened ("Open in floor plan").
     ...(typeof s.area === "string" ? { area: s.area } : {}),
+    // ?pf=<filter> - the plan's filter (plan-filter.ts), shareable.
+    ...(s.pf && typeof s.pf === "object" && !Array.isArray(s.pf)
+      ? { pf: s.pf as Record<string, unknown> }
+      : {}),
   }),
 })
 

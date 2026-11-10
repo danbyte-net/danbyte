@@ -1,4 +1,6 @@
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+
+import { ZOOM_MS, viewAt } from "./plan-zoom"
 
 export interface Transform {
   x: number
@@ -75,9 +77,42 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
   const touches = useRef(new Map<number, Point>())
   const pinch = useRef<PinchStart | null>(null)
   const pinched = useRef(false)
+  // An eased move under way (animateTo): any input stops it.
+  const anim = useRef<number | null>(null)
+  const stopAnim = useCallback(() => {
+    if (anim.current != null) cancelAnimationFrame(anim.current)
+    anim.current = null
+  }, [])
+  useEffect(() => stopAnim, [stopAnim])
+
+  /** Ease the view to `to` (a click to zoom, a fit) on a `vw` x `vh`
+   * screen; at once when the reader asks for reduced motion. */
+  const animateTo = useCallback(
+    (to: Transform, vw: number, vh: number, ms: number = ZOOM_MS) => {
+      stopAnim()
+      const reduced =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      if (reduced || ms <= 0 || typeof requestAnimationFrame === "undefined") {
+        setT(to)
+        return
+      }
+      const from = tRef.current
+      const start = performance.now()
+      const step = (now: number) => {
+        const p = (now - start) / ms
+        setT(viewAt(from, to, p, vw, vh))
+        anim.current = p < 1 ? requestAnimationFrame(step) : null
+      }
+      anim.current = requestAnimationFrame(step)
+    },
+    [stopAnim]
+  )
 
   const onWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault()
+    stopAnim()
     const rect = e.currentTarget.getBoundingClientRect()
     const cx = e.clientX - rect.left
     const cy = e.clientY - rect.top
@@ -95,9 +130,10 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
 
   const startPan = useCallback(
     (e: React.PointerEvent) => {
+      stopAnim()
       panning.current = { px: e.clientX, py: e.clientY, ox: t.x, oy: t.y }
     },
-    [t]
+    [t, stopAnim]
   )
 
   const movePan = useCallback((e: React.PointerEvent) => {
@@ -129,18 +165,28 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
     [t]
   )
 
-  /** Fit a w×h world box into the container with a margin. */
+  /** Fit a w×h world box into the container with a margin - eased with
+   * `animate` (a double-click on empty plan, 0 or Home). */
   const fitTo = useCallback(
-    (svg: SVGSVGElement | null, w: number, h: number) => {
+    (svg: SVGSVGElement | null, w: number, h: number, animate = false) => {
       if (!svg) return
       const rect = svg.getBoundingClientRect()
       if (!rect.width || !rect.height) return
       const fit = Math.min((rect.width - 64) / w, (rect.height - 64) / h)
       minZoom.current = minZoomFor(fit)
       const k = Math.min(MAX_ZOOM, Math.max(minZoom.current, fit))
-      setT({ k, x: (rect.width - w * k) / 2, y: (rect.height - h * k) / 2 })
+      const to = {
+        k,
+        x: (rect.width - w * k) / 2,
+        y: (rect.height - h * k) / 2,
+      }
+      if (animate) animateTo(to, rect.width, rect.height)
+      else {
+        stopAnim()
+        setT(to)
+      }
     },
-    []
+    [animateTo, stopAnim]
   )
 
   const touchAt = (e: React.PointerEvent<SVGSVGElement>): Point => {
@@ -161,6 +207,7 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
   const pinchDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>): boolean => {
       if (e.pointerType !== "touch") return false
+      stopAnim()
       touches.current.set(e.pointerId, touchAt(e))
       if (touches.current.size < 2) return pinched.current
       if (!pinched.current) {
@@ -170,7 +217,7 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
       }
       return true
     },
-    []
+    [stopAnim]
   )
 
   /** A pointer moves. True when the pinch took it. */
@@ -207,6 +254,7 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
     endPan,
     toWorld,
     fitTo,
+    animateTo,
     pinchDown,
     pinchMove,
     pinchUp,

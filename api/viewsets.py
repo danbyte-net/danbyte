@@ -11728,12 +11728,19 @@ TILE_RELATED = (
     "floor_plan__stack", "tile_type", "role_type", "rack__room", "rack__role",
     "cabinet__room", "cabinet__role", "device__room", "device__role",
     "device__device_type", "power_panel", "power_feed", "cooling_source",
-    "linked_floor_plan",
+    "linked_floor_plan", "rack__rack_type", "cabinet__cabinet_type",
+    "device__status", "rack__status", "cabinet__status",
 )
+#: The linked object's tags (the plan's filter reads them).
+TILE_PREFETCH = ("device__tags", "rack__tags", "cabinet__tags")
 
 
 def _plan_tiles(plan):
-    return plan.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id")
+    return (
+        plan.tiles.select_related(*TILE_RELATED)
+        .prefetch_related(*TILE_PREFETCH)
+        .order_by("y", "x", "id")
+    )
 
 
 def _plan_areas(plan):
@@ -11762,7 +11769,7 @@ def plan_contents(request, tenant, src, crop=None, view=None) -> dict:
 
     rows = {
         "tiles": (visible(
-            src.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id"),
+            _plan_tiles(src),
             "floorplantile",
         ), FloorPlanTileSerializer),
         "trays": (visible(
@@ -14782,7 +14789,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 )
                 ser.is_valid(raise_exception=True)
                 ser.save(floor_plan=plan)
-        tiles = plan.tiles.select_related(*TILE_RELATED).order_by("y", "x")
+        tiles = _plan_tiles(plan)
         return Response(
             FloorPlanTileSerializer(tiles, many=True, context={"request": request}).data
         )
@@ -16025,7 +16032,10 @@ class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSe
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
     snapshot_kind = "tiles"
-    queryset = FloorPlanTile.objects.select_related(*TILE_RELATED).order_by("y", "x")
+    queryset = (
+        FloorPlanTile.objects.select_related(*TILE_RELATED)
+        .prefetch_related(*TILE_PREFETCH).order_by("y", "x")
+    )
     serializer_class = FloorPlanTileSerializer
     pagination_class = StandardPagination
     tenant_field = None

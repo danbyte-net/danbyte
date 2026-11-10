@@ -303,6 +303,8 @@ describe("a room's facts", () => {
 
   it("counts a type's name plainly", () => {
     expect(countOf("UPS", 3)).toBe("3 UPS")
+    expect(countOf("AP", 12)).toBe("12 APs")
+    expect(countOf("AP", 1)).toBe("1 AP")
     expect(countOf("Cooling unit", 6)).toBe("6 cooling units")
     expect(countOf("Switchgear", 2)).toBe("2 switchgear")
     expect(countOf("Desk", 1)).toBe("1 desk")
@@ -330,17 +332,62 @@ describe("the overview's room labels", () => {
     const rooms = planRooms([hall])
     // 40 cells at 2.7 px: 108 px - the name fits, its facts do not.
     expect(placeRoomLabels([hall], rooms, facts, 2.7)[0]?.facts).toBe("")
-    expect(placeRoomLabels([hall], rooms, facts, 1)).toEqual([])
+    // 40 px: too small for the name inside it, so it overhangs, upright;
+    // under OVERHANG_MIN_PX it gets none.
+    expect(placeRoomLabels([hall], rooms, facts, 1)[0]?.angle).toBe(0)
+    expect(placeRoomLabels([hall], rooms, facts, 0.5)).toEqual([])
   })
 
-  it("turns along a long narrow room where only that fits", () => {
-    const strip = area("Generator yard", {
-      x: 0,
-      y: 0,
-      width: 4,
-      height: 60,
+  it("keeps a tall narrow building's label upright, over its edges", () => {
+    // The campus's Building A: 40 px wide, 600 px tall.
+    const strip = area("Building A", { x: 10, y: 0, width: 4, height: 60 })
+    const [l] = placeRoomLabels(
+      [strip],
+      planRooms([strip]),
+      new Map([
+        [
+          "Building A",
+          { text: "6 racks · 4% full", alarm: { check: "down", count: 2 } },
+        ],
+      ]),
+      10
+    )
+    expect(l).toMatchObject({
+      angle: 0,
+      facts: "6 racks · 4% full",
+      badge: "2 down",
     })
-    const [l] = placeRoomLabels([strip], planRooms([strip]), new Map(), 10)
+    expect(l.w).toBeGreaterThan(40)
+  })
+
+  it("turns the name alone along the room only as the last resort", () => {
+    // Two strips side by side: upright, their labels would touch; the
+    // smaller one's name turns along it, its facts and badge left out.
+    const a = area("Gen", { x: 10, y: 0, width: 4, height: 61 })
+    const b = area("Fuel store", { x: 14, y: 0, width: 4, height: 60 })
+    const labels = placeRoomLabels(
+      [a, b],
+      planRooms([a, b]),
+      new Map([
+        ["Fuel store", { text: "2 tanks", alarm: { check: "down", count: 1 } }],
+      ]),
+      10
+    )
+    expect(labels.find((l) => l.id === "Gen")?.angle).toBe(0)
+    expect(labels.find((l) => l.id === "Fuel store")).toMatchObject({
+      angle: 90,
+      facts: "",
+      badge: "",
+    })
+  })
+
+  it("never puts a label past the plan's edge", () => {
+    // At the plan's left edge, the upright label would overhang it.
+    const edge = area("Generator yard", { x: 0, y: 0, width: 4, height: 60 })
+    const [l] = placeRoomLabels([edge], planRooms([edge]), new Map(), 10, {
+      w: 100,
+      h: 100,
+    })
     expect(l.angle).toBe(90)
   })
 

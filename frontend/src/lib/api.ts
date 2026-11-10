@@ -13304,6 +13304,12 @@ export interface FloorPlanTile {
     icon?: string
     /** A device's measured size - what "Fit to size" resizes to. */
     size_mm?: FloorObjectSize | null
+    /** A device's, rack's or cabinet's type (the plan's filter). */
+    type?: { id: string; name: string } | null
+    /** A device's, rack's or cabinet's status. */
+    status?: { id: string; name: string; color: string } | null
+    /** A device's, rack's or cabinet's tags. */
+    tags?: { id: number; name: string; slug: string; color: string }[]
   } | null
   fov_deg: number | null
   fov_distance: number | null

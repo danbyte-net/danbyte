@@ -416,11 +416,14 @@ export function FloorDevicesLayer({
   checks,
   selection,
   focusTileId,
+  recedeTileIds,
   showNames,
   onSelect,
   onFlyTo,
   onTooDetailed,
 }: {
+  /** The plan's filter leaves these out: ghosted. */
+  recedeTileIds?: ReadonlySet<string> | null
   scene: ScenePayload
   /** The device tiles to draw (hidden and isolated-out ones left out). */
   tiles: SceneTile[]
@@ -601,7 +604,10 @@ export function FloorDevicesLayer({
             overBudget={overBudget.has(p.tile.id)}
             check={checks(p.tile.id)}
             selected={selection?.tileId === p.tile.id}
-            ghosted={!!focusTileId && focusTileId !== p.tile.id}
+            ghosted={
+              (!!focusTileId && focusTileId !== p.tile.id) ||
+              !!recedeTileIds?.has(p.tile.id)
+            }
             showName={showNames}
             showPorts={portsNear.has(p.tile.id)}
             selectedPort={

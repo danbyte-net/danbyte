@@ -523,3 +523,21 @@ describe("a drawing framed to its content", () => {
     expect(lines(closeup(6 / 40))).toBeGreaterThan(lines(closeup(1 / 40)))
   })
 })
+
+describe("planSvg under the plan's filter", () => {
+  it("prints what the filter leaves out faded, the rest as ever", () => {
+    const kept = tile({ id: "k", label: "Kept" })
+    const out = tile({ id: "o", x: 6, label: "Out" })
+    const svg = planSvg({
+      plan,
+      tiles: [kept, out],
+      dimTileIds: new Set(["o"]),
+    })
+    const faded = [...parse(svg).querySelectorAll('g[opacity="0.25"]')]
+    expect(faded).toHaveLength(1)
+    expect(faded[0].textContent).toContain("Out")
+    expect(planSvg({ plan, tiles: [kept, out] })).not.toContain(
+      'opacity="0.25"'
+    )
+  })
+})
