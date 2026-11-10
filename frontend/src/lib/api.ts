@@ -12206,8 +12206,68 @@ export interface ExportTemplate {
   bundle_path: string
   /** Read-only: `target_path` ends in `/` - one file per `{% file %}` block. */
   is_directory: boolean
+  /** CLI check on a render (#465): `""` = from the platform, `off`, `ios`. */
+  lint_family: ExportTemplateLintFamily
+  /** Rendered lines the CLI check skips: fnmatch patterns or plain prefixes. */
+  ignore_lint_patterns: string[]
   created_at: string
   updated_at: string
+}
+
+export type ExportTemplateLintFamily = "" | "off" | "ios"
+
+/** One CLI-check warning on a rendered line. */
+export interface CliLintWarning {
+  line: number
+  keyword: string
+  message: string
+  suggestion: string | null
+}
+
+/** `POST /api/export-templates/{id}/lint/` - `family` is `""` when the
+ * template's platform has no known command list (no check ran). */
+export interface CliLintResult {
+  family: string
+  family_label: string
+  warnings: CliLintWarning[]
+  /** Commands learned from this tenant's stored configs. */
+  learned: number
+}
+
+/** One saved version of a template or script body, read back from the change
+ * log (#465). `id` is the change-log entry, or `"current"` for the live text. */
+export interface TextVersion {
+  id: string
+  at: string | null
+  by: string
+  action: "create" | "update" | "current"
+  cause: string
+  /** False when the change log holds no text for this entry. */
+  text_kept: boolean
+  sha256: string | null
+  size: number | null
+  lines: number | null
+}
+
+export interface TextVersionList extends Paginated<TextVersion> {
+  current: TextVersion
+  /** The live text matches the newest logged version. */
+  current_logged: boolean
+  /** The first version is still in the change log (nothing pruned). */
+  history_complete: boolean
+}
+
+export interface TextVersionDetail extends TextVersion {
+  text: string | null
+  /** Unified diff from `against` to this version, with `?against=`. */
+  diff?: string | null
+  against?: TextVersion
+}
+
+/** `POST …/validate/`: the save-time Jinja syntax check on a draft. */
+export interface TemplateCheck {
+  ok: boolean
+  error: { message: string; line: number | null } | null
 }
 
 export interface ExportTemplateWritePayload {
@@ -12219,6 +12279,8 @@ export interface ExportTemplateWritePayload {
   file_extension?: string
   as_attachment?: boolean
   target_path?: string
+  lint_family?: ExportTemplateLintFamily
+  ignore_lint_patterns?: string[]
 }
 
 // ─── Config bundles ────────────────────────────────────────────────────

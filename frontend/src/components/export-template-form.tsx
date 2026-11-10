@@ -6,12 +6,15 @@ import { Play } from "lucide-react"
 import {
   api,
   ApiError,
+  type CliLintResult,
   type DeviceOption,
   type DeviceRenderFile,
   type ExportTemplate,
+  type ExportTemplateLintFamily,
   type ExportTemplateWritePayload,
   type RBACObjectTypes,
 } from "@/lib/api"
+import { Badge } from "@/components/ui/badge"
 import { apiAll } from "@/lib/api-all"
 import {
   Field,
@@ -43,6 +46,27 @@ export interface ExportTemplateFormProps {
 // inline field errors.
 const CLIENT_VALIDATION = "__client_validation__"
 
+// The save-time Jinja check, run while typing (#465).
+const TEMPLATE_CHECK = {
+  url: "/api/export-templates/validate/",
+  field: "template_code",
+}
+
+// The CLI check's families; "auto" stands for the stored "" (Radix selects
+// take no empty value).
+const LINT_OPTIONS: SelectOption[] = [
+  { value: "auto", label: "From the platform" },
+  { value: "ios", label: "Cisco IOS / IOS-XE" },
+  { value: "off", label: "Off" },
+]
+
+function patternsOf(text: string): string[] {
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+}
+
 export function ExportTemplateForm({
   template,
   onSaved,
@@ -65,6 +89,13 @@ export function ExportTemplateForm({
     template?.as_attachment ?? true
   )
   const [targetPath, setTargetPath] = useState(template?.target_path ?? "")
+  const [lintFamily, setLintFamily] = useState<string>(
+    template?.lint_family || "auto"
+  )
+  const [ignoreText, setIgnoreText] = useState(
+    (template?.ignore_lint_patterns ?? []).join("\n")
+  )
+  const [lint, setLint] = useState<CliLintResult | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   // A directory template's preview: one entry per file block.
   const [previewFiles, setPreviewFiles] = useState<DeviceRenderFile[] | null>(
@@ -84,6 +115,9 @@ export function ExportTemplateForm({
     setExt(template.file_extension)
     setAsAttachment(template.as_attachment)
     setTargetPath(template.target_path)
+    setLintFamily(template.lint_family || "auto")
+    setIgnoreText(template.ignore_lint_patterns.join("\n"))
+    setLint(null)
     setSampleId(null)
     setPreview(null)
     setPreviewFiles(null)
@@ -158,6 +192,10 @@ export function ExportTemplateForm({
         // Only a device template lands in a bundle; the path means nothing
         // on any other type, so it is not carried over when the type changes.
         target_path: objectType === "device" ? targetPath.trim() : "",
+        lint_family: (lintFamily === "auto"
+          ? ""
+          : lintFamily) as ExportTemplateLintFamily,
+        ignore_lint_patterns: patternsOf(ignoreText),
       }
       return saveObject<ExportTemplate>({
         objectType: "api.exporttemplate",
@@ -179,6 +217,17 @@ export function ExportTemplateForm({
     },
   })
 
+  // A failed check says nothing: it is advice, and the render stands.
+  const runLint = useMutation({
+    mutationFn: (output: string) =>
+      api<CliLintResult>(`/api/export-templates/${template!.id}/lint/`, {
+        method: "POST",
+        body: JSON.stringify({ output }),
+      }),
+    onSuccess: setLint,
+    onError: () => setLint(null),
+  })
+
   // Preview renders the *saved* template against live objects.
   const runPreview = useMutation({
     mutationFn: () =>
@@ -190,16 +239,20 @@ export function ExportTemplateForm({
             `/api/export-templates/${template!.id}/preview/`
           ),
     onSuccess: (r) => {
+      setLint(null)
       if (r.files) {
         setPreview(null)
         setPreviewFiles(Object.values(r.files))
       } else {
         setPreviewFiles(null)
         setPreview(r.output ?? "")
+        // The CLI check on what a device would get: warnings only (#465).
+        if (isPerObject && r.output) runLint.mutate(r.output)
       }
     },
     onError: (err) => {
       setPreviewFiles(null)
+      setLint(null)
       const detail =
         err instanceof ApiError &&
         err.body &&
@@ -268,6 +321,7 @@ export function ExportTemplateForm({
               setClientErrors((err) => ({ ...err, template_code: "" }))
             }}
             height="20rem"
+            check={TEMPLATE_CHECK}
             placeholder={"{% for o in objects %}\n{{ o.name }}\n{% endfor %}"}
           />
         </Field>
@@ -309,6 +363,29 @@ export function ExportTemplateForm({
           onChange={setAsAttachment}
         />
       </FormSection>
+
+      {isPerObject && (
+        <FormSection title="CLI check" card>
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormSelect
+              label="Commands"
+              info="The preview warns about top-level commands the platform's command list does not know, with a did-you-mean hint. The list is a short seed plus every command in this tenant's stored configs for the platform. Warnings never block a save."
+              value={lintFamily}
+              onChange={(v) => setLintFamily(v ?? "auto")}
+              options={LINT_OPTIONS}
+              error={fieldErrors.lint_family}
+            />
+          </div>
+          <FormTextarea
+            label="Ignore"
+            info="One per line: a command prefix (vendor-cmd) or a pattern with * and ? (snmp-server * RO). A template line with {# lint: ignore #} ignores the lines it renders."
+            value={ignoreText}
+            onChange={setIgnoreText}
+            rows={3}
+            error={fieldErrors.ignore_lint_patterns}
+          />
+        </FormSection>
+      )}
 
       {isEdit && (
         <FormSection title="Preview" card>
@@ -353,12 +430,39 @@ export function ExportTemplateForm({
                 {preview}
               </div>
             ) : (
-              <FileViewer
-                text={preview}
-                filename={`${template.name}.${template.file_extension || "txt"}`}
-                storageKey="template-preview"
-                label="Preview"
-              />
+              <>
+                <FileViewer
+                  text={preview}
+                  filename={`${template.name}.${template.file_extension || "txt"}`}
+                  storageKey="template-preview"
+                  label="Preview"
+                  marks={lint?.warnings.map((w) => w.line)}
+                  meta={
+                    lint && lint.family ? (
+                      lint.warnings.length ? (
+                        <Badge variant="warning">
+                          {lint.warnings.length}{" "}
+                          {lint.warnings.length === 1 ? "warning" : "warnings"}
+                        </Badge>
+                      ) : (
+                        <Badge variant="success">CLI check clean</Badge>
+                      )
+                    ) : undefined
+                  }
+                />
+                {lint && lint.warnings.length > 0 && (
+                  <ul className="space-y-0.5 font-mono text-[12px]">
+                    {lint.warnings.map((w) => (
+                      <li key={`${w.line}:${w.keyword}`}>
+                        <span className="text-muted-foreground">
+                          Line {w.line}
+                        </span>{" "}
+                        {w.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
             ))}
           {previewFiles !== null && (
             <BundleFiles

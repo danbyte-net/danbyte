@@ -9454,6 +9454,17 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     #: name and extension. Ending in ``/`` makes it a directory: the template
     #: writes one file per ``{% file "name" %}`` block, each at ``<dir><name>``.
     target_path = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: The CLI check on a render (#465, ``api.cli_lint``): ``""`` picks the
+    #: family from the platforms using this template, ``off`` skips it.
+    lint_family = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=[("", "Auto"), ("off", "Off"), ("ios", "Cisco IOS / IOS-XE")],
+    )
+    #: Rendered lines the CLI check leaves alone: ``fnmatch`` patterns, or a
+    #: plain prefix (the commands its vocabulary does not know).
+    ignore_lint_patterns = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
 
     class Meta:
         ordering = ["name"]

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useMemo, useState } from "react"
-import { Plus } from "lucide-react"
+import { History, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -12,6 +12,14 @@ import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { IconTip } from "@/components/icon-tip"
+import { TextVersionsPanel } from "@/components/text-versions-panel"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { buildLabelTemplateColumns } from "@/components/columns/label-template-columns"
 import { LabelTemplateFormDialog } from "@/components/label-template-form"
@@ -27,6 +35,7 @@ function LabelTemplatesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<LabelTemplate | null>(null)
   const [deleting, setDeleting] = useState<LabelTemplate | null>(null)
+  const [versionsOf, setVersionsOf] = useState<LabelTemplate | null>(null)
   const [selected, setSelected] = useState<LabelTemplate[]>([])
 
   const query = useQuery({
@@ -60,6 +69,18 @@ function LabelTemplatesPage() {
         selection: selectable,
         onOpen: canManage ? open : undefined,
         actions: {
+          extra: (t) => (
+            <IconTip label="Versions">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => setVersionsOf(t)}
+              >
+                <History className="h-3.5 w-3.5" />
+              </Button>
+            </IconTip>
+          ),
           onEdit: open,
           canEdit: () => canManage,
           onDelete: setDeleting,
@@ -117,6 +138,24 @@ function LabelTemplatesPage() {
         open={formOpen}
         onOpenChange={setFormOpen}
       />
+      <Dialog
+        open={!!versionsOf}
+        onOpenChange={(o) => !o && setVersionsOf(null)}
+      >
+        <DialogContent size="5xl">
+          <DialogHeader>
+            <DialogTitle>Versions · {versionsOf?.name}</DialogTitle>
+          </DialogHeader>
+          {versionsOf && (
+            <TextVersionsPanel
+              endpoint={`/api/label-templates/${versionsOf.id}`}
+              filename={`${versionsOf.name}.html`}
+              canRestore={canManage}
+              invalidate={[["label-templates"]]}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
