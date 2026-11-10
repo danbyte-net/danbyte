@@ -122,6 +122,97 @@ Y*, and the prefix's journal records *Renumbered from X to Y.* The API is
 `POST /api/prefixes/<id>/renumber/` - see
 [REST API](../reference/api.md#renumbering-a-prefix).
 
+## Free space in the list
+
+Tick **Show free space** at the top of the prefix list's filter sidebar. Each
+container, and each prefix that holds child prefixes, then gets free rows
+between its children: the gaps, as the largest aligned blocks. A `/16`
+holding `10.20.0.0/24`, `10.20.1.0/24` and `10.20.4.0/22` shows
+`10.20.2.0/23`, `10.20.8.0/21`, `10.20.16.0/20` and so on.
+
+A free row shows its block, a dashed **Free** badge and its size
+(`512 addresses`; IPv6 counts `/64`s). **Create** opens the prefix form with
+the block, the parent's VRF and the parent's site filled in; the form's
+**Size** picker carves a smaller block at the same start, so a `/23` gap can
+become a `/24`, `/25` and so on. A parent with more than 8 free blocks shows
+the first 8 and **+ N more free**, which loads the rest (up to 256; past
+that it opens the prefix, whose [Space map](space-map.md) shows them all).
+
+Free rows are never selected, exported or counted: the row count, the VRF
+group counts, Download and the bulk bar see only real prefixes. The switch
+lives in the URL (`?free=1`), so a link or a saved view keeps it, along
+with the size, Next available and scope below.
+
+IPv6 free space is offered in whole `/64`s under a `/64` or shorter: a `/64`
+holding a `/127` link is not free, and blocks start on `/64` boundaries.
+Under a longer parent (a `/120`), any size is shown.
+
+Only prefixes count as used. Stray addresses and IP ranges don't take space
+here, as on the Space map: a new prefix over them adopts them.
+
+### Find a size
+
+With free space on, type a length into **Free size** (`/29`, or pick one of
+the sizes that fit). The list then shows only the parents that have a free
+block of that size, each followed by its first 16, lowest address first,
+and **+ N more free** for the rest.
+
+Tick **Next available** to see just one: the lowest free block of that size
+among the listed parents (the first VRF in the list that has one),
+highlighted, with **Create**. The sidebar's other filters (VRF, site, tags,
+status, search) narrow which parents are looked in.
+
+### Scope
+
+**Scope** limits every search to a block inside the parent: type any CIDR
+(`10.20.0.0/19` out of a `/15`) or pick one of the listed parents. Free
+rows, Free size, Next available and the planner then offer only space inside
+it.
+
+### Who sees what
+
+Free space is worked out on the server against every prefix in the VRF,
+including ones you may not view, so a free row is always really free. Space
+a prefix you can't see takes is simply not offered - it is never named and
+never counted in the totals. Free rows appear only under prefixes you can
+view. Create, allocate and the planner check again on the server: they need
+add on prefixes, and with site-limited access the new prefix must sit in
+your own site's space, as for any new prefix.
+
+## Plan subnets
+
+**Plan subnets…** on a container or parent prefix (and in the list toolbar
+when free space is on and one parent is in scope) places a set of subnets at
+once. Each row is a count and a size - `2 × /24`, `5 × /29` - with an
+optional description pattern (`servers-{n}` numbers them), status, VLAN and
+site (the parent's site by default). **Keep together** places a row's
+subnets side by side in one block.
+
+The planner places the largest first, each aligned to its size, inside the
+parent or the **Scope**:
+
+- **Lowest address first** fills from the bottom of the free space;
+- **Best fit** uses the smallest free block that holds each subnet, which
+  keeps big blocks whole;
+- **Leave room to grow** keeps the next block of the same size free after
+  each one (not created, just left alone).
+
+**Preview** shows the proposed prefixes in a table and on a strip of the
+parent in the Space map's colours, with the proposed blocks outlined. A row
+that doesn't fit says why: *No free /24 left in 10.0.0.0/22; largest free
+block is /25.* **Create all** is offered only when everything fits, asks
+once more, and creates the lot in one change - all or nothing. If the free
+space changed since the preview, it refuses and asks for a new preview.
+Every new prefix gets a change-log entry with the cause *Planned in
+&lt;parent&gt;*.
+
+Moving existing prefixes to make room is not part of planning; use
+[Renumber](#renumbering-a-prefix) for that.
+
+The API: `GET /api/prefixes/?free=1`, `GET /api/prefixes/available/`,
+`POST /api/prefixes/<id>/allocate/` and `POST /api/prefixes/<id>/plan/` -
+see [REST API](../reference/api.md#free-space-in-prefixes).
+
 ## What gets validated
 
 Danbyte checks a few things when you save, so your data stays clean:

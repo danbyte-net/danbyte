@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
@@ -13,6 +13,7 @@ import {
   type VRFOption,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { carveSizes, withLength } from "@/lib/prefix-free"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { VlanPicker } from "@/components/vlan-picker"
 import {
@@ -21,6 +22,7 @@ import {
   FormColumns,
   FormCombobox,
   FormFooter,
+  FormSelect,
   FormSection,
   FormStatusSelect,
   FormTags,
@@ -39,6 +41,9 @@ export interface PrefixFormInitial {
   siteId?: string | null
   locationId?: string | null
   vlanId?: string | null
+  /** A free block (from a free row's Create): the form offers its sizes,
+   * each at the block's start. */
+  freeBlock?: string
 }
 
 export interface PrefixFormProps {
@@ -69,6 +74,11 @@ export function PrefixForm({
   const seed = prefix ?? clone
 
   const [cidr, setCidr] = useState(prefix?.cidr ?? initial?.cidr ?? "")
+  const freeBlock = isEdit ? undefined : initial?.freeBlock
+  const freeSizes = useMemo(
+    () => (freeBlock ? carveSizes(freeBlock) : []),
+    [freeBlock]
+  )
   const [statusId, setStatusId] = useState<string | null>(
     seed?.status?.id ?? null
   )
@@ -203,16 +213,47 @@ export function PrefixForm({
       <FormColumns>
         <FormColumn>
           <FormSection title="Prefix" card>
-            <FormText
-              label="Prefix (CIDR)"
-              required
-              autoFocus={!isEdit}
-              value={cidr}
-              onChange={setCidr}
-              mono
-              placeholder="10.0.10.0/24"
-              error={fieldErrors.cidr}
-            />
+            {freeSizes.length > 1 ? (
+              <div className="grid gap-3 @md:grid-cols-[1fr_8rem]">
+                <FormText
+                  label="Prefix (CIDR)"
+                  required
+                  autoFocus={!isEdit}
+                  value={cidr}
+                  onChange={setCidr}
+                  mono
+                  placeholder="10.0.10.0/24"
+                  error={fieldErrors.cidr}
+                />
+                <FormSelect
+                  label="Size"
+                  value={
+                    freeSizes.some((n) => withLength(freeBlock!, n) === cidr)
+                      ? cidr.slice(cidr.indexOf("/") + 1)
+                      : null
+                  }
+                  placeholder="Size"
+                  onChange={(v) =>
+                    v && setCidr(withLength(freeBlock!, Number(v)))
+                  }
+                  options={freeSizes.map((n) => ({
+                    value: String(n),
+                    label: `/${n}`,
+                  }))}
+                />
+              </div>
+            ) : (
+              <FormText
+                label="Prefix (CIDR)"
+                required
+                autoFocus={!isEdit}
+                value={cidr}
+                onChange={setCidr}
+                mono
+                placeholder="10.0.10.0/24"
+                error={fieldErrors.cidr}
+              />
+            )}
 
             <div className="grid gap-3 @md:grid-cols-2">
               <FormStatusSelect

@@ -204,3 +204,14 @@ zooms keep their nibble steps the same way.
   scope leaves its block looking free.
 - IP ranges and IPs don't make a block used; they are marked on free and partly
   used chips (the amber strip, the stray-IP count).
+
+## Free space elsewhere
+
+The prefix list shows the same free space as rows between the real prefixes
+(**Show free space** in its sidebar), finds the next free block of a size,
+and plans several subnets at once - see
+[Prefixes → Free space in the list](prefix-crud.md#free-space-in-the-list)
+and [Plan subnets](prefix-crud.md#plan-subnets). Those work against every
+prefix in the VRF, so unlike this map they never offer a block a hidden
+prefix already takes. The planner's preview strip uses this map's free and
+used colours.

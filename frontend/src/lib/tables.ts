@@ -302,6 +302,7 @@ const ROWS: Row[] = [
   ["embedded-deploy-runs", "Deploy runs (embedded)", "Integrations", "/api/deploy-runs/", sub],
   ["prefix-renumber-changes", "Renumber: changes", "IPAM", "/api/prefixes/", sub],
   ["prefix-renumber-unchanged", "Renumber: left unchanged", "IPAM", "/api/prefixes/", sub],
+  ["prefix-plan-preview", "Plan subnets: preview", "IPAM", null, sub],
   ["deploy-pipelines", "Pipelines", "Integrations", "/api/deploy-pipelines/"],
   ["deploy-pipeline-runs", "Pipeline runs", "Integrations", "/api/deploy-pipeline-runs/"],
   ["deploy-pipeline-runs-of-pipeline", "Pipeline runs (embedded)", "Integrations", "/api/deploy-pipeline-runs/", sub],

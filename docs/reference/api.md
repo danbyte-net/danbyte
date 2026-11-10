@@ -425,6 +425,105 @@ new network answers `400` under `new_prefix`. A kind the caller may not
 change, or a row outside their sites, answers `403` naming it - for the
 preview too. Nothing is written by a refusal.
 
+## Free space in prefixes
+
+Four calls find and fill the free space inside prefixes (see
+[Prefixes](../features/prefix-crud.md#free-space-in-the-list)). Free space is
+computed against every prefix of the tenant and VRF, so a block offered is
+really free; blocks are offered only inside prefixes the caller may view,
+and space a prefix the caller may not view takes is not offered, named or
+counted. IPv6 space under a `/64` or shorter is offered in whole `/64`s
+unless a longer length is asked for.
+
+**The list.** `GET /api/prefixes/?free=1` adds, beside `results`, the free
+blocks of the parents on that page (containers and prefixes with children):
+
+```json
+{
+  "count": 4, "next": null, "previous": null, "results": [ … ],
+  "free": [{"kind": "free", "cidr": "10.20.2.0/23", "prefixlen": 23,
+            "family": 4, "parent": "<prefix id>", "vrf": null}],
+  "free_totals": {"<prefix id>": 6}
+}
+```
+
+`length=29` lists free blocks of exactly that size instead of the largest
+aligned ones; `scope=<cidr>` keeps to a block; `strategy=first|best` orders
+them (lowest address, or smallest free block first); `limit` is per parent
+(8 without a length, 16 with, at most 256). `free_totals` counts every free
+block of each parent, and only parents that have one. `count` and paging are
+unchanged. Without `free=1` these parameters are unknown (see
+[Unknown query parameters](#unknown-query-parameters)).
+
+**Available.** `GET /api/prefixes/available/?length=29` answers free blocks
+as a list:
+
+```json
+[{"cidr": "10.0.0.16/29", "prefixlen": 29, "family": 4,
+  "parent": {"id": "…", "cidr": "10.0.0.0/24"},
+  "vrf": {"id": "…", "name": "CUST"}}]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `length` | The size; without it, the largest aligned free blocks. |
+| `within` | One parent: its id, or its CIDR in `vrf` (the global table without `vrf`). Without it, every container or parent the caller may view. |
+| `scope` | A CIDR the blocks must sit in. |
+| `vrf`, `site` | Narrow the parents (`vrf=global` for the global table). |
+| `strategy` | `first` (default, lowest address) or `best` (the smallest free block that holds one). |
+| `limit` | Default 16, at most 256. |
+
+A `within` the caller can't see, a scope outside it or a length larger than
+it answers `400`.
+
+**Allocate.** `POST /api/prefixes/<id>/allocate/` with `{"length": 29}` and
+any prefix fields (`description`, `status_id`, `vlan_id`, `site_id`,
+`tag_ids`, `custom_fields` …; the site defaults to the parent's) creates the
+next free child and answers `201` with the prefix, like a create. `scope`
+and `strategy` work as above; `cidr` and `vrf_id` are refused. It holds a
+row lock on the parent and every prefix above it while it picks and creates,
+so two callers never get the same block. No room answers `409` under
+`length`, naming the largest free block. It needs add on prefixes and view
+on the parent (else `404`); a site-limited caller may create only in their
+own site's space (`403`). The change log's cause is *Allocated in
+&lt;parent&gt;*.
+
+**Plan.** `POST /api/prefixes/<id>/plan/`:
+
+```json
+{"requests": [{"count": 2, "length": 24, "description": "servers-{n}"},
+              {"count": 5, "length": 29, "keep_together": true}],
+ "scope": "10.0.0.0/22", "strategy": "first", "reserve_growth": false,
+ "dry_run": true}
+```
+
+Each request takes `count`, `length` and optionally `description` (`{n}`
+numbers it), `status_id`, `vlan_id`, `site_id`, `location_id`, `tag_ids` and
+`keep_together`. Requests are placed largest first, aligned; at most 1,024
+subnets. It answers:
+
+```json
+{"parent": {"id": "…", "cidr": "10.0.0.0/22"}, "scope": "10.0.0.0/22",
+ "strategy": "first", "dry_run": true, "applied": false, "fits": false,
+ "items": [{"request": 0, "n": 1, "length": 24, "cidr": "10.0.1.0/24",
+            "description": "servers-1", "reason": null},
+           {"request": 0, "n": 2, "length": 24, "cidr": null, "description": "servers-2",
+            "reason": "No free /24 left in 10.0.0.0/22; largest free block is /25."}],
+ "reserved": [],
+ "strip": {"root": "10.0.0.0/22", "used": [[0.0, 0.125]],
+           "planned": [[0.25, 0.5]], "reserved": []},
+ "created": []}
+```
+
+`strip` holds fractions of the scope for drawing. `dry_run` defaults to
+`true`; `false` creates every item in one transaction under the same lock as
+allocate, or nothing: a request that doesn't fit, or a field error on any
+item, answers `400`. Send the preview's CIDRs as `cidrs` and the apply
+answers `409` if the free space changed in between. The answer then has
+`applied: true` and `created: [{id, cidr}]`; each change-log entry has the
+cause *Planned in &lt;parent&gt;*. Permissions are those of allocate, and a
+site-limited caller is refused (`403`) on the preview too.
+
 ## Generating the schema offline
 
 To export the schema to a file (for client generation, diffing, or CI):
