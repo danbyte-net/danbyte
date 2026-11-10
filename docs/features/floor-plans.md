@@ -3900,6 +3900,16 @@ chosen (the menu shows it) and opens it in the browser's viewer to print.
   landscape (A3 landscape until you choose; kept for next time).
 - **Include** - **Plan drawing** (on by default), **Cable schedule**,
   **Inventory** and **Ports summary**.
+- **Cables** (with the plan drawing) - **As on screen** (the default: the
+  cables as the Display menu draws them) or **Bundles**: the sheets go
+  without their cables and the server draws them as
+  [bundles](#bundles-on-paper), with their legend in the sheet's strip
+  instead of the cables' legend.
+- **Trace pages** (with the cable schedule) - a page per cable picked, as
+  in the [cable schedule](#trace-pages); cables selected on the plan when
+  the dialog opens are picked already. Only cables of this floor that the
+  report lists can be traced (one outside the scope is left out, with a
+  note).
 
 The PDF has, in order:
 
@@ -3921,7 +3931,9 @@ The PDF has, in order:
    outline). For a building a cable is listed once, under the first level
    that has it, its route and computed length joined across the levels
    (`B1: OH-1 → R1 to Ground | Ground: R1 → CT-1`); grouped by room (by
-   level and room for a building), with the totals per type;
+   level and room for a building), with the totals per type. Its tables
+   are the schedule's [tighter tables](#the-tables) under the report's
+   headings, then its trace pages;
 4. the **inventory** - the racks, cabinets and devices in scope: each rack
    or cabinet, then the devices in it (top unit first), then devices on
    their own, with the role and status as square badges in their
@@ -3951,7 +3963,7 @@ levels is refused.
 
 | Endpoint | |
 |---|---|
-| `POST /api/floor-plans/{id}/export/report/` | The report as a PDF. Body: `scope` (`view`, `floor`, `area` or `building`), `box` (`scope=view`: `[x, y, w, h]` in plan px), `area` (`scope=area`: the area's id), `include` (`plan`, `cables`, `inventory`, `ports`), `paper` (`{size, orientation}`; A3 landscape by default), `hidden_tiles` (tile ids left out of this floor's inventory) and `sheets` (with `plan`: per sheet `{floor, svg, legend, cable_legend, area_legend}`, the drawing as `plan-svg.ts` draws it for the sheet's box and scale; at most 24). `?print=1` answers `{url}`, a five-minute link. |
+| `POST /api/floor-plans/{id}/export/report/` | The report as a PDF. Body: `scope` (`view`, `floor`, `area` or `building`), `box` (`scope=view`: `[x, y, w, h]` in plan px), `area` (`scope=area`: the area's id), `include` (`plan`, `cables`, `inventory`, `ports`), `paper` (`{size, orientation}`; A3 landscape by default), `hidden_tiles` (tile ids left out of this floor's inventory), `sheets` (with `plan`: per sheet `{floor, svg, legend, cable_legend, area_legend}`, the drawing as `plan-svg.ts` draws it for the sheet's box and scale; at most 24), `cables` (`lines` or `bundles`, as the schedule PDF's, for the sheets), `trace` (with `cables` in `include`: cable ids of this floor that the report lists, for trace pages; any other is refused) and `trace_svgs` (this floor drawn without cables per trace page, by cable id; the boxes come from `cable-schedule/closeups/?trace=…&closeups=off` at the report's paper). `?print=1` answers `{url}`, a five-minute link. |
 | `POST /api/floor-plans/{id}/export/report/tables/` | The same scope's tables as JSON: `cables` (the cable schedule's shape), `inventory` (`groups` of `{name, rows}`, each row `{kind, id, name, parent, role, type, status, holder, position, serial, asset_tag, room, level}`; `count`; `hidden_count`), `ports` (`rows` of `{device, port, cable, far}`; `hidden_count`; `truncated`), with `title`, `scope` and `levels`. |
 
 ### The one-sheet PDF
@@ -4018,9 +4030,10 @@ a device you may not view reads **Hidden**.
 **PDF** is laid out on the server on **A4**, **A3**, **Letter** or
 **Tabloid** (landscape), a table per group with its header repeated on
 every page, under the plan's title; **Plan on the first page** puts the
-plan with its routes on top, as the Display menu draws it - framed to
-what is drawn on the plan (not the whole grid), with hatches and cables
-sized for the paper so they stay crisp. Under it go the plan's
+plan with its routes on top - framed to what is drawn on the plan (not the
+whole grid), with hatches and cables sized for the paper so they stay
+crisp. **Cables** chooses how they print: **Bundles** (the default, below)
+or **Each cable**, every cable drawn as the Display menu draws it. Under it go the plan's
 **background image** and its **CAD drawing**, added on the server as the
 floor-plan PDF adds them: the image cut to the framed part (a live view's
 part of its source's image), at most 200 dpi on paper and under the
@@ -4058,17 +4071,100 @@ Names of devices you may not view are left out. The overview carries a
 labelled frame for each page (A, B, … in reading order), and the
 schedule's table gains a **Detail** column naming the pages a cable is on.
 At most 20 close-ups, those with the most cable ends kept; the caption says
-how many were left out. The schedule's tables follow
-the close-ups. **CSV** and
-**XLSX** are the same rows as a table (one line per cable in each group,
-then the totals) - the table export's files. The PDF obeys the floor-plan
-PDF's limits. Anyone who can view the plan can make it:
+how many were left out. A close-up lists its cables (label, ends, length)
+when it has at most 20; with more it says how many, and the schedule's
+**Detail** column names the page for each. The trace pages and the
+schedule's tables follow the close-ups.
+
+#### Bundles on paper
+
+With **Cables: Bundles** the page posts the plan without its cables and
+the server draws them from what it stores, so a few hundred cables in a
+few trays read as bundles instead of lines on top of each other:
+
+- **One stroke per stretch.** Each listed cable's run - its stored route
+  (documented), else a route through its trays, else an elbow between its
+  tiles (inferred) - is cut where other runs join or leave it. Each piece
+  of a tray, drop or hop is one stroke carrying every cable that rides all
+  of it: a cable riding several trays counts on each, a breakout's legs
+  count once on their shared trunk.
+- **Width by count**, in steps: 1, 2–3, 4–7, 8–15, 16–31, 32–63 and 64+
+  cables (0.3 mm to 2.6 mm on paper). On a print where a cell is under
+  2 mm (an overview of a big plan) the strokes narrow with it, to half
+  width at most.
+- **Colour by type** when a stroke carries one cable type - the plan's
+  Color by Type colours, most common type first - else a neutral grey.
+- **Documented solid, inferred dashed**; a stretch carrying both draws two
+  strokes side by side.
+- **Counts** on a small white shield on the stroke (`24`; on a mixed stroke
+  the count per type in the types' colours, `18·6`). A stretch too short
+  on paper for its shield gets none, nor does one where the shield would
+  cover a tile, a name or another count; the same cables are counted again
+  only 60 mm further on. Single cables are not counted.
+- **Stubs.** A cable with one end here and no run: one short dashed arrow
+  per tile and side, out of the tile away from the plan's middle, with the
+  count when there are several.
+
+A **legend** under the overview and on each close-up gives what that page
+draws: the width steps, the type colours with their cable counts (and
+*Mixed*), and the line styles. The interactive plan is drawn as before;
+this is the paper's mode.
+
+#### Trace pages
+
+**Trace pages** adds a page per cable picked (at most 20; the caption says
+how many more were asked for). The picker lists this schedule's cables
+only; cables selected on the plan (traced, or picked in a bundle) when the
+dialog opens are picked already. Each page is the plan framed to the
+cable's route and both end tiles with a margin, page-shaped and scaled as
+a close-up is (between 3 and 12 mm a cell, or smaller to fit), with:
+
+- the other cables as faint bundles, and the cable over them in its
+  type's colour, solid when documented, dashed when inferred;
+- its **A** and **B** end tiles outlined and named (`A · device · port`;
+  **Hidden** for a device you may not view);
+- a **facts strip**: label and colour, type, status, the A and B ends with
+  their rooms, the trays in travel order, the riser, the lengths (computed,
+  stored and where that came from) and notes.
+
+The schedule's **Detail** column names a cable's trace page (`T1`) after
+its close-ups. The server checks every cable asked for: it must be a
+listed row of this schedule - in the plan's tenant, on this plan, and one
+you may view. Any other id - another tenant's, one not on the plan, a
+hidden one - is refused with the same answer, so none is told apart.
+
+#### The tables
+
+The tables say each thing once:
+
+- **Hoisted values.** A value the same for every cable of a group - type,
+  status, length source, A or B room - goes in the group's heading
+  (`Room: Data Hall 1 · 114 cables · Computed lengths`) and its column is
+  left out of that group; one the same for the whole schedule goes in the
+  subtitle under the title (`All 314 cables: Connected · B room Meet-me
+  room`) instead. A room the group is named after is not repeated. A
+  column empty for every cable (notes, say) is left out.
+- **Route bands.** In a group where cables share a route, each route is a
+  band row (`Route DH1 row A → DH1 spine → … · 4 cables`) with its cables
+  under it, and the Route column goes; when every route's cables share a
+  type, the type moves into the band too. Cables with no route come last,
+  under *No route*. A group where no two cables share a route keeps the
+  Route column.
+- **Widths.** Each column is as wide as its texts need: labels and ends on
+  one line where they fit, wrapped only between words; the spare width
+  goes to the ends, the route and the notes.
+
+The label, A end, B end, Detail, lengths and notes always stay. **CSV** and
+**XLSX** are data exports and stay flat: one row per cable in each group
+with every column (type, colour, status, rooms, route, both lengths and
+the source), then the totals - the table export's files. The PDF obeys the
+floor-plan PDF's limits. Anyone who can view the plan can make it:
 
 | Endpoint | |
 |---|---|
 | `GET /api/floor-plans/{id}/cable-schedule/?group=room\|tray` | The schedule: `rows` (`[{id, label, type, type_display, color, status, a, b, trays, route, route_source, riser, computed_m, length, length_unit, length_m, length_source, notes, rooms}]`, each end `{device, port, room, on_floor, hidden}`), `groups` (`[{name, rows}]`, row ids), `totals` (`[{type, label, count, metres, unmeasured}]`), `total` and `hidden_count`. |
-| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default), `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's; the background image and CAD drawing are added on the server), `closeup_svgs` (optional: the plan drawn for each close-up, by label, framed to its box at its scale; a drawing whose viewBox is not the page's box is left out; at most 20) and `closeups` (`auto`, the default: close-ups when a cell prints under 2 mm or the cable ends form several groups; `on`: whenever a close-up prints larger than the plan; `off`). `?print=1` answers `{url}`, a five-minute link. |
-| `GET /api/floor-plans/{id}/cable-schedule/closeups/?box=x,y,w,h` | The close-up pages the PDF will have for an overview framed to `box` (plan px, the overview's viewBox), with `size`, `orientation` and `closeups` as for the PDF: `pages` (`[{label, box, mm_per_px, cables}]`, `box` in plan px, `mm_per_px` paper mm per plan px), `overview_mm_per_px` and `dropped` (groups over the cap of 20). The page asks for it, draws each close-up, then posts the PDF. |
+| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default), `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's; the background image and CAD drawing are added on the server), `closeup_svgs` (optional: the plan drawn for each close-up, by label, framed to its box at its scale; a drawing whose viewBox is not the page's box is left out; at most 20), `closeups` (`auto`, the default: close-ups when a cell prints under 2 mm or the cable ends form several groups; `on`: whenever a close-up prints larger than the plan; `off`), `cables` (`lines`, the default: the cables as the posted drawings have them; `bundles`: the drawings are posted without cables and the server draws the bundles), `trace` (cable ids for trace pages, in order, at most 200; the first 20 get a page; an id that is not a listed row of this schedule is refused with 400 `{"trace": ["Not a cable of this schedule."]}`) and `trace_svgs` (the plan drawn without cables for each trace page, by cable id, framed to its box at its scale; at most 20). `?print=1` answers `{url}`, a five-minute link. |
+| `GET /api/floor-plans/{id}/cable-schedule/closeups/?box=x,y,w,h` | The close-up pages the PDF will have for an overview framed to `box` (plan px, the overview's viewBox; not needed with `closeups=off`), with `size`, `orientation` and `closeups` as for the PDF: `pages` (`[{label, box, mm_per_px, cables}]`, `box` in plan px, `mm_per_px` paper mm per plan px), `overview_mm_per_px` and `dropped` (groups over the cap of 20). With `trace=id,id,…` (checked as the PDF's `trace`): `traces` (`[{label, cable, box, mm_per_px}]`, the first 20) and `traces_dropped`. The page asks for it, draws each close-up and trace page, then posts the PDF. |
 
 ### Try it: the demo floor plan
 
