@@ -54,7 +54,9 @@ a lot of data fast - typography and spacing serve that, not decoration.
   buttons for labels or counts; `rounded-full` stays reserved for status dots
   and avatars. Severity chips use the semantic variants (`destructive`,
   `warning`, `success`) as **separate badges per severity**, not one combined
-  pill. Chips overlaying a tinted/tiled canvas sit on a solid
+  pill. A scale with two red levels (a vulnerability's Critical / High,
+  Fix first / High) puts the worst on `destructive-solid` (solid
+  `bg-destructive`) and the next on the soft `destructive`. Chips overlaying a tinted/tiled canvas sit on a solid
   `bg-background/95 rounded-md border` backdrop so the tint reads.
 - **Tooltips never go white in dark mode.** The plain tooltip is a chip:
   inverted on light (dark chip, light text), but on dark it steps *up* to a

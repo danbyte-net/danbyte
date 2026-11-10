@@ -1910,6 +1910,8 @@ export interface Device {
   /** Open vulnerability records (#451): on table rows while the feature
    * is on, else null. */
   vulnerabilities?: HostVulnerabilities | null
+  /** Open-match summary (#451): table rows and the detail read. */
+  vulnerability_summary?: HostVulnerabilitySummary | null
   description: string
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
@@ -6635,6 +6637,7 @@ export interface VirtualMachine {
   lifecycle_next?: LifecycleNext | null
   /** Open vulnerability records (#451), as on a device row. */
   vulnerabilities?: HostVulnerabilities | null
+  vulnerability_summary?: HostVulnerabilitySummary | null
   status: StatusMini | null
   /** The software version running (#395). */
   software_version?: string
@@ -17967,6 +17970,19 @@ export interface HostVulnerabilities {
   /** The worst priority among them; "" when none is open. */
   priority: VulnPriority | ""
   kev: boolean
+}
+
+/** `vulnerability_summary` on device and VM table rows and detail reads
+ * (#451): the open matches no exception covers - what the host's
+ * Vulnerabilities tab lists by default. Null while the feature is off and
+ * on the plain list. */
+export interface HostVulnerabilitySummary {
+  open: number
+  /** The worst CVSS severity among them; "" when none is open or scored. */
+  worst_severity: VulnSeverity
+  max_cvss: number | null
+  fix_first: number
+  kev: number
 }
 
 /** GET /api/vulnerabilities/ - one row per record matched in the tenant. */

@@ -18,6 +18,7 @@ import { eolColumn } from "@/components/cells/eol-cell"
 import {
   vulnHostColumn,
   vulnKevColumn,
+  vulnScoreColumn,
 } from "@/components/columns/vulnerability-columns"
 import { lifecycleNextColumn } from "@/components/cells/lifecycle-cell"
 import {
@@ -80,6 +81,7 @@ export type VmColumnId =
   | "software_target"
   | "vulnerabilities"
   | "vuln_kev"
+  | "vuln_score"
   | "synced_from"
   | "profiles"
   | "tags"
@@ -109,6 +111,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "software_target",
   "vulnerabilities",
   "vuln_kev",
+  "vuln_score",
   "synced_from",
   "profiles",
   "tags",
@@ -160,6 +163,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
   if (!opts.vulns) {
     omit.add("vulnerabilities")
     omit.add("vuln_kev")
+    omit.add("vuln_score")
   }
   const keep = (id: VmColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
@@ -423,6 +427,9 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     // Open vulnerability records (#451), annotated on the table row.
     vulnerabilities: () => vulnHostColumn<T>((r) => r.vulnerabilities),
     vuln_kev: () => vulnKevColumn<T>((r) => r.vulnerabilities),
+    // Worst open severity and top score (#451); hidden by default.
+    vuln_score: () =>
+      vulnScoreColumn<T>("virtual_machine", (r) => r.vulnerability_summary),
     // The platform's effective end of life (#436); hidden by default.
     lifecycle_next: () =>
       lifecycleNextColumn<T>({ get: (r) => r.lifecycle_next }),

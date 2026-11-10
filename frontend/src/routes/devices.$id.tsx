@@ -220,6 +220,7 @@ import {
   vulnTabSearch,
 } from "@/components/vulnerabilities/vulnerabilities-tab"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
+import { HostVulnBadge } from "@/components/vulnerabilities/badges"
 
 const DEVICE_TABS = [
   "overview",
@@ -444,6 +445,11 @@ function Body({ device: d }: { device: Device }) {
             <>
               <StatusBadge status={d.status} />
               <MonitoringHeaderBadge target={{ device: d.id }} />
+              <HostVulnBadge
+                summary={d.vulnerability_summary}
+                kind="device"
+                id={d.id}
+              />
               {d.virtual_chassis && (
                 <Badge variant="secondary" asChild>
                   <Link
@@ -546,7 +552,13 @@ function Body({ device: d }: { device: Device }) {
           count: d.document_count || undefined,
         },
         ...(vuln.enabled
-          ? [{ value: "vulnerabilities", label: "Vulnerabilities" }]
+          ? [
+              {
+                value: "vulnerabilities",
+                label: "Vulnerabilities",
+                count: d.vulnerability_summary?.open || undefined,
+              },
+            ]
           : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },

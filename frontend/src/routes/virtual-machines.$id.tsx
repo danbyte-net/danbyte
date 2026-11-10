@@ -80,6 +80,7 @@ import {
   vulnTabSearch,
 } from "@/components/vulnerabilities/vulnerabilities-tab"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
+import { HostVulnBadge } from "@/components/vulnerabilities/badges"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -238,6 +239,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                 </Badge>
               )}
               <MonitoringHeaderBadge target={{ virtual_machine: vm.id }} />
+              <HostVulnBadge
+                summary={vm.vulnerability_summary}
+                kind="virtual_machine"
+                id={vm.id}
+              />
               {vm.synced_from && (
                 <Link
                   to="/virtualization-sources/$id"
@@ -315,7 +321,13 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         },
         { value: "config", label: "Config" },
         ...(vuln.enabled
-          ? [{ value: "vulnerabilities", label: "Vulnerabilities" }]
+          ? [
+              {
+                value: "vulnerabilities",
+                label: "Vulnerabilities",
+                count: vm.vulnerability_summary?.open || undefined,
+              },
+            ]
           : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },

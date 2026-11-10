@@ -1,5 +1,8 @@
+import { Link } from "@tanstack/react-router"
+
 import type {
   DecimalValue,
+  HostVulnerabilitySummary,
   VulnConfidence,
   VulnPriority,
   VulnSeverity,
@@ -14,9 +17,11 @@ import {
 import { dash } from "@/components/cells/dash"
 
 // Severity, priority, KEV and confidence chips (#451). All on the squarish
-// Badge, one variant per level; never a dot or a hand-rolled pill.
+// Badge, one variant per level; never a dot or a hand-rolled pill. One
+// colour scale for both: solid red, soft red, yellow, green, plain.
 
-type Variant = "destructive" | "warning" | "secondary" | "outline"
+type Variant =
+  "destructive-solid" | "destructive" | "warning" | "success" | "outline"
 
 export const PRIORITY_LABELS: Record<VulnPriority, string> = {
   fix_first: "Fix first",
@@ -33,10 +38,10 @@ export const PRIORITY_ORDER: VulnPriority[] = [
 ]
 
 const PRIORITY_VARIANT: Record<VulnPriority, Variant> = {
-  fix_first: "destructive",
-  high: "warning",
-  medium: "secondary",
-  low: "outline",
+  fix_first: "destructive-solid",
+  high: "destructive",
+  medium: "warning",
+  low: "success",
 }
 
 export type KnownSeverity = Exclude<VulnSeverity, "">
@@ -58,10 +63,10 @@ export const SEVERITY_ORDER: KnownSeverity[] = [
 ]
 
 const SEVERITY_VARIANT: Record<KnownSeverity, Variant> = {
-  critical: "destructive",
-  high: "warning",
-  medium: "secondary",
-  low: "outline",
+  critical: "destructive-solid",
+  high: "destructive",
+  medium: "warning",
+  low: "success",
   none: "outline",
 }
 
@@ -82,6 +87,60 @@ export function SeverityBadge({ value }: { value: VulnSeverity }) {
   if (!value) return dash
   return (
     <Badge variant={SEVERITY_VARIANT[value]}>{SEVERITY_LABELS[value]}</Badge>
+  )
+}
+
+/** "N open · M fix first · K KEV" - the host badge's hover. */
+export function hostVulnSummaryText(s: HostVulnerabilitySummary): string {
+  return `${s.open} open · ${s.fix_first} fix first · ${s.kev} KEV`
+}
+
+/** "Critical 9.8" - the worst open severity and the top score. */
+export function hostVulnLabel(s: HostVulnerabilitySummary): string {
+  const n = toNumber(s.max_cvss)
+  const sev = s.worst_severity ? SEVERITY_LABELS[s.worst_severity] : "Unscored"
+  return n === null ? sev : `${sev} ${n.toFixed(1)}`
+}
+
+/**
+ * A host's open vulnerabilities as one severity badge with the top score,
+ * linked to its Vulnerabilities tab; the counts on hover. Nothing while the
+ * summary is null (the feature is off) or nothing is open.
+ */
+export function HostVulnBadge({
+  summary,
+  kind,
+  id,
+}: {
+  summary: HostVulnerabilitySummary | null | undefined
+  kind: "device" | "virtual_machine"
+  id: string
+}) {
+  if (!summary || summary.open === 0) return null
+  const variant = summary.worst_severity
+    ? SEVERITY_VARIANT[summary.worst_severity]
+    : "outline"
+  const label = hostVulnLabel(summary)
+  const search = { tab: "vulnerabilities" as const }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant={variant} className="num" asChild>
+          {kind === "device" ? (
+            <Link to="/devices/$id" params={{ id }} search={search}>
+              {label}
+            </Link>
+          ) : (
+            <Link to="/virtual-machines/$id" params={{ id }} search={search}>
+              {label}
+            </Link>
+          )}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent variant="panel">
+        {hostVulnSummaryText(summary)}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

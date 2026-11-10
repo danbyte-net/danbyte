@@ -670,6 +670,22 @@ gets a tick box per row and **Add exception** for the ticked open rows, and
 the shield button on a row for that one (see [Adding one](#adding-one)). The filters are in the address (`?vstatus=resolved&priority=fix_first`),
 so a link keeps them. The tab is gone entirely while the feature is off.
 
+On a device or VM the tab shows how many matches are open (what it lists by
+default: open, no exception), and the header's badge row has one badge for
+the worst open severity with the top score - *Critical 9.8*. Its hover reads
+*4 open · 2 fix first · 1 KEV*, and a click opens the tab. A host with
+nothing open has neither.
+
+Priority and severity share one colour scale:
+
+| Colour | Priority | Severity |
+|---|---|---|
+| Solid red | Fix first | Critical |
+| Soft red | High | High |
+| Yellow | Medium | Medium |
+| Green | Low | Low |
+| Plain | - | None |
+
 ### The Vulnerabilities page
 
 **Software & lifecycle → Vulnerabilities** (`/vulnerabilities`, next to
@@ -755,7 +771,10 @@ open and *KEV* when one is known exploited (`Fix first · 4 · KEV`). It
 sorts worst first and its rail facet filters by worst priority (*None open*
 for a clean host); **Known exploited** (a hidden column) filters by the KEV
 flag. Both are computed on the server for the whole list, and the column is
-in the list's Download.
+in the list's Download. **CVE score** (hidden until ticked in Columns) shows
+the host's header badge - the worst open severity and the top score, the
+counts on hover, linked to its Vulnerabilities tab - and sorts by the top
+score.
 
 ## Exceptions
 
@@ -962,6 +981,21 @@ On `GET /api/devices/` and `GET /api/virtual-machines/`:
 The table rows (`view=table`) carry `vulnerabilities: {open, priority,
 kev}` while the feature is on (`null` otherwise), and take
 `f_vulnerabilities` / `f_vuln_kev` and `ordering=vulnerabilities`. While the
-feature is off the parameters are accepted and do nothing. Counted like
+feature is off the parameters are accepted and do nothing.
+
+The table rows and the detail read (`GET /api/devices/<id>/`,
+`GET /api/virtual-machines/<id>/`) also carry `vulnerability_summary`:
+
+| Field | Is |
+|---|---|
+| `open` | Open matches no exception covers - the host's tab count. |
+| `worst_severity` | The worst CVSS severity among them; `""` when none is open or scored. |
+| `max_cvss` | The top CVSS score among them, or `null`. |
+| `fix_first`, `kev` | How many of them are fix first, and in CISA KEV. |
+
+It is `null` while the feature is off and on the plain list. A page of rows
+costs one correlated subquery, not a query per row.
+`ordering=vuln_score` (or `-vuln_score`) sorts the table by `max_cvss`, hosts
+with none last both ways. Counted like
 everything here: an application match needs `view` on its install, and a
 match an exception covers is not counted.

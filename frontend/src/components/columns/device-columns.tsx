@@ -47,6 +47,7 @@ import { eolColumn } from "@/components/cells/eol-cell"
 import {
   vulnHostColumn,
   vulnKevColumn,
+  vulnScoreColumn,
 } from "@/components/columns/vulnerability-columns"
 import { coverageColumn } from "@/components/cells/coverage-cell"
 import { cabinetColumn } from "@/components/cells/cabinet-cell"
@@ -90,6 +91,7 @@ export type DeviceColumnId =
   | "software_target"
   | "vulnerabilities"
   | "vuln_kev"
+  | "vuln_score"
   | "ips"
   | "ports"
   | "monitoring"
@@ -124,6 +126,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "software_target",
   "vulnerabilities",
   "vuln_kev",
+  "vuln_score",
   "ips",
   "ports",
   "monitoring",
@@ -218,6 +221,7 @@ export function buildDeviceColumns<T extends Device = Device>(
   if (!opts.vulns) {
     omit.add("vulnerabilities")
     omit.add("vuln_kev")
+    omit.add("vuln_score")
   }
   const keep = (id: DeviceColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
@@ -358,6 +362,9 @@ export function buildDeviceColumns<T extends Device = Device>(
     // Open vulnerability records (#451), annotated on the table row.
     vulnerabilities: () => vulnHostColumn<T>((r) => r.vulnerabilities),
     vuln_kev: () => vulnKevColumn<T>((r) => r.vulnerabilities),
+    // Worst open severity and top score (#451); hidden by default.
+    vuln_score: () =>
+      vulnScoreColumn<T>("device", (r) => r.vulnerability_summary),
     // Support & warranty coverage (#421), derived server-side per row.
     coverage: () => coverageColumn<T>({ get: (r) => r.coverage }),
     // The soonest of hardware, OS and coverage (#436); hidden by default.
