@@ -8,6 +8,13 @@ it has. The rail's ``vulnerabilities`` facet buckets hosts by that worst
 priority (``none`` for a clean host) and ``vuln_kev`` by the KEV flag; the
 column sorts worst first.
 
+The table row and the detail read also carry ``vulnerability_summary``:
+``{open, worst_severity, max_cvss, fix_first, kev}`` - the open matches
+(the host's Vulnerabilities tab by default), the worst CVSS severity and top
+score among them, and how many are fix first or in KEV - from one
+correlated subquery that builds the object. ``ordering=vuln_score`` sorts by
+that top score.
+
 The plain list takes the same as filters: ``vuln_priority=fix_first,high``
 (the worst priority, ``none`` for none), ``vuln_kev=true|false`` and
 ``cve_severity=critical,high`` (an open record of that CVSS severity).
@@ -26,13 +33,16 @@ from django.db.models import (
     Exists,
     F,
     IntegerField,
+    JSONField,
+    Max,
+    Min,
     OuterRef,
     Q,
     Subquery,
     Value,
     When,
 )
-from django.db.models.functions import Coalesce, Least
+from django.db.models.functions import Coalesce, JSONObject, Least
 from rest_framework.exceptions import ValidationError
 
 from . import priority as prio
@@ -119,6 +129,60 @@ def payload(obj) -> dict | None:
     }
 
 
+_SEV_RANK = Case(*[When(cve__cvss_severity=k, then=Value(i)) for i, k in enumerate(_SEVERITIES)],
+                 default=Value(len(_SEVERITIES)), output_field=IntegerField())
+
+
+def annotate_summary(qs, request, kind: str):
+    """``vuln_summary`` on a device or VM queryset: one correlated subquery
+    over the host's open matches (as ``_open_matches``) that returns the
+    summary as a JSON object. Off: nothing, so the field reads null."""
+    if "vuln_summary" in qs.query.annotations or not enabled(request):
+        return qs
+    agg = (_open_matches(request, kind).order_by().values(kind).annotate(j=JSONObject(
+        open=Count("id"),
+        fix_first=Count("id", filter=Q(priority="fix_first")),
+        kev=Count("id", filter=Q(cve__kev_added__isnull=False)),
+        sev=Min(_SEV_RANK),
+        max_cvss=Max("cve__cvss_score"),
+    )).values("j")[:1])
+    return qs.annotate(vuln_summary=Subquery(agg, output_field=JSONField()))
+
+
+def summary_payload(obj) -> dict | None:
+    """The row's ``vulnerability_summary``; None when not annotated (the
+    feature is off, or a response that does not carry it)."""
+    if not hasattr(obj, "vuln_summary"):
+        return None
+    j = obj.vuln_summary or {}
+    sev = j.get("sev")
+    score = j.get("max_cvss")
+    return {
+        "open": j.get("open") or 0,
+        "worst_severity": _SEVERITIES[sev] if isinstance(sev, int) and sev < len(
+            _SEVERITIES) else "",
+        "max_cvss": round(float(score), 1) if score is not None else None,
+        "fix_first": j.get("fix_first") or 0,
+        "kev": j.get("kev") or 0,
+    }
+
+
+def score_sort_prepare(kind: str):
+    """``vuln_score``: the top CVSS score among the open matches; a clean
+    host (null) sorts last either way."""
+
+    def run(qs, request):
+        if "_sort_vuln_score" in qs.query.annotations:
+            return qs
+        if not enabled(request):
+            return qs.annotate(_sort_vuln_score=Value(None, output_field=IntegerField()))
+        top = (_open_matches(request, kind).order_by().values(kind)
+               .annotate(s=Max("cve__cvss_score")).values("s")[:1])
+        return qs.annotate(_sort_vuln_score=Subquery(top))
+
+    return run
+
+
 # ─── the table's facets and sort (api.list_specs) ────────────────────────────
 
 
@@ -195,5 +259,6 @@ def apply_filters(qs, request, kind: str):
     return qs
 
 
-__all__ = ["BUCKETS", "LABELS", "annotate", "apply_filters", "enabled", "kev_buckets",
-           "payload", "prepare", "priority_buckets", "sort_prepare"]
+__all__ = ["BUCKETS", "LABELS", "annotate", "annotate_summary", "apply_filters", "enabled",
+           "kev_buckets", "payload", "prepare", "priority_buckets", "score_sort_prepare",
+           "sort_prepare", "summary_payload"]

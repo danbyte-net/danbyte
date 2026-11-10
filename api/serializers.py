@@ -2638,6 +2638,24 @@ def _host_vulnerabilities(obj):
     return payload(obj)
 
 
+#: ``vulnerability_summary`` on device and VM table rows and detail reads:
+#: open matches no exception covers, the worst severity and top score among
+#: them, and how many are fix first or in KEV (#451).
+VULNERABILITY_SUMMARY_SCHEMA = inline_serializer("HostVulnerabilitySummary", {
+    "open": serializers.IntegerField(),
+    "worst_severity": serializers.CharField(),
+    "max_cvss": serializers.FloatField(allow_null=True),
+    "fix_first": serializers.IntegerField(),
+    "kev": serializers.IntegerField(),
+}, allow_null=True)
+
+
+def _host_vulnerability_summary(obj):
+    from vulnerabilities.host_columns import summary_payload
+
+    return summary_payload(obj)
+
+
 #: The ``lifecycle_next`` shape on device and VM rows.
 LIFECYCLE_NEXT_SCHEMA = inline_serializer("LifecycleNext", {
     "source": serializers.ChoiceField(choices=["hardware", "os", "coverage", "software"]),
@@ -3295,7 +3313,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         # Its own column, Profiles (device-columns.tsx).
         "device_profiles",
         # Its own column, Vulnerabilities (device-columns.tsx, #451).
-        "vulnerabilities",
+        "vulnerabilities", "vulnerability_summary",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
@@ -3347,6 +3365,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     # Open vulnerability records (#451): on the table row while the
     # feature is on (vulnerabilities.host_columns), else null.
     vulnerabilities = serializers.SerializerMethodField()
+    # The open-match summary: table row and detail read, else null.
+    vulnerability_summary = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -3533,6 +3553,10 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     @extend_schema_field(VULNERABILITIES_SCHEMA)
     def get_vulnerabilities(self, obj):
         return _host_vulnerabilities(obj)
+
+    @extend_schema_field(VULNERABILITY_SUMMARY_SCHEMA)
+    def get_vulnerability_summary(self, obj):
+        return _host_vulnerability_summary(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -4083,6 +4107,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "software_version", "software_version_seen_at",
                   "software_version_source",
                   "warranty_end", "coverage", "lifecycle_next", "vulnerabilities",
+                  "vulnerability_summary",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
                   "width_mm", "height_mm", "depth_mm",
@@ -6991,7 +7016,7 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
     list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host",
                             "device_profiles", "local_context_data",
                             # Its own column, Vulnerabilities (#451).
-                            "vulnerabilities")
+                            "vulnerabilities", "vulnerability_summary")
     cluster = ClusterMiniSerializer(read_only=True)
     #: What the PRTG plan made of a save that changed prtg_sync; else null.
     prtg_plan = serializers.SerializerMethodField()
@@ -7133,10 +7158,15 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
 
     # Open vulnerability records (#451), as on the device row.
     vulnerabilities = serializers.SerializerMethodField()
+    vulnerability_summary = serializers.SerializerMethodField()
 
     @extend_schema_field(VULNERABILITIES_SCHEMA)
     def get_vulnerabilities(self, obj):
         return _host_vulnerabilities(obj)
+
+    @extend_schema_field(VULNERABILITY_SUMMARY_SCHEMA)
+    def get_vulnerability_summary(self, obj):
+        return _host_vulnerability_summary(obj)
 
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
@@ -7247,7 +7277,7 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
         list_serializer_class = _VMListSerializer
         fields = ["id", "name", "cluster", "cluster_id", "group", "group_id",
                   "role", "role_id", "platform", "platform_id", "lifecycle_next",
-                  "vulnerabilities", "device", "device_id",
+                  "vulnerabilities", "vulnerability_summary", "device", "device_id",
                   "site", "site_id", "status", "status_id",
                   "power_state", "power_state_at",
                   "synced_from", "synced_from_id", "drift_count",

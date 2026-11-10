@@ -271,6 +271,106 @@ class HostColumnTests(PagesBase):
             "/api/devices/?view=table&ordering=vulnerabilities").status_code, 200)
 
 
+class HostSummaryTests(PagesBase):
+    """``vulnerability_summary`` on the device and VM table rows and detail
+    reads: the open matches the host's Vulnerabilities tab lists by default."""
+
+    def _exception(self):
+        from .models import VulnerabilityException
+
+        VulnerabilityException.objects.create(
+            tenant=self.tenant, cve=self.cve, device=self.d_b, status="not_applicable",
+            reason="Web UI off", owner=self.admin, owner_name="root",
+            analysis_justification="code_not_reachable")
+
+    def test_table_rows_and_detail(self):
+        self.login(self.admin)
+        rows = _rows(self.client, "/api/devices/?view=table&page_size=50")
+        full = {"open": 4, "worst_severity": "critical", "max_cvss": 9.8, "fix_first": 2,
+                "kev": 1}
+        self.assertEqual(rows["a1"]["vulnerability_summary"], full)
+        self.assertEqual(rows["c1"]["vulnerability_summary"],
+                         {"open": 0, "worst_severity": "", "max_cvss": None, "fix_first": 0,
+                          "kev": 0})
+        r = self.client.get(f"/api/devices/{self.d_a.pk}/")
+        self.assertEqual(r.json()["vulnerability_summary"], full)
+        # The tab's open rows are the same matches.
+        tab = self.client.get(f"/api/devices/{self.d_a.pk}/vulnerabilities/").json()
+        self.assertEqual(tab["count"], full["open"])
+        self.assertIsNone(_rows(self.client, "/api/devices/?page_size=50")["a1"]
+                          ["vulnerability_summary"])
+        vm = self.client.get(f"/api/virtual-machines/{self.vm.pk}/").json()
+        self.assertEqual(vm["vulnerability_summary"],
+                         {"open": 3, "worst_severity": "critical", "max_cvss": 9.8,
+                          "fix_first": 2, "kev": 1})
+        vms = _rows(self.client, "/api/virtual-machines/?view=table&page_size=50")
+        self.assertEqual(vms["vm1"]["vulnerability_summary"]["open"], 3)
+
+    def test_exception_is_left_out(self):
+        self._exception()
+        self.login(self.admin)
+        r = self.client.get(f"/api/devices/{self.d_b.pk}/").json()
+        self.assertEqual(r["vulnerability_summary"],
+                         {"open": 2, "worst_severity": "high", "max_cvss": 7.5,
+                          "fix_first": 1, "kev": 1})
+        tab = self.client.get(f"/api/devices/{self.d_b.pk}/vulnerabilities/").json()
+        self.assertEqual(tab["count"], 2)
+
+    def test_install_needs_its_own_view(self):
+        self.member("dev", ["device"], ["view"])
+        r = self.client.get(f"/api/devices/{self.d_a.pk}/").json()
+        self.assertEqual(r["vulnerability_summary"]["open"], 3)
+        self.assertEqual(r["vulnerability_summary"]["max_cvss"], 9.8)
+
+    def test_tenant_isolation(self):
+        self.login(self.admin, self.other)
+        rows = _rows(self.client, "/api/devices/?view=table&page_size=50")
+        self.assertEqual(set(rows), {"o1"})
+        self.assertEqual(rows["o1"]["vulnerability_summary"]["open"], 3)
+        self.assertEqual(self.client.get(f"/api/devices/{self.d_a.pk}/").status_code, 404)
+
+    def test_off_is_null(self):
+        self.login(self.admin)
+        VulnerabilitySettings.objects.filter(pk=1).update(enabled=False)
+        rows = _rows(self.client, "/api/devices/?view=table&page_size=50")
+        self.assertIsNone(rows["a1"]["vulnerability_summary"])
+        self.assertIsNone(
+            self.client.get(f"/api/devices/{self.d_a.pk}/").json()["vulnerability_summary"])
+        self.assertIsNone(
+            self.client.get(f"/api/virtual-machines/{self.vm.pk}/").json()
+            ["vulnerability_summary"])
+        self.assertEqual(self.client.get(
+            "/api/devices/?view=table&ordering=vuln_score").status_code, 200)
+
+    def test_order_by_top_score(self):
+        self._exception()
+        self.login(self.admin)
+        names = lambda o: [r["name"] for r in self.client.get(  # noqa: E731
+            f"/api/devices/?view=table&ordering={o}").json()["results"]]
+        self.assertEqual(names("-vuln_score"), ["a1", "b1", "c1"])
+        self.assertEqual(names("vuln_score"), ["b1", "a1", "c1"])
+
+    def test_page_cost_is_flat(self):
+        for i in range(12):
+            Device.objects.create(tenant=self.tenant, name=f"x{i:02d}", site=self.site_a,
+                                  platform=self.xe, software_version="17.9.4")
+        matching.recompute(self.tenant)
+        for user in (self.admin, None):
+            if user:
+                self.login(user)
+            else:
+                self.member("site", ["device", "virtualmachine", "installedsoftware"],
+                            ["view"], sites=[self.site_a])
+            for base in ("/api/devices/?view=table&ordering=-vuln_score",
+                         "/api/virtual-machines/?view=table&ordering=-vuln_score"):
+                with self.subTest(base=base, superuser=bool(user)):
+                    with CaptureQueriesContext(connection) as small:
+                        self.client.get(f"{base}&page_size=2")
+                    with self.assertNumQueries(len(small)):
+                        r = self.client.get(f"{base}&page_size=15")
+                    self.assertEqual(r.status_code, 200)
+
+
 class VexTests(PagesBase):
     def doc(self, query="vex=1"):
         r = self.client.get(f"/api/sbom/?{query}")

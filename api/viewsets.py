@@ -4865,6 +4865,8 @@ class DeviceViewSet(
             qs = host_columns.apply_filters(qs, self.request, "device")
             if self.is_table_view():
                 qs = host_columns.annotate(qs, self.request, "device")
+            if self.is_table_view() or self.action == "retrieve":
+                qs = host_columns.annotate_summary(qs, self.request, "device")
         return qs
 
     def _cooling_filters(self, qs):
@@ -7505,6 +7507,8 @@ class VirtualMachineViewSet(
             qs = host_columns.apply_filters(qs, self.request, "virtual_machine")
             if self.is_table_view():
                 qs = host_columns.annotate(qs, self.request, "virtual_machine")
+            if self.is_table_view() or self.action == "retrieve":
+                qs = host_columns.annotate_summary(qs, self.request, "virtual_machine")
         return qs
 
 

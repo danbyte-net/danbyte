@@ -208,6 +208,12 @@ def _vuln_sort(kind: str) -> Sort:
     return Sort(("_sort_vuln",), vh.sort_prepare(kind))
 
 
+def _vuln_score_sort(kind: str) -> Sort:
+    from vulnerabilities import host_columns as vh
+
+    return Sort(("_sort_vuln_score",), vh.score_sort_prepare(kind))
+
+
 # ─── Devices ─────────────────────────────────────────────────────────────────
 
 def device_table_rows():
@@ -304,6 +310,7 @@ DEVICE_TABLE = TableSpec(
         "software_target": Sort(("_software_target",), _software_target_prepare),
         "device_profiles": _profiles_sort("device"),
         "vulnerabilities": _vuln_sort("device"),
+        "vuln_score": _vuln_score_sort("device"),
         "tags": _tags_sort(),
         "updated": by("updated_at"),
     },
@@ -314,6 +321,7 @@ DEVICE_TABLE = TableSpec(
         "serial_number", "software_version", "ip_count", "primary_ip",
         "secondary_ip", "oob_ip", "description", "device_profiles", "tags",
         "custom_fields", "created_at", "updated_at", "vulnerabilities",
+        "vulnerability_summary",
     ),
     cheap={
         # On the slim base already, or a join of it.
@@ -473,6 +481,7 @@ VM_TABLE = TableSpec(
         "software_target": Sort(("_software_target",), _software_target_prepare),
         "device_profiles": _profiles_sort("virtual_machine"),
         "vulnerabilities": _vuln_sort("virtual_machine"),
+        "vuln_score": _vuln_score_sort("virtual_machine"),
         "tags": _tags_sort(),
         "updated": by("updated_at"),
     },
@@ -482,6 +491,7 @@ VM_TABLE = TableSpec(
         "memory_mb", "disk_gb", "primary_ip", "site", "role", "platform",
         "lifecycle_next", "software_version", "device_profiles", "tags",
         "description", "custom_fields", "created_at", "updated_at", "vulnerabilities",
+        "vulnerability_summary",
     ),
     cheap={
         "device": None, "represents_device": None, "intended": None, "vmid": None,
