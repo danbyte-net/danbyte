@@ -372,16 +372,12 @@ def _cursor(key, *, status: str, until: datetime | None = None) -> None:
 
 
 def _nvd_product(client: Client, key, p: dict, tracked, state: _State) -> None:
-    _, part, vendor, product = key
     counts = state.section("nvd")
     errors = imports.ErrorLog()
     pages = 0
     while True:
-        params = {"virtualMatchString": f"cpe:2.3:{part}:{vendor}:{product}",
+        params = {**nvd_params(key, p.get("since"), p["until"]),
                   "resultsPerPage": NVD_PAGE, "startIndex": p["start_index"]}
-        if p.get("since"):
-            params["lastModStartDate"] = p["since"]
-            params["lastModEndDate"] = p["until"]
         resp = client.request("nvd", f"{client.cfg.nvd}{NVD_CVES}", params=params)
         header: dict = {}
         before = counts.get("records", 0)
@@ -411,6 +407,35 @@ def _nvd_product(client: Client, key, p: dict, tracked, state: _State) -> None:
         _gate()
 
 
+def nvd_window(key, now: datetime) -> tuple[str | None, str]:
+    """``(since, until)`` for a product: only what changed since its cursor
+    when that is younger than 110 days, else ``since`` is None (the whole
+    product). Server and browser mode share it, and the cursor it reads."""
+    cursor = CpeProductSync.objects.filter(
+        part=key[1], vendor=key[2], product=key[3]).values_list(
+        "last_synced_at", flat=True).first()
+    since = None
+    if cursor is not None and now - cursor < NVD_WINDOW:
+        since = _iso(cursor - CURSOR_OVERLAP)
+    return since, _iso(now)
+
+
+def nvd_params(key, since: str | None, until: str) -> dict:
+    """The NVD query for a product, without paging."""
+    _, part, vendor, product = key
+    params = {"virtualMatchString": f"cpe:2.3:{part}:{vendor}:{product}"}
+    if since:
+        params["lastModStartDate"] = since
+        params["lastModEndDate"] = until
+    return params
+
+
+def mark_product(key, *, ok: bool, until: str | None = None) -> None:
+    """Record a product's fetch outcome; ``until`` moves its cursor."""
+    _cursor(key, status="ok" if ok else "failed",
+            until=_parse_iso(until) if ok and until else None)
+
+
 def _sync_nvd(client: Client, tracked, state: _State, now: datetime) -> None:
     keys = sorted(k for k in tracked.keys if k[0] == "cpe")
     nvd = state.progress.setdefault("nvd", {})
@@ -420,14 +445,9 @@ def _sync_nvd(client: Client, tracked, state: _State, now: datetime) -> None:
         if p and p.get("done"):
             continue
         if p is None:
-            cursor = CpeProductSync.objects.filter(
-                part=key[1], vendor=key[2], product=key[3]).values_list(
-                "last_synced_at", flat=True).first()
-            since = None
-            if cursor is not None and now - cursor < NVD_WINDOW:
-                since = _iso(cursor - CURSOR_OVERLAP)
+            since, until = nvd_window(key, now)
             p = nvd[name] = {"start_index": 0, "total": None, "since": since,
-                             "until": _iso(now), "done": False}
+                             "until": until, "done": False}
             state.save()
         _gate()
         try:
@@ -445,6 +465,24 @@ def _sync_nvd(client: Client, tracked, state: _State, now: datetime) -> None:
 
 def _purl(ptype: str, product: str) -> str:
     return f"pkg:{ptype}/" + "/".join(quote(s, safe="") for s in product.split("/"))
+
+
+def osv_queries(keys) -> tuple[list[dict], int]:
+    """``(querybatch queries, packages OSV cannot answer)`` for purl keys."""
+    queries, unsupported = [], 0
+    for _, _, ptype, product in sorted(keys):
+        if ptype == "generic":
+            unsupported += 1  # OSV has no ecosystem for a generic package
+            continue
+        queries.append({"package": {"purl": _purl(ptype, product)}})
+    return queries, unsupported
+
+
+def epss_candidates(today) -> list[str]:
+    """The stored CVEs whose EPSS score is missing or older than yesterday."""
+    return list(Cve.objects.filter(vuln_id__startswith="CVE-", rejected=False)
+                .filter(Q(epss_date__isnull=True) | Q(epss_date__lt=today - timedelta(days=1)))
+                .order_by("vuln_id").values_list("vuln_id", flat=True))
 
 
 def _osv_ids(client: Client, queries: list[dict], counts: dict) -> dict[str, str]:
@@ -501,12 +539,7 @@ def _sync_osv(client: Client, tracked, state: _State) -> None:
     if not keys or p.get("done"):
         return
     counts = state.section("osv")
-    queries, unsupported = [], 0
-    for _, _, ptype, product in keys:
-        if ptype == "generic":
-            unsupported += 1  # OSV has no ecosystem for a generic package
-            continue
-        queries.append({"package": {"purl": _purl(ptype, product)}})
+    queries, unsupported = osv_queries(keys)
     counts["unsupported"] = unsupported
     if not queries:
         p["done"] = True
@@ -582,9 +615,7 @@ def _sync_kev(client: Client, state: _State) -> None:
 def _sync_epss(client: Client, state: _State, today) -> None:
     p = state.progress.setdefault("epss", {})
     counts = state.section("epss")
-    ids = list(Cve.objects.filter(vuln_id__startswith="CVE-", rejected=False)
-               .filter(Q(epss_date__isnull=True) | Q(epss_date__lt=today - timedelta(days=1)))
-               .order_by("vuln_id").values_list("vuln_id", flat=True))
+    ids = epss_candidates(today)
     p.update({"to_fetch": len(ids), "batches_failed": 0})
     errors = imports.ErrorLog()
     for i in range(0, len(ids), EPSS_BATCH):

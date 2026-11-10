@@ -6,7 +6,10 @@
   (``can_manage_deployment``).
 * ``POST /api/vulnerabilities/import/``          upload a file (multipart
   ``file`` + ``kind``); parsed by a background job, answers the run (202).
-* ``GET /api/vulnerabilities/sync/<run>/``       one run, for polling.
+* ``GET /api/vulnerabilities/sync/<run>/``       one run, for polling (a
+  browser run with its progress).
+
+The browser-sync posts are in :mod:`vulnerabilities.browser_api`.
 
 No endpoint here makes an outbound request.
 """
@@ -219,4 +222,8 @@ def vulnerability_sync_run(request, run_id):
     run = SyncRun.objects.select_related("started_by").filter(pk=run_id).first()
     if run is None:
         return Response({"detail": "Not found."}, status=404)
-    return Response(run_dict(run))
+    out = run_dict(run)
+    if run.via == "browser":
+        # The sync page resumes from it (posted start_index values).
+        out["progress"] = run.progress
+    return Response(out)
