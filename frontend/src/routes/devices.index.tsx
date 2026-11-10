@@ -268,7 +268,12 @@ function DevicesPage() {
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
-          <TableActions ioType="device" extraExports={sbomVex ? [sbom, sbomVex, reportItem] : [sbom, reportItem]} />
+          <TableActions
+            ioType="device"
+            extraExports={
+              sbomVex ? [sbom, sbomVex, reportItem] : [sbom, reportItem]
+            }
+          />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/devices/new">Add device</Link>

@@ -17850,9 +17850,24 @@ export interface VulnMatch {
     application: VulnRef | null
   } | null
   mapping: { id: string; identifier: string }
+  /** The exception that covers it, if one does. */
+  exception: VulnExceptionBrief | null
   first_seen_at: string
   last_seen_at: string
   resolved_at: string | null
+}
+
+export type VulnExceptionStatus = "not_applicable" | "risk_accepted"
+export type VulnExceptionScope =
+  "device" | "virtual_machine" | "platform" | "application" | "tenant"
+
+export interface VulnExceptionBrief {
+  id: string
+  numid: number | null
+  status: VulnExceptionStatus
+  scope: VulnExceptionScope
+  expires_on: string | null
+  owner_name: string
 }
 
 export type VulnVersionScheme =
@@ -17948,6 +17963,8 @@ export interface VulnRecordRow extends VulnRecordBrief {
   virtual_machines: number
   installs: number
   matches: number
+  /** Its matches an exception covers (not in the other counts). */
+  excepted: number
   first_seen_at: string
 }
 
@@ -17960,7 +17977,12 @@ export interface VulnRecordDetail extends VulnRecordBrief {
   cvss_verified: boolean
   cwes: string[]
   references: { url: string; tags?: string[] }[]
-  fixed_in: { part?: string; vendor?: string; product?: string; version: string }[]
+  fixed_in: {
+    part?: string
+    vendor?: string
+    product?: string
+    version: string
+  }[]
   osv_fixed_in: { ecosystem: string; name: string; version: string }[]
   kev_action: string
   kev_ransomware: string
@@ -17969,6 +17991,7 @@ export interface VulnRecordDetail extends VulnRecordBrief {
   fetched_at: string | null
   priority: VulnPriority
   affected_count: number
+  excepted_count: number
   affected: VulnMatch[]
 }
 
@@ -17981,6 +18004,8 @@ export interface VulnSummary {
   kev: number
   critical: number
   new_this_week: number
+  excepted: number
+  excepted_records: number
   by_priority: Record<VulnPriority, number>
 }
 

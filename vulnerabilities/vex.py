@@ -9,13 +9,13 @@ caller may not view never appears - the document's own scoping is the VEX's.
 A record is public data; the section only says which of the document's
 components it affects.
 
-Every entry carries an ``analysis``. Today that is a default -
-``exploitable`` for a record in CISA KEV, ``in_triage`` otherwise.
-Exceptions (Phase 8) supply theirs through :func:`register_analysis`: a
-provider answers a match's analysis (``not_affected`` with a justification,
-``exploitable`` with ``response: ["will_not_fix"]``…) or None to leave it to
-the next. Matches of one record with different analyses become separate
-entries, so each ``affects`` list states one analysis.
+Every entry carries an ``analysis``. A match an exception covers takes the
+exception's (``exceptions.cyclonedx_analysis``: ``not_affected`` with a
+justification, ``exploitable`` with ``will_not_fix``…); otherwise the
+default is ``exploitable`` for a record in CISA KEV and ``in_triage``.
+:func:`register_analysis` lets another source answer first. Matches of one
+record with different analyses become separate entries, so each
+``affects`` list states one analysis.
 """
 from __future__ import annotations
 
@@ -43,6 +43,10 @@ def unregister_analysis(fn: Callable) -> None:
 
 
 def default_analysis(match) -> dict:
+    if match.excepted_id is not None:
+        from .exceptions import cyclonedx_analysis
+
+        return cyclonedx_analysis(match.excepted)
     if match.cve.kev_added is not None:
         return {"state": "exploitable",
                 "detail": "Listed in CISA Known Exploited Vulnerabilities."}
@@ -121,7 +125,7 @@ def section(tenant, devices, vms, os_refs: dict, install_refs: dict) -> list[dic
         VulnerabilityMatch.objects.filter(tenant=tenant, resolved_at__isnull=True)
         .filter(Q(device__in=devices.order_by().values("pk"))
                 | Q(virtual_machine__in=vms.order_by().values("pk")))
-        .select_related("cve")
+        .select_related("cve", "excepted")
         .order_by("cve__vuln_id", "id")
     )
     groups: dict[tuple, dict] = {}

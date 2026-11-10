@@ -187,7 +187,10 @@ function VirtualMachinesPage() {
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
-          <TableActions ioType="virtualmachine" extraExports={sbomVex ? [sbom, sbomVex] : [sbom]} />
+          <TableActions
+            ioType="virtualmachine"
+            extraExports={sbomVex ? [sbom, sbomVex] : [sbom]}
+          />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/virtual-machines/new">Add VM</Link>

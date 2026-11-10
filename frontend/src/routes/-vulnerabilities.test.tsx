@@ -30,14 +30,19 @@ import { Route as DetailRoute, cweUrl } from "./vulnerabilities.$id"
 
 const { apiMock, settings } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
-  settings: { value: { enabled: true, can_manage: true } as Record<string, unknown> },
+  settings: { value: { enabled: true, can_manage: true } },
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
   api: apiMock,
 }))
 vi.mock("@/lib/use-me", () => ({
-  useMe: () => ({ me: {}, canDo: () => true, can: () => true, humanIds: false }),
+  useMe: () => ({
+    me: {},
+    canDo: () => true,
+    can: () => true,
+    humanIds: false,
+  }),
   objCan: (_o: unknown, _a: string, fallback: boolean) => fallback,
 }))
 vi.mock("@/components/list-page-shell", () => ({
@@ -94,6 +99,7 @@ const ROW: VulnRecordRow = {
   virtual_machines: 1,
   installs: 0,
   matches: 13,
+  excepted: 0,
   first_seen_at: "2026-11-01T00:00:00Z",
 }
 
@@ -105,8 +111,12 @@ const DETAIL: VulnRecordDetail = {
   cvss_vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
   cvss_verified: true,
   cwes: ["CWE-420"],
-  references: [{ url: "https://sec.example.com/advisory", tags: ["Vendor Advisory"] }],
-  fixed_in: [{ part: "o", vendor: "cisco", product: "ios_xe", version: "17.9.4a" }],
+  references: [
+    { url: "https://sec.example.com/advisory", tags: ["Vendor Advisory"] },
+  ],
+  fixed_in: [
+    { part: "o", vendor: "cisco", product: "ios_xe", version: "17.9.4a" },
+  ],
   osv_fixed_in: [],
   kev_action: "Apply the vendor fix.",
   kev_ransomware: "unknown",
@@ -115,6 +125,7 @@ const DETAIL: VulnRecordDetail = {
   fetched_at: "2026-11-09T05:50:00Z",
   priority: "fix_first",
   affected_count: 13,
+  excepted_count: 0,
   affected: [],
 }
 
@@ -224,7 +235,9 @@ describe("a record's page", () => {
     expect(await screen.findByText("Web UI privilege escalation")).toBeTruthy()
     expect(screen.getByText(DETAIL.cvss_vector)).toBeTruthy()
     expect(screen.getByText("17.9.4a")).toBeTruthy()
-    const ref = screen.getByText("https://sec.example.com/advisory").closest("a")
+    const ref = screen
+      .getByText("https://sec.example.com/advisory")
+      .closest("a")
     expect(ref?.getAttribute("rel")).toContain("noopener")
     expect(ref?.getAttribute("target")).toBe("_blank")
     const cwe = screen.getByText("CWE-420").closest("a")
@@ -239,7 +252,7 @@ describe("a record's page", () => {
       expect(
         calls().some((p) =>
           p.startsWith(
-            "/api/vulnerabilities/matches/?cve=CVE-2023-20198&status=all"
+            "/api/vulnerabilities/matches/?cve=CVE-2023-20198&status=all&excepted=all"
           )
         )
       ).toBe(true)

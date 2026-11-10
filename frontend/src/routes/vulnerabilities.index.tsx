@@ -43,8 +43,15 @@ export const VULN_EXTRA_FACETS: ServerFacetExtra[] = [
   { id: "application", label: "Application", kind: "enum" },
 ]
 
-export const RECORD_FACETS = ["priority", "severity", "kev"]
-export const MATCH_FACETS = ["priority", "severity", "kev", "confidence", "via"]
+export const RECORD_FACETS = ["priority", "severity", "kev", "excepted"]
+export const MATCH_FACETS = [
+  "priority",
+  "severity",
+  "kev",
+  "confidence",
+  "via",
+  "excepted",
+]
 
 function VulnerabilitiesPage() {
   const settings = useVulnSettings()
@@ -52,7 +59,8 @@ function VulnerabilitiesPage() {
   const write = useSearchWriter()
   const view: View = search.view === "objects" ? "objects" : "records"
   if (settings.isLoading) return <Loading />
-  if (!settings.enabled) return <FeatureOff canManage={!!settings.data?.can_manage} />
+  if (!settings.enabled)
+    return <FeatureOff canManage={!!settings.data?.can_manage} />
   // The rail's facets mean the same in both views, so they stay; the page
   // and the sort start over.
   const viewSwitch = (
@@ -124,7 +132,11 @@ function RecordsView({ viewSwitch }: { viewSwitch: ReactNode }) {
           activeCount: list.activeCount,
         },
       }}
-      search={{ value: q, onChange: setQ, placeholder: "Filter by id, summary…" }}
+      search={{
+        value: q,
+        onChange: setQ,
+        placeholder: "Filter by id, summary…",
+      }}
       actions={viewSwitch}
       query={list.query}
     >
@@ -173,7 +185,11 @@ function MatchesView({ viewSwitch }: { viewSwitch: ReactNode }) {
           activeCount: list.activeCount,
         },
       }}
-      search={{ value: q, onChange: setQ, placeholder: "Filter by id, summary…" }}
+      search={{
+        value: q,
+        onChange: setQ,
+        placeholder: "Filter by id, summary…",
+      }}
       actions={viewSwitch}
       query={list.query}
     >

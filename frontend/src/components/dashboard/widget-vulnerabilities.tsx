@@ -6,7 +6,10 @@ import type { VulnPriority, VulnSummary } from "@/lib/api"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
-import { PRIORITY_LABELS, PRIORITY_ORDER } from "@/components/vulnerabilities/badges"
+import {
+  PRIORITY_LABELS,
+  PRIORITY_ORDER,
+} from "@/components/vulnerabilities/badges"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 
 // Dashboard widget "Vulnerabilities" (#451): open records per priority, the
@@ -34,7 +37,7 @@ export function vulnTiles(s: VulnSummary): Tile[] {
     ...PRIORITY_ORDER.map((p) => ({
       key: p,
       label: PRIORITY_LABELS[p],
-      n: s.by_priority[p] ?? 0,
+      n: s.by_priority[p],
       search: { priority: p },
     })),
     { key: "kev", label: "Known exploited", n: s.kev, search: { kev: "yes" } },
@@ -56,8 +59,7 @@ export function VulnerabilitiesWidget() {
     staleTime: 60_000,
   })
   if (settings.isLoading) return <Loading className="min-h-[80px]" />
-  if (!settings.enabled)
-    return <EmptyState title="Vulnerability data is off" />
+  if (!settings.enabled) return <EmptyState title="Vulnerability data is off" />
   if (q.isLoading) return <Loading className="min-h-[80px]" />
   if (q.isError) return <QueryError error={q.error} />
   if (!q.data) return null

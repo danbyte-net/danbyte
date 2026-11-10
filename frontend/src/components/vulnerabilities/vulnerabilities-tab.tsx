@@ -21,11 +21,7 @@ import type { VulnMatchColumnId } from "@/components/columns/vulnerability-match
 // `?confidence=`). The page shows the tab only while the feature is on.
 
 export type VulnSubject =
-  | "device"
-  | "virtual_machine"
-  | "platform"
-  | "application"
-  | "record"
+  "device" | "virtual_machine" | "platform" | "application" | "record"
 
 const PATH: Record<Exclude<VulnSubject, "record">, string> = {
   device: "devices",
@@ -37,8 +33,8 @@ const PATH: Record<Exclude<VulnSubject, "record">, string> = {
 /** Every match row of the object, open and resolved. */
 export function matchesUrl(kind: VulnSubject, id: string): string {
   if (kind === "record")
-    return `/api/vulnerabilities/matches/?cve=${encodeURIComponent(id)}&status=all&page_size=1000`
-  return `/api/${PATH[kind]}/${id}/vulnerabilities/?status=all&page_size=500`
+    return `/api/vulnerabilities/matches/?cve=${encodeURIComponent(id)}&status=all&excepted=all&page_size=1000`
+  return `/api/${PATH[kind]}/${id}/vulnerabilities/?status=all&excepted=all&page_size=500`
 }
 
 const OMIT: Record<VulnSubject, VulnMatchColumnId[]> = {
@@ -66,6 +62,7 @@ export const VULN_TAB_PARAMS = [
   "kev",
   "confidence",
   "via",
+  "excepted",
 ] as const
 
 /** Keep the tab's filter params through a route's `validateSearch`. */

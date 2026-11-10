@@ -318,7 +318,10 @@ function Body({ record: r }: { record: VulnRecordDetail }) {
               </h2>
               <ul className="space-y-1 text-sm">
                 {r.references.map((ref) => (
-                  <li key={ref.url} className="flex flex-wrap items-center gap-2">
+                  <li
+                    key={ref.url}
+                    className="flex flex-wrap items-center gap-2"
+                  >
                     <OutLink href={ref.url}>{ref.url}</OutLink>
                     {(ref.tags ?? []).map((t) => (
                       <Badge key={t} variant="outline">

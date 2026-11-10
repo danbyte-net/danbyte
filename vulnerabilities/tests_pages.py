@@ -340,3 +340,44 @@ class VexTests(PagesBase):
         states = {v["analysis"]["state"]: {a["ref"] for a in v["affects"]} for v in ones}
         self.assertEqual(states["not_affected"], {f"danbyte:device:{self.d_b.pk}:os"})
         self.assertEqual(len({v["bom-ref"] for v in ones}), 2)
+
+
+class ExceptedTests(PagesBase):
+    """An exception (Phase 8) on CVE-2024-0001 for b1: out of the counts,
+    the column and the open work; in the Excepted facet and the VEX."""
+
+    def setUp(self):
+        from .models import VulnerabilityException
+
+        VulnerabilityException.objects.create(
+            tenant=self.tenant, cve=self.cve, device=self.d_b, status="not_applicable",
+            reason="Web UI off", owner=self.admin, owner_name="root",
+            analysis_justification="code_not_reachable")
+        self.login(self.admin)
+
+    def test_record_list_and_facet(self):
+        rows = {x["id"]: x for x in self.client.get("/api/vulnerabilities/").json()["results"]}
+        self.assertEqual(rows["CVE-2024-0001"]["devices"], 1)
+        self.assertEqual(rows["CVE-2024-0001"]["excepted"], 1)
+        r = self.client.get("/api/vulnerabilities/?f_excepted=yes").json()["results"]
+        self.assertEqual([(x["id"], x["devices"]) for x in r], [("CVE-2024-0001", 1)])
+        f = self.client.get("/api/vulnerabilities/facets/").json()["facets"]
+        self.assertEqual({o["value"]: o["count"] for o in f["excepted"]}, {"yes": 1, "no": 4})
+        m = self.client.get("/api/vulnerabilities/matches/?f_excepted=yes").json()
+        self.assertEqual(m["count"], 1)
+        self.assertEqual(m["results"][0]["exception"]["status"], "not_applicable")
+        self.assertEqual(self.client.get("/api/vulnerabilities/matches/").json()["count"], 9)
+
+    def test_column_leaves_it_out(self):
+        rows = _rows(self.client, "/api/devices/?view=table&page_size=50")
+        self.assertEqual(rows["b1"]["vulnerabilities"]["open"], 2)
+        self.assertEqual(rows["a1"]["vulnerabilities"]["open"], 4)
+
+    def test_vex_takes_the_exception(self):
+        doc = json.loads(self.client.get("/api/sbom/?vex=1").content)
+        ones = [v for v in doc["vulnerabilities"] if v["id"] == "CVE-2024-0001"]
+        states = {v["analysis"]["state"]: v for v in ones}
+        self.assertEqual({a["ref"] for a in states["not_affected"]["affects"]},
+                         {f"danbyte:device:{self.d_b.pk}:os"})
+        self.assertEqual(states["not_affected"]["analysis"]["justification"],
+                         "code_not_reachable")

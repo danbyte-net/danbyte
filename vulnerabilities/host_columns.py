@@ -13,7 +13,8 @@ The plain list takes the same as filters: ``vuln_priority=fix_first,high``
 ``cve_severity=critical,high`` (an open record of that CVSS severity).
 
 Counted like ``match_api.visible_matches``: the host is in the caller's
-list already; an application match also needs ``view`` on its install.
+list already; an application match also needs ``view`` on its install; a
+match an exception covers is left out.
 While vulnerability data is off nothing is annotated, the facets are empty
 and the filters are read but do nothing.
 """
@@ -81,11 +82,8 @@ def _open_matches(request, kind: str):
             "installedsoftware", "view")
         m = m.filter(Q(installed_software__isnull=True)
                      | Q(installed_software__in=installs.values("pk")))
-    # Phase 8 seam: once matches can be excepted, an excepted match is not
-    # open work and stays out of the counts.
-    if any(f.name == "excepted" for f in VulnerabilityMatch._meta.concrete_fields):
-        m = m.filter(excepted__isnull=True)
-    return m
+    # A match an exception covers is not open work.
+    return m.filter(excepted__isnull=True)
 
 
 def annotate(qs, request, kind: str):
