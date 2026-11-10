@@ -654,6 +654,9 @@ export interface ColumnPrefData {
   order: string[]
   /** Column ids the user has hidden. */
   hidden: string[]
+  /** Column ids pinned to the left edge, in pin order. Absent on layouts
+   * saved before pins existed - read as none. */
+  pinned?: string[]
 }
 
 export interface ColumnPref {

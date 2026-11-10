@@ -124,3 +124,50 @@ describe("ColumnsMenu", () => {
     expect((save as HTMLButtonElement).disabled).toBe(true)
   })
 })
+
+describe("ColumnsMenu pins", () => {
+  function openPins(pinned: string[]) {
+    const onApply = vi.fn()
+    render(
+      <ColumnsMenu
+        label="Columns"
+        isForced={false}
+        hasUserRow={false}
+        seq={["name", "status", "primary_ip"]}
+        labelFor={(id) => LABELS[id] ?? id}
+        isHidden={() => false}
+        onApply={onApply}
+        onReset={() => {}}
+        pinned={pinned}
+        canPin={(id) => id !== "status"}
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /columns/i }))
+    return onApply
+  }
+
+  it("offers a pin on each pinnable shown column and saves it with the layout", () => {
+    const onApply = openPins([])
+    expect(screen.queryByRole("button", { name: "Pin Status" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Pin Primary IP" }))
+    fireEvent.click(screen.getByRole("button", { name: "Pin Name" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    expect(onApply).toHaveBeenCalledWith(
+      ["name", "status", "primary_ip"],
+      [],
+      ["primary_ip", "name"]
+    )
+  })
+
+  it("unpins, and drops the pin of a column it hides", () => {
+    const onApply = openPins(["name", "primary_ip"])
+    fireEvent.click(screen.getByRole("button", { name: "Unpin Name" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: "Toggle Primary IP" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    expect(onApply).toHaveBeenCalledWith(
+      ["name", "status", "primary_ip"],
+      ["primary_ip"],
+      []
+    )
+  })
+})

@@ -398,6 +398,22 @@ plans, the site map), bounded boxes whose bar is already in view (a
 `max-h-*` list, a dialog's code block, a kanban board that fills its pane),
 and one-line strips (headers, tab rows, faceplates, cable traces).
 
+**Pinned columns.** Every `DataTable` lets a column be pinned to the left
+edge from the Columns menu (a Lucide `Pin` / `PinOff` button per shown
+column, labelled through the shared Tooltip). TanStack column pinning moves
+the pins left in pin order, the `select` column first whenever anything is
+pinned; `lib/column-pins.ts` sticks each at the measured width of the ones
+before it. Pins are part of the saved layout (`pinned` beside `order` and
+`hidden` in `/api/prefs/columns/<table>/`; older layouts without the key load
+unchanged). Guardrails: the stuck band is capped at 60% of the frame (later
+pins scroll), and pins are ignored in a frame under 640 px. A stuck cell is
+opaque - `--background` with the row's stripe / hover / selected tint over it
+(styles.css) - and the last one carries a 1 px `--border` hairline only while
+the table is scrolled; no shadow. Exports and prints are unaffected
+(`getVisibleLeafColumns` ignores pinning). A table where pinning makes no
+sense passes `pinnable={false}`. Known limit: a page's own `rowClassName`
+tint does not reach the stuck cells, which show the plain row colour.
+
 ## Column factories
 
 **One entity, one column factory** (`frontend/src/components/columns/`), reused

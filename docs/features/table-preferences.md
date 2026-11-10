@@ -26,6 +26,25 @@ off.
     A few columns (like the row-select checkbox and the row-actions menu) always
     stay in place and can't be moved or hidden.
 
+## Pinned columns
+
+Click the pin beside a column under **Shown** to pin it to the left edge,
+then **Save**. A pinned column moves to the left, in the order you pinned
+them, and stays in view while the rest of the table scrolls sideways - pin
+**Name** on Devices and the name stays beside every row you scroll to. On a
+table with checkboxes the checkbox column is pinned first. Click the pin
+again to unpin. Tables on detail tabs have the same pin in their
+**Columns** menu; a table that keeps no saved layout keeps its pins until
+you leave the page.
+
+- Pins are saved with the rest of your layout, per table, and a published
+  tenant default carries them too.
+- Pinned columns take at most 60% of the table's width. A pin that would go
+  past that stays at the left but scrolls with the table, so there is always
+  something left to scroll.
+- On a phone-width window (a table under 640 px wide) pins are ignored.
+- Hiding a column drops its pin. Exports keep the table's own column order.
+
 ## Wide tables
 
 A table with more columns than fit the window scrolls sideways. Its

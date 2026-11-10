@@ -209,6 +209,7 @@ function AdminTableRow({
       return putTableDefault(table.id, {
         order: mine.data?.order ?? [],
         hidden: mine.data?.hidden ?? [],
+        ...(mine.data?.pinned ? { pinned: mine.data.pinned } : {}),
         forced,
       })
     },

@@ -15,7 +15,14 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { ChevronDown, GripVertical, Lock, RotateCcw } from "lucide-react"
+import {
+  ChevronDown,
+  GripVertical,
+  Lock,
+  Pin,
+  PinOff,
+  RotateCcw,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -25,6 +32,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 /** Where a hidden column is listed under "Available": the table's own
@@ -38,6 +50,8 @@ const GROUPS: { id: ColumnGroup; label: string }[] = [
   { id: "related", label: "Related" },
   { id: "custom", label: "Custom fields" },
 ]
+
+const NO_PINS: string[] = []
 
 /** A search box appears once the menu lists more than this many columns. */
 const SEARCH_FROM = 12
@@ -59,10 +73,15 @@ export interface ColumnsMenuProps {
   /** The menu is about to be used - hover, focus or open. Lets the table
    * start fetching the columns it only offers on demand. */
   onIntent?: () => void
-  /** Commit a full layout (order + hidden ids) in one atomic write. The order
-   * lists the shown columns first, then the hidden ones. */
-  onApply: (order: string[], hidden: string[]) => void
+  /** Commit a full layout (order + hidden ids, and the pins when the table
+   * offers them) in one atomic write. The order lists the shown columns
+   * first, then the hidden ones. */
+  onApply: (order: string[], hidden: string[], pinned?: string[]) => void
   onReset: () => void
+  /** Saved pins, in pin order. */
+  pinned?: string[]
+  /** Which columns may be pinned; omit for a table without pins. */
+  canPin?: (id: string) => boolean
 }
 
 /**
@@ -85,8 +104,11 @@ export function ColumnsMenu({
   onIntent,
   onApply,
   onReset,
+  pinned: savedPins = NO_PINS,
+  canPin,
 }: ColumnsMenuProps) {
   const [open, setOpen] = useState(false)
+  const [pins, setPins] = useState<string[]>(savedPins)
   const [order, setOrder] = useState<string[]>(seq)
   const [hidden, setHidden] = useState<Set<string>>(
     () => new Set(seq.filter(isHidden))
@@ -98,6 +120,7 @@ export function ColumnsMenu({
     if (!open) return
     setOrder(seq)
     setHidden(new Set(seq.filter(isHidden)))
+    setPins(savedPins)
     setQuery("")
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -121,13 +144,17 @@ export function ColumnsMenu({
   }, [seqKey])
 
   const shown = order.filter((id) => !hidden.has(id))
+  // A hidden column keeps no pin.
+  const shownPins = pins.filter((id) => !hidden.has(id))
+  const pinsDirty = shownPins.join(" ") !== savedPins.join(" ")
   const dirty = useMemo(() => {
+    if (pinsDirty) return true
     const savedShown = seq.filter((id) => !isHidden(id))
     if (savedShown.length !== shown.length) return true
     for (let i = 0; i < shown.length; i++)
       if (shown[i] !== savedShown[i]) return true
     return seq.some((id) => isHidden(id) !== hidden.has(id))
-  }, [shown, hidden, seq, isHidden])
+  }, [shown, hidden, seq, isHidden, pinsDirty])
 
   const needle = query.trim().toLowerCase()
   const matches = (id: string) =>
@@ -161,8 +188,7 @@ export function ColumnsMenu({
     })
   }
 
-  const hide = (id: string) =>
-    setHidden((prev) => new Set(prev).add(id))
+  const hide = (id: string) => setHidden((prev) => new Set(prev).add(id))
   const show = (id: string) => {
     // A column ticked from Available lands at the end of Shown.
     setOrder((prev) => {
@@ -182,7 +208,8 @@ export function ColumnsMenu({
 
   const save = () => {
     const hiddenIds = order.filter((id) => hidden.has(id))
-    onApply([...shown, ...hiddenIds], hiddenIds)
+    if (canPin) onApply([...shown, ...hiddenIds], hiddenIds, shownPins)
+    else onApply([...shown, ...hiddenIds], hiddenIds)
     setOpen(false)
   }
 
@@ -245,6 +272,14 @@ export function ColumnsMenu({
                       checked
                       draggable={!needle}
                       onToggle={() => hide(id)}
+                      pinned={canPin?.(id) ? pins.includes(id) : undefined}
+                      onPin={() =>
+                        setPins((prev) =>
+                          prev.includes(id)
+                            ? prev.filter((x) => x !== id)
+                            : [...prev, id]
+                        )
+                      }
                     />
                   ))}
                 </SortableContext>
@@ -356,12 +391,17 @@ function ColumnRow({
   checked,
   draggable,
   onToggle,
+  pinned,
+  onPin,
 }: {
   id: string
   label: string
   checked: boolean
   draggable: boolean
   onToggle: () => void
+  /** Pinned to the left edge; undefined when the column cannot be pinned. */
+  pinned?: boolean
+  onPin?: () => void
 }) {
   const {
     attributes,
@@ -399,6 +439,31 @@ function ColumnRow({
         aria-label={`Toggle ${label}`}
       />
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {pinned !== undefined && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${pinned ? "Unpin" : "Pin"} ${label}`}
+              aria-pressed={pinned}
+              onClick={onPin}
+              className={cn(
+                "-mr-0.5 rounded p-0.5 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+                pinned ? "text-foreground" : "text-muted-foreground/60"
+              )}
+            >
+              {pinned ? (
+                <PinOff className="h-3.5 w-3.5" />
+              ) : (
+                <Pin className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left" variant="default">
+            {pinned ? "Unpin" : "Pin left"}
+          </TooltipContent>
+        </Tooltip>
+      )}
     </div>
   )
 }

@@ -73,7 +73,17 @@ def _validate_payload(raw_body: bytes) -> dict:
         raise ValueError("order must be a list of strings")
     if not isinstance(hidden, list) or not all(isinstance(x, str) for x in hidden):
         raise ValueError("hidden must be a list of strings")
-    return {"order": order, "hidden": hidden}
+    out = {"order": order, "hidden": hidden}
+    # Columns pinned to the left edge, in pin order. Optional: a layout saved
+    # before pins existed has no key and reads as "nothing pinned".
+    if "pinned" in data:
+        pinned = data["pinned"]
+        if not isinstance(pinned, list) or not all(
+            isinstance(x, str) for x in pinned
+        ):
+            raise ValueError("pinned must be a list of strings")
+        out["pinned"] = list(dict.fromkeys(pinned))
+    return out
 
 
 def _effective_pref(user, tenant, table_id):
