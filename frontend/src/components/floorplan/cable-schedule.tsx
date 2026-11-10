@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Download } from "lucide-react"
 
 import { Field, FormCheckbox } from "@/components/forms"
@@ -25,14 +26,17 @@ import type { Paper, PaperChoice } from "@/lib/diagram/sheet"
 import { downloadBlob, toCsv, toXlsx } from "@/lib/table-export"
 
 import type { PlanBox } from "./plan-svg"
+import { MAX_TRACES, TracePicker } from "./trace-picker"
 
 /**
  * **Cable schedule**: the plan's cables as a pull sheet - every cable with
  * a route on this floor or an end on it, its ends, route, lengths and
  * notes, grouped by room or by tray, with totals per type. The server
  * writes the rows (hidden cables counted, not listed); the PDF is laid
- * out there too, optionally under a picture of the plan with its routes;
- * CSV and XLSX go through the table export.
+ * out there too, optionally under a picture of the plan with its routes
+ * (its cables drawn there as bundles, or as the page draws them), with
+ * close-ups and a trace page per chosen cable; CSV and XLSX go through the
+ * table export, one flat row per cable.
  */
 
 export type ScheduleGroup = "room" | "tray"
@@ -172,42 +176,115 @@ export interface CloseupPage {
   cables: number
 }
 
-/** The plan drawn for each close-up the PDF will have, by label: the
- * server clusters the cable ends and scales each page; each is drawn
- * framed to its box at its scale, so cables and hatches suit the paper. */
-export async function closeupSvgs(
-  planId: string,
+/** A trace page: one cable, its box and scale. */
+export interface TracePage {
+  label: string
+  cable: string
+  box: [number, number, number, number]
+  mm_per_px: number
+}
+
+/** How the cables print: drawn by the server as bundles, or as the page
+ * draws each one. */
+export type ScheduleCables = "bundles" | "lines"
+
+/** Draws the plan for paper: the overview (no `closeup`) or one page
+ * framed to its box at its scale; `cables: false` leaves the cables out
+ * (the server draws them as bundles). */
+export type SchedulePlanSvg = (
+  paper: PaperChoice,
+  closeup?: { box: PlanBox; mmPerPx: number },
+  opts?: { cables?: boolean }
+) => Promise<string | null>
+
+/** The layout endpoint's query: the overview's box (its viewBox) unless
+ * close-ups are off, and the cables to trace. */
+export function layoutQuery(
   sheet: PaperChoice,
-  overview: string,
-  draw: (
-    paper: PaperChoice,
-    closeup: { box: PlanBox; mmPerPx: number }
-  ) => Promise<string | null>
-): Promise<Record<string, string> | null> {
-  const vb = /viewBox="([^"]+)"/.exec(overview)?.[1]
-  if (!vb) return null
+  overview: string | null,
+  opts: { closeups: boolean; trace: readonly string[] }
+): URLSearchParams | null {
+  const vb = overview ? /viewBox="([^"]+)"/.exec(overview)?.[1] : undefined
+  const closeups = opts.closeups && !!vb
+  if (!closeups && !opts.trace.length) return null
   const params = new URLSearchParams({
     size: sheet.size,
     orientation: sheet.orientation,
-    closeups: "auto",
-    box: vb
-      .trim()
-      .split(/[\s,]+/)
-      .join(","),
+    closeups: closeups ? "auto" : "off",
   })
-  const { pages } = await api<{ pages: CloseupPage[] }>(
-    `/api/floor-plans/${planId}/cable-schedule/closeups/?${params}`
-  )
-  const out: Record<string, string> = {}
+  if (vb)
+    params.set(
+      "box",
+      vb
+        .trim()
+        .split(/[\s,]+/)
+        .join(",")
+    )
+  if (opts.trace.length) params.set("trace", opts.trace.join(","))
+  return params
+}
+
+/** The plan drawn for each close-up (by label) and trace page (by cable)
+ * the PDF will have: the server clusters the cable ends, frames each
+ * traced cable and scales each page; each is drawn framed to its box at
+ * its scale, so cables and hatches suit the paper. A trace page's plan is
+ * drawn without cables - the server draws them. */
+export async function scheduleDrawings(
+  planId: string,
+  sheet: PaperChoice,
+  overview: string | null,
+  opts: { closeups: boolean; trace: readonly string[]; cables: boolean },
+  draw: SchedulePlanSvg
+): Promise<{
+  closeups: Record<string, string> | null
+  traces: Record<string, string> | null
+}> {
+  const params = layoutQuery(sheet, overview, opts)
+  if (!params) return { closeups: null, traces: null }
+  const { pages, traces } = await api<{
+    pages: CloseupPage[]
+    traces?: TracePage[]
+  }>(`/api/floor-plans/${planId}/cable-schedule/closeups/?${params}`)
+  const closeups: Record<string, string> = {}
   for (const p of pages) {
     const [x, y, w, h] = p.box
-    const svg = await draw(sheet, {
-      box: { x, y, w, h },
-      mmPerPx: p.mm_per_px,
-    })
-    if (svg) out[p.label] = svg
+    const svg = await draw(
+      sheet,
+      { box: { x, y, w, h }, mmPerPx: p.mm_per_px },
+      { cables: opts.cables }
+    )
+    if (svg) closeups[p.label] = svg
   }
-  return Object.keys(out).length ? out : null
+  const traced: Record<string, string> = {}
+  for (const p of traces ?? []) {
+    const [x, y, w, h] = p.box
+    const svg = await draw(
+      sheet,
+      { box: { x, y, w, h }, mmPerPx: p.mm_per_px },
+      { cables: false }
+    )
+    if (svg) traced[p.cable] = svg
+  }
+  return {
+    closeups: Object.keys(closeups).length ? closeups : null,
+    traces: Object.keys(traced).length ? traced : null,
+  }
+}
+
+const CABLE_ITEMS: { value: ScheduleCables; label: string }[] = [
+  { value: "bundles", label: "Bundles" },
+  { value: "lines", label: "Each cable" },
+]
+
+/** The schedule's rows, for the trace picker. */
+export function useScheduleRows(planId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["floor-plan", planId, "cable-schedule", "rows"],
+    queryFn: () =>
+      api<CableSchedule>(`/api/floor-plans/${planId}/cable-schedule/`),
+    enabled,
+    staleTime: 30_000,
+  })
 }
 
 export function CableScheduleDialog({
@@ -216,36 +293,65 @@ export function CableScheduleDialog({
   open,
   onOpenChange,
   planSvg,
+  selectedCables,
 }: {
   planId: string
   planName: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The plan with its routes, for the PDF's first page; `closeup`: one
-   * close-up page, framed to its box at its scale. */
-  planSvg?: (
-    paper: PaperChoice,
-    closeup?: { box: PlanBox; mmPerPx: number }
-  ) => Promise<string | null>
+  /** The plan for the PDF: its first page, and each close-up and trace
+   * page framed to its box at its scale. */
+  planSvg?: SchedulePlanSvg
+  /** Cables selected on the plan: the trace pages to start with. */
+  selectedCables?: readonly string[]
 }) {
   const [group, setGroup] = useState<ScheduleGroup>("room")
   const [format, setFormat] = useState<ScheduleFormat>("pdf")
   const [paper, setPaper] = useState<Paper>("a4")
   const [withPlan, setWithPlan] = useState(true)
   const [closeups, setCloseups] = useState(true)
+  const [cables, setCables] = useState<ScheduleCables>("bundles")
+  const [tracePages, setTracePages] = useState(false)
+  const [trace, setTrace] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const base = `${planName} cable schedule`
+  // Opened with cables selected on the plan: those are the trace pages.
+  const [wasOpen, setWasOpen] = useState(false)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open && selectedCables?.length) {
+      setTrace(selectedCables.slice(0, MAX_TRACES))
+      setTracePages(true)
+    }
+  }
+  const pdf = format === "pdf" && !!planSvg
+  const schedule = useScheduleRows(planId, open && pdf && tracePages)
+  const listed = schedule.data
+    ? new Set(schedule.data.rows.map((r) => r.id))
+    : null
+  // Only the schedule's own cables: a selection may hold others.
+  const chosen = listed ? trace.filter((id) => listed.has(id)) : trace
 
   const run = async () => {
     setBusy(true)
     try {
       if (format === "pdf") {
         const sheet: PaperChoice = { size: paper, orientation: "landscape" }
-        const svg = withPlan && planSvg ? await planSvg(sheet) : null
-        const details =
-          svg && closeups && planSvg
-            ? await closeupSvgs(planId, sheet, svg, planSvg)
+        const bundles = cables === "bundles"
+        const wanted = pdf && tracePages ? chosen : []
+        const svg =
+          withPlan && planSvg
+            ? await planSvg(sheet, undefined, { cables: !bundles })
             : null
+        const drawn = planSvg
+          ? await scheduleDrawings(
+              planId,
+              sheet,
+              svg,
+              { closeups: !!svg && closeups, trace: wanted, cables: !bundles },
+              planSvg
+            )
+          : { closeups: null, traces: null }
         const { url } = await api<{ url: string }>(
           `/api/floor-plans/${planId}/cable-schedule/pdf/?print=1`,
           {
@@ -254,7 +360,12 @@ export function CableScheduleDialog({
               group,
               paper: sheet,
               ...(svg ? { svg, closeups: closeups ? "auto" : "off" } : {}),
-              ...(details ? { closeup_svgs: details } : {}),
+              ...(drawn.closeups ? { closeup_svgs: drawn.closeups } : {}),
+              ...((svg || wanted.length) && bundles
+                ? { cables: "bundles" }
+                : {}),
+              ...(wanted.length ? { trace: wanted } : {}),
+              ...(drawn.traces ? { trace_svgs: drawn.traces } : {}),
             }),
           }
         )
@@ -323,7 +434,16 @@ export function CableScheduleDialog({
               />
             </Field>
           )}
-          {format === "pdf" && planSvg && (
+          {pdf && (
+            <Field label="Cables">
+              <SegmentedTabs<ScheduleCables>
+                items={CABLE_ITEMS}
+                value={cables}
+                onValueChange={setCables}
+              />
+            </Field>
+          )}
+          {pdf && (
             <FormCheckbox
               label="Plan on the first page"
               checked={withPlan}
@@ -331,12 +451,27 @@ export function CableScheduleDialog({
               className="items-center text-[13px]"
             />
           )}
-          {format === "pdf" && planSvg && withPlan && (
+          {pdf && withPlan && (
             <FormCheckbox
               label="Close-ups of the cabled parts"
               checked={closeups}
               onChange={setCloseups}
               className="items-center text-[13px]"
+            />
+          )}
+          {pdf && (
+            <FormCheckbox
+              label="Trace pages"
+              checked={tracePages}
+              onChange={setTracePages}
+              className="items-center text-[13px]"
+            />
+          )}
+          {pdf && tracePages && (
+            <TracePicker
+              rows={schedule.data?.rows}
+              value={chosen}
+              onChange={setTrace}
             />
           )}
         </div>

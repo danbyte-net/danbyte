@@ -1078,11 +1078,19 @@ export function FloorPlanEditor({
   /** A report sheet (report-dialog.tsx): this floor framed to the scope's
    * box at the sheet's scale - the view with the screen's callouts - or
    * another level of the building, drawn from its own rows. */
-  const drawReportSheet: DrawSheet = async ({ scope, paper, floor, area }) => {
+  const drawReportSheet: DrawSheet = async ({
+    scope,
+    paper,
+    floor,
+    area,
+    cables = true,
+  }) => {
     if (!plan) return null
+    // Bundles: the server draws the cables, the sheet goes without them.
+    const links = prefs.showCableLinks && cables
     if (floor && floor !== plan.id)
       return drawLevel(floor, paper, {
-        showCableLinks: prefs.showCableLinks,
+        showCableLinks: links,
         cableColorBy: prefs.cableColorBy,
         bundleCables: prefs.bundleCables,
         showCableLabels: prefs.showCableLabels,
@@ -1109,7 +1117,7 @@ export function FloorPlanEditor({
     }
     const svg = exportSvg(
       paper,
-      prefs.showCableLinks,
+      links,
       true,
       { box, mmPerPx: reportScale(box, paper) },
       true,
@@ -2174,6 +2182,10 @@ export function FloorPlanEditor({
         }
         hiddenTiles={[...hiddenTileIds].filter((t) => !isTemp(t))}
         draw={drawReportSheet}
+        planSvg={async (paper, closeup) =>
+          exportSvg(paper, false, true, closeup) || null
+        }
+        selectedCables={ed.highlightCableIds}
       />
       <CableScheduleDialog
         planId={plan.id}
@@ -2182,9 +2194,10 @@ export function FloorPlanEditor({
         onOpenChange={setScheduleOpen}
         // Built from the plan's data, not the 2D canvas, so it works from
         // the 3D view too.
-        planSvg={async (paper, closeup) =>
-          exportSvg(paper, true, true, closeup) || null
+        planSvg={async (paper, closeup, opts) =>
+          exportSvg(paper, opts?.cables ?? true, true, closeup) || null
         }
+        selectedCables={ed.highlightCableIds}
       />
       <SnapAllDialog
         planId={plan.id}

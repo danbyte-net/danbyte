@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { CableSchedule, CableScheduleRow } from "@/lib/api"
 
-import { scheduleTable } from "./cable-schedule"
+import { layoutQuery, scheduleDrawings, scheduleTable } from "./cable-schedule"
+import { traceOption } from "./trace-picker"
 
 // The cable schedule as the CSV/XLSX table: one line per cable in each of
 // its groups, then the totals per type and the hidden count.
@@ -133,5 +134,87 @@ describe("scheduleTable", () => {
       ["Hidden", "3 cables hidden", "", "", ""],
     ])
     for (const r of rows) expect(r).toHaveLength(columns.length)
+  })
+})
+
+// The PDF's pages: the layout asked for (close-ups and trace pages), each
+// page drawn framed to its box - a trace page always without its cables.
+
+const SHEET = { size: "a4", orientation: "landscape" } as const
+const OVERVIEW = '<svg viewBox="0 0 800 400"></svg>'
+
+describe("layoutQuery", () => {
+  it("asks for close-ups by the overview's box, and trace pages", () => {
+    const q = layoutQuery(SHEET, OVERVIEW, {
+      closeups: true,
+      trace: ["a", "b"],
+    })
+    expect(Object.fromEntries(q!)).toEqual({
+      size: "a4",
+      orientation: "landscape",
+      closeups: "auto",
+      box: "0,0,800,400",
+      trace: "a,b",
+    })
+  })
+
+  it("asks for trace pages alone without an overview", () => {
+    const q = layoutQuery(SHEET, null, { closeups: true, trace: ["a"] })
+    expect(q!.get("closeups")).toBe("off")
+    expect(q!.has("box")).toBe(false)
+  })
+
+  it("asks nothing when there is nothing to lay out", () => {
+    expect(layoutQuery(SHEET, null, { closeups: true, trace: [] })).toBeNull()
+    expect(
+      layoutQuery(SHEET, OVERVIEW, { closeups: false, trace: [] })
+    ).toBeNull()
+  })
+})
+
+describe("scheduleDrawings", () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it("draws each close-up as asked and each trace page without cables", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          pages: [
+            { label: "A", box: [0, 0, 100, 50], mm_per_px: 0.5, cables: 3 },
+          ],
+          traces: [
+            { label: "T1", cable: "c9", box: [10, 0, 60, 30], mm_per_px: 0.8 },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    )
+    const draw = vi.fn(() => Promise.resolve("<svg/>"))
+    const out = await scheduleDrawings(
+      "p1",
+      SHEET,
+      OVERVIEW,
+      { closeups: true, trace: ["c9"], cables: false },
+      draw
+    )
+    expect(out).toEqual({ closeups: { A: "<svg/>" }, traces: { c9: "<svg/>" } })
+    expect(draw.mock.calls).toEqual([
+      [
+        SHEET,
+        { box: { x: 0, y: 0, w: 100, h: 50 }, mmPerPx: 0.5 },
+        { cables: false },
+      ],
+      [
+        SHEET,
+        { box: { x: 10, y: 0, w: 60, h: 30 }, mmPerPx: 0.8 },
+        { cables: false },
+      ],
+    ])
+  })
+})
+
+describe("traceOption", () => {
+  it("names a cable by its label and ends", () => {
+    expect(traceOption(row({}))).toBe("C-1 · sw-a · ge-1 → Hidden")
   })
 })
