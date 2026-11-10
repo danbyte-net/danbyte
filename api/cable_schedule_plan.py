@@ -412,6 +412,40 @@ def closeup_layout(geometry: dict[str, dict], *, content: Box, grid: Box,
     return ordered, dropped
 
 
+#: At most this many trace pages, one cable each.
+MAX_TRACES = 20
+
+
+def trace_layout(geometry: dict[str, dict], ids: list[str], *, grid: Box,
+                 page_mm: tuple[float, float], px_per_cell: float | None = None,
+                 cap: int = MAX_TRACES) -> tuple[list[Page], int]:
+    """A page per cable of ``ids`` (in order, the first ``cap``): the plan
+    framed to the cable's route and end tiles with a margin, page-shaped,
+    scaled as a close-up is (:func:`_frame`), labelled T1, T2, … Second
+    value: the ids left out by the cap."""
+    w_mm, h_mm = page_mm
+    _lo, hi = scale_limits(px_per_cell)
+    pages = []
+    for cid in ids[:cap]:
+        geo = geometry.get(cid) or {}
+        boxes = list(geo.get("boxes", ()))
+        for r in geo.get("runs", ()):
+            pts = r["points"]
+            if pts:
+                xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+                boxes.append((min(xs), min(ys), max(xs), max(ys)))
+        if not boxes:
+            for line in geo.get("lines", ()):
+                if line:
+                    xs, ys = [p[0] for p in line], [p[1] for p in line]
+                    boxes.append((min(xs), min(ys), max(xs), max(ys)))
+        if not boxes:
+            continue
+        box, s = _frame([End(tuple(b)) for b in boxes], grid, w_mm, h_mm, hi)
+        pages.append(Page(f"T{len(pages) + 1}", box, s, cables=[cid]))
+    return pages, max(0, len(ids) - cap)
+
+
 def to_px(geometry: dict[str, dict]) -> dict[str, dict]:
     """Cable geometry in plan cells (``cable_schedule.build``) in plan px."""
     out = {}
@@ -421,6 +455,14 @@ def to_px(geometry: dict[str, dict]) -> dict[str, dict]:
             "boxes": [tuple(v * CELL for v in b) for b in geo["boxes"]],
             "ends": [(*(v * CELL for v in e[:4]), e[4]) for e in geo.get("ends", ())],
         }
+        if "runs" in geo:
+            out[cid]["runs"] = [
+                {"points": [(x * CELL, y * CELL) for x, y in r["points"]],
+                 "documented": r["documented"]} for r in geo["runs"]
+            ]
+            out[cid]["terms"] = [
+                (t[0], *(v * CELL for v in t[1:5]), t[5], t[6]) for t in geo.get("terms", ())
+            ]
     return out
 
 
@@ -565,12 +607,18 @@ def encode(img, fmt: str = "") -> str | None:
 def compose(posted: etree._Element | None, box: Box, *, grid: tuple[float, float],
             background: etree._Element | None = None, cad: etree._Element | None = None,
             frames: list[Page] | None = None, ends: list[End] | None = None,
-            mm_per_px: float = 1.0) -> bytes:
+            mm_per_px: float = 1.0, bundles=None, tiles=(), trace: str | None = None,
+            stubs: bool = False) -> bytes:
     """One SVG of ``box``: paper, the background, the CAD drawing clipped to
     the grid, the (sanitised) posted plan drawing over them, then a
     close-up's end tiles with their names (:func:`_end_names`) or the
     overview's close-up frames, all in plan pixels, strokes and type sized
-    in paper mm at ``mm_per_px``."""
+    in paper mm at ``mm_per_px``.
+
+    ``bundles`` (``cable_bundles.Bundles``) draws the cables over the plan
+    and under the names, their counts clear of ``tiles`` (plan px boxes),
+    the posted drawing's names and the end names; with ``trace``, faint,
+    and that one cable over them (:meth:`Bundles.draw_trace`)."""
     out = etree.Element(_q("svg"), nsmap={None: SVG_NS})
     out.set("viewBox", box.view_box())
     out.set("width", _fmt(box.w))
@@ -594,8 +642,21 @@ def compose(posted: etree._Element | None, box: Box, *, grid: tuple[float, float
             top.set("font-family", posted.get("font-family"))
         for child in posted:
             top.append(copy.deepcopy(child))
+    holder = etree.SubElement(out, _q("g")) if bundles is not None else None
+    names: list[Box] = []
     if ends:
-        _end_names(out, box, ends, mm_per_px)
+        names = _end_names(out, box, ends, mm_per_px)
+    if bundles is not None:
+        from .cable_bundles import Rect, text_boxes
+
+        taken = [Rect(*t) for t in tiles]
+        taken += text_boxes(posted)
+        taken += [Rect(b.x, b.y, b.x2, b.y2) for b in names]
+        bundles.draw(holder, box, mm_per_px, taken=taken, faint=trace is not None,
+                     stubs=stubs and trace is None,
+                     centre=(grid[0] / 2, grid[1] / 2))
+        if trace is not None:
+            bundles.draw_trace(out, trace, box, mm_per_px, avoid=text_boxes(posted))
     if frames:
         line = 0.35 / mm_per_px
         size = 3.2 / mm_per_px
@@ -639,7 +700,7 @@ def end_label(names: list[str], limit: int = 3) -> str:
     return f"{', '.join(names[:limit])} +{len(names) - limit}"
 
 
-def _end_names(out: etree._Element, box: Box, ends: list[End], mm_per_px: float) -> None:
+def _end_names(out: etree._Element, box: Box, ends: list[End], mm_per_px: float) -> list[Box]:
     """Each end tile on ``box`` outlined, its device names beside it on a
     white halo: right of the tile, else left, below or above - the first
     place inside the page clear of the tiles and names already there. When
@@ -657,6 +718,7 @@ def _end_names(out: etree._Element, box: Box, ends: list[End], mm_per_px: float)
         _attrs(etree.SubElement(g, _q("rect")), x=x0, y=y0, width=x1 - x0, height=y1 - y0,
                fill="none", stroke="#18181b", stroke_width=line)
         taken.append(Box(x0, y0, x1 - x0, y1 - y0))
+    placed: list[Box] = []
     for e in shown:
         name = end_label(e.names)
         if not name:
@@ -671,6 +733,7 @@ def _end_names(out: etree._Element, box: Box, ends: list[End], mm_per_px: float)
             if not inside or any(overlaps(r, t) for t in taken):
                 continue
             taken.append(r)
+            placed.append(r)
             for halo in (True, False):
                 t = _attrs(etree.SubElement(g, _q("text")), x=lx, y=ly + size * 0.95,
                            fill="#18181b", font_size=size, font_weight=600)
@@ -679,3 +742,4 @@ def _end_names(out: etree._Element, box: Box, ends: list[End], mm_per_px: float)
                            stroke_linejoin="round")
                 t.text = name
             break
+    return placed

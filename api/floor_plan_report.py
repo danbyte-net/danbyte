@@ -632,9 +632,11 @@ def _cover_html(*, title, kind, subtitle, parts, data, generated, include, versi
 
 
 def _sheet_html(sheet: dict) -> str:
+    keys = ("legend", "area_legend") if sheet.get("bundle_legend") else (
+        "legend", "cable_legend", "area_legend")
     left = (_bar_html(sheet["bar"]) if sheet.get("bar") else "") + "".join(
-        _legend_html(sheet.get(k)) for k in ("legend", "cable_legend", "area_legend")
-    )
+        _legend_html(sheet.get(k)) for k in keys
+    ) + (sheet.get("bundle_legend") or "")
     if sheet.get("credit"):
         left += f"<div class='credit'>{escape(sheet['credit'])}</div>"
     w, h = sheet["size"]
@@ -648,70 +650,31 @@ def _sheet_html(sheet: dict) -> str:
     )
 
 
-_CABLE_COLS = (
-    "<colgroup>" + "".join(f"<col style='width:{p}%'>"
-                           for p in (9, 9, 8, 13, 8, 13, 8, 15, 6, 5, 6)) + "</colgroup>"
-)
-
-
-def _cables_html(data: dict, multi: bool) -> str:
+def _cables_html(data: dict, multi: bool, *, width_mm: float,
+                 traces: list[dict] | None = None) -> str:
+    """The cable schedule section: the schedule's tables
+    (``cable_schedule.schedule_tables``: hoisted values, route bands) under
+    the report's headings, its totals, then a trace page per traced cable."""
+    traces = traces or []
+    on_pages: dict = {}
+    for tp in traces:
+        on_pages.setdefault(tp["cable"], []).append(tp["label"])
+    tables, facts = sched.schedule_tables(
+        data, width_mm=width_mm, on_pages=on_pages, heading="h3", detail=bool(traces),
+    )
+    body = tables or "<p class='muted'>No cables in this scope.</p>"
+    n = data["total"]["count"]
+    lead = (f"<p class='facts'>All {_plural(n, 'cable')}: {facts}</p>" if facts else "")
     rows = {r["id"]: r for r in data["rows"]}
-    head = (
-        "<tr><th>Cable</th><th>Type</th><th>Status</th><th>A end</th><th>A room</th>"
-        "<th>B end</th><th>B room</th><th>Route</th><th class='n'>Computed</th>"
-        "<th class='n'>Stored</th><th>Notes</th></tr>"
-    )
-    body = []
-    for g in data["groups"]:
-        trs = []
-        for rid in g["rows"]:
-            r = rows[rid]
-            computed, stored, _source = sched.length_text(r)
-            trs.append(
-                "<tr>"
-                f"<td class='b'>{sched._swatch(r['color'])}{escape(r['label'])}</td>"
-                f"<td>{escape(r['type_display'])}</td>"
-                f"<td>{_pill(r['status'])}</td>"
-                f"<td>{escape(sched.end_text(r['a']))}</td>"
-                f"<td>{escape(sched.room_text(r['a']))}</td>"
-                f"<td>{escape(sched.end_text(r['b']))}</td>"
-                f"<td>{escape(sched.room_text(r['b']))}</td>"
-                f"<td>{escape(r['route'])}</td>"
-                f"<td class='n'>{escape(computed)}</td>"
-                f"<td class='n'>{escape(stored)}</td>"
-                f"<td class='notes'>{escape(r['notes'])}</td>"
-                "</tr>"
-            )
-        body.append(
-            f"<h3>{escape(g['name'])} <span>{_plural(len(g['rows']), 'cable')}</span></h3>"
-            f"<table class='fixed'>{_CABLE_COLS}<thead>{head}</thead>"
-            f"<tbody>{''.join(trs)}</tbody></table>"
-        )
-    if not data["groups"]:
-        body.append("<p class='muted'>No cables in this scope.</p>")
-    tot = "".join(
-        f"<tr><td>{escape(t['label'])}</td><td class='n'>{t['count']}</td>"
-        f"<td class='n'>{t['metres']:g} m</td><td class='n'>{t['unmeasured'] or ''}</td></tr>"
-        for t in data["totals"]
-    )
-    total = data["total"]
-    tot += (
-        f"<tr class='sum'><td>All</td><td class='n'>{total['count']}</td>"
-        f"<td class='n'>{total['metres']:g} m</td>"
-        f"<td class='n'>{total['unmeasured'] or ''}</td></tr>"
-    )
-    hidden = data["hidden_count"]
-    hidden_line = (
-        f"<p class='muted'>{_plural(hidden, 'cable')} hidden - not listed or counted.</p>"
-        if hidden else ""
-    )
+    pages = "".join(sched.trace_html(tp, rows[tp["cable"]], heading="h2")
+                    for tp in traces if tp["cable"] in rows)
+    note = ""
+    if data.get("trace_note"):
+        note = f"<p class='muted'>{escape(data['trace_note'])}</p>"
     return (
         "<section class='part'><h2>Cable schedule</h2>"
-        f"{''.join(body)}"
-        "<div class='keep'><h3>Totals by type</h3>"
-        "<table class='totals'><thead><tr><th>Type</th><th class='n'>Cables</th>"
-        "<th class='n'>Length</th><th class='n'>Unmeasured</th></tr></thead>"
-        f"<tbody>{tot}</tbody></table>{hidden_line}</div></section>"
+        f"{lead}{body}{sched.totals_html(data, heading='h3', note=note)}</section>"
+        f"{pages}"
     )
 
 
@@ -796,8 +759,11 @@ def _css_str(text: str) -> str:
 
 
 def report_html(*, title, kind, subtitle, parts, sheets, data, generated, include,
-                paper, orientation) -> str:
+                paper, orientation, traces: list[dict] | None = None) -> str:
     from danbyte import __version__
+
+    from .cable_bundles import BUNDLE_LEGEND_CSS
+    from .cable_schedule_plan import closeup_mm
 
     pw, ph = _page(paper, orientation)
     mm = lambda v: f"{v:.3f}mm"  # noqa: E731
@@ -808,7 +774,8 @@ def report_html(*, title, kind, subtitle, parts, sheets, data, generated, includ
     pages += [_sheet_html(s) for s in sheets]
     multi = len(parts) > 1
     if "cables" in data:
-        pages.append(_cables_html(data["cables"], multi))
+        pages.append(_cables_html(data["cables"], multi, width_mm=pw - 2 * MARGIN_MM,
+                                  traces=traces))
     if "inventory" in data:
         pages.append(_inventory_html(data["inventory"]))
     if "ports" in data:
@@ -880,6 +847,13 @@ def report_html(*, title, kind, subtitle, parts, sheets, data, generated, includ
         ".plain{background:#f4f4f5;color:#3f3f46}"
         ".totals{width:auto;min-width:90mm}"
         ".totals .sum td{font-weight:600;border-top:0.3mm solid #a1a1aa}"
+        ".facts{color:#3f3f46;margin:-1.5mm 0 2mm}"
+        f"{sched.TABLE_CSS}{BUNDLE_LEGEND_CSS}"
+        ".sfoot .bundle-legend{display:inline-block;vertical-align:top;margin-right:6mm}"
+        "section.cu{break-before:page}"
+        f".cuimg{{height:{mm(closeup_mm(paper, orientation)[0])};margin-bottom:2mm;"
+        "border:0.25mm solid #d4d4d8;border-radius:1mm;padding:1mm;box-sizing:border-box}"
+        ".cuimg img{width:100%;height:100%;object-fit:contain;display:block}"
         "</style></head><body>"
         f"{''.join(pages)}"
         "</body></html>"
@@ -919,10 +893,14 @@ def render_with_deadline(*, timeout: float = RENDER_TIMEOUT, **kwargs) -> bytes:
 # ─── Sheets ─────────────────────────────────────────────────────────────────
 
 
-def compose_sheet(part, posted: bytes | None, paper: str, orientation: str) -> dict:
+def compose_sheet(part, posted: bytes | None, paper: str, orientation: str, *,
+                  bundles: dict | None = None) -> dict:
     """A plan sheet: the posted drawing (sanitised) framed to the part's
     box, the background image and CAD drawing under it, fitted to the
-    sheet; its scale bar and credit line."""
+    sheet; its scale bar and credit line. ``bundles`` (``{user, tenant,
+    info}``): the part's cables drawn here as bundles
+    (``api/cable_bundles.py``), the page having posted the plan without
+    them, with their legend."""
     from . import cable_schedule_plan as cp
     from .floor_plan_pdf import _ready_drawing, cad_group
 
@@ -947,12 +925,25 @@ def compose_sheet(part, posted: bytes | None, paper: str, orientation: str) -> d
             log.warning("Floor plan report: CAD drawing of %s unreadable: %s", view.pk, exc)
             credit += " · left out: unreadable"
     root = etree.fromstring(posted) if posted else None
+    drawn = None
+    tiles: list = []
+    if bundles is not None:
+        from .cable_bundles import Bundles
+
+        geometry: dict = {}
+        cells: list = []
+        sched.build(part.plan, part.crop, bundles["user"], bundles["tenant"],
+                    keep_tile=part.keep, strict=part.crop is not None, geometry=geometry,
+                    routes=True, origin=part.view_crop, tile_boxes=cells)
+        drawn = Bundles(cp.to_px(geometry), bundles["info"])
+        tiles = [tuple(v * CELL for v in t) for t in cells]
     svg = cp.compose(root, box, grid=grid, background=background.element(box, scale),
-                     cad=cad, mm_per_px=scale)
+                     cad=cad, mm_per_px=scale, bundles=drawn, tiles=tiles, stubs=True)
     px_per_mm = CELL / view.cell_mm
     bar = scale_bar(scale * px_per_mm)
     return {"svg": svg, "size": (box.w * scale, box.h * scale), "bar": bar,
-            "ratio": bar["ratio"], "credit": credit}
+            "ratio": bar["ratio"], "credit": credit,
+            "bundle_legend": drawn.legend_html() if drawn is not None else ""}
 
 
 # ─── The request ────────────────────────────────────────────────────────────
@@ -993,6 +984,31 @@ class ReportScopeSerializer(serializers.Serializer):
 class ReportRequestSerializer(ReportScopeSerializer):
     paper = DrawingPaperSerializer(required=False, help_text="A3 landscape when absent.")
     sheets = ReportSheetSerializer(many=True, required=False, max_length=MAX_SHEETS)
+    cables = serializers.ChoiceField(
+        choices=sched.CABLE_MODES, required=False, default="lines",
+        help_text=sched.CABLES_HELP,
+    )
+    trace = serializers.ListField(
+        child=serializers.UUIDField(), required=False, max_length=sched.MAX_TRACE_IDS,
+        help_text="With `cables` in `include`: cables of this floor listed in the report "
+                  "to give a trace page each (the first 20). Any other id is refused.",
+    )
+    trace_svgs = serializers.DictField(
+        child=serializers.CharField(trim_whitespace=False, max_length=MAX_SVG_BYTES),
+        required=False,
+        help_text="This floor drawn without cables for each trace page, keyed by cable "
+                  "id (`cable-schedule/closeups/?trace=`).",
+    )
+
+    def validate_trace(self, value):
+        return sched._unique(value)
+
+    def validate_trace_svgs(self, value):
+        from .cable_schedule_plan import MAX_TRACES
+
+        if len(value) > MAX_TRACES:
+            raise serializers.ValidationError(f"At most {MAX_TRACES} trace pages.")
+        return value
 
 
 def _print_key(user_id, tenant_id) -> str:
@@ -1037,7 +1053,18 @@ def export_report(request, view, tenant, resolved) -> HttpResponse | Response:
         posted[str(s["floor"])] = s
     if "plan" in include and not posted:
         return Response({"sheets": ["The plan's drawing, one per sheet."]}, status=400)
+    trace = data.get("trace") or []
+    if trace and "cables" not in include:
+        return Response({"trace": ["Trace pages come with the cable schedule."]}, status=400)
     tbl = tables(parts, include, request.user, tenant, hidden)
+    traced = None
+    if trace:
+        traced = _trace_pages(request, view, tenant, resolved, tbl["cables"], trace,
+                              size, orientation)
+    bundles = None
+    if data["cables"] == "bundles" and "plan" in include:
+        info = sched.cable_info(tbl["cables"]) if "cables" in tbl else None
+        bundles = {"user": request.user, "tenant": tenant, "info": info}
     title, kind = scope_title(view, parts, data["scope"])
     _name, subtitle = plan_title(view, view.tenant.name)
     if view.stack_id:
@@ -1052,7 +1079,12 @@ def export_report(request, view, tenant, resolved) -> HttpResponse | Response:
         for i, part in enumerate(parts):
             s = posted.get(str(part.view.pk))
             clean = sanitize_svg(s["svg"]) if s else None
-            sheet = compose_sheet(part, clean, size, orientation)
+            part_bundles = bundles
+            if bundles is not None and bundles["info"] is None:
+                part_bundles = {**bundles, "info": sched.cable_info(sched.build(
+                    part.plan, part.crop, request.user, tenant, keep_tile=part.keep,
+                    strict=part.crop is not None))}
+            sheet = compose_sheet(part, clean, size, orientation, bundles=part_bundles)
             url = f"{BASE_URL}_/sheet-{i}.svg"
             pages[url] = sheet.pop("svg")
             sheet.update(url=url, title=part.level,
@@ -1061,15 +1093,26 @@ def export_report(request, view, tenant, resolved) -> HttpResponse | Response:
             sheets.append(sheet)
         return b""
 
+    def sanitize_all(text: str) -> bytes:
+        out = sanitize(text)
+        if traced is not None:
+            svgs = {cid: sanitize_svg(t) for cid, t in (data.get("trace_svgs") or {}).items()
+                    if cid in trace and t.strip()}
+            traced.compose(None, {}, svgs)
+            pages.update(traced.pages)
+            tbl["cables"]["trace_note"] = traced.trace_note()
+        return out
+
     def render(_svg: bytes) -> bytes:
         return render_with_deadline(
             pages=pages, title=title, kind=kind, subtitle=subtitle, parts=parts,
             sheets=sheets, data=tbl, generated=generated, include=include,
             paper=size, orientation=orientation,
+            traces=traced.traces if traced is not None else None,
         )
 
     try:
-        pdf = render_guarded(request, "", sanitize=sanitize, render=render)
+        pdf = render_guarded(request, "", sanitize=sanitize_all, render=render)
     except RenderTimeout:
         log.warning("Floor plan report for user %s stopped after %ss", request.user.pk,
                     RENDER_TIMEOUT)
@@ -1087,6 +1130,24 @@ def export_report(request, view, tenant, resolved) -> HttpResponse | Response:
         ),
         label="Floor plan report",
         extra={"object": str(view.pk)},
+    )
+
+
+def _trace_pages(request, view, tenant, resolved, rows: dict, trace: list[str],
+                 paper: str, orientation: str):
+    """The trace pages of a report: cables listed in it and on this floor's
+    schedule (``serializers.ValidationError`` for any other), laid out as
+    the schedule's (``cable_schedule.PlanPages``)."""
+    src, crop = resolved(view)
+    geometry: dict = {}
+    tiles: list = []
+    floor = sched.build(src, crop, request.user, tenant, geometry=geometry, routes=True,
+                        tile_boxes=tiles)
+    listed = {r["id"] for r in rows["rows"]} & {r["id"] for r in floor["rows"]}
+    sched.check_traces(trace, listed)
+    return sched.PlanPages(
+        view=view, plan=src, crop=crop, paper=paper, orientation=orientation, mode="off",
+        geometry=geometry, info=sched.cable_info(rows), tiles=tiles, trace=trace,
     )
 
 
