@@ -23,6 +23,8 @@ tenant and site scope ([#451](https://github.com/danbyte-net/danbyte/issues/451)
     [compliance rule](#compliance-rule), [notifications](#notifications),
     [match history retention](#match-history), the
     [VEX in the SBOM](sbom.md#vulnerabilities-vex) and the API for them.
+    [Discovery](discovery.md) adds the packages it reads from Linux hosts
+    as a third match source (**Via: Package**).
     Until a mapping exists, an NVD or OSV upload keeps nothing and a server fetch
     asks for nothing.
 
@@ -51,7 +53,8 @@ description and score win and OSV adds the affected packages.
 
 Only records that name a **mapped product** are kept: an NVD year feed names
 tens of thousands of products, and Danbyte stores the CVEs for the products
-you have mapped. A CVE NVD has not analysed yet (*Awaiting Analysis*, no
+you have mapped - or, with [discovery](discovery.md) on, the packages it
+found on your hosts. A CVE NVD has not analysed yet (*Awaiting Analysis*, no
 configurations) names no product and is not kept until NVD adds them.
 
 ### CVSS
@@ -552,6 +555,13 @@ used.
 
 ### Distro packages
 
+Packages [discovery](discovery.md) reads from a host are matched the same
+way, with no mapping: each one under the name its distro advises (the
+source package for Debian and Ubuntu, the origin for Alpine) at the release
+the host's os-release names. Those matches say **Via: Package**, read with
+*installed software* view, and exist only while Discovery is on for the
+tenant ([Vulnerabilities](discovery.md#vulnerabilities)).
+
 OSV writes Debian, Ubuntu, Alpine, Rocky Linux, AlmaLinux and Red Hat
 advisories **per release**: one advisory carries an entry for `Debian:11`,
 one for `Debian:12` and one for `Debian:13`, each with its own fixed version
@@ -658,7 +668,7 @@ object's matches, worst priority first:
 | EPSS | The probability of exploitation, as a percentage. |
 | Host | The device or VM (platform and application tabs). |
 | Application, Version | The install that matched, and the version tested. |
-| Via | Platform or application (device and VM tabs). |
+| Via | Platform, application or package ([discovery](discovery.md)) - device and VM tabs. |
 | Confidence | *Exact*, *Range*, or *Partial* - the record also names hardware or an OS that is not mapped. |
 | Product, Summary, First seen | The mapping, the record's description, when the match appeared. |
 
@@ -947,7 +957,7 @@ site role sees only its own sites' matches, everywhere.
 
 The record and match lists take `status` (`open` by default, `resolved`,
 `all`), `device`, `virtual_machine`, `platform`, `application`, `mapping`,
-`site`, `cve`, `priority`, `confidence`, `via` (`platform`/`application`),
+`site`, `cve`, `priority`, `confidence`, `via` (`platform`/`application`/`package`),
 `severity`, `kev`, `epss_min`, `q` (id or description) and `excepted`:
 `false` (the default) leaves out matches an exception covers, `true` lists
 only them, `all` both. Values of one filter are comma-separated or repeated.

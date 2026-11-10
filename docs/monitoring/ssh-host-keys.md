@@ -11,6 +11,18 @@ scoped to a device.
     one, and the model refuses to persist anything that looks like key material.
     Upload only the **public** host key.
 
+## Virtual machines and discovery
+
+A VM keeps host keys too (`"virtual_machine": "<vm-id>"` in place of
+`device`, `?virtual_machine=` on the list; the panel is on the VM's
+**Certificates** tab). They are inventory only: drift alerts attach to a
+device's address, so a VM's keys raise none.
+
+[Discovery](../features/discovery.md#host-keys-and-credentials) reads a host
+only when it presents an **accepted** key - uploaded, or observed and then
+accepted. A host it refuses has the key it presented recorded as observed,
+so you can check the fingerprint and accept it here.
+
 ## Recording an expected key
 
 `POST /api/monitoring/ssh-host-keys/` with a device and a pasted OpenSSH

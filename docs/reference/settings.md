@@ -480,6 +480,22 @@ Default `False`, so a self-hosted deployment that monitors its own LAN from the
 central box is unaffected. `DANBYTE_SSRF_ALLOWLIST` (above) also exempts its
 CIDRs from this block. Outpost agents keep the permissive default regardless.
 
+## Discovery
+
+[Built-in discovery](../features/discovery.md) logs in to a tenant's hosts
+over SSH and reads their installed packages. It is off unless this
+deployment allows it **and** a tenant admin turns the Discovery integration
+on.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `DANBYTE_DISCOVERY_ENABLED` | `False` | Deployment switch for discovery. Set `True` in the environment of the web, worker and timer units, then restart them. With it off nothing is contacted, the pages and API answer not found and package matches resolve. |
+
+Runs go to the RQ queue `discovery` (`RQ_QUEUES`, timeout 6 h); the shipped
+`danbyte-workers` unit and compose file listen on it. The check-engine
+target policy above (`DANBYTE_CHECK_BLOCK_INTERNAL`, `DANBYTE_SSRF_ALLOWLIST`)
+applies to every host discovery logs in to from the server.
+
 ## Security headers
 
 Response hardening is applied at the **nginx** edge (see

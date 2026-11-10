@@ -12,7 +12,9 @@ is recorded at that moment.
 
 ## Where the software list comes from
 
-The SBOM lists what Danbyte has recorded; it does not scan hosts. Each host
+The SBOM lists what Danbyte has recorded; it does not scan hosts. The
+packages [discovery](discovery.md) reads from Linux hosts are kept apart, on
+the host's Packages tab, and are not SBOM components. Each host
 contributes:
 
 - its **platform** (the OS), at the host's *Software version*, as an

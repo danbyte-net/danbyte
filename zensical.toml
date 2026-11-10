@@ -110,6 +110,7 @@ nav = [
     { "Compliance"        = "features/compliance.md" },
     { "End-of-life data"  = "features/end-of-life-data.md" },
     { "Known vulnerabilities" = "features/vulnerabilities.md" },
+    { "Discovery: package inventory" = "features/discovery.md" },
   ] },
   { "Working with data" = [
     "working-with-data/index.md",
