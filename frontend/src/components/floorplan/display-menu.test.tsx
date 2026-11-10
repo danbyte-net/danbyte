@@ -97,4 +97,18 @@ describe("Display > Photos", () => {
       state: { show_fov: false, show_photo_outlines: true },
     })
   })
+
+  it("Tile icons is on by default; off goes back to plain tiles", async () => {
+    const mutate = vi.fn()
+    render(<Harness mutate={mutate} />)
+    fireEvent.click(screen.getByRole("button", { name: /Display/ }))
+    const box = await screen.findByLabelText("Tile icons")
+    expect(
+      box.getAttribute("aria-checked") ?? box.getAttribute("data-state")
+    ).toMatch(/true|checked/)
+    fireEvent.click(box)
+    expect(mutate).toHaveBeenCalledWith({
+      state: { show_fov: false, tile_icons: false },
+    })
+  })
 })

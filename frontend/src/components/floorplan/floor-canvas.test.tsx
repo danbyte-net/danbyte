@@ -9,6 +9,7 @@ import type {
   FloorPlanTray,
 } from "@/lib/api"
 import { FloorCanvas } from "./floor-canvas"
+import { solidBorder } from "./tile-face"
 import { structureOf } from "./structure"
 
 // A tile linked to a DIN-rail cabinet on the 2D plan: named after the
@@ -121,7 +122,9 @@ describe("a cabinet tile", () => {
   it("turns its border red when a device is down", () => {
     const up = draw(tile(), live("up"))
     const calm = tileGroup(up.container).querySelector("rect[data-part=fill]")!
-    expect(calm.getAttribute("stroke")).toBe("#64748b")
+    // Tile icons: a solid block, its border a shade of its own colour.
+    expect(calm.getAttribute("fill")).toBe("#64748b")
+    expect(calm.getAttribute("stroke")).toBe(solidBorder("#64748b", "light"))
     cleanup()
     const down = draw(tile(), live("down"))
     const red = tileGroup(down.container).querySelector("rect[data-part=fill]")!

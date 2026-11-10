@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -74,6 +75,7 @@ import {
   readableHit,
   readableOrder,
   readableShape,
+  readTileIcons,
   splitGrown,
 } from "./readable"
 import { MuteFilter, muteFilterId, mutesBasemap } from "./background-look"
@@ -94,6 +96,8 @@ import {
 } from "./cable-draw"
 import type { CalloutMode, ObjectSize, ShapeOf } from "./readable"
 import { tileFill } from "./tile-paint"
+import { GlyphSprite, spritePrefix } from "./tile-glyph"
+import type { GlyphSheet } from "./tile-glyph"
 import { clusterMembersOf } from "./cluster-members"
 import type { ClusterMember } from "./cluster-members"
 import { ClusterHoverCard } from "./cluster-members-view"
@@ -309,6 +313,9 @@ export interface FloorCanvasProps {
   /** Display > Icons when zoomed out: a device, rack or cabinet too small
    * on screen draws as its icon tile (readable.ts). */
   iconTiles?: boolean
+  /** Display > Tile icons: tiles drawn solid in their colour with a
+   * glyph of what they are (tile-face.ts); off, the plain tint. */
+  tileIcons?: boolean
   /** Display > Callouts: Auto names a tile whose name will not sit
    * cleanly by it in a box off to the side, a leader back to it
    * (plan-callouts.ts); Off leaves such a name hidden. */
@@ -641,6 +648,7 @@ export function FloorCanvas({
   photoOutlines = false,
   objectSize = "real",
   iconTiles = true,
+  tileIcons: tileIconsProp,
   callouts = "off",
   calloutLines,
   muteBackground = false,
@@ -754,6 +762,18 @@ export function FloorCanvas({
   // re-renders the names and not the canvas.
   const readable = objectSize === "readable"
   const { theme } = useTheme()
+  // Unless the caller says, as the plan saved it (on by default).
+  const tileIcons = tileIconsProp ?? readTileIcons(plan.state.tile_icons)
+  // The icons the tiles draw, each once in the canvas's sprite.
+  const glyphPrefix = spritePrefix(useId())
+  const glyphNames = useMemo(
+    () => new Set(tiles.map((tl) => tileIcon(tl)).filter(Boolean)),
+    [tiles]
+  )
+  const glyphSheet = useMemo<GlyphSheet>(
+    () => ({ prefix: glyphPrefix, names: glyphNames }),
+    [glyphPrefix, glyphNames]
+  )
   const muteId = muteFilterId(plan.id)
   // The base map, when this floor draws it, and whether the floor layer
   // (picture or CAD drawing) is shown.
@@ -2158,6 +2178,9 @@ export function FloorCanvas({
             colorBy={colorBy}
             figures={figures?.get(tile.id)}
             iconTile={iconIds.has(tile.id)}
+            icons={tileIcons}
+            theme={theme}
+            glyphs={glyphSheet}
             rotation={iconIds.has(tile.id) ? 0 : residual}
             highlighted={
               !!highlightTileIds?.has(tile.id) ||
@@ -2211,6 +2234,9 @@ export function FloorCanvas({
           labelFit={labelFit}
           showZoneLabels={showZoneLabels}
           photoOutline={photoOutlines}
+          icons={tileIcons}
+          theme={theme}
+          glyphs={glyphSheet}
           live={liveState?.tiles[tile.id]}
           colorBy={colorBy}
           figures={figures?.get(tile.id)}
@@ -2370,6 +2396,7 @@ export function FloorCanvas({
             (muteMap && mapImage)) && (
             <MuteFilter id={muteId} dark={theme === "dark"} />
           )}
+          <GlyphSprite prefix={glyphPrefix} names={glyphNames} />
         </defs>
         {clipToGrid && (
           <defs>
