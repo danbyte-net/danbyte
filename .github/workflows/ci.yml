@@ -52,6 +52,7 @@ jobs:
         with:
           python-version: '3.13'
           cache: pip
+          cache-dependency-path: requirements.lock
       - name: System deps (python-ldap build headers)
         run: |
           # Drop flaky third-party apt sources (Chrome/etc.) so their transient
@@ -62,7 +63,8 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt coverage ruff
+          pip install --require-hashes -r requirements.lock
+          pip install ruff
       - name: Migrations apply cleanly
         run: |
           python manage.py migrate --noinput
@@ -121,6 +123,7 @@ jobs:
         with:
           python-version: '3.13'
           cache: pip
+          cache-dependency-path: requirements.lock
       - name: System deps (python-ldap build headers)
         run: |
           sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* || true
@@ -129,7 +132,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --require-hashes -r requirements.lock
       - name: Migrate to the last final release, then upgrade
         run: |
           # the newest final release this one is built on

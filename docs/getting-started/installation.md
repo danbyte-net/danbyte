@@ -209,7 +209,7 @@ The other tabs cover building from source and a local dev checkout.
     ```bash
     git clone …/danbyte ~/danbyte && cd ~/danbyte
     uv python install 3.13 && uv venv --python 3.13 .venv
-    VIRTUAL_ENV=$PWD/.venv uv pip install -r requirements.txt
+    VIRTUAL_ENV=$PWD/.venv uv pip install --require-hashes -r requirements.lock
     ```
 
     **5 · `.env`.** Write `~/danbyte/.env` - the secret key, monitoring key, DB
@@ -304,7 +304,7 @@ The other tabs cover building from source and a local dev checkout.
     ```bash
     git clone …/danbyte && cd danbyte
     uv python install 3.13 && uv venv --python 3.13 .venv
-    VIRTUAL_ENV=$PWD/.venv uv pip install -r requirements.txt
+    VIRTUAL_ENV=$PWD/.venv uv pip install --require-hashes -r requirements.lock
 
     # Postgres role + db (dev creds are fine locally)
     sudo -u postgres psql <<SQL

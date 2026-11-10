@@ -37,7 +37,7 @@ docker compose -f docker-compose.dev.yml up -d postgres redis
 
 # Backend
 uv venv --python 3.13 .venv
-VIRTUAL_ENV=$PWD/.venv uv pip install -r requirements.txt
+VIRTUAL_ENV=$PWD/.venv uv pip install --require-hashes -r requirements.lock
 cp .env.example .env               # set DJANGO_SECRET_KEY
 make migrate
 make bootstrap
@@ -54,7 +54,10 @@ cd frontend && npm ci && npm run dev    # :3000, proxies the API to :8000
 Open <http://localhost:3000>. [docs/getting-started](docs/getting-started/)
 covers installation, Docker and upgrades in more depth.
 
-Use **npm** for the frontend; `package-lock.json` is the only lockfile.
+Use **npm** for the frontend; `package-lock.json` is its only lockfile. A
+Python dependency changes in `requirements.txt`; then `make lock` regenerates
+`requirements.lock` and you commit both. See
+[Dependencies](docs/getting-started/dependencies.md) for the scanner gate.
 
 ## Before you open a pull request
 

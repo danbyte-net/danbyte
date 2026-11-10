@@ -318,6 +318,8 @@ class Host:
         (dest / "app" / "a.py").write_text(f"VERSION = {version!r}\n")
         if v2:
             (dest / "app" / "new.py").write_text("NEW = 1\n")
+            # Releases from 0.20 pin and hash-check their dependencies (#451).
+            (dest / "requirements.lock").write_text("django==5.2 \\\n    --hash=sha256:" + "0" * 64 + "\n")
         else:
             (dest / "app" / "old.py").write_text("OLD = 1\n")
         (dest / "frontend").mkdir(exist_ok=True)
@@ -1013,9 +1015,9 @@ class GitStageTests(StageTestCase):
             r"^py manage.py backup_now",
             r"^npm ci",
             r"^npm run build",
-            r"^uv pip install -q --python .*/depcheck/bin/python",
+            r"^uv pip install -q --python .*/depcheck/bin/python --require-hashes -r .*/requirements\.lock$",
             r"^systemctl --user stop .*danbyte-web\.service",
-            r"^uv pip install -q --python .*/danbyte/\.venv/bin/python",
+            r"^uv pip install -q --python .*/danbyte/\.venv/bin/python --require-hashes -r .*/requirements\.lock$",
             r"^py manage.py upgrade_migrate$",
             r"^systemctl --user start .*danbyte-web\.service",
         )

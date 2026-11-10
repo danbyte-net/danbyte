@@ -127,8 +127,10 @@ COPY --from=cad-tools /out/LICENSE.libredwg /usr/share/doc/libredwg/COPYING
 COPY --from=cad-tools /out/NOTICE /usr/share/doc/libredwg/NOTICE
 ENV DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# requirements.lock pins every package and the sha256 of each file: pip
+# refuses anything else (#451). requirements.txt stays for the SBOM.
+COPY requirements.txt requirements.lock ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY . .
 
