@@ -4,7 +4,10 @@
   ``device_type`` changes, or one is created: that host.
 * An install is created, deleted, or its ``version`` / ``application`` /
   host changes: its host (both hosts when it moved).
-* A mapping is saved or deleted: the whole tenant.
+* A mapping is saved or deleted: the whole tenant. A mapping created,
+  enabled or pointed at another product also asks the server-mode fetch for
+  that product at once (no-op in other modes; once per product per
+  ``PRODUCT_DEBOUNCE`` seconds, hardware CPEs are never fetched).
 * A policy is saved: the tenant's open matches are re-prioritised.
 
 Changes are collected per transaction and queued once it commits, so a bulk
@@ -26,6 +29,9 @@ HOST_FIELDS = {
     "virtualmachine": ("software_version", "platform_id"),
 }
 INSTALL_FIELDS = ("version", "application_id", "device_id", "virtual_machine_id")
+MAPPING_FIELDS = ("enabled", "kind", "part", "vendor", "product")
+#: A product asked for once is not asked for again within this window.
+PRODUCT_DEBOUNCE = 300
 _SNAP = "_vuln_snapshot"
 
 _local = threading.local()
@@ -33,7 +39,7 @@ _local = threading.local()
 
 def _fresh() -> dict:
     return {"objects": defaultdict(lambda: defaultdict(set)), "tenants": set(),
-            "policies": set()}
+            "policies": set(), "products": set()}
 
 
 def _add(mutate) -> None:
@@ -78,6 +84,33 @@ def _flush() -> None:
     for tenant_id, objects in p["objects"].items():
         if tenant_id in mapped and tenant_id not in p["tenants"]:
             jobs.enqueue_objects(tenant_id, objects)
+    if p["products"]:
+        _fetch_products(p["products"])
+
+
+def _fetch_products(keys) -> None:
+    """Fetch newly mapped products now in server mode, debounced per product
+    key so a burst of saves (or two tenants mapping the same product) queues
+    one fetch."""
+    import hashlib
+
+    from django.core.cache import cache
+
+    from . import fetch
+
+    if not fetch.server_mode():
+        return
+    fresh = []
+    for key in sorted(keys):
+        digest = hashlib.sha256("\n".join(key).encode()).hexdigest()[:32]
+        try:
+            claimed = cache.add(f"vuln:fetch-product:{digest}", 1, PRODUCT_DEBOUNCE)
+        except Exception:  # noqa: BLE001 - cache down: ask anyway, the job is idempotent
+            claimed = True
+        if claimed:
+            fresh.append(key)
+    if fresh:
+        fetch.enqueue_products(fresh)
 
 
 def _snapshot(instance, fields) -> tuple:
@@ -163,11 +196,28 @@ def _install_deleted(sender, instance, **kwargs):
     _add_hosts(instance.tenant_id, _install_hosts(instance))
 
 
-def _mapping_changed(sender, instance, raw=False, **kwargs):
+def _mapping_init(sender, instance, **kwargs):
+    setattr(instance, _SNAP, _snapshot(instance, MAPPING_FIELDS))
+
+
+def _mapping_changed(sender, instance, raw=False, created=False, **kwargs):
     if raw:
         return
     tenant_id = instance.tenant_id
-    _add(lambda p: p["tenants"].add(tenant_id))
+    key = None
+    if kwargs.get("signal") is post_save:
+        before = getattr(instance, _SNAP, None)
+        after = _snapshot(instance, MAPPING_FIELDS)
+        setattr(instance, _SNAP, after)
+        if instance.enabled and instance.part != "h" and (created or before != after):
+            key = (instance.kind, instance.part or "", instance.vendor, instance.product)
+
+    def mutate(p):
+        p["tenants"].add(tenant_id)
+        if key is not None:
+            p["products"].add(key)
+
+    _add(mutate)
 
 
 def _policy_saved(sender, instance, raw=False, **kwargs):
@@ -188,6 +238,7 @@ def connect() -> None:
     post_init.connect(_install_init, sender=InstalledSoftware, dispatch_uid="vuln-init-inst")
     post_save.connect(_install_saved, sender=InstalledSoftware, dispatch_uid="vuln-save-inst")
     post_delete.connect(_install_deleted, sender=InstalledSoftware, dispatch_uid="vuln-del-inst")
+    post_init.connect(_mapping_init, sender=ProductMapping, dispatch_uid="vuln-init-map")
     post_save.connect(_mapping_changed, sender=ProductMapping, dispatch_uid="vuln-save-map")
     post_delete.connect(_mapping_changed, sender=ProductMapping, dispatch_uid="vuln-del-map")
     post_save.connect(_policy_saved, sender=VulnerabilityPolicy, dispatch_uid="vuln-save-pol")

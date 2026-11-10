@@ -582,6 +582,71 @@ class CpeSearchTests(EndpointBase):
         self.assertEqual(self.get("ios xe").status_code, 409)
         self.assertEqual(self.net.calls, [])
 
+    def test_picker_users_may_search(self):
+        """Anyone who may change a platform, device type or application in the
+        active tenant may search; view alone, or a grant in another tenant,
+        is not enough."""
+        from auth_api.models import ObjectPermission, UserProfile
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="O", slug="o")
+        tenant = Tenant.objects.create(org=org, name="A", slug="a")
+        other = Tenant.objects.create(org=org, name="B", slug="b")
+
+        def member(name, types, actions, granted_in):
+            user = User.objects.create_user(name, password="x")
+            UserProfile.objects.create(user=user, role="custom").tenants.add(tenant, other)
+            perm = ObjectPermission.objects.create(name=name, object_types=types,
+                                                   actions=actions)
+            perm.users.add(user)
+            perm.tenants.add(granted_in)
+            self.client.force_login(user)
+            s = self.client.session
+            s["current_tenant_id"] = str(tenant.pk)
+            s.save()
+
+        for name, types, actions, where, status in (
+                ("plat", ["platform"], ["view", "change"], tenant, 200),
+                ("app", ["application"], ["change"], tenant, 200),
+                ("dtype", ["devicetype"], ["change"], tenant, 200),
+                ("viewer", ["platform", "application"], ["view"], tenant, 403),
+                ("device", ["device"], ["change"], tenant, 403),
+                ("elsewhere", ["platform"], ["change"], other, 403)):
+            with self.subTest(name=name):
+                member(name, types, actions, where)
+                r = self.get("ios xe")
+                self.assertEqual(r.status_code, status, r.content)
+                if status == 200:
+                    self.assertIn(r.json()["remote_status"], ("ok", "cached"))
+                    self.assertEqual(r.json()["remote"][0]["cpe"], "cpe:2.3:o:cisco:ios_xe")
+                    self.assertNotIn(KEY, r.content.decode())
+        # Still one NVD request: the answer is cached for everyone.
+        self.assertEqual(len(self.net.calls), 1)
+
+    def test_picker_users_share_the_limits(self):
+        from auth_api.models import ObjectPermission, UserProfile
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="O", slug="o")
+        tenant = Tenant.objects.create(org=org, name="A", slug="a")
+        user = User.objects.create_user("plat", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(tenant)
+        perm = ObjectPermission.objects.create(name="p", object_types=["platform"],
+                                               actions=["change"])
+        perm.users.add(user)
+        perm.tenants.add(tenant)
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(tenant.pk)
+        s.save()
+        clock = mock.patch("vulnerabilities.fetch_api.time.time", return_value=3000.0)
+        clock.start()
+        self.addCleanup(clock.stop)
+        statuses = [self.get(f"vendor{n}").json()["remote_status"] for n in range(4)]
+        self.assertIn("limited", statuses)
+        with mock.patch("vulnerabilities.fetch_api.USER_LIMIT", 1):
+            self.assertEqual(self.get("more").status_code, 429)
+
     def test_outside_server_mode_nvd_is_not_asked(self):
         self.client.force_login(self.admin)
         self.settings_(update_source="browser")
