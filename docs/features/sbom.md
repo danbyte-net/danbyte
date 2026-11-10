@@ -179,7 +179,9 @@ vulnerability matching reads, so a template set now is reused there.
 
 - **Devices** and **Virtual machines** lists: **Import / Export → SBOM
   (CycloneDX)** exports the rows the list shows now, with its filters and
-  search applied.
+  search applied. While [vulnerability data](vulnerabilities.md) is on,
+  **SBOM with vulnerabilities** exports the same document with its
+  [vulnerabilities section](#vulnerabilities-vex).
 - **Site** page: **Export SBOM** exports the site's devices and VMs.
 - **API**: `GET /api/sbom/` (below).
 
@@ -266,6 +268,50 @@ id, so its name is in neither the document nor the file name. `metadata.properti
 | `danbyte:components` | Operating-system and application components. |
 | `danbyte:components_without_license` | Of those, how many have no licence. |
 | `danbyte:unlicensed` | Their names, de-duplicated - the applications and platforms to fix. |
+| `danbyte:vulnerabilities` | With `vex=1`: entries in the vulnerabilities section. |
+
+### Vulnerabilities (VEX)
+
+`vex=1` (`GET /api/sbom/?vex=1`, or `"vex": true` in a `POST` body) adds a
+CycloneDX `vulnerabilities` section while [vulnerability data](vulnerabilities.md)
+is on - a VEX for the same components, to hand in next to the SBOM. Without
+`vex`, or with the feature off, the document has no such section.
+
+```json
+"vulnerabilities": [
+  {
+    "bom-ref": "danbyte:vulnerability:CVE-2023-20198",
+    "id": "CVE-2023-20198",
+    "source": {"name": "NVD", "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-20198"},
+    "ratings": [{"source": {"name": "NVD"}, "score": 10.0, "severity": "critical",
+                 "method": "CVSSv31", "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"}],
+    "cwes": [420],
+    "description": "…",
+    "published": "2023-10-16T16:15:09Z",
+    "affects": [{"ref": "danbyte:device:…:os",
+                 "versions": [{"version": "17.9.4", "status": "affected"}]}],
+    "analysis": {"state": "exploitable",
+                 "detail": "Listed in CISA Known Exploited Vulnerabilities."},
+    "properties": [{"name": "danbyte:priority", "value": "fix_first"},
+                   {"name": "danbyte:kev_added", "value": "2023-10-16"}, …]
+  }
+]
+```
+
+- One entry per record, listing in `affects` every component of the
+  document it matched: the host's `operating-system` component for a
+  platform match, the install's `application` component for an
+  application match, with the version tested. Only open matches are
+  included.
+- Only components already in the document are named. A host or an install
+  you may not view is in neither the SBOM nor its VEX - the filters and your
+  scope apply to both alike.
+- `analysis.state` is `exploitable` for a record in CISA KEV and
+  `in_triage` otherwise. Exceptions will set their own analysis
+  (`not_affected` with a justification, or `exploitable` with
+  `will_not_fix`); matches of one record with different analyses are then
+  separate entries.
+- `properties` carry Danbyte's priority, the KEV dates and the EPSS score.
 
 ## API
 
@@ -281,6 +327,7 @@ filters combine:
 | `role` | Device role ids. |
 | `device` | Device ids. |
 | `virtual_machine` | Virtual machine ids. |
+| `vex` | `1` adds the [vulnerabilities section](#vulnerabilities-vex). |
 
 Given `device` or `virtual_machine`, only the listed hosts of each kind are
 included; without either, every device and VM that matches the other

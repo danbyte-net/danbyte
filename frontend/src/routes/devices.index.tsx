@@ -18,6 +18,7 @@ import { usePrtgDeviceStates } from "@/components/columns/prtg-columns"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { useEolSettings } from "@/components/cells/eol-cell"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { wireFacetColumns } from "@/components/table-filters"
 import {
   AvailabilityFramePicker,
@@ -29,7 +30,7 @@ import { DeviceBulkBar } from "@/components/device-bulk-bar"
 import { useCanApplyProfiles } from "@/components/device-profile-bulk"
 import { useMe, objCan } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
-import { useSbomExport } from "@/components/sbom-export"
+import { useSbomExport, useSbomVexExport } from "@/components/sbom-export"
 import { reportExport, useObjectReport } from "@/components/object-report"
 
 /** Ids per port-utilization request: 100 UUIDs keep the URL under the
@@ -102,6 +103,8 @@ const DEVICE_FACETS = [
   "site",
   "software_version",
   "software_target",
+  "vulnerabilities",
+  "vuln_kev",
   "ips",
   "tags",
 ]
@@ -120,11 +123,12 @@ function DevicesPage() {
   const canDeploy = canDo("automationtarget", "view")
   const canProfiles = useCanApplyProfiles()
   const { enabled: eolOn } = useEolSettings()
+  const { enabled: vulnsOn } = useVulnSettings()
 
   // The rail's facets, from the factory's own columns (no row data needed).
   const facetColumns = useMemo(
-    () => buildDeviceColumns<Device>({ eol: eolOn }),
-    [eolOn]
+    () => buildDeviceColumns<Device>({ eol: eolOn, vulns: vulnsOn }),
+    [eolOn, vulnsOn]
   )
   // One page at a time from the server (#482).
   const list = useServerList<Device>({
@@ -192,6 +196,7 @@ function DevicesPage() {
           selection: true,
           humanIds,
           eol: eolOn,
+          vulns: vulnsOn,
           violations: true,
           drift: driftMap,
           planned: plannedMap,
@@ -218,6 +223,7 @@ function DevicesPage() {
       prtg,
       humanIds,
       eolOn,
+      vulnsOn,
       portUtil,
       sla.entries,
       sla.frame,
@@ -232,6 +238,7 @@ function DevicesPage() {
     [allIds]
   )
   const sbom = useSbomExport(sbomFilter, total === 0)
+  const sbomVex = useSbomVexExport(sbomFilter, total === 0)
   // The PDF report of the devices the list's filters match.
   const report = useObjectReport("device")
   const reportItem = reportExport(
@@ -261,7 +268,12 @@ function DevicesPage() {
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
-          <TableActions ioType="device" extraExports={[sbom, reportItem]} />
+          <TableActions
+            ioType="device"
+            extraExports={
+              sbomVex ? [sbom, sbomVex, reportItem] : [sbom, reportItem]
+            }
+          />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/devices/new">Add device</Link>

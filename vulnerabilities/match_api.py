@@ -35,7 +35,7 @@ from django.db.models import Case, Count, F, IntegerField, Min, Q, Value, When
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -43,8 +43,8 @@ from rest_framework.response import Response
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin
 
+from . import list_api, versions
 from . import priority as prio
-from . import versions
 from .identifiers import CPE_PARTS, purl_key, split_cpe
 from .models import (
     PRODUCT_KINDS,
@@ -565,14 +565,34 @@ class VulnerabilityMatchViewSet(viewsets.ViewSet):
 
     permission_classes = [IsAuthenticated]
 
+    def _base(self, request, tenant, *, every=False):
+        """The filtered matches before the rail. The ``f_excepted`` facet
+        (or, with ``every``, the caller) decides on excepted matches; an
+        explicit ``excepted`` parameter still works as on every list."""
+        explicit = "excepted" in request.query_params
+        qs = _filter_matches(request, visible_matches(request, tenant),
+                             excepted=explicit and not every)
+        return list_api.search(request, qs)
+
     @extend_schema(summary="Vulnerability matches", tags=["vulnerabilities"],
                    responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
     def list(self, request):
         tenant = _tenant(request)
-        qs = _filter_matches(request, visible_matches(request, tenant))
-        qs = _match_rows(qs).annotate(rank=_RANK).order_by(
-            "rank", _SCORE_DESC, "cve__vuln_id", "id")
+        list_api.table_params(request)
+        qs = list_api.apply_facets(request, self._base(request, tenant), list_api.MATCH_FACETS)
+        qs = list_api.ordered_matches(_match_rows(qs).annotate(rank=_RANK), request)
         return _paginate(request, qs, lambda page: [match_dict(r) for r in page])
+
+    @extend_schema(summary="Facet counts of the match list", tags=["vulnerabilities"],
+                   responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+    @action(detail=False, methods=["get"], url_path="facets")
+    def facets(self, request):
+        """Matches per facet value, each counted over what the other
+        filters leave (``vulnerabilities.list_api``)."""
+        tenant = _tenant(request)
+        counts = list_api.facet_counts(request, self._base(request, tenant),
+                                       list_api.MATCH_FACETS, "id", tenant)
+        return Response({"facets": counts, "sortable": list(list_api.MATCH_ORDERS)})
 
 
 def _relevant(request, tenant, cve: Cve) -> bool:
@@ -625,35 +645,62 @@ class VulnerabilityViewSet(viewsets.ViewSet):
     lookup_field = "vuln_id"
     lookup_value_regex = r"[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9._:-]+"
 
+    def _base(self, request, tenant, *, every=False):
+        """The filtered matches before the rail. The ``f_excepted`` facet
+        (or, with ``every``, the caller) decides on excepted matches; an
+        explicit ``excepted`` parameter still works as on every list."""
+        explicit = "excepted" in request.query_params
+        qs = _filter_matches(request, visible_matches(request, tenant),
+                             excepted=explicit and not every)
+        return list_api.search(request, qs)
+
     @extend_schema(summary="Vulnerabilities matched in the tenant", tags=["vulnerabilities"],
                    responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
     def list(self, request):
         tenant = _tenant(request)
-        live = excepted_q(excepted_mode(request))
-        qs = _filter_matches(request, visible_matches(request, tenant), excepted=False)
-        groups = qs.values("cve_id").annotate(
+        list_api.table_params(request)
+        # Every match the facets leave, excepted or not: the row counts the
+        # live ones and says how many an exception covers.
+        qs = list_api.apply_facets(request, self._base(request, tenant, every=True),
+                                   list_api.RECORD_FACETS, exclude_excepted=False)
+        live = list_api.live_q(request)
+        groups = list_api.ordered_records(qs.values("cve_id", "cve__vuln_id").annotate(
             devices=Count("device_id", distinct=True, filter=live),
             virtual_machines=Count("virtual_machine_id", distinct=True, filter=live),
+            installs=Count("installed_software_id", distinct=True, filter=live),
             matches=Count("id", filter=live),
             excepted_n=Count("id", filter=Q(excepted__isnull=False)),
             worst=Min(_RANK, filter=live),
             first_seen_at=Min("first_seen_at", filter=live),
             score=Min("cve__cvss_score"),
-        ).filter(matches__gt=0).order_by("worst", F("score").desc(nulls_last=True), "cve_id")
+        ).filter(matches__gt=0), request)
 
         def rows(page):
             cves = {c.pk: c for c in Cve.objects.filter(pk__in=[g["cve_id"] for g in page])}
             return [{
+                "id": cves[g["cve_id"]].vuln_id,
                 **cve_brief(cves[g["cve_id"]]),
                 "priority": prio.LEVELS[g["worst"]] if g["worst"] < len(prio.LEVELS) else "",
                 "devices": g["devices"],
                 "virtual_machines": g["virtual_machines"],
+                "installs": g["installs"],
                 "matches": g["matches"],
                 "excepted": g["excepted_n"],
                 "first_seen_at": g["first_seen_at"],
             } for g in page if g["cve_id"] in cves]
 
         return _paginate(request, groups, rows)
+
+    @extend_schema(summary="Facet counts of the record list", tags=["vulnerabilities"],
+                   responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+    @action(detail=False, methods=["get"], url_path="facets")
+    def facets(self, request):
+        """Records per facet value, each counted over what the other
+        filters leave (``vulnerabilities.list_api``)."""
+        tenant = _tenant(request)
+        counts = list_api.facet_counts(request, self._base(request, tenant),
+                                       list_api.RECORD_FACETS, "cve_id", tenant)
+        return Response({"facets": counts, "sortable": list(list_api.RECORD_ORDERS)})
 
     @extend_schema(summary="One vulnerability with what it affects",
                    tags=["vulnerabilities"],
@@ -801,13 +848,14 @@ def vulnerability_policy(request):
 @permission_classes([IsAuthenticated])
 def vulnerability_summary(request):
     """Open matches the caller may see that no exception covers: records
-    per priority, KEV and critical records, and the devices and VMs
-    affected; plus how many matches (``excepted``) and records
-    (``excepted_records``) exceptions cover."""
+    per priority, KEV and critical records, records new this week, and the
+    devices and VMs affected; plus how many matches (``excepted``) and
+    records (``excepted_records``) exceptions cover."""
     tenant = _tenant(request)
     every = visible_matches(request, tenant).filter(resolved_at__isnull=True)
     qs = every.filter(excepted__isnull=True)
     by_priority = dict(qs.values_list("priority").annotate(n=Count("cve_id", distinct=True)))
+    week = list_api.first_seen_q("7d")
     totals = qs.aggregate(
         records=Count("cve_id", distinct=True),
         devices=Count("device_id", distinct=True),
@@ -815,6 +863,9 @@ def vulnerability_summary(request):
         matches=Count("id"),
         kev=Count("cve_id", distinct=True, filter=Q(cve__kev_added__isnull=False)),
         critical=Count("cve_id", distinct=True, filter=Q(cve__cvss_severity="critical")),
+        # Records with a match that appeared in the last 7 days - the list's
+        # ``first_seen=7d`` facet counts the same.
+        new_this_week=Count("cve_id", distinct=True, filter=week),
     )
     ex = every.filter(excepted__isnull=False).aggregate(
         n=Count("id"), records=Count("cve_id", distinct=True))

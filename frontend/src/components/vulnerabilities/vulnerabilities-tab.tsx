@@ -14,18 +14,27 @@ import { buildVulnerabilityMatchColumns } from "@/components/columns/vulnerabili
 import type { VulnMatchColumnId } from "@/components/columns/vulnerability-match-columns"
 
 // The Vulnerabilities tab on a device, VM, platform or application (#451):
-// the object's matches with priority, severity, KEV, EPSS and confidence.
+// the object's matches with priority, severity, KEV, EPSS and confidence -
+// and, with `kind="record"`, a record page's Affected tab (every host and
+// install it matched, resolved history one tick away).
 // Filters live in the URL (`?vstatus=`, `?priority=`, `?severity=`, `?kev=`,
 // `?confidence=`). The page shows the tab only while the feature is on.
 
 export type VulnSubject =
-  "device" | "virtual_machine" | "platform" | "application"
+  "device" | "virtual_machine" | "platform" | "application" | "record"
 
-const PATH: Record<VulnSubject, string> = {
+const PATH: Record<Exclude<VulnSubject, "record">, string> = {
   device: "devices",
   virtual_machine: "virtual-machines",
   platform: "platforms",
   application: "applications",
+}
+
+/** Every match row of the object, open and resolved. */
+export function matchesUrl(kind: VulnSubject, id: string): string {
+  if (kind === "record")
+    return `/api/vulnerabilities/matches/?cve=${encodeURIComponent(id)}&status=all&excepted=all&page_size=1000`
+  return `/api/${PATH[kind]}/${id}/vulnerabilities/?status=all&excepted=all&page_size=500`
 }
 
 const OMIT: Record<VulnSubject, VulnMatchColumnId[]> = {
@@ -33,6 +42,8 @@ const OMIT: Record<VulnSubject, VulnMatchColumnId[]> = {
   virtual_machine: ["host"],
   platform: ["application", "via"],
   application: ["via"],
+  // One record: its own facts are the page's Overview.
+  record: ["record", "priority", "severity", "score", "kev", "epss", "summary"],
 }
 
 const TABLE_ID: Record<VulnSubject, string> = {
@@ -40,6 +51,7 @@ const TABLE_ID: Record<VulnSubject, string> = {
   virtual_machine: "vm-vulnerabilities",
   platform: "platform-vulnerabilities",
   application: "application-vulnerabilities",
+  record: "vulnerability-affected",
 }
 
 /** The search params the tab writes, for a route's `validateSearch`. */
@@ -50,6 +62,7 @@ export const VULN_TAB_PARAMS = [
   "kev",
   "confidence",
   "via",
+  "excepted",
 ] as const
 
 /** Keep the tab's filter params through a route's `validateSearch`. */
@@ -84,10 +97,7 @@ export function VulnerabilitiesTab({
 }) {
   const q = useQuery({
     queryKey: ["vulnerabilities", kind, id],
-    queryFn: () =>
-      api<Paginated<VulnMatch>>(
-        `/api/${PATH[kind]}/${id}/vulnerabilities/?status=all&page_size=500`
-      ),
+    queryFn: () => api<Paginated<VulnMatch>>(matchesUrl(kind, id)),
   })
   const [statusParam, setStatusParam] = useUrlSet("vstatus")
   const status = useMemo(() => effectiveStatus(statusParam), [statusParam])
@@ -141,7 +151,11 @@ export function VulnerabilitiesTab({
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   if ((all ?? []).length === 0)
-    return (
+    return kind === "record" ? (
+      <EmptyState title="Nothing affected">
+        Nothing you can see in this tenant runs an affected version.
+      </EmptyState>
+    ) : (
       <EmptyState title="No known vulnerabilities">
         Nothing in the vulnerability data matches{" "}
         {kind === "platform" || kind === "application"
@@ -159,9 +173,11 @@ export function VulnerabilitiesTab({
           tableId={TABLE_ID[kind]}
           data={filteredRows}
           columns={wired}
-          flexColumn="summary"
+          flexColumn={kind === "record" ? "host" : "summary"}
           searchable
-          searchPlaceholder="Search records…"
+          searchPlaceholder={
+            kind === "record" ? "Search hosts…" : "Search records…"
+          }
           exportName={TABLE_ID[kind]}
           autoColumns={false}
         />

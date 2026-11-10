@@ -20,6 +20,7 @@ import type { StatusHistoryConfig } from "./widget-status-history"
 import { AlertsPerDay, LatencyWeek } from "./widget-monitoring-charts"
 import { MyTasksWidget } from "./widget-tasks"
 import { SupportCoverageWidget } from "./widget-support-coverage"
+import { VulnerabilitiesWidget } from "./widget-vulnerabilities"
 import type { SupportCoverageConfig } from "./widget-support-coverage"
 import {
   SensorAlarmsWidget,
@@ -83,6 +84,7 @@ export type WidgetId =
   | "coverage"
   | "upcoming-maintenance"
   | "support-coverage"
+  | "vulnerabilities"
   | "prtg-sensor"
   | "prtg-alarms"
 
@@ -218,6 +220,11 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
     span: { w: 3, h: 3 },
     min: { w: 2, h: 2 },
     max: { w: 6, h: 5 },
+  },
+  vulnerabilities: {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 4 },
   },
   "prtg-sensor": {
     span: { w: 2, h: 2 },
@@ -713,6 +720,13 @@ export const CATALOG: WidgetDef[] = [
         setConfig={(c) => ctx?.setConfig({ ...c })}
       />
     ),
+  },
+  {
+    id: "vulnerabilities",
+    fit: "scroll",
+    title: "Vulnerabilities",
+    description: "Open records by priority, known exploited and new this week",
+    render: () => <VulnerabilitiesWidget />,
   },
   {
     id: "prtg-sensor",

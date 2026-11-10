@@ -4858,6 +4858,13 @@ class DeviceViewSet(
             if tag_slugs:
                 qs = qs.distinct()
             qs = _apply_custom_field_scope(self.request, qs, "device")
+            # Vulnerabilities (#451): ?vuln_priority= / ?vuln_kev= /
+            # ?cve_severity=, and the table's column.
+            from vulnerabilities import host_columns
+
+            qs = host_columns.apply_filters(qs, self.request, "device")
+            if self.is_table_view():
+                qs = host_columns.annotate(qs, self.request, "device")
         return qs
 
     def _cooling_filters(self, qs):
@@ -7492,6 +7499,12 @@ class VirtualMachineViewSet(
             qs = software_target.apply_filter(qs, self.request)
             # ?software_version= / ?software_version_source= (#451).
             qs = software_versions.apply_list_filters(qs, self.request)
+            # Vulnerabilities (#451), as on the device list.
+            from vulnerabilities import host_columns
+
+            qs = host_columns.apply_filters(qs, self.request, "virtual_machine")
+            if self.is_table_view():
+                qs = host_columns.annotate(qs, self.request, "virtual_machine")
         return qs
 
 

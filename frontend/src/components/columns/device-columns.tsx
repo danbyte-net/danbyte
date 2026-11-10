@@ -44,6 +44,10 @@ import {
   softwareVersionColumn,
 } from "@/components/cells/software-version-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
+import {
+  vulnHostColumn,
+  vulnKevColumn,
+} from "@/components/columns/vulnerability-columns"
 import { coverageColumn } from "@/components/cells/coverage-cell"
 import { cabinetColumn } from "@/components/cells/cabinet-cell"
 import { coolingMethodColumn } from "@/components/cells/cooling-cell"
@@ -84,6 +88,8 @@ export type DeviceColumnId =
   | "serial"
   | "software_version"
   | "software_target"
+  | "vulnerabilities"
+  | "vuln_kev"
   | "ips"
   | "ports"
   | "monitoring"
@@ -116,6 +122,8 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "serial",
   "software_version",
   "software_target",
+  "vulnerabilities",
+  "vuln_kev",
   "ips",
   "ports",
   "monitoring",
@@ -163,6 +171,9 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   /** End-of-life column from the platform's mapping (#8) - pass
    * `useEolSettings().enabled`; the column only exists while it is on. */
   eol?: boolean
+  /** Vulnerabilities and its KEV facet column (#451) - pass
+   * `useVulnSettings().enabled`; the server fills them on table rows. */
+  vulns?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
   /** Trailing RowActions column. */
@@ -204,6 +215,10 @@ export function buildDeviceColumns<T extends Device = Device>(
   }
   if (!opts.portUtil) omit.add("ports")
   if (!opts.eol) omit.add("eol")
+  if (!opts.vulns) {
+    omit.add("vulnerabilities")
+    omit.add("vuln_kev")
+  }
   const keep = (id: DeviceColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -340,6 +355,9 @@ export function buildDeviceColumns<T extends Device = Device>(
       },
     }),
     eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
+    // Open vulnerability records (#451), annotated on the table row.
+    vulnerabilities: () => vulnHostColumn<T>((r) => r.vulnerabilities),
+    vuln_kev: () => vulnKevColumn<T>((r) => r.vulnerabilities),
     // Support & warranty coverage (#421), derived server-side per row.
     coverage: () => coverageColumn<T>({ get: (r) => r.coverage }),
     // The soonest of hardware, OS and coverage (#436); hidden by default.

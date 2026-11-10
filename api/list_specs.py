@@ -189,6 +189,25 @@ def _cooling_prepare(qs, request):
     return annotate_devices(qs)
 
 
+def _vuln_facets(kind: str) -> dict:
+    """The Vulnerabilities column's facets (#451): the worst open priority
+    and the KEV flag - empty while vulnerability data is off."""
+    from vulnerabilities import host_columns as vh
+
+    return {
+        "vulnerabilities": Facet(kind="buckets", prepare=vh.prepare(kind),
+                                 buckets=vh.priority_buckets, labels=vh.LABELS),
+        "vuln_kev": Facet(kind="buckets", prepare=vh.prepare(kind), buckets=vh.kev_buckets,
+                          labels={"yes": "Known exploited", "no": "Not in KEV"}),
+    }
+
+
+def _vuln_sort(kind: str) -> Sort:
+    from vulnerabilities import host_columns as vh
+
+    return Sort(("_sort_vuln",), vh.sort_prepare(kind))
+
+
 # ─── Devices ─────────────────────────────────────────────────────────────────
 
 def device_table_rows():
@@ -264,6 +283,7 @@ DEVICE_TABLE = TableSpec(
         "software_target": Facet(kind="buckets", prepare=_software_target_prepare,
                                  buckets=_software_target_buckets),
         "ips": Facet(kind="range", between=_address_range("device")),
+        **_vuln_facets("device"),
         "tags": TAGS_FACET,
     },
     sorts={
@@ -283,6 +303,7 @@ DEVICE_TABLE = TableSpec(
         "software_version": nat("software_version"),
         "software_target": Sort(("_software_target",), _software_target_prepare),
         "device_profiles": _profiles_sort("device"),
+        "vulnerabilities": _vuln_sort("device"),
         "tags": _tags_sort(),
         "updated": by("updated_at"),
     },
@@ -292,7 +313,7 @@ DEVICE_TABLE = TableSpec(
         "cooling_method", "effective_cooling_method", "site", "rack", "cabinet",
         "serial_number", "software_version", "ip_count", "primary_ip",
         "secondary_ip", "oob_ip", "description", "device_profiles", "tags",
-        "custom_fields", "created_at", "updated_at",
+        "custom_fields", "created_at", "updated_at", "vulnerabilities",
     ),
     cheap={
         # On the slim base already, or a join of it.
@@ -430,6 +451,7 @@ VM_TABLE = TableSpec(
         "software_version": value("software_version"),
         "software_target": Facet(kind="buckets", prepare=_software_target_prepare,
                                  buckets=_software_target_buckets),
+        **_vuln_facets("virtual_machine"),
         "tags": TAGS_FACET,
     },
     sorts={
@@ -450,6 +472,7 @@ VM_TABLE = TableSpec(
         "software_version": nat("software_version"),
         "software_target": Sort(("_software_target",), _software_target_prepare),
         "device_profiles": _profiles_sort("virtual_machine"),
+        "vulnerabilities": _vuln_sort("virtual_machine"),
         "tags": _tags_sort(),
         "updated": by("updated_at"),
     },
@@ -458,7 +481,7 @@ VM_TABLE = TableSpec(
         "power_state", "power_state_at", "synced_from", "synced_from_id", "vcpus",
         "memory_mb", "disk_gb", "primary_ip", "site", "role", "platform",
         "lifecycle_next", "software_version", "device_profiles", "tags",
-        "description", "custom_fields", "created_at", "updated_at",
+        "description", "custom_fields", "created_at", "updated_at", "vulnerabilities",
     ),
     cheap={
         "device": None, "represents_device": None, "intended": None, "vmid": None,
