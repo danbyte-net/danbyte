@@ -23,6 +23,7 @@ import { buildVulnerabilityMatchColumns } from "@/components/columns/vulnerabili
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { EXCEPTIONS_ENDPOINT } from "@/components/vulnerabilities/exception-dialog"
 import { useExceptionTable } from "@/components/vulnerabilities/exceptions-table"
+import { SuggestMappingsButton } from "@/components/vulnerabilities/suggest-mappings"
 
 // Vulnerabilities (#451): every record matched in the tenant, one row each,
 // or "By object" - one row per match (record × host × install). Both page,
@@ -76,24 +77,27 @@ function VulnerabilitiesPage() {
   // The rail's facets mean the same in both views, so they stay; the page
   // and the sort start over.
   const viewSwitch = (
-    <SegmentedTabs<View>
-      value={view}
-      onValueChange={(v) =>
-        write((prev) =>
-          // Exceptions filter on other things: their rail starts clean,
-          // and so does the one they go back to.
-          v === "exceptions" || view === "exceptions"
-            ? { view: v === "records" ? undefined : v }
-            : {
-                ...prev,
-                view: v === "objects" ? v : undefined,
-                page: undefined,
-                ordering: undefined,
-              }
-        )
-      }
-      items={VIEWS}
-    />
+    <>
+      <SuggestMappingsButton />
+      <SegmentedTabs<View>
+        value={view}
+        onValueChange={(v) =>
+          write((prev) =>
+            // Exceptions filter on other things: their rail starts clean,
+            // and so does the one they go back to.
+            v === "exceptions" || view === "exceptions"
+              ? { view: v === "records" ? undefined : v }
+              : {
+                  ...prev,
+                  view: v === "objects" ? v : undefined,
+                  page: undefined,
+                  ordering: undefined,
+                }
+          )
+        }
+        items={VIEWS}
+      />
+    </>
   )
   if (view === "exceptions") return <ExceptionsView viewSwitch={viewSwitch} />
   return view === "objects" ? (
@@ -285,6 +289,9 @@ function NothingMatched() {
   return (
     <EmptyState title="No known vulnerabilities">
       Nothing you can see matches the vulnerability data.
+      <div className="mt-3 flex justify-center">
+        <SuggestMappingsButton />
+      </div>
     </EmptyState>
   )
 }

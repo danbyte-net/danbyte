@@ -463,6 +463,41 @@ Whoever may change the object sees **Map product**, **Change** and
 **Version scheme** (not for a device type) is *Automatic* unless you pick
 one. Changing a mapping can also switch it off.
 
+### Suggest mappings
+
+Instead of mapping one object at a time, **Suggest mappings** proposes a
+product for everything already documented. The button is on the
+Vulnerabilities page (toolbar and empty state) and on the **Vulnerability
+data** settings card, for anyone who may change platforms, applications or
+device types.
+
+It lists every platform, application and device type you may change that
+has no enabled mapping and is in use - hosts on the platform, installs of
+the application, devices of the type, counted over what you may see. Each
+row shows how many it would cover and how many of those have **no version**:
+a blank version never matches, so fill those in for the mapping to find
+anything. Candidates come best first:
+
+| Source | From | Confidence |
+|---|---|---|
+| SBOM | The object's own **Package URL** or **CPE** field. | High |
+| Known | A built-in table of about 60 well-known network operating systems, hypervisors, server operating systems and server software (Cisco IOS / IOS XE / IOS XR / NX-OS / ASA, Junos, Arista EOS, FortiOS, PAN-OS, ESXi, vCenter, Proxmox VE, Ubuntu, Debian, RHEL, Windows Server, RouterOS, ArubaOS, AOS-CX, Dell OS10, ExtremeXOS, pfSense, OPNsense, PostgreSQL, nginx, …), found by the words of the name, slug and manufacturer (`IOS-XE`, `Cisco IOS XE 17` and `ios_xe` all find `cisco:ios_xe`). Every name in it was checked against NVD's CPE dictionary. | High; medium for a bare word that needs its maker (`IOS` without Cisco) or a maker alone (a MikroTik platform) |
+| In store | Products the stored records already name, whose product name is in the object's name. | Medium when the vendor is in the name or is the manufacturer, else low |
+| NVD | Server mode only: NVD's CPE dictionary, for rows with no other candidate, on **Search NVD**. | Medium or low |
+
+Only rows whose best candidate is high confidence start ticked. Pick another
+candidate per row, change the version scheme (*Automatic* shows the scheme
+it resolves to), filter by type or confidence, and **Pick…** opens the
+picker for a row without a candidate. **Create N mappings** creates the
+ticked rows in one request; then, in server mode, their records are fetched
+at once; in browser mode **Sync now** fetches them; in upload mode, import
+NVD or OSV files for the products named. Nothing is created until you press
+it.
+
+**Search NVD** uses the picker's cache and limits (see
+[CPE search](#cpe-search)): cached answers are free, at most three live
+searches run per press, and what is left is counted on the button.
+
 ## Version schemes
 
 | Scheme | Reads | Order | `auto` for |
@@ -829,6 +864,8 @@ site role sees only its own sites' matches, everywhere.
 | Endpoint | Answers |
 |---|---|
 | `GET/POST /api/vulnerabilities/mappings/`, `GET/PATCH/DELETE …/<id>/` | Mappings. `POST {platform\|device_type\|application, identifier?, version_scheme?, enabled?}`. Filters `platform`, `device_type`, `application`, `kind`, `enabled`. |
+| `GET /api/vulnerabilities/mappings/suggestions/` | [Suggest mappings](#suggest-mappings): per unmapped, in-use subject you may change `subject_type`, `id`, `name`, `manufacturer`, `in_use`, `without_version` and `candidates` (`identifier`, `kind`, `part`, `vendor`, `product`, `source` `sbom`/`known`/`local`/`nvd`, `confidence` `high`/`medium`/`low`, `title`, `scheme` = `auto` resolved, `records` for `local`). Best confidence first, then most used. Filters `subject_type`, `confidence` (of the best candidate; `none` = no candidate), `q` (name) and `nvd=true` (server mode: look up the page's rows without a candidate). Adds `totals`, `update_source`, `nvd_status` (`off`, `not_asked`, `ok`, `limited` with `retry_after`, `error`) and `nvd_pending`. Creates nothing. |
+| `POST /api/vulnerabilities/mappings/bulk-create/` | `[{platform\|device_type\|application, identifier, version_scheme?}]`, up to 500. Each row is checked as a single create; any error answers `{errors: {<index>: {...}}}` (`403` when one is a refusal, else `400`) and nothing is created. Answers `201 {created, update_source}`. Change-log entries as usual; one recompute and one fetch are queued for the lot. |
 | `GET /api/vulnerabilities/` | One row per matched record: score, severity, KEV, EPSS, worst priority, devices, VMs and installs affected, first seen. |
 | `GET /api/vulnerabilities/facets/`, `GET /api/vulnerabilities/matches/facets/` | The page's rail: `{facets: {id: [{value, label, count}]}, sortable: [...]}`. Each facet counts records (or matches) over what the other filters leave. |
 | `GET /api/vulnerabilities/<id>/` | The record (CVE id, OSV id or an alias) with its open matches (`affected`, first 1,000; `affected_count`). 404 unless the tenant matched it or maps one of its products. |

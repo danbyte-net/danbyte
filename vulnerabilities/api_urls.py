@@ -6,11 +6,14 @@ them."""
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import exceptions_api, match_api
+from . import exceptions_api, match_api, suggest_api
 
 router = SimpleRouter()
 router.register(r"vulnerability-exceptions", exceptions_api.VulnerabilityExceptionViewSet,
                 basename="vulnerabilityexception")
+# Ahead of the mappings: their detail route would take "suggestions" for an id.
+router.register(r"vulnerabilities/mappings/suggestions", suggest_api.MappingSuggestionViewSet,
+                basename="vulnerability-mapping-suggestion")
 router.register(r"vulnerabilities/mappings", match_api.ProductMappingViewSet,
                 basename="vulnerability-mapping")
 router.register(r"vulnerabilities/matches", match_api.VulnerabilityMatchViewSet,

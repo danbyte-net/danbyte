@@ -160,6 +160,7 @@ const ROWS: Row[] = [
   ["vulnerability-exceptions", "Vulnerabilities · Exceptions", "Software & lifecycle", null],
   ["vulnerability-record-exceptions", "Vulnerability · Exceptions", "Software & lifecycle", null, sub],
   ["vulnerability-exception-matches", "Vulnerability exception · Covers", "Software & lifecycle", null, sub],
+  ["vulnerability-mapping-suggestions", "Vulnerabilities · Suggest mappings", "Software & lifecycle", null, sub],
   ["vuln-sync-products", "Vulnerability browser sync", "Software & lifecycle", null, sub],
   ["application-children", "Application · Child applications", "Software & lifecycle", "/api/applications/", sub],
   ["application-groups", "Application groups", "Software & lifecycle", "/api/application-groups/", { ioType: "applicationgroup" }],

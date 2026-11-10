@@ -15,7 +15,8 @@ active tenant. Access follows the objects, not a type of its own:
 Routes (``vulnerabilities/api_urls.py``):
 
 ``vulnerabilities/mappings/``              list, create; ``<id>/`` read,
-                                           PATCH, DELETE
+                                           PATCH, DELETE; ``bulk-create/``
+``vulnerabilities/mappings/suggestions/``  candidates (``suggest_api``)
 ``vulnerabilities/matches/``               match rows, filtered
 ``vulnerabilities/``                       one row per matched record
 ``vulnerabilities/<vuln id>/``             the record + affected objects
@@ -68,6 +69,7 @@ _RANK = Case(*[When(priority=k, then=Value(v)) for k, v in prio.RANK.items()],
 _CPE_TOKEN_OK = set("abcdefghijklmnopqrstuvwxyz0123456789._-~!%\\+")
 _SCORE_DESC = F("cve__cvss_score").desc(nulls_last=True)
 AFFECTED_MAX = 1000
+BULK_MAX = 500
 
 
 # ─── gate, scope ─────────────────────────────────────────────────────────────
@@ -465,6 +467,8 @@ class ProductMappingViewSet(viewsets.ViewSet):
     ``device_type``, ``application``, ``kind``, ``enabled``."""
 
     permission_classes = [IsAuthenticated]
+    #: Only ``bulk-create`` takes a top-level JSON list (``api.parsers``).
+    allow_json_list = False
 
     def _qs(self, request, tenant, action="view"):
         return visible_mappings(request, tenant, action).select_related(
@@ -525,6 +529,61 @@ class ProductMappingViewSet(viewsets.ViewSet):
                            enabled=_enabled(data), **{field: subject})
         self._save(m)
         return Response(mapping_dict(m), status=201)
+
+    @extend_schema(summary="Map several subjects at once", tags=["vulnerabilities"],
+                   request=OpenApiTypes.OBJECT,
+                   responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+    @action(detail=False, methods=["post"], url_path="bulk-create", allow_json_list=True)
+    def bulk_create(self, request):
+        """``[{platform|device_type|application, identifier, version_scheme?}]``
+        (up to ``BULK_MAX``), all or nothing: each row is checked as a single
+        create is, and any error answers per row (``errors`` keyed by index;
+        ``403`` when one is a refusal, else ``400``) with nothing created.
+        The saves share one transaction, so the recompute and the fetch of
+        the new products are queued once (``signals``)."""
+        tenant = _tenant(request)
+        rows = request.data
+        if not isinstance(rows, list) or not rows:
+            raise ValidationError({"detail": "A JSON list of mappings."})
+        if len(rows) > BULK_MAX:
+            raise ValidationError({"detail": f"At most {BULK_MAX} mappings at once."})
+        errors: dict[str, dict] = {}
+        denied = False
+        made: list[ProductMapping] = []
+        seen: dict[tuple, int] = {}
+        with transaction.atomic():
+            for i, data in enumerate(rows):
+                try:
+                    if not isinstance(data, dict):
+                        raise ValidationError({"detail": "A JSON object."})
+                    field, subject = _subject(request, tenant, data, "change")
+                    if not data.get("identifier"):
+                        raise ValidationError({"identifier": "Give a CPE 2.3 name or a "
+                                                             "package URL."})
+                    kind, part, vendor, product = parse_identifier(data["identifier"])
+                    _check_kind(_SUBJECTS[field], kind, part)
+                    key = (field, subject.pk, kind, part, vendor, product)
+                    if key in seen:
+                        raise ValidationError({"identifier": f"The same as row {seen[key]}."})
+                    seen[key] = i
+                    m = ProductMapping(tenant=tenant, kind=kind, part=part,
+                                       vendor=vendor[:128], product=product[:255],
+                                       version_scheme=_scheme(data), **{field: subject})
+                    self._save(m)
+                    made.append(m)
+                except PermissionDenied as exc:
+                    denied = True
+                    errors[str(i)] = {"detail": str(exc.detail)}
+                except ValidationError as exc:
+                    errors[str(i)] = exc.detail if isinstance(exc.detail, dict) \
+                        else {"detail": exc.detail}
+            if errors:
+                transaction.set_rollback(True)
+        if errors:
+            return Response({"errors": errors}, status=403 if denied else 400)
+        return Response({"created": [mapping_dict(m) for m in made],
+                         "update_source": VulnerabilitySettings.load().update_source},
+                        status=201)
 
     @extend_schema(summary="Change a product mapping", tags=["vulnerabilities"],
                    request=OpenApiTypes.OBJECT,
