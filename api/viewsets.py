@@ -41,6 +41,7 @@ from routing.models import RoutingKeychain
 from .catalog_slug import check_name_and_slug
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_edit import BulkEditMixin, BulkEditSpec
+from .text_versions import TemplateCheckMixin, TextVersionsMixin
 # Re-exported: these lived here before api.bulk_update.
 from .bulk_update import (  # noqa: F401
     BulkUpdateMixin,
@@ -10920,12 +10921,50 @@ class ConfigBundleViewSet(BulkEditMixin, TenantScopedViewSet):
         return qs.distinct()
 
 
-class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
+class ExportTemplateViewSet(
+    TextVersionsMixin, TemplateCheckMixin, BulkEditMixin, TenantScopedViewSet
+):
     queryset = ExportTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = ExportTemplateSerializer
     pagination_class = StandardPagination
+    versions_field = "template_code"
+    check_field = "template_code"
+    rbac_action_map = {
+        **BulkEditMixin.rbac_action_map, "validate_template": "view", "lint": "view",
+    }
     # The code, type and file name belong to one template: not bulk edits.
     bulk_edit = BulkEditSpec(fields=("as_attachment", "description"), tags=False)
+
+    def check_environment(self):
+        from .export_templates import _env
+
+        return _env()
+
+    @extend_schema(request=dict, responses={200: dict})
+    @action(detail=True, methods=["post"])
+    def lint(self, request, pk=None):
+        """The CLI check on a rendered ``output`` (#465): warnings for
+        top-level commands the platform's vocabulary does not know. Reads
+        only configs of this tenant the caller may view; never blocks."""
+        from .cli_lint import lint_render
+        from .text_versions import CHECK_MAX_CHARS, check_rate_limited
+        from .views import _get_active_tenant
+
+        tmpl = self.get_object()
+        data = request.data if hasattr(request.data, "get") else {}
+        output = data.get("output", "")
+        if not isinstance(output, str):
+            return Response({"output": ["A string."]}, status=drf_status.HTTP_400_BAD_REQUEST)
+        if len(output) > CHECK_MAX_CHARS:
+            return Response(
+                {"output": ["Too long to check."]}, status=drf_status.HTTP_400_BAD_REQUEST
+            )
+        if check_rate_limited(request.user, "template-lint"):
+            return Response(
+                {"detail": "Too many checks. Try again in a minute."},
+                status=drf_status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        return Response(lint_render(tmpl, _get_active_tenant(request), request.user, output))
 
     def bulk_notes(self, rows):
         """A template in a config bundle leaves it, as its single delete does:
@@ -11046,7 +11085,9 @@ class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
         return resp
 
 
-class LabelTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
+class LabelTemplateViewSet(
+    TextVersionsMixin, TemplateCheckMixin, BulkEditMixin, TenantScopedViewSet
+):
     """Printable per-object label templates (Jinja2 HTML + QR, sized in mm).
 
     CRUD, plus ``fields`` (token reference for the editor), ``preview`` (render an
@@ -11060,6 +11101,15 @@ class LabelTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
     pagination_class = StandardPagination
     # Size, markup and the default flag belong to one template: not bulk edits.
     bulk_edit = BulkEditSpec(fields=("qr_enabled", "description"), tags=False)
+    versions_field = "template_html"
+    check_field = "template_html"
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "validate_template": "view"}
+
+    def check_environment(self):
+        # The environment LabelTemplateSerializer checks a body with.
+        from jinja2.sandbox import SandboxedEnvironment
+
+        return SandboxedEnvironment(autoescape=True)
 
     def get_queryset(self):
         qs = super().get_queryset()

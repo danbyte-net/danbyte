@@ -100,6 +100,14 @@ export const viewerTheme = EditorView.theme({
   ".cm-fv-mark .cm-gutterElement": { padding: "0 2px 0 4px" },
   ".cm-fv-mark .cm-fv-mark-add": { color: "oklch(0.55 0.14 160)" },
   ".cm-fv-mark .cm-fv-mark-del": { color: "oklch(0.58 0.2 25)" },
+  // A warning on a line (the CLI check, #465): the warning tint, never red.
+  ".cm-fv-warn": {
+    backgroundColor: "color-mix(in oklch, oklch(0.8 0.15 80) 16%, transparent)",
+  },
+  ".cm-fv-mark .cm-fv-mark-warn": {
+    color: "oklch(0.62 0.15 70)",
+    fontWeight: "700",
+  },
 })
 
 /** The base of every viewer: read-only, a visible selection, no caret. */
@@ -305,6 +313,18 @@ export function markGutter(marks: readonly ("+" | "-" | null)[]): Extension {
       return new TextMarker(m, m === "+" ? "cm-fv-mark-add" : "cm-fv-mark-del")
     },
     initialSpacer: () => new TextMarker("+"),
+  })
+}
+
+/** A `!` beside each flagged line (1-based numbers). */
+export function warnGutter(lines: ReadonlySet<number>): Extension {
+  return gutter({
+    class: "cm-fv-mark",
+    lineMarker(view, line) {
+      const n = view.state.doc.lineAt(line.from).number
+      return lines.has(n) ? new TextMarker("!", "cm-fv-mark-warn") : null
+    },
+    initialSpacer: () => new TextMarker("!"),
   })
 }
 

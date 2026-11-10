@@ -30,6 +30,22 @@ and Danbyte renders it against your live data on demand. Templates live under
 3. Save. Danbyte checks the template compiles and that the object type is valid,
    so mistakes surface immediately rather than when you run it.
 
+The editor runs the same syntax check while you type. About half a second
+after the last keystroke it sends the draft to the check endpoint; a Jinja
+error is underlined on its line, marked in the gutter (hover the mark for the
+message), and spelled out under the editor as `Line 4: Unexpected end of
+template…`. The check only parses the template in the sandboxed environment a
+render uses - it loads and renders no data. A failed or refused check (offline,
+rate limited) marks nothing; save still checks.
+
+| Endpoint | Needs |
+|---|---|
+| `POST /api/export-templates/validate/` | `exporttemplate.view`; `{template_code}` → `{ok, error: {message, line}}` |
+| `POST /api/label-templates/validate/` | `labeltemplate.view`; `{template_html}` → the same shape |
+
+The check is limited to 120 calls a minute per user (`429` past it) and to a
+body of a million characters.
+
 The template body is stored exactly as sent - leading indentation, trailing
 spaces and the final newline included - so a client that writes a template
 over the API reads the same bytes back. Names are still trimmed. Label
@@ -256,6 +272,8 @@ edits it; **Render** produces the file without leaving the page.
   how many lines it has), what it produces (file extension, MIME type, inline or
   attachment), when it was created and last changed, and then the **template
   body itself**, in the [file viewer](#the-file-viewer).
+- **Versions** - every saved body of the template, from the change log. See
+  [Versions and restore](#versions-and-restore).
 - **Journal** - your notes on this template.
 - **Change log** - the automatic record of changes to the row.
 
@@ -263,6 +281,51 @@ An export template has no reverse relations: nothing in the data model points
 back at one, and a render is produced on demand rather than stored. So the page
 is deliberately short - the template body is the content, and there is no
 "what uses this" tab to show.
+
+## Versions and restore
+
+The **Versions** tab lists every body the template was saved with, newest
+first: when, by whom, its line count, size and SHA-256, and the cause (a
+restore says *Restored version from 2026-11-01 10:00 UTC*). The row that
+matches the live text carries a **Current** badge.
+
+- Tick **one** version to see its text and a diff against the current text -
+  what a restore would change.
+- Tick **two** to diff the older against the newer, unified or side by side,
+  in the [file viewer](#the-file-viewer).
+- With one version ticked, **Restore this version** saves its text as a new
+  version. It goes through the normal update: the same syntax and target-path
+  checks, the `change` permission, and an ordinary change-log entry. Nothing
+  in the history is rewritten or removed, so a restore can itself be undone
+  from the list.
+
+Versions are read from the change log, which keeps each saved body byte for
+byte; nothing extra is stored. That has limits:
+
+- Entries older than the change-log retention (`CHANGELOG_RETENTION_DAYS`,
+  two years by default) are pruned, and their versions with them. The tab then
+  says older versions are past the retention.
+- A body written outside the audited save path (a direct database update) has
+  no entry. The tab says the current text was saved outside the change log;
+  the current text is still compared against as **current**.
+- An entry that holds no text for the body lists as **Text not kept** and
+  cannot be restored.
+
+Label templates (their HTML) and scripts (their source) have the same
+history: a **Versions** row action on the label template list opens it in a
+dialog, and a script's page has a **Versions** tab. Restoring a script's
+source follows the script's own rules - a script that runs as its owner only
+takes new code from the owner or a holder of `trust`, and changed code clears
+`trusted`.
+
+| Endpoint | Needs |
+|---|---|
+| `GET /api/export-templates/<id>/versions/` | `exporttemplate.view`; paged `{id, at, by, action, cause, text_kept, sha256, size, lines}`, plus `current`, `current_logged`, `history_complete` |
+| `GET /api/export-templates/<id>/versions/<vid>/` | `exporttemplate.view`; the version and its `text`. `?against=<vid>` (or `current`) adds a unified `diff` from that version to this one |
+| `POST /api/export-templates/<id>/versions/<vid>/restore/` | `exporttemplate.change`; saves the version's text as a new version |
+
+The same three sit under `/api/label-templates/<id>/` and `/api/scripts/<id>/`.
+`<vid>` is the change-log entry's id; `current` names the live text.
 
 ## Preview and download
 
@@ -272,9 +335,65 @@ is deliberately short - the template body is the content, and there is no
 - A render loops over at most **50,000** rows - the same bound as the list
   export. Past it the render is refused with the row count; use the list
   export for a whole large table.
+- On a device or VM template, the preview also runs the
+  [CLI check](#cli-check) on the rendered text.
 - From the template list, each row has a **Render & download** action that
   produces the file (saved as an attachment when you enabled that option). The
   same action sits in the header of the template's own page.
+
+## CLI check
+
+A device template can hold a mistyped command that renders fine and only
+fails on the box: `snmp-server comunity public RO`. When you run the preview
+of a device or VM template, Danbyte checks the leading keywords of each
+top-level line of the render against a command list for the template's
+platform, and warns:
+
+> Line 3 Unknown 'snmp-server' option 'comunity' - did you mean 'community'?
+
+Warnings are a `!` in the preview's gutter with the line tinted, a count badge
+in its header, and a list under it. They never block a save or a render.
+
+**Which commands.** Set under **CLI check → Commands** on the template:
+
+| Value | Check |
+|---|---|
+| From the platform (default) | The family of the first platform that has this template as its config template, read from the platform's name or slug (`ios`, `ios-xe`, `iosxe`). A platform that matches no known family: no check. |
+| Cisco IOS / IOS-XE | Always that list. |
+| Off | No check. |
+
+The list is a short bundled seed of IOS / IOS-XE top-level commands (and, for
+a few of them, the words that may follow, such as `snmp-server community`),
+plus every top-level command found in the configs this tenant already holds
+for the platform: what a push tool reported pushing, and the intended and
+running configs drift reports carry. Only configs of devices you may view
+count, never another tenant's; up to the 200 newest of each.
+
+**What is checked.** Only top-level lines - a sub-mode line (indented, like
+` description uplink`) depends on the mode it is in, which the list does not
+model. Blank lines, `!` and `#` comments and banner bodies are skipped, a
+leading `no` or `default` is looked past, and an unambiguous abbreviation
+(`int` for `interface`) passes, as the device itself takes it.
+
+**Ignores.** For vendor commands the list does not know:
+
+- **CLI check → Ignore**, one per line: a command prefix (`vendor-cmd`)
+  ignores lines starting with it; a pattern with `*`, `?` or `[...]`
+  (`snmp-server * RO`) is matched against the whole line. Case-insensitive,
+  up to 100 patterns of 200 characters.
+- Inline, a Jinja comment on the template line:
+  `vendor-cmd {{ value }} {# lint: ignore #}`. It never renders; the rendered
+  lines starting with that template line's literal text (`vendor-cmd`) are
+  skipped.
+
+A directory template (several files) is not checked.
+
+| Endpoint | Needs |
+|---|---|
+| `POST /api/export-templates/<id>/lint/` | `exporttemplate.view`; `{output}` → `{family, family_label, warnings: [{line, keyword, message, suggestion}], learned}`. Limited to 120 calls a minute per user. |
+
+The template carries the settings as `lint_family` (`""`, `off`, `ios`) and
+`ignore_lint_patterns` (a list).
 
 ## Bulk changes
 

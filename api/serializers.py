@@ -10625,6 +10625,14 @@ class ExportTemplateSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(f"Template syntax error: {exc}")
         return value
 
+    def validate_ignore_lint_patterns(self, value):
+        from .cli_lint import clean_patterns
+
+        try:
+            return clean_patterns(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
     def validate(self, attrs):
         """A target path ending in ``/`` is a directory: the template writes
         one file per ``{% file %}`` block. Only a device template has one, a
@@ -10667,6 +10675,7 @@ class ExportTemplateSerializer(NumIdModelSerializer):
         fields = ["id", "name", "object_type", "object_type_label", "description",
                   "template_code", "mime_type", "file_extension", "as_attachment",
                   "target_path", "bundle_path", "is_directory",
+                  "lint_family", "ignore_lint_patterns",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "object_type_label", "bundle_path", "is_directory",
                             "created_at", "updated_at"]

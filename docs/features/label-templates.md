@@ -39,6 +39,15 @@ name). Cable labels also get each end: `{{ a }}` / `{{ b }}` (the devices),
 `{{ a_port_name }}` / `{{ b_port_name }}` (the bare port name, for short
 labels).
 
+## Versions
+
+The clock icon on a template's row opens its **Versions**: every saved HTML
+body from the change log, a diff between any two, and **Restore this
+version**, which saves the old HTML as a new version through a normal edit.
+See [Versions and restore](export-templates.md#versions-and-restore).
+`POST /api/label-templates/validate/` runs the save-time syntax check on a
+draft without saving it.
+
 ## Bulk changes
 
 Tick rows in **Customize → Label templates** - with the `change` or `delete`

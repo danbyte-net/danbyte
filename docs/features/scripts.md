@@ -247,6 +247,16 @@ an address becomes `127.0.0.1` and a port below 1024 becomes 8080; a host
 name is kept, so TLS still checks it. With an `https`
 `DANBYTE_INTERNAL_URL`, use a host name, not an address.
 
+## Versions
+
+The **Versions** tab lists every saved source of the script from the change
+log, with who saved it and when. Tick one to diff it against the current
+source, or two to compare them, and **Restore this version** saves the old
+source as a new version through a normal edit - the owner and `trust` rules
+above still apply. See
+[Versions and restore](export-templates.md#versions-and-restore) for the
+endpoints and what the change log does not keep.
+
 ## Permissions
 
 | Grant | Lets someone |

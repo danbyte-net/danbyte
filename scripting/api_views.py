@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.bulk_edit import BulkEditMixin, BulkEditSpec
+from api.text_versions import TextVersionsMixin
 from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 
 from .models import Script, ScriptOutput, ScriptRun
@@ -29,7 +30,7 @@ from .visibility import visible_scripts
 logger = logging.getLogger(__name__)
 
 
-class ScriptViewSet(BulkEditMixin, TenantScopedViewSet):
+class ScriptViewSet(TextVersionsMixin, BulkEditMixin, TenantScopedViewSet):
     """Scripts the caller can see. `run` and `trust` are their own grants."""
 
     queryset = Script.objects.all()
@@ -42,6 +43,7 @@ class ScriptViewSet(BulkEditMixin, TenantScopedViewSet):
     # trust one script at a time: not bulk edits. Each row still passes the
     # serializer's checks, as a PATCH would.
     bulk_edit = BulkEditSpec(fields=("enabled", "description"), tags=False)
+    versions_field = "source"
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("owner").prefetch_related(

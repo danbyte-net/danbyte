@@ -245,6 +245,7 @@ const ROWS: Row[] = [
   ["saved-filters", "Saved views", "Customize", "/api/saved-filters/"],
   ["export-templates", "Export templates", "Customize", "/api/export-templates/"],
   ["label-templates", "Label templates", "Customize", "/api/label-templates/"],
+  ["text-versions", "Template · Versions", "Customize", null, sub],
   ["config-contexts", "Config contexts", "Customize", "/api/config-contexts/"],
   ["dashboards", "Dashboards", "Customize", "/api/dashboards/"],
   ["topology-views", "Topology views", "Customize", null],
