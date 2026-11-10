@@ -33,6 +33,7 @@ from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_field
 from rest_framework import serializers
+from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
@@ -353,7 +354,7 @@ def _uuid(params, key):
 class VulnerabilityExceptionViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     """The active tenant's vulnerability exceptions."""
 
-    rbac_action_map = {"bulk_delete": "delete"}
+    rbac_action_map = {"bulk_delete": "delete", "scopes": "add"}
     queryset = VulnerabilityException.objects.select_related(
         "cve", "device", "virtual_machine", "platform", "application", "owner",
         "created_by").order_by("-created_at", "id")
@@ -446,6 +447,27 @@ class VulnerabilityExceptionViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         if page is not None:
             return self.get_paginated_response(data)
         return Response(data)
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    @action(detail=False, methods=["get"])
+    def scopes(self, request):
+        """The scopes the caller may create an exception for: ``device`` and
+        ``virtual_machine`` (when they may view that type), and - for a role
+        without a site limit - ``platform``, ``application`` (when they may
+        view it) and ``tenant``. ``site_limited`` says why the rest is gone."""
+        tenant = self._tenant_or_403()
+        user = request.user
+        sites = None if user.is_superuser else rbac.site_scope(user, tenant, SLUG, "add")
+        out = []
+        for scope in _SCOPES:
+            if sites is not None and scope not in ("device", "virtual_machine"):
+                continue
+            slug = _SUBJECT_SLUGS.get(scope)
+            if slug and not user.is_superuser and not rbac.has_action(
+                    user, tenant, slug, "view"):
+                continue
+            out.append(scope)
+        return Response({"scopes": out, "site_limited": sites is not None})
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()

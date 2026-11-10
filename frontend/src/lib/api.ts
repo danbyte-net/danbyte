@@ -9786,6 +9786,7 @@ export type ComplianceCheck =
   | "eol_status"
   | "coverage"
   | "software_target"
+  | "vulnerabilities"
   | "expression"
 export type ComplianceSeverity = "critical" | "warning" | "info"
 
@@ -9867,9 +9868,14 @@ export interface ComplianceRule {
   fail_on_unknown?: boolean
   /** eol_status checks (#436): installed software counts too. */
   include_software?: boolean
+  /** vulnerabilities checks (#451): kev | fix_first | high | cvss. */
+  vuln_fail_on?: VulnFailOn
+  /** vulnerabilities checks failing on cvss: the score, 0.1 - 10. */
+  cvss_min?: DecimalValue | null
   created_at: string
   updated_at: string
 }
+export type VulnFailOn = "" | "kev" | "fix_first" | "high" | "cvss"
 export interface ComplianceViolation {
   rule_id: string
   rule_name: string
@@ -9881,6 +9887,8 @@ export interface ComplianceViolation {
   object_repr: string
   /** Why it fails, where the check says (software_target). */
   detail?: string
+  /** Where the fix is looked up, an SPA path (vulnerabilities checks). */
+  link?: string
   /** The object's site (a site's own id), or null. */
   site_id?: string | null
   site_name?: string
@@ -10031,6 +10039,10 @@ export interface DeviceComplianceViolation {
   condition?: ComplianceExpr | null
   refs?: Record<string, ComplianceRef>
   detail?: string
+  vuln_fail_on?: string
+  cvss_min?: DecimalValue | null
+  /** Where the fix is looked up, an SPA path (vulnerabilities checks). */
+  link?: string
 }
 
 /** Response of GET /api/compliance/devices/<id>/ - one device's compliance
@@ -17849,7 +17861,7 @@ export interface VulnMatch {
     version: string
     application: VulnRef | null
   } | null
-  mapping: { id: string; identifier: string }
+  mapping: { id: string; identifier: string; platform?: VulnRef | null }
   /** The exception that covers it, if one does. */
   exception: VulnExceptionBrief | null
   first_seen_at: string
@@ -17944,6 +17956,8 @@ export interface CpeSearchResult {
   remote_status: "ok" | "cached" | "off" | "limited" | "error"
   remote_error: string
   retry_after?: number
+  /** Where the store's records come from; NVD is asked only for `server`. */
+  update_source?: VulnUpdateSource
 }
 
 /** A device's or VM's open vulnerability records (the list column). */
@@ -18009,6 +18023,87 @@ export interface VulnSummary {
   by_priority: Record<VulnPriority, number>
 }
 
+export type VulnAnalysisState =
+  "not_affected" | "false_positive" | "exploitable"
+export type VulnAnalysisJustification =
+  | ""
+  | "code_not_present"
+  | "code_not_reachable"
+  | "requires_configuration"
+  | "requires_dependency"
+  | "requires_environment"
+  | "protected_by_compiler"
+  | "protected_at_runtime"
+  | "protected_at_perimeter"
+  | "protected_by_mitigating_control"
+export type VulnAnalysisResponse =
+  | "can_not_fix"
+  | "will_not_fix"
+  | "update"
+  | "rollback"
+  | "workaround_available"
+
+/** GET /api/vulnerability-exceptions/ - a decision about one record. */
+export interface VulnException {
+  id: string
+  numid: number | null
+  cve: {
+    id: string
+    vuln_id: string
+    aliases: string[]
+    cvss_score: DecimalValue | null
+    cvss_severity: VulnSeverity
+    kev: boolean
+    summary: string
+  }
+  scope: VulnExceptionScope
+  device: VulnRef | null
+  virtual_machine: VulnRef | null
+  platform: VulnRef | null
+  application: VulnRef | null
+  status: VulnExceptionStatus
+  reason: string
+  owner: { id: number; username: string; display_name: string } | null
+  owner_name: string
+  expires_on: string | null
+  active: boolean
+  analysis_state: VulnAnalysisState
+  analysis_justification: VulnAnalysisJustification
+  analysis_response: VulnAnalysisResponse[]
+  cyclonedx: Record<string, unknown>
+  /** Open matches it covers that you may see. */
+  matches: number
+  created_by: { id: number; username: string; display_name: string } | null
+  expiry_notified_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** POST/PATCH /api/vulnerability-exceptions/. Record and scope only on
+ * create. */
+export interface VulnExceptionWrite {
+  vuln_id?: string
+  status?: VulnExceptionStatus
+  reason?: string
+  owner_id?: number | null
+  expires_on?: string | null
+  device_id?: string
+  virtual_machine_id?: string
+  platform_id?: string
+  application_id?: string
+  analysis_state?: VulnAnalysisState
+  analysis_justification?: VulnAnalysisJustification
+  analysis_response?: VulnAnalysisResponse[]
+}
+
+/** GET /api/vulnerability-exceptions/scopes/ - what the caller may create. */
+export interface VulnExceptionScopes {
+  scopes: VulnExceptionScope[]
+  site_limited: boolean
+}
+
+export type VulnNotifyOn = "fix_first" | "critical" | "kev"
+
 export interface VulnPolicy {
   kev_is_fix_first: boolean
   fix_first_epss: DecimalValue
@@ -18017,7 +18112,7 @@ export interface VulnPolicy {
   high_epss: DecimalValue
   high_epss_cvss: DecimalValue
   medium_cvss: DecimalValue
-  notify_on: string[]
+  notify_on: VulnNotifyOn[]
   notify_enabled: boolean
   updated_at: string
   can_change: boolean

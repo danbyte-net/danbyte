@@ -379,7 +379,8 @@ fail:
 ### Picking people outside Admin
 
 Some features name people without being user administration: notification
-subscriptions, script sharing, a site editor's viewer invite, and user or
+subscriptions, script sharing, a site editor's viewer invite, the owner of
+a [vulnerability exception](vulnerabilities.md#exceptions), and user or
 group [custom fields](tags-and-custom-fields.md). Their pickers list the
 **active accounts that can work in the tenant** - the tenant is on their
 user page, a permission limited to the tenant names them or their group,

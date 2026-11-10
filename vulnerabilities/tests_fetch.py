@@ -652,6 +652,7 @@ class CpeSearchTests(EndpointBase):
         self.settings_(update_source="browser")
         body = self.get("ios xe").json()
         self.assertEqual(body["remote_status"], "off")
+        self.assertEqual(body["update_source"], "browser")
         self.assertEqual(self.net.calls, [])
 
     def test_server_mode_proxies_folds_and_caches(self):

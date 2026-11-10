@@ -147,7 +147,7 @@ def vulnerability_cpe_search(request):
         typed = {"part": part, "vendor": vendor, "product": product,
                  "cpe": f"cpe:2.3:{part}:{vendor}:{product}"}
     out = {"query": q, "typed": typed, "local": _local(q, parsed), "remote": [],
-           "remote_status": "off", "remote_error": ""}
+           "remote_status": "off", "remote_error": "", "update_source": row.update_source}
     if typed is not None or not fetch.server_mode(row):
         return Response(out)
     try:

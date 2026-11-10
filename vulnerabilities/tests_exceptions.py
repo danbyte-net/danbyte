@@ -392,6 +392,36 @@ class AccessTests(ApiBase):
         self.assertFalse(open_rows(self.tenant, excepted__isnull=False).exists())
 
 
+    def test_scopes_follow_the_role(self):
+        self.login(self.admin)
+        r = self.client.get(f"{URL}scopes/").json()
+        self.assertEqual(r, {"scopes": ["device", "virtual_machine", "platform",
+                                        "application", "tenant"], "site_limited": False})
+        self.member("site", [(["device", "virtualmachine", "vulnerabilityexception"],
+                              ["view", "add"])], sites=[self.site_a])
+        self.assertEqual(self.client.get(f"{URL}scopes/").json(),
+                         {"scopes": ["device", "virtual_machine"], "site_limited": True})
+        self.member("devonly", [(["device", "vulnerabilityexception"], ["view", "add"])])
+        self.assertEqual(self.client.get(f"{URL}scopes/").json()["scopes"],
+                         ["device", "tenant"])
+        self.member("reader", [(["device", "vulnerabilityexception"], ["view"])])
+        self.assertEqual(self.client.get(f"{URL}scopes/").status_code, 403)
+
+    def test_exception_writers_may_pick_the_owner(self):
+        self.member("writer", [(["device", "vulnerabilityexception"], ["view", "add"])])
+        r = self.client.get("/api/people/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn("alice", [p["username"] for p in r.json()["results"]])
+        self.member("reader", [(["device", "vulnerabilityexception"], ["view"])])
+        self.assertEqual(self.client.get("/api/people/").status_code, 403)
+
+    def test_match_names_its_mapping_platform(self):
+        self.login(self.admin)
+        rows = self.client.get(f"/api/devices/{self.d_a.pk}/vulnerabilities/").json()["results"]
+        self.assertEqual(rows[0]["mapping"]["platform"],
+                         {"id": str(self.xe.pk), "name": "IOS-XE"})
+
+
 class SiteRoleMigrationTests(TestCase):
     """0052 gives the site roles built before it vulnerability exceptions."""
 

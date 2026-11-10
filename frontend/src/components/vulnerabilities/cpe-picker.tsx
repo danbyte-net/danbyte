@@ -51,7 +51,9 @@ export function remoteNote(data: CpeSearchResult | undefined): string | null {
   if (!data || data.typed) return null
   switch (data.remote_status) {
     case "off":
-      return "Stored products only; NVD is searched in server mode."
+      return data.update_source === "browser"
+        ? "Stored products only; NVD search isn't available in browser mode."
+        : "Stored products only; NVD is searched in server mode."
     case "limited":
       return `NVD is busy; try again in ${data.retry_after ?? 30} s.`
     case "error":

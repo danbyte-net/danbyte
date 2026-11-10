@@ -23,7 +23,11 @@ const EXTRA_SOURCES: Record<string, string[]> = {
   integrations: ["src/components/settings/plugins-section.tsx"],
   updates: ["src/components/settings/services-section.tsx"],
   preferences: ["src/components/settings/sidebar-card.tsx"],
-  "tenant-policy": ["src/components/settings/report-cover-card.tsx"],
+  "tenant-policy": [
+    "src/components/settings/report-cover-card.tsx",
+    "src/components/vulnerabilities/policy-card.tsx",
+  ],
+  branding: ["src/components/settings/vulnerability-settings-card.tsx"],
 }
 
 function sourcesFor(pageKey: string): string {
