@@ -362,6 +362,13 @@ const ROWS: Row[] = [
   ["prtg-retire-rules", "PRTG · Retirement rules", "Integrations", "/api/prtg/retire-rules/"],
   ["oxidized-links", "Oxidized · Linked nodes", "Integrations", "/api/oxidized/links/"],
   ["oxidized-unmatched", "Oxidized · Unmatched nodes", "Integrations", null],
+  // Discovery (#451 B2): nested refs and counts, not flat list fields.
+  ["inventory-profiles", "Discovery · Inventory profiles", "Integrations", null],
+  ["inventory-runs", "Discovery · Runs", "Integrations", null, sub],
+  ["inventory-run-hosts", "Discovery run · Hosts", "Integrations", null, sub],
+  ["inventory-scope-hosts", "Inventory profile · Hosts", "Integrations", null, sub],
+  ["device-packages", "Device · Packages", "Software & lifecycle", null, sub],
+  ["vm-packages", "Virtual machine · Packages", "Software & lifecycle", null, sub],
 
   // ─── Planning & system ─────────────────────────────────────────────────
   ["planning-boards", "Boards", "Planning", "/api/planning/boards/"],

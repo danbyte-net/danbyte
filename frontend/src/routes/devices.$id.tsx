@@ -221,6 +221,10 @@ import {
 } from "@/components/vulnerabilities/vulnerabilities-tab"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { HostVulnBadge } from "@/components/vulnerabilities/badges"
+import {
+  PackagesTab,
+  usePackagesTab,
+} from "@/components/discovery/packages-tab"
 
 const DEVICE_TABS = [
   "overview",
@@ -240,6 +244,7 @@ const DEVICE_TABS = [
   "access",
   "config",
   "documents",
+  "packages",
   "vulnerabilities",
   "journal",
   "history",
@@ -329,6 +334,7 @@ function Body({ device: d }: { device: Device }) {
   // re-clicking the active tab clear the param and bounce you to Overview.
   const [tab, setTab] = useUrlTab<DeviceTab>("overview", "tab", DEVICE_TABS)
   const vuln = useVulnSettings()
+  const pkgs = usePackagesTab("device", d.id)
   // Shared with the header badge and the drift inbox - one request, and the
   // tab markers can never disagree with what the inbox lists.
   const deviceDrift = useDeviceDrift(d.id)
@@ -551,6 +557,9 @@ function Body({ device: d }: { device: Device }) {
           label: "Documents",
           count: d.document_count || undefined,
         },
+        ...(pkgs.show
+          ? [{ value: "packages", label: "Packages", count: pkgs.count }]
+          : []),
         ...(vuln.enabled
           ? [
               {
@@ -714,6 +723,11 @@ function Body({ device: d }: { device: Device }) {
           }
         />
       </DetailTab>
+      {pkgs.show && (
+        <DetailTab value="packages">
+          <PackagesTab kind="device" id={d.id} />
+        </DetailTab>
+      )}
       {vuln.enabled && (
         <DetailTab value="vulnerabilities">
           <VulnerabilitiesTab kind="device" id={d.id} />

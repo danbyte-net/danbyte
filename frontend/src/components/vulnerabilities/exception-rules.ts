@@ -166,7 +166,8 @@ export function subjectOf(
     const app = m.installed_software?.application
     return app ? { scope: "application", id: app.id } : null
   }
-  const p = m.mapping.platform
+  // A package match has no catalog subject: host or tenant only.
+  const p = m.mapping?.platform
   return p ? { scope: "platform", id: p.id } : null
 }
 

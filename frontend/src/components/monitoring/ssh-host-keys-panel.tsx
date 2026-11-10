@@ -56,7 +56,14 @@ interface RawAlert {
  * Device-scoped - a host key belongs to its device, so there is no assignment
  * step (unlike certificates).
  */
-export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
+export function SSHHostKeysPanel({
+  deviceId,
+  hostField = "device",
+}: {
+  /** The host's id: a device's, or a VM's with `hostField="virtual_machine"`. */
+  deviceId: string
+  hostField?: "device" | "virtual_machine"
+}) {
   const qc = useQueryClient()
   const { canDo } = useMe()
   const canManage = canDo("sshhostkey", "add")
@@ -65,7 +72,9 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
   const keys = useQuery({
     queryKey: ["ssh-host-keys", deviceId],
     queryFn: () =>
-      apiAll<SSHHostKey>(`/api/monitoring/ssh-host-keys/?device=${deviceId}`),
+      apiAll<SSHHostKey>(
+        `/api/monitoring/ssh-host-keys/?${hostField}=${deviceId}`
+      ),
   })
 
   const alerts = useQuery({
@@ -214,6 +223,7 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
 
       <UploadSSHHostKeyDialog
         deviceId={deviceId}
+        hostField={hostField}
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onDone={() => {
@@ -227,11 +237,13 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
 
 function UploadSSHHostKeyDialog({
   deviceId,
+  hostField,
   open,
   onOpenChange,
   onDone,
 }: {
   deviceId: string
+  hostField: "device" | "virtual_machine"
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone: () => void
@@ -249,7 +261,7 @@ function UploadSSHHostKeyDialog({
       apiStatus<SSHHostKey>("/api/monitoring/ssh-host-keys/", {
         method: "POST",
         body: JSON.stringify({
-          device: deviceId,
+          [hostField]: deviceId,
           public_key_line: line.trim(),
         }),
       }),

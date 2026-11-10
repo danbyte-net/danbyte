@@ -92,6 +92,7 @@ import {
   Waypoints,
   Bot,
   FileCode,
+  ScanSearch,
   Webhook,
   Workflow,
   Wrench,
@@ -192,7 +193,14 @@ type NavItem = {
   perm?: string
   /** Also require one of these Settings → Integrations toggles to be on. */
   integration?: Array<
-    "dhcp" | "dns" | "virtualization" | "ai" | "zabbix" | "prtg" | "oxidized"
+    | "dhcp"
+    | "dns"
+    | "virtualization"
+    | "ai"
+    | "zabbix"
+    | "prtg"
+    | "oxidized"
+    | "discovery"
   >
   /** Also require this deployment-wide feature to be on. */
   feature?: "vulnerabilities"
@@ -1460,6 +1468,13 @@ export const sections: NavSection[] = [
             icon: FileCode,
             objectType: "oxidizedconnection",
             integration: ["oxidized"],
+          },
+          {
+            title: "Discovery",
+            url: "/discovery",
+            icon: ScanSearch,
+            objectType: "inventoryprofile",
+            integration: ["discovery"],
           },
         ],
       },

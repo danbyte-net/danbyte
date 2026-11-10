@@ -156,6 +156,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/zabbix": "monitoring/zabbix/",
   "/prtg": "features/prtg/",
   "/oxidized": "features/oxidized/",
+  "/discovery": "features/discovery/",
   // The pages the settings merges left standing. Without these they fall
   // through to "/settings" and the book button opens the access page, which
   // is the right doc for almost none of them.

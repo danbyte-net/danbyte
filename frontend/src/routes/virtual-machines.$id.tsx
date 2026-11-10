@@ -81,6 +81,12 @@ import {
 } from "@/components/vulnerabilities/vulnerabilities-tab"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { HostVulnBadge } from "@/components/vulnerabilities/badges"
+import {
+  PackagesTab,
+  usePackagesTab,
+} from "@/components/discovery/packages-tab"
+import { DeviceCredentialsCard } from "@/components/device-credentials-card"
+import { SSHHostKeysPanel } from "@/components/monitoring/ssh-host-keys-panel"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -146,11 +152,13 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "snmp"
     | "certificates"
     | "config"
+    | "packages"
     | "vulnerabilities"
     | "journal"
     | "history"
   >("overview")
   const vuln = useVulnSettings()
+  const pkgs = usePackagesTab("virtual_machine", vm.id)
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const openDelete = useCallback(() => setDeleting(vm), [vm])
@@ -320,6 +328,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           count: vm.certificate_count,
         },
         { value: "config", label: "Config" },
+        ...(pkgs.show
+          ? [{ value: "packages", label: "Packages", count: pkgs.count }]
+          : []),
         ...(vuln.enabled
           ? [
               {
@@ -398,6 +409,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           </p>
         )}
         <div className="mt-6 empty:hidden">
+          <DeviceCredentialsCard deviceId={vm.id} hostField="virtual_machine" />
+        </div>
+        <div className="mt-6 empty:hidden">
           <PrtgMonitoringRow
             parent={{ virtual_machine: vm.id }}
             prtgSync={vm.prtg_sync}
@@ -427,8 +441,16 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         <VmSnmpCard vmId={vm.id} />
       </DetailTab>
       <DetailTab value="certificates">
-        <CertificatesPanel objectType="api.virtualmachine" objectId={vm.id} />
+        <div className="space-y-6">
+          <CertificatesPanel objectType="api.virtualmachine" objectId={vm.id} />
+          <SSHHostKeysPanel deviceId={vm.id} hostField="virtual_machine" />
+        </div>
       </DetailTab>
+      {pkgs.show && (
+        <DetailTab value="packages">
+          <PackagesTab kind="virtual_machine" id={vm.id} />
+        </DetailTab>
+      )}
       {vuln.enabled && (
         <DetailTab value="vulnerabilities">
           <VulnerabilitiesTab kind="virtual_machine" id={vm.id} />

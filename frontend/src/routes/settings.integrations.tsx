@@ -11,6 +11,8 @@ import { SettingsHeader } from "@/components/settings/settings-card"
 import { ToggleCard, ToggleCardGrid } from "@/components/settings/toggle-card"
 import { VendorLogo } from "@/components/settings/vendor-logo"
 import { PluginsSection } from "@/components/settings/plugins-section"
+import { Badge } from "@/components/ui/badge"
+import { useDiscoveryStatus } from "@/components/discovery/status"
 
 export const Route = createFileRoute("/settings/integrations")({
   component: IntegrationsSettingsPage,
@@ -28,6 +30,7 @@ type IntegrationSettings = {
   zabbix_enabled: boolean
   prtg_enabled: boolean
   oxidized_enabled: boolean
+  discovery_enabled: boolean
 }
 
 interface IntegrationCard {
@@ -123,6 +126,14 @@ const CARDS: IntegrationCard[] = [
     configure: { to: "/oxidized", label: "Connection" },
   },
   {
+    key: "discovery_enabled",
+    label: "Discovery",
+    info: "Logs in over SSH with each host's own device credential and reads os-release and the package list - fixed commands, no sudo, nothing written. Only hosts with an accepted SSH host key, inside a profile's scope and with a recorded authorisation, are read. The deployment must allow it too.",
+    description:
+      "Read installed packages from Linux devices and VMs, so vulnerability matching sees exact distro versions.",
+    configure: { to: "/discovery", label: "Profiles" },
+  },
+  {
     key: "ai_access_enabled",
     label: "Agent access (MCP)",
     info: "Speaks the Model Context Protocol over HTTP at /api/mcp/. An assistant authenticates with an API token and sees exactly what that account sees - the same tenant, sites and objects, through the same permissions.",
@@ -170,10 +181,13 @@ function IntegrationsSettingsPage() {
       }),
     onSuccess: (data) => {
       qc.setQueryData(["integration-settings"], data)
+      qc.invalidateQueries({ queryKey: ["integrations-enabled"] })
+      qc.invalidateQueries({ queryKey: ["discovery", "status"] })
       toast.success("Integration settings saved")
     },
     onError: (e) => apiErrorToast(e),
   })
+  const discovery = useDiscoveryStatus(canManage)
 
   if (isLoading)
     return <p className="text-sm text-muted-foreground">Loading…</p>
@@ -185,6 +199,8 @@ function IntegrationsSettingsPage() {
     )
 
   const settings = query.data
+  // Discovery also needs the deployment switch (DANBYTE_DISCOVERY_ENABLED).
+  const deploymentOff = discovery.data && !discovery.data.deployment_enabled
   const notice = trademarkNotice(CARDS.flatMap((c) => c.names ?? []))
 
   return (
@@ -217,6 +233,11 @@ function IntegrationsSettingsPage() {
                 checked={settings[card.key]}
                 disabled={save.isPending}
                 onCheckedChange={(on) => save.mutate({ [card.key]: on })}
+                badges={
+                  card.key === "discovery_enabled" && deploymentOff ? (
+                    <Badge variant="warning">Off for this deployment</Badge>
+                  ) : undefined
+                }
                 action={
                   card.configure && (
                     <Button size="sm" variant="outline" asChild>

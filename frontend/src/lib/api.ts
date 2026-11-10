@@ -538,6 +538,7 @@ export type RBACAction =
   | "view_config"
   | "view_cost"
   | "provision"
+  | "scan"
 
 export interface RBACUser {
   id: number
@@ -17855,7 +17856,7 @@ export interface VulnMatch {
   cve: VulnRecordBrief
   priority: VulnPriority
   confidence: VulnConfidence
-  via: "platform" | "application"
+  via: "platform" | "application" | "package"
   version: string
   device: VulnRef | null
   virtual_machine: VulnRef | null
@@ -17864,7 +17865,18 @@ export interface VulnMatch {
     version: string
     application: VulnRef | null
   } | null
-  mapping: { id: string; identifier: string; platform?: VulnRef | null }
+  /** Null for a match through an inventoried package (`via: "package"`). */
+  mapping: { id: string; identifier: string; platform?: VulnRef | null } | null
+  /** The package discovery read from the host (`via: "package"`). */
+  host_package?: {
+    id: string
+    name: string
+    version: string
+    arch: string
+    source_name: string
+    ecosystem: string
+    purl: string
+  } | null
   /** The exception that covers it, if one does. */
   exception: VulnExceptionBrief | null
   first_seen_at: string
@@ -18136,4 +18148,156 @@ export interface VulnPolicy {
   notify_enabled: boolean
   updated_at: string
   can_change: boolean
+}
+
+// ─── Discovery (#451 B2) ─────────────────────────────────────────────────
+
+export interface DiscoveryStatus {
+  /** DANBYTE_DISCOVERY_ENABLED on this deployment. */
+  deployment_enabled: boolean
+  /** The tenant's Discovery integration toggle. */
+  enabled: boolean
+  /** Both on. */
+  active: boolean
+  can_manage: boolean
+}
+
+export interface DiscoverySettings {
+  deny_subnets: string[]
+  can_change: boolean
+  updated_at: string
+}
+
+export type InventoryRunStatus =
+  "queued" | "running" | "ok" | "partial" | "failed" | "skipped"
+
+export type InventoryHostStatus =
+  | "ok"
+  | "auth_failed"
+  | "host_key_refused"
+  | "unreachable"
+  | "timeout"
+  | "unsupported"
+  | "failed"
+  | "no_credential"
+  | "no_address"
+  | "exempt"
+  | "denied"
+  | "maintenance"
+  | "blocked"
+
+export interface InventoryRunCounts {
+  hosts?: number
+  ok?: number
+  packages?: number
+  changed?: number
+  [status: string]: number | undefined
+}
+
+export interface InventoryProfile {
+  id: string
+  numid: number | null
+  name: string
+  description: string
+  enabled: boolean
+  site_ids: string[]
+  prefix_ids: string[]
+  device_ids: string[]
+  virtual_machine_ids: string[]
+  scope: {
+    sites: { id: string; name: string }[]
+    prefixes: { id: string; name: string }[]
+    devices: { id: string; name: string }[]
+    virtual_machines: { id: string; name: string }[]
+  }
+  interval_hours: number
+  window_start: string | null
+  window_end: string | null
+  max_concurrency: number
+  timeout_seconds: number
+  authorisation: string
+  authorised: boolean
+  authorised_by_name: string
+  authorised_at: string | null
+  /** Why it cannot run now; "" when it can. */
+  blocked_reason: string
+  last_run_at: string | null
+  last_run: {
+    id: string
+    status: InventoryRunStatus
+    created_at: string
+    finished_at: string | null
+    counts: InventoryRunCounts
+  } | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InventoryRun {
+  id: string
+  profile: { id: string; name: string }
+  trigger: "manual" | "schedule"
+  started_by_name: string
+  engine: string
+  status: InventoryRunStatus
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  counts: InventoryRunCounts
+  errors: string[]
+}
+
+export interface InventoryHostResult {
+  id: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  address: string
+  status: InventoryHostStatus
+  transport: "ssh" | ""
+  message: string
+  packages: number
+  added: number
+  removed: number
+  updated: number
+  finished_at: string | null
+}
+
+/** A host as a profile's scope resolves now (`.../hosts/`). */
+export interface InventoryScopeHost {
+  kind: "device" | "virtual_machine"
+  id: string
+  name: string
+  address: string
+  status: InventoryHostStatus | "ready"
+  message: string
+  credential: { id: string; name: string } | null
+  scan_exempt: boolean
+}
+
+export interface HostPackage {
+  id: string
+  name: string
+  version: string
+  arch: string
+  source_name: string
+  source_version: string
+  type: "deb" | "rpm" | "apk"
+  ecosystem: string
+  purl: string
+  first_seen: string
+  last_seen: string
+}
+
+export interface HostOsFact {
+  os_id: string
+  version_id: string
+  codename: string
+  pretty_name: string
+  ecosystem: string
+  package_manager: string
+  collected_at: string
+}
+
+export interface HostPackagePage extends Paginated<HostPackage> {
+  os: HostOsFact | null
 }

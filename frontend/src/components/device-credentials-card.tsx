@@ -70,7 +70,14 @@ const KIND_LABEL: Record<string, string> = Object.fromEntries(
  * the configured secret manager (managed) or an external path the operator keeps
  * themselves. Secrets are never shown in the list; the Reveal action (gated on
  * the reveal verb) fetches one on demand. */
-export function DeviceCredentialsCard({ deviceId }: { deviceId: string }) {
+export function DeviceCredentialsCard({
+  deviceId,
+  hostField = "device",
+}: {
+  /** The host's id: a device's, or a VM's with `hostField="virtual_machine"`. */
+  deviceId: string
+  hostField?: "device" | "virtual_machine"
+}) {
   const { canDo } = useMe()
   const canView = canDo("devicecredential", "view")
   const canAdd = canDo("devicecredential", "add")
@@ -86,7 +93,7 @@ export function DeviceCredentialsCard({ deviceId }: { deviceId: string }) {
     queryKey: ["device-credentials", deviceId],
     queryFn: () =>
       apiAll<DeviceCredential>(
-        `/api/monitoring/device-credentials/?device=${deviceId}`
+        `/api/monitoring/device-credentials/?${hostField}=${deviceId}`
       ),
     enabled: canView,
   })
@@ -169,6 +176,7 @@ export function DeviceCredentialsCard({ deviceId }: { deviceId: string }) {
       {(adding || editing) && (
         <CredentialForm
           deviceId={deviceId}
+          hostField={hostField}
           credential={editing}
           onClose={() => {
             setAdding(false)
@@ -233,10 +241,12 @@ function RevealButton({ id }: { id: string }) {
 
 function CredentialForm({
   deviceId,
+  hostField,
   credential,
   onClose,
 }: {
   deviceId: string
+  hostField: "device" | "virtual_machine"
   credential: DeviceCredential | null
   onClose: () => void
 }) {
@@ -278,7 +288,7 @@ function CredentialForm({
   const mutation = useMutation({
     mutationFn: () => {
       const payload: Record<string, unknown> = {
-        device: deviceId,
+        [hostField]: deviceId,
         name: name.trim(),
         kind,
         username: username.trim(),
