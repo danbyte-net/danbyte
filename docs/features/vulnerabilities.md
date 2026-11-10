@@ -725,7 +725,7 @@ Affected tab, or a row's shield button) asks for:
 | Scope | *This device* / *This VM* (or *Its device or VM*), *Its platform or application* (*This platform* / *This application* on those pages), or *Whole tenant*. Only scopes you may create are offered: a role limited to sites gets the device or VM only, and a platform or application needs `view` on it. With several rows the choice reads *N of M* when only some can take it (a match through a device type mapping has no platform). |
 | Status | *Not applicable* or *Risk accepted*. |
 | Reason | Required. |
-| Owner | A member of the tenant; required. |
+| Owner | A member of the tenant; required. Picked from the tenant's people when you may use the [people picker](permissions.md#picking-people-outside-admin); otherwise it is you, and an edit keeps the owner it has (the API refuses any other `owner_id`). |
 | Expires | Required for a risk acceptance, today to 365 days ahead; optional for not applicable. |
 | Advanced | The CycloneDX analysis: state, justification (with *Not affected*) and response, starting from the status's defaults. |
 
@@ -768,7 +768,10 @@ limited to sites writes them only for hosts at its sites, and reads those
 plus the ones without a site. An exception for a platform, an application or
 the whole tenant has no site, so a role limited to sites cannot write one
 (the API answers with a field error). The subject must be one you may view,
-on create and when listing. Exceptions are in the [change log](change-log.md).
+on create and when listing. Only someone who may use the
+[people picker](permissions.md#picking-people-outside-admin) names another
+owner; anyone else owns what they add. Exceptions are in the
+[change log](change-log.md).
 
 ## Compliance rule
 
@@ -834,7 +837,7 @@ site role sees only its own sites' matches, everywhere.
 | `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, records new this week (`new_this_week`: a match first seen in the last 7 days), devices and VMs affected. |
 | `GET /api/vulnerabilities/coverage/` | Per mapping: objects tested, matched, with a blank version, with a version the scheme cannot read; and from the last run the records it could not decide (`unparsed_bounds`, `range_not_understood`). Filters `platform`, `device_type`, `application`. |
 | `GET/PATCH /api/vulnerabilities/policy/` | Priority thresholds and notification settings (`notify_on`, `notify_enabled`). |
-| `GET /api/vulnerability-exceptions/scopes/` | The scopes the caller may create an exception for (`{scopes, site_limited}`); needs `add`. |
+| `GET /api/vulnerability-exceptions/scopes/` | The scopes the caller may create an exception for (`{scopes, site_limited, can_pick_owner, you}`: whether you may name another owner, and yourself); needs `add`. |
 | `GET/POST /api/vulnerability-exceptions/`, `GET/PATCH/DELETE …/<id>/`, `POST …/bulk-delete/` | [Exceptions](#exceptions). `POST {vuln_id, status, reason, owner_id, expires_on?, device_id \| virtual_machine_id \| platform_id \| application_id?, analysis_state?, analysis_justification?, analysis_response?}`. Reads add `cve`, `scope`, the subject, `owner`, `owner_name`, `active`, `cyclonedx`, `matches` (open matches it covers that you may see) and `expiry_notified_at`. Filters `vuln_id`, `status`, `scope` (`device`, `virtual_machine`, `platform`, `application`, `tenant`), `device`, `virtual_machine`, `platform`, `application`, `owner`, `active` and `q`. |
 
 The record and match lists take `status` (`open` by default, `resolved`,

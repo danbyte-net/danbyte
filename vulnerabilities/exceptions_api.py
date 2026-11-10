@@ -271,8 +271,14 @@ class VulnerabilityExceptionSerializer(NumIdModelSerializer):
 
         if "owner" in attrs or inst is None:
             owner = attrs.get("owner")
+            unchanged = inst is not None and owner is not None and owner.pk == inst.owner_id
             if owner is None:
                 errors["owner_id"] = "Pick an owner."
+            elif (not unchanged and user is not None and owner.pk != user.pk
+                    and not can_pick_owner(user, tenant)):
+                # Without the people picker the owner is yourself: naming
+                # anyone else would turn this into a member-id oracle.
+                errors["owner_id"] = "You can only name yourself."
             elif tenant is not None:
                 from auth_api.people_api import tenant_members
 
@@ -328,6 +334,14 @@ class VulnerabilityExceptionSerializer(NumIdModelSerializer):
                 raise ValidationError({"vuln_id": "This record already has an active "
                                                   "exception for that scope."})
         return attrs
+
+
+def can_pick_owner(user, tenant) -> bool:
+    """May ``user`` name someone else as an owner: the people picker's own
+    rule (``auth_api.people_api.may_pick_people``)."""
+    from auth_api.people_api import may_pick_people
+
+    return bool(getattr(user, "is_superuser", False)) or may_pick_people(user, tenant)
 
 
 def _match_counts(request, pks) -> dict:
@@ -454,7 +468,9 @@ class VulnerabilityExceptionViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         """The scopes the caller may create an exception for: ``device`` and
         ``virtual_machine`` (when they may view that type), and - for a role
         without a site limit - ``platform``, ``application`` (when they may
-        view it) and ``tenant``. ``site_limited`` says why the rest is gone."""
+        view it) and ``tenant``. ``site_limited`` says why the rest is gone.
+        ``can_pick_owner`` says whether the caller may name another owner
+        (the people picker's rule); ``you`` is the caller, the owner otherwise."""
         tenant = self._tenant_or_403()
         user = request.user
         sites = None if user.is_superuser else rbac.site_scope(user, tenant, SLUG, "add")
@@ -467,7 +483,9 @@ class VulnerabilityExceptionViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
                     user, tenant, slug, "view"):
                 continue
             out.append(scope)
-        return Response({"scopes": out, "site_limited": sites is not None})
+        return Response({"scopes": out, "site_limited": sites is not None,
+                         "can_pick_owner": can_pick_owner(user, tenant),
+                         "you": _user_ref(user)})
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()

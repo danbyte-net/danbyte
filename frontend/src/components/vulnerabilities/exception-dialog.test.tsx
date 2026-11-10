@@ -66,9 +66,19 @@ const MATCH = {
   },
 } as unknown as VulnMatch
 
-function open(scopes: string[], siteLimited = false) {
-  apiMock.mockImplementation(async (path: string) => {
-    if (path?.endsWith("/scopes/")) return { scopes, site_limited: siteLimited }
+const YOU = { id: 7, username: "sam", display_name: "Sam Site" }
+
+function open(scopes: string[], siteLimited = false, canPick = true) {
+  apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path?.endsWith("/scopes/"))
+      return {
+        scopes,
+        site_limited: siteLimited,
+        can_pick_owner: canPick,
+        you: YOU,
+      }
+    if (path === "/api/vulnerability-exceptions/" && init?.method === "POST")
+      return { id: "e1" }
     throw new Error(`unexpected ${path}`)
   })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -102,6 +112,27 @@ describe("ExceptionDialog", () => {
     expect(
       apiMock.mock.calls.every(([p]) => !p || p.endsWith("/scopes/"))
     ).toBe(true)
+  })
+
+  it("makes you the owner without the people picker", async () => {
+    open(["device", "virtual_machine"], true, false)
+    expect(await screen.findByText("You · Sam Site")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /person search/i })).toBeNull()
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "HTTP server is off" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Add exception" }))
+    await waitFor(() =>
+      expect(apiMock.mock.calls.some(([, i]) => i?.method === "POST")).toBe(
+        true
+      )
+    )
+    const [, init] = apiMock.mock.calls.find(([, i]) => i?.method === "POST")!
+    expect(JSON.parse(String(init!.body))).toMatchObject({
+      owner_id: 7,
+      device_id: "d1",
+      reason: "HTTP server is off",
+    })
   })
 
   it("says why a site-limited role gets the host only", async () => {

@@ -18100,6 +18100,9 @@ export interface VulnExceptionWrite {
 export interface VulnExceptionScopes {
   scopes: VulnExceptionScope[]
   site_limited: boolean
+  /** May name another owner (the people picker's rule); else it is `you`. */
+  can_pick_owner: boolean
+  you: { id: number; username: string; display_name: string }
 }
 
 export type VulnNotifyOn = "fix_first" | "critical" | "kev"
