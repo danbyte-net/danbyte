@@ -1,0 +1,22 @@
+"""Discovery routes (#451 B2), mounted at ``/api/`` beside the vulnerability
+routes, ahead of the main router so the per-host paths win over its detail
+routes."""
+from django.urls import path
+from rest_framework.routers import SimpleRouter
+
+from . import api
+
+router = SimpleRouter()
+router.register(r"discovery/profiles", api.InventoryProfileViewSet,
+                basename="inventoryprofile")
+router.register(r"discovery/runs", api.InventoryRunViewSet, basename="inventoryrun")
+
+urlpatterns = [
+    path("discovery/status/", api.discovery_status, name="discovery-status"),
+    path("discovery/settings/", api.discovery_settings, name="discovery-settings"),
+    path("discovery/exempt/", api.discovery_exempt, name="discovery-exempt"),
+    path("devices/<uuid:pk>/packages/", api.device_packages, name="device-packages"),
+    path("virtual-machines/<uuid:pk>/packages/", api.virtual_machine_packages,
+         name="virtual-machine-packages"),
+    *router.urls,
+]

@@ -735,6 +735,8 @@ urlpatterns = [
     path("", include("profiles.api_urls")),
     # Vulnerability mappings, matches, policy and per-object lists (#451).
     path("", include("vulnerabilities.api_urls")),
+    # Built-in discovery: profiles, runs, per-host packages (#451 B2).
+    path("", include("discovery.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) - gated on jobs.manage.
