@@ -262,8 +262,12 @@ AUDITED_MODELS = [
     "compliance.EolSettings",
     "compliance.EolMapping",
     "compliance.EolProduct",
-    # Vulnerability data: the settings only; records are fetched public data.
+    # Vulnerability data: the settings, a tenant's product mappings and its
+    # priority policy. Records are fetched public data and matches are
+    # machine-computed in bulk; neither is change-logged.
     "vulnerabilities.VulnerabilitySettings",
+    "vulnerabilities.ProductMapping",
+    "vulnerabilities.VulnerabilityPolicy",
     # Access: object permissions + public share links.
 ]
 

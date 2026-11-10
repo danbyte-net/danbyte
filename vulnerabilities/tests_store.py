@@ -55,9 +55,11 @@ class StoreTests(TestCase):
             store.store_records(nvd_records(data("nvd_page.json")), source="nvd_feed",
                                 tracked=products.tracked())
             before = dict(Cve.objects.values_list("vuln_id", "fetched_at"))
+            # The mapping provider reads the tracked products once, outside.
+            tracked = products.tracked()
             with self.assertNumQueries(1):
                 counts = store.store_records(nvd_records(data("nvd_page.json")),
-                                             source="nvd_feed", tracked=products.tracked())
+                                             source="nvd_feed", tracked=tracked)
             self.assertEqual((counts["created"], counts["updated"], counts["unchanged"]),
                              (0, 0, 2))
             self.assertEqual(dict(Cve.objects.values_list("vuln_id", "fetched_at")), before)
