@@ -1313,6 +1313,7 @@ export default function FloorScene3D({
           items={activeTexts}
           plan={plan}
           readable={readableNames}
+          walls={sceneData?.walls}
         />
         {building &&
           levels.length > 1 &&

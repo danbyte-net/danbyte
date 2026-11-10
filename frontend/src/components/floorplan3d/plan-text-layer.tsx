@@ -18,6 +18,15 @@ import {
   screenBounds,
 } from "./plan-text"
 import type { PlanTextItem, PlanTextMode } from "./plan-text"
+import {
+  MIN_FIT_SCALE,
+  fitPlanText,
+  segmentsNear,
+  standingPlace,
+  standingSpan,
+  wallSegments,
+} from "./plan-text-fit"
+import type { FitRegion, PlacedText } from "./plan-text-fit"
 import { applyPlanText, collectPlanText } from "./plan-text-bus"
 import type { PlanTextBus, PlanTextCollector } from "./plan-text-bus"
 import { iconDataUrl, nameReach, screenScale } from "./readable-names"
@@ -25,8 +34,8 @@ import { roomLook } from "./room-look"
 import type { RoomLook } from "./room-look"
 import { textTexture } from "./text-sprite"
 import { useMaxAnisotropy } from "./texture-quality"
-import { cellM } from "./world"
-import type { ScenePayload } from "./world"
+import { WALL_THICKNESS_M, cellM } from "./world"
+import type { SceneWall, ScenePayload } from "./world"
 
 // The plan's own text in the room (plan-text.ts): each piece painted once
 // into a canvas texture and kept - a flat quad on the floor, a billboard
@@ -44,6 +53,9 @@ const SANS = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
 const TRAY_PX = 15
 /** Readable never grows a text past this many times its size. */
 const MAX_GROW = 60
+/** A room's name keeps this far (mm) off a wall's face, and a wall's
+ * thickness plus this in from its room's edges. */
+const WALL_PAD_MM = 60
 
 /** One floor quad, laid flat: its local +y (the text's up) along −z. */
 let floorQuad: THREE.PlaneGeometry | null = null
@@ -214,11 +226,26 @@ interface Made {
   mesh: THREE.Mesh | null
   sprite: THREE.Sprite | null
   mode: PlanTextMode
+  /** A room's, an area's or a zone's name: where it fits inside its
+   * floor (plan-text-fit.ts) - null, it fits nowhere and is left out.
+   * Undefined for the rest. */
+  fit?: PlacedText | null
+  region?: FitRegion
+  /** How far a standing name's line runs inside its room each way
+   * (cells), at the turn it was last asked at. */
+  stand?: {
+    rot: number
+    lines: { base: Pt; back: number; ahead: number }[]
+  }
+  /** The roomiest spot in its room, once a standing name needs it. */
+  pole?: Pt | null
   /** This frame: how it shows if it wins, where (level-local metres) and
    * at what size. */
   frame: {
     state: "hidden" | "flat" | "billboard" | "plate"
+    /** Its size over its painted one, and its turn (degrees). */
     grow: number
+    rot: number
     pos: THREE.Vector3
     scale: number
   }
@@ -275,6 +302,7 @@ export function PlanTextLayer({
   place = null,
   readable = false,
   idPrefix = "",
+  walls,
 }: {
   bus: PlanTextBus
   items: readonly PlanTextItem[]
@@ -284,6 +312,8 @@ export function PlanTextLayer({
    * screen. */
   readable?: boolean
   idPrefix?: string
+  /** The level's walls: a room's name keeps clear of them. */
+  walls?: readonly SceneWall[]
 }) {
   const group = useRef<THREE.Group>(null)
   const made = useRef(new Map<string, Made>())
@@ -336,11 +366,53 @@ export function PlanTextLayer({
         mesh,
         sprite: plate ? makeSprite(painted, false, g) : null,
         mode: "flat",
-        frame: { state: "hidden", grow: 1, pos: new THREE.Vector3(), scale: 1 },
+        frame: {
+          state: "hidden",
+          grow: 1,
+          rot: 0,
+          pos: new THREE.Vector3(),
+          scale: 1,
+        },
       })
     }
     invalidate()
   }, [items, idPrefix, dark, look, anisotropy, invalidate])
+
+  // Where each room's name fits inside its floor, clear of the walls.
+  const cellMm = plan.cell_mm
+  useLayoutEffect(() => {
+    const ws = walls ?? []
+    const segs = wallSegments(ws, cellMm, WALL_THICKNESS_M * 1000, WALL_PAD_MM)
+    const thickest = ws.reduce(
+      (t, wl) => Math.max(t, wl.thickness_mm || 0),
+      WALL_THICKNESS_M * 1000
+    )
+    for (const m of made.current.values()) {
+      const room = m.item.room
+      m.stand = undefined
+      m.pole = undefined
+      if (!room) {
+        m.fit = undefined
+        m.region = undefined
+        continue
+      }
+      // An area's edges are where its walls stand; a zone lies inside a
+      // room, and only the walls themselves bound it.
+      const marginMm =
+        m.item.kind === "area" ? thickest + WALL_PAD_MM : WALL_PAD_MM
+      const region: FitRegion = {
+        outline: room.outline,
+        margin: marginMm / cellMm,
+        obstacles: segmentsNear(segs, room.outline),
+        angles: room.angles,
+      }
+      m.region = region
+      m.fit = fitPlanText(region, m.item, m.painted.w, m.painted.h, {
+        maxGrow: MAX_GROW,
+      })
+    }
+    invalidate()
+  }, [items, idPrefix, dark, anisotropy, walls, cellMm, invalidate])
 
   useEffect(() => {
     const all = made.current
@@ -361,6 +433,8 @@ export function PlanTextLayer({
     const v2 = new THREE.Vector3()
     const pA = new THREE.Vector3()
     const pB = new THREE.Vector3()
+    const right = new THREE.Vector3()
+    const inv = new THREE.Matrix4()
     return {
       collect(camera, size) {
         const cfg = settings.current
@@ -382,6 +456,11 @@ export function PlanTextLayer({
           ? (camera as THREE.PerspectiveCamera).fov
           : 50
         const tanHalf = Math.tan((fov * Math.PI) / 360)
+        // The camera's right on the level's plan: the line a standing
+        // text spans (degrees, as the plan turns).
+        inv.copy(world).invert()
+        right.setFromMatrixColumn(camera.matrixWorld, 0).transformDirection(inv)
+        const standRot = (Math.atan2(right.z, right.x) * 180) / Math.PI
         const out: NameCandidate[] = []
         // A level-local point (metres) on screen; null behind the camera.
         const toScreen = (p: THREE.Vector3): Pt | null => {
@@ -417,8 +496,16 @@ export function PlanTextLayer({
             out.push({ id, ...box, priority: planTextPriority("tray", d) })
             continue
           }
+          // A room's name where it fits in its room, at the size it fits.
+          const fit = m.fit
+          if (fit === null) continue
+          const spot = fit ?? item
+          const scale = fit?.scale ?? 1
+          const pw = painted.w * scale
+          const ph = painted.h * scale
+          const shift: Pt = [painted.shift[0] * scale, painted.shift[1] * scale]
           // Its middle at its own size: how far, and how high the camera.
-          const q1 = flatQuad(item, painted.w, painted.h, 1, painted.shift)
+          const q1 = flatQuad(spot, pw, ph, 1, shift)
           w.set(q1.centre[0] * c, item.elevation, q1.centre[1] * c)
           w.applyMatrix4(world)
           const d = Math.max(1e-3, camera.position.distanceTo(w))
@@ -426,13 +513,13 @@ export function PlanTextLayer({
           const sinE = (camera.position.y - w.y) / d
           m.mode = planTextMode(sinE, m.mode)
           const pxPerM = size.height / (2 * tanHalf * d)
-          const fontM = item.fontCells * c
+          const fontM = item.fontCells * c * scale
           // The glyphs' height on screen: flat, the text's up axis as it
           // projects; standing, its height at that distance.
           let textPx = fontM * pxPerM
           if (m.mode === "flat") {
             // The text's up on the plan, (0, −1) turned with it, as x, z.
-            const r = (item.rotation * Math.PI) / 180
+            const r = (spot.rotation * Math.PI) / 180
             pA.set(q1.centre[0] * c, item.elevation, q1.centre[1] * c)
             pB.set(Math.sin(r), 0, -Math.cos(r)).multiplyScalar(fontM).add(pA)
             const a = toScreen(pA)
@@ -440,12 +527,72 @@ export function PlanTextLayer({
             textPx = a && b ? Math.hypot(a[0] - b[0], a[1] - b[1]) : 0
           }
           if (!cfg.readable && textPx < PLAN_TEXT_TINY_PX) continue
-          const grow = cfg.readable
-            ? Math.min(MAX_GROW, fontGrow(textPx, 1, PLAN_TEXT_MIN_PX))
+          // Readable grows it, never past its room.
+          let grow = cfg.readable
+            ? Math.min(
+                MAX_GROW,
+                fit?.maxGrow ?? MAX_GROW,
+                fontGrow(textPx, 1, PLAN_TEXT_MIN_PX)
+              )
             : 1
           let box: { x: number; y: number; w: number; h: number }
+          // Standing, it spans the camera's right: slid along that line
+          // to lie inside its room, no wider than the room there, else
+          // left out.
+          let standAt: Pt = q1.centre
+          if (m.mode !== "flat" && fit && m.region) {
+            const region = m.region
+            if (!m.stand || Math.abs(m.stand.rot - standRot) > 1) {
+              // Its line through its flat middle, and through the
+              // roomiest spot in the room (for a name in a corner).
+              if (m.pole === undefined)
+                m.pole =
+                  fitPlanText(region, fit, painted.w, painted.h, {
+                    anywhere: true,
+                    minScale: 0,
+                  })?.at ?? null
+              m.stand = {
+                rot: standRot,
+                lines: [
+                  {
+                    base: q1.centre,
+                    ...standingSpan(region, q1.centre, standRot),
+                  },
+                  ...(m.pole
+                    ? [
+                        {
+                          base: m.pole,
+                          ...standingSpan(region, m.pole, standRot),
+                        },
+                      ]
+                    : []),
+                ],
+              }
+            }
+            // Its own place when that holds it, else the roomier line.
+            const want = (pw * grow) / 2
+            let line = m.stand.lines[0]
+            let placed = standingPlace(line, want)
+            const other = m.stand.lines.at(1)
+            if (other && placed.half < want) {
+              const there = standingPlace(other, want)
+              if (there.half > placed.half) {
+                line = other
+                placed = there
+              }
+            }
+            const most = (2 * placed.half) / Math.max(1e-6, painted.w)
+            if (most < MIN_FIT_SCALE) continue
+            grow = Math.min(grow, most / scale)
+            const r = (standRot * Math.PI) / 180
+            const b = line.base
+            standAt = [
+              b[0] + Math.cos(r) * placed.offset,
+              b[1] + Math.sin(r) * placed.offset,
+            ]
+          }
           if (m.mode === "flat") {
-            const q = flatQuad(item, painted.w, painted.h, grow, painted.shift)
+            const q = flatQuad(spot, pw, ph, grow, shift)
             const pts: Pt[] = []
             for (const [x, y] of q.corners) {
               const s = toScreen(v2.set(x * c, item.elevation, y * c))
@@ -455,16 +602,17 @@ export function PlanTextLayer({
             box = screenBounds(pts)
             frame.pos.set(q.centre[0] * c, item.elevation, q.centre[1] * c)
           } else {
-            frame.pos.set(q1.centre[0] * c, item.elevation, q1.centre[1] * c)
+            frame.pos.set(standAt[0] * c, item.elevation, standAt[1] * c)
             const s = toScreen(frame.pos)
             if (!s) continue
-            const bw = painted.w * c * grow * pxPerM
-            const bh = painted.h * c * grow * pxPerM
+            const bw = pw * c * grow * pxPerM
+            const bh = ph * c * grow * pxPerM
             box = { x: s[0] - bw / 2, y: s[1] - bh, w: bw, h: bh }
           }
           if (!onScreen(box)) continue
           frame.state = m.mode
-          frame.grow = grow
+          frame.grow = grow * scale
+          frame.rot = spot.rotation
           out.push({ id, ...box, priority: planTextPriority(item.kind, d) })
         }
         return out
@@ -473,12 +621,12 @@ export function PlanTextLayer({
         const g = group.current
         const c = cellM(settings.current.plan)
         for (const [id, m] of made.current) {
-          const { frame, painted, item } = m
+          const { frame, painted } = m
           const show = frame.state !== "hidden" && kept.has(id)
           if (m.mesh) m.mesh.visible = show && frame.state === "flat"
           if (show && frame.state === "flat" && m.mesh) {
             m.mesh.position.copy(frame.pos)
-            m.mesh.rotation.set(0, (-item.rotation * Math.PI) / 180, 0)
+            m.mesh.rotation.set(0, (-frame.rot * Math.PI) / 180, 0)
             m.mesh.scale.set(
               painted.w * c * frame.grow,
               1,
