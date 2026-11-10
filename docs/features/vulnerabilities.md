@@ -771,9 +771,9 @@ open and *KEV* when one is known exploited (`Fix first · 4 · KEV`). It
 sorts worst first and its rail facet filters by worst priority (*None open*
 for a clean host); **Known exploited** (a hidden column) filters by the KEV
 flag. Both are computed on the server for the whole list, and the column is
-in the list's Download. **CVE score** (hidden until ticked in Columns) shows
-the host's header badge - the worst open severity and the top score, the
-counts on hover, linked to its Vulnerabilities tab - and sorts by the top
+in the list's Download. **CVE score** shows the host's top open score as a
+badge in its severity's colour (`9.8` in solid red for Critical), the
+counts on hover, linked to its Vulnerabilities tab, and sorts by the top
 score.
 
 ## Exceptions

@@ -427,7 +427,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     // Open vulnerability records (#451), annotated on the table row.
     vulnerabilities: () => vulnHostColumn<T>((r) => r.vulnerabilities),
     vuln_kev: () => vulnKevColumn<T>((r) => r.vulnerabilities),
-    // Worst open severity and top score (#451); hidden by default.
+    // The top open score, coloured by its severity (#451).
     vuln_score: () =>
       vulnScoreColumn<T>("virtual_machine", (r) => r.vulnerability_summary),
     // The platform's effective end of life (#436); hidden by default.

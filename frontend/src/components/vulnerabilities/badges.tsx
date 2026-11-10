@@ -111,16 +111,21 @@ export function HostVulnBadge({
   summary,
   kind,
   id,
+  compact = false,
 }: {
   summary: HostVulnerabilitySummary | null | undefined
   kind: "device" | "virtual_machine"
   id: string
+  /** The score alone ("9.8"), for a column whose header names it. */
+  compact?: boolean
 }) {
   if (!summary || summary.open === 0) return null
   const variant = summary.worst_severity
     ? SEVERITY_VARIANT[summary.worst_severity]
     : "outline"
-  const label = hostVulnLabel(summary)
+  const top = toNumber(summary.max_cvss)
+  const label =
+    compact && top !== null ? top.toFixed(1) : hostVulnLabel(summary)
   const search = { tab: "vulnerabilities" as const }
   return (
     <Tooltip>
