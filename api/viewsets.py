@@ -53,6 +53,7 @@ from .list_table import TableListMixin
 from .filters import apply_tag_filter
 from .floor_plan_from_map import FromMapRequestSerializer
 from .natural import natural, natural_key
+from .prefix_space_views import PrefixSpaceMixin
 from .pagination import StandardResultsSetPagination
 from .visible_counts import (
     path_count_expr,
@@ -1139,7 +1140,7 @@ def _tag_params_filter(qs, params):
     return qs
 
 
-class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # Mirrors what this viewset's own bulk_update action already accepts, so
     # api.editable_fields can describe prefixes without a second list. The
     # bespoke action stays the enforcer; a test asserts the two agree.
@@ -1155,7 +1156,10 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         .all()
     )
     serializer_class = PrefixSerializer
-    rbac_action_map = {"bulk_delete": "delete", **object_report.RBAC_ACTIONS}
+    rbac_action_map = {
+        "bulk_delete": "delete", **object_report.RBAC_ACTIONS,
+        **PrefixSpaceMixin.space_rbac_actions,
+    }
     # Clone carries the routing/classification context; the CIDR is the unique
     # identifier and is left blank for the user to fill.
     clone_fields = (
