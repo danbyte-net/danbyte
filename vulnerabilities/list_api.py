@@ -23,8 +23,10 @@ record list counts records, the match list matches. Both are scoped like the
 lists: the active tenant, the matches whose device or VM (and install) the
 caller may see.
 
-Phase 8 adds an ``excepted`` facet: a new entry in ``RECORD_FACETS`` /
-``MATCH_FACETS`` with its ``Q`` per bucket is all it takes.
+Matches an exception covers are left out unless the ``excepted`` facet
+asks for them (``yes``: only those, ``yes,no``: both), or the plain
+``excepted=true|all`` parameter does. A record row counts its live matches
+and says how many are excepted (``excepted``).
 """
 from __future__ import annotations
 
@@ -167,6 +169,10 @@ def first_seen_q(bucket: str) -> Q:
     return Q(first_seen_at__gte=_since(days)) if days else Q(first_seen_at__lt=_since(30))
 
 
+def _excepted_values():
+    return {"yes": Q(excepted__isnull=False), "no": Q(excepted__isnull=True)}
+
+
 def _first_seen_values():
     return {k: first_seen_q(k) for k in _FIRST_SEEN}
 
@@ -178,6 +184,8 @@ RECORD_FACETS: dict[str, MatchFacet] = {
                       labels={"yes": "Known exploited", "no": "Not in KEV"}),
     "first_seen": MatchFacet(values=_first_seen_values, labels=FIRST_SEEN_LABELS),
     "epss": MatchFacet(range_field="cve__epss"),
+    "excepted": MatchFacet(values=_excepted_values,
+                           labels={"yes": "Excepted", "no": "Not excepted"}),
     "site": MatchFacet(group=_SITE, labels=_names("api.Site"), none=True, uuid=True),
     "platform": MatchFacet(group="mapping__platform_id", labels=_names("api.Platform"),
                            uuid=True),
@@ -193,10 +201,33 @@ MATCH_FACETS: dict[str, MatchFacet] = {
 }
 
 
-def apply_facets(request, qs, facets: dict[str, MatchFacet], *, skip: str | None = None):
+def _excepted_picked(request) -> bool:
+    return bool(decode_list(request.query_params.get("f_excepted")))
+
+
+def live_q(request) -> Q | None:
+    """Which of the rows a record row counts: the excepted facet's (or the
+    ``excepted`` parameter's) choice, else the matches no exception
+    covers."""
+    from .match_api import excepted_mode, excepted_q
+
+    if _excepted_picked(request):
+        return None
+    if "excepted" in request.query_params:
+        return excepted_q(excepted_mode(request))
+    return Q(excepted__isnull=True)
+
+
+def apply_facets(request, qs, facets: dict[str, MatchFacet], *, skip: str | None = None,
+                 exclude_excepted: bool = True):
     """The rail's ``f_<facet>`` selection on match rows. An unknown facet is
-    a 400, as on the inventory lists."""
+    a 400, as on the inventory lists. Without an ``excepted`` choice (the
+    facet or the parameter), ``exclude_excepted`` leaves out the matches an
+    exception covers."""
     params = request.query_params
+    if (exclude_excepted and skip != "excepted" and "excepted" in facets
+            and not _excepted_picked(request) and "excepted" not in params):
+        qs = qs.filter(excepted__isnull=True)
     for key in list(params.keys()):
         if not key.startswith("f_"):
             continue

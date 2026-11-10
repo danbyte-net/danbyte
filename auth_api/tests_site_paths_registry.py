@@ -220,6 +220,9 @@ PATHS = importlib.import_module(
 )
 AREA_TYPES = importlib.import_module("auth_api.migrations.0048_site_roles_area_types")
 ROUTING_ROWS = importlib.import_module("auth_api.migrations.0049_site_roles_routing_rows")
+VULN_EXCEPTIONS = importlib.import_module(
+    "auth_api.migrations.0052_site_roles_vulnerability_exceptions"
+)
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -333,7 +336,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(AREAS.NEW_TYPES)
             | set(OUTLINES.NEW_TYPES)
             | set(PATHS.NEW_TYPES)
-            | set(ROUTING_ROWS.NEW_TYPES),
+            | set(ROUTING_ROWS.NEW_TYPES)
+            | set(VULN_EXCEPTIONS.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(

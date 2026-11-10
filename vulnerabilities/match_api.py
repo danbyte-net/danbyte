@@ -227,6 +227,19 @@ def mapping_dict(m: ProductMapping) -> dict:
     }
 
 
+def exception_brief(e) -> dict | None:
+    if e is None:
+        return None
+    return {
+        "id": str(e.pk),
+        "numid": e.numid,
+        "status": e.status,
+        "scope": e.scope,
+        "expires_on": e.expires_on,
+        "owner_name": e.owner_name,
+    }
+
+
 def match_dict(r: VulnerabilityMatch) -> dict:
     inst = r.installed_software
     return {
@@ -242,6 +255,7 @@ def match_dict(r: VulnerabilityMatch) -> dict:
             "id": str(inst.pk), "version": inst.version,
             "application": _ref(inst.application)},
         "mapping": {"id": str(r.mapping_id), "identifier": r.mapping.identifier},
+        "exception": exception_brief(r.excepted),
         "first_seen_at": r.first_seen_at,
         "last_seen_at": r.last_seen_at,
         "resolved_at": r.resolved_at,
@@ -250,13 +264,39 @@ def match_dict(r: VulnerabilityMatch) -> dict:
 
 def _match_rows(qs):
     return qs.select_related("cve", "device", "virtual_machine", "mapping",
-                             "installed_software__application")
+                             "installed_software__application", "excepted")
 
 
 # ─── match filters ───────────────────────────────────────────────────────────
 
 
-def _filter_matches(request, qs, *, status_default="open"):
+def excepted_mode(request, default: str = "false") -> str:
+    """``excepted``: ``false`` (default) leaves out the matches an exception
+    covers, ``true`` lists only them, ``all`` both."""
+    raw = (request.query_params.get("excepted") or default).strip().lower()
+    if raw in _TRUE:
+        return "true"
+    if raw in _FALSE:
+        return "false"
+    if raw == "all":
+        return "all"
+    raise ValidationError({"excepted": "true, false or all."})
+
+
+def excepted_q(mode: str) -> Q | None:
+    if mode == "false":
+        return Q(excepted__isnull=True)
+    if mode == "true":
+        return Q(excepted__isnull=False)
+    return None
+
+
+def _filter_matches(request, qs, *, status_default="open", excepted=True,
+                    excepted_default="false"):
+    if excepted:
+        q = excepted_q(excepted_mode(request, excepted_default))
+        if q is not None:
+            qs = qs.filter(q)
     status = (request.query_params.get("status") or status_default).strip().lower()
     if status == "open":
         qs = qs.filter(resolved_at__isnull=True)
@@ -520,12 +560,18 @@ class VulnerabilityMatchViewSet(viewsets.ViewSet):
     (``status=open|resolved|all``). Filters: ``device``, ``virtual_machine``,
     ``platform``, ``application``, ``mapping``, ``site``, ``cve``,
     ``priority``, ``confidence``, ``via``, ``severity``, ``kev``,
-    ``epss_min``, ``q``. Worst priority first."""
+    ``epss_min``, ``q``, ``excepted`` (``false`` by default: matches an
+    exception covers are left out; ``true``, ``all``). Worst priority first."""
 
     permission_classes = [IsAuthenticated]
 
-    def _base(self, request, tenant):
-        qs = _filter_matches(request, visible_matches(request, tenant))
+    def _base(self, request, tenant, *, every=False):
+        """The filtered matches before the rail. The ``f_excepted`` facet
+        (or, with ``every``, the caller) decides on excepted matches; an
+        explicit ``excepted`` parameter still works as on every list."""
+        explicit = "excepted" in request.query_params
+        qs = _filter_matches(request, visible_matches(request, tenant),
+                             excepted=explicit and not every)
         return list_api.search(request, qs)
 
     @extend_schema(summary="Vulnerability matches", tags=["vulnerabilities"],
@@ -599,8 +645,13 @@ class VulnerabilityViewSet(viewsets.ViewSet):
     lookup_field = "vuln_id"
     lookup_value_regex = r"[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9._:-]+"
 
-    def _base(self, request, tenant):
-        qs = _filter_matches(request, visible_matches(request, tenant))
+    def _base(self, request, tenant, *, every=False):
+        """The filtered matches before the rail. The ``f_excepted`` facet
+        (or, with ``every``, the caller) decides on excepted matches; an
+        explicit ``excepted`` parameter still works as on every list."""
+        explicit = "excepted" in request.query_params
+        qs = _filter_matches(request, visible_matches(request, tenant),
+                             excepted=explicit and not every)
         return list_api.search(request, qs)
 
     @extend_schema(summary="Vulnerabilities matched in the tenant", tags=["vulnerabilities"],
@@ -608,16 +659,21 @@ class VulnerabilityViewSet(viewsets.ViewSet):
     def list(self, request):
         tenant = _tenant(request)
         list_api.table_params(request)
-        qs = list_api.apply_facets(request, self._base(request, tenant), list_api.RECORD_FACETS)
+        # Every match the facets leave, excepted or not: the row counts the
+        # live ones and says how many an exception covers.
+        qs = list_api.apply_facets(request, self._base(request, tenant, every=True),
+                                   list_api.RECORD_FACETS, exclude_excepted=False)
+        live = list_api.live_q(request)
         groups = list_api.ordered_records(qs.values("cve_id", "cve__vuln_id").annotate(
-            devices=Count("device_id", distinct=True),
-            virtual_machines=Count("virtual_machine_id", distinct=True),
-            installs=Count("installed_software_id", distinct=True),
-            matches=Count("id"),
-            worst=Min(_RANK),
-            first_seen_at=Min("first_seen_at"),
+            devices=Count("device_id", distinct=True, filter=live),
+            virtual_machines=Count("virtual_machine_id", distinct=True, filter=live),
+            installs=Count("installed_software_id", distinct=True, filter=live),
+            matches=Count("id", filter=live),
+            excepted_n=Count("id", filter=Q(excepted__isnull=False)),
+            worst=Min(_RANK, filter=live),
+            first_seen_at=Min("first_seen_at", filter=live),
             score=Min("cve__cvss_score"),
-        ), request)
+        ).filter(matches__gt=0), request)
 
         def rows(page):
             cves = {c.pk: c for c in Cve.objects.filter(pk__in=[g["cve_id"] for g in page])}
@@ -629,6 +685,7 @@ class VulnerabilityViewSet(viewsets.ViewSet):
                 "virtual_machines": g["virtual_machines"],
                 "installs": g["installs"],
                 "matches": g["matches"],
+                "excepted": g["excepted_n"],
                 "first_seen_at": g["first_seen_at"],
             } for g in page if g["cve_id"] in cves]
 
@@ -655,11 +712,16 @@ class VulnerabilityViewSet(viewsets.ViewSet):
         if c is None or not _relevant(request, tenant, c):
             raise NotFound("Not found.")
         policy = VulnerabilityPolicy.objects.filter(tenant=tenant).first()
-        affected = _match_rows(visible_matches(request, tenant).filter(
-            cve=c, resolved_at__isnull=True)).order_by("device__name", "virtual_machine__name")
+        mode = excepted_mode(request, "all")
+        affected = visible_matches(request, tenant).filter(cve=c, resolved_at__isnull=True)
+        excepted_count = affected.filter(excepted__isnull=False).count()
+        if excepted_q(mode) is not None:
+            affected = affected.filter(excepted_q(mode))
+        affected = _match_rows(affected).order_by("device__name", "virtual_machine__name")
         total = affected.count()
         out = cve_detail(c, policy)
         out["affected_count"] = total
+        out["excepted_count"] = excepted_count
         out["affected"] = [match_dict(r) for r in affected[:AFFECTED_MAX]]
         return Response(out)
 
@@ -785,11 +847,13 @@ def vulnerability_policy(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def vulnerability_summary(request):
-    """Open matches the caller may see: records per priority, KEV and
-    critical records, records new this week, and the devices and VMs
-    affected."""
+    """Open matches the caller may see that no exception covers: records
+    per priority, KEV and critical records, records new this week, and the
+    devices and VMs affected; plus how many matches (``excepted``) and
+    records (``excepted_records``) exceptions cover."""
     tenant = _tenant(request)
-    qs = visible_matches(request, tenant).filter(resolved_at__isnull=True)
+    every = visible_matches(request, tenant).filter(resolved_at__isnull=True)
+    qs = every.filter(excepted__isnull=True)
     by_priority = dict(qs.values_list("priority").annotate(n=Count("cve_id", distinct=True)))
     week = list_api.first_seen_q("7d")
     totals = qs.aggregate(
@@ -803,7 +867,10 @@ def vulnerability_summary(request):
         # ``first_seen=7d`` facet counts the same.
         new_this_week=Count("cve_id", distinct=True, filter=week),
     )
-    return Response({**totals, "by_priority": {k: by_priority.get(k, 0) for k in prio.LEVELS}})
+    ex = every.filter(excepted__isnull=False).aggregate(
+        n=Count("id"), records=Count("cve_id", distinct=True))
+    return Response({**totals, "excepted": ex["n"], "excepted_records": ex["records"],
+                     "by_priority": {k: by_priority.get(k, 0) for k in prio.LEVELS}})
 
 
 def _host_versions(request, tenant, m: ProductMapping) -> tuple[list[str], int]:

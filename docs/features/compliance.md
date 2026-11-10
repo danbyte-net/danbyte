@@ -50,7 +50,7 @@ your team decides about a violation: acknowledged, or snoozed until a date
    | Remediation | **How to fix** | Optional **Markdown remediation guide** - step-by-step instructions rendered wherever the rule's violations appear (see below). |
    | Applies to | **Object types** | Toggle the types the rule covers; at least one. |
    | Applies to | **Only objects where** | The scope. Leave it empty to judge every object of the chosen types. |
-   | Check | **Check** | **Conditions** (the default), **End-of-life status**, **Support coverage** or **Software target**. |
+   | Check | **Check** | **Conditions** (the default), **End-of-life status**, **Support coverage**, **Software target** or **Known vulnerabilities**. |
    | Check | **Must match** | For Conditions: what every object in scope must satisfy. |
 
 4. Watch the **Preview** under the form: how many objects are in scope and how
@@ -97,8 +97,9 @@ empty: *Device type is any of C9300* is false for a VM, *Device type is
 empty* is true. The **Object type** field lets a rule say which branch is
 for which type. A field that none of the chosen types has cannot be saved.
 
-The end-of-life and software target checks apply to devices and VMs, support
-coverage to devices; the **Check** list offers what suits every chosen type.
+The end-of-life, software target and known vulnerabilities checks apply to
+devices and VMs, support coverage to devices; the **Check** list offers what
+suits every chosen type.
 
 ### Check types
 
@@ -108,6 +109,7 @@ coverage to devices; the **Check** list offers what suits every chosen type.
 | **End-of-life status** | The platform's [end-of-life status](end-of-life-data.md#compliance-rules) is not the one picked. Devices and virtual machines only. | What it fails on: *End of life*, *Support ending or ended*, or *No end-of-life data*; **Include installed software** also fails on the [installed software](applications.md#installed-software) (off by default) |
 | **Support coverage** | The device's [support coverage](support-coverage.md#compliance-rules) is not one the check fails on. Devices only. | What it fails on: *Expired or not covered*, or *Expiring, expired or not covered* |
 | **Software target** | The object's [software version](lifecycle.md#software-target) equals its platform's target version. Passes when the platform has no target. Devices and virtual machines only. | Optionally **Fail without a version**, so a blank software version fails too (otherwise it passes) |
+| **Known vulnerabilities** | The object has no open [vulnerability match](vulnerabilities.md#compliance-rule) that meets the condition, leaving out matches an [exception](vulnerabilities.md#exceptions) covers. Passes while vulnerability data is off. Devices and virtual machines only. | What it fails on (`vuln_fail_on`): *In CISA KEV* (`kev`), *Priority fix first* (`fix_first`), *Priority high or fix first* (`high`), or *CVSS score at or over* (`cvss`, with `cvss_min` from 0.1 to 10) |
 
 Every check takes the scope.
 
@@ -170,7 +172,10 @@ only objects you can open.
 The **Violations** tab lists every object that currently fails a rule, worst
 first: severity, then open before triaged. Each row shows the severity, the
 object (linked to its page), its type, the rule (linked to the rule's page),
-the object's site, and the triage state. You can:
+the object's site, and the triage state. A known vulnerabilities violation
+names its worst three records (`detail`, e.g. `CVE-2023-20198 (KEV),
+CVE-2024-1234 and 4 more`) and carries `link`, the object's vulnerabilities
+(`/devices/<id>?tab=vulnerabilities`). You can:
 
 - **Search** by object or rule name.
 - **Filter** on the rail by **State**, **Severity**, **Rule**, **Object type**,

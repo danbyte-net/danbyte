@@ -161,6 +161,10 @@ SITE_PATHS: dict[str, str] = {
     # Installed software follows its device or VM (#436); the application
     # catalog itself is tenant-wide, like platforms.
     "installedsoftware": "device__site|virtual_machine__site",
+    # A vulnerability exception follows its host (#451); one for a platform,
+    # an application or the whole tenant has no site, so a site role reads
+    # it as shared and never writes it.
+    "vulnerabilityexception": "device__site|virtual_machine__site",
     # An application group follows its host the same way (#436); the group
     # and its members are a tenant-wide catalog.
     "applicationgroupassignment": "device__site|virtual_machine__site",
