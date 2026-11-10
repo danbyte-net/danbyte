@@ -262,6 +262,8 @@ AUDITED_MODELS = [
     "compliance.EolSettings",
     "compliance.EolMapping",
     "compliance.EolProduct",
+    # Vulnerability data: the settings only; records are fetched public data.
+    "vulnerabilities.VulnerabilitySettings",
     # Access: object permissions + public share links.
 ]
 

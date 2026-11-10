@@ -1,0 +1,166 @@
+{
+  "resultsPerPage": 4,
+  "startIndex": 0,
+  "totalResults": 4,
+  "format": "NVD_CVE",
+  "version": "2.0",
+  "timestamp": "2026-11-09T10:12:31.457",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2023-20198",
+        "sourceIdentifier": "psirt@cisco.com",
+        "published": "2023-10-16T16:15:09.457",
+        "lastModified": "2025-02-28T14:44:42.360",
+        "vulnStatus": "Analyzed",
+        "cisaExploitAdd": "2023-10-16",
+        "cisaActionDue": "2023-10-20",
+        "cisaRequiredAction": "Verify that instances of Cisco IOS XE Web UI are in compliance with BOD 23-02 and apply mitigations per vendor instructions.",
+        "cisaVulnerabilityName": "Cisco IOS XE Web UI Privilege Escalation Vulnerability",
+        "descriptions": [
+          {"lang": "en", "value": "Cisco is providing an update for the ongoing investigation into observed exploitation of the web UI feature in Cisco IOS XE Software."},
+          {"lang": "es", "value": "Cisco proporciona una actualizacion."}
+        ],
+        "metrics": {
+          "cvssMetricV31": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+                "baseScore": 10.0,
+                "baseSeverity": "CRITICAL",
+                "attackVector": "NETWORK"
+              },
+              "exploitabilityScore": 3.9,
+              "impactScore": 6.0
+            },
+            {
+              "source": "psirt@cisco.com",
+              "type": "Secondary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+                "baseScore": 10.0,
+                "baseSeverity": "CRITICAL"
+              }
+            }
+          ]
+        },
+        "weaknesses": [
+          {"source": "nvd@nist.gov", "type": "Primary",
+           "description": [{"lang": "en", "value": "CWE-420"}]}
+        ],
+        "configurations": [
+          {
+            "nodes": [
+              {
+                "operator": "OR",
+                "negate": false,
+                "cpeMatch": [
+                  {"vulnerable": true, "criteria": "cpe:2.3:o:cisco:ios_xe:16.12.4:*:*:*:*:*:*:*", "matchCriteriaId": "A1"},
+                  {"vulnerable": true, "criteria": "cpe:2.3:o:cisco:ios_xe:17.6.5:*:*:*:*:*:*:*", "matchCriteriaId": "A2"},
+                  {"vulnerable": true, "criteria": "cpe:2.3:o:cisco:ios_xe:17.9.4:*:*:*:*:*:*:*", "matchCriteriaId": "A3"}
+                ]
+              }
+            ]
+          }
+        ],
+        "references": [
+          {"url": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-iosxe-webui-privesc-j22SaA4z", "source": "psirt@cisco.com", "tags": ["Vendor Advisory"]},
+          {"url": "javascript:alert(1)", "source": "x", "tags": []}
+        ]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2024-10979",
+        "sourceIdentifier": "f86ef6dc-4d3a-42ad-8f28-e6d5547a5007",
+        "published": "2024-11-14T13:15:04.407",
+        "lastModified": "2025-02-11T15:15:15.457",
+        "vulnStatus": "Modified",
+        "descriptions": [
+          {"lang": "en", "value": "Incorrect control of environment variables in PostgreSQL PL/Perl allows an unprivileged database user to change sensitive process environment variables."}
+        ],
+        "metrics": {
+          "cvssMetricV31": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+                "baseScore": 8.8,
+                "baseSeverity": "HIGH"
+              }
+            }
+          ]
+        },
+        "weaknesses": [
+          {"source": "nvd@nist.gov", "type": "Primary",
+           "description": [{"lang": "en", "value": "CWE-15"}, {"lang": "en", "value": "NVD-CWE-Other"}]}
+        ],
+        "configurations": [
+          {
+            "nodes": [
+              {
+                "operator": "OR",
+                "negate": false,
+                "cpeMatch": [
+                  {"vulnerable": true, "criteria": "cpe:2.3:a:postgresql:postgresql:*:*:*:*:*:*:*:*", "versionStartIncluding": "16.0", "versionEndExcluding": "16.5", "matchCriteriaId": "B1"},
+                  {"vulnerable": true, "criteria": "cpe:2.3:a:postgresql:postgresql:*:*:*:*:*:*:*:*", "versionStartIncluding": "15.0", "versionEndExcluding": "15.9", "matchCriteriaId": "B2"},
+                  {"vulnerable": true, "criteria": "cpe:2.3:a:postgresql:postgresql:17.0:*:*:*:*:*:*:*", "matchCriteriaId": "B3"}
+                ]
+              }
+            ]
+          }
+        ],
+        "references": [
+          {"url": "https://www.postgresql.org/support/security/CVE-2024-10979/", "source": "f86ef6dc", "tags": ["Vendor Advisory"]}
+        ]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2025-1094",
+        "sourceIdentifier": "f86ef6dc-4d3a-42ad-8f28-e6d5547a5007",
+        "published": "2025-02-13T13:15:09.130",
+        "lastModified": "2025-02-14T10:15:09.130",
+        "vulnStatus": "Awaiting Analysis",
+        "descriptions": [
+          {"lang": "en", "value": "Improper neutralization of quoting syntax in PostgreSQL libpq functions allows a database input provider to achieve SQL injection."}
+        ],
+        "metrics": {
+          "cvssMetricV31": [
+            {
+              "source": "f86ef6dc-4d3a-42ad-8f28-e6d5547a5007",
+              "type": "Secondary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                "baseScore": 8.1,
+                "baseSeverity": "HIGH"
+              }
+            }
+          ]
+        },
+        "references": []
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2023-4000",
+        "sourceIdentifier": "cve@mitre.org",
+        "published": "2023-07-27T03:15:10.000",
+        "lastModified": "2023-08-01T12:00:00.000",
+        "vulnStatus": "Rejected",
+        "descriptions": [
+          {"lang": "en", "value": "Rejected reason: This candidate was withdrawn by its CNA."}
+        ],
+        "metrics": {},
+        "references": []
+      }
+    }
+  ]
+}

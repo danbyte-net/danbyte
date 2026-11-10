@@ -84,6 +84,7 @@ INSTALLED_APPS = [
     "agents.apps.AgentsConfig",
     "assistant.apps.AssistantConfig",
     "routing.apps.RoutingConfig",
+    "vulnerabilities.apps.VulnerabilitiesConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
@@ -761,6 +762,10 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 # The largest 3D model (binary glTF) a device type or device takes, in bytes
 # (api.model_3d). 25 MB by default.
 DEVICE_MODEL_MAX_BYTES = int(os.getenv("DEVICE_MODEL_MAX_BYTES", str(25 * 1024 * 1024)))
+# Largest vulnerability data file an admin may upload (#451): NVD feeds, OSV
+# zips, KEV, EPSS. Keep it at or under nginx client_max_body_size (512m).
+VULN_IMPORT_MAX_BYTES = int(
+    os.getenv("DANBYTE_VULN_IMPORT_MAX_BYTES", str(512 * 1024 * 1024)))
 
 # Uploaded media (device-type rack images, …). Served through
 # api.media_views, never straight from disk: a new upload and the folders
