@@ -45,6 +45,21 @@ so the interactive docs work on **airgapped** installs with no CDN access.
 - **Session** - when you are logged into the SPA, the same session cookie
   authorizes API calls from the browser.
 
+Passwords are not an API-token concern. The sign-in and password endpoints
+below are plain JSON views for the browser: they take the session cookie and
+a CSRF token, are not in the OpenAPI schema, and never accept a token.
+
+| Endpoint | Who | Body | Answer |
+|---|---|---|---|
+| `POST /api/auth/password/change/` | Signed-in session with a local password. A request with an `Authorization` header is refused with 403. | `current_password`, `new_password` | 200 `{ok, sessions_ended}`; 400 with `current_password` or `new_password` messages, or `detail` for a directory/SSO account; 429 when the sign-in lockout is reached. |
+| `POST /api/auth/password-reset/` | Anyone, when [reset by email](../features/permissions.md#forgot-password-reset-by-email) is on; 404 otherwise. | `identifier` (username or email) | Always the same 200 `{detail}`; 429 past the sign-in limits. |
+| `POST /api/auth/password-reset/confirm/` | Anyone with a link from the mail; 404 when reset is off. | `uid`, `token`, `password` | 200 `{ok}`; 400 `detail` for a bad or used link, `password` messages for a weak one. Ends every session and signs nobody in. |
+
+`GET /api/me/` says whether the sign-in page offers the reset
+(`password_reset_available`, anonymous answer) and where the signed-in
+account's password lives (`password_source`: `local`, `ldap`, `sso` or
+`none`).
+
 Every request is scoped to your active tenant and enforced by RBAC - the schema
 describes the shape of each endpoint, but access is always checked server-side.
 

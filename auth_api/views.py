@@ -166,6 +166,8 @@ def me_json(request):
     an anonymous visitor - the React login page calls this on mount, so the
     follow-up ``POST /api/auth/login/`` has a token to send.
     """
+    from .password_api import password_source, reset_available
+
     user = request.user
     if not user.is_authenticated:
         # Branding rides on the anonymous answer - the login page shows the
@@ -190,6 +192,8 @@ def me_json(request):
             # only "this install prefers SSO", which the provider list at
             # /api/auth/sso/providers/ says anyway.
             "hide_local_login": ds.hide_local_login,
+            # Whether the login page offers "Forgot password?" (#492).
+            "password_reset_available": reset_available(),
         })
 
     from api.views import _get_active_tenant
@@ -244,6 +248,8 @@ def me_json(request):
         "can_manage_users": can_manage_users,
         "can_manage_deployment": can_manage_deployment(user),
         "can_grant_superuser": can_grant_superuser(user),
+        # Where the password lives; only "local" may change it here (#492).
+        "password_source": password_source(user),
         "mfa": {
             "require_mfa": bool(profile and profile.require_mfa),
             "totp_confirmed": bool(profile and profile.mfa_totp_confirmed),

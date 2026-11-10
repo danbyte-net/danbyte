@@ -48,6 +48,11 @@ from auth_api.login_api import (
     totp_disable_api,
     totp_setup_api,
 )
+from auth_api.password_api import (
+    password_change_api,
+    password_reset_confirm_api,
+    password_reset_request_api,
+)
 from auth_api.people_api import (
     PeopleGroupDetail,
     PeopleGroupList,
@@ -751,6 +756,11 @@ urlpatterns = [
     path("auth/sso/<slug:slug>/acs/", sso_acs, name="sso-acs"),
     path("auth/sso/<slug:slug>/metadata/", sso_metadata, name="sso-metadata"),
     path("auth/set-password/", set_password_api, name="auth-set-password"),
+    # Self-service password change (session + CSRF) and reset by email (#492).
+    path("auth/password/change/", password_change_api, name="auth-password-change"),
+    path("auth/password-reset/", password_reset_request_api, name="auth-password-reset"),
+    path("auth/password-reset/confirm/", password_reset_confirm_api,
+         name="auth-password-reset-confirm"),
     path("auth/mfa/verify/", mfa_verify_api, name="auth-mfa-verify"),
     path("auth/mfa/resend/", mfa_resend_api, name="auth-mfa-resend"),
     path("auth/mfa/totp/setup/", totp_setup_api, name="auth-totp-setup"),

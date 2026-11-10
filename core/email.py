@@ -511,6 +511,31 @@ def send_html_email(
         return False
 
 
+def send_text_email(subject: str, recipients: list[str], *, text_body: str, tenant=None) -> bool:
+    """Send a plain-text email (no HTML part, no logo) through the effective
+    SMTP for ``tenant``. For mail that carries a secret link, where a plain
+    body is easiest to check. Best-effort like :func:`send_html_email`."""
+    from django.core.mail import EmailMessage
+
+    from core.effective_settings import effective_email
+    from monitoring.notify import build_email_connection
+
+    recipients = [r.strip() for r in (recipients or []) if r and r.strip()]
+    if not recipients:
+        return False
+    eff = effective_email(tenant)
+    from_email = getattr(eff, "email_from", "") or settings.DEFAULT_FROM_EMAIL
+    try:
+        conn = build_email_connection(eff)
+        EmailMessage(subject, text_body, from_email, recipients, connection=conn).send(
+            fail_silently=False
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        logger.warning("send_text_email failed (%s): %s", subject, exc)
+        return False
+
+
 #: What a send can fail with that is worth repeating to the admin: SMTP and
 #: socket/TLS errors (all ``OSError``), a bad address (``ValueError``) and the
 #: ``RuntimeError`` messages Danbyte's own senders raise. Anything else is a

@@ -650,6 +650,15 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# Self-service "Forgot password?" by email (#492). Off by default; offered only
+# when it is on and the deployment can send mail and has a public URL
+# (auth_api.password_api.reset_available). The link expires after
+# PASSWORD_RESET_LINK_TIMEOUT seconds; invite links keep PASSWORD_RESET_TIMEOUT.
+PASSWORD_RESET_ENABLED = os.getenv("PASSWORD_RESET_ENABLED", "").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+PASSWORD_RESET_LINK_TIMEOUT = int(os.getenv("PASSWORD_RESET_LINK_TIMEOUT", "3600"))
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

@@ -531,6 +531,24 @@ their own. Anonymous API responses, `/media/`, `/static/` and the hashed
 Console logging is on by default (`django` at INFO, `rq.worker` at INFO).
 Suitable for `journalctl --user -fu danbyte-backend`.
 
+## Password reset (`PASSWORD_RESET_ENABLED`)
+
+`PASSWORD_RESET_ENABLED=true` turns on self-service
+[Forgot password?](../features/permissions.md#forgot-password-reset-by-email)
+by email. Default: off. Even when on, it is offered only while deployment
+email is enabled, the deployment has a mail server of its own (an SMTP host,
+or a delivering `EMAIL_BACKEND`) and the public base URL is set: the link is
+built from that URL, never from the request's `Host` header.
+
+`PASSWORD_RESET_LINK_TIMEOUT` is how long a reset link works, in seconds
+(default `3600`). Invite and administrator-sent links keep Django's
+`PASSWORD_RESET_TIMEOUT` (three days); the two kinds of link are not
+interchangeable.
+
+The mail is sent by the RQ `default` queue, so it needs `danbyte-workers`
+running. Changing your own password (Preferences → Password) needs no
+setting.
+
 ## Secrets
 
 | Setting | Where it lives | Dev default | Prod |
