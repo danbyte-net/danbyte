@@ -150,6 +150,15 @@ import { CableDetailPanel } from "./cable-detail-panel"
 import { ObjectDetailPanel } from "./object-detail-panel"
 import { applyPick } from "./plan-search"
 import type { PlanHit } from "./plan-search"
+import {
+  filterFactKey,
+  filterSearch,
+  matchAreas,
+  matchTiles,
+  readPlanFilter,
+} from "./plan-filter"
+import type { PlanFilter } from "./plan-filter"
+import { PlanFilterMenu } from "./plan-filter-menu"
 
 /** The floor-plan page's search params (validated by the route). */
 export interface FloorPlanSearch {
@@ -162,6 +171,8 @@ export interface FloorPlanSearch {
   /** A room, location or area opened and zoomed onto on arrival (a room's
    * Floor plan tab, "Open in floor plan"). */
   area?: string
+  /** The plan's filter (plan-filter.ts filterSnapshot): shareable. */
+  pf?: Record<string, unknown>
 }
 
 /** The floor-plan editor: header, bar, mode rail, the 2D canvas or the 3D
@@ -234,6 +245,8 @@ export function FloorPlanEditor({
       search: {
         ...(view3d ? { viz: "3d" as const } : {}),
         ...(tile ? { tile } : {}),
+        // The filter goes with you, floor to floor.
+        ...(search.pf ? { pf: search.pf } : {}),
       },
     })
 
@@ -504,6 +517,46 @@ export function FloorPlanEditor({
   )
   // The area types the shown plain areas wear: the plan's Areas legend.
   const areaTypes = useMemo(() => areaTypesInUse(shownShapes), [shownShapes])
+  // The plan's filter (plan-filter.ts), kept in the URL so a link shares
+  // it: what it keeps, the areas its area type keeps, and what the rooms'
+  // facts count under it.
+  const planFilter = useMemo(() => readPlanFilter(search.pf), [search.pf])
+  const setPlanFilter = useCallback(
+    (f: PlanFilter) =>
+      void nav({
+        to: "/floorplans/$id",
+        params: { id },
+        search: (prev: FloorPlanSearch) => ({ ...prev, pf: filterSearch(f) }),
+        replace: true,
+      } as never),
+    [nav, id]
+  )
+  const planAreas = useMemo(
+    () => shownShapes.filter((s): s is AreaShape => s.kind === "area"),
+    [shownShapes]
+  )
+  const filterIds = useMemo(
+    () => matchTiles(shownTiles, planAreas, planFilter),
+    [shownTiles, planAreas, planFilter]
+  )
+  const filterAreaIds = useMemo(
+    () => matchAreas(planAreas, planFilter),
+    [planAreas, planFilter]
+  )
+  const factKey = useCallback(
+    (t: FloorPlanTile) => filterFactKey(t, planFilter),
+    [planFilter]
+  )
+  /** What the filter leaves out (null while it is off). */
+  const filteredOut = useMemo(
+    () =>
+      filterIds
+        ? new Set(
+            shownTiles.filter((t) => !filterIds.has(t.id)).map((t) => t.id)
+          )
+        : null,
+    [filterIds, shownTiles]
+  )
   // The cameras' views against the walls (camera-view.ts): the 3D room's
   // fans, the PDF's, and the coverage figures - the floor's in the legend
   // under Display > Camera coverage, an area's in its panel.
@@ -966,7 +1019,13 @@ export function FloorPlanEditor({
     plan
       ? planSvg({
           plan,
-          tiles: shownTiles,
+          // The filter as on screen: Hide others leaves the rest off the
+          // paper, else it prints faded.
+          tiles:
+            filteredOut && planFilter.hide
+              ? shownTiles.filter((t) => !filteredOut.has(t.id))
+              : shownTiles,
+          dimTileIds: filteredOut && !planFilter.hide ? filteredOut : undefined,
           walls,
           trays,
           areas,
@@ -1316,6 +1375,15 @@ export function FloorPlanEditor({
         }}
         search={ed.search}
         onSearchChange={ed.setSearch}
+        filterSlot={
+          <PlanFilterMenu
+            filter={planFilter}
+            onChange={setPlanFilter}
+            tiles={shownTiles}
+            areas={planAreas}
+            kept={filterIds ? filterIds.size : null}
+          />
+        }
         onPickHit={pickHit}
         onFit={() => canvasApi.current?.fit()}
         showGrid={ed.showGrid}
@@ -1439,7 +1507,12 @@ export function FloorPlanEditor({
               plan={plan}
               cameraViews={prefs.showFov ? camViews : undefined}
               liveState={liveState.data ?? null}
-              hiddenTileIds={hiddenTileIds}
+              hiddenTileIds={
+                filteredOut && planFilter.hide
+                  ? new Set([...hiddenTileIds, ...filteredOut])
+                  : hiddenTileIds
+              }
+              recedeTileIds={planFilter.hide ? null : filteredOut}
               traceCableId={
                 detail?.kind === "cable" ? detail.id : (traceParam ?? null)
               }
@@ -1496,6 +1569,12 @@ export function FloorPlanEditor({
               plan={plan}
               shownTiles={drawnTiles}
               shownShapes={shownShapes}
+              filter={{
+                ids: filterIds,
+                hide: planFilter.hide,
+                areaIds: filterAreaIds,
+                factKey,
+              }}
               shapeEdits={shapeEdits}
               canEdit={editing}
               onOpenShape={(s) => {

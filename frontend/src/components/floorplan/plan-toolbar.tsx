@@ -77,7 +77,10 @@ export function PlanToolbar({
   saving,
   onSave,
   placeSlot,
+  filterSlot,
 }: {
+  /** The plan's Filter, its saved Views and the active filter's chip. */
+  filterSlot?: ReactNode
   /** Edit: the Place picker, first on the bar. */
   placeSlot?: ReactNode
   plan: FloorPlan
@@ -128,6 +131,7 @@ export function PlanToolbar({
           onPick={onPickHit}
         />
       )}
+      {filterSlot}
       <BarIconButton label="Fit to view" onClick={onFit}>
         <Maximize />
       </BarIconButton>

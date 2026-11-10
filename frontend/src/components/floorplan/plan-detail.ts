@@ -265,12 +265,14 @@ const KIND_WORD: Record<string, [string, string]> = {
 // Words that do not take an "s": "3 switchgear", "14 fire suppression".
 const MASS = /(ion|ment|gear|ing|ware|s|x|ch|sh)$/i
 
-/** "3 UPS", "6 cooling units", "1 switchgear": a type's name counted. An
- * acronym keeps its case. */
+/** "3 UPS", "12 APs", "6 cooling units", "1 switchgear": a type's name
+ * counted. An acronym keeps its case, and its S ("UPS"). */
 export function countOf(name: string, n: number): string {
   const acronym = /^[A-Z0-9]{2,6}$/.test(name)
-  const word = acronym ? name : name.toLowerCase()
-  if (n === 1 || acronym || MASS.test(word)) return `${n} ${word}`
+  if (acronym)
+    return n === 1 || /S$/.test(name) ? `${n} ${name}` : `${n} ${name}s`
+  const word = name.toLowerCase()
+  if (n === 1 || MASS.test(word)) return `${n} ${word}`
   return `${n} ${word}s`
 }
 
@@ -284,9 +286,13 @@ export function roomFacts(
   {
     fillOf,
     checkOf,
+    keyOf,
   }: {
     fillOf?: (t: FloorPlanTile) => RackFill | null | undefined
     checkOf?: (t: FloorPlanTile) => string | null | undefined
+    /** What a tile counts as ("type:AP"), when not as it is - the plan's
+     * filter counts by what it picks ("12 APs"); racks stay racks. */
+    keyOf?: (t: FloorPlanTile) => string | undefined
   } = {}
 ): Map<string, RoomFacts> {
   const placed = tiles
@@ -319,11 +325,13 @@ export function roomFacts(
         continue
       }
       // Unlinked, its type says what it is ("Rack" counts as a rack).
-      const key = kind
-        ? `kind:${kind}`
-        : t.tile_type?.name
-          ? `type:${t.tile_type.name}`
-          : ""
+      const key =
+        keyOf?.(t) ??
+        (kind
+          ? `kind:${kind}`
+          : t.tile_type?.name
+            ? `type:${t.tile_type.name}`
+            : "")
       if (!key) continue
       if (key.toLowerCase() === "type:rack") {
         racks++
@@ -463,19 +471,33 @@ function turnedBox(at: Pt, w: number, h: number, deg: number): Pt[] {
   ).map(([x, y]) => [at[0] + x * c - y * s, at[1] + x * s + y * c])
 }
 
+/** A room this long on screen (px) may carry a label wider than itself,
+ * centred on it; a smaller one is named on hover. */
+export const OVERHANG_MIN_PX = 24
+
 /**
  * The overview's room labels at `scale` px per cell: each named room's
- * name, centred, with its facts line under it where that fits too and its
- * alarm's badge by the name - upright, else along the room when only that
- * fits (a long narrow plant room). A room too small for its name gets
- * none (its name shows on hover); of two that would touch the smaller
- * gives way. Deterministic.
+ * name, centred, with its facts line under it and its alarm's badge by the
+ * name - always upright where it can be:
+ *
+ *   1. upright inside the room: name, badge and facts, then without the
+ *      facts, then the name alone;
+ *   2. upright and centred though wider than the room (a tall narrow
+ *      building), as long as it keeps clear of the other labels and on the
+ *      plan - the same three tries;
+ *   3. the name alone along the room, the last resort; its facts and
+ *      badge then show on hover. A badge never turns.
+ *
+ * A room too small for any gets none (its name shows on hover); of two
+ * that would touch the smaller gives way. `bounds`: the plan (cells),
+ * which no label leaves. Deterministic.
  */
 export function placeRoomLabels(
   areas: readonly AreaShape[],
   rooms: readonly PlanRoom[],
   facts: ReadonlyMap<string, RoomFacts>,
-  scale: number
+  scale: number,
+  bounds?: { w: number; h: number }
 ): RoomLabel[] {
   if (!(scale > 0)) return []
   const roomById = new Map(rooms.map((r) => [r.id, r]))
@@ -486,6 +508,9 @@ export function placeRoomLabels(
   const kept: { label: RoomLabel; quad: Pt[] }[] = []
   const { parentOf, outlines } = roomNesting(rooms)
   const pad = LABEL_GAP / 2 / scale
+  const onPlan = (box: Pt[]) =>
+    !bounds ||
+    box.every(([x, y]) => x >= 0 && y >= 0 && x <= bounds.w && y <= bounds.h)
   for (const room of order) {
     // An outline round rooms is named by its rooms.
     if (outlines.has(room.id)) continue
@@ -498,39 +523,54 @@ export function placeRoomLabels(
       ["", badge],
       ...(badge ? ([["", ""]] as [string, string][]) : []),
     ]
-    const angles = [
-      ...new Set([0, upright(room.rotation), upright(room.rotation + 90)]),
+    const long = Math.max(room.hw, room.hh) * 2 * scale
+    const along = [
+      ...new Set([upright(room.rotation), upright(room.rotation + 90)]),
+    ].filter((a) => a !== 0)
+    // Upright inside, upright over its edges, then the name alone along it.
+    const steps: {
+      angle: number
+      inside: boolean
+      tries: [string, string][]
+    }[] = [
+      { angle: 0, inside: true, tries },
+      ...(long >= OVERHANG_MIN_PX ? [{ angle: 0, inside: false, tries }] : []),
+      ...along.map((angle) => ({
+        angle,
+        inside: true,
+        tries: [["", ""]] as [string, string][],
+      })),
     ]
-    let placed = false
-    for (const [line, b] of tries) {
-      const size = roomLabelSize(room.name, line, b)
-      const w = size.w / scale
-      const h = size.h / scale
-      for (const angle of angles) {
-        const box = turnedBox(room.at, w, h, angle)
-        if (!box.every((p) => room.contains(p))) continue
-        // Clear of the others by a gap: the box grown by half of it.
-        const quad = turnedBox(room.at, w + pad * 2, h + pad * 2, angle)
-        if (kept.some((k) => quadsOverlap(k.quad, quad))) continue
-        kept.push({
-          quad,
-          label: {
-            id: room.id,
-            at: room.at,
-            angle,
-            name: room.name,
-            facts: line,
-            badge: b,
-            check: b ? alarm!.check : null,
-            minor: !!parent && !outlines.has(parent.id),
-            ...size,
-          },
-        })
-        placed = true
-        break
-      }
-      if (placed) break
+    const place = () => {
+      for (const step of steps)
+        for (const [line, b] of step.tries) {
+          const size = roomLabelSize(room.name, line, b)
+          const w = size.w / scale
+          const h = size.h / scale
+          const box = turnedBox(room.at, w, h, step.angle)
+          if (step.inside && !box.every((p) => room.contains(p))) continue
+          if (!onPlan(box)) continue
+          // Clear of the others by a gap: the box grown by half of it.
+          const quad = turnedBox(room.at, w + pad * 2, h + pad * 2, step.angle)
+          if (kept.some((k) => quadsOverlap(k.quad, quad))) continue
+          kept.push({
+            quad,
+            label: {
+              id: room.id,
+              at: room.at,
+              angle: step.angle,
+              name: room.name,
+              facts: line,
+              badge: b,
+              check: b ? alarm!.check : null,
+              minor: !!parent && !outlines.has(parent.id),
+              ...size,
+            },
+          })
+          return
+        }
     }
+    place()
   }
   return kept.map((k) => k.label)
 }

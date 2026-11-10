@@ -1596,10 +1596,15 @@ threshold back so a zoom that rests near one does not flicker:
 A plan with no rooms or areas drawn on it has nothing to sum up from afar:
 it stops at the room level, its racks and icons still there.
 
-- **Room labels.** A label sits upright, or along a long narrow room
-  (a plant room, a generator yard) when only that fits. A room too small
-  for its name gets none; hover it and the name shows in a tooltip. Of two
-  labels that would touch, the bigger room's stays. A room inside a room
+- **Room labels.** A label always sits upright where it can: inside its
+  room with its facts and badge; else without its facts; else upright
+  and centred on the room though wider than it (a tall narrow building
+  on a campus), as long as it keeps clear of the other labels and stays
+  on the plan. Only as the last resort does the **name alone** turn along
+  the room; its facts and badge then show on hover. A badge never turns.
+  A room under 24 px on screen gets no label; hover it and its name (and
+  what its label left out) shows in a tooltip. Of two labels that would
+  touch, the bigger room's stays. A room inside a room
   (a cage in its hall, a fit-out zone) is named in a lighter weight. An
   area drawn round other rooms - a building's or a site's outline - is
   named by its rooms, not over them.
@@ -1639,6 +1644,28 @@ it stops at the room level, its racks and icons still there.
 - The level is worked out when a zoom settles. **Export PDF** and the SVG
   are not affected: they print the full detail at the paper's scale, with
   full names. The 3D view has its own levels.
+
+##### Click to zoom {#click-to-zoom}
+
+While viewing with **Detail: Auto**, at the overview and the room level:
+
+- **Click a room or area** and the view eases (the 3D view's fly-to
+  easing) to fit it, at least to the room level. Of the rooms round the
+  point it picks the biggest that is still a zoom in, so a campus opens
+  building by building: the building, then its hall, then a cage in it.
+  When the room already fills the screen (and at the detail level) a
+  click does what it always did - opens the area's panel.
+- **Click a row's bar** and it eases to the row, close enough to read its
+  racks (the detail level).
+- The room a click would zoom to lights its outline under the pointer,
+  with a pointer cursor. Rooms take the keyboard focus (++tab++); ++enter++
+  zooms to the focused one.
+- **Double-click empty plan**, or press ++0++ or ++home++, to ease back to
+  the whole plan.
+- An area that **Opens** another plan keeps that apart: its link mark (a
+  button, large enough to press from afar) opens the plan; a plain click
+  on the area zooms. A plan label that opens a plan opens it as before.
+- Editing keeps its selection behaviour: a click selects, nothing zooms.
 
 #### Callouts {#callouts}
 
@@ -3572,6 +3599,7 @@ floors.
     opens the [cable panel](#the-cable-panel); a tray lights up and is
     framed; an area is selected or opened. In 3D the room flies to the pick.
     Hidden tiles and ends are not offered.
+- **Filter** (the bar, beside Find) - see [Filters and saved views](#filters-and-saved-views).
 - **Fit to view** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
@@ -3625,6 +3653,43 @@ floors.
     supply, the figure the rack page shows, so the two agree, and the rack
     panel's heading (*Contents & trace*) reads the same figure. Large figures
     read in kW.
+
+### Filters and saved views {#filters-and-saved-views}
+
+**Filter ▾** on the bar picks what the plan shows, with the list pages'
+facets: **Kind** (rack, cabinet, device, power panel, … and each planning
+tile type), **Device role**, **Device type**, **Status** (the object's,
+else the tile's own *planned* / *reserved* …), **Tags**, **Rack role** and
+**Area type** (the tiles inside an area of that type; the other areas
+fade). Values tick OR within a facet and AND across facets, each with its
+count on this plan; **Advanced** takes the lists' filter expression over
+the same fields (`role = AP and status = planned`, `tags ~ core`). Find
+on plan stays the text search. A tile whose object you may not view
+counts only by its kind.
+
+- What the filter keeps draws as ever, **at every zoom**. From afar (the
+  overview) it is drawn as its icon tiles on the rooms, clustered where
+  they crowd - *show only APs* on a campus - and nothing else is.
+- Closer in the rest **recedes** (faded, as the rack table's filter fades
+  racks), or with **Hide others** on is not drawn at all.
+- The rooms' facts count what it keeps, by what it picks: **12 APs**,
+  **3 cameras**.
+- While a filter is on, a chip on the bar says what it keeps and how many
+  show, with **Clear**.
+- The filter is in the page's address (`?pf=`), so a link shares it, and
+  it stays on as you go from floor to floor.
+- **Views** beside it saves the filter (Hide others included) as a named
+  view, exactly like a list's [saved views](saved-views.md): yours are
+  private until you share them with the tenant, only you can change
+  yours, and a shared view re-runs on what each reader may see. They are
+  kept under the object type `floorplan`, so a floor plan's views are the
+  same on every floor plan and never on a list's menu. There are no
+  built-in presets: save the views you use.
+- **3D**: what the filter leaves out is ghosted, as focus ghosts it, or
+  with Hide others left out.
+- **Export**: the PDF of the current view (and the plan PDF) prints the
+  filter as on screen - faded, or left out with Hide others; the PNG is
+  the screen.
 
 ## Snapshots
 

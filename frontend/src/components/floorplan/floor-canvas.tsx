@@ -102,6 +102,7 @@ import {
   hiddenAreaNames,
   levelShows,
   placeRoomLabels,
+  alarmText,
   pxPerMetre,
   roomFacts,
   roomNesting,
@@ -109,6 +110,7 @@ import {
 } from "./plan-detail"
 import type { DetailLevel, DetailMode } from "./plan-detail"
 import { RoomLabelsLayer } from "./room-labels-layer"
+import { clickZoomTarget, rowZoomMinK } from "./plan-zoom"
 import { GlyphSprite, spritePrefix } from "./tile-glyph"
 import type { GlyphSheet } from "./tile-glyph"
 import { clusterMembersOf } from "./cluster-members"
@@ -205,6 +207,8 @@ export { tileFill }
 
 /** Rows shown but locked here (a live view's edge rows) draw faded. */
 const LOCKED_OPACITY = 0.5
+/** What the plan's filter leaves out, drawn: as the rack table's. */
+const RECEDE_OPACITY = 0.25
 /** From afar (Detail by zoom) a plan label under this on screen (px) is
  * left out. */
 const MIN_LABEL_PX = 9
@@ -309,6 +313,15 @@ export interface FloorCanvasProps {
   highlightTileIds?: ReadonlySet<string>
   /** Tiles faded - racks the rack table's filter leaves out. */
   dimTileIds?: ReadonlySet<string>
+  /** The plan's filter (plan-filter.ts): the tiles it keeps, null when it
+   * is off. The rest recede, or with `filterHide` are not drawn; from
+   * afar they never are, and the kept ones draw as their icons. */
+  filterIds?: ReadonlySet<string> | null
+  filterHide?: boolean
+  /** The areas the filter's area type keeps (the rest recede). */
+  filterAreaIds?: ReadonlySet<string> | null
+  /** Under the filter, what the rooms' facts count a kept tile as. */
+  filterFactKey?: (tile: FloorPlanTile) => string | undefined
   /** Drawn over the plan inside the export area, so the PNG carries it -
    * the Color by legend. */
   overlay?: React.ReactNode
@@ -626,7 +639,7 @@ function useElementSize(ref: React.RefObject<Element | null>) {
  */
 export function FloorCanvas({
   plan,
-  tiles,
+  tiles: allTiles,
   selectedId,
   editable,
   showGrid,
@@ -669,6 +682,10 @@ export function FloorCanvas({
   rackFigures: figures,
   highlightTileIds,
   dimTileIds,
+  filterIds = null,
+  filterHide = false,
+  filterAreaIds = null,
+  filterFactKey,
   overlay,
   labelFit = false,
   showFov = true,
@@ -791,6 +808,7 @@ export function FloorCanvas({
     endPan,
     toWorld,
     fitTo,
+    animateTo,
     pinchDown,
     pinchMove,
     pinchUp,
@@ -806,8 +824,8 @@ export function FloorCanvas({
   // The icons the tiles draw, each once in the canvas's sprite.
   const glyphPrefix = spritePrefix(useId())
   const glyphNames = useMemo(
-    () => new Set(tiles.map((tl) => tileIcon(tl)).filter(Boolean)),
-    [tiles]
+    () => new Set(allTiles.map((tl) => tileIcon(tl)).filter(Boolean)),
+    [allTiles]
   )
   const glyphSheet = useMemo<GlyphSheet>(
     () => ({ prefix: glyphPrefix, names: glyphNames }),
@@ -833,22 +851,6 @@ export function FloorCanvas({
     hoverStore.get
   )
   const viewSize = useElementSize(svgRef)
-  // Icons when zoomed out: the tiles drawn as their icon, with hysteresis -
-  // the set from the last render decides which threshold each tile meets
-  // (stored during render, the documented previous-render pattern).
-  const [iconPrev, setIconPrev] = useState<ReadonlySet<string>>(NO_ICONS)
-  const iconIds = useMemo(
-    () => (iconTiles ? iconTileIds(tiles, pxPerCell, iconPrev) : NO_ICONS),
-    [iconTiles, tiles, pxPerCell, iconPrev]
-  )
-  if (iconIds !== iconPrev) setIconPrev(iconIds)
-  const pinnedNames = useMemo(() => {
-    const s = new Set(multiSelectedIds ?? [])
-    if (selectedId) s.add(selectedId)
-    return s
-  }, [multiSelectedIds, selectedId])
-  // The tile whose callout is hovered: lit on the plan with it.
-  const [calloutHot, setCalloutHot] = useState<string | null>(null)
   // Settled: the view once a pan or zoom stops - the label pass and the
   // icons' layout run on it, not on every frame.
   const settledView = useSettled(
@@ -868,14 +870,45 @@ export function FloorCanvas({
       })
     : "detail"
   if (autoDetail && level !== levelPrev) setLevelPrev(level)
-  const shows = useMemo(
+  // The plan's filter: what it keeps draws; from afar, or with Hide
+  // others, the rest is not drawn at all (and the rooms' facts, the icons'
+  // clusters and the rows count only what it keeps).
+  const filterOn = !!filterIds
+  const filterDrops = !!filterIds && (filterHide || level === "overview")
+  const tiles = useMemo(
     () =>
-      levelShows(level, autoDetail ? "auto" : "full", {
-        capacityColour: isCapacityMetric(colorBy),
-        coverage: showCoverage,
-      }),
-    [level, autoDetail, colorBy, showCoverage]
+      filterIds && (filterHide || level === "overview")
+        ? allTiles.filter((tl) => filterIds.has(tl.id))
+        : allTiles,
+    [filterDrops, allTiles, filterIds]
   )
+  /** A tile the filter leaves out but still draws: it recedes. */
+  const recedes = (id: string) => !!filterIds && !filterIds.has(id)
+  // Icons when zoomed out: the tiles drawn as their icon, with hysteresis -
+  // the set from the last render decides which threshold each tile meets
+  // (stored during render, the documented previous-render pattern).
+  const [iconPrev, setIconPrev] = useState<ReadonlySet<string>>(NO_ICONS)
+  const iconIds = useMemo(
+    () => (iconTiles ? iconTileIds(tiles, pxPerCell, iconPrev) : NO_ICONS),
+    [iconTiles, tiles, pxPerCell, iconPrev]
+  )
+  if (iconIds !== iconPrev) setIconPrev(iconIds)
+  const pinnedNames = useMemo(() => {
+    const s = new Set(multiSelectedIds ?? [])
+    if (selectedId) s.add(selectedId)
+    return s
+  }, [multiSelectedIds, selectedId])
+  // The tile whose callout is hovered: lit on the plan with it.
+  const [calloutHot, setCalloutHot] = useState<string | null>(null)
+  const shows = useMemo(() => {
+    const s = levelShows(level, autoDetail ? "auto" : "full", {
+      capacityColour: isCapacityMetric(colorBy),
+      coverage: showCoverage,
+    })
+    // Filtered, the overview draws what the filter keeps - as icons on the
+    // rooms, clustered where they crowd - and only that.
+    return filterOn && s.level === "overview" ? { ...s, tiles: true } : s
+  }, [level, autoDetail, colorBy, showCoverage, filterOn])
   // Icons that would overlap spread apart, or fold into clusters where
   // there is no room (icon-layout.ts) - laid out for the settled zoom's
   // bucket, so a pan never moves them; the last layout holds clusters a
@@ -1011,10 +1044,18 @@ export function FloorCanvas({
     () => shapes.filter((s): s is AreaShape => s.kind === "area"),
     [shapes]
   )
+  // The rooms' facts count what the filter keeps ("12 APs").
+  const factTiles = useMemo(
+    () =>
+      filterIds && !filterDrops
+        ? tiles.filter((tl) => filterIds.has(tl.id))
+        : tiles,
+    [filterOn, filterDrops, tiles, filterIds]
+  )
   const facts = useMemo(
     () =>
       autoDetail
-        ? roomFacts(rooms, tiles, {
+        ? roomFacts(rooms, factTiles, {
             fillOf: (tl) => {
               const f = figures?.get(tl.id)
               if (f) return { used: f.used_units, total: f.u_height }
@@ -1024,14 +1065,26 @@ export function FloorCanvas({
                 : null
             },
             checkOf: (tl) => liveState?.tiles[tl.id]?.check,
+            keyOf: filterOn ? filterFactKey : undefined,
           })
         : null,
-    [autoDetail, rooms, tiles, figures, liveState]
+    [autoDetail, rooms, factTiles, figures, liveState, filterOn, filterFactKey]
   )
   const roomLabels = useMemo(() => {
     if (!facts || !shows.roomLabels) return []
-    return placeRoomLabels(areaShapes, rooms, facts, CELL * settledView.k)
-  }, [facts, shows.roomLabels, areaShapes, rooms, settledView.k])
+    return placeRoomLabels(areaShapes, rooms, facts, CELL * settledView.k, {
+      w: plan.grid_width,
+      h: plan.grid_height,
+    })
+  }, [
+    facts,
+    shows.roomLabels,
+    areaShapes,
+    rooms,
+    settledView.k,
+    plan.grid_width,
+    plan.grid_height,
+  ])
   const labelledRooms = useMemo(
     () => new Set(roomLabels.map((l) => l.id)),
     [roomLabels]
@@ -1222,6 +1275,82 @@ export function FloorCanvas({
     mode === "layout" && !editing && !(editable && armed) && !snapshotting
   /** Shown, but not to be edited here (a live view's edge rows). */
   const isLocked = (id: string) => editable && !!lockedIds?.has(id)
+  // Click to zoom (View, Detail: Auto, from afar): a click on a room eases
+  // the view to fit it - the biggest room round the point that is still a
+  // zoom in, so a campus opens building by building - and a row's bar to
+  // the row. Up close, or when nothing is left to zoom into, a click opens
+  // the area as it always did.
+  const zoomable = autoDetail && (level === "overview" || level === "room")
+  const [hotArea, setHotArea] = useState<string | null>(null)
+  const screen = () => {
+    const r = svgRef.current?.getBoundingClientRect()
+    return { w: r?.width ?? 0, h: r?.height ?? 0 }
+  }
+  const zoomTargetAt = (p: Pt) => {
+    if (!zoomable) return null
+    const { w, h } = screen()
+    return clickZoomTarget(rooms, p, t, w, h, {
+      cell: CELL,
+      cellMm: plan.cell_mm,
+      hasRooms: rooms.length > 0,
+    })
+  }
+  /** Zoom to what a click at `p` lands on; false when it zooms nowhere. */
+  const zoomAt = (p: Pt): boolean => {
+    const target = zoomTargetAt(p)
+    if (!target) return false
+    setHotArea(null)
+    const { w, h } = screen()
+    animateTo(target.view, w, h)
+    return true
+  }
+  const openShape = (shape: PlanShape) => {
+    if (shape.kind === "area" && zoomable) {
+      const room = rooms.find((r) => r.id === shape.id)
+      if (zoomAt(pointerAt.current ?? room?.at ?? [0, 0])) return
+    }
+    onOpenShape?.(shape)
+  }
+  /** View, from afar: the room a click would zoom to, lit under the
+   * pointer - set only when it changes. */
+  /** A room a key may zoom to: one that is named on the plan. */
+  const labelledOrNamed = (id: string) =>
+    labelledRooms.has(id) || !!rooms.find((r) => r.id === id)?.name
+  const hoverZoom = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!zoomable) {
+      if (hotArea) setHotArea(null)
+      return
+    }
+    const svg = svgRef.current
+    if (!svg || drag.current || hoverStore.get()) return
+    const rect = svg.getBoundingClientRect()
+    const hit = zoomTargetAt([
+      (e.clientX - rect.left - t.x) / t.k / CELL,
+      (e.clientY - rect.top - t.y) / t.k / CELL,
+    ])
+    const id = hit?.room.id ?? null
+    if (id !== hotArea) setHotArea(id)
+  }
+  // 0 or Home: the whole plan, eased (View; a field keeps its keys).
+  useEffect(() => {
+    if (editable) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "0" && e.key !== "Home") return
+      if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return
+      const el = e.target as HTMLElement | null
+      if (
+        el &&
+        (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
+      )
+        return
+      if (!svgRef.current?.isConnected) return
+      e.preventDefault()
+      fitTo(svgRef.current, gw, gh, true)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [editable, fitTo, gw, gh])
+
   const shapeG = useShapeGestures({
     svgRef,
     toWorld,
@@ -1249,7 +1378,7 @@ export function FloorCanvas({
           }
         : onCreateArea,
     onCreateLabel,
-    onOpenShape,
+    onOpenShape: openShape,
     onChangeTile,
     onGestureStart,
     onGestureEnd,
@@ -2216,13 +2345,23 @@ export function FloorCanvas({
           shows.areaNames !== "none" &&
           !hiddenNames?.has(area.id) &&
           planLabels.areas.get(area.id) !== null))
-    if (!room?.name || drawn) return clear()
+    if (!room?.name) return clear()
+    // From afar, what its label left out (its facts, its alarm) too.
+    const f = facts?.get(room.id)
+    const shown = roomLabels.find((l) => l.id === room.id)
+    const missing = shows.roomLabels
+      ? [
+          f?.text && shown?.facts !== f.text ? f.text : "",
+          f?.alarm && !shown?.badge ? alarmText(f.alarm) : "",
+        ].filter(Boolean)
+      : []
+    if (drawn && !missing.length) return clear()
     if (roomHint?.id === room.id) return
     setRoomHint({
       id: room.id,
       x: e.clientX - rect.left,
       y: e.clientY - rect.top - 10,
-      text: room.name,
+      text: [room.name, ...missing].join(" · "),
     })
   }
 
@@ -2285,23 +2424,35 @@ export function FloorCanvas({
 
   /** A click on a cluster: zoom to its members, close enough that they
    * part or turn back into tiles. */
-  const fitCluster = (c: Pick<IconCluster, "members">) => {
+  const fitCluster = (c: Pick<IconCluster, "members" | "form">) => {
     const rect = svgRef.current?.getBoundingClientRect()
     const members = c.members
       .map((id) => tileById.get(id))
       .filter((x): x is FloorPlanTile => !!x)
     if (!rect || !members.length) return
     setClusterHint(null)
-    setT(
-      clusterFitView(members, rect.width, rect.height, {
-        cell: CELL,
-        spacingPx: READABLE_SYMBOL_PX * 1.3,
-        tilePx: ICON_TILE_EXIT_PX + 4,
-        maxK: 4,
-        // Room round the extent for the icons and their names.
-        margin: 160,
-      })
-    )
+    const view = clusterFitView(members, rect.width, rect.height, {
+      cell: CELL,
+      spacingPx: READABLE_SYMBOL_PX * 1.3,
+      tilePx: ICON_TILE_EXIT_PX + 4,
+      maxK: 4,
+      // Room round the extent for the icons and their names.
+      margin: 160,
+    })
+    // A row's bar, from afar: eased to the row, close enough to read its
+    // racks (the detail level).
+    if (c.form === "row" && autoDetail) {
+      const k = Math.min(4, Math.max(view.k, rowZoomMinK(plan.cell_mm, CELL)))
+      const cx = (rect.width / 2 - view.x) / view.k
+      const cy = (rect.height / 2 - view.y) / view.k
+      animateTo(
+        { k, x: rect.width / 2 - cx * k, y: rect.height / 2 - cy * k },
+        rect.width,
+        rect.height
+      )
+      return
+    }
+    setT(view)
   }
 
   const gridClipId = `fp-grid-clip-${plan.id}`
@@ -2380,7 +2531,14 @@ export function FloorCanvas({
           pointerEvents={
             mode === "structure" || isLocked(tile.id) ? "none" : undefined
           }
-          opacity={isLocked(tile.id) ? LOCKED_OPACITY : undefined}
+          opacity={
+            isLocked(tile.id)
+              ? LOCKED_OPACITY
+              : recedes(tile.id)
+                ? RECEDE_OPACITY
+                : undefined
+          }
+          data-recedes={recedes(tile.id) || undefined}
           data-grown=""
           style={
             shift
@@ -2479,7 +2637,7 @@ export function FloorCanvas({
             !!tilePick?.picked.has(tile.id) ||
             calloutHot === tile.id
           }
-          dimmed={!!dimTileIds?.has(tile.id)}
+          dimmed={!!dimTileIds?.has(tile.id) || recedes(tile.id)}
           onPointerDown={(e) => handleTileDown(tile, e)}
           onResizeDown={(e) => handleResizeDown(tile, e)}
           // In Cables mode a double-click finishes a tray draw - don't
@@ -2563,6 +2721,7 @@ export function FloorCanvas({
           handleMove(e)
           hoverOpens(e)
           hoverRoom(e)
+          hoverZoom(e)
         }}
         onPointerCancel={pinchUp}
         onPointerUp={(e) => {
@@ -2596,9 +2755,17 @@ export function FloorCanvas({
           if (pinchUp(e)) return
           handleUp(e)
         }}
-        onDoubleClick={() => {
+        onDoubleClick={(e) => {
           if (drawing) onFinishDraw?.()
           else if (shapeG.poly) shapeG.finishPolygon()
+          // View: a double-click on empty plan fits the whole of it.
+          else if (
+            !editable &&
+            !(e.target as Element).closest(
+              "[data-area],[data-tile],[data-icon-cluster],[data-grown],[data-row-symbol],[data-hall-symbol],[data-label]"
+            )
+          )
+            fitTo(svgRef.current, gw, gh, true)
         }}
         onContextMenu={handleContextMenu}
         style={{
@@ -2611,7 +2778,9 @@ export function FloorCanvas({
             (editable && mode === "layout" && shapeTool) ||
             (editable && raisedPolygonTool)
               ? "crosshair"
-              : "grab",
+              : hotArea
+                ? "pointer"
+                : "grab",
         }}
       >
         <defs>
@@ -2839,6 +3008,24 @@ export function FloorCanvas({
                 pattern={shows.pattern}
                 interactive={shapesLive && !isLocked(a.id)}
                 multiSelected={!!areaSel?.has(a.id)}
+                recedes={!!filterAreaIds && !filterAreaIds.has(a.id)}
+                hot={zoomable && hotArea === a.id}
+                onActivate={
+                  zoomable && labelledOrNamed(a.id)
+                    ? () => {
+                        const room = rooms.find((r) => r.id === a.id)
+                        if (room && !zoomAt(room.at)) onOpenShape?.(a)
+                      }
+                    : undefined
+                }
+                onFocusChange={(on) =>
+                  setHotArea(on ? a.id : (h) => (h === a.id ? null : h))
+                }
+                onOpens={
+                  zoomable && (a.opens || a.opens_hidden)
+                    ? () => onOpenShape?.(a)
+                    : undefined
+                }
                 onPointerDown={(e) => {
                   if (
                     editable &&

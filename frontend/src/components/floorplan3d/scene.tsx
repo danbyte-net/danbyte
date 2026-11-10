@@ -150,6 +150,7 @@ export default function FloorScene3D({
   planId,
   liveState,
   hiddenTileIds,
+  recedeTileIds = null,
   traceCableId,
   onOpenCable,
   onOpenDevice,
@@ -194,6 +195,8 @@ export default function FloorScene3D({
   liveState: FloorPlanLiveState | null
   /** Tiles the plan's eyes have switched off - not drawn here either. */
   hiddenTileIds?: Set<string>
+  /** Tiles the plan's filter leaves out: ghosted, as focus ghosts. */
+  recedeTileIds?: ReadonlySet<string> | null
   traceCableId?: string | null
   /** A cable run clicked: the plan's cable panel in place of the room's
    * cable card (null: clicked away). */
@@ -1102,7 +1105,10 @@ export default function FloorScene3D({
             portLabelColor={faceplatePortLabelColor}
             showAirflow={showAirflow}
             shellMode={shellMode}
-            ghosted={focusOn && !!selection && selection.tileId !== t.id}
+            ghosted={
+              (focusOn && !!selection && selection.tileId !== t.id) ||
+              !!recedeTileIds?.has(t.id)
+            }
             focusDeviceId={
               focusOn && selection?.tileId === t.id
                 ? (selection.deviceId ?? null)
@@ -1138,7 +1144,10 @@ export default function FloorScene3D({
             selected={
               selection?.tileId === t.id && selection.kind === "cabinet"
             }
-            ghosted={focusOn && !!selection && selection.tileId !== t.id}
+            ghosted={
+              (focusOn && !!selection && selection.tileId !== t.id) ||
+              !!recedeTileIds?.has(t.id)
+            }
             xray={shellMode === "xray"}
             attention={attention}
             doorOpen={openDoors.has(t.id)}
@@ -1299,6 +1308,7 @@ export default function FloorScene3D({
           checks={(id) => liveState?.tiles[id]?.check ?? null}
           selection={selection}
           focusTileId={focusOn && selection ? selection.tileId : null}
+          recedeTileIds={recedeTileIds}
           showNames={!readableNames}
           onSelect={handleSelect}
           onFlyTo={(target, position) => {
