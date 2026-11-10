@@ -979,6 +979,7 @@ export function FloorPlanEditor({
           // Readable on paper as on screen, at the sheet's scale.
           objectSize: prefs.objectSize,
           iconTiles: prefs.iconTiles,
+          tileIcons: prefs.tileIcons,
           callouts: ownCallouts && prefs.callouts === "auto",
           cameras: prefs.showFov
             ? { racksBlock: prefs.fovRacksBlock }
@@ -1030,6 +1031,7 @@ export function FloorPlanEditor({
         showTrays: prefs.showTrays,
         objectSize: prefs.objectSize,
         iconTiles: prefs.iconTiles,
+        tileIcons: prefs.tileIcons,
         showFov: prefs.showFov,
         fovRacksBlock: prefs.fovRacksBlock,
         callouts: prefs.callouts === "auto",

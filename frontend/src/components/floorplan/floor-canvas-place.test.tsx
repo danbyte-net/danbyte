@@ -118,7 +118,19 @@ describe("a placed device", () => {
     const { container } = draw({ tiles: [device()] })
     const fill = container.querySelector('[data-tile="t1"] [data-part="fill"]')!
     expect(fill.getAttribute("fill")).toBe("#0ea5e9")
+    // Tile icons (the default): the role's icon centred, from the sprite.
+    const glyph = container.querySelector(
+      '[data-tile="t1"] [data-part="glyph"]'
+    )!
+    expect(glyph.tagName).toBe("use")
+    expect(glyph.getAttribute("data-icon")).toBe("router")
+    expect(container.querySelector('[data-part="role-icon"]')).toBeNull()
+  })
+
+  it("wears its role's icon in the corner as a plain tile", () => {
+    const { container } = draw({ tiles: [device()], tileIcons: false })
     expect(container.querySelector('[data-part="role-icon"]')).not.toBeNull()
+    expect(container.querySelector('[data-part="glyph"]')).toBeNull()
   })
 
   it("follows its role: a new role colour repaints it", () => {

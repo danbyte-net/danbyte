@@ -17,6 +17,10 @@ import {
 } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 import { facingBarRect, figureBarRect, figureLift } from "./tile-marks"
+import { SOLID_MARK_OPACITY, tileFace } from "./tile-face"
+import type { TileTheme } from "./tile-face"
+import { TileGlyph } from "./tile-glyph"
+import type { GlyphSheet } from "./tile-glyph"
 
 /** Native hover tooltip text: name · type · linked · (rack) used-U/%. */
 function tileTooltip(
@@ -80,6 +84,9 @@ export function TileShape({
   handlePx = 12,
   hideName = false,
   zoneNameGrow = 1,
+  icons = false,
+  theme = "light",
+  glyphs = null,
   onPointerDown,
   onResizeDown,
   onDoubleClick,
@@ -113,6 +120,13 @@ export function TileShape({
   hideName?: boolean
   /** A zone's name, grown to stay readable from afar (Readable). */
   zoneNameGrow?: number
+  /** Display > Tile icons: a solid fill and a centred glyph (tile-face.ts)
+   * instead of the pale tint. */
+  icons?: boolean
+  /** The page the solid tile stands on. */
+  theme?: TileTheme
+  /** The canvas's icon sprite (tile-glyph.tsx). */
+  glyphs?: GlyphSheet | null
   onPointerDown: (e: React.PointerEvent) => void
   onResizeDown: (e: React.PointerEvent) => void
   onDoubleClick: () => void
@@ -131,6 +145,8 @@ export function TileShape({
   // Live monitoring: down/degraded overrides the stroke so a rack going red
   // is visible at any zoom - whatever the fill says about its capacity.
   const rackLive = live?.kind === "rack" ? live : null
+  // Tile icons: a solid block - not a zone's tint, not a photo.
+  const solid = icons && !zone && !(tile.display === "photo" && tile.photo)
   const paint = tilePaint({
     tile,
     colorBy,
@@ -138,8 +154,11 @@ export function TileShape({
     check: live?.check ?? null,
     selected,
     dimmed,
+    solid,
+    theme,
   })
   const fill = paint.fill
+  const ink = paint.ink
   const cabinetLive = live?.kind === "cabinet" ? live : null
   // The figure along the foot: on a two-cell tile its text sits at the
   // right; a capacity mode writes it on a one-cell tile too, centred. Where
@@ -285,12 +304,28 @@ export function TileShape({
       </g>
     )
   }
-  // A tile with no type of its own wears its object's role icon.
+  // A tile with no type of its own wears its object's role icon - in the
+  // corner on a plain tile; Tile icons centres the glyph instead.
   const RoleIcon = (() => {
-    const icon = tileRoleIcon(tile)
+    const icon = icons ? "" : tileRoleIcon(tile)
     return icon ? getLucideIcon(icon) : null
   })()
   const iconSize = Math.min(14, (h - GUTTER * 2) * 0.32)
+  // Tile icons: what the tile is, centred on what the marks leave free -
+  // in its ink on a solid tile, faint in its colour on a receding one.
+  const glyphName = icons ? tileIcon(tile) : ""
+  const face = glyphName
+    ? tileFace({
+        w,
+        h,
+        orientation: tile.orientation,
+        figure: figure ? { text: !!figureText } : null,
+        count: !!cabinetLive,
+        riser: tile.riser && iconSize >= 6 ? iconSize : 0,
+        name: label ? { text: label.text, fontSize: label.fontSize } : null,
+      })
+    : null
+  const labelAt = face?.glyph && face.label ? face.label : null
 
   return (
     <g
@@ -385,8 +420,22 @@ export function TileShape({
         h={h}
         orientation={tile.orientation}
         withFigure={!!figure}
-        color={fill}
+        color={ink ?? fill}
+        opacity={ink ? SOLID_MARK_OPACITY : 0.9}
       />
+      {face?.glyph && (
+        <g opacity={ink ? 1 : 0.55}>
+          <TileGlyph
+            part="glyph"
+            name={glyphName}
+            x={face.glyph.x}
+            y={face.glyph.y}
+            size={face.glyph.size}
+            color={ink ?? fill}
+            sheet={glyphs}
+          />
+        </g>
+      )}
       {/* Typed tiles stay clean (colour, label, live state); a tile placed
           straight from an object wears that object's role icon. */}
       {RoleIcon && iconSize >= 6 && (
@@ -410,7 +459,7 @@ export function TileShape({
           y={GUTTER + 3}
           width={iconSize}
           height={iconSize}
-          color={fill}
+          color={ink ?? fill}
           strokeWidth={2.25}
           pointerEvents="none"
           aria-hidden="true"
@@ -418,12 +467,12 @@ export function TileShape({
       )}
       {label && (
         <text
-          x={w / 2}
-          y={labelY}
+          x={labelAt?.x ?? w / 2}
+          y={labelAt?.y ?? labelY}
           textAnchor="middle"
           fontSize={label.fontSize}
           fontWeight={500}
-          fill="currentColor"
+          fill={ink ?? "currentColor"}
           opacity={paint.muted ? 0.6 : 1}
           pointerEvents="none"
         >
@@ -434,13 +483,17 @@ export function TileShape({
         // Rack tiles: a thin bar along the bottom edge - space, or the
         // measure the plan is coloured by - and its figure.
         <g pointerEvents="none" data-part="figure">
-          <rect {...figBar} rx={2} className="fill-foreground/10" />
+          {ink ? (
+            <rect {...figBar} rx={2} fill={ink} fillOpacity={0.28} />
+          ) : (
+            <rect {...figBar} rx={2} className="fill-foreground/10" />
+          )}
           {figure.ratio != null && (
             <rect
               {...figBar}
               width={Math.max(2, figBar.width * Math.min(1, figure.ratio))}
               rx={2}
-              fill={figure.color}
+              fill={paint.barColor ?? figure.color}
             />
           )}
           {figureText && (
@@ -449,7 +502,7 @@ export function TileShape({
               y={h - GUTTER - 10 - lift}
               textAnchor={wide ? "end" : "middle"}
               fontSize={8}
-              fill="currentColor"
+              fill={ink ?? "currentColor"}
               opacity={figure.always ? 0.85 : 0.7}
               className="num"
             >
@@ -465,6 +518,7 @@ export function TileShape({
           count={cabinetLive.device_count}
           // The resize handle takes the corner on a selected tile.
           inset={selected && editable ? 9 : 0}
+          color={ink ?? undefined}
         />
       )}
       {selected && editable && grip && (
@@ -519,12 +573,15 @@ function CabinetCount({
   h,
   count,
   inset = 0,
+  color,
 }: {
   w: number
   h: number
   count: number
   /** Extra room at the right, px - kept clear of the resize handle. */
   inset?: number
+  /** A solid tile's ink; the page's text colour otherwise. */
+  color?: string
 }) {
   const text = String(count)
   const right = w - GUTTER - 4 - inset
@@ -534,6 +591,7 @@ function CabinetCount({
   return (
     <g
       data-part="device-count"
+      color={color}
       pointerEvents="none"
       opacity={0.75}
       aria-hidden="true"
@@ -568,12 +626,14 @@ function FacingEdge({
   orientation,
   withFigure,
   color,
+  opacity = 0.9,
 }: {
   w: number
   h: number
   orientation: number
   withFigure: boolean
   color: string
+  opacity?: number
 }) {
   // tile-marks.ts keeps it clear of the figure bar along the foot.
   const bar = facingBarRect(w, h, orientation, withFigure)
@@ -584,7 +644,7 @@ function FacingEdge({
       {...bar}
       rx={1.5}
       fill={color}
-      opacity={0.9}
+      opacity={opacity}
       pointerEvents="none"
     />
   )
@@ -703,6 +763,9 @@ export function ReadableSymbol({
   iconTile = false,
   highlighted = false,
   rotation = 0,
+  icons = false,
+  theme = "light",
+  glyphs = null,
   onPointerDown,
   onDoubleClick,
   onPointerEnter,
@@ -722,6 +785,12 @@ export function ReadableSymbol({
   figures?: RackFigures
   /** Drawn as its icon from afar (Display > Icons when zoomed out). */
   iconTile?: boolean
+  /** Display > Tile icons: the solid tile's own fill and ink, so the
+   * symbol from afar is the tile zoomed out. */
+  icons?: boolean
+  theme?: TileTheme
+  /** The canvas's icon sprite (tile-glyph.tsx). */
+  glyphs?: GlyphSheet | null
   /** Pointed at from outside the canvas - a rack table row. */
   highlighted?: boolean
   onPointerDown: (e: React.PointerEvent) => void
@@ -736,13 +805,17 @@ export function ReadableSymbol({
     rack: figures ?? rackFigures(null, rackLive),
     check: live?.check ?? null,
     selected,
+    solid: icons,
+    theme,
   })
   const x = box.x * CELL
   const y = box.y * CELL
   const w = box.w * CELL
   const h = box.h * CELL
   const iconName = tileIcon(tile)
-  const Icon = iconName ? getLucideIcon(iconName) : null
+  // Tile icons: the colour the plan colours the tile by, in its ink.
+  const symbolFill = paint.ink ? paint.fill : tileFill(tile)
+  const symbolInk = paint.ink ?? "#ffffff"
   // An icon tile is a square: the icon a little smaller, so it reads.
   const icon = Math.min(w, h) * (iconTile ? 0.6 : 0.7)
   const turn = rotation
@@ -790,8 +863,8 @@ export function ReadableSymbol({
         width={w}
         height={h}
         rx={Math.min(w, h) * 0.2}
-        fill={tileFill(tile)}
-        fillOpacity={0.9}
+        fill={symbolFill}
+        fillOpacity={paint.ink ? 1 : 0.9}
         // A hairline of the page round it, so the symbol stands off a map
         // or a busy floor; the alarm or selection colour when it has one.
         stroke={paint.alarm || selected ? paint.stroke : "var(--background)"}
@@ -814,17 +887,15 @@ export function ReadableSymbol({
           pointerEvents="none"
         />
       )}
-      {Icon && (
-        <Icon
-          data-part="symbol-icon"
+      {iconName && (
+        <TileGlyph
+          part="symbol-icon"
+          name={iconName}
           x={x + w / 2 - icon / 2}
           y={y + h / 2 - icon / 2}
-          width={icon}
-          height={icon}
-          color="#ffffff"
-          strokeWidth={2.25}
-          pointerEvents="none"
-          aria-hidden="true"
+          size={icon}
+          color={symbolInk}
+          sheet={glyphs}
         />
       )}
     </g>

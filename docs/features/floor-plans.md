@@ -1323,6 +1323,8 @@ Under **Display**: **Color by** heads the menu - see [below](#color-by);
 **Muted background** greys the background image and a street base map so
 the plan reads over them - a satellite map keeps its colours
 (on unless the plan turns it off; see [Background image](#site-wide-floor-plans));
+**Tile icons** draws each tile as a solid block with an icon of what it is
+(on unless the plan turns it off - see [Tile icons](#tile-icons));
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;
 **Camera FOV cones** shows/hides the camera views and **Camera coverage**
@@ -1424,6 +1426,47 @@ the canvas as you see it.
 Like the other Display choices, Object size is saved on the plan for those
 who may edit it. A viewer without change rights can switch it for
 themselves; it lasts for the session and is not saved.
+
+#### Tile icons {#tile-icons}
+
+**Tile icons** (on unless the plan turns it off) makes a tile say what it
+is at a glance:
+
+- **Fill.** The tile is a solid block in the colour [Color by](#color-by)
+  gives it - its type's or its role's under Type, its rack's role, status
+  or capacity level otherwise - with a thin border a shade of that colour.
+  A tile with no colour of its own is mid grey. A planning tile (linked to
+  nothing) is the same colour lighter in the light theme and deeper in the
+  dark one, so what is built and what is planned read apart, as in the 3D
+  room. While the plan is coloured by a rack measure, tiles that are not
+  racks stay pale so the racks stand out. Zones and photo tiles are not
+  changed.
+- **Icon.** In the middle of the tile, the icon of what it is: a device's
+  own icon or its device type's, else the tile type's (a UPS's battery, a
+  CRAH's snowflake, a camera, a generator), else the role's, else the
+  kind's (a rack's container, a cabinet's rails). It is white where white
+  reads on the fill (3 : 1 at least) and near-black on light colours such
+  as sky or amber; the tile's name, front edge and figure take the same
+  ink. The icon grows with the tile - up to 30 px on a rack-sized tile,
+  more on a big one such as a generator - and is not drawn under 10 px.
+  It keeps clear of the front-edge marker, the capacity bar and its
+  figure, a cabinet's device count and a riser's arrows.
+- **Name.** The name rules do not change: a name that fits stays in the
+  tile, with the icon above it or beside it (a short name on a one-cell
+  rack sits beside its icon); where both do not fit the name wins. A name
+  that does not fit is named along its row or in a callout as before, and
+  the tile then shows its icon alone. With **Callouts** off, such a name
+  goes under the tile first, as a caption. No second caption is added
+  under a tile: it would compete with the row names and callouts for the
+  same aisle.
+- **From afar and on paper.** The symbol Readable draws and the icon tile
+  of **Icons when zoomed out** take the same solid colour and ink, and the
+  [PDF and SVG export](#export) prints the tiles the same way, from the
+  same layout. Each icon is drawn once per plan (an SVG sprite) and reused
+  by every tile that wears it, so a hall of hundreds of racks stays light.
+
+Off, tiles are the pale tint with the name they always were, a placed
+object's role icon in the corner.
 
 #### Icons when zoomed out {#icon-tiles}
 

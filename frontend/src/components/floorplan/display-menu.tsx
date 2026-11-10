@@ -56,6 +56,7 @@ export function DisplayMenu({
     bundleCables,
     objectSize,
     iconTiles,
+    tileIcons,
     callouts,
     muteBackground,
     showPhotos,
@@ -121,6 +122,12 @@ export function DisplayMenu({
               ]}
             />
           </div>
+          <FormCheckbox
+            label="Tile icons"
+            checked={tileIcons}
+            onChange={(v) => setViewPref("tile_icons", v)}
+            className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+          />
           <FormCheckbox
             label="Icons when zoomed out"
             checked={iconTiles}
