@@ -278,11 +278,13 @@ by `_shell.html`.
 
 ## Hosts
 
-`ALLOWED_HOSTS` should be set in the systemd service env (already done for
-local + Netbird in `services/danbyte-backend.service`):
+`ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` are set in `.env` (see
+`.env.example`), never in a unit file in the repo. The dev unit
+`services/danbyte-backend.service` carries no hosts or credentials and
+listens on `127.0.0.1:8000`; Vite on `:3000` proxies to it.
 
 ```text
-Environment=ALLOWED_HOSTS=localhost,127.0.0.1,<your-vpn-fqdn>,<your-vpn-ip>
+ALLOWED_HOSTS=localhost,127.0.0.1,<your-vpn-fqdn>,<your-vpn-ip>
 ```
 
 ## Backups (`DANBYTE_BACKUP_DIR`, `DANBYTE_SKIP_BACKUP`)
