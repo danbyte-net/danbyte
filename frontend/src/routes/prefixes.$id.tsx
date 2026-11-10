@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import {
   ArrowRightLeft,
+  LayoutList,
   ChevronRight,
   CopyPlus,
   Layers,
@@ -67,6 +68,7 @@ import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
 import { IpRailToggles } from "@/components/ip-rail-toggles"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { PrefixRenumberDialog } from "@/components/prefix-renumber-dialog"
+import { PrefixPlanDialog } from "@/components/prefix-plan-dialog"
 import {
   AutoDiscoverButton,
   PrefixScanGroup,
@@ -148,6 +150,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const [deletingIp, setDeletingIp] = useState<IPAddress | null>(null)
   const [showPool, setShowPool] = useState(false)
   const [showRenumber, setShowRenumber] = useState(false)
+  const [showPlan, setShowPlan] = useState(false)
   const [selectedIps, setSelectedIps] = useState<IPAddress[]>([])
 
   // IP table toggles (the facets live inside the table's own rail).
@@ -290,6 +293,16 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               </Link>
             </Button>
           )}
+          {canAddPrefix &&
+            (p.has_descendants || p.status?.slug === "container") && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowPlan(true)}
+              >
+                <LayoutList className="h-3.5 w-3.5" /> Plan subnets…
+              </Button>
+            )}
           {canEditPrefix && (
             <Button
               size="sm"
@@ -494,6 +507,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       {showRenumber && (
         <PrefixRenumberDialog prefix={p} onOpenChange={setShowRenumber} />
       )}
+      {showPlan && <PrefixPlanDialog prefix={p} onOpenChange={setShowPlan} />}
       {deletingIp && (
         <IpDeleteDialog ip={deletingIp} onOpenChange={closeDeleteIp} />
       )}

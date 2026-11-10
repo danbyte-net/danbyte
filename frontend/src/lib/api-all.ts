@@ -24,7 +24,18 @@ export const LIST_MAX = 10000
  * and a response that isn't paged ends the walk as it is. */
 export async function apiAll<T>(
   path: string,
-  { chunk = LIST_CHUNK, max = LIST_MAX }: { chunk?: number; max?: number } = {}
+  {
+    chunk = LIST_CHUNK,
+    max = LIST_MAX,
+    join = [],
+  }: {
+    chunk?: number
+    max?: number
+    /** Keys a page carries beside `results` that belong to its rows (the
+     * prefix list's `free` and `free_totals`): arrays are concatenated and
+     * objects merged across pages, instead of keeping the first page's. */
+    join?: string[]
+  } = {}
 ): Promise<Paginated<T>> {
   if (new URL(path, "http://x").searchParams.has("page_size"))
     return api<Paginated<T>>(path)
@@ -36,6 +47,7 @@ export async function apiAll<T>(
     : `${path}?${size}`
   let head: Paginated<T> | null = null
   const results: T[] = []
+  const joined: Record<string, unknown> = {}
   let next: string | null = null
   while (url) {
     // Typed loosely: a view that doesn't page answers some other shape.
@@ -44,6 +56,14 @@ export async function apiAll<T>(
     if (!page || !Array.isArray(page.results)) return page as Paginated<T>
     head ??= page as Paginated<T>
     results.push(...page.results)
+    for (const key of join) {
+      const v = (page as Record<string, unknown>)[key]
+      const had = joined[key]
+      if (Array.isArray(v))
+        joined[key] = Array.isArray(had) ? [...had, ...v] : [...v]
+      else if (v && typeof v === "object")
+        joined[key] = Object.assign({}, had, v)
+    }
     next = page.next ?? null
     // `next` is absolute (scheme and host as the server saw them); only its
     // path and query are ours to follow, on this origin.
@@ -52,6 +72,7 @@ export async function apiAll<T>(
   const over = results.length > max
   return {
     ...head!,
+    ...joined,
     count: typeof head?.count === "number" ? head.count : results.length,
     next: over ? (next ?? path) : next,
     previous: null,

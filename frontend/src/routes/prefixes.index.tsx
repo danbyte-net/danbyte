@@ -1,12 +1,38 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
-import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
-import { useMemo, useState } from "react"
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query"
+import type {ColumnDef} from "@tanstack/react-table";
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { LayoutList } from "lucide-react"
 
-import { type BulkStatusEntry, type Prefix } from "@/lib/api"
+import {
+  api
+  
+  
+  
+} from "@/lib/api"
+import type {BulkStatusEntry, Paginated, Prefix} from "@/lib/api";
 import { apiAll } from "@/lib/api-all"
-import { annotateNesting, type NestedPrefix } from "@/lib/prefix-tree"
+import {
+  annotateNesting,
+  contains,
+  parseCidr
+  
+} from "@/lib/prefix-tree"
+import type {NestedPrefix} from "@/lib/prefix-tree";
+import {
+  blocksByParent,
+  isFreeRow,
+  layoutFreeRows,
+  parseSize,
+  scopeError
+  
+  
+} from "@/lib/prefix-free"
+import type {FreeBlock, ListRow} from "@/lib/prefix-free";
+import { PrefixFreeRail, withFreeCells } from "@/components/prefix-free-rows"
+import { PrefixPlanDialog } from "@/components/prefix-plan-dialog"
+import type { FilterSnapshot } from "@/components/table-filters"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
@@ -22,7 +48,12 @@ import { useViolationMap } from "@/components/compliance/violation-badge"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
 import { reportExport, useObjectReport } from "@/components/object-report"
 import { useMe, objCan } from "@/lib/use-me"
-import { useUrlSearch } from "@/lib/url-filters"
+import {
+  decodeText,
+  useListSearch,
+  useSearchWriter,
+  useUrlSearch,
+} from "@/lib/url-filters"
 import {
   AvailabilityFramePicker,
   useSlaStatus,
@@ -51,6 +82,12 @@ export const Route = createFileRoute("/prefixes/")({
 // churn every render and DataTable's selection effect loops (see useTableFilters).
 const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
+// A list page with the free blocks of its parents (GET ?free=1).
+type FreePage = Paginated<Prefix> & {
+  free?: FreeBlock[]
+  free_totals?: Record<string, number>
+}
+
 function PrefixesPage() {
   const { canDo } = useMe()
   const canAdd = canDo("prefix", "add")
@@ -60,14 +97,75 @@ function PrefixesPage() {
   const [deleting, setDeleting] = useState<Prefix | null>(null)
   const [selectedRows, setSelectedRows] = useState<Prefix[]>([])
 
+  // Free space (lib/prefix-free): `?free=1`, a size (`size=29`), Next
+  // available (`next=1`) and a scope (`scope=10.20.0.0/19`), all in the URL.
+  const search = useListSearch()
+  const writeSearch = useSearchWriter()
+  const showFree = decodeText(search.free) === "1"
+  const nextOnly = decodeText(search.next) === "1"
+  const [sizeText, setSizeText] = useUrlSearch("size")
+  const [scopeText, setScopeText] = useUrlSearch("scope")
+  const sizeUrl = decodeText(search.size)
+  const scopeUrl = decodeText(search.scope).trim()
+  const size = showFree ? parseSize(sizeUrl) : null
+  const scope = showFree && scopeUrl && !scopeError(scopeUrl) ? scopeUrl : ""
+  const freeParams = useMemo<Record<string, string>>(
+    () =>
+      showFree
+        ? {
+            free: "1",
+            ...(size !== null ? { length: String(size) } : {}),
+            ...(scope ? { scope } : {}),
+          }
+        : {},
+    [showFree, size, scope]
+  )
+  const setFlag = useCallback(
+    (key: string, on: boolean) =>
+      writeSearch((prev) => ({ ...prev, [key]: on ? "1" : undefined })),
+    [writeSearch]
+  )
+
   const query = useQuery({
-    queryKey: ["prefixes", q],
+    queryKey: ["prefixes", q, freeParams],
     queryFn: () =>
       apiAll<Prefix>(
-        `/api/prefixes/?${new URLSearchParams({ search: q }).toString()}`
-      ),
+        `/api/prefixes/?${new URLSearchParams({ search: q, ...freeParams }).toString()}`,
+        { join: ["free", "free_totals"] }
+      ) as Promise<FreePage>,
+    placeholderData: keepPreviousData,
   })
   const allRows = useMemo(() => query.data?.results ?? [], [query.data])
+
+  // "+ N more free": the rest of one parent's blocks, fetched on demand.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  useEffect(() => setExpanded(new Set()), [freeParams])
+  const expandedIds = useMemo(() => [...expanded], [expanded])
+  const extraQueries = useQueries({
+    queries: expandedIds.map((id) => ({
+      queryKey: ["prefix-available", id, freeParams],
+      queryFn: () =>
+        api<FreeBlock[]>(
+          `/api/prefixes/available/?${new URLSearchParams({
+            within: id,
+            limit: "256",
+            ...(freeParams.length ? { length: freeParams.length } : {}),
+            ...(freeParams.scope ? { scope: freeParams.scope } : {}),
+          }).toString()}`
+        ),
+    })),
+  })
+  const extraSig = extraQueries.map((x) => x.dataUpdatedAt).join(",")
+  const freeBlocks = useMemo(() => {
+    const map = blocksByParent(query.data?.free ?? [])
+    expandedIds.forEach((id, i) => {
+      const got = extraQueries[i]?.data
+      if (got) map.set(id, got)
+    })
+    return map
+    // extraSig stands in for the fetched blocks' identity.
+  }, [query.data, expandedIds, extraSig])
+  const freeTotals = useMemo(() => query.data?.free_totals ?? {}, [query.data])
 
   const cfQuery = useCustomFieldDefs("prefix")
   const cfDefs = useMemo(() => cfQuery.data?.results ?? [], [cfQuery.data])
@@ -103,6 +201,55 @@ function PrefixesPage() {
       }),
     [cfDefs, monitoring]
   )
+  // Sizes that fit somewhere on the page, and the parents a scope can be.
+  const sizeSuggestions = useMemo(() => {
+    const blocks = query.data?.free ?? []
+    const out: string[] = []
+    for (const fam of [4, 6] as const) {
+      const lens = blocks
+        .filter((b) => b.family === fam)
+        .map((b) => b.prefixlen)
+      if (!lens.length) continue
+      const top = Math.min(...lens)
+      const end = fam === 4 ? 32 : Math.max(64, top)
+      for (let n = top; n <= Math.min(end, top + 12); n++) out.push(`/${n}`)
+    }
+    return [...new Set(out)]
+  }, [query.data])
+  const scopeSuggestions = useMemo(
+    () =>
+      allRows
+        .filter((p) => (freeTotals[p.id] ?? 0) > 0)
+        .slice(0, 50)
+        .map((p) => p.cidr),
+    [allRows, freeTotals]
+  )
+  const sizeError =
+    sizeText.trim() && parseSize(sizeText) === null
+      ? "A length, e.g. /29."
+      : null
+  const railExtras = (
+    <PrefixFreeRail
+      show={showFree}
+      onShow={(v) =>
+        writeSearch((prev) => ({
+          ...prev,
+          free: v ? "1" : undefined,
+          ...(v ? {} : { size: undefined, next: undefined, scope: undefined }),
+        }))
+      }
+      size={sizeText}
+      onSize={setSizeText}
+      sizeError={sizeError}
+      sizes={sizeSuggestions}
+      next={nextOnly}
+      onNext={(v) => setFlag("next", v)}
+      scope={scopeText}
+      onScope={setScopeText}
+      scopeError={scopeError(scopeText)}
+      scopes={scopeSuggestions}
+    />
+  )
   const {
     rail,
     filteredRows,
@@ -111,8 +258,35 @@ function PrefixesPage() {
     snapshot,
     restore,
     activeCount,
-  } = useUrlTableFilters(facetColumns, allRows)
+  } = useUrlTableFilters(facetColumns, allRows, { railExtras })
   const tagSelection = selectedValues("tags")
+
+  // Saved views keep the free-space switches with the facets.
+  const viewSnapshot = useCallback((): FilterSnapshot => {
+    const out = snapshot()
+    if (showFree) out.__free = "1"
+    if (showFree && sizeUrl) out.__free_size = sizeUrl
+    if (showFree && nextOnly) out.__free_next = "1"
+    if (showFree && scopeUrl) out.__free_scope = scopeUrl
+    return out
+  }, [snapshot, showFree, sizeUrl, nextOnly, scopeUrl])
+  const viewRestore = useCallback(
+    (saved: FilterSnapshot | null | undefined) => {
+      restore(saved)
+      const text = (k: string) => {
+        const v = saved?.[k]
+        return typeof v === "string" ? v : undefined
+      }
+      writeSearch((prev) => ({
+        ...prev,
+        free: text("__free"),
+        size: text("__free_size"),
+        next: text("__free_next"),
+        scope: text("__free_scope"),
+      }))
+    },
+    [restore, writeSearch]
+  )
 
   // Filter → annotate with nesting depth → keep Global VRF on top. The
   // annotation runs on the filtered set so a hidden parent doesn't push
@@ -133,6 +307,52 @@ function PrefixesPage() {
     })
   }, [filteredRows])
 
+  // Free rows between the real ones; never selected, exported or counted.
+  const listRows = useMemo<ListRow[]>(
+    () =>
+      showFree
+        ? layoutFreeRows(rows, {
+            blocks: freeBlocks,
+            totals: freeTotals,
+            expanded,
+            collapsed: size !== null ? 16 : 8,
+            sized: size !== null,
+            nextOnly: size !== null && nextOnly,
+          })
+        : rows,
+    [showFree, rows, freeBlocks, freeTotals, expanded, size, nextOnly]
+  )
+  const shownCount = useMemo(
+    () => listRows.filter((r) => !isFreeRow(r)).length,
+    [listRows]
+  )
+
+  // "Plan subnets…" in the toolbar when one parent is in scope: the most
+  // specific listed parent holding the scope, else the only root row.
+  const planTarget = useMemo<Prefix | null>(() => {
+    if (!showFree) return null
+    if (scope) {
+      const s = parseCidr(scope)
+      let best: { p: Prefix; len: number } | null = null
+      for (const p of allRows) {
+        const c = parseCidr(p.cidr)
+        if (!s || !c) continue
+        const same =
+          c.family === s.family &&
+          c.start === s.start &&
+          c.prefixlen === s.prefixlen
+        if (!same && !contains(c, s)) continue
+        if (!best || c.prefixlen > best.len) best = { p, len: c.prefixlen }
+      }
+      return best?.p ?? null
+    }
+    const roots = rows.filter((r) => r._depth === 0)
+    return roots.length === 1 && (freeTotals[roots[0].id] ?? 0) > 0
+      ? roots[0]
+      : null
+  }, [showFree, scope, allRows, rows, freeTotals])
+  const [planning, setPlanning] = useState(false)
+
   const violations = useViolationMap()
   // The PDF report of the rows the list shows now.
   const report = useObjectReport("prefix")
@@ -146,36 +366,43 @@ function PrefixesPage() {
     rows.length === 0
   )
 
-  const columns = useMemo<ColumnDef<NestedPrefix>[]>(
+  const columns = useMemo<ColumnDef<ListRow>[]>(
     () =>
-      wireFacetColumns(
-        buildPrefixColumns<NestedPrefix>({
-          // VRF renders as the group banner (hidden vrfName column), not a
-          // per-row column.
-          omit: ["vrf"],
-          selection: true,
-          nested: true,
-          violations,
-          monitoring,
-          sla: { entries: sla.entries, frame: sla.frame },
-          cfDefs,
-          tagFilter: {
-            activeSlugs: tagSelection,
-            onToggle: (slug) => toggleValue("tags", slug),
-          },
-          vrfGroupColumn: true,
-          actions: {
-            editTo: "/prefixes/$id/edit",
-            editParams: (p) => ({ id: p.id }),
-            canEdit: (p) => objCan(p, "change", canEdit),
-            onDelete: setDeleting,
-            canDelete: (p) => objCan(p, "delete", canDelete),
-          },
-        }),
-        selectedValues,
-        toggleValue
+      withFreeCells(
+        wireFacetColumns(
+          buildPrefixColumns<ListRow>({
+            // VRF renders as the group banner (hidden vrfName column), not a
+            // per-row column.
+            omit: ["vrf"],
+            selection: true,
+            nested: true,
+            violations,
+            monitoring,
+            sla: { entries: sla.entries, frame: sla.frame },
+            cfDefs,
+            tagFilter: {
+              activeSlugs: tagSelection,
+              onToggle: (slug) => toggleValue("tags", slug),
+            },
+            vrfGroupColumn: true,
+            actions: {
+              editTo: "/prefixes/$id/edit",
+              editParams: (p) => ({ id: p.id }),
+              canEdit: (p) => objCan(p, "change", canEdit),
+              onDelete: setDeleting,
+              canDelete: (p) => objCan(p, "delete", canDelete),
+            },
+          }),
+          selectedValues,
+          toggleValue
+        ),
+        {
+          canAdd,
+          onExpand: (id) => setExpanded((prev) => new Set(prev).add(id)),
+        }
       ),
     [
+      canAdd,
       tagSelection,
       selectedValues,
       toggleValue,
@@ -195,12 +422,16 @@ function PrefixesPage() {
     <>
       <ListPageShell
         title="Prefixes"
-        count={query.data ? rows.length : undefined}
+        count={query.data ? shownCount : undefined}
         /* Filter rail - derived from the columns' facet metadata. */
         rail={rail}
         savedViews={{
           objectType: "prefix",
-          filters: { snapshot, restore, activeCount },
+          filters: {
+            snapshot: viewSnapshot,
+            restore: viewRestore,
+            activeCount,
+          },
         }}
         search={{
           value: q,
@@ -214,6 +445,15 @@ function PrefixesPage() {
               onChange={sla.setFrame}
             />
             <TableActions ioType="prefix" extraExports={[reportItem]} />
+            {canAdd && planTarget && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPlanning(true)}
+              >
+                <LayoutList className="h-3.5 w-3.5" /> Plan subnets…
+              </Button>
+            )}
             {canAdd && (
               <Button size="sm" asChild>
                 <Link
@@ -235,11 +475,15 @@ function PrefixesPage() {
         page={query.data}
       >
         <DataTable
-          data={rows}
+          data={listRows}
           columns={columns}
           groupBy="vrfName"
           renderGroupHeader={renderVrfGroupHeader}
-          onSelectedRowsChange={setSelectedRows}
+          isPlaceholderRow={isFreeRow}
+          rowClassName={(r) => (r._free?.next ? "bg-muted" : undefined)}
+          onSelectedRowsChange={(picked) =>
+            setSelectedRows(picked.filter((r) => !isFreeRow(r)))
+          }
           initialColumnVisibility={{ vrfName: false }}
           tableId="prefixes"
         />
@@ -253,6 +497,13 @@ function PrefixesPage() {
         onOpenChange={(o) => !o && setDeleting(null)}
       />
       {report.dialog}
+      {planning && planTarget && (
+        <PrefixPlanDialog
+          prefix={planTarget}
+          scope={scope}
+          onOpenChange={setPlanning}
+        />
+      )}
       <PrefixBulkBar
         selected={selectedRows}
         onCleared={() => setSelectedRows([])}
@@ -280,7 +531,7 @@ function renderVrfGroupHeader({
         VRF
       </span>
       <ColorBadge
-        name={isGlobal ? "Global" : vrf!.name || String(value)}
+        name={isGlobal ? "Global" : vrf.name || String(value)}
         color={vrf?.color || undefined}
       />
       {vrf?.rd && (

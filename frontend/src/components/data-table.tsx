@@ -145,6 +145,9 @@ interface DataTableProps<T> {
   /** Optional per-row tailwind classes (e.g. a status-based background tint).
    * Row hover/selection still win (declared `!important` in tokens.css). */
   rowClassName?: (original: T) => string | undefined
+  /** Rows that only show something between the real ones (the prefix list's
+   * free rows): never selectable, never exported, not counted. */
+  isPlaceholderRow?: (original: T) => boolean
   /** Optional per-row inline style - use for tints derived from user-chosen
    * colors (arbitrary hex) that can't be expressed as a Tailwind class. Row
    * hover/selection still win (declared `!important` in tokens.css). */
@@ -256,6 +259,7 @@ export function DataTable<T>({
   exportName,
   exportTitle,
   rowClassName,
+  isPlaceholderRow,
   rowStyle,
   onRowHover,
   onRowClick,
@@ -640,7 +644,9 @@ export function DataTable<T>({
     onRowSelectionChange: setRowSelection,
     onExpandedChange: setExpanded,
     onPaginationChange: setPagination,
-    enableRowSelection: true,
+    enableRowSelection: isPlaceholderRow
+      ? (row) => !isPlaceholderRow(row.original)
+      : true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -668,7 +674,12 @@ export function DataTable<T>({
   // Footer figures, in one place for the pager's "is there anything to page"
   // question and the row count's grammar.
   const rowTotal =
-    serverPagination?.totalRows ?? table.getFilteredRowModel().rows.length
+    serverPagination?.totalRows ??
+    (isPlaceholderRow
+      ? table
+          .getFilteredRowModel()
+          .rows.filter((r) => !isPlaceholderRow(r.original)).length
+      : table.getFilteredRowModel().rows.length)
   const pageTotal = serverPagination?.pageCount ?? table.getPageCount()
 
   // A ticked row that leaves the list - deleted, refetched away, or hidden by
@@ -940,12 +951,18 @@ export function DataTable<T>({
                             .getVisibleLeafColumns()
                             .map((c) => c.columnDef.meta?.prepareExport)
                             .filter((f) => !!f)
-                          if (!all && !prepares.length) {
+                          if (!all && !prepares.length && !isPlaceholderRow) {
                             exportTable(table, fmt, opts)
                             return
                           }
                           void (async () => {
-                            const rows = all ? await all() : undefined
+                            const rows = all
+                              ? await all()
+                              : isPlaceholderRow
+                                ? exportSourceRows(table).filter(
+                                    (r) => !isPlaceholderRow(r)
+                                  )
+                                : undefined
                             const source = rows ?? exportSourceRows(table)
                             await Promise.all(prepares.map((f) => f(source)))
                             exportTable(table, fmt, opts, rows)
@@ -1121,7 +1138,11 @@ export function DataTable<T>({
                           {renderGroupHeader && sampleRow ? (
                             renderGroupHeader({
                               value: groupVal,
-                              count: row.subRows.length,
+                              count: isPlaceholderRow
+                                ? row.subRows.filter(
+                                    (r) => !isPlaceholderRow(r.original)
+                                  ).length
+                                : row.subRows.length,
                               sampleRow,
                             })
                           ) : (
