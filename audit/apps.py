@@ -268,6 +268,8 @@ AUDITED_MODELS = [
     "vulnerabilities.VulnerabilitySettings",
     "vulnerabilities.ProductMapping",
     "vulnerabilities.VulnerabilityPolicy",
+    # Exceptions are decisions people make: logged like the policy.
+    "vulnerabilities.VulnerabilityException",
     # Access: object permissions + public share links.
 ]
 

@@ -8,6 +8,9 @@
 * ``enqueue_objects(tenant_id, {"device": ids, "virtual_machine": ids})`` -
   some hosts, after a version, platform, device type or install change.
 
+Each run ends with the tenant's one notification about what it found
+(``notifications.after_recompute``).
+
 Each job re-reads its scope when it runs: the feature must still be on, the
 tenant must still exist and be active, and the hosts are looked up inside
 the tenant again (an id that left it only resolves its rows). With Redis
@@ -88,6 +91,7 @@ def run_recompute(tenant_id: str) -> dict | None:
     if tenant is None:
         return None
     counts = matching.recompute(tenant)
+    counts["notified"] = _notify(tenant)
     log.info("vulnerability matches for tenant %s: %s", tenant_id, counts)
     return counts
 
@@ -98,7 +102,9 @@ def run_objects(tenant_id: str, objects: dict) -> dict | None:
     tenant = _tenant(tenant_id)
     if tenant is None:
         return None
-    return matching.recompute(tenant, objects=objects)
+    counts = matching.recompute(tenant, objects=objects)
+    counts["notified"] = _notify(tenant)
+    return counts
 
 
 def run_reprioritise(tenant_id: str) -> int | None:
@@ -107,7 +113,21 @@ def run_reprioritise(tenant_id: str) -> int | None:
     tenant = _tenant(tenant_id)
     if tenant is None:
         return None
-    return matching.reprioritise(tenant)
+    n = matching.reprioritise(tenant)
+    _notify(tenant)
+    return n
+
+
+def _notify(tenant) -> int:
+    """One message for what this run found (``notifications``); never
+    fails the run."""
+    from . import notifications
+
+    try:
+        return notifications.after_recompute(tenant)
+    except Exception:  # noqa: BLE001
+        log.exception("vulnerability notifications for tenant %s failed", tenant.pk)
+        return 0
 
 
 def tenants_for(vuln_ids) -> set:

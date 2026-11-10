@@ -3,7 +3,8 @@
 ``recompute(tenant)`` builds the tenant's current match set in memory and
 diffs it against the open ``VulnerabilityMatch`` rows: new ones are inserted
 (``first_seen_at``), still-matching ones touched (``last_seen_at``, and
-``version``/``confidence``/``priority`` when they changed), vanished ones
+``version``/``confidence``/``priority`` when they changed, and ``excepted``
+from the tenant's active exceptions), vanished ones
 resolved (``resolved_at``). Bulk statements only, so the query count does not
 grow with the inventory; a per-tenant advisory lock keeps two recomputes from
 interleaving.
@@ -30,6 +31,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from . import evaluate, priority
+from .exceptions import Resolver
 from .models import Cve, CveProduct, ProductMapping, VulnerabilityMatch, VulnerabilityPolicy
 
 log = logging.getLogger(__name__)
@@ -119,6 +121,7 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                  for pid, ms in by_platform.items()}
 
         desired: dict[tuple, tuple] = {}
+        resolver = Resolver(tenant.pk)
         stats: dict = defaultdict(lambda: defaultdict(set))
         cache: dict = {}
         levels: dict = {}
@@ -141,8 +144,10 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                     continue
                 if cve.pk not in levels:
                     levels[cve.pk] = priority.of_cve(cve, policy)
+                excepted = resolver.covering(cve.pk, *host_key, m.platform_id,
+                                             m.application_id) if resolver else None
                 desired[(cve.pk, *host_key, m.pk, install_id)] = (
-                    target.version, conf, levels[cve.pk], via)
+                    target.version, conf, levels[cve.pk], via, excepted)
 
         devices, vms = _hosts(tenant, set(by_platform), set(by_app), objects)
         for kind, hosts in (("device", devices), ("virtual_machine", vms)):
@@ -188,30 +193,32 @@ def _diff(tenant, desired: dict, *, cves, objects) -> dict:
     existing = {}
     for row in open_rows.values_list("pk", "cve_id", "device_id", "virtual_machine_id",
                                      "mapping_id", "installed_software_id", "version",
-                                     "confidence", "priority"):
-        pk, *key, version, conf, prio = row
-        existing[tuple(key)] = (pk, version, conf, prio)
+                                     "confidence", "priority", "excepted_id"):
+        pk, *key, version, conf, prio, excepted = row
+        existing[tuple(key)] = (pk, version, conf, prio, excepted)
 
     new, changed, touched = [], [], []
-    for key, (version, conf, prio, via) in desired.items():
+    for key, (version, conf, prio, via, excepted) in desired.items():
         have = existing.pop(key, None)
         if have is None:
             cve_id, device_id, vm_id, mapping_id, install_id = key
             new.append(VulnerabilityMatch(
                 tenant=tenant, cve_id=cve_id, device_id=device_id, virtual_machine_id=vm_id,
                 via=via, mapping_id=mapping_id, installed_software_id=install_id,
-                version=version, confidence=conf, priority=prio,
+                version=version, confidence=conf, priority=prio, excepted_id=excepted,
                 first_seen_at=now, last_seen_at=now))
-        elif have[1:] != (version, conf, prio):
+        elif have[1:] != (version, conf, prio, excepted):
             changed.append(VulnerabilityMatch(pk=have[0], version=version, confidence=conf,
-                                              priority=prio, last_seen_at=now))
+                                              priority=prio, excepted_id=excepted,
+                                              last_seen_at=now))
         else:
             touched.append(have[0])
     gone = [v[0] for v in existing.values()]
 
     VulnerabilityMatch.objects.bulk_create(new, batch_size=CHUNK)
     VulnerabilityMatch.objects.bulk_update(
-        changed, ["version", "confidence", "priority", "last_seen_at"], batch_size=CHUNK)
+        changed, ["version", "confidence", "priority", "excepted", "last_seen_at"],
+        batch_size=CHUNK)
     for i in range(0, len(touched), CHUNK * 5):
         VulnerabilityMatch.objects.filter(pk__in=touched[i:i + CHUNK * 5]).update(
             last_seen_at=now)
