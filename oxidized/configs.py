@@ -1,6 +1,7 @@
 """Read a device's configuration out of Oxidized, briefly cached.
 
-Nothing here writes config text to the database. A read is cached in Redis
+Nothing here writes config text to the database; a config fresh from
+Oxidized only has its software version read out (:mod:`oxidized.versions`). A read is cached in Redis
 for :data:`CURRENT_TTL` seconds (a version addressed by its git oid, which
 never changes, for :data:`VERSION_TTL`), keyed by tenant, connection and
 node, so opening the tab twice does not fetch twice. Every caller has already
@@ -67,11 +68,17 @@ def _client(link) -> OxidizedClient:
 
 
 def current(link, *, refresh=False) -> tuple[str, bool]:
-    return _cached(
+    text, cached = _cached(
         _key(link, "current"), CURRENT_TTL,
         lambda: _client(link).fetch(link.node_name, link.node_group),
         refresh=refresh,
     )
+    if not cached:
+        # A config fresh from Oxidized: the running version in it (#451).
+        from .versions import note_config
+
+        note_config(link, text)
+    return text, cached
 
 
 def _when(value) -> str | None:

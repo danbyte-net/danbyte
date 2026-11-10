@@ -8,17 +8,23 @@ Sources (``software_version_source``):
 ``import``          set by a file import;
 ``snmp``            read from ``sysDescr`` when SNMP facts are collected;
 ``virtualization``  reported by a hypervisor sync;
-``oxidized``        read from a stored configuration.
+``oxidized``        read from a configuration backup held by Oxidized.
 
 A manual or imported value is the operator's and is never overwritten. An
 automatic source may replace a blank value or one an automatic source wrote
 (``software_version_seen_at`` set); ``seen_at`` is when an automatic source
-last set the value.
+last set the value. Between automatic sources the value read last wins, with
+two exceptions: a value another automatic source already holds is left as it
+is (no source ping-pong), and a less specific value never replaces a more
+specific one it is a prefix of (a config's ``version 17.9`` keeps SNMP's
+``17.9.4a``).
 
 ``extract(text, pattern)`` reads a version: the platform's own pattern
 first, then the built-in extractors for Cisco IOS, IOS-XE, NX-OS, Juniper
 Junos and Arista EOS. A Linux kernel line yields nothing: the kernel is not
-the platform's version.
+the platform's version. ``extract_config(text, pattern)`` reads one out of
+the head of a configuration (the pattern first, then config statements and
+the ``show version`` comments Oxidized puts on top).
 """
 from __future__ import annotations
 
@@ -111,6 +117,86 @@ def extract(text: str | None, pattern: str = "") -> tuple[str, str] | None:
     return None
 
 
+# ─── Configurations (Oxidized) ─────────────────────────────────────────────
+
+#: How much of a configuration is read: the version is stated at the top.
+CONFIG_LINES = 200
+CONFIG_MAX_CHARS = 32_768
+
+_CV = r"([0-9][0-9A-Za-z.()\-]*)"
+#: Without parentheses: EOS and Junos never use them, and the EOS one sits
+#: inside ``(…, EOS-4.31.2F)``.
+_CVP = r"([0-9][0-9A-Za-z.\-]*)"
+
+#: ``(scheme, regex)`` over the config head, in the order tried. Oxidized
+#: puts ``show version`` on top as comments (``!`` or ``#``).
+CONFIG_EXTRACTORS: tuple[tuple[str, re.Pattern], ...] = (
+    # NX-OS: ``! NXOS: version 10.3(4)`` (or the older ``system: version``),
+    # then the running config's own ``version 10.3(4) Bios:version 05.47``.
+    ("cisco_nxos", re.compile(r"^[!#\s]*(?:NXOS|system):\s+version\s+" + _CV, re.I | re.M)),
+    ("cisco_nxos", re.compile(r"^version\s+(\d+\.\d+\([^)\s]+\)[0-9A-Za-z.()]*)", re.M)),
+    # EOS: ``! device: leaf1 (DCS-7050SX3-48YC8, EOS-4.31.2F)``, or the
+    # ``Software image version: 4.31.2F`` comment.
+    ("arista_eos", re.compile(r"^!\s*device:.*\bEOS-" + _CVP, re.I | re.M)),
+    ("arista_eos", re.compile(r"^!\s*Software image version:\s+" + _CVP, re.I | re.M)),
+    # Junos: ``version 22.4R3-S2;`` or the ``# Junos: 22.4R3-S2.11`` comment.
+    ("junos", re.compile(r"^#\s*Junos:\s+" + _CVP, re.I | re.M)),
+    ("junos", re.compile(r"^\s*version\s+(\d[0-9A-Za-z.\-]*)\s*;", re.M)),
+)
+#: IOS and IOS-XE state only major.minor in the config (``version 17.9``).
+_IOS_STATEMENT = re.compile(r"^version\s+(\d+\.\d+)\s*$", re.M)
+#: Oxidized's own summary of ``show version``:
+#: ``! Image: Software: CAT9K_IOSXE, 17.9.4a, RELEASE SOFTWARE (fc3)``.
+_IOS_IMAGE = re.compile(r"^!\s*Image:[^\n]*?Software:\s*[^,\n]+,\s*" + _CV, re.I | re.M)
+_IOSXE_MARK = re.compile(r"IOS[ _-]?XE\b|\bCisco IOS Software \[[^\]]+\]", re.I)
+_COMMENT = re.compile(r"^\s*[!#]")
+
+
+def _config_head(text: str) -> str:
+    return "\n".join(text[:CONFIG_MAX_CHARS].splitlines()[:CONFIG_LINES])
+
+
+def extract_config(text: str | None, pattern: str = "") -> tuple[str, str] | None:
+    """``(version, scheme)`` read from a configuration, else None.
+
+    Order: the platform's pattern; the NX-OS, EOS and Junos statements and
+    comments; a Cisco IOS / IOS-XE ``show version`` comment, then Oxidized's
+    ``Image: Software:`` line (the full version); the IOS ``version 17.9``
+    statement (major.minor only)."""
+    head = _config_head(text or "")
+    if not head.strip():
+        return None
+    rx = compile_pattern(pattern)
+    if rx is not None:
+        m = rx.search(head)
+        if m:
+            raw = m.group("version") if "version" in rx.groupindex else m.group(1)
+            version = _clean(raw or "")
+            if version:
+                return version, "custom"
+    for scheme, version_rx in CONFIG_EXTRACTORS:
+        m = version_rx.search(head)
+        if m:
+            version = _clean(m.group(1))
+            if version:
+                return version, scheme
+    lines = head.splitlines()
+    for line in lines:
+        if not _COMMENT.match(line):
+            continue
+        got = extract(_COMMENT.sub("", line, count=1))
+        if got and got[1] in ("cisco_ios", "cisco_iosxe"):
+            return got
+    scheme = "cisco_iosxe" if _IOSXE_MARK.search(head) else "cisco_ios"
+    m = _IOS_IMAGE.search(head)
+    if m and _clean(m.group(1)):
+        return _clean(m.group(1)), scheme
+    m = _IOS_STATEMENT.search(head)
+    if m:
+        return m.group(1), scheme
+    return None
+
+
 def owned_by_person(obj) -> bool:
     """A value a person typed or imported: no automatic writer touches it."""
     if not obj.software_version:
@@ -119,6 +205,21 @@ def owned_by_person(obj) -> bool:
         obj.software_version_seen_at is None
         or obj.software_version_source in OWNED_SOURCES
     )
+
+
+_PARTS = re.compile(r"\d+|[a-z]+")
+
+
+def _parts(version: str) -> list:
+    return [int(t) if t.isdigit() else t for t in _PARTS.findall(version.lower())]
+
+
+def less_specific(general: str, specific: str) -> bool:
+    """``general`` names fewer parts of the same version as ``specific``:
+    ``17.9`` against ``17.9.4a`` or ``17.09.04a``, ``15.2`` against
+    ``15.2(7)E8``."""
+    a, b = _parts(general), _parts(specific)
+    return bool(a) and len(a) < len(b) and b[: len(a)] == a
 
 
 def record(obj, version: str | None, source: str, now=None) -> list[str]:
@@ -132,12 +233,15 @@ def record(obj, version: str | None, source: str, now=None) -> list[str]:
     version = _clean(version or "")
     if not version or owned_by_person(obj):
         return []
-    if (
-        version == obj.software_version
-        and obj.software_version_source == source
-        and obj.software_version_seen_at is not None
-    ):
-        return []
+    current, held_by = obj.software_version, obj.software_version_source
+    if current and obj.software_version_seen_at is not None and held_by in AUTOMATIC_SOURCES:
+        if version == current:
+            # Seen again, by this source or another automatic one: nothing
+            # new, so no write and no source ping-pong between SNMP and
+            # Oxidized.
+            return []
+        if held_by != source and less_specific(version, current):
+            return []
     obj.software_version = version
     obj.software_version_seen_at = now or timezone.now()
     obj.software_version_source = source
@@ -217,6 +321,17 @@ def apply_snmp_facts(obj, data: dict | None, now=None) -> list[str]:
     """Read the version out of ``data["sys_descr"]`` and record it from
     SNMP; saves and returns the changed fields. ``obj`` is reloaded, so a
     value a person typed since it was read is seen and kept."""
+    return _apply(obj, lambda pattern: extract((data or {}).get("sys_descr"), pattern),
+                  "snmp", now)
+
+
+def apply_config(obj, text: str | None, now=None) -> list[str]:
+    """Read the version out of a configuration from Oxidized and record it
+    with source ``oxidized``; saves and returns the changed fields."""
+    return _apply(obj, lambda pattern: extract_config(text, pattern), "oxidized", now)
+
+
+def _apply(obj, read, source: str, now=None) -> list[str]:
     if obj is None:
         return []
     model = type(obj)
@@ -230,10 +345,10 @@ def apply_snmp_facts(obj, data: dict | None, now=None) -> list[str]:
     )
     if fresh is None:
         return []
-    got = extract((data or {}).get("sys_descr"), platform_pattern(fresh))
+    got = read(platform_pattern(fresh))
     if got is None:
         return []
-    changed = record(fresh, got[0], "snmp", now)
+    changed = record(fresh, got[0], source, now)
     if changed:
         fresh.save(update_fields=[*changed, "updated_at"])
         for name in changed:
@@ -241,11 +356,26 @@ def apply_snmp_facts(obj, data: dict | None, now=None) -> list[str]:
     return changed
 
 
-def reextract(tenant_id=None, platform_id=None) -> int:
-    """Read the version again from every stored set of SNMP facts (all, one
-    tenant's, or the objects on one platform). Returns the objects changed.
-    Re-reads scope itself: only facts whose object is still in the same
-    tenant count."""
+SOURCES_REREAD = ("snmp", "oxidized")
+
+
+def reextract(tenant_id=None, platform_id=None, sources=SOURCES_REREAD) -> int:
+    """Read the version again (all, one tenant's, or the objects on one
+    platform): from every stored set of SNMP facts, and from the current
+    configuration of every confirmed Oxidized link (fetched from Oxidized).
+    Returns the objects changed. Re-reads scope itself: only facts and links
+    whose object is still in the same tenant count."""
+    n = 0
+    if "snmp" in sources:
+        n += _reextract_snmp(tenant_id, platform_id)
+    if "oxidized" in sources:
+        from oxidized.versions import reextract_configs
+
+        n += reextract_configs(tenant_id=tenant_id, platform_id=platform_id)
+    return n
+
+
+def _reextract_snmp(tenant_id=None, platform_id=None) -> int:
     from django.db.models import F, Q
 
     from monitoring.models import DeviceSnmp
@@ -271,9 +401,9 @@ def reextract(tenant_id=None, platform_id=None) -> int:
     return n
 
 
-def run_reextract(tenant_id=None, platform_id=None) -> int:
+def run_reextract(tenant_id=None, platform_id=None, sources=SOURCES_REREAD) -> int:
     """RQ entry point for :func:`reextract`."""
-    return reextract(tenant_id=tenant_id, platform_id=platform_id)
+    return reextract(tenant_id=tenant_id, platform_id=platform_id, sources=tuple(sources))
 
 
 def enqueue_reextract(platform) -> None:
@@ -294,8 +424,9 @@ def enqueue_reextract(platform) -> None:
             )
         except Exception:  # noqa: BLE001 - Redis down
             logging.getLogger("api.software_versions").warning(
-                "RQ unavailable; re-reading versions for platform %s inline", platform_id
+                "RQ unavailable; re-reading SNMP versions for platform %s inline", platform_id
             )
-            reextract(tenant_id=tenant_id, platform_id=platform_id)
+            # Inline, only what is stored here: no Oxidized fetches in a request.
+            reextract(tenant_id=tenant_id, platform_id=platform_id, sources=("snmp",))
 
     transaction.on_commit(push)

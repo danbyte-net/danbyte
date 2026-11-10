@@ -14,7 +14,8 @@ between any two versions.
     Danbyte keeps how to reach oxidized-web and which node is which device or
     VM - never the configuration text. A config is fetched when someone opens it,
     held in Redis for a minute (a version addressed by its commit, five
-    minutes), and nothing is written to Danbyte's database.
+    minutes), and nothing is written to Danbyte's database. The one thing
+    taken from it is the device's [software version](#software-version).
 
 ## Turning it on
 
@@ -165,6 +166,40 @@ only the current config.
 
 A config is shown as text. Markup in a banner or description is never
 interpreted.
+
+## Software version {#software-version}
+
+The running software version is read out of each config Danbyte gets from
+Oxidized and recorded on the device or VM with source **Oxidized** (see
+[Where the running version comes
+from](lifecycle.md#where-the-running-version-comes-from)). It is read:
+
+- when a config is fetched for the **Current** view or a diff against it (not
+  a cached copy);
+- after each node sync, manual or automatic, for every confirmed link whose
+  node Oxidized has backed up since the last read - a background job on the
+  `low` queue that fetches only those configs;
+- by `manage.py extract_software_versions`, which fetches every confirmed
+  link's config again, and when a platform's version pattern changes.
+
+A proposed link is never read. A version typed by hand or imported is never
+replaced, and such a device's config is not even fetched for it.
+
+Only the head of the config (200 lines) is read. Oxidized puts the device's
+`show version` on top as comments, so the full version is usually there:
+
+| Platform | Read from | Version |
+|---|---|---|
+| Platform's own **Version pattern** | anything it matches | what it captures |
+| Cisco NX-OS | `! NXOS: version 9.3(10)`, or `version 10.3(4) Bios:version 05.47` | `9.3(10)` / `10.3(4)` |
+| Arista EOS | `! device: leaf2 (DCS-7050SX3-48YC8, EOS-4.31.2F)`, or `! Software image version: 4.31.2F` | `4.31.2F` |
+| Juniper Junos | `# Junos: 22.4R3-S2.11`, or `version 22.4R3-S2;` | `22.4R3-S2.11` / `22.4R3-S2` |
+| Cisco IOS, IOS-XE | the `show version` comment (`… Version 15.2(7)E8, …`) | `15.2(7)E8` |
+| Cisco IOS, IOS-XE | `version 17.9` in the config itself | `17.9` |
+
+The pattern is tried first, then the rows in order. IOS and IOS-XE state only
+major.minor in the config itself; that value never replaces a more specific
+one SNMP read (`17.9.4a` stays).
 
 ## Who can read a config
 
