@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import {
   FormCheckbox,
   FormCombobox,
@@ -234,7 +235,7 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
           <code className="font-mono">[1-24]</code> for one template per port.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <ScrollFrame className="rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -290,7 +291,7 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <ModuleInterfaceTemplateDialog

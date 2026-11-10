@@ -15,6 +15,7 @@ import {
 import { FormCheckbox, FormText } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
+import { HScroll } from "@/components/table-scroll"
 
 /** Bases worth trying first - the standard tables every agent has, then the
  * root of the vendor space, so the field is never a blank prompt. */
@@ -228,7 +229,10 @@ function WalkTable({
 
       {/* Wide tables scroll inside their own box rather than stretching the
           dialog - a 20-column entPhysicalTable is normal. */}
-      <div className="overflow-x-auto rounded-md border border-border">
+      <HScroll
+        frameClassName="rounded-md border border-border"
+        label="OID table"
+      >
         <table className="w-full text-[12px]">
           <thead>
             <tr className="border-b border-border bg-muted/40">
@@ -279,7 +283,7 @@ function WalkTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </HScroll>
 
       {chosen && (
         <div className="flex items-center gap-2 rounded-md border border-border p-2">

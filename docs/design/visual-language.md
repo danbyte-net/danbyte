@@ -375,6 +375,29 @@ scrolls in a bounded pane keeps its native bar (already at the pane's
 bottom edge), and printing hides both. Shift-wheel and trackpad sideways
 scrolling work on the table as before.
 
+**The rule: a sideways scrollbar is never below the fold.** Anything wide and
+tall enough to scroll sideways gets the same floating bar, never a bare
+`overflow-x-auto` whose bar sits after the last row. `table-scroll.tsx` has
+the two wrappers for content outside `DataTable`:
+
+- `ScrollFrame` - the bordered frame around a shadcn `<Table>` (the table's
+  own container scrolls). `SimpleTable` and the hand-built detail tables
+  (component templates, members, terminations, search results, device bays,
+  modules and antennas) use it.
+- `HScroll` - wide content that is not a table: the rack elevations wall, the
+  rack and cabinet drawings when zoomed past their column, the device's rack
+  card, the image list, the OID explorer. `className` lays out the content,
+  `frameClassName` draws the frame, `viewportRef` reaches the scroller for
+  code that measures it. While it overflows the viewport is a named,
+  focusable region, so arrow keys scroll it; it prints unclipped.
+
+Both show the bar only while the content overflows, add no height of their
+own (the proxy takes the place of the native bar), and stay in step with
+the content both ways. Out of scope: canvases that pan (topology, floor
+plans, the site map), bounded boxes whose bar is already in view (a
+`max-h-*` list, a dialog's code block, a kanban board that fills its pane),
+and one-line strips (headers, tab rows, faceplates, cable traces).
+
 ## Column factories
 
 **One entity, one column factory** (`frontend/src/components/columns/`), reused

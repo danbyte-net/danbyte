@@ -36,6 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { Section } from "@/components/ui/section"
 import { FormCombobox, FormText, useFieldErrors } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
@@ -98,7 +99,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
       ) : q.isLoading ? (
         <p className="p-4 text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollFrame>
           <Table>
             <TableHeader>
               <TableRow>
@@ -164,7 +165,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <InstallModuleDialog

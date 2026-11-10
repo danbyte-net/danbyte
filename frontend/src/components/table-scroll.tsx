@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -19,8 +19,14 @@ import { cn } from "@/lib/utils"
  * `vertical`: the container is a fixed-height scroller (a sticky-header
  * pane). When it does scroll vertically its native bar already sits at the
  * pane's bottom edge, so the proxy stays out of the way.
+ *
+ * `selector` names the scroller inside the frame: a shadcn Table's container
+ * by default, or {@link HScroll}'s viewport for content that is not a table.
  */
-export function useTableScroll(vertical = false) {
+export function useTableScroll(
+  vertical = false,
+  selector = "[data-slot=table-container]"
+) {
   const frameRef = useRef<HTMLDivElement>(null)
   const proxyRef = useRef<HTMLDivElement>(null)
   const spacerRef = useRef<HTMLDivElement>(null)
@@ -28,9 +34,7 @@ export function useTableScroll(vertical = false) {
 
   useEffect(() => {
     const frame = frameRef.current
-    const scroller = frame?.querySelector<HTMLElement>(
-      "[data-slot=table-container]"
-    )
+    const scroller = frame?.querySelector<HTMLElement>(selector)
     if (!frame || !scroller) return
     let frameId = 0
     let pendingFrom: HTMLElement | null = null
@@ -86,12 +90,26 @@ export function useTableScroll(vertical = false) {
 
     scroller.addEventListener("scroll", onScroll, { passive: true })
     measure()
+    // The scroller's own size and its children's (the table, or the items
+    // of a wide row) - together they cover every change to scrollWidth.
     let ro: ResizeObserver | undefined
+    let mo: MutationObserver | undefined
     if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(measure)
-      ro.observe(scroller)
-      const table = scroller.querySelector("table")
-      if (table) ro.observe(table)
+      const r = new ResizeObserver(measure)
+      ro = r
+      const watch = () => {
+        r.disconnect()
+        r.observe(scroller)
+        for (const child of Array.from(scroller.children)) r.observe(child)
+      }
+      watch()
+      if (typeof MutationObserver !== "undefined") {
+        mo = new MutationObserver(() => {
+          watch()
+          measure()
+        })
+        mo.observe(scroller, { childList: true })
+      }
     }
     const proxy = proxyRef.current
     proxy?.addEventListener("scroll", onScroll, { passive: true })
@@ -99,22 +117,21 @@ export function useTableScroll(vertical = false) {
       scroller.removeEventListener("scroll", onScroll)
       proxy?.removeEventListener("scroll", onScroll)
       ro?.disconnect()
+      mo?.disconnect()
       if (frameId) cancelAnimationFrame(frameId)
       scroller.removeAttribute("data-scroll-proxy")
     }
     // The proxy mounts when the table first overflows: re-bind then so its
     // scroll listener and scrollLeft are live.
-  }, [vertical, showProxy])
+  }, [vertical, selector, showProxy])
 
   // A freshly mounted proxy starts at 0; line it up with the table.
   useEffect(() => {
-    const scroller = frameRef.current?.querySelector<HTMLElement>(
-      "[data-slot=table-container]"
-    )
+    const scroller = frameRef.current?.querySelector<HTMLElement>(selector)
     if (showProxy && proxyRef.current && scroller) {
       proxyRef.current.scrollLeft = scroller.scrollLeft
     }
-  }, [showProxy])
+  }, [selector, showProxy])
 
   return { frameRef, proxyRef, spacerRef, showProxy }
 }
@@ -141,6 +158,87 @@ export function TableScrollProxy({
       )}
     >
       <div ref={scroll.spacerRef} className="h-px" />
+    </div>
+  )
+}
+
+const VIEWPORT = "[data-slot=hscroll-viewport]"
+
+/**
+ * Wide content that is not a table - a rack wall, a zoomed drawing, a
+ * hand-built grid - scrolling sideways with the same floating scrollbar and
+ * edge hints as DataTable, so its horizontal bar is at the bottom of the view
+ * rather than after the last row. The frame (`frameClassName`: border,
+ * radius, background) holds a viewport (`className`: the content's own
+ * layout) that scrolls; `viewportRef` reaches it for callers that measure.
+ *
+ * While it overflows the viewport is a named, focusable region, so arrow
+ * keys scroll it. It prints at full width, never clipped.
+ */
+export function HScroll({
+  children,
+  className,
+  frameClassName,
+  outerClassName,
+  viewportRef,
+  label,
+}: {
+  children: ReactNode
+  className?: string
+  frameClassName?: string
+  outerClassName?: string
+  viewportRef?: Ref<HTMLDivElement>
+  /** Accessible name for the scrollable region. */
+  label?: string
+}) {
+  const scroll = useTableScroll(false, VIEWPORT)
+  const scrolls = scroll.showProxy
+  return (
+    <div className={cn("min-w-0", outerClassName)}>
+      <div ref={scroll.frameRef} className={cn("relative", frameClassName)}>
+        <div
+          ref={viewportRef}
+          data-slot="hscroll-viewport"
+          role={scrolls ? "region" : undefined}
+          aria-label={scrolls ? label : undefined}
+          tabIndex={scrolls ? 0 : undefined}
+          className={cn(
+            "overflow-x-auto rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring print:overflow-visible",
+            className
+          )}
+        >
+          {children}
+        </div>
+      </div>
+      <TableScrollProxy scroll={scroll} />
+    </div>
+  )
+}
+
+/**
+ * The bordered frame around a shadcn `<Table>` outside DataTable: the
+ * table's own container scrolls, with the floating scrollbar and edge hints.
+ * `className` styles the frame.
+ */
+export function ScrollFrame({
+  children,
+  className,
+  outerClassName,
+}: {
+  children: ReactNode
+  className?: string
+  outerClassName?: string
+}) {
+  const scroll = useTableScroll()
+  return (
+    <div className={cn("min-w-0", outerClassName)}>
+      <div
+        ref={scroll.frameRef}
+        className={cn("relative overflow-hidden", className)}
+      >
+        {children}
+      </div>
+      <TableScrollProxy scroll={scroll} />
     </div>
   )
 }

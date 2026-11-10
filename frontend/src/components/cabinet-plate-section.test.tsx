@@ -451,8 +451,8 @@ describe("the Plate's controls", () => {
     for (let i = 0; i < 9; i++) fireEvent.click(zoomIn)
     expect(zoom()).toBe(3)
     expect(zoomIn.disabled).toBe(true)
-    // Wider than the column, it scrolls in its frame.
-    expect(svg().closest(".overflow-auto")).not.toBeNull()
+    // Wider than the column, it scrolls in its frame (HScroll).
+    expect(svg().closest("[data-slot=hscroll-viewport]")).not.toBeNull()
   })
 
   it("exports Render's PNG as a picture of the drawing", async () => {

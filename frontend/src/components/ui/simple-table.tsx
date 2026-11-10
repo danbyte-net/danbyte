@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { ChevronRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -51,7 +52,7 @@ export function SimpleTable<T>({
   const [open, setOpen] = React.useState<React.Key | null>(null)
   const span = columns.length + (renderExpanded ? 1 : 0)
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
+    <ScrollFrame className="rounded-lg border border-border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -134,6 +135,6 @@ export function SimpleTable<T>({
           )}
         </TableBody>
       </Table>
-    </div>
+    </ScrollFrame>
   )
 }

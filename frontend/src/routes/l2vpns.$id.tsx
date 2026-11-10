@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { TagList } from "@/components/cells/tag-list"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -320,7 +321,7 @@ function TerminationsTab({
           No terminations on this L2VPN yet.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <ScrollFrame className="rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -354,7 +355,7 @@ function TerminationsTab({
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <L2vpnTerminationDialog

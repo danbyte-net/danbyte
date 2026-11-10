@@ -18,6 +18,7 @@ import { Loading } from "@/components/loading"
 import { TagList } from "@/components/cells/tag-list"
 import { CopyButton, KvCard, dash, type KvRow } from "@/components/kv-card"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { QueryError } from "@/components/query-error"
 import { CircuitDeleteDialog } from "@/components/circuit-delete-dialog"
 import { CircuitTerminationDialog } from "@/components/circuit-termination-dialog"
@@ -462,7 +463,7 @@ function TerminationCard({
           </div>
         )}
       </div>
-      <div className="overflow-hidden rounded-lg border border-border">
+      <ScrollFrame className="rounded-lg border border-border">
         <Table>
           <TableBody>
             {rows.map((r, i) => (
@@ -483,7 +484,7 @@ function TerminationCard({
             ))}
           </TableBody>
         </Table>
-      </div>
+      </ScrollFrame>
     </section>
   )
 }

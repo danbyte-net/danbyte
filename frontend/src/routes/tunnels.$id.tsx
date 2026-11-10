@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { TagList } from "@/components/cells/tag-list"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { CopyButton, KvCard, dash, type KvRow } from "@/components/kv-card"
@@ -324,7 +325,7 @@ function TerminationsTab({
           No terminations on this tunnel yet.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <ScrollFrame className="rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -394,7 +395,7 @@ function TerminationsTab({
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <TunnelTerminationDialog

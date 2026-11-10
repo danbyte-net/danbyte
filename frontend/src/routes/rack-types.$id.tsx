@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import {
   FormCombobox,
   FormFooter,
@@ -268,7 +269,7 @@ function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
           side-mounted devices automatically.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <ScrollFrame className="rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -334,7 +335,7 @@ function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <AccessoryDialog

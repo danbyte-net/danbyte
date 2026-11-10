@@ -271,7 +271,8 @@ The rack's **Overview** puts the rack's facts on the left - the **Rack** and
 the right, under **Elevation**: paired elevations, **front and rear side by
 side**. Until you zoom by hand the zoom steps down until both faces fit the
 column, so a whole rack reads without scrolling; **−** and **+** take over
-from there. The Devices tab keeps a single toggleable elevation beside a
+from there. Zoomed wider than the column, the faces scroll sideways with
+their scrollbar floating at the bottom of the window. The Devices tab keeps a single toggleable elevation beside a
 searchable list of the rack's devices. Three
 **display modes**:
 
@@ -515,7 +516,9 @@ floor, not a guarantee.
 Racks can carry a **location** (building / floor / room within their
 site) and a [**room**](rooms.md) in it - the Locations page's **Rack
 elevations** button then shows exactly the racks in that location, and
-`/api/racks/?location=` and `?room=` filter likewise. The
+`/api/racks/?location=` and `?room=` filter likewise. A wall wider than
+the page scrolls sideways from a scrollbar that stays at the bottom of the
+window, so there is no need to scroll down past the racks first. The
 wall reads the devices of all its racks in one request:
 `/api/devices/?rack=` takes one rack id or several, comma-separated. A
 location can also be drawn as a [floor plan](../features/floor-plans.md),

@@ -45,6 +45,7 @@ import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { HScroll } from "@/components/table-scroll"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { BarIconButton } from "@/components/map-toolbar"
@@ -701,7 +702,7 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                 className="ml-auto"
               />
             </div>
-            <div ref={frameRef} className="overflow-auto">
+            <HScroll viewportRef={frameRef} label="Rack faces">
               <div
                 ref={facesRef}
                 className="mx-auto flex w-max items-start gap-8"
@@ -725,7 +726,7 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                   </div>
                 ))}
               </div>
-            </div>
+            </HScroll>
           </>
         )}
       </div>

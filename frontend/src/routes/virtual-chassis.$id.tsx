@@ -35,6 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
@@ -504,7 +505,7 @@ function MembersTable({
             : "Devices join from their own edit form (Stack membership)."}
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <ScrollFrame className="rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -635,7 +636,7 @@ function MembersTable({
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <VcAddMemberDialog

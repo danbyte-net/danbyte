@@ -7,6 +7,7 @@ import {
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
+import { HScroll } from "@/components/table-scroll"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { ObjectReportButton } from "@/components/object-report"
@@ -1644,7 +1645,7 @@ function DeviceRackCard({ device }: { device: Device }) {
   if (!q.data) return null
   return (
     <Section title={title}>
-      <div className="flex gap-6 overflow-x-auto pb-1">
+      <HScroll className="flex gap-6 pb-1" label="Rack faces">
         {(["front", "rear"] as const).map((face) => (
           <div key={face} className="flex flex-col items-center gap-1.5">
             <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
@@ -1660,7 +1661,7 @@ function DeviceRackCard({ device }: { device: Device }) {
             />
           </div>
         ))}
-      </div>
+      </HScroll>
     </Section>
   )
 }

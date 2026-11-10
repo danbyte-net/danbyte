@@ -90,6 +90,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 
@@ -703,7 +704,7 @@ function SubnetDetailsCard({
 
 function SubnetDetailsTable({ rows }: { rows: SubnetDetailRow[] }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-background">
+    <ScrollFrame className="rounded-lg border border-border bg-background">
       <Table>
         <TableHeader>
           <TableRow>
@@ -746,7 +747,7 @@ function SubnetDetailsTable({ rows }: { rows: SubnetDetailRow[] }) {
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollFrame>
   )
 }
 
@@ -758,7 +759,7 @@ function NextAvailableTable({
   onPick: (addr: string) => void
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-background">
+    <ScrollFrame className="rounded-lg border border-border bg-background">
       <Table>
         <TableHeader>
           <TableRow>
@@ -797,7 +798,7 @@ function NextAvailableTable({
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollFrame>
   )
 }
 

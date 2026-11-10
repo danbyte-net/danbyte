@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { Section } from "@/components/ui/section"
 import { QueryError } from "@/components/query-error"
 import {
@@ -161,7 +162,7 @@ export function DeviceAntennasPane({ deviceId }: { deviceId: string }) {
       ) : q.isLoading ? (
         <p className="p-4 text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollFrame>
           <Table>
             <TableHeader>
               <TableRow>
@@ -186,7 +187,7 @@ export function DeviceAntennasPane({ deviceId }: { deviceId: string }) {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
       {editing && (
         <AntennaDialog

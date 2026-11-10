@@ -351,7 +351,7 @@ export function ArrangePlate({
         near={near}
         standing={standing}
         box
-        frame="overflow-auto"
+        scroll
         elevationClassName="mx-auto"
         pxPerMm={pxPerMm}
         look={look}
