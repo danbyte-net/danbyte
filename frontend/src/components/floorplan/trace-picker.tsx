@@ -1,5 +1,6 @@
 import { X } from "lucide-react"
 
+import { Field } from "@/components/forms/field"
 import { Badge } from "@/components/ui/badge"
 import { MultiCombobox } from "@/components/ui/multi-combobox"
 import {
@@ -50,20 +51,24 @@ export function TracePicker({
   const left = MAX_TRACES - value.length
   return (
     <div className="grid gap-1.5">
-      <MultiCombobox
-        options={(rows ?? [])
-          .filter((r) => !picked.has(r.id))
-          .map((r) => ({ value: r.id, label: traceOption(r) }))}
-        onAdd={(more) =>
-          onChange([...value, ...more.map((m) => m.value)].slice(0, MAX_TRACES))
-        }
-        max={Math.max(0, left)}
-        disabled={disabled || !rows || left <= 0}
-        placeholder={rows ? "Pick cables…" : "Loading…"}
-        searchPlaceholder="Search cables…"
-        emptyText="No cables."
-        className="text-[13px]"
-      />
+      <Field label="Cables to trace" labelHidden>
+        <MultiCombobox
+          options={(rows ?? [])
+            .filter((r) => !picked.has(r.id))
+            .map((r) => ({ value: r.id, label: traceOption(r) }))}
+          onAdd={(more) =>
+            onChange(
+              [...value, ...more.map((m) => m.value)].slice(0, MAX_TRACES)
+            )
+          }
+          max={Math.max(0, left)}
+          disabled={disabled || !rows || left <= 0}
+          placeholder={rows ? "Pick cables…" : "Loading…"}
+          searchPlaceholder="Search cables…"
+          emptyText="No cables."
+          className="text-[13px]"
+        />
+      </Field>
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1" data-part="trace-picked">
           {value.map((id) => (
