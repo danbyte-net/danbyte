@@ -356,6 +356,16 @@ def me_prefs(request):
                     {"error": f"'{tz}' is not a valid IANA timezone."}, status=400
                 )
             body["timezone"] = canonical
+        if "map_label_language" in body:
+            from core.models import DeploymentSettings
+
+            allowed = {"auto"} | {k for k, _ in DeploymentSettings.MAP_LABEL_CHOICES}
+            if body["map_label_language"] not in allowed:
+                return JsonResponse(
+                    {"error": "map_label_language must be one of: "
+                     + ", ".join(sorted(allowed))},
+                    status=400,
+                )
         # The sidebar layout is a structured value - store only its cleaned
         # form (#285). None resets it to the tenant default.
         if body.get("sidebar") is not None:

@@ -379,8 +379,44 @@ def _no_kept_access_grant() -> bool:
     return True
 
 
+_NGINX_MAP_CSP = """\
+# in /etc/nginx/sites-available/danbyte.conf, in the Content-Security-Policy:
+#   connect-src: add https://vector.openstreetmap.org (or your vector host)
+#   then add:    worker-src 'self' blob:;
+sudo sed -i "s|connect-src 'self'|connect-src 'self' https://vector.openstreetmap.org|; \\
+s|; frame-ancestors|; worker-src 'self' blob:; frame-ancestors|" \\
+    /etc/nginx/sites-available/danbyte.conf
+sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _map_csp_allows_vector() -> bool:
+    """Done when the site's CSP lets the vector basemap run its worker."""
+    text = _site_config()
+    if text is None:
+        return False
+    return "worker-src" in text
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.20.0-nginx-map-csp",
+        version="0.20.0",
+        title="Let the Site map load vector tiles",
+        body=(
+            "The vector basemap fetches its tiles in the browser and draws them "
+            "in a web worker. The nginx Content-Security-Policy needs the tile "
+            "host in connect-src and worker-src 'self' blob:. Until then an "
+            "install set to vector tiles falls back to the raster ones. Root "
+            "runs this from the bundle of this release, never from the app "
+            "directory."
+        ),
+        snippet=_NGINX_MAP_CSP,
+        docs="features/site-map/#vector-basemap-and-label-language",
+        platforms=("systemd",),
+        check=_map_csp_allows_vector,
+        host=True,
+    ),
     UpgradeNote(
         id="0.19.0-nginx-assets",
         version="0.19.0",

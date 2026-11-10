@@ -410,6 +410,11 @@
   border-color: var(--muted-foreground);
   font-size: 10px;
 }
+/* The vector basemap's MapLibre container (#467): positioned like a tile
+   layer; its own CSS would make it a relative block. */
+.leaflet-pane > .leaflet-gl-layer {
+  position: absolute;
+}
 .dark .sm-tiles {
   filter: brightness(0.65) invert(1) contrast(3) hue-rotate(200deg)
     saturate(0.35) brightness(0.7);

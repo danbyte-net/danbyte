@@ -494,10 +494,13 @@ uniformly and survives an app restart:
   `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy: same-origin`.
 - An **enforced Content-Security-Policy** with `report-uri /api/csp-report/`.
   `connect-src` allows `raw.githubusercontent.com` and `api.github.com` so the
-  device-type import's *Fetch with my browser* option works; everything else
-  stays same-origin.
+  device-type import's *Fetch with my browser* option works, and
+  `vector.openstreetmap.org` for the Site map's default vector tiles
+  (a different vector source in **Settings → Site map → Basemap** needs its
+  host added here by hand). `worker-src 'self' blob:` lets MapLibre run its
+  bundled tile worker. Everything else stays same-origin.
   The SPA loads only same-origin bundled assets (no external scripts/styles/
-  fonts, no `eval`, no web workers; the presence WebSocket is same-origin), so
+  fonts, no `eval`, one bundled web worker; the presence WebSocket is same-origin), so
   the policy doesn't block anything it serves. `'unsafe-inline'` is still
   permitted for the SSR hydration + chart `<style>` injection - the next
   hardening step is a nonce-based `script-src` (needs SSR nonce plumbing). Any

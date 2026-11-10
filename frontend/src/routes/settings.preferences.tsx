@@ -28,6 +28,7 @@ import {
 } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useTimezoneOptions } from "@/lib/use-timezones"
+import { LABEL_LANGUAGE_OPTIONS } from "@/components/site-map/vector-style"
 
 export const Route = createFileRoute("/settings/preferences")({
   component: PreferencesPage,
@@ -51,6 +52,7 @@ function PreferencesPage() {
         <TaskEmailsCard />
         <SpaceMapCard />
         <PasswordSection />
+        <SiteMapCard />
         <TwoFactorSection />
         <ApiTokensSection />
       </SettingsGrid>
@@ -254,6 +256,29 @@ function NavigationCard() {
         hint="Show a confirmation step on destructive actions"
         checked={d.get("confirm_destructive") !== false}
         onChange={(v) => d.set("confirm_destructive", v)}
+      />
+    </SettingsCard>
+  )
+}
+
+function SiteMapCard() {
+  const d = usePrefDraft()
+  return (
+    <SettingsCard
+      title="Site map"
+      description="Applies to vector basemaps."
+      onSave={d.save}
+      dirty={d.dirty}
+      saving={d.saving}
+    >
+      <FormSelect
+        label="Label language"
+        value={String(d.get("map_label_language") ?? AUTO)}
+        onChange={(v) => v && d.set("map_label_language", v)}
+        options={[
+          { value: AUTO, label: "Auto (deployment default)" },
+          ...LABEL_LANGUAGE_OPTIONS,
+        ]}
       />
     </SettingsCard>
   )

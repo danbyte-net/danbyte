@@ -529,6 +529,15 @@ have run. Until then the site works as before, only without that caching. A
 site you manage yourself needs the `/assets/` block and the
 `$danbyte_asset_cache` map from `deploy/nginx/danbyte.prod.conf.template`.
 
+From 0.20 the Site map can draw a [vector
+basemap](../features/site-map.md#vector-basemap-and-label-language). Its
+tiles come over `fetch` and it runs a web worker, so the CSP gains
+`https://vector.openstreetmap.org` in `connect-src` and
+`worker-src 'self' blob:`. The step *Let the Site map load vector tiles*
+stays up until the site's CSP has `worker-src`. Until then a deployment set
+to vector tiles shows the raster tiles. An upgraded install stays on raster
+tiles until an admin picks vector under **Settings → Site map → Basemap**.
+
 !!! warning "Root runs only files root owns"
     The app directory belongs to the service account. A script or template
     changed there would run as root, or become root's configuration, so no

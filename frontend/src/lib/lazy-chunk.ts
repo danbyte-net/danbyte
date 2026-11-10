@@ -34,18 +34,23 @@ export function isStaleChunkError(err: unknown): boolean {
   )
 }
 
+/** A dynamic import with the same recovery as `lazyChunk`, for a module
+ *  that is not a component (the Site map's vector basemap): a stale chunk
+ *  reloads the page once and the promise then never settles. */
+export function importChunk<M>(factory: () => Promise<M>): Promise<M> {
+  return factory().catch((err: unknown) => {
+    if (isStaleChunkError(err) && reloadForNewBuild()) {
+      return new Promise<M>(() => {})
+    }
+    throw err
+  })
+}
+
 /** `React.lazy` that recovers from a chunk deleted by a redeploy: the first
  *  stale-chunk failure reloads the page instead of showing an error. */
 export function lazyChunk<T extends ComponentType<any>>( // eslint-disable-line @typescript-eslint/no-explicit-any
   factory: () => Promise<{ default: T }>
 ) {
-  return lazy(() =>
-    factory().catch((err: unknown) => {
-      if (isStaleChunkError(err) && reloadForNewBuild()) {
-        // Keep Suspense waiting while the page reloads.
-        return new Promise<{ default: T }>(() => {})
-      }
-      throw err
-    })
-  )
+  // Keeps Suspense waiting while the page reloads.
+  return lazy(() => importChunk(factory))
 }

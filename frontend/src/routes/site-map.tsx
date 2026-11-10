@@ -153,9 +153,12 @@ import { SiteMapLegend } from "@/components/site-map/site-map-legend"
 import {
   LABEL_ZOOM,
   markerZ,
+  basemapConfig,
   observeMapSize,
-  setBaseLayer,
+  setBasemap as applyBasemap,
+  type VectorFallback,
 } from "@/components/site-map/map-core"
+import { useTheme } from "@/components/theme-provider"
 import {
   applyDensityScaling,
   createMarkerGroup,
@@ -355,6 +358,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   }
   const modeCleanupRef = useRef<(() => void) | null>(null)
   const [tilesBlocked, setTilesBlocked] = useState(false)
+  // The vector basemap could not run here and raster tiles stand in (#467).
+  const [vectorFallback, setVectorFallback] = useState<VectorFallback | null>(
+    null
+  )
+  const { theme } = useTheme()
   // After stamping a marker: ask for a name + optional device link.
   const [linkPrompt, setLinkPrompt] = useState<{
     id: string
@@ -1049,7 +1057,13 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     // Detect CSP-blocked tiles for BOTH basemaps (street + satellite) - the
     // reverse proxy's img-src must allow each tile host, and a stale nginx
     // config otherwise fails silently with a gray map.
-    const tileHosts = [data.tiles.url, data.tiles.satellite.url]
+    const tileHosts = [
+      data.tiles.url,
+      data.tiles.satellite.url,
+      ...(data.tiles.basemap === "vector" && data.tiles.vector
+        ? [data.tiles.vector.url]
+        : []),
+    ]
       .map((u) => {
         try {
           return new URL(u.replace(/\{[xyz]\}/g, "0")).host
@@ -1060,7 +1074,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       .filter(Boolean)
     const onCspViolation = (e: SecurityPolicyViolationEvent) => {
       if (
-        e.violatedDirective.startsWith("img-src") &&
+        (e.violatedDirective.startsWith("img-src") ||
+          e.violatedDirective.startsWith("connect-src")) &&
         tileHosts.some((h) => e.blockedURI.includes(h))
       ) {
         setTilesBlocked(true)
@@ -1077,29 +1092,32 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Basemap - street tiles or satellite imagery, swapped in place.
-  const baseRef = useRef<L.TileLayer | null>(null)
+  // Basemap - street tiles (raster or vector) or satellite imagery, swapped
+  // in place. A vector basemap that can't run falls back to raster.
+  const baseRef = useRef<L.Layer[]>([])
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
     setTilesBlocked(false) // re-detect per basemap
-    const cfg =
-      basemap === "sat"
-        ? data.tiles.satellite
-        : { url: data.tiles.url, attribution: data.tiles.attribution }
-    setBaseLayer(map, baseRef, {
-      url: cfg.url,
-      attribution: cfg.attribution,
-      // Satellite imagery escapes the dark-mode tile filter.
-      className: basemap === "sat" ? "" : "sm-tiles",
-    })
+    setVectorFallback(null)
+    return applyBasemap(
+      map,
+      baseRef,
+      basemapConfig(data.tiles, basemap, theme),
+      setVectorFallback
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     basemap,
+    theme,
     data.tiles.url,
     data.tiles.attribution,
     data.tiles.satellite.url,
     data.tiles.satellite.attribution,
+    data.tiles.basemap,
+    data.tiles.vector?.url,
+    data.tiles.vector?.attribution,
+    data.tiles.labels,
   ])
 
   // Region boundaries - OSM-sourced polygons shaded under everything else.
@@ -1953,7 +1971,12 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 blocked by this server's Content-Security-Policy.
               </p>
               <p className="mt-1 text-muted-foreground">
-                The reverse proxy's <span className="font-mono">img-src</span>{" "}
+                The reverse proxy's{" "}
+                <span className="font-mono">
+                  {basemap === "map" && data.tiles.basemap === "vector"
+                    ? "connect-src"
+                    : "img-src"}
+                </span>{" "}
                 directive doesn't allow the tile server - see{" "}
                 <a
                   href="/docs/features/site-map/"
@@ -1965,6 +1988,14 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 </a>{" "}
                 for the one-line fix. Markers and placement still work.
               </p>
+            </div>
+          )}
+
+          {vectorFallback && !tilesBlocked && (
+            <div className="pointer-events-none absolute bottom-6 left-3 z-[1000] rounded-md border border-border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground">
+              {vectorFallback === "webgl"
+                ? "Raster tiles: this browser has no WebGL"
+                : "Raster tiles: vector tiles unavailable"}
             </div>
           )}
 

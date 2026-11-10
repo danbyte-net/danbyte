@@ -29,6 +29,8 @@ export function useUserPrefs() {
       // /api/me/ carries values RESOLVED from prefs (me.datetime) - refresh it
       // so formatting picks the change up without a reload.
       qc.invalidateQueries({ queryKey: ["me"] })
+      // The Site map payload carries the resolved label language (#467).
+      qc.invalidateQueries({ queryKey: ["site-map"] })
     },
   })
   return {

@@ -154,6 +154,130 @@ class SiteMapTests(TestCase):
             s.validate_map_tile_url("https://t.example/tiles.png")
 
 
+class VectorBasemapTests(TestCase):
+    """#467: raster or vector street basemap, the vector source, and the
+    label language (deployment default, per-user override)."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=self.org, name="T", slug="t")
+        self.admin = User.objects.create_superuser("vec-admin", password="x")
+        self.user = User.objects.create_user("vec-user", password="x")
+        self.client_api = APIClient()
+        self.client_api.force_authenticate(self.admin)
+        s = self.client_api.session
+        s["tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def tiles(self):
+        r = self.client_api.get("/api/site-map/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()["tiles"]
+
+    def test_a_new_install_starts_on_vector_an_upgraded_one_keeps_raster(self):
+        DeploymentSettings.objects.all().delete()
+        self.assertEqual(DeploymentSettings.load().map_basemap, "vector")
+        # The row an upgraded install already has keeps the column default.
+        DeploymentSettings.objects.all().delete()
+        DeploymentSettings.objects.create(pk=1)
+        self.assertEqual(DeploymentSettings.load().map_basemap, "raster")
+        self.assertEqual(DeploymentSettings._meta.get_field("map_basemap").default, "raster")
+
+    def test_payload_carries_the_vector_source_and_language(self):
+        ds = DeploymentSettings.load()
+        ds.map_basemap = "vector"
+        ds.map_label_language = "local"
+        ds.save()
+        tiles = self.tiles()
+        self.assertEqual(tiles["basemap"], "vector")
+        self.assertEqual(
+            tiles["vector"]["url"],
+            "https://vector.openstreetmap.org/shortbread_v1/tilejson.json",
+        )
+        self.assertIn("OpenStreetMap", tiles["vector"]["attribution"])
+        self.assertTrue(tiles["vector"]["osm_default"])
+        self.assertEqual(tiles["labels"], "local")
+        # The raster URL stays: the fallback without WebGL.
+        self.assertEqual(tiles["url"], "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+
+        ds.map_vector_url = "https://tiles.corp.example/style.json"
+        ds.map_vector_attribution = "Corp GIS"
+        ds.save()
+        tiles = self.tiles()
+        self.assertEqual(tiles["vector"], {
+            "url": "https://tiles.corp.example/style.json",
+            "attribution": "Corp GIS", "osm_default": False,
+        })
+
+    def test_a_user_overrides_the_label_language(self):
+        ds = DeploymentSettings.load()
+        ds.map_label_language = "en"
+        ds.save()
+        # /api/me/prefs/ is a plain Django view: it needs a session login;
+        # and a fresh user per request, as in real use (force_authenticate
+        # hands every request the same object, profile cached).
+        self.client_api.force_authenticate(None)
+        self.client_api.force_login(self.admin)
+        s = self.client_api.session
+        s["tenant_id"] = str(self.tenant.id)
+        s.save()
+        r = self.client_api.put("/api/me/prefs/", {"map_label_language": "browser_local"},
+                                format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self.tiles()["labels"], "browser_local")
+        self.client_api.put("/api/me/prefs/", {"map_label_language": "auto"}, format="json")
+        self.assertEqual(self.tiles()["labels"], "en")
+        r = self.client_api.put("/api/me/prefs/", {"map_label_language": "<b>"}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_settings_are_admin_only_and_validated(self):
+        c = APIClient()
+        c.force_authenticate(self.user)
+        r = c.put("/api/deployment/email/", {"map_basemap": "vector"}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+        base = self.client_api.get("/api/deployment/email/").json()
+        for field in ("map_basemap", "map_vector_url", "map_vector_attribution",
+                      "map_label_language"):
+            self.assertIn(field, base)
+
+        def put(**patch):
+            return self.client_api.put("/api/deployment/email/", {**base, **patch},
+                                       format="json")
+
+        r = put(map_basemap="vector", map_label_language="en_local",
+                map_vector_url=" https://tiles.example/shortbread/tilejson.json ")
+        self.assertEqual(r.status_code, 200, r.content)
+        ds = DeploymentSettings.load()
+        self.assertEqual(ds.map_basemap, "vector")
+        self.assertEqual(ds.map_vector_url, "https://tiles.example/shortbread/tilejson.json")
+        for bad in ("http://tiles.example/tilejson.json",
+                    "javascript:alert(1)",
+                    "https://user:pw@tiles.example/tilejson.json",
+                    "https:///nohost",
+                    "https://tiles.example/{z}/{x}/{y}.mvt",
+                    'https://tiles.example/"><script>'):
+            with self.subTest(url=bad):
+                self.assertEqual(put(map_vector_url=bad).status_code, 400)
+        self.assertEqual(put(map_basemap="webgl").status_code, 400)
+        self.assertEqual(put(map_label_language="klingon").status_code, 400)
+
+    def test_a_capture_credits_the_basemap_it_was_drawn_from(self):
+        from api.site_map_views import effective_tiles, street_attribution
+
+        ds = DeploymentSettings.load()
+        ds.map_tile_url = "https://r.example/{z}/{x}/{y}.png"
+        ds.map_tile_attribution = "Raster Co"
+        ds.map_vector_url = "https://v.example/tilejson.json"
+        ds.map_vector_attribution = "Vector Co"
+        ds.map_basemap = "vector"
+        ds.save()
+        self.assertEqual(street_attribution(effective_tiles()), "Vector Co")
+        ds.map_basemap = "raster"
+        ds.save()
+        self.assertEqual(street_attribution(effective_tiles()), "Raster Co")
+
+
 class SiteMapHealthTests(SiteMapTests.__bases__[0]):
     """Per-site / per-device worst-status roll-up in the map payload."""
 

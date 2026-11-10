@@ -61,24 +61,60 @@ ESRI_SAT_ATTRIBUTION = (
 )
 
 
-def effective_tiles() -> dict:
+# The OpenStreetMap Foundation's vector tiles (Shortbread 1.1), the default
+# vector source (#467). Same donated-service caveat as the raster tiles:
+# https://operations.osmfoundation.org/policies/vector/ asks for the
+# attribution and no bulk download; the browser only fetches what it shows.
+OSM_VECTOR_URL = "https://vector.openstreetmap.org/shortbread_v1/tilejson.json"
+
+
+def label_language(ds, user=None, tenant=None) -> str:
+    """The vector basemap's label language for this user: their preference,
+    else the deployment default. Always a MAP_LABEL_CHOICES key."""
+    from auth_api import user_prefs
+
+    keys = {k for k, _ in DeploymentSettings.MAP_LABEL_CHOICES}
+    if user is not None:
+        mine = user_prefs.get(user, "map_label_language", tenant=tenant)
+        if mine in keys:
+            return mine
+    return ds.map_label_language if ds.map_label_language in keys else "en"
+
+
+def effective_tiles(user=None, tenant=None) -> dict:
+    """The basemap config the browser uses: the raster street tiles (also the
+    fallback of a browser without WebGL), satellite, and the vector source
+    with the user's label language when ``basemap`` is vector."""
     ds = DeploymentSettings.load()
     url = (ds.map_tile_url or "").strip()
     sat_url = (ds.map_satellite_url or "").strip()
+    vec_url = (ds.map_vector_url or "").strip()
     satellite = {
         "url": sat_url or ESRI_SAT_URL,
         "attribution": (ds.map_satellite_attribution or "")
         if sat_url else ESRI_SAT_ATTRIBUTION,
     }
-    if url:
-        return {
-            "url": url,
-            "attribution": ds.map_tile_attribution or "",
-            "osm_default": False,
-            "satellite": satellite,
-        }
-    return {"url": OSM_TILE_URL, "attribution": OSM_ATTRIBUTION,
-            "osm_default": True, "satellite": satellite}
+    vector = {
+        "url": vec_url or OSM_VECTOR_URL,
+        "attribution": (ds.map_vector_attribution or "") if vec_url else OSM_ATTRIBUTION,
+        "osm_default": not vec_url,
+    }
+    out = {
+        "url": url or OSM_TILE_URL,
+        "attribution": (ds.map_tile_attribution or "") if url else OSM_ATTRIBUTION,
+        "osm_default": not url,
+        "satellite": satellite,
+        "basemap": ds.map_basemap if ds.map_basemap in ("raster", "vector") else "raster",
+        "vector": vector,
+        "labels": label_language(ds, user, tenant),
+    }
+    return out
+
+
+def street_attribution(tiles: dict) -> str:
+    """The credit of the street basemap a capture was drawn from."""
+    return tiles["vector"]["attribution"] if tiles.get("basemap") == "vector" \
+        else tiles["attribution"]
 
 
 @extend_schema(
@@ -361,7 +397,7 @@ def site_map(request):
     ]
 
     return Response({
-        "tiles": effective_tiles(),
+        "tiles": effective_tiles(request.user, tenant),
         "sites": sites,
         "devices": devices,
         "markers": markers,
