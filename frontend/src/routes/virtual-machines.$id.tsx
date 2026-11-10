@@ -75,6 +75,11 @@ import {
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
+import {
+  VulnerabilitiesTab,
+  vulnTabSearch,
+} from "@/components/vulnerabilities/vulnerabilities-tab"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -83,7 +88,11 @@ export const Route = createFileRoute("/virtual-machines/$id")({
   // `?sensor=` opens that PRTG sensor's panel on the Sensors tab.
   validateSearch: (
     s: Record<string, unknown>
-  ): { tab?: string; sensor?: string; state?: string } => ({
+  ): { tab?: string; sensor?: string; state?: string } & ReturnType<
+    typeof vulnTabSearch
+  > => ({
+    // The Vulnerabilities tab's filters.
+    ...vulnTabSearch(s),
     ...(typeof s.tab === "string" ? { tab: s.tab } : {}),
     ...(typeof s.sensor === "string" ? { sensor: s.sensor } : {}),
     // The monitoring bar's filter, on the Monitoring and Sensors tabs.
@@ -136,9 +145,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "snmp"
     | "certificates"
     | "config"
+    | "vulnerabilities"
     | "journal"
     | "history"
   >("overview")
+  const vuln = useVulnSettings()
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const openDelete = useCallback(() => setDeleting(vm), [vm])
@@ -303,6 +314,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           count: vm.certificate_count,
         },
         { value: "config", label: "Config" },
+        ...(vuln.enabled
+          ? [{ value: "vulnerabilities", label: "Vulnerabilities" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -403,6 +417,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       <DetailTab value="certificates">
         <CertificatesPanel objectType="api.virtualmachine" objectId={vm.id} />
       </DetailTab>
+      {vuln.enabled && (
+        <DetailTab value="vulnerabilities">
+          <VulnerabilitiesTab kind="virtual_machine" id={vm.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.virtualmachine" objectId={vm.id} />
       </DetailTab>

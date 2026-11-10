@@ -13,11 +13,13 @@ tenant and site scope ([#451](https://github.com/danbyte-net/danbyte/issues/451)
 !!! note "Work in progress"
     This page grows with the feature. Today Danbyte has the **data store**
     (settings, records, upload import), the [server fetch](#server-mode),
-    **product mappings**, and **matching** against your inventory with a
-    **priority**, plus the API for them. The Vulnerabilities tabs and page,
-    the mapping picker and browser sync are still to come. Until a mapping
-    exists, an NVD or OSV upload keeps nothing and a server fetch asks for
-    nothing.
+    **product mappings** with their [picker](#map-your-products),
+    **matching** against your inventory with a [priority](#priority), the
+    [Vulnerabilities tab](#where-it-shows) on devices, VMs, platforms and
+    applications, and the API for them. The Vulnerabilities list page, a
+    page per record, exceptions and browser sync are still to come. Until a
+    mapping exists, an NVD or OSV upload keeps nothing and a server fetch
+    asks for nothing.
 
 It is **off by default** and deployment-wide. By default nothing is fetched
 and nothing leaves the server: the update source is *upload* until a
@@ -70,13 +72,30 @@ has no Critical: 7.0 and up is High). OSV advisories carry only a vector, so a
 
 ## Turn it on
 
-A deployment admin (`users.manage` without tenant narrowing) uses
-`PATCH /api/vulnerabilities/settings/`; the settings card follows with the
-mappings.
+A deployment admin (`users.manage` without tenant narrowing) opens
+**Settings → General → Vulnerability data** (or uses
+`PATCH /api/vulnerabilities/settings/`). The card has:
+
+- **Enabled** and the **Update source**. Under the source, one line says
+  what it needs: *Upload* - nothing reaches the internet; *Server* - the
+  server reaches NVD, OSV, FIRST and CISA. *Browser* is listed but not
+  available yet.
+- In server mode: the **NVD API key** (a password field; it shows *Set*
+  when one is stored, never the key, and **Clear key** removes it),
+  **Fetch EPSS scores**, **Fetch the CISA KEV catalog** and the four mirror
+  URLs.
+- How many records are stored, the last run (status, who started it, what
+  it stored, its error) and **Refresh now** in server mode.
+- **Import file** with the **File kind** (NVD records, OSV advisories, CISA
+  KEV, EPSS scores). The run is followed until it ends. In upload mode the
+  card lists the `curl` commands from [Upload](#upload-airgapped-installs).
+
+The card saves only the fields you changed; a blank key field keeps the
+stored key.
 
 | Setting | Meaning |
 |---|---|
-| `enabled` | Off by default. While off, uploads are refused and nothing runs. |
+| `enabled` | Off by default. While off, uploads are refused, nothing runs and every vulnerability tab and card is hidden. |
 | `update_source` | `upload` (default), `server` or `browser`. Upload and [server](#server-mode) work today. |
 | `nvd_url`, `epss_url`, `kev_url`, `osv_url` | Blank uses the public service. A mirror goes here; it must be `https://`. For NVD, EPSS and OSV it is the base URL the API paths are added to (`https://services.nvd.nist.gov`, `https://api.first.org`, `https://api.osv.dev`); for KEV it is the catalog file itself. |
 | `sync_epss`, `sync_kev` | Whether a server sync also fetches EPSS and KEV (on by default). |
@@ -228,13 +247,20 @@ lists them, and what did arrive is stored.
   05:50; `run_scheduler` in a container) does the same and appears under
   **Jobs → Scheduled tasks**. In any mode but server it records a skip and
   contacts nothing.
-- Mapping a new product (later phase) fetches just that product at once in
-  server mode.
+- Mapping a new product - or enabling a mapping, or pointing one at
+  another product - fetches just that product at once in server mode, on
+  the `low` queue. The same product asked for again within five minutes
+  (another save, another tenant mapping it) is not fetched twice, and
+  hardware CPEs are never fetched. If another run is going, the next daily
+  run picks the product up.
 
 ### CPE search
 
 `GET /api/vulnerabilities/cpe/search/?q=` finds CPE names for the mapping
-picker (deployment admin, feature on):
+picker. It answers a deployment admin and anyone who may change a platform,
+device type or application in the active tenant (the people who use the
+picker), while the feature is on. The answer is public NVD data and never
+holds the API key:
 
 | Field | Meaning |
 |---|---|
@@ -243,10 +269,10 @@ picker (deployment admin, feature on):
 | `remote` | Server mode only: NVD's CPE dictionary (`keywordSearch`), one row per `part:vendor:product` with an example title and how many CPE names NVD has for it. |
 | `remote_status` | `ok`, `cached`, `off` (not server mode: NVD was not asked), `limited` (try again after `retry_after` seconds) or `error` (with `remote_error`). |
 
-NVD answers are cached for 24 hours. A user may search 30 times a minute
-(`429` past that), and the deployment asks NVD at most 2 times per 30
-seconds without an API key (20 with one), well under NVD's limit, so the
-picker cannot starve a running fetch.
+NVD answers are cached for 24 hours and shared by everyone who searches. A
+user may search 30 times a minute (`429` past that), and the deployment asks
+NVD at most 2 times per 30 seconds without an API key (20 with one), well
+under NVD's limit, so the picker cannot starve a running fetch.
 
 ## Map your products
 
@@ -276,6 +302,27 @@ and applications it may edit. Mapping changes are in the
 |---|---|
 | `version_scheme` | How versions are read and ordered. `auto` (default) picks from the product, see below. |
 | `enabled` | Off stops matching it; its open matches are resolved. |
+
+### The picker
+
+Platform, device type and application pages have a **Vulnerability data**
+card on their Overview while the feature is on. It lists each mapping with
+its version scheme and a coverage line from `/api/vulnerabilities/coverage/`
+- *41 of 44 hosts matched · 3 with a version Danbyte cannot read* (installs
+for an application; a device type reads *Hardware context for N devices*).
+Whoever may change the object sees **Map product**, **Change** and
+**Remove**.
+
+**Map product** opens the picker:
+
+| Choice | What it maps |
+|---|---|
+| SBOM identifier | The object's own **Package URL** or **CPE** field, cut to the product. Offered first when the object has one and no mapping yet. |
+| CPE | Type words (`ios xe`) or a `cpe:2.3:` name. The list shows the typed name, products already in the store (with how many records name them) and, in server mode, NVD's CPE dictionary, one row per product; a device type only offers hardware (`h`) names, the others operating systems and applications. The **CPE** field below takes a name by hand. |
+| Package URL | `pkg:pypi/django`, for an application or platform. |
+
+**Version scheme** (not for a device type) is *Automatic* unless you pick
+one. Changing a mapping can also switch it off.
 
 ## Version schemes
 
@@ -358,11 +405,37 @@ entry, with thresholds per tenant:
 | Medium | CVSS ≥ 4.0 |
 | Low | everything else, including a record without a score |
 
-`GET/PATCH /api/vulnerabilities/policy/` reads and sets them:
-`kev_is_fix_first`, `fix_first_epss`, `fix_first_cvss`, `high_cvss`,
-`high_epss`, `high_epss_cvss`, `medium_cvss` (EPSS 0-1, CVSS 0-10). Anyone
-who may view devices or VMs reads the policy; a tenant admin changes it, and
-the change is in the change log.
+A tenant admin sets them on **Settings → Tenant policy → Vulnerability
+priority** (shown while the feature is on), or with
+`GET/PATCH /api/vulnerabilities/policy/`: `kev_is_fix_first`,
+`fix_first_epss`, `fix_first_cvss`, `high_cvss`, `high_epss`,
+`high_epss_cvss`, `medium_cvss` (EPSS 0-1, CVSS 0-10). Anyone who may view
+devices or VMs reads the policy; a tenant admin changes it, the open matches
+are re-prioritised, and the change is in the change log.
+
+## Where it shows
+
+While the feature is on, devices, VMs, platforms and applications have a
+**Vulnerabilities** tab (before Journal and Change log). It lists the
+object's matches, worst priority first:
+
+| Column | Shows |
+|---|---|
+| Record | The CVE or advisory id, linked to NVD (CVE) or OSV (others). |
+| Priority | *Fix first*, *High*, *Medium*, *Low*. |
+| Severity, CVSS | From the record's score. |
+| KEV | *KEV* when CISA lists it; the date added and the due date on hover. |
+| EPSS | The probability of exploitation, as a percentage. |
+| Host | The device or VM (platform and application tabs). |
+| Application, Version | The install that matched, and the version tested. |
+| Via | Platform or application (device and VM tabs). |
+| Confidence | *Exact*, *Range*, or *Partial* - the record also names hardware or an OS that is not mapped. |
+| Product, Summary, First seen | The mapping, the record's description, when the match appeared. |
+
+The rail filters by **Status** (open by default; tick *Resolved* for the
+history, which adds a Resolved column), priority, severity, KEV, confidence
+and via. The filters are in the address (`?vstatus=resolved&priority=fix_first`),
+so a link keeps them. The tab is gone entirely while the feature is off.
 
 ## API
 

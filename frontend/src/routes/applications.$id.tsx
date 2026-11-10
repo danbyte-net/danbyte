@@ -13,6 +13,9 @@ import type {
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useUrlText } from "@/lib/use-url-state"
 import { useMe } from "@/lib/use-me"
+import { VulnerabilityMappingCard } from "@/components/vulnerabilities/mapping-card"
+import { VulnerabilitiesTab } from "@/components/vulnerabilities/vulnerabilities-tab"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
@@ -66,6 +69,7 @@ function Body({ app }: { app: Application }) {
     | "diagram"
     | "children"
     | "groups"
+    | "vulnerabilities"
     | "journal"
     | "history"
   >("overview")
@@ -73,6 +77,7 @@ function Body({ app }: { app: Application }) {
   const [deleting, setDeleting] = useState<Application | null>(null)
   const goBack = useCallback(() => nav({ to: "/applications" }), [nav])
   const { canDo, humanIds } = useMe()
+  const vuln = useVulnSettings()
   const [cycle, setCycle] = useUrlText("cycle")
 
   const rows: KvRow[] = [
@@ -220,6 +225,9 @@ function Body({ app }: { app: Application }) {
           count: app.child_count,
         },
         { value: "groups", label: "Groups" },
+        ...(vuln.enabled
+          ? [{ value: "vulnerabilities", label: "Vulnerabilities" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -236,6 +244,13 @@ function Body({ app }: { app: Application }) {
             application={app}
             canEdit={canDo("application", "change")}
           />
+          <div className="max-w-xl">
+            <VulnerabilityMappingCard
+              subject="application"
+              object={app}
+              canEdit={canDo("application", "change")}
+            />
+          </div>
         </div>
       </DetailTab>
       <DetailTab value="installs">
@@ -260,6 +275,11 @@ function Body({ app }: { app: Application }) {
       <DetailTab value="groups">
         <ApplicationGroupsOfApp applicationId={app.id} />
       </DetailTab>
+      {vuln.enabled && (
+        <DetailTab value="vulnerabilities">
+          <VulnerabilitiesTab kind="application" id={app.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.application" objectId={app.id} />
       </DetailTab>

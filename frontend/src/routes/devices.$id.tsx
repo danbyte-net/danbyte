@@ -215,6 +215,11 @@ import {
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import { naturalCompare } from "@/lib/natural-sort"
 import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
+import {
+  VulnerabilitiesTab,
+  vulnTabSearch,
+} from "@/components/vulnerabilities/vulnerabilities-tab"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 
 const DEVICE_TABS = [
   "overview",
@@ -234,6 +239,7 @@ const DEVICE_TABS = [
   "access",
   "config",
   "documents",
+  "vulnerabilities",
   "journal",
   "history",
 ] as const
@@ -266,7 +272,9 @@ export const Route = createFileRoute("/devices/$id")({
     cabled?: CableState
     sensor?: string
     state?: string
-  } => ({
+  } & ReturnType<typeof vulnTabSearch> => ({
+    // The Vulnerabilities tab's filters.
+    ...vulnTabSearch(s),
     ...(typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
       ? { tab: s.tab as DeviceTab }
       : {}),
@@ -319,6 +327,7 @@ function Body({ device: d }: { device: Device }) {
   // The hook reads `?tab=` itself; seeding the *default* from the URL made
   // re-clicking the active tab clear the param and bounce you to Overview.
   const [tab, setTab] = useUrlTab<DeviceTab>("overview", "tab", DEVICE_TABS)
+  const vuln = useVulnSettings()
   // Shared with the header badge and the drift inbox - one request, and the
   // tab markers can never disagree with what the inbox lists.
   const deviceDrift = useDeviceDrift(d.id)
@@ -536,6 +545,9 @@ function Body({ device: d }: { device: Device }) {
           label: "Documents",
           count: d.document_count || undefined,
         },
+        ...(vuln.enabled
+          ? [{ value: "vulnerabilities", label: "Vulnerabilities" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -690,6 +702,11 @@ function Body({ device: d }: { device: Device }) {
           }
         />
       </DetailTab>
+      {vuln.enabled && (
+        <DetailTab value="vulnerabilities">
+          <VulnerabilitiesTab kind="device" id={d.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.device" objectId={d.id} />
       </DetailTab>

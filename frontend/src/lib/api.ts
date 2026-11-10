@@ -17742,3 +17742,196 @@ export interface NetworkPlan {
   cables_skipped: { cable: NetworkPlanCable; reason: string }[]
   notes: string[]
 }
+
+// ─── Known vulnerabilities (#451) ────────────────────────────────────────
+
+export type VulnUpdateSource = "upload" | "server" | "browser"
+export type VulnImportKind = "nvd" | "osv" | "kev" | "epss"
+export type VulnPriority = "fix_first" | "high" | "medium" | "low"
+export type VulnSeverity = "critical" | "high" | "medium" | "low" | "none" | ""
+export type VulnConfidence = "exact" | "range" | "partial"
+export type VulnRunStatus = "running" | "ok" | "failed" | "abandoned"
+/** DRF sends decimals as strings. */
+export type DecimalValue = string | number
+
+export interface VulnSyncRun {
+  id: string
+  via: VulnUpdateSource
+  status: VulnRunStatus
+  started_at: string
+  finished_at: string | null
+  started_by: string | null
+  plan: Record<string, unknown> | null
+  counts: Record<string, unknown> | null
+  error: string
+}
+
+/** GET /api/vulnerabilities/settings/ - everyone reads `enabled`; the rest
+ * is there for a deployment admin only (`can_manage`). */
+export interface VulnSettings {
+  enabled: boolean
+  can_manage?: boolean
+  update_source?: VulnUpdateSource
+  update_sources?: VulnUpdateSource[]
+  nvd_url?: string
+  epss_url?: string
+  kev_url?: string
+  osv_url?: string
+  sync_epss?: boolean
+  sync_kev?: boolean
+  nvd_api_key_set?: boolean
+  last_sync_at?: string | null
+  last_sync_status?: string
+  last_sync_error?: string
+  last_sync_via?: string
+  last_run?: VulnSyncRun | null
+  records?: number
+  records_by_kind?: { cpe: number; purl: number }
+  import_kinds?: VulnImportKind[]
+  import_max_bytes?: number
+}
+
+export interface VulnSettingsPatch {
+  enabled?: boolean
+  update_source?: VulnUpdateSource
+  nvd_url?: string
+  epss_url?: string
+  kev_url?: string
+  osv_url?: string
+  sync_epss?: boolean
+  sync_kev?: boolean
+  nvd_api_key?: string
+  nvd_api_key_clear?: boolean
+}
+
+export interface VulnRecordBrief {
+  vuln_id: string
+  aliases: string[]
+  summary: string
+  published: string | null
+  cvss_version: string
+  cvss_score: DecimalValue | null
+  cvss_severity: VulnSeverity
+  attack_vector: string
+  kev: boolean
+  kev_added: string | null
+  kev_due: string | null
+  epss: DecimalValue | null
+  epss_percentile: DecimalValue | null
+  analysed: boolean
+}
+
+export interface VulnRef {
+  id: string
+  name: string
+}
+
+export interface VulnMatch {
+  id: string
+  cve: VulnRecordBrief
+  priority: VulnPriority
+  confidence: VulnConfidence
+  via: "platform" | "application"
+  version: string
+  device: VulnRef | null
+  virtual_machine: VulnRef | null
+  installed_software: {
+    id: string
+    version: string
+    application: VulnRef | null
+  } | null
+  mapping: { id: string; identifier: string }
+  first_seen_at: string
+  last_seen_at: string
+  resolved_at: string | null
+}
+
+export type VulnVersionScheme =
+  | "auto"
+  | "cisco_ios"
+  | "cisco_iosxe"
+  | "cisco_nxos"
+  | "junos"
+  | "arista_eos"
+  | "semver"
+  | "pep440"
+  | "dpkg"
+  | "apk"
+  | "generic"
+
+export interface ProductMapping {
+  id: string
+  numid: number | null
+  subject_type: "platform" | "devicetype" | "application"
+  platform: VulnRef | null
+  device_type: VulnRef | null
+  application: VulnRef | null
+  kind: "cpe" | "purl"
+  part: "" | "o" | "a" | "h"
+  vendor: string
+  product: string
+  identifier: string
+  version_scheme: VulnVersionScheme
+  /** The scheme in force (`auto` resolved). */
+  scheme: VulnVersionScheme
+  enabled: boolean
+  coverage: Record<string, number>
+  matched_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductMappingWrite {
+  platform?: string
+  device_type?: string
+  application?: string
+  identifier?: string
+  version_scheme?: VulnVersionScheme
+  enabled?: boolean
+}
+
+export interface VulnCoverageRow {
+  mapping: ProductMapping
+  objects: number
+  matched: number
+  blank_version: number
+  version_not_understood: number
+  records: Record<string, number>
+}
+
+export interface CpeSearchRow {
+  part: string
+  vendor: string
+  product: string
+  cpe: string
+  /** Local: records in the store naming it. */
+  cves?: number
+  /** Remote: an example title and how many CPE names NVD has for it. */
+  example_title?: string
+  names?: number
+  deprecated?: boolean
+}
+
+export interface CpeSearchResult {
+  query: string
+  typed: CpeSearchRow | null
+  local: CpeSearchRow[]
+  remote: CpeSearchRow[]
+  remote_status: "ok" | "cached" | "off" | "limited" | "error"
+  remote_error: string
+  retry_after?: number
+}
+
+export interface VulnPolicy {
+  kev_is_fix_first: boolean
+  fix_first_epss: DecimalValue
+  fix_first_cvss: DecimalValue
+  high_cvss: DecimalValue
+  high_epss: DecimalValue
+  high_epss_cvss: DecimalValue
+  medium_cvss: DecimalValue
+  notify_on: string[]
+  notify_enabled: boolean
+  updated_at: string
+  can_change: boolean
+}

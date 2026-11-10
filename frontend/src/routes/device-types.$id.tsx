@@ -42,6 +42,7 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
 import { objCan, useMe } from "@/lib/use-me"
+import { VulnerabilityMappingCard } from "@/components/vulnerabilities/mapping-card"
 import { Model3DCard } from "@/components/model-3d-card"
 import { ModelViewerCard } from "@/components/model-viewer-card"
 
@@ -461,6 +462,11 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
         <KvCard title="Usage" rows={usage} />
         <KvCard title="Monitoring" rows={monitoring} />
         <LifecycleCard item={d} />
+        <VulnerabilityMappingCard
+          subject="device_type"
+          object={{ id: d.id, name: d.model || d.name }}
+          canEdit={objCan(d, "change", canDo("devicetype", "change"))}
+        />
         <Model3DCard
           kind="device-types"
           id={d.id}
