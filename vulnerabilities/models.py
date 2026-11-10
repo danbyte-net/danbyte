@@ -307,7 +307,7 @@ class ProductMapping(NumIdMixin, TimestampedModel):
     enabled = models.BooleanField(default=True, db_default=True)
     #: What the last full recompute found in the records, written by UPDATE
     #: (bookkeeping, out of the change log): candidates, unparsed_bounds,
-    #: range_not_understood, version_not_understood.
+    #: range_not_understood, version_not_understood, release_unknown.
     coverage = models.JSONField(default=dict, blank=True, db_default={}, editable=False)
     matched_at = models.DateTimeField(null=True, blank=True, editable=False)
 

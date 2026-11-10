@@ -17,7 +17,7 @@ import requests
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
@@ -729,3 +729,35 @@ class CommandTests(NetMixin, TestCase):
         self.assertEqual([c.params["virtualMatchString"] for c in self.net.calls],
                          ["cpe:2.3:a:postgresql:postgresql"])
         self.assertFalse(SyncRun.objects.get().plan["resumable"])
+
+
+class OsvQueryTests(SimpleTestCase):
+    """Distro packages are asked for by release when every host's is known."""
+
+    DEB = ("purl", "", "deb", "debian/openssl")
+    APK = ("purl", "", "apk", "alpine/busybox")
+    RPM = ("purl", "", "rpm", "rocky/openssl")
+
+    def test_without_releases_by_purl(self):
+        queries, unsupported = fetch.osv_queries([self.DEB, DJANGO])
+        self.assertEqual(queries, [{"package": {"purl": "pkg:deb/debian/openssl"}},
+                                   {"package": {"purl": "pkg:pypi/django"}}])
+        self.assertEqual(unsupported, 0)
+
+    def test_known_releases_by_ecosystem(self):
+        releases = {self.DEB: {("debian", "12"), ("debian", "11")},
+                    self.APK: {("alpine", "3.20")}}
+        queries, _ = fetch.osv_queries([self.DEB, self.APK, DJANGO], releases)
+        self.assertEqual(queries, [
+            {"package": {"ecosystem": "Alpine:v3.20", "name": "busybox"}},
+            {"package": {"ecosystem": "Debian:11", "name": "openssl"}},
+            {"package": {"ecosystem": "Debian:12", "name": "openssl"}},
+            {"package": {"purl": "pkg:pypi/django"}}])
+        # Never the purl's distro qualifier: OSV answers nothing for debian-12.
+        self.assertNotIn("distro=", json.dumps(queries))
+
+    def test_an_unknown_release_or_rpm_keeps_the_purl(self):
+        releases = {self.DEB: {("debian", "12"), None}, self.RPM: {("rocky", "9")}}
+        queries, _ = fetch.osv_queries([self.DEB, self.RPM], releases)
+        self.assertEqual(queries, [{"package": {"purl": "pkg:deb/debian/openssl"}},
+                                   {"package": {"purl": "pkg:rpm/rocky/openssl"}}])

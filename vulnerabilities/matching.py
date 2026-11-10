@@ -13,7 +13,10 @@ What runs where comes from the SBOM's query (``api.sbom.what_runs_where``):
 each device and VM with its platform (its own, else its device type's), its
 device type and its installs. A platform mapping tests the host's
 ``software_version``; an application mapping tests each install's
-``version``; device type mappings are hardware context only.
+``version``; device type mappings are hardware context only. A distro
+package (deb, rpm, apk) also takes the host's release and, for Debian and
+Ubuntu, the source package name (``package_target``): OSV writes those
+advisories per release and per source package.
 
 ``objects`` narrows a run to some hosts (a version, platform or install
 changed); ``cves`` to some records. Either way only the rows inside the scope
@@ -22,6 +25,7 @@ are diffed.
 from __future__ import annotations
 
 import logging
+import re
 import zlib
 from collections import defaultdict
 from collections.abc import Iterable
@@ -30,14 +34,18 @@ from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from api.package_ids import render_purl
+
 from . import evaluate, priority
 from .exceptions import Resolver
+from .identifiers import DISTRO_TYPES, distro_release, platform_release, purl_key, purl_qualifiers
 from .models import Cve, CveProduct, ProductMapping, VulnerabilityMatch, VulnerabilityPolicy
 
 log = logging.getLogger(__name__)
 
 LOCK_CLASS = 451
 CHUNK = 2000
+_SOURCE_NAME = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,127}$")
 _CVE_FIELDS = ("id", "vuln_id", "configurations", "osv", "cvss_score", "epss",
                "kev_added", "rejected")
 
@@ -48,7 +56,7 @@ def _lock(tenant_id) -> None:
         cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", [LOCK_CLASS, key])
 
 
-def _platform_id(host):
+def _platform_of_id(host):
     if host.platform_id:
         return host.platform_id
     dt = getattr(host, "device_type", None) if hasattr(host, "device_type_id") else None
@@ -94,6 +102,105 @@ def _candidates(keys: Iterable[tuple], cve_ids: Iterable[str] | None):
     return {k: [cves[i] for i in v if i in cves] for k, v in by_key.items()}
 
 
+def _platform_of(host):
+    if host.platform_id:
+        return host.platform
+    dt = getattr(host, "device_type", None) if hasattr(host, "device_type_id") else None
+    return dt.platform if dt is not None else None
+
+
+def package_target(m, host, purl: str, version: str) -> tuple[str, str, tuple | None]:
+    """``(package, version, release)`` the OSV test uses for mapping ``m``
+    on ``host``; ``purl`` is the install's (or platform's) package URL.
+
+    For a distro package (deb, rpm, apk) the release comes from the purl's
+    ``distro=`` qualifier, else the platform's purl, else the platform's
+    name and the host's version (:mod:`vulnerabilities.identifiers`). Debian
+    and Ubuntu advisories name the source package: a deb purl's
+    ``upstream=`` qualifier (``upstream=openssl`` or ``openssl@<version>``)
+    gives it, otherwise the mapped name is taken as is."""
+    if m.kind != "purl" or m.vendor not in DISTRO_TYPES:
+        return m.product, version, None
+    namespace, _, name = m.product.rpartition("/")
+    quals = {}
+    if purl and (purl_key(purl) or ("",))[0] == m.vendor:
+        quals = purl_qualifiers(purl)
+    release = distro_release(m.vendor, namespace, quals.get("distro"))
+    if release is None:
+        plat = _platform_of(host)
+        if plat is not None:
+            own = host.software_version or ""
+            plat_purl = render_purl(plat.purl_template, version=own, os_version=own)
+            release = (distro_release(m.vendor, namespace,
+                                      purl_qualifiers(plat_purl).get("distro"))
+                       or platform_release(m.vendor, namespace, plat.name, own))
+    product = m.product
+    upstream = quals.get("upstream", "") if m.vendor == "deb" else ""
+    if upstream and namespace:
+        src, _, src_version = upstream.partition("@")
+        src = src.strip().lower()
+        if src != name and _SOURCE_NAME.match(src):
+            product = f"{namespace}/{src}"
+            version = src_version.strip()[:128] or version
+    return product, version, release
+
+
+def _targets(tenant, by_platform, by_app, hardware, os_of, objects, counts=None):
+    """``(mapping, host key, install id, version, hardware, platforms, via,
+    package, release)`` for every mapping on every host in scope."""
+    devices, vms = _hosts(tenant, set(by_platform), set(by_app), objects)
+    for kind, hosts in (("device", devices), ("virtual_machine", vms)):
+        for host in hosts:
+            if counts is not None:
+                counts["hosts"] += 1
+            host_key = (host.pk, None) if kind == "device" else (None, host.pk)
+            hw = None
+            if kind == "device" and host.device_type_id in hardware:
+                hw = frozenset(hardware[host.device_type_id])
+            pid = _platform_of_id(host)
+            plats = os_of.get(pid)
+            own = host.software_version or ""
+            platform_ms = by_platform.get(pid, ())
+            if platform_ms and own.strip():
+                plat = _platform_of(host)
+                purl = render_purl(plat.purl_template, version=own, os_version=own) if plat else ""
+                for m in platform_ms:
+                    product, version, release = package_target(
+                        m, host, purl, own.strip()[:128])
+                    yield (m, host_key, None, version, hw, plats, "platform", product,
+                           release)
+            for inst in host.installed_software.all():
+                ms = by_app.get(inst.application_id, ())
+                if not ms or not (inst.version or "").strip():
+                    continue
+                purl = render_purl(inst.purl or inst.application.purl_template,
+                                   version=inst.version, os_version=own)
+                for m in ms:
+                    product, version, release = package_target(
+                        m, host, purl, inst.version.strip()[:128])
+                    yield (m, host_key, inst.pk, version, hw, plats, "application",
+                           product, release)
+
+
+def package_releases() -> dict[tuple, set]:
+    """``{product key: releases}`` over every tenant's enabled deb, rpm and
+    apk mappings: what the OSV fetch asks for (``fetch.osv_queries``). A
+    source package an install names (``upstream=``) is a key of its own; a
+    host whose release is unknown adds ``None``."""
+    out: dict[tuple, set] = defaultdict(set)
+    rows = ProductMapping.objects.filter(enabled=True, kind="purl",
+                                         vendor__in=sorted(DISTRO_TYPES)).exclude(
+        platform__isnull=True, application__isnull=True)
+    by_tenant: dict = defaultdict(lambda: (defaultdict(list), defaultdict(list)))
+    for m in rows:
+        plat, app = by_tenant[m.tenant_id]
+        (plat[m.platform_id] if m.platform_id else app[m.application_id]).append(m)
+    for tenant_id, (plat, app) in by_tenant.items():
+        for m, *_rest, product, release in _targets(tenant_id, plat, app, {}, {}, None):
+            out[(m.kind, m.part, m.vendor, product)].add(release)
+    return dict(out)
+
+
 def recompute(tenant, *, cves: Iterable[str] | None = None,
               objects: dict | None = None) -> dict:
     """Rebuild the tenant's matches; returns counts. ``cves``: vuln ids to
@@ -116,7 +223,6 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
             elif m.application_id:
                 by_app[m.application_id].append(m)
         matching = [m for ms in (*by_platform.values(), *by_app.values()) for m in ms]
-        candidates = _candidates((m.product_key for m in matching), cves)
         os_of = {pid: frozenset((m.part, m.vendor, m.product) for m in ms if m.kind == "cpe")
                  for pid, ms in by_platform.items()}
 
@@ -126,14 +232,12 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
         cache: dict = {}
         levels: dict = {}
 
-        def consider(m, host_key, install_id, version, hw, plats, via):
-            if not version or not version.strip():
-                return
+        def consider(m, host_key, install_id, version, hw, plats, via, product, release):
             target = evaluate.Target(
-                kind=m.kind, part=m.part, vendor=m.vendor, product=m.product,
-                scheme=m.scheme, version=version.strip()[:128], hardware=hw,
-                platforms=plats or None)
-            for cve in candidates.get(m.product_key, ()):
+                kind=m.kind, part=m.part, vendor=m.vendor, product=product,
+                scheme=m.scheme, version=version, hardware=hw,
+                platforms=plats or None, release=release)
+            for cve in candidates.get((m.kind, m.part, m.vendor, product), ()):
                 ck = (cve.pk, target)
                 if ck not in cache:
                     cache[ck] = evaluate.match(cve.configurations, cve.osv, target)
@@ -149,22 +253,12 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                 desired[(cve.pk, *host_key, m.pk, install_id)] = (
                     target.version, conf, levels[cve.pk], via, excepted)
 
-        devices, vms = _hosts(tenant, set(by_platform), set(by_app), objects)
-        for kind, hosts in (("device", devices), ("virtual_machine", vms)):
-            for host in hosts:
-                counts["hosts"] += 1
-                host_key = (host.pk, None) if kind == "device" else (None, host.pk)
-                hw = None
-                if kind == "device" and host.device_type_id in hardware:
-                    hw = frozenset(hardware[host.device_type_id])
-                pid = _platform_id(host)
-                plats = os_of.get(pid)
-                for m in by_platform.get(pid, ()):
-                    consider(m, host_key, None, host.software_version, hw, plats, "platform")
-                for inst in host.installed_software.all():
-                    for m in by_app.get(inst.application_id, ()):
-                        consider(m, host_key, inst.pk, inst.version, hw, plats,
-                                 "application")
+        items = list(_targets(tenant, by_platform, by_app, hardware, os_of, objects, counts))
+        source_keys = {(item[0].kind, item[0].part, item[0].vendor, item[7]) for item in items
+                       if item[7] != item[0].product}
+        candidates = _candidates({*(m.product_key for m in matching), *source_keys}, cves)
+        for item in items:
+            consider(*item)
 
         counts.update(_diff(tenant, desired, cves=cves, objects=objects))
         if cves is None and objects is None:
@@ -172,9 +266,7 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
             for m in mappings:
                 cand = candidates.get(m.product_key, ()) if not m.device_type_id else ()
                 cov = {"candidates": len(cand),
-                       **{f: len(stats[m.pk][f]) for f in (
-                           evaluate.UNPARSED_BOUNDS, evaluate.RANGE_NOT_UNDERSTOOD,
-                           evaluate.VERSION_NOT_UNDERSTOOD)}}
+                       **{f: len(stats[m.pk][f]) for f in evaluate.FLAGS}}
                 if cov != m.coverage or m.matched_at is None:
                     # UPDATE, not save(): bookkeeping stays out of the change log.
                     ProductMapping.objects.filter(pk=m.pk).update(coverage=cov, matched_at=now)

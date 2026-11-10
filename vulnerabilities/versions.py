@@ -24,6 +24,9 @@ Schemes:
   anything (dpkg's own algorithm).
 * ``apk``         Alpine: numbers, a letter, ``_alpha``…``_p`` suffixes,
   ``-rN``.
+* ``rpm``         RHEL, Rocky, AlmaLinux, SUSE: ``epoch:version-release``,
+  each part by rpmvercmp (``~`` before the end, ``^`` after it, letters
+  before digits, separators ignored).
 * ``generic``     digits and letters as tokens; exact matches only - no range
   is evaluated under it.
 
@@ -35,7 +38,7 @@ import re
 from dataclasses import dataclass
 
 SCHEMES = ("cisco_ios", "cisco_iosxe", "cisco_nxos", "junos", "arista_eos",
-           "semver", "pep440", "dpkg", "apk", "generic")
+           "semver", "pep440", "dpkg", "apk", "rpm", "generic")
 #: Schemes whose order is good enough to test a version range.
 RANGE_SCHEMES = frozenset(SCHEMES) - {"generic"}
 MAX_LEN = 128
@@ -303,6 +306,38 @@ def _apk(text: str) -> Key | None:
     return Key("apk", "", (nums, m[2], suffixes, int(m[4] or 0)), text)
 
 
+# ─── rpm ─────────────────────────────────────────────────────────────────────
+
+_RPM = re.compile(r"^(?:(\d{1,9}):)?([^:\s-][^:\s]*?)(?:-([^:\s-]+))?$")
+_RPM_TOKEN = re.compile(r"~|\^|[A-Za-z]+|[0-9]+")
+_RPM_ALNUM = re.compile(r"[A-Za-z0-9]")
+_RPM_END = (1, 0, "")
+
+
+def _rpm_part(s: str) -> tuple:
+    """A sort key equal to rpmvercmp over one part: ``~`` lowest, then the
+    end of the string, then ``^``, then letter runs (by text), then digit
+    runs (by number); any other character only separates."""
+    out = []
+    for tok in _RPM_TOKEN.findall(s):
+        if tok == "~":
+            out.append((0, 0, ""))
+        elif tok == "^":
+            out.append((2, 0, ""))
+        elif tok.isdigit():
+            out.append((4, int(tok), ""))
+        else:
+            out.append((3, 0, tok))
+    return (*out, _RPM_END)
+
+
+def _rpm(text: str) -> Key | None:
+    m = _RPM.match(text)
+    if not m or not _RPM_ALNUM.search(m[2]):
+        return None
+    return Key("rpm", "", (int(m[1] or 0), _rpm_part(m[2]), _rpm_part(m[3] or "")), text)
+
+
 # ─── generic ─────────────────────────────────────────────────────────────────
 
 
@@ -325,6 +360,7 @@ _PARSERS = {
     "pep440": _pep440,
     "dpkg": _dpkg,
     "apk": _apk,
+    "rpm": _rpm,
     "generic": _generic,
 }
 
@@ -356,6 +392,7 @@ _PURL_SCHEMES = {
     "golang": "semver",
     "deb": "dpkg",
     "apk": "apk",
+    "rpm": "rpm",
 }
 
 

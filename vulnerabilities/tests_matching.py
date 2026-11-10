@@ -540,3 +540,120 @@ class JobTests(Base):
         row = VulnerabilityMatch.objects.get()
         self.assertEqual(row.first_seen_at, past)
         self.assertGreater(row.resolved_at, past)
+
+
+def debian_openssl() -> bytes:
+    """One Debian advisory with a fix per release, as OSV writes it."""
+    def entry(release, fixed):
+        return {"package": {"ecosystem": f"Debian:{release}", "name": "openssl",
+                            "purl": "pkg:deb/debian/openssl?arch=source"},
+                "ranges": [{"type": "ECOSYSTEM",
+                            "events": [{"introduced": "0"}, {"fixed": fixed}]}]}
+
+    return json.dumps({
+        "id": "DEBIAN-CVE-2024-5535", "modified": "2024-10-01T00:00:00Z",
+        "aliases": ["CVE-2024-5535"],
+        "affected": [entry("11", "1.1.1w-0+deb11u2"), entry("12", "3.0.15-1~deb12u1"),
+                     entry("13", "3.3.2-1")]}).encode()
+
+
+class DistroReleaseMatchingTests(Base):
+    """A Debian package is tested against its host's release only (B0)."""
+
+    DEB = ("purl", "", "deb", "debian/openssl")
+
+    def setUp(self):
+        self.app = Application.objects.create(tenant=self.tenant, name="OpenSSL",
+                                              slug="openssl")
+        self.mapping = ProductMapping.objects.create(
+            tenant=self.tenant, application=self.app, kind="purl", vendor="deb",
+            product="debian/openssl")
+        self.d12 = Platform.objects.create(tenant=self.tenant, name="Debian 12", slug="d12")
+        self.deb = Platform.objects.create(tenant=self.tenant, name="Debian", slug="deb")
+        load_osv(debian_openssl())
+
+    def vm(self, name, version, platform=None, purl="", os_version=""):
+        vm = VirtualMachine.objects.create(tenant=self.tenant, cluster=self.cluster, name=name,
+                                           site=self.site, platform=platform,
+                                           software_version=os_version)
+        return InstalledSoftware.objects.create(tenant=self.tenant, application=self.app,
+                                                virtual_machine=vm, version=version, purl=purl)
+
+    def matched(self):
+        return {m.installed_software_id: m.confidence for m in self.open_matches()
+                if m.installed_software_id}
+
+    def test_release_from_platform_and_purl(self):
+        fixed12 = self.vm("fixed12", "3.0.15-1~deb12u1", self.d12)
+        old11 = self.vm("old11", "1.1.1w-0+deb11u1", self.deb, os_version="11.9")
+        fixed11 = self.vm("fixed11", "1.1.1w-0+deb11u2", self.deb, os_version="11.11")
+        by_purl = self.vm("by_purl", "3.0.14-1~deb12u2",
+                          purl="pkg:deb/debian/openssl@{version}?distro=bookworm")
+        matching.recompute(self.tenant)
+        self.assertEqual(self.matched(), {old11.pk: "range", by_purl.pk: "range"})
+        self.assertNotIn(fixed12.pk, self.matched())
+        self.assertNotIn(fixed11.pk, self.matched())
+        self.mapping.refresh_from_db()
+        self.assertEqual(self.mapping.coverage["release_unknown"], 0)
+
+    def test_unknown_release_is_flagged(self):
+        unsure = self.vm("unsure", "3.0.15-1~deb12u1")
+        old = self.vm("old", "1.0.2u-1")
+        matching.recompute(self.tenant)
+        # Every release agrees 1.0.2u is affected; 3.0.15 depends on the release.
+        self.assertEqual(self.matched(), {old.pk: "partial"})
+        self.assertNotIn(unsure.pk, self.matched())
+        self.mapping.refresh_from_db()
+        self.assertEqual(self.mapping.coverage["release_unknown"], 1)
+
+    def test_source_package_from_upstream(self):
+        lib = Application.objects.create(tenant=self.tenant, name="libssl3", slug="libssl3")
+        libmap = ProductMapping.objects.create(tenant=self.tenant, application=lib,
+                                               kind="purl", vendor="deb",
+                                               product="debian/libssl3")
+        vm = VirtualMachine.objects.create(tenant=self.tenant, cluster=self.cluster,
+                                           name="h", site=self.site)
+        named = InstalledSoftware.objects.create(
+            tenant=self.tenant, application=lib, virtual_machine=vm, version="3.0.14-1~deb12u2",
+            purl="pkg:deb/debian/libssl3@3.0.14-1~deb12u2?upstream=openssl&distro=debian-12")
+        vm2 = VirtualMachine.objects.create(tenant=self.tenant, cluster=self.cluster,
+                                            name="h2", site=self.site)
+        # No source recorded: the binary name finds no Debian advisory.
+        InstalledSoftware.objects.create(
+            tenant=self.tenant, application=lib, virtual_machine=vm2,
+            version="3.0.14-1~deb12u2", purl="pkg:deb/debian/libssl3@{version}?distro=debian-12")
+        matching.recompute(self.tenant)
+        rows = list(self.open_matches().filter(mapping=libmap))
+        self.assertEqual([(m.installed_software_id, m.confidence) for m in rows],
+                         [(named.pk, "range")])
+        self.assertEqual(rows[0].cve.vuln_id, "CVE-2024-5535")
+
+    def test_releases_for_the_fetch(self):
+        self.vm("a", "3.0.15-1~deb12u1", self.d12)
+        self.vm("b", "1.1.1w-0+deb11u1", self.deb, os_version="11.9")
+        self.assertEqual(matching.package_releases(),
+                         {self.DEB: {("debian", "12"), ("debian", "11")}})
+        self.vm("c", "3.0.15-1~deb12u1")
+        self.assertEqual(matching.package_releases()[self.DEB],
+                         {("debian", "12"), ("debian", "11"), None})
+
+    def test_source_packages_are_tracked(self):
+        self.mapping.delete()
+        lib = Application.objects.create(tenant=self.tenant, name="libssl3", slug="libssl3")
+        ProductMapping.objects.create(tenant=self.tenant, application=lib, kind="purl",
+                                      vendor="deb", product="debian/libssl3")
+        vm = VirtualMachine.objects.create(tenant=self.tenant, cluster=self.cluster,
+                                           name="h", site=self.site)
+        InstalledSoftware.objects.create(
+            tenant=self.tenant, application=lib, virtual_machine=vm, version="3.0.14-1",
+            purl="pkg:deb/debian/libssl3@{version}?upstream=openssl")
+        keys = jobs.tracked_keys()
+        self.assertIn(self.DEB, keys)
+        self.assertIn(("purl", "", "deb", "debian/libssl3"), keys)
+
+    def test_a_purl_change_queues_its_host(self):
+        inst = self.vm("p", "3.0.15-1~deb12u1")
+        with mock.patch.object(signals, "_add_hosts") as add:
+            inst.purl = "pkg:deb/debian/openssl@{version}?distro=bookworm"
+            inst.save()
+        add.assert_called()

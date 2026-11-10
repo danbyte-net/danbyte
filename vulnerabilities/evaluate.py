@@ -20,24 +20,30 @@ OSV advisories (``match_osv``). An ``affected`` entry for the mapped package
 matches when its ``versions`` list holds the version (``exact``) or one of
 its ``ECOSYSTEM``/``SEMVER`` ranges covers it (``range``), evaluated as the
 OSV schema describes: events in version order, ``introduced`` opens,
-``fixed`` and ``limit`` close at, ``last_affected`` closes after.
+``fixed`` and ``limit`` close at, ``last_affected`` closes after. Distro
+packages (deb, rpm, apk) are advisories per release (``Debian:12``,
+``Ubuntu:22.04:LTS``): an entry counts only for a target on its release (see
+``match_osv`` for a target whose release is unknown).
 
 Each test also reports why it could not decide, as flags the coverage report
 counts: ``version_not_understood``, ``unparsed_bounds``,
-``range_not_understood``.
+``range_not_understood``, ``release_unknown``.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from . import versions
-from .identifiers import split_cpe
+from .identifiers import DISTRO_TYPES, ecosystem_release, split_cpe
 
 CONFIDENCE_ORDER = {"exact": 3, "range": 2, "partial": 1}
 
 VERSION_NOT_UNDERSTOOD = "version_not_understood"
 UNPARSED_BOUNDS = "unparsed_bounds"
 RANGE_NOT_UNDERSTOOD = "range_not_understood"
+RELEASE_UNKNOWN = "release_unknown"
+#: Every flag a test can raise, in the order the coverage report lists them.
+FLAGS = (UNPARSED_BOUNDS, RANGE_NOT_UNDERSTOOD, VERSION_NOT_UNDERSTOOD, RELEASE_UNKNOWN)
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,9 @@ class Target:
     #: ``(part, vendor, product)`` of the host's platform mappings; None
     #: when the platform has none.
     platforms: frozenset | None = None
+    #: ``(family, release)`` of a distro package's host (``("debian", "12")``,
+    #: :mod:`vulnerabilities.identifiers`); None when it is not known.
+    release: tuple | None = None
 
     @property
     def key(self) -> versions.Key | None:
@@ -282,25 +291,54 @@ def _osv_range(target: Target, rng: dict, flags: set) -> bool:
     return affected
 
 
+def _osv_entry(a: dict, target: Target, key, flags: set) -> str | None:
+    """``exact`` / ``range`` when one ``affected`` entry covers the version."""
+    listed = a.get("versions") or []
+    if target.version in listed or (key is not None and any(
+            (k := _key(v, target.scheme)) is not None
+            and versions.compare(key, k) == 0 for v in listed)):
+        return "exact"
+    if any(_osv_range(target, r, flags) for r in a.get("ranges") or []):
+        return "range"
+    return None
+
+
 def match_osv(osv, target: Target) -> tuple[str | None, set]:
-    """``(confidence or None, flags)`` of a record's OSV advisories."""
+    """``(confidence or None, flags)`` of a record's OSV advisories.
+
+    For a distro package (deb, rpm, apk) an entry written for one release
+    (``Debian:12``) is tested only against a target on that release. When
+    the target's release is unknown the record matches (``partial``) only
+    if every release it names agrees the version is affected; when the
+    releases disagree it does not match and is flagged ``release_unknown``.
+    """
     flags: set = set()
     best = None
     if target.kind != "purl" or not target.version.strip():
         return None, flags
     key = target.key
+    distro = target.vendor in DISTRO_TYPES
+    per_release: dict = {}
     for adv in (osv or {}).values():
         for a in adv.get("affected") or []:
             if (a.get("purl_type"), a.get("package")) != (target.vendor, target.product):
                 continue
-            listed = a.get("versions") or []
-            if target.version in listed or (key is not None and any(
-                    (k := _key(v, target.scheme)) is not None
-                    and versions.compare(key, k) == 0 for v in listed)):
-                best = _best(best, "exact")
+            # Entries stored without an ecosystem test as release-less.
+            release = ecosystem_release(a.get("ecosystem")) if distro else None
+            if release is not None and target.release is not None \
+                    and release != target.release:
                 continue
-            if any(_osv_range(target, r, flags) for r in a.get("ranges") or []):
-                best = _best(best, "range")
+            conf = _osv_entry(a, target, key, flags)
+            if release is None or target.release is not None:
+                best = _best(best, conf)
+            else:
+                per_release[release] = _best(per_release.get(release), conf)
+    if per_release:
+        verdicts = list(per_release.values())
+        if all(v is not None for v in verdicts):
+            best = _best(best, "partial")
+        elif any(v is not None for v in verdicts):
+            flags.add(RELEASE_UNKNOWN)
     return best, flags
 
 

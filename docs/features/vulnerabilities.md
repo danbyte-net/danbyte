@@ -187,7 +187,7 @@ on the default *upload* source never makes a request.
 | Service | Request | When | What Danbyte sends |
 |---|---|---|---|
 | NVD (`services.nvd.nist.gov`) | `GET /rest/json/cves/2.0?virtualMatchString=cpe:2.3:<part>:<vendor>:<product>&resultsPerPage=2000&startIndex=…` | once per mapped CPE product, one request per 2000 CVEs | the CPE product, the date window; the API key as the `apiKey` header when one is set |
-| OSV (`api.osv.dev`) | `POST /v1/querybatch`, then `GET /v1/vulns/<id>` | one batch per 1000 mapped packages, then one request per advisory that is new or changed | the package URLs, without versions |
+| OSV (`api.osv.dev`) | `POST /v1/querybatch`, then `GET /v1/vulns/<id>` | one batch per 1000 mapped packages, then one request per advisory that is new or changed | the package URLs, without versions; for a Debian, Ubuntu or Alpine package whose hosts' releases are all known, the ecosystem and package name instead (`Debian:12` + `openssl`, see [Distro packages](#distro-packages)) |
 | CISA (`www.cisa.gov`) | `GET` the KEV catalog JSON | once per run, when `sync_kev` is on | nothing |
 | FIRST (`api.first.org`) | `GET /data/v1/epss?cve=…` | 100 CVEs per request, when `sync_epss` is on | CVE ids of stored records |
 
@@ -216,6 +216,12 @@ same validation and CVSS recomputation apply.
 - **OSV** - the batch query answers each advisory's id and modified time;
   only advisories that are new or modified since they were stored are
   fetched. Packages of type `generic` have no OSV ecosystem and are skipped.
+  A deb or apk package is asked for per release (`{"ecosystem": "Debian:12",
+  "name": "openssl"}`) when every host it is tracked on has a known release,
+  so advisories for releases you do not run are not stored; otherwise, and
+  for RPM packages, it is asked for by package URL, all releases. A purl
+  qualifier such as `distro=debian-12` is never sent: OSV answers nothing for
+  it.
 - **EPSS** - only CVEs without a score from yesterday or today are asked
   for. An empty answer to a batch fails that batch.
 - **KEV** - the catalog is one file and is read whole each run.
@@ -306,7 +312,8 @@ or so.
 
 The browser sends no cookies to these hosts and no referrer. What leaves the
 browser is what [server mode](#what-is-contacted) sends: product names
-(`cisco:ios_xe`, `pkg:pypi/django`) and CVE ids, never your inventory.
+(`cisco:ios_xe`, `pkg:pypi/django`), the distro releases of tracked distro
+packages (`Debian:12`) and CVE ids, never your inventory.
 
 **KEV** dates (date added, due date, required action) come inside the NVD
 records, so browser mode needs no KEV file. The *known ransomware use* flag
@@ -511,6 +518,7 @@ searches run per press, and what is left is counted on the button.
 | `pep440` | Python versions | PEP 440 | `pypi` |
 | `dpkg` | `1:2.3-4+deb12u1` | dpkg's own (epoch, `~` before anything) | `deb` |
 | `apk` | `1.2.3_rc1-r0` | Alpine's | `apk` |
+| `rpm` | `1:3.0.7-25.el9_3` | rpmvercmp per part (epoch, version, release; `~` before the end, `^` after it, letters before digits) | `rpm` (only through `auto`) |
 | `generic` | anything with a digit | exact matches only | every other product |
 
 A version the scheme cannot read matches no range; a record that lists that
@@ -542,6 +550,47 @@ the version (`exact`) or one of its `ECOSYSTEM` or `SEMVER` ranges covers it
 (Maven, NuGet, RubyGems, …) only listed versions match. `GIT` ranges are not
 used.
 
+### Distro packages
+
+OSV writes Debian, Ubuntu, Alpine, Rocky Linux, AlmaLinux and Red Hat
+advisories **per release**: one advisory carries an entry for `Debian:11`,
+one for `Debian:12` and one for `Debian:13`, each with its own fixed version
+(the backport). A deb, rpm or apk package is therefore tested only against
+the entry for its host's release. Other ecosystems (PyPI, npm, Go, crates,
+Maven, …) have no release and are tested as above.
+
+The host's release comes from, first to last:
+
+| Source | Example |
+|---|---|
+| The install's package URL, `distro=` qualifier | `pkg:deb/debian/openssl@{version}?distro=bookworm` (or `debian-12`, `12`); `ubuntu-22.04` or `jammy`; `alpine-3.20` or `v3.20`; `el9`, `rocky-9` |
+| The platform's package URL, `distro=` qualifier | the platform's **Package URL** template |
+| The platform's name, else the host's running version | *Debian 12*, *Ubuntu 22.04 LTS*, *Debian Bookworm*; *Rocky Linux* on a host at `9.3` |
+
+The release must be the package's distro (`pkg:deb/debian/…` reads only a
+Debian release). Debian and Ubuntu codenames are known up to *duke* (15) and
+*resolute* (26.04); RPM distros compare the major release only.
+
+When the release is not known, a record still matches if **every** release
+it names agrees the version is affected; the match is `partial`. When the
+releases disagree (fixed on one, not on another) it does not match, and the
+mapping's coverage counts it as `release_unknown` - *2 records need the
+distro release* on the Vulnerability data card. Give the install a
+`distro=` qualifier or name the platform's release to resolve it.
+
+**Source packages.** Debian and Ubuntu advisories name the **source**
+package (`openssl`), not the binary one (`libssl3`). Map the source package,
+or record it on the install's package URL with the `upstream=` qualifier
+(`pkg:deb/debian/libssl3@3.0.15-1~deb12u1?upstream=openssl&distro=bookworm`,
+or `upstream=openssl@<version>` when the source version differs): the
+install is then tested against `openssl`'s advisories, and the fetch tracks
+`openssl` too. Without either, a binary name that differs from its source
+finds no advisory; Danbyte does not guess the source name.
+
+Records stored before this change already carry each entry's ecosystem,
+so no re-import is needed; an entry stored without one is tested as an
+entry without a release.
+
 Each match records its `confidence`: `exact`, `range` or `partial`.
 
 ### Match history
@@ -564,7 +613,7 @@ The purge runs even while vulnerability data is off.
 | A mapping created, changed or deleted | the tenant |
 | An exception created, changed or deleted | the `excepted` mark on that record's matches, at once |
 | A device's or VM's running version, platform or device type changes | that host |
-| An install created, deleted or its version or application changed | its host |
+| An install created, deleted or its version, application or package URL changed | its host |
 | The policy changed | the priorities of the tenant's open matches |
 | The feature switched on | every tenant with a mapping |
 
@@ -872,7 +921,7 @@ site role sees only its own sites' matches, everywhere.
 | `GET /api/vulnerabilities/matches/` | Match rows, worst priority first. |
 | `GET /api/devices/<id>/vulnerabilities/` | One device's matches; likewise `virtual-machines`, `platforms` (through its mappings) and `applications`. |
 | `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, records new this week (`new_this_week`: a match first seen in the last 7 days), devices and VMs affected. |
-| `GET /api/vulnerabilities/coverage/` | Per mapping: objects tested, matched, with a blank version, with a version the scheme cannot read; and from the last run the records it could not decide (`unparsed_bounds`, `range_not_understood`). Filters `platform`, `device_type`, `application`. |
+| `GET /api/vulnerabilities/coverage/` | Per mapping: objects tested, matched, with a blank version, with a version the scheme cannot read; and from the last run the records it could not decide (`unparsed_bounds`, `range_not_understood`, `release_unknown`). Filters `platform`, `device_type`, `application`. |
 | `GET/PATCH /api/vulnerabilities/policy/` | Priority thresholds and notification settings (`notify_on`, `notify_enabled`). |
 | `GET /api/vulnerability-exceptions/scopes/` | The scopes the caller may create an exception for (`{scopes, site_limited, can_pick_owner, you}`: whether you may name another owner, and yourself); needs `add`. |
 | `GET/POST /api/vulnerability-exceptions/`, `GET/PATCH/DELETE …/<id>/`, `POST …/bulk-delete/` | [Exceptions](#exceptions). `POST {vuln_id, status, reason, owner_id, expires_on?, device_id \| virtual_machine_id \| platform_id \| application_id?, analysis_state?, analysis_justification?, analysis_response?}`. Reads add `cve`, `scope`, the subject, `owner`, `owner_name`, `active`, `cyclonedx`, `matches` (open matches it covers that you may see) and `expiry_notified_at`. Filters `vuln_id`, `status`, `scope` (`device`, `virtual_machine`, `platform`, `application`, `tenant`), `device`, `virtual_machine`, `platform`, `application`, `owner`, `active` and `q`. |

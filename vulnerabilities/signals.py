@@ -3,7 +3,7 @@
 * A device's or VM's ``software_version``, ``platform`` or (device)
   ``device_type`` changes, or one is created: that host.
 * An install is created, deleted, or its ``version`` / ``application`` /
-  host changes: its host (both hosts when it moved).
+  ``purl`` (a distro release or source package) / host changes: its host (both hosts when it moved).
 * A mapping is saved or deleted: the whole tenant. A mapping created,
   enabled or pointed at another product also asks the server-mode fetch for
   that product at once (no-op in other modes; once per product per
@@ -28,7 +28,7 @@ HOST_FIELDS = {
     "device": ("software_version", "platform_id", "device_type_id"),
     "virtualmachine": ("software_version", "platform_id"),
 }
-INSTALL_FIELDS = ("version", "application_id", "device_id", "virtual_machine_id")
+INSTALL_FIELDS = ("version", "application_id", "device_id", "virtual_machine_id", "purl")
 MAPPING_FIELDS = ("enabled", "kind", "part", "vendor", "product")
 #: A product asked for once is not asked for again within this window.
 PRODUCT_DEBOUNCE = 300

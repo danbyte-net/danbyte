@@ -247,7 +247,7 @@ class OsvTests(SimpleTestCase):
 
         def t(v):
             return Target(kind="purl", part="", vendor="deb", product="debian/openssl",
-                          scheme="dpkg", version=v)
+                          scheme="dpkg", version=v, release=("debian", "12"))
 
         self.assertEqual(evaluate.match_osv(osv, t("3.0.14-1~deb12u2"))[0], "range")
         self.assertEqual(evaluate.match_osv(osv, t("3.0.15-1~deb12u0"))[0], "range")
@@ -261,7 +261,7 @@ class OsvTests(SimpleTestCase):
 
         def t(v):
             return Target(kind="purl", part="", vendor="deb", product="debian/x",
-                          scheme="dpkg", version=v)
+                          scheme="dpkg", version=v, release=("debian", "12"))
 
         for v, expected in [("0.9", None), ("1.0", "range"), ("1.4", "range"),
                             ("1.5", None), ("2.1", "range"), ("2.2", None)]:
@@ -286,3 +286,107 @@ class OsvTests(SimpleTestCase):
         self.assertIsNone(evaluate.match_osv(self.osv(), Target(
             kind="purl", part="", vendor="pypi", product="flask", scheme="pep440",
             version="4.2.15"))[0])
+
+
+
+def _fixed(version: str) -> list:
+    return [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": version}]}]
+
+
+def distro_osv(*entries, osv_id="DEBIAN-CVE-2024-0001") -> dict:
+    """One OSV record through the parser, as the store keeps it."""
+    from .sources import normalise_osv
+
+    rec = {"id": osv_id, "modified": "2024-10-01T00:00:00Z", "aliases": ["CVE-2024-0001"],
+           "affected": [{"package": {"ecosystem": eco, "name": name}, "ranges": _fixed(fix)}
+                        for eco, name, fix in entries]}
+    n = normalise_osv(rec)
+    return {n["osv"]["id"]: n["osv"]}
+
+
+class DistroReleaseTests(SimpleTestCase):
+    """OSV advisories for distro packages are per release (#451, B0)."""
+
+    def setUp(self):
+        self.osv = distro_osv(("Debian:11", "openssl", "1.1.1w-0+deb11u2"),
+                              ("Debian:12", "openssl", "3.0.15-1~deb12u1"),
+                              ("Debian:13", "openssl", "3.3.2-1"))
+
+    def t(self, version, release=None, product="debian/openssl", scheme="dpkg", vendor="deb"):
+        return Target(kind="purl", part="", vendor=vendor, product=product, scheme=scheme,
+                      version=version, release=release)
+
+    def test_parser_keeps_the_release(self):
+        (adv,) = self.osv.values()
+        self.assertEqual([a["ecosystem"] for a in adv["affected"]],
+                         ["Debian:11", "Debian:12", "Debian:13"])
+
+    def test_only_the_hosts_release_counts(self):
+        d11, d12, d13 = ("debian", "11"), ("debian", "12"), ("debian", "13")
+        for version, release, expected in [
+                ("3.0.14-1~deb12u2", d12, "range"),
+                # Fixed on 12; Debian 13's later fix used to make this a match.
+                ("3.0.15-1~deb12u1", d12, None),
+                ("1.1.1w-0+deb11u1", d11, "range"),
+                # Fixed on 11; Debian 12's fix is a later version.
+                ("1.1.1w-0+deb11u2", d11, None),
+                ("3.3.2-1", d13, None),
+                ("3.3.1-1", d13, "range"),
+                # No entry for that release: not affected.
+                ("1.0.0-1", ("debian", "14"), None)]:
+            with self.subTest(version=version, release=release):
+                conf, flags = evaluate.match_osv(self.osv, self.t(version, release))
+                self.assertEqual(conf, expected)
+                self.assertEqual(flags, set())
+
+    def test_unknown_release_needs_every_release_to_agree(self):
+        conf, flags = evaluate.match_osv(self.osv, self.t("1.0.0-1"))
+        self.assertEqual((conf, flags), ("partial", set()))
+        conf, flags = evaluate.match_osv(self.osv, self.t("9.9-1"))
+        self.assertEqual((conf, flags), (None, set()))
+        conf, flags = evaluate.match_osv(self.osv, self.t("3.0.15-1~deb12u1"))
+        self.assertIsNone(conf)
+        self.assertEqual(flags, {evaluate.RELEASE_UNKNOWN})
+
+    def test_entry_without_ecosystem_tests_as_before(self):
+        osv = {"X-1": {"modified": "", "fixed_in": [], "affected": [
+            {"purl_type": "deb", "package": "debian/openssl", "versions": [],
+             "ranges": _fixed("3.0.15-1~deb12u1")}]}}
+        self.assertEqual(evaluate.match_osv(osv, self.t("3.0.14-1"))[0], "range")
+        self.assertEqual(evaluate.match_osv(osv, self.t("3.0.14-1", ("debian", "12")))[0],
+                         "range")
+
+    def test_ubuntu_tilde_revision(self):
+        osv = distro_osv(("Ubuntu:22.04:LTS", "apache2", "2.4.52-1ubuntu4.10~22.04.1"),
+                         ("Ubuntu:24.04:LTS", "apache2", "2.4.58-1ubuntu8.5"),
+                         osv_id="UBUNTU-CVE-2024-0001")
+        jammy = ("ubuntu", "22.04")
+
+        def t(v):
+            return self.t(v, jammy, product="ubuntu/apache2")
+
+        self.assertEqual(evaluate.match_osv(osv, t("2.4.52-1ubuntu4.10~22.04"))[0], "range")
+        self.assertIsNone(evaluate.match_osv(osv, t("2.4.52-1ubuntu4.10~22.04.1"))[0])
+        self.assertIsNone(evaluate.match_osv(osv, t("2.4.52-1ubuntu4.10"))[0])
+
+    def test_rpm_release_and_epoch(self):
+        osv = distro_osv(("Rocky Linux:9", "openssl", "1:3.0.7-25.el9_3"),
+                         ("AlmaLinux:8", "openssl", "1:1.1.1k-12.el8_9"),
+                         osv_id="RLSA-2024:0001")
+
+        def t(v, release=("rocky", "9")):
+            return self.t(v, release, product="rocky/openssl", scheme="rpm", vendor="rpm")
+
+        self.assertEqual(evaluate.match_osv(osv, t("1:3.0.7-24.el9"))[0], "range")
+        # No epoch is epoch 0, below the fix's 1.
+        self.assertEqual(evaluate.match_osv(osv, t("3.0.9-1.el9"))[0], "range")
+        self.assertIsNone(evaluate.match_osv(osv, t("1:3.0.7-25.el9_3"))[0])
+        self.assertIsNone(evaluate.match_osv(osv, t("1:3.0.7-24.el9", ("rocky", "8")))[0])
+
+    def test_other_ecosystems_ignore_the_release(self):
+        osv = {"GHSA-x": {"modified": "", "fixed_in": [], "affected": [
+            {"ecosystem": "PyPI", "purl_type": "pypi", "package": "django", "versions": [],
+             "ranges": _fixed("4.2.16")}]}}
+        t = Target(kind="purl", part="", vendor="pypi", product="django", scheme="pep440",
+                   version="4.2.15")
+        self.assertEqual(evaluate.match_osv(osv, t), ("range", set()))

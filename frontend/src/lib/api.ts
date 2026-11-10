@@ -17893,6 +17893,7 @@ export type VulnVersionScheme =
   | "pep440"
   | "dpkg"
   | "apk"
+  | "rpm"
   | "generic"
 
 export interface ProductMapping {

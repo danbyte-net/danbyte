@@ -122,7 +122,7 @@ def build_plan(row: VulnerabilitySettings, now) -> dict:
     tracked = products.tracked()
     cpe = [k for k in tracked.keys if k[0] == "cpe"]
     purl = sorted(k for k in tracked.keys if k[0] == "purl")
-    queries, unsupported = fetch.osv_queries(purl)
+    queries, unsupported = fetch.osv_queries(purl, fetch.package_releases())
     return {
         "resumable": True,
         "urls": _urls(row),

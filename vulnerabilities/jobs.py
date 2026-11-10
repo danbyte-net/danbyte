@@ -171,7 +171,15 @@ def enqueue_all() -> None:
 def tracked_keys():
     """``products.register_provider`` hook: every product an enabled
     mapping names, hardware excepted (context only, never fetched)."""
+    from .identifiers import DISTRO_TYPES
     from .models import ProductMapping
 
-    return set(ProductMapping.objects.filter(enabled=True).exclude(part="h").values_list(
+    keys = set(ProductMapping.objects.filter(enabled=True).exclude(part="h").values_list(
         "kind", "part", "vendor", "product").distinct())
+    if any(k[0] == "purl" and k[2] in DISTRO_TYPES for k in keys):
+        # Debian/Ubuntu advisories name the source package an install's
+        # purl may give (``upstream=``); keep those records too.
+        from .matching import package_releases
+
+        keys |= set(package_releases())
+    return keys

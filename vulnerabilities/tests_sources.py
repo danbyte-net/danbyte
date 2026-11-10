@@ -344,3 +344,82 @@ class IdentifierTests(SimpleTestCase):
                          ("maven", "org.apache.logging.log4j/log4j-core"))
         self.assertEqual(package_key("Debian:12", "openssl"), ("deb", "debian/openssl"))
         self.assertEqual(package_key("PyPI", "Django"), ("pypi", "django"))
+
+
+class DistroReleaseIdentifierTests(SimpleTestCase):
+    """Distro releases: OSV ecosystems, purl ``distro=`` and platforms (B0)."""
+
+    def test_ecosystem_release(self):
+        from .identifiers import ecosystem_release
+
+        for eco, expected in [
+                ("Debian:12", ("debian", "12")), ("Debian:11", ("debian", "11")),
+                ("Ubuntu:22.04:LTS", ("ubuntu", "22.04")), ("Ubuntu:24.10", ("ubuntu", "24.10")),
+                ("Ubuntu:Pro:18.04:LTS", ("ubuntu", "18.04")),
+                ("Alpine:v3.19", ("alpine", "3.19")), ("Rocky Linux:9", ("rocky", "9")),
+                ("AlmaLinux:8", ("almalinux", "8")),
+                ("Red Hat:enterprise_linux:9::appstream", ("redhat", "9")),
+                ("SUSE:Linux Enterprise Server 15 SP5",
+                 ("suse", "linux enterprise server 15 sp5")),
+                ("PyPI", None), ("Debian", None), ("", None), (None, None)]:
+            with self.subTest(eco=eco):
+                self.assertEqual(ecosystem_release(eco), expected)
+
+    def test_distro_qualifier(self):
+        from .identifiers import distro_release
+
+        for args, expected in [
+                (("deb", "debian", "bookworm"), ("debian", "12")),
+                (("deb", "debian", "debian-12"), ("debian", "12")),
+                (("deb", "debian", "debian-12.5"), ("debian", "12")),
+                (("deb", "debian", "12"), ("debian", "12")),
+                (("deb", "ubuntu", "jammy"), ("ubuntu", "22.04")),
+                (("deb", "ubuntu", "ubuntu-22.04"), ("ubuntu", "22.04")),
+                (("apk", "alpine", "v3.19"), ("alpine", "3.19")),
+                (("apk", "alpine", "alpine-3.19.1"), ("alpine", "3.19")),
+                (("rpm", "rocky", "el9"), ("rocky", "9")),
+                (("rpm", "rocky", "rocky-9.3"), ("rocky", "9")),
+                (("rpm", "redhat", "rhel-9"), ("redhat", "9")),
+                # Another distro's name or codename, or none at all.
+                (("deb", "debian", "jammy"), None),
+                (("deb", "debian", "ubuntu-22.04"), None),
+                (("deb", "debian", "sid"), None),
+                (("deb", "debian", ""), None),
+                (("deb", "debian", None), None),
+                (("pypi", "", "bookworm"), None)]:
+            with self.subTest(args=args):
+                self.assertEqual(distro_release(*args), expected)
+
+    def test_platform_release(self):
+        from .identifiers import platform_release
+
+        for args, expected in [
+                (("deb", "debian", "Debian 12", ""), ("debian", "12")),
+                (("deb", "debian", "Debian", "12.5"), ("debian", "12")),
+                (("deb", "debian", "Debian Bookworm", "6.1.0"), ("debian", "12")),
+                (("deb", "ubuntu", "Ubuntu 22.04 LTS", "6.8.0"), ("ubuntu", "22.04")),
+                (("deb", "ubuntu", "Ubuntu", "24.04.1"), ("ubuntu", "24.04")),
+                (("rpm", "rocky", "Rocky Linux", "9.3"), ("rocky", "9")),
+                (("rpm", "almalinux", "AlmaLinux", "8.10"), ("almalinux", "8")),
+                (("rpm", "redhat", "Red Hat Enterprise Linux 9", ""), ("redhat", "9")),
+                (("apk", "alpine", "Alpine Linux", "3.20.3"), ("alpine", "3.20")),
+                (("deb", "debian", "Ubuntu 22.04", ""), None),
+                (("deb", "debian", "Debian", ""), None),
+                (("deb", "debian", "Linux", "12"), None)]:
+            with self.subTest(args=args):
+                self.assertEqual(platform_release(*args), expected)
+
+    def test_qualifiers_and_ecosystems(self):
+        from .identifiers import osv_ecosystems, purl_qualifiers
+
+        self.assertEqual(
+            purl_qualifiers("pkg:deb/debian/libssl3@3.0.11?arch=amd64"
+                            "&upstream=openssl%403.0.11-1&distro=debian-12#x"),
+            {"arch": "amd64", "upstream": "openssl@3.0.11-1", "distro": "debian-12"})
+        self.assertEqual(purl_qualifiers("pkg:pypi/django@5.2"), {})
+        self.assertEqual(osv_ecosystems(("debian", "12")), ["Debian:12"])
+        self.assertEqual(osv_ecosystems(("ubuntu", "22.04")), ["Ubuntu:22.04:LTS"])
+        self.assertEqual(osv_ecosystems(("ubuntu", "24.10")), ["Ubuntu:24.10"])
+        self.assertEqual(osv_ecosystems(("alpine", "3.19")), ["Alpine:v3.19"])
+        self.assertEqual(osv_ecosystems(("rocky", "9")), ["Rocky Linux:9"])
+        self.assertEqual(osv_ecosystems(("redhat", "9")), [])

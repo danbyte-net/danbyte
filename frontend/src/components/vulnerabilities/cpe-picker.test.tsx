@@ -166,6 +166,11 @@ describe("mapping card helpers", () => {
     expect(coverageLine({ ...row, blank_version: 2 }, "application")).toBe(
       "41 of 44 installs matched · 2 without a version · 3 with a version Danbyte cannot read"
     )
+    expect(
+      coverageLine({ ...row, records: { release_unknown: 2 } }, "application")
+    ).toBe(
+      "41 of 44 installs matched · 3 with a version Danbyte cannot read · 2 records need the distro release"
+    )
     expect(coverageLine({ ...row, objects: 1 }, "device_type")).toBe(
       "Hardware context for 1 device"
     )

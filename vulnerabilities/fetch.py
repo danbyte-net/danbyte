@@ -48,7 +48,7 @@ from django.utils import timezone
 from core.ssrf import SafeSession, SSRFError
 
 from . import imports, products, sources, store
-from .identifiers import cpe_product, is_vuln_id
+from .identifiers import cpe_product, is_vuln_id, osv_ecosystems
 from .models import CpeProductSync, Cve, CveProduct, SyncRun, VulnerabilitySettings
 from .streaming import CappedReader, ImportFormatError
 
@@ -467,15 +467,50 @@ def _purl(ptype: str, product: str) -> str:
     return f"pkg:{ptype}/" + "/".join(quote(s, safe="") for s in product.split("/"))
 
 
-def osv_queries(keys) -> tuple[list[dict], int]:
-    """``(querybatch queries, packages OSV cannot answer)`` for purl keys."""
+def _ecosystem_queries(ptype: str, product: str, releases) -> list[dict]:
+    """``{ecosystem, name}`` queries for a deb or apk package whose hosts'
+    releases are all known (``Debian:12``); ``[]`` to ask by purl instead.
+    A purl with ``distro=debian-12`` answers nothing, so the release is never
+    sent as a qualifier. RPM names keep their case at OSV, so RPM packages
+    are still asked for by purl."""
+    if ptype not in ("deb", "apk") or not releases or None in releases:
+        return []
+    ecosystems = set()
+    for release in releases:
+        names = osv_ecosystems(release)
+        if not names:
+            return []
+        ecosystems.update(names)
+    name = product.rpartition("/")[2]
+    return [{"package": {"ecosystem": e, "name": name}} for e in sorted(ecosystems)]
+
+
+def osv_queries(keys, releases: dict | None = None) -> tuple[list[dict], int]:
+    """``(querybatch queries, packages OSV cannot answer)`` for purl keys.
+    ``releases`` (``matching.package_releases``) narrows a distro package to
+    its hosts' releases."""
     queries, unsupported = [], 0
-    for _, _, ptype, product in sorted(keys):
+    releases = releases or {}
+    for key in sorted(keys):
+        _, _, ptype, product = key
         if ptype == "generic":
             unsupported += 1  # OSV has no ecosystem for a generic package
             continue
-        queries.append({"package": {"purl": _purl(ptype, product)}})
+        by_release = _ecosystem_queries(ptype, product, releases.get(tuple(key)))
+        queries.extend(by_release or [{"package": {"purl": _purl(ptype, product)}}])
     return queries, unsupported
+
+
+def package_releases() -> dict:
+    """The tracked distro packages' releases; ``{}`` when they cannot be read
+    (the fetch then asks by purl, as before)."""
+    from .matching import package_releases as releases
+
+    try:
+        return releases()
+    except Exception:  # noqa: BLE001 - never stop a fetch over the narrowing
+        log.exception("vulnerabilities: reading distro releases failed")
+        return {}
 
 
 def epss_candidates(today) -> list[str]:
@@ -539,7 +574,7 @@ def _sync_osv(client: Client, tracked, state: _State) -> None:
     if not keys or p.get("done"):
         return
     counts = state.section("osv")
-    queries, unsupported = osv_queries(keys)
+    queries, unsupported = osv_queries(keys, package_releases())
     counts["unsupported"] = unsupported
     if not queries:
         p["done"] = True

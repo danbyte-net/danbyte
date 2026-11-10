@@ -55,9 +55,12 @@ export const VERSION_SCHEMES: { value: VulnVersionScheme; label: string }[] = [
   { value: "generic", label: "Exact only" },
 ]
 
-const SCHEME_LABEL = Object.fromEntries(
-  VERSION_SCHEMES.map((s) => [s.value, s.label])
-) as Record<VulnVersionScheme, string>
+// rpm is only ever picked by Automatic (a pkg:rpm mapping), so it has a
+// label but no option.
+const SCHEME_LABEL = Object.fromEntries([
+  ...VERSION_SCHEMES.map((s) => [s.value, s.label]),
+  ["rpm", "RPM package"],
+]) as Record<VulnVersionScheme, string>
 
 const PARTS: Record<MappingSubject, CpePart[]> = {
   platform: ["o", "a"],
@@ -90,6 +93,11 @@ export function coverageLine(
   if (row.version_not_understood)
     parts.push(
       `${row.version_not_understood} with a version Danbyte cannot read`
+    )
+  const unknown = row.records.release_unknown
+  if (unknown)
+    parts.push(
+      `${unknown} ${unknown === 1 ? "record needs" : "records need"} the distro release`
     )
   return parts.join(" · ")
 }
