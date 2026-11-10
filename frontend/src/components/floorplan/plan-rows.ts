@@ -184,6 +184,27 @@ function split(name: string): { stem: string; num: string } | null {
   return m ? { stem: m[1], num: m[2] } : null
 }
 
+/** What a row's names share before their row letters: "DH5-" for
+ * "DH5-A01" … "DH5-A12" (the stem up to its last separator), "" when they
+ * share no stem or no separator. A name less this head is still its own
+ * ("A01"): what the row's label does not already say. */
+export function rowHead(names: readonly string[]): string {
+  const named = names.filter(Boolean)
+  if (named.length < 2) return ""
+  const parts = named.map(split)
+  if (!parts.every(Boolean)) return ""
+  const stem = parts[0]!.stem
+  if (!parts.every((p) => p!.stem === stem)) return ""
+  const cut = Math.max(
+    stem.lastIndexOf("-"),
+    stem.lastIndexOf("_"),
+    stem.lastIndexOf(" "),
+    stem.lastIndexOf("."),
+    stem.lastIndexOf("/")
+  )
+  return stem.slice(0, cut + 1)
+}
+
 /**
  * A row's name: "Row B · B01–B12" when its names share a stem ending in a
  * row letter or two ("DH5-B01" … "DH5-B12"); "R01–R12" for a stem with

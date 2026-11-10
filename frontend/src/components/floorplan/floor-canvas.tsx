@@ -95,7 +95,20 @@ import {
   layoutCables,
 } from "./cable-draw"
 import type { CalloutMode, ObjectSize, ShapeOf } from "./readable"
-import { tileFill } from "./tile-paint"
+import { isCapacityMetric, tileFill } from "./tile-paint"
+import {
+  buildingFootprint,
+  detailLevel,
+  hiddenAreaNames,
+  levelShows,
+  placeRoomLabels,
+  pxPerMetre,
+  roomFacts,
+  roomNesting,
+  shortTileNames,
+} from "./plan-detail"
+import type { DetailLevel, DetailMode } from "./plan-detail"
+import { RoomLabelsLayer } from "./room-labels-layer"
 import { GlyphSprite, spritePrefix } from "./tile-glyph"
 import type { GlyphSheet } from "./tile-glyph"
 import { clusterMembersOf } from "./cluster-members"
@@ -115,6 +128,7 @@ import {
   boxBounds,
   byZ,
   labelBox,
+  labelFontCells,
   opensLink as opensLabel,
   opensName,
   pointInBox,
@@ -191,10 +205,14 @@ export { tileFill }
 
 /** Rows shown but locked here (a live view's edge rows) draw faded. */
 const LOCKED_OPACITY = 0.5
+/** From afar (Detail by zoom) a plan label under this on screen (px) is
+ * left out. */
+const MIN_LABEL_PX = 9
 /** Stable empties, so the memoised cable layer keeps its props. */
 const NO_CABLES: FloorPlanCablePath[] = []
 const NO_IDS: string[] = []
 const NO_ICONS: ReadonlySet<string> = new Set()
+const NO_OUTLINES: ReadonlySet<string> = new Set()
 const NO_ROUTES: ReadonlyMap<string, CableRoute> = new Map()
 const NO_STRUCT: StructShape[] = []
 
@@ -323,6 +341,11 @@ export interface FloorCanvasProps {
   /** The lines under each tile's callout name (its panel layout's callout
    * fields), by tile id. */
   calloutLines?: ReadonlyMap<string, readonly CalloutLine[]>
+  /** Display > Detail: Auto draws one clear picture per zoom - rooms from
+   * afar, then rows, then racks with short names (plan-detail.ts); Always
+   * full (the default here) draws everything at every zoom. Editing
+   * always draws everything. */
+  detail?: DetailMode
   /** Display > Muted background: the background image greyed and pushed
    * toward the page (background-look.tsx), so the plan reads over it. */
   muteBackground?: boolean
@@ -559,6 +582,13 @@ const sameView = (
 
 /** An element's size on screen (px), kept up to date by a ResizeObserver;
  * 0 by 0 until measured. */
+/** A ring (cells) as an SVG path (plan px). */
+function footprintPath(ring: readonly Pt[]): string {
+  return (
+    "M " + ring.map(([x, y]) => `${x * CELL} ${y * CELL}`).join(" L ") + " Z"
+  )
+}
+
 /** A tile as its cluster lists it. */
 function tileMember(t: FloorPlanTile): ClusterMember {
   return {
@@ -651,6 +681,7 @@ export function FloorCanvas({
   tileIcons: tileIconsProp,
   callouts = "off",
   calloutLines,
+  detail = "full",
   muteBackground = false,
   onion = null,
   mode = "layout",
@@ -736,6 +767,14 @@ export function FloorCanvas({
     /** The cell point right-clicked. */
     at?: Pt
   } | null>(null)
+  // Detail by zoom: the name of the room under the pointer, when the plan
+  // does not draw it.
+  const [roomHint, setRoomHint] = useState<{
+    id: string
+    x: number
+    y: number
+    text: string
+  } | null>(null)
   // View: the name of the plan the area or label under the pointer opens.
   const [opensHint, setOpensHint] = useState<{
     id: string
@@ -817,6 +856,24 @@ export function FloorCanvas({
     120,
     sameView
   )
+  // Detail by zoom (plan-detail.ts): the level the settled zoom is at -
+  // the last level deciding which threshold it meets (hysteresis, stored
+  // during render as `iconPrev` is) - and what it shows. Always full, and
+  // editing, show everything.
+  const autoDetail = detail === "auto" && !editable
+  const [levelPrev, setLevelPrev] = useState<DetailLevel | null>(null)
+  const level: DetailLevel = autoDetail
+    ? detailLevel(pxPerMetre(CELL * settledView.k, plan.cell_mm), levelPrev)
+    : "detail"
+  if (autoDetail && level !== levelPrev) setLevelPrev(level)
+  const shows = useMemo(
+    () =>
+      levelShows(level, autoDetail ? "auto" : "full", {
+        capacityColour: isCapacityMetric(colorBy),
+        coverage: showCoverage,
+      }),
+    [level, autoDetail, colorBy, showCoverage]
+  )
   // Icons that would overlap spread apart, or fold into clusters where
   // there is no room (icon-layout.ts) - laid out for the settled zoom's
   // bucket, so a pan never moves them; the last layout holds clusters a
@@ -838,14 +895,19 @@ export function FloorCanvas({
   const freePlan = plan.layout_mode === "free"
   const planRowList = useMemo(
     () =>
-      iconTiles
+      iconTiles || autoDetail
         ? planRows(
             tiles,
             rooms,
             freePlan ? (tile) => tileBox(tile).rotation : undefined
           )
         : [],
-    [iconTiles, tiles, rooms, freePlan]
+    [iconTiles, autoDetail, tiles, rooms, freePlan]
+  )
+  // Detail by zoom: a rack's name less what its row says ("A01").
+  const shortNames = useMemo(
+    () => (shows.shortNames ? shortTileNames(planRowList) : null),
+    [shows.shortNames, planRowList]
   )
   const lastLod = useRef<PlanLod>(EMPTY_LOD)
   const rowLod = useMemo(
@@ -856,8 +918,11 @@ export function FloorCanvas({
         rooms,
         scale: CELL * layoutK,
         prev: lastLod.current,
+        // Detail by zoom: from afar the room's label sums it up, so
+        // rows never fold into a plate.
+        fold: !autoDetail,
       }),
-    [planRowList, tiles, iconIds, rooms, layoutK]
+    [planRowList, tiles, iconIds, rooms, layoutK, autoDetail]
   )
   useEffect(() => {
     lastLod.current = rowLod
@@ -918,6 +983,82 @@ export function FloorCanvas({
     () => new Map(tiles.map((tl) => [tl.id, tl])),
     [tiles]
   )
+  // Detail by zoom: what is in focus - selected, hovered, pointed at,
+  // found - draws whole whatever the level: its name in full, its bar,
+  // its camera's cone, and at all from afar.
+  const focusIds = useMemo(() => {
+    const s = new Set<string>([
+      ...pinnedNames,
+      ...(highlightTileIds ?? []),
+      ...(tilePick?.picked ?? []),
+    ])
+    if (hoveredTile) s.add(hoveredTile)
+    if (focusedTile) s.add(focusedTile)
+    return s
+  }, [
+    pinnedNames,
+    highlightTileIds,
+    tilePick?.picked,
+    hoveredTile,
+    focusedTile,
+  ])
+  const tileShown = (id: string) => shows.tiles || focusIds.has(id)
+  // The rooms' facts and, from afar, their labels; the base map blanked
+  // under the building.
+  const areaShapes = useMemo(
+    () => shapes.filter((s): s is AreaShape => s.kind === "area"),
+    [shapes]
+  )
+  const facts = useMemo(
+    () =>
+      autoDetail
+        ? roomFacts(rooms, tiles, {
+            fillOf: (tl) => {
+              const f = figures?.get(tl.id)
+              if (f) return { used: f.used_units, total: f.u_height }
+              const l = liveState?.tiles[tl.id]
+              return l?.kind === "rack"
+                ? { used: l.used_units, total: l.u_height }
+                : null
+            },
+            checkOf: (tl) => liveState?.tiles[tl.id]?.check,
+          })
+        : null,
+    [autoDetail, rooms, tiles, figures, liveState]
+  )
+  const roomLabels = useMemo(() => {
+    if (!facts || !shows.roomLabels) return []
+    return placeRoomLabels(areaShapes, rooms, facts, CELL * settledView.k)
+  }, [facts, shows.roomLabels, areaShapes, rooms, settledView.k])
+  const labelledRooms = useMemo(
+    () => new Set(roomLabels.map((l) => l.id)),
+    [roomLabels]
+  )
+  // Outlines round rooms (a building's, a site's) are named by their
+  // rooms: no name over them.
+  const outlines = useMemo(
+    () => (autoDetail ? roomNesting(rooms).outlines : NO_OUTLINES),
+    [autoDetail, rooms]
+  )
+  // Sorted area names: none past its room, none over another.
+  const hiddenNames = useMemo(
+    () =>
+      shows.areaNames === "sorted"
+        ? hiddenAreaNames(areaShapes, {
+            grow: readable ? fontGrow(12, settledView.k) : 1,
+            cell: CELL,
+            skip: outlines,
+          })
+        : null,
+    [shows.areaNames, areaShapes, readable, settledView.k, outlines]
+  )
+  const footprint = useMemo(
+    () =>
+      autoDetail && mapImage ? buildingFootprint(walls, areaShapes, plan) : [],
+    [autoDetail, mapImage, walls, areaShapes, plan]
+  )
+  // The cameras whose cone draws: all, or those in focus.
+  const coneIds = shows.cones === "focus" ? focusIds : null
   const clusterFaces = useMemo(() => {
     const m = new Map<string, ClusterFace>()
     for (const c of iconLayout.clusters) {
@@ -1186,7 +1327,26 @@ export function FloorCanvas({
     () => new Set([...highlightCableIds, ...hoveredCables]),
     [highlightCableIds, hoveredCables]
   )
-  const cablesShown = showCableLinks && !trayEditMode
+  const cablesShown = showCableLinks && !trayEditMode && shows.cables
+  // Detail by zoom: the tiles as the pass names them - short names where
+  // the row says the rest, but for what is in focus.
+  const labelTiles = useMemo(() => {
+    if (!shows.tiles) return []
+    if (!shortNames?.size) return tiles
+    return tiles.map((tl) => {
+      const short = shortNames.get(tl.id)
+      return short && !focusIds.has(tl.id) ? { ...tl, label: short } : tl
+    })
+  }, [shows.tiles, shortNames, tiles, focusIds])
+  const labelAreas = useMemo(
+    () =>
+      shows.areaNames === "none"
+        ? []
+        : hiddenNames?.size
+          ? areaShapes.filter((a) => !hiddenNames.has(a.id))
+          : areaShapes,
+    [shows.areaNames, hiddenNames, areaShapes]
+  )
   const planLabels = useMemo(() => {
     const k = settledView.k
     const scale = CELL * k
@@ -1212,10 +1372,10 @@ export function FloorCanvas({
         { x: 0, y: 0, w: plan.grid_width, h: plan.grid_height },
         scale
       ),
-      tiles,
-      shapeOf: shapeAt(scale),
-      iconIds,
-      iconClusters: iconLayout.clusters.map((c) => ({
+      tiles: labelTiles,
+      shapeOf: shows.tiles ? shapeAt(scale) : null,
+      iconIds: shows.tiles ? iconIds : NO_ICONS,
+      iconClusters: (shows.tiles ? iconLayout.clusters : []).map((c) => ({
         id: c.id,
         box: clusterBox(c, scale),
         // A row drawn as one icon: its short name by it.
@@ -1244,13 +1404,13 @@ export function FloorCanvas({
       pinnedTiles: hoveredTile
         ? new Set([...pinnedNames, hoveredTile])
         : pinnedNames,
-      trays: showTrays ? trays : [],
+      trays: showTrays && shows.trays ? trays : [],
       trayWidth: Math.max(10 * k, readable ? 6 : 4),
-      areas,
+      areas: labelAreas,
       areaFontPx: 12 * (readable ? fontGrow(12, k) : 1),
       // One caption per drawn region, its box's bottom-left where the
       // canvas starts it.
-      raised: raisedSaved.map((rg) => {
+      raised: (shows.raised ? raisedSaved : []).map((rg) => {
         const named = rg.rows.find((r) => r.label) ?? rg.rows[0]
         const [ax, ay] = regionCaptionAnchor(rg.pieces)
         const h = Math.max(ay - rg.bounds.minY, 0.01)
@@ -1263,7 +1423,10 @@ export function FloorCanvas({
       }),
       planLabels: labels,
       cellMm: plan.cell_mm,
-      callouts: callouts === "auto" ? { lines: calloutLines } : null,
+      callouts:
+        callouts === "auto" && shows.callouts !== "none"
+          ? { lines: calloutLines }
+          : null,
       cables: cablesShown
         ? {
             paths: cablePaths,
@@ -1288,7 +1451,9 @@ export function FloorCanvas({
     keepBox,
     plan.grid_width,
     plan.grid_height,
-    tiles,
+    labelTiles,
+    labelAreas,
+    shows,
     readable,
     shapeAt,
     iconIds,
@@ -1315,6 +1480,23 @@ export function FloorCanvas({
     calloutLines,
     rooms,
   ])
+  // What the level names: at the room level only what is in focus names
+  // itself or gets its callout.
+  const shownLabels = useMemo(() => {
+    if (shows.tileNames === "all" && shows.callouts !== "focus")
+      return planLabels
+    return {
+      ...planLabels,
+      tiles:
+        shows.tileNames === "focus"
+          ? planLabels.tiles.filter((l) => focusIds.has(l.id))
+          : planLabels.tiles,
+      callouts:
+        shows.callouts === "focus"
+          ? planLabels.callouts.filter((c) => !c.members && focusIds.has(c.id))
+          : planLabels.callouts,
+    }
+  }, [planLabels, shows, focusIds])
   const selectedShape = shapes.find((s) => s.id === selectedShapeId) ?? null
   const selectedTile =
     free && editable && mode === "layout" && selectedId
@@ -1433,7 +1615,7 @@ export function FloorCanvas({
       return {
         box: { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y },
         k: t.k,
-        callouts: planLabels.callouts,
+        callouts: shownLabels.callouts,
       }
     }
     apiRef.current.showTrayCables = showTrayCables
@@ -1561,7 +1743,7 @@ export function FloorCanvas({
    * drag - the callout never moves its tile. */
   const pressCallout = (id: string, e: React.PointerEvent) => {
     // A crowd's plate or a cluster's box: zoom to what it names.
-    const plate = planLabels.callouts.find((c) => c.id === id)
+    const plate = shownLabels.callouts.find((c) => c.id === id)
     if (plate?.members) {
       fitCluster({ members: [...plate.members] })
       return
@@ -2011,6 +2193,37 @@ export function FloorCanvas({
     })
   }
 
+  /** Detail by zoom: a room whose name is not drawn names itself in a
+   * tooltip under the pointer - set only when that room changes. */
+  const hoverRoom = (e: React.PointerEvent<SVGSVGElement>) => {
+    const svg = svgRef.current
+    const clear = () => {
+      if (roomHint) setRoomHint(null)
+    }
+    if (!autoDetail || !svg || drag.current || hoverStore.get()) return clear()
+    const rect = svg.getBoundingClientRect()
+    const room = roomAt(rooms, [
+      (e.clientX - rect.left - t.x) / t.k / CELL,
+      (e.clientY - rect.top - t.y) / t.k / CELL,
+    ])
+    const area = room && areaShapes.find((a) => a.id === room.id)
+    const drawn =
+      !!area &&
+      (labelledRooms.has(area.id) ||
+        (area.show_name &&
+          shows.areaNames !== "none" &&
+          !hiddenNames?.has(area.id) &&
+          planLabels.areas.get(area.id) !== null))
+    if (!room?.name || drawn) return clear()
+    if (roomHint?.id === room.id) return
+    setRoomHint({
+      id: room.id,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top - 10,
+      text: room.name,
+    })
+  }
+
   /** View: the topmost area or label with an Opens link under the pointer
    * names its target beside it - set only when that shape changes. */
   const hoverOpens = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -2103,24 +2316,35 @@ export function FloorCanvas({
       pinnedNames,
       undefined,
       shapeOf ?? undefined
-    ).filter((tl) => !iconIds.has(tl.id))
+    ).filter((tl) => !iconIds.has(tl.id) && tileShown(tl.id))
     return splitGrown(ordered, shapeOf)
   })()
 
-  /** One label on the plan. */
-  const renderLabel = (l: LabelShape) => (
-    <LabelShapeView
-      key={l.id}
-      label={l}
-      cellMm={plan.cell_mm}
-      minFontPx={readable ? READABLE_FONT_PX : undefined}
-      zoom={t.k}
-      // View: a label takes the pointer only to open its link.
-      interactive={shapesLive && (editable ? !isLocked(l.id) : opensLabel(l))}
-      viewing={!editable}
-      onPointerDown={(e) => shapeG.shapeDown(l, e)}
-    />
-  )
+  /** One label on the plan. From afar (Detail by zoom) a label keeps its
+   * real size and goes when too small to read - a row's letter - but for
+   * one that opens a link. */
+  const renderLabel = (l: LabelShape) =>
+    level === "overview" &&
+    autoDetail &&
+    !opensLabel(l) &&
+    labelFontCells(l.font_mm, plan.cell_mm) * pxPerCell <
+      MIN_LABEL_PX ? null : (
+      <LabelShapeView
+        key={l.id}
+        label={l}
+        cellMm={plan.cell_mm}
+        minFontPx={
+          readable && !(autoDetail && level === "overview")
+            ? READABLE_FONT_PX
+            : undefined
+        }
+        zoom={t.k}
+        // View: a label takes the pointer only to open its link.
+        interactive={shapesLive && (editable ? !isLocked(l.id) : opensLabel(l))}
+        viewing={!editable}
+        onPointerDown={(e) => shapeG.shapeDown(l, e)}
+      />
+    )
 
   /** One tile on the plan. */
   const renderTile = (tile: FloorPlanTile) => {
@@ -2224,7 +2448,15 @@ export function FloorCanvas({
         <TileShape
           tile={shown}
           grip={!free && grow <= 1}
-          hideName={planLabels.tileNamesHere.has(tile.id)}
+          hideName={
+            planLabels.tileNamesHere.has(tile.id) ||
+            (shows.tileNames === "focus" && !focusIds.has(tile.id))
+          }
+          shortName={
+            focusIds.has(tile.id) ? undefined : shortNames?.get(tile.id)
+          }
+          figure={shows.capacity === "all" || focusIds.has(tile.id)}
+          quiet={shows.quietMarks}
           zoneNameGrow={
             readable && tileIsZone(tile) ? fontGrow(10, t.k) : undefined
           }
@@ -2328,6 +2560,7 @@ export function FloorCanvas({
           if (pinchMove(e)) return
           handleMove(e)
           hoverOpens(e)
+          hoverRoom(e)
         }}
         onPointerCancel={pinchUp}
         onPointerUp={(e) => {
@@ -2356,6 +2589,7 @@ export function FloorCanvas({
           pickStart.current = null
           pointerAt.current = null
           setOpensHint(null)
+          setRoomHint(null)
           setHint(null)
           if (pinchUp(e)) return
           handleUp(e)
@@ -2427,6 +2661,19 @@ export function FloorCanvas({
               data-muted={muteMap || undefined}
             />
           )}
+          {/* Detail by zoom: the map blanked under the building, so its
+              own words never show through the rooms. */}
+          {mapImage && shows.maskMap && footprint.length > 0 && (
+            <g
+              data-layer="map-mask"
+              fill="var(--background)"
+              pointerEvents="none"
+            >
+              {footprint.map((ring, i) => (
+                <path key={i} d={footprintPath(ring)} />
+              ))}
+            </g>
+          )}
           {plan.background_image && floorShown && (
             <image
               href={plan.background_image}
@@ -2464,7 +2711,7 @@ export function FloorCanvas({
               Interactive (selectable) only in Structure mode. */}
           {/* Touching raised floors of one depth and colour are one pad:
               filled once, outlined only outside (raised-floor-shape.ts). */}
-          {raisedShown.regions.map((rg) => {
+          {(shows.raised ? raisedShown.regions : []).map((rg) => {
             const color = rg.color || "#71717a"
             const named = rg.rows.find((r) => r.label) ?? rg.rows[0]
             const picked = rg.rows.some((r) => r.id === selectedAreaId)
@@ -2571,7 +2818,7 @@ export function FloorCanvas({
           {onion && <OnionLayer skin={onion} />}
           {/* Zones first (background), then areas (rooms), then normal
               tiles, then FOV cones. */}
-          {tiles.filter(tileIsZone).map(renderTile)}
+          {shows.zones !== "none" && tiles.filter(tileIsZone).map(renderTile)}
           <g data-layer="areas">
             {areas.map((a) => (
               <AreaShapeView
@@ -2580,7 +2827,14 @@ export function FloorCanvas({
                 selected={a.id === selectedShapeId}
                 zoom={t.k}
                 minNamePx={readable ? READABLE_FONT_PX : undefined}
-                nameAt={planLabels.areas.get(a.id)}
+                nameAt={
+                  shows.areaNames === "none" ||
+                  hiddenNames?.has(a.id) ||
+                  labelledRooms.has(a.id)
+                    ? null
+                    : planLabels.areas.get(a.id)
+                }
+                pattern={shows.pattern}
                 interactive={shapesLive && !isLocked(a.id)}
                 multiSelected={!!areaSel?.has(a.id)}
                 onPointerDown={(e) => {
@@ -2607,7 +2861,7 @@ export function FloorCanvas({
           {/* On a free plan tiles may overlap: their z says which is on
               top. Readable's grown symbols draw in the overlays. */}
           {/* Camera coverage: the blind floor, under the tiles. */}
-          {showCoverage && (
+          {showCoverage && shows.coverage && (
             <LiveCameraLayer
               part="coverage"
               tiles={tiles}
@@ -2624,7 +2878,7 @@ export function FloorCanvas({
           {/* From afar a placed device, rack or cabinet keeps a marker in
               its colour where it would shrink to a dot - Readable grows
               the whole symbol instead. */}
-          {!readable && !iconTiles && (
+          {!readable && !iconTiles && shows.tiles && (
             <TileMarkers
               tiles={tiles}
               k={t.k}
@@ -2636,9 +2890,10 @@ export function FloorCanvas({
             />
           )}
 
-          {showFov && (
+          {showFov && shows.cones !== "none" && (
             <LiveCameraLayer
               part="cones"
+              only={coneIds}
               tiles={tiles}
               walls={shownWalls}
               cellMm={plan.cell_mm}
@@ -2658,6 +2913,7 @@ export function FloorCanvas({
                 cellMM={plan.cell_mm}
                 selected={w.id === selectedWallId || !!structSel?.has(w.id)}
                 interactive={live}
+                doors={shows.doors}
                 doorArmed={doorArmed && editable}
                 selectedDoor={
                   selectedDoor?.wallId === w.id ? selectedDoor.index : null
@@ -2692,6 +2948,7 @@ export function FloorCanvas({
               print. Clickable in cable mode so layout editing is undisturbed;
               in View a click on one that carries cables lists them. */}
           {showTrays &&
+            shows.trays &&
             trays.map((tray) => {
               // In edit mode the SELECTED tray shows drag handles + "+" bend
               // inserters; all trays are draggable/selectable.
@@ -2741,7 +2998,7 @@ export function FloorCanvas({
               read. Clickable in any mode when the links overlay is on - no
               Cables mode needed. Edit trays hides them so trays are free to
               grab. */}
-          {showCableLinks && !trayEditMode && (
+          {showCableLinks && !trayEditMode && shows.cables && (
             <CableLayer
               cablePaths={cablePaths}
               routes={cableRoutes}
@@ -2792,7 +3049,11 @@ export function FloorCanvas({
           <g data-layer="icon-tiles">
             {/* Spread icons: a leader back to where each really is. */}
             {tiles.map((tl) => {
-              if (!iconIds.has(tl.id) || iconLayout.clusterOf.has(tl.id))
+              if (
+                !iconIds.has(tl.id) ||
+                iconLayout.clusterOf.has(tl.id) ||
+                !tileShown(tl.id)
+              )
                 return null
               const o = iconLayout.offsets.get(tl.id)
               if (!o || Math.hypot(o[0], o[1]) < 2) return null
@@ -2807,16 +3068,18 @@ export function FloorCanvas({
               )
             })}
             {readableOrder(
-              tiles.filter((tl) => iconIds.has(tl.id)),
+              tiles.filter((tl) => iconIds.has(tl.id) && tileShown(tl.id)),
               pxPerCell,
               pinnedNames,
               undefined,
               shapeOf ?? undefined
             ).map(renderTile)}
             {/* Icons folded together: one tile each, the count on it. */}
-            {iconLayout.clusters.map((c) => {
+            {(shows.tiles ? iconLayout.clusters : []).map((c) => {
               const face = clusterFaces.get(c.id)
               if (!face) return null
+              // Its room's label says it instead (Detail by zoom).
+              if (c.form === "hall" && !shows.hallPlates) return null
               const props = {
                 id: c.id,
                 k: t.k,
@@ -2865,8 +3128,11 @@ export function FloorCanvas({
           {/* Every text the label pass places: cable names along their
               runs, trays' names, a focused cable's ends, Readable's tile
               names - one pass, the cables first (plan-label-pass.ts). */}
+          {/* Detail by zoom, from afar: each room's label and facts. */}
+          <RoomLabelsLayer labels={roomLabels} k={t.k} />
+
           <PlanLabelsLayer
-            labels={planLabels}
+            labels={shownLabels}
             k={t.k}
             trays={trays}
             onRowHover={(row, e) => {
@@ -2890,7 +3156,7 @@ export function FloorCanvas({
               in boxes off to the side with a leader each - hovered or
               selected with their tile, a press opens the tile. */}
           <PlanCalloutsLayer
-            callouts={planLabels.callouts}
+            callouts={shownLabels.callouts}
             k={t.k}
             hot={calloutHot ?? hoveredTile}
             selected={pinnedNames}
@@ -2901,7 +3167,7 @@ export function FloorCanvas({
             onHover={(id, e) => {
               if (drag.current) return
               const plate = id
-                ? planLabels.callouts.find((c) => c.id === id)
+                ? shownLabels.callouts.find((c) => c.id === id)
                 : null
               const rect = svgRef.current?.getBoundingClientRect()
               if (plate?.members && e && rect) {
@@ -3192,6 +3458,23 @@ export function FloorCanvas({
         >
           {opensHint.text}
         </div>
+      )}
+
+      {/* Detail by zoom: the room under the pointer, named. */}
+      {roomHint && !hint && (
+        <Tooltip open>
+          <TooltipTrigger asChild>
+            <div
+              aria-hidden
+              data-part="room-hint"
+              className="pointer-events-none absolute"
+              style={{ left: roomHint.x, top: roomHint.y }}
+            />
+          </TooltipTrigger>
+          <TooltipContent side="top" variant="default">
+            {roomHint.text}
+          </TooltipContent>
+        </Tooltip>
       )}
 
       {/* What dragging the handle under the pointer does. */}

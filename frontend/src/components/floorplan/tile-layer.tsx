@@ -52,6 +52,13 @@ function tileTooltip(
   return parts.join(" · ")
 }
 
+/** Detail by zoom (`quiet`): a zone's wash, and the front edge's share of
+ * its usual strength. */
+const ZONE_QUIET_FILL = 0.06
+const QUIET_MARK = 0.45
+/** A short name's largest size fitted to its tile (plan px). */
+const SHORT_NAME_MAX_PX = 13
+
 /** Label sizing: fixed 11px + ellipsis, or (labelFit) scaled to FILL the
  * tile - as big as the footprint allows, bounded by width per glyph and by
  * tile height (leaving room for the utilization bar). */
@@ -87,6 +94,9 @@ export function TileShape({
   icons = false,
   theme = "light",
   glyphs = null,
+  shortName,
+  figure: showFigure = true,
+  quiet = false,
   onPointerDown,
   onResizeDown,
   onDoubleClick,
@@ -94,6 +104,14 @@ export function TileShape({
   onPointerLeave,
 }: {
   tile: FloorPlanTile
+  /** Detail by zoom: the name less what its row says ("A01"), drawn in
+   * place of the full one (plan-detail.ts). */
+  shortName?: string
+  /** The capacity bar along the foot (off: Detail by zoom, but for the
+   * hovered or selected). */
+  figure?: boolean
+  /** Detail by zoom: the front edge faint, a zone's wash lighter. */
+  quiet?: boolean
   selected: boolean
   editable: boolean
   labelFit: boolean
@@ -137,7 +155,7 @@ export function TileShape({
 }) {
   const w = tile.width * CELL
   const h = tile.height * CELL
-  const name = tileName(tile)
+  const name = shortName || tileName(tile)
   const zone = tileIsZone(tile)
   const dashed = tile.status === "planned" || tile.status === "reserved"
   const showLabel = !!name && !hideName
@@ -164,15 +182,20 @@ export function TileShape({
   // right; a capacity mode writes it on a one-cell tile too, centred. Where
   // the tile is too small for both side by side, the name moves up to make
   // room - never under Type, which keeps the plan's look.
-  const figure = paint.figure
+  const figure = showFigure ? paint.figure : null
   const wide = w >= CELL * 2
   const figureText = figure && (wide || figure.always) ? figure.text : null
   const stacked = !!figureText && (!wide || (!!figure?.always && h < CELL * 2))
-  const label = showLabel
+  const fitted = showLabel
     ? stacked
       ? stackedLabel(labelLayout(name, w, h - 14, labelFit), h)
       : labelLayout(name, w, h, labelFit)
     : null
+  // A short name fitted to its tile would shout: it keeps a modest size.
+  const label =
+    fitted && shortName
+      ? { ...fitted, fontSize: Math.min(fitted.fontSize, SHORT_NAME_MAX_PX) }
+      : fitted
   // A front facing down takes the foot: the figure lifts clear of it.
   const lift = figure ? figureLift(tile.orientation) : 0
   const figBar = figureBarRect(w, h, tile.orientation)
@@ -196,9 +219,9 @@ export function TileShape({
           height={h}
           rx={4}
           fill={zoneFill}
-          fillOpacity={0.14}
+          fillOpacity={quiet ? ZONE_QUIET_FILL : 0.14}
           stroke={zoneFill}
-          strokeOpacity={selected ? 0.9 : 0.35}
+          strokeOpacity={selected ? 0.9 : quiet ? 0.2 : 0.35}
           strokeWidth={selected ? 2 : 1}
           strokeDasharray="4 4"
         />
@@ -421,7 +444,7 @@ export function TileShape({
         orientation={tile.orientation}
         withFigure={!!figure}
         color={ink ?? fill}
-        opacity={ink ? SOLID_MARK_OPACITY : 0.9}
+        opacity={(ink ? SOLID_MARK_OPACITY : 0.9) * (quiet ? QUIET_MARK : 1)}
       />
       {face?.glyph && (
         <g opacity={ink ? 1 : 0.55}>

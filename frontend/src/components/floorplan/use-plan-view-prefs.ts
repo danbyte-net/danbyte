@@ -22,6 +22,8 @@ import {
   readTileIcons,
 } from "./readable"
 import type { CalloutMode, ObjectSize } from "./readable"
+import { readDetailMode } from "./plan-detail"
+import type { DetailMode } from "./plan-detail"
 import type { FloorHidden } from "./hidden"
 import { readColorBy } from "./tile-paint"
 import type { ColorBy } from "./tile-paint"
@@ -60,6 +62,7 @@ export type ViewPrefKey =
   | "icon_tiles"
   | "tile_icons"
   | "callouts"
+  | "detail"
   | "mute_background"
   | "show_fov_coverage"
   | "fov_racks_block"
@@ -148,6 +151,9 @@ export function usePlanViewPrefs({
   // Callouts: a name that will not sit cleanly by its tile in a box off
   // to the side - Auto unless the plan chose Off.
   const [calloutsLocal, setCalloutsLocal] = useState<CalloutMode | null>(null)
+  // Detail: Auto draws one clear picture per zoom (plan-detail.ts), Always
+  // full everything at every zoom.
+  const [detailLocal, setDetailLocal] = useState<DetailMode | null>(null)
   // 3D effects budget - PER-DEVICE (localStorage), not a plan pref: the
   // workstation's High must not follow the plan onto a weak laptop.
   const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
@@ -329,6 +335,7 @@ export function usePlanViewPrefs({
   const iconTiles = iconTilesLocal ?? readIconTiles(plan?.state.icon_tiles)
   const tileIcons = tileIconsLocal ?? readTileIcons(plan?.state.tile_icons)
   const callouts = calloutsLocal ?? readCallouts(plan?.state.callouts)
+  const detail = detailLocal ?? readDetailMode(plan?.state.detail)
   // Muted unless the plan turned it off: a map or a photo at full colour
   // drowns the racks, trays and cables drawn over it.
   const muteBackground =
@@ -346,9 +353,11 @@ export function usePlanViewPrefs({
       | CableColorBy
       | ObjectSize
       | CalloutMode
+      | DetailMode
   ) => {
     if (key === "object_size") setObjectSizeLocal(value as ObjectSize)
     else if (key === "callouts") setCalloutsLocal(value as CalloutMode)
+    else if (key === "detail") setDetailLocal(value as DetailMode)
     else if (key === "icon_tiles") setIconTilesLocal(value as boolean)
     else if (key === "tile_icons") setTileIconsLocal(value as boolean)
     else if (key === "label_fit") setLabelFitLocal(value as boolean)
@@ -424,6 +433,7 @@ export function usePlanViewPrefs({
     iconTiles,
     tileIcons,
     callouts,
+    detail,
     muteBackground,
     quality3d,
     setQuality3d,

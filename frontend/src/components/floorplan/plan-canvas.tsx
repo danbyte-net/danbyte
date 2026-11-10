@@ -248,6 +248,7 @@ export function PlanCanvas({
     iconTiles,
     tileIcons,
     callouts,
+    detail,
     muteBackground,
     showTrays,
     showCableLinks,
@@ -423,6 +424,7 @@ export function PlanCanvas({
         tileIcons={tileIcons}
         callouts={callouts}
         calloutLines={calloutLines}
+        detail={detail}
         muteBackground={muteBackground}
         mode={mode}
         trays={trays}
