@@ -86,6 +86,11 @@ from compliance.eol_api import (
     eol_settings,
 )
 from compliance.eol_custom import EolCustomProductViewSet
+from vulnerabilities.api import (
+    vulnerability_import,
+    vulnerability_settings,
+    vulnerability_sync_run,
+)
 from core import (
     deployment,
     service_api,
@@ -626,6 +631,11 @@ urlpatterns = [
     path("eol/products/<slug:source>/<str:name>/", eol_product, name="eol-product"),
     path("eol/platforms/<uuid:platform_id>/", eol_platform_mapping,
          name="eol-platform-mapping"),
+    path("vulnerabilities/settings/", vulnerability_settings,
+         name="vulnerability-settings"),
+    path("vulnerabilities/import/", vulnerability_import, name="vulnerability-import"),
+    path("vulnerabilities/sync/<uuid:run_id>/", vulnerability_sync_run,
+         name="vulnerability-sync-run"),
     path("rbac/object-types/", rbac_object_types, name="rbac-object-types"),
     path("rbac/site-role/", create_site_role, name="rbac-site-role"),
     path("users/<int:user_id>/access-summary/", user_access_summary,

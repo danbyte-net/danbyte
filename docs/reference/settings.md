@@ -330,6 +330,17 @@ takes, in bytes. The default is `26214400` (25 MB); a larger upload is
 refused with the limit in the message. Keep it under the web server's
 `client_max_body_size` (512 MB in the shipped nginx templates).
 
+## Vulnerability data uploads (`DANBYTE_VULN_IMPORT_MAX_BYTES`)
+
+`DANBYTE_VULN_IMPORT_MAX_BYTES` is the largest file a deployment admin may
+upload as [vulnerability data](../features/vulnerabilities.md#upload-airgapped-installs)
+(NVD feeds, OSV archives, KEV, EPSS), in bytes. The default is `536870912`
+(512 MB), which is also the shipped nginx `client_max_body_size`; raise both
+together. The unpacked-content, record and archive limits are fixed and listed
+on the feature page. Uploads wait in `MEDIA_ROOT/vuln-imports/` until their
+job has parsed them, then are deleted; the folder is not served under
+`/media/`.
+
 ## PDF reports (`DANBYTE_REPORT_JOB_TIMEOUT`)
 
 A [PDF report](../features/reports.md) too large to render within a request
