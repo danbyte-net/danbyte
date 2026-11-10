@@ -13,11 +13,12 @@ tenant and site scope ([#451](https://github.com/danbyte-net/danbyte/issues/451)
 !!! note "Work in progress"
     This page grows with the feature. Today Danbyte has the **data store**
     (settings, records, upload import), the [server fetch](#server-mode),
+    the [browser sync](#browser-mode),
     **product mappings** with their [picker](#map-your-products),
     **matching** against your inventory with a [priority](#priority), the
     [Vulnerabilities tab](#where-it-shows) on devices, VMs, platforms and
     applications, and the API for them. The Vulnerabilities list page, a
-    page per record, exceptions and browser sync are still to come. Until a
+    page per record and exceptions are still to come. Until a
     mapping exists, an NVD or OSV upload keeps nothing and a server fetch
     asks for nothing.
 
@@ -78,12 +79,15 @@ A deployment admin (`users.manage` without tenant narrowing) opens
 
 - **Enabled** and the **Update source**. Under the source, one line says
   what it needs: *Upload* - nothing reaches the internet; *Server* - the
-  server reaches NVD, OSV, FIRST and CISA. *Browser* is listed but not
-  available yet.
+  server reaches NVD, OSV, FIRST and CISA; *Browser* - an admin's browser
+  fetches NVD, EPSS and OSV on **Sync now** and the server stays offline.
 - In server mode: the **NVD API key** (a password field; it shows *Set*
   when one is stored, never the key, and **Clear key** removes it),
   **Fetch EPSS scores**, **Fetch the CISA KEV catalog** and the four mirror
   URLs.
+- In browser mode: **Fetch EPSS scores**, the NVD, EPSS and OSV mirror URLs
+  and **Sync now from this browser**, which opens the
+  [sync page](#browser-mode).
 - How many records are stored, the last run (status, who started it, what
   it stored, its error) and **Refresh now** in server mode.
 - **Import file** with the **File kind** (NVD records, OSV advisories, CISA
@@ -96,9 +100,9 @@ stored key.
 | Setting | Meaning |
 |---|---|
 | `enabled` | Off by default. While off, uploads are refused, nothing runs and every vulnerability tab and card is hidden. |
-| `update_source` | `upload` (default), `server` or `browser`. Upload and [server](#server-mode) work today. |
+| `update_source` | `upload` (default), `server` or [`browser`](#browser-mode). |
 | `nvd_url`, `epss_url`, `kev_url`, `osv_url` | Blank uses the public service. A mirror goes here; it must be `https://`. For NVD, EPSS and OSV it is the base URL the API paths are added to (`https://services.nvd.nist.gov`, `https://api.first.org`, `https://api.osv.dev`); for KEV it is the catalog file itself. |
-| `sync_epss`, `sync_kev` | Whether a server sync also fetches EPSS and KEV (on by default). |
+| `sync_epss`, `sync_kev` | Whether a server sync also fetches EPSS and KEV (on by default). A browser sync reads `sync_epss`; it never fetches the KEV file (see [browser mode](#browser-mode)). |
 | `nvd_api_key` | Write-only. Stored encrypted; reads show `nvd_api_key_set`. A blank value keeps the stored key, `nvd_api_key_clear: true` removes it. |
 
 Everyone signed in can read `enabled`; everything else, and every change, is
@@ -273,6 +277,134 @@ NVD answers are cached for 24 hours and shared by everyone who searches. A
 user may search 30 times a minute (`429` past that), and the deployment asks
 NVD at most 2 times per 30 seconds without an API key (20 with one), well
 under NVD's limit, so the picker cannot starve a running fetch.
+
+## Browser mode
+
+For a server without internet that should still stay current: with the
+feature on and `update_source` set to `browser`, a deployment admin opens
+**Settings → General → Vulnerability data → Sync now from this browser**
+(`/settings/vulnerabilities/sync`). *Their* browser fetches the public data
+and posts each answer to Danbyte; the Danbyte server contacts nothing.
+Nothing updates by itself: run it after mapping new products, and every week
+or so.
+
+### What the browser contacts
+
+| Service | Request | Cross-origin |
+|---|---|---|
+| NVD (`services.nvd.nist.gov`) | `GET /rest/json/cves/2.0?virtualMatchString=…&resultsPerPage=500&startIndex=…` (plus the date window), one per 500 CVEs of a mapped CPE product | `Access-Control-Allow-Origin: *` |
+| FIRST (`api.first.org`) | `GET /data/v1/epss?cve=…`, 100 CVEs per request, when **Fetch EPSS scores** is on | `Access-Control-Allow-Origin: *` |
+| OSV (`api.osv.dev`) | `POST /v1/querybatch` for the mapped packages, then `GET /v1/vulns/<id>` per new or changed advisory | answers with the page's origin, allows `POST` with JSON |
+| CISA KEV | - | the catalog sends no CORS header, so a browser cannot read it |
+
+The browser sends no cookies to these hosts and no referrer. What leaves the
+browser is what [server mode](#what-is-contacted) sends: product names
+(`cisco:ios_xe`, `pkg:pypi/django`) and CVE ids, never your inventory.
+
+**KEV** dates (date added, due date, required action) come inside the NVD
+records, so browser mode needs no KEV file. The *known ransomware use* flag
+is only in CISA's catalog: [upload](#upload-airgapped-installs) it as `kev`
+when you want it (an upload works in every update source).
+
+**The NVD API key** is typed on the sync page. It is kept in the page's
+memory only, sent to NVD as the `apiKey` header and never to Danbyte; the key
+stored for server mode is never sent to the browser. Without a key NVD
+allows 5 requests per 30 seconds (the page sends up to 5, then waits for the
+window), with one 50. NVD's preflight answer for the key header could not be
+checked from a real browser while this was written: if NVD refuses the keyed
+request cross-origin, the sync pauses with *NVD could not be reached with the
+API key from this browser*; clear the key and resume at the slower pace.
+
+### The sync page
+
+- A line naming the hosts this browser contacts (the mirrors when set).
+- **NVD API key** (optional, see above), **Start sync**, **Pause** /
+  **Resume** and **Stop**.
+- A bar per phase (NVD products, EPSS batches, OSV advisories) with an
+  estimate from the pacing, and a table of the products: *Waiting*,
+  *Fetching*, *Posted* or *Failed* with the reason and **Retry**.
+- An NVD `403`, `429` or `5xx` is retried after 30 and 60 seconds, then the
+  product is marked failed and the sync goes on. A network or cross-origin
+  error, or the browser going offline, **pauses** the sync with the message
+  - it never retries in a loop.
+
+Reloading the page, or opening it in another browser, continues where the
+run stopped: the server keeps which pages, batches and advisories arrived.
+While the page is open and syncing, closing the tab asks first.
+
+### Runs and resume
+
+A browser sync is a run with `via: browser`, owned by the admin who started
+it. Only one update runs at a time. While it runs, no other admin can post
+to it (`403`), and starting another answers `409` with who is syncing. A run
+with nothing posted for **30 minutes** is marked *abandoned* (a paused page
+counts as idle); the next **Start sync** within 20 hours - by the same or
+another admin - resumes it, adding any product mapped since. **Stop** leaves
+the run abandoned on purpose. When the page finishes, the run is *ok* if
+every product, EPSS batch and advisory arrived, else *failed* listing what is
+missing (resume it the same way), and every tenant's matches are recomputed.
+
+### What the server checks
+
+The trust boundary is the deployment admin - the same person who may upload
+a file. Everything the browser posts is the service's answer **verbatim**,
+parsed by the same code as an upload and a server fetch:
+
+- deployment admin, session login and CSRF token only (an API token cannot
+  drive a sync), the run is open, `via: browser` and the caller's;
+- the body is `application/json` with a `Content-Length`: at most 8 MB for an
+  NVD page or an OSV post, 1 MB for an EPSS answer (`413` past it);
+- NVD: `format NVD_CVE`, `version 2.0`, `startIndex` equal to the posted
+  `start_index`, `resultsPerPage` at most 2000 and no more records than it;
+  pages are taken in order (`409` with the `expected` index otherwise), a
+  page already taken is answered `duplicate: true` and writes nothing;
+- a record is kept only when its configurations name the product the page
+  was asked for (`not_tracked` otherwise), so a page cannot write CVEs for
+  another product;
+- CVSS 3.x is [recomputed from the vector](#cvss); a claimed score that does
+  not match is dropped (`cvss_mismatch`) and the severity always comes from
+  the score;
+- EPSS: rows only for the CVEs of the posted batch, scores 0 to 1, a score
+  date not in the future and not older than 30 days; a batch with no usable
+  row is refused (`422`);
+- OSV: only advisories in the list the server answered, at most 25 per post;
+- per run at most 200,000 NVD records and 100,000 EPSS rows; per admin at
+  most 20 posts per 10 seconds (`429`).
+
+Records stored this way show `source: browser`, and the run records who
+synced.
+
+### Content-Security-Policy
+
+The page fetches from the browser, so the site's nginx
+`Content-Security-Policy` must allow the three hosts in `connect-src`. The
+shipped template does (`https://services.nvd.nist.gov https://api.first.org
+https://api.osv.dev`); a site rendered before 0.20 gets them from the
+[upgrade step](../getting-started/upgrading.md) or by adding them by hand.
+A **mirror** set under Vulnerability data must be added the same way, and
+must answer cross-origin requests itself. When the policy blocks a host, the
+sync page says which one. The Docker image's nginx sets no CSP and needs
+nothing.
+
+If your proxy or the services refuse the browser, use
+[upload](#upload-airgapped-installs) or [server mode](#server-mode) instead.
+
+### Browser-sync API
+
+All `POST`, deployment admin, session + CSRF:
+
+| Endpoint | Body | Answers |
+|---|---|---|
+| `/api/vulnerabilities/sync/` | `{"via": "browser"}` | The open, resumed or new run with its `plan` (URLs, page size, pacing, per product the `params` and date window) and `progress`. `409` outside browser mode, with no product mapped, or while another update runs. |
+| `…/sync/<run>/nvd/?product=o:cisco:ios_xe&start_index=0` | the NVD page | `start_index` (next), `total`, `done`, `created`, `updated`, `not_tracked`, `cvss_mismatch`, `invalid`; or `duplicate: true`. |
+| `…/sync/<run>/epss-plan/` | - | `batches` (CVE ids, 100 each) and `done`. |
+| `…/sync/<run>/epss/?batch=0` | the EPSS answer | `stored`, `dropped`, `stale`, `invalid`. |
+| `…/sync/<run>/osv-ids/` | `{"vulns": {id: modified}}` | `to_fetch`: the advisories that are new or changed. |
+| `…/sync/<run>/osv/` | a JSON list of OSV records | `stored`, `dropped`, `posted`, `done`. |
+| `…/sync/<run>/finish/` | `{"errors": [...], "stop": false}` | The run, `ok`, `failed` or (with `stop`) `abandoned`. |
+
+`GET /api/vulnerabilities/sync/<run>/` answers a browser run with its
+`progress` too.
 
 ## Map your products
 

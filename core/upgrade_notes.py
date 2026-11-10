@@ -397,8 +397,45 @@ def _map_csp_allows_vector() -> bool:
     return "worker-src" in text
 
 
+_VULN_HOSTS = "https://services.nvd.nist.gov https://api.first.org https://api.osv.dev"
+_NGINX_VULN_CSP = f"""\
+# in /etc/nginx/sites-available/danbyte.conf, in the Content-Security-Policy:
+#   connect-src: add {_VULN_HOSTS}
+#   (and the host of any NVD, EPSS or OSV mirror set under Vulnerability data)
+grep -q services.nvd.nist.gov /etc/nginx/sites-available/danbyte.conf || \\
+sudo sed -i "s|\\(connect-src [^;]*\\);|\\1 {_VULN_HOSTS};|" \\
+    /etc/nginx/sites-available/danbyte.conf
+sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _vuln_csp_allows_browser_sync() -> bool:
+    """Done when the site's CSP lets the browser reach NVD (#451)."""
+    text = _site_config()
+    if text is None:
+        return False
+    return "services.nvd.nist.gov" in text
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.20.0-nginx-vuln-csp",
+        version="0.20.0",
+        title="Let the browser sync vulnerability data",
+        body=(
+            "Browser mode for vulnerability data has the admin's browser fetch "
+            "NVD, FIRST EPSS and OSV and hand the answers to Danbyte. The nginx "
+            "Content-Security-Policy needs those hosts in connect-src; until "
+            "then the sync page says the policy blocks them. Only needed for "
+            "the Browser update source. Root runs this from the bundle of this "
+            "release, never from the app directory."
+        ),
+        snippet=_NGINX_VULN_CSP,
+        docs="features/vulnerabilities/#browser-mode",
+        platforms=("systemd",),
+        check=_vuln_csp_allows_browser_sync,
+        host=True,
+    ),
     UpgradeNote(
         id="0.20.0-nginx-map-csp",
         version="0.20.0",
