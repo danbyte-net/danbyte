@@ -175,7 +175,8 @@ object (linked to its page), its type, the rule (linked to the rule's page),
 the object's site, and the triage state. A known vulnerabilities violation
 names its worst three records (`detail`, e.g. `CVE-2023-20198 (KEV),
 CVE-2024-1234 and 4 more`) and carries `link`, the object's vulnerabilities
-(`/devices/<id>?tab=vulnerabilities`). You can:
+(`/devices/<id>?tab=vulnerabilities`): the records beside the object name
+open that tab, here and on a device's compliance page. You can:
 
 - **Search** by object or rule name.
 - **Filter** on the rail by **State**, **Severity**, **Rule**, **Object type**,

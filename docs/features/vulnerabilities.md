@@ -23,8 +23,7 @@ tenant and site scope ([#451](https://github.com/danbyte-net/danbyte/issues/451)
     [compliance rule](#compliance-rule), [notifications](#notifications),
     [match history retention](#match-history), the
     [VEX in the SBOM](sbom.md#vulnerabilities-vex) and the API for them.
-    The exception screens are still to come. Until a
-    mapping exists, an NVD or OSV upload keeps nothing and a server fetch
+    Until a mapping exists, an NVD or OSV upload keeps nothing and a server fetch
     asks for nothing.
 
 It is **off by default** and deployment-wide. By default nothing is fetched
@@ -279,6 +278,7 @@ holds the API key:
 | `local` | vendor:product pairs already in the store matching every word of `q`, with how many CVEs name them. |
 | `remote` | Server mode only: NVD's CPE dictionary (`keywordSearch`), one row per `part:vendor:product` with an example title and how many CPE names NVD has for it. |
 | `remote_status` | `ok`, `cached`, `off` (not server mode: NVD was not asked), `limited` (try again after `retry_after` seconds) or `error` (with `remote_error`). |
+| `update_source` | The deployment's update source. In browser mode the picker says NVD search isn't available in this mode: the browser sync fetches records, not the CPE dictionary. |
 
 NVD answers are cached for 24 hours and shared by everyone who searches. A
 user may search 30 times a minute (`429` past that), and the deployment asks
@@ -555,7 +555,9 @@ priority** (shown while the feature is on), or with
 `fix_first_epss`, `fix_first_cvss`, `high_cvss`, `high_epss`,
 `high_epss_cvss`, `medium_cvss` (EPSS 0-1, CVSS 0-10). Anyone who may view
 devices or VMs reads the policy; a tenant admin changes it, the open matches
-are re-prioritised, and the change is in the change log.
+are re-prioritised, and the change is in the change log. The card beside
+it, **Vulnerability notifications**, sets what is
+[sent](#notifications).
 
 ## Where it shows
 
@@ -577,8 +579,11 @@ object's matches, worst priority first:
 | Product, Summary, First seen | The mapping, the record's description, when the match appeared. |
 
 The rail filters by **Status** (open by default; tick *Resolved* for the
-history, which adds a Resolved column), priority, severity, KEV, confidence
-and via. The filters are in the address (`?vstatus=resolved&priority=fix_first`),
+history, which adds a Resolved column), priority, severity, KEV, confidence,
+via and excepted. The **Exception** column shows the exception that covers a
+match, linked to [its page](#an-exceptions-page). Whoever may add exceptions
+gets a tick box per row and **Add exception** for the ticked open rows, and
+the shield button on a row for that one (see [Adding one](#adding-one)). The filters are in the address (`?vstatus=resolved&priority=fix_first`),
 so a link keeps them. The tab is gone entirely while the feature is off.
 
 ### The Vulnerabilities page
@@ -598,6 +603,24 @@ admin to **Settings → General → Vulnerability data**.
 | Devices, VMs, Installs | How many of each it affects - open matches you can see. |
 | First seen | When its first open match appeared. |
 | Summary | The record's description. |
+
+**Exceptions** is one row per [exception](#exceptions), active and
+expired, as far as you may see its subject:
+
+| Column | Shows |
+|---|---|
+| Id | The exception's number, linked to [its page](#an-exceptions-page). |
+| Record, Scope, Subject | What it is about; the subject linked to its Vulnerabilities tab, or *Whole tenant*. |
+| Status | *Not applicable* or *Risk accepted*. |
+| Owner | Who answers for it. |
+| Expires | The date; a *N days* badge within 30 days of it, *Expired* after. |
+| Covers | Open matches it covers now that you may see. |
+| Reason, Created | Why, and when it was made (Created is hidden by default). |
+
+The rail filters by scope, status, owner and expiry (*Expiring*,
+*Expired*, *Later*, *No expiry*), the search box by id, reason or owner.
+Edit and Delete are on each row as your role allows; tick rows to delete
+several (their matches reopen). **Download** exports the list.
 
 **By object** is one row per match - a record on a host, through a platform
 or an install - with the tab's columns. The rail and the search box work the
@@ -631,7 +654,10 @@ tabs:
   record. Links out open in a new tab.
 - **Affected** - every host and install it matched: host, application,
   version tested, via, confidence, product and first seen. Tick *Resolved*
-  under Status for the history (with when each was resolved).
+  under Status for the history (with when each was resolved). Ticked rows
+  take **Add exception**.
+- **Exceptions** - the exceptions for the record, with the Exceptions
+  view's columns, Edit and Delete.
 
 The page opens for a record the tenant matched or maps a product of, and
 404s otherwise. Records are public data and not in the change log, so the
@@ -688,6 +714,32 @@ SBOM's vulnerabilities section can say what was decided:
 
 The reason (and the expiry date) becomes the analysis `detail`. Reads return
 the whole analysis as `cyclonedx`.
+
+### Adding one
+
+**Add exception** (on ticked rows of a Vulnerabilities tab or a record's
+Affected tab, or a row's shield button) asks for:
+
+| Field | |
+|---|---|
+| Scope | *This device* / *This VM* (or *Its device or VM*), *Its platform or application* (*This platform* / *This application* on those pages), or *Whole tenant*. Only scopes you may create are offered: a role limited to sites gets the device or VM only, and a platform or application needs `view` on it. With several rows the choice reads *N of M* when only some can take it (a match through a device type mapping has no platform). |
+| Status | *Not applicable* or *Risk accepted*. |
+| Reason | Required. |
+| Owner | A member of the tenant; required. |
+| Expires | Required for a risk acceptance, today to 365 days ahead; optional for not applicable. |
+| Advanced | The CycloneDX analysis: state, justification (with *Not affected*) and response, starting from the status's defaults. |
+
+Several ticked rows make one exception per record and subject; one that
+already has an exception for that scope is skipped. The API's field errors
+show on their fields. **Edit** changes status, reason, owner, expiry and
+analysis; the record and scope stay.
+
+### An exception's page
+
+`/vulnerabilities/exceptions/<id>` has **Overview** (the reason, the
+decision and its CycloneDX analysis), **Covers** (the open matches it
+covers now) and **Change log**, with **Edit** and **Delete** as your role
+allows.
 
 ### Expiry
 
@@ -760,6 +812,10 @@ resync says nothing more. Matches an exception covers are never named.
 `notify_enabled: false` in the policy sends nothing; matches found while it
 was off are told about in the next message after it is turned on.
 
+A tenant admin sets both on **Settings → Tenant policy → Vulnerability
+notifications**: **Send notifications** (`notify_enabled`) and which new
+matches count - *Fix first*, *Critical CVSS*, *CISA KEV* (`notify_on`).
+
 ## API
 
 Every endpoint below answers 404 while vulnerability data is off and works
@@ -778,6 +834,7 @@ site role sees only its own sites' matches, everywhere.
 | `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, records new this week (`new_this_week`: a match first seen in the last 7 days), devices and VMs affected. |
 | `GET /api/vulnerabilities/coverage/` | Per mapping: objects tested, matched, with a blank version, with a version the scheme cannot read; and from the last run the records it could not decide (`unparsed_bounds`, `range_not_understood`). Filters `platform`, `device_type`, `application`. |
 | `GET/PATCH /api/vulnerabilities/policy/` | Priority thresholds and notification settings (`notify_on`, `notify_enabled`). |
+| `GET /api/vulnerability-exceptions/scopes/` | The scopes the caller may create an exception for (`{scopes, site_limited}`); needs `add`. |
 | `GET/POST /api/vulnerability-exceptions/`, `GET/PATCH/DELETE …/<id>/`, `POST …/bulk-delete/` | [Exceptions](#exceptions). `POST {vuln_id, status, reason, owner_id, expires_on?, device_id \| virtual_machine_id \| platform_id \| application_id?, analysis_state?, analysis_justification?, analysis_response?}`. Reads add `cve`, `scope`, the subject, `owner`, `owner_name`, `active`, `cyclonedx`, `matches` (open matches it covers that you may see) and `expiry_notified_at`. Filters `vuln_id`, `status`, `scope` (`device`, `virtual_machine`, `platform`, `application`, `tenant`), `device`, `virtual_machine`, `platform`, `application`, `owner`, `active` and `q`. |
 
 The record and match lists take `status` (`open` by default, `resolved`,
@@ -788,7 +845,8 @@ The record and match lists take `status` (`open` by default, `resolved`,
 only them, `all` both. Values of one filter are comma-separated or repeated.
 
 Every match carries `exception` (`id`, `numid`, `status`, `scope`,
-`expires_on`, `owner_name`, or `null`). The record list adds `excepted` (its
+`expires_on`, `owner_name`, or `null`) and its `mapping` (`id`,
+`identifier`, `platform`). The record list adds `excepted` (its
 matches an exception covers); a record's page lists every open match by
 default (`excepted=all`) with `excepted_count`; the summary adds `excepted`
 and `excepted_records`.

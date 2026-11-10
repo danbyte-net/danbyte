@@ -369,6 +369,13 @@
       "keywords": ["oui", "mac", "vendor", "ieee"]
     },
     {
+      "key": "branding.vulnerabilities",
+      "label": "Vulnerability data",
+      "description": "Known vulnerabilities, and where the records come from",
+      "page": "branding",
+      "keywords": ["cve", "nvd", "osv", "kev", "epss", "browser sync"]
+    },
+    {
       "key": "tenant.ui",
       "label": "UI policy",
       "description": "Optional device fields and human-readable numbers",
@@ -409,6 +416,20 @@
       "description": "Cover page background, colours and image for PDF reports",
       "page": "tenant-policy",
       "keywords": ["cover", "report", "pdf", "branding", "image", "waves", "background"]
+    },
+    {
+      "key": "tenant.vuln-priority",
+      "label": "Vulnerability priority",
+      "description": "When a matched record reads as Fix first, High or Medium",
+      "page": "tenant-policy",
+      "keywords": ["cve", "cvss", "epss", "kev", "fix first", "threshold"]
+    },
+    {
+      "key": "tenant.vuln-notifications",
+      "label": "Vulnerability notifications",
+      "description": "Which new matches go to the notification channels",
+      "page": "tenant-policy",
+      "keywords": ["cve", "kev", "critical", "notify", "webhook"]
     },
     {
       "key": "separation.sites",

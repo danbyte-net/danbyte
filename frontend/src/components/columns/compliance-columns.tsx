@@ -18,6 +18,7 @@ import {
   SEVERITY_RANK,
   SeverityBadge,
   TriageBadge,
+  ViolationDetail,
   countByType,
   countOf,
   ruleSummary,
@@ -166,12 +167,14 @@ export function violationColumns<
             label={v.object_repr}
           />
         )
-        return v.detail ? (
+        return v.detail || v.link ? (
           <span className="whitespace-nowrap">
             {name}
-            <span className="ml-2 text-xs text-muted-foreground">
-              {v.detail}
-            </span>
+            <ViolationDetail
+              detail={v.detail}
+              link={v.link}
+              className="ml-2 text-xs text-muted-foreground"
+            />
           </span>
         ) : (
           name

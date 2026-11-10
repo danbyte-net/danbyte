@@ -87,6 +87,9 @@ describe("remoteNote", () => {
   it("says why NVD was not asked", () => {
     expect(remoteNote(result({ remote_status: "off" }))).toMatch(/server mode/)
     expect(
+      remoteNote(result({ remote_status: "off", update_source: "browser" }))
+    ).toBe("Stored products only; NVD search isn't available in browser mode.")
+    expect(
       remoteNote(result({ remote_status: "limited", retry_after: 12 }))
     ).toMatch(/12 s/)
     expect(

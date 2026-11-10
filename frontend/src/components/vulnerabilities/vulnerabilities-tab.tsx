@@ -1,10 +1,17 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { ShieldOff } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { Paginated, VulnMatch } from "@/lib/api"
 import { useUrlSet } from "@/lib/url-filters"
-import { DataTable } from "@/components/data-table"
+import { DataTable, selectionColumn } from "@/components/data-table"
+import { Button } from "@/components/ui/button"
+import { actionsColumn } from "@/components/columns/actions-column"
+import {
+  ExceptionDialog,
+  useExceptionPerms,
+} from "@/components/vulnerabilities/exception-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { FacetGroup } from "@/components/filter-rail"
 import { Loading } from "@/components/loading"
@@ -109,14 +116,39 @@ export function VulnerabilitiesTab({
       ),
     [all, status]
   )
+  const { canAdd } = useExceptionPerms()
+  const [selected, setSelected] = useState<VulnMatch[]>([])
+  const [excepting, setExcepting] = useState<VulnMatch[] | null>(null)
   const columns = useMemo(
-    () =>
-      buildVulnerabilityMatchColumns({
+    () => [
+      ...(canAdd ? [selectionColumn<VulnMatch>()] : []),
+      ...buildVulnerabilityMatchColumns({
         omit: OMIT[kind],
         showResolved: status.has("resolved"),
       }),
-    [kind, status]
+      ...(canAdd
+        ? [
+            actionsColumn<VulnMatch>({
+              extra: (r) =>
+                r.resolved_at ? null : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    title="Add exception"
+                    onClick={() => setExcepting([r])}
+                  >
+                    <ShieldOff className="h-3.5 w-3.5" />
+                    <span className="sr-only">Add exception</span>
+                  </Button>
+                ),
+            }),
+          ]
+        : []),
+    ],
+    [kind, status, canAdd]
   )
+  const openSelected = selected.filter((r) => !r.resolved_at)
   const counts = useMemo(() => {
     const c = { open: 0, resolved: 0 }
     for (const r of all ?? []) c[r.resolved_at ? "resolved" : "open"]++
@@ -169,7 +201,19 @@ export function VulnerabilitiesTab({
     <div className="flex min-w-0 overflow-hidden rounded-lg border border-border">
       {rail}
       <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
+        {canAdd && openSelected.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {openSelected.length} selected
+            </span>
+            <Button size="sm" onClick={() => setExcepting(openSelected)}>
+              Add exception
+            </Button>
+          </div>
+        )}
         <DataTable
+          onSelectedRowsChange={setSelected}
+          selectedRows={selected}
           tableId={TABLE_ID[kind]}
           data={filteredRows}
           columns={wired}
@@ -182,6 +226,12 @@ export function VulnerabilitiesTab({
           autoColumns={false}
         />
       </div>
+      <ExceptionDialog
+        open={!!excepting}
+        onOpenChange={(o) => !o && setExcepting(null)}
+        matches={excepting ?? []}
+        kind={kind}
+      />
     </div>
   )
 }

@@ -11,6 +11,10 @@ export interface FormDateProps extends Base {
   onChange: (v: string) => void
   placeholder?: string
   disabled?: boolean
+  /** Earliest pickable day, ISO `YYYY-MM-DD`. */
+  min?: string
+  /** Latest pickable day, ISO `YYYY-MM-DD`. */
+  max?: string
 }
 
 // Date field using the shared DatePicker (displays per the user's date-format
@@ -20,6 +24,8 @@ export function FormDate({
   onChange,
   placeholder,
   disabled,
+  min,
+  max,
   ...field
 }: FormDateProps) {
   return (
@@ -29,6 +35,8 @@ export function FormDate({
         onChange={onChange}
         placeholder={placeholder}
         disabled={disabled}
+        min={min}
+        max={max}
       />
     </Field>
   )

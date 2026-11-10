@@ -21,6 +21,7 @@ import { EmptyState } from "@/components/empty-state"
 import { Markdown } from "@/components/markdown"
 import { QueryError } from "@/components/query-error"
 import { SEV_VARIANT, ruleSummary } from "@/routes/compliance"
+import { ViolationDetail } from "@/components/compliance/compliance-shared"
 
 export const Route = createFileRoute("/devices/$id_/compliance")({
   component: DeviceCompliancePage,
@@ -133,6 +134,13 @@ function ViolationCard({ v }: { v: DeviceComplianceViolation }) {
           <span className="font-mono text-xs text-muted-foreground">
             {ruleSummary(v)}
           </span>
+        )}
+        {!isDrift && (v.detail || v.link) && (
+          <ViolationDetail
+            detail={v.detail}
+            link={v.link}
+            className="text-xs text-muted-foreground"
+          />
         )}
         {v.remediation && (
           <Button

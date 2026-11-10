@@ -2,11 +2,17 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import type { ReactNode } from "react"
 import { useMemo } from "react"
 
-import type { VulnMatch, VulnRecordRow } from "@/lib/api"
+import { useQuery } from "@tanstack/react-query"
+
+import type { VulnException, VulnMatch, VulnRecordRow } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useListSearch, useSearchWriter, useUrlSearch } from "@/lib/url-filters"
 import { useServerList } from "@/lib/server-list"
 import type { ServerFacetExtra } from "@/components/table-filters"
-import { wireFacetColumns } from "@/components/table-filters"
+import {
+  useUrlTableFilters,
+  wireFacetColumns,
+} from "@/components/table-filters"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -15,6 +21,8 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { buildVulnerabilityRecordColumns } from "@/components/columns/vulnerability-columns"
 import { buildVulnerabilityMatchColumns } from "@/components/columns/vulnerability-match-columns"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
+import { EXCEPTIONS_ENDPOINT } from "@/components/vulnerabilities/exception-dialog"
+import { useExceptionTable } from "@/components/vulnerabilities/exceptions-table"
 
 // Vulnerabilities (#451): every record matched in the tenant, one row each,
 // or "By object" - one row per match (record × host × install). Both page,
@@ -27,12 +35,16 @@ export const Route = createFileRoute("/vulnerabilities/")({
   component: VulnerabilitiesPage,
 })
 
-type View = "records" | "objects"
+type View = "records" | "objects" | "exceptions"
 
 const VIEWS = [
   { value: "records", label: "Records" },
   { value: "objects", label: "By object" },
+  { value: "exceptions", label: "Exceptions" },
 ] as const
+
+const viewOf = (v: unknown): View =>
+  v === "objects" || v === "exceptions" ? v : "records"
 
 /** Facets the server counts that no column carries. */
 export const VULN_EXTRA_FACETS: ServerFacetExtra[] = [
@@ -57,7 +69,7 @@ function VulnerabilitiesPage() {
   const settings = useVulnSettings()
   const search = useListSearch()
   const write = useSearchWriter()
-  const view: View = search.view === "objects" ? "objects" : "records"
+  const view: View = viewOf(search.view)
   if (settings.isLoading) return <Loading />
   if (!settings.enabled)
     return <FeatureOff canManage={!!settings.data?.can_manage} />
@@ -67,16 +79,23 @@ function VulnerabilitiesPage() {
     <SegmentedTabs<View>
       value={view}
       onValueChange={(v) =>
-        write((prev) => ({
-          ...prev,
-          view: v === "objects" ? v : undefined,
-          page: undefined,
-          ordering: undefined,
-        }))
+        write((prev) =>
+          // Exceptions filter on other things: their rail starts clean,
+          // and so does the one they go back to.
+          v === "exceptions" || view === "exceptions"
+            ? { view: v === "records" ? undefined : v }
+            : {
+                ...prev,
+                view: v === "objects" ? v : undefined,
+                page: undefined,
+                ordering: undefined,
+              }
+        )
       }
       items={VIEWS}
     />
   )
+  if (view === "exceptions") return <ExceptionsView viewSwitch={viewSwitch} />
   return view === "objects" ? (
     <MatchesView viewSwitch={viewSwitch} />
   ) : (
@@ -206,6 +225,58 @@ function MatchesView({ viewSwitch }: { viewSwitch: ReactNode }) {
           exportTitle="Vulnerabilities by object"
         />
       )}
+    </ListPageShell>
+  )
+}
+
+function ExceptionsView({ viewSwitch }: { viewSwitch: ReactNode }) {
+  const [q, setQ] = useUrlSearch()
+  const query = useQuery({
+    queryKey: ["vulnerability-exceptions", "list", q],
+    queryFn: () =>
+      apiAll<VulnException>(
+        `${EXCEPTIONS_ENDPOINT}?${new URLSearchParams(q ? { q } : {}).toString()}`
+      ),
+  })
+  const rows = query.data?.results ?? []
+  const { columns, selected, setSelected, overlays } = useExceptionTable({})
+  const { rail, filteredRows, snapshot, restore, activeCount, ...rest } =
+    useUrlTableFilters(columns, rows)
+  return (
+    <ListPageShell
+      title="Vulnerabilities"
+      count={query.data ? filteredRows.length : undefined}
+      rail={rail}
+      savedViews={{
+        objectType: "vulnerabilityexception",
+        filters: { snapshot, restore, activeCount },
+      }}
+      search={{
+        value: q,
+        onChange: setQ,
+        placeholder: "Filter by id, reason, owner…",
+      }}
+      actions={viewSwitch}
+      query={query}
+    >
+      {rows.length === 0 && activeCount === 0 && !q ? (
+        <EmptyState title="No exceptions">
+          Add one from a record&apos;s Affected tab or an object&apos;s
+          Vulnerabilities tab.
+        </EmptyState>
+      ) : (
+        <DataTable
+          data={filteredRows}
+          columns={rest.columns}
+          onSelectedRowsChange={setSelected}
+          selectedRows={selected}
+          flexColumn="reason"
+          tableId="vulnerability-exceptions"
+          exportName="vulnerability-exceptions"
+          exportTitle="Vulnerability exceptions"
+        />
+      )}
+      {overlays}
     </ListPageShell>
   )
 }

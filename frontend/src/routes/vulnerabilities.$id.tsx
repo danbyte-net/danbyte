@@ -24,19 +24,24 @@ import {
 } from "@/components/vulnerabilities/badges"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { VulnerabilitiesTab } from "@/components/vulnerabilities/vulnerabilities-tab"
+import {
+  RecordExceptions,
+  useRecordExceptions,
+} from "@/components/vulnerabilities/record-exceptions"
 
 // One vulnerability record (#451): what it is (Overview) and what in the
 // tenant it affects (Affected - devices, VMs and installs, with the version
 // tested, the confidence, the mapping it came through and when it appeared;
-// resolved history one tick away). Records are public data and not
-// change-logged, so there is no Journal or Change log tab.
+// resolved history one tick away) and the exceptions made for it. Records
+// are public data and not change-logged, so there is no Journal or Change
+// log tab.
 
 export const Route = createFileRoute("/vulnerabilities/$id")({
   component: VulnerabilityDetail,
 })
 
-type Tab = "overview" | "affected"
-const TABS: readonly Tab[] = ["overview", "affected"]
+type Tab = "overview" | "affected" | "exceptions"
+const TABS: readonly Tab[] = ["overview", "affected", "exceptions"]
 
 function VulnerabilityDetail() {
   const { id } = Route.useParams()
@@ -104,6 +109,7 @@ function Body({ record: r }: { record: VulnRecordDetail }) {
   const { formatDate, formatDateTime } = useDateFormat()
   const date = (v: string | null) => (v ? formatDate(v) : dash)
   const score = toNumber(r.cvss_score)
+  const exceptions = useRecordExceptions(r.vuln_id)
 
   const record: KvRow[] = [
     { label: "Id", value: mono(r.vuln_id), copy: r.vuln_id },
@@ -289,6 +295,11 @@ function Body({ record: r }: { record: VulnRecordDetail }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "affected", label: "Affected", count: r.affected_count },
+        {
+          value: "exceptions",
+          label: "Exceptions",
+          count: exceptions.data?.count,
+        },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v)}
@@ -337,6 +348,9 @@ function Body({ record: r }: { record: VulnRecordDetail }) {
       </DetailTab>
       <DetailTab value="affected">
         <VulnerabilitiesTab kind="record" id={r.vuln_id} />
+      </DetailTab>
+      <DetailTab value="exceptions">
+        <RecordExceptions vulnId={r.vuln_id} />
       </DetailTab>
     </DetailShell>
   )

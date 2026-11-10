@@ -254,7 +254,8 @@ def match_dict(r: VulnerabilityMatch) -> dict:
         "installed_software": None if inst is None else {
             "id": str(inst.pk), "version": inst.version,
             "application": _ref(inst.application)},
-        "mapping": {"id": str(r.mapping_id), "identifier": r.mapping.identifier},
+        "mapping": {"id": str(r.mapping_id), "identifier": r.mapping.identifier,
+                    "platform": _ref(r.mapping.platform)},
         "exception": exception_brief(r.excepted),
         "first_seen_at": r.first_seen_at,
         "last_seen_at": r.last_seen_at,
@@ -263,7 +264,7 @@ def match_dict(r: VulnerabilityMatch) -> dict:
 
 
 def _match_rows(qs):
-    return qs.select_related("cve", "device", "virtual_machine", "mapping",
+    return qs.select_related("cve", "device", "virtual_machine", "mapping__platform",
                              "installed_software__application", "excepted")
 
 

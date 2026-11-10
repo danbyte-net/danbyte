@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { VulnPolicy } from "@/lib/api"
+import type { VulnNotifyOn, VulnPolicy } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
-import { FormCheckbox, FormRow, FormText } from "@/components/forms"
+import { Field, FormCheckbox, FormRow, FormText } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { SettingsCard } from "@/components/settings/settings-card"
 import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
@@ -49,14 +49,130 @@ export function policyPatch(
   return out
 }
 
+export const NOTIFY_ON: { value: VulnNotifyOn; label: string }[] = [
+  { value: "fix_first", label: "Fix first" },
+  { value: "critical", label: "Critical CVSS" },
+  { value: "kev", label: "CISA KEV" },
+]
+
+interface NotifyForm {
+  notify_enabled: boolean
+  notify_on: VulnNotifyOn[]
+}
+
+/** The changed notification fields; `notify_on` in the catalog's order. */
+export function notifyPatch(
+  p: Pick<VulnPolicy, "notify_enabled" | "notify_on">,
+  f: NotifyForm
+): Partial<NotifyForm> {
+  const out: Partial<NotifyForm> = {}
+  if (f.notify_enabled !== p.notify_enabled)
+    out.notify_enabled = f.notify_enabled
+  const want = NOTIFY_ON.map((o) => o.value).filter((v) =>
+    f.notify_on.includes(v)
+  )
+  const have = NOTIFY_ON.map((o) => o.value).filter((v) =>
+    p.notify_on.includes(v)
+  )
+  if (want.join(",") !== have.join(",")) out.notify_on = want
+  return out
+}
+
 export function VulnerabilityPolicyCard() {
+  return (
+    <>
+      <PriorityCard />
+      <NotificationsCard />
+    </>
+  )
+}
+
+function usePolicy() {
   const settings = useVulnSettings()
-  const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["vulnerability-policy"],
     queryFn: () => api<VulnPolicy>("/api/vulnerabilities/policy/"),
     enabled: settings.enabled,
   })
+  return { settings, q }
+}
+
+function NotificationsCard() {
+  const { settings, q } = usePolicy()
+  const qc = useQueryClient()
+  const [form, setForm] = useState<NotifyForm | null>(null)
+  useEffect(() => {
+    if (q.data)
+      setForm({
+        notify_enabled: q.data.notify_enabled,
+        notify_on: q.data.notify_on,
+      })
+  }, [q.data])
+  const save = useMutation({
+    mutationFn: (body: Partial<NotifyForm>) =>
+      api<VulnPolicy>("/api/vulnerabilities/policy/", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (p) => {
+      qc.setQueryData(["vulnerability-policy"], p)
+      toast.success("Notifications saved")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  if (!settings.enabled || !q.data || !form) return null
+  const p = q.data
+  const patch = notifyPatch(p, form)
+  return (
+    <SettingsCard
+      title="Vulnerability notifications"
+      description="One message per recompute to the tenant's notification channels."
+      onSave={p.can_change ? () => save.mutate(patch) : undefined}
+      dirty={Object.keys(patch).length > 0}
+      saving={save.isPending}
+      saveLabel="Save notifications"
+    >
+      <FormCheckbox
+        label="Send notifications"
+        checked={form.notify_enabled}
+        onChange={(v) => setForm((f) => (f ? { ...f, notify_enabled: v } : f))}
+        disabled={!p.can_change}
+      />
+      <Field
+        label="New matches that are"
+        group
+        info="Matches an exception covers are never named."
+      >
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {NOTIFY_ON.map((o) => (
+            <FormCheckbox
+              key={o.value}
+              label={o.label}
+              checked={form.notify_on.includes(o.value)}
+              onChange={(v) =>
+                setForm((f) =>
+                  f
+                    ? {
+                        ...f,
+                        notify_on: v
+                          ? [...f.notify_on, o.value]
+                          : f.notify_on.filter((x) => x !== o.value),
+                      }
+                    : f
+                )
+              }
+              disabled={!p.can_change || !form.notify_enabled}
+            />
+          ))}
+        </div>
+      </Field>
+    </SettingsCard>
+  )
+}
+
+function PriorityCard() {
+  const { settings, q } = usePolicy()
+  const qc = useQueryClient()
   const [form, setForm] = useState<Form | null>(null)
   useEffect(() => {
     if (q.data) setForm(formOf(q.data))
