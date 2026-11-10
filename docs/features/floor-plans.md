@@ -792,7 +792,15 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   turned with it, or centred in a polygon - in the same ink as 2D (the
   area's own colour over a light fill, black or white over a strong one,
   on a halo where the fill is light), with its type's icon first; an area
-  with **Show the name** off stays unnamed. The 2D **Zone labels** switch
+  with **Show the name** off stays unnamed. A room's, an area's or a
+  zone's name always stays inside its own floor: a wall's thickness in
+  from the area's edges and clear of every wall on the level. Where the
+  2D place would put it against or under a wall it slides in; where the
+  room is too small for it, it moves to the roomiest spot (turned along a
+  narrow room if that holds it whole) and shrinks to fit, and a room too
+  small for a readable name shows none. **Readable** grows a name only as
+  far as its room allows, and a standing name is no wider than its room
+  along the line it stands on. The 2D **Zone labels** switch
   also writes the zones' names on the 3D floor. What the eyes hide is
   hidden here too. Seen from low down, where flat text no longer reads,
   each piece stands up and faces the camera instead, lying back down as

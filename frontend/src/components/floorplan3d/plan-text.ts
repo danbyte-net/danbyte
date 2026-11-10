@@ -9,6 +9,7 @@ import {
   areaNameHalo,
   areaNameHaloColor,
   boxCenter,
+  boxCorners,
   labelBox,
   labelFontCells,
   labelPlate,
@@ -26,6 +27,7 @@ import {
 } from "@/components/floorplan/readable"
 import type { NameCandidate } from "@/components/floorplan/readable"
 
+import { mainAxis, readableAngle } from "./plan-text-fit"
 import { trayElevationM } from "./world"
 import type {
   SceneRaisedFloor,
@@ -90,6 +92,14 @@ export interface PlanTextItem {
   ink: PlanTextInk
   /** A Lucide icon before the text (an area's type). */
   icon?: string
+  /** The floor it names (an area's or a zone's outline, cells): the text
+   * stays inside it, clear of its edges and the level's walls
+   * (plan-text-fit.ts). */
+  room?: {
+    outline: Pt[]
+    /** The turns it may take besides its own, where that holds it. */
+    angles: number[]
+  }
 }
 
 /** What the plan writes, as the Display menu asks for it. */
@@ -216,6 +226,7 @@ export function areaText(
       at: polygonCentroid(a.points),
       pivot: [0.5, 0.5],
       rotation: 0,
+      room: { outline: a.points, angles: [mainAxis(a.points)] },
     }
   }
   // As 2D: a room too small for its name leaves it off, unless Readable.
@@ -229,6 +240,10 @@ export function areaText(
     at: rotatePoint(corner, boxCenter(a), a.rotation),
     pivot: [0, 0],
     rotation: a.rotation,
+    room: {
+      outline: boxCorners(a),
+      angles: [readableAngle(a.rotation + 90)],
+    },
   }
 }
 
@@ -277,6 +292,16 @@ export function zoneText(t: SceneTile, dark: boolean): PlanTextItem | null {
     at: rotatePoint(corner, [pose.cx, pose.cy], pose.residual),
     pivot: [0, 0],
     rotation: pose.residual,
+    room: {
+      outline: boxCorners({
+        x: t.x,
+        y: t.y,
+        width: t.w,
+        height: t.h,
+        rotation: pose.residual,
+      }),
+      angles: [readableAngle(pose.residual + 90)],
+    },
     elevation: FLOOR_TEXT_Y,
     ink: {
       color: t.color || "#71717a",
