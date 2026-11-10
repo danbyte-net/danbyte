@@ -124,6 +124,14 @@ export const Route = createRootRoute({
   component: AppLayout,
 })
 
+// Routes reachable without a session (see AppLayout).
+const PUBLIC_ROUTES = new Set([
+  "/login",
+  "/set-password",
+  "/forgot-password",
+  "/reset-password",
+])
+
 // AppLayout - every page hangs off this. Sidebar + header + outlet.
 // The SidebarProvider exposes a context that SidebarTrigger consumes,
 // so the toggle button in the header collapses/expands the sidebar.
@@ -139,7 +147,7 @@ function AppLayout() {
   // Routes reachable without a session - rendered bare, no sidebar, and the
   // auth guard never bounces them to /login. (Public share links were removed;
   // no /share/* exemption remains - every data route requires a session.)
-  const isPublic = pathname === "/login" || pathname === "/set-password"
+  const isPublic = PUBLIC_ROUTES.has(pathname)
 
   useEffect(() => {
     // The deployment name is the tab-title SUFFIX; each page prepends what
@@ -185,7 +193,7 @@ function AppLayout() {
     }
   }, [isLoading, me.is_authenticated, isPublic, pathname, navigate])
 
-  // Public routes (login, set-password) render bare (no sidebar chrome).
+  // Public routes (sign-in and password pages) render bare (no sidebar chrome).
   if (isPublic) return <Outlet />
 
   // SECURITY: never render an app page until we *know* the caller is

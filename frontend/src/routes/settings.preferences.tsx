@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TwoFactorSection } from "@/components/two-factor-section"
+import { PasswordSection } from "@/components/password-section"
 import { ApiTokensSection } from "@/components/api-tokens-section"
 import { SidebarCard } from "@/components/settings/sidebar-card"
 import {
@@ -49,6 +50,7 @@ function PreferencesPage() {
         <NavigationCard />
         <TaskEmailsCard />
         <SpaceMapCard />
+        <PasswordSection />
         <TwoFactorSection />
         <ApiTokensSection />
       </SettingsGrid>

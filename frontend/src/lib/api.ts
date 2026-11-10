@@ -404,6 +404,12 @@ export interface Me {
   /** Hide the local username/password form when SSO providers exist (#119).
    * Cosmetic de-emphasis - the API keeps accepting local credentials. */
   hide_local_login?: boolean
+  /** Login page: offer "Forgot password?" (reset by email is on and mail
+   * can be sent). Anonymous answer only. */
+  password_reset_available?: boolean
+  /** Where this account's password lives; only "local" can change it here.
+   * "none" is a local account with no password yet. */
+  password_source?: "local" | "ldap" | "sso" | "none"
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
   /** Faceplates / photo ports draw "marked connected" ports lit like cabled. */
@@ -479,6 +485,23 @@ export const auth = {
   logout: () => api<{ ok: boolean }>("/api/auth/logout/", { method: "POST" }),
   setPassword: (uid: string, token: string, password: string) =>
     api<{ ok: boolean; username: string }>("/api/auth/set-password/", {
+      method: "POST",
+      body: JSON.stringify({ uid, token, password }),
+    }),
+  /** Session only: an API token can't change a password. */
+  changePassword: (current_password: string, new_password: string) =>
+    api<{ ok: boolean; sessions_ended: number }>("/api/auth/password/change/", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+  /** Always the same answer, whether or not the account exists. */
+  requestPasswordReset: (identifier: string) =>
+    api<{ detail: string }>("/api/auth/password-reset/", {
+      method: "POST",
+      body: JSON.stringify({ identifier }),
+    }),
+  confirmPasswordReset: (uid: string, token: string, password: string) =>
+    api<{ ok: boolean }>("/api/auth/password-reset/confirm/", {
       method: "POST",
       body: JSON.stringify({ uid, token, password }),
     }),
