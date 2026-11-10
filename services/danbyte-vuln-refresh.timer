@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Danbyte vulnerability data daily
+
+[Timer]
+OnCalendar=*-*-* 05:50:00
+OnBootSec=300
+Persistent=true
+AccuracySec=15m
+
+[Install]
+WantedBy=timers.target

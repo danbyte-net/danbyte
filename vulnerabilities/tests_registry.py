@@ -1,5 +1,6 @@
 """The app is wired into the shared registries: change log, migration guard,
-and no outbound request on any path in this phase."""
+and outbound requests only from the server-mode fetch, through the SSRF
+guard."""
 from __future__ import annotations
 
 import ast
@@ -24,11 +25,14 @@ class RegistryTests(SimpleTestCase):
     def test_migrations_are_safe(self):
         self.assertEqual(problems(only_apps={"vulnerabilities"}), [])
 
-    def test_no_outbound_client_is_imported(self):
+    def test_only_the_fetch_module_makes_requests(self):
         banned = {"requests", "urllib.request", "http.client", "httpx", "socket",
                   "core.ssrf"}
         found = []
+        allowed = {"fetch.py", "tests_fetch.py"}
         for path in APP.glob("*.py"):
+            if path.name in allowed:
+                continue
             tree = ast.parse(path.read_text())
             for node in ast.walk(tree):
                 names = []
@@ -38,3 +42,15 @@ class RegistryTests(SimpleTestCase):
                     names = [node.module]
                 found += [f"{path.name}: {n}" for n in names if n in banned]
         self.assertEqual(found, [])
+
+    def test_the_fetch_module_sends_only_through_the_guard(self):
+        """``requests`` is there for its exception types; every request is
+        made by ``core.ssrf.SafeSession`` (pinned address, no redirects)."""
+        tree = ast.parse((APP / "fetch.py").read_text())
+        direct = [
+            ast.unparse(node.func) for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name) and node.func.value.id == "requests"
+        ]
+        self.assertEqual(direct, [])
+        self.assertIn("SafeSession()", (APP / "fetch.py").read_text())

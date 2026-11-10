@@ -1,0 +1,15 @@
+[Unit]
+Description=Danbyte vulnerability data refresh (opt-in, server mode only)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py vuln_refresh
+
+# Triggered daily by danbyte-vuln-refresh.timer. Does nothing unless a
+# deployment admin turned vulnerability data on with update source "server";
+# then fetches NVD, OSV, CISA KEV and FIRST EPSS through the SSRF guard.
+# Logs: journalctl --user -fu danbyte-vuln-refresh
