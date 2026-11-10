@@ -1067,7 +1067,7 @@ for configuration rendering.
 
 A platform also carries a **Target version** and a **Version pattern** - the
 regular expression that reads the running version out of SNMP `sysDescr`
-for devices and VMs on it; see [Software
+and Oxidized configurations for devices and VMs on it; see [Software
 target](../features/lifecycle.md#software-target) and [Version
 pattern](../features/lifecycle.md#version-pattern). Its **License** is
 the OS's SPDX licence expression (`license` in the API and import), reported

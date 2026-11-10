@@ -147,12 +147,26 @@ Every software version records its **source**:
 | Import | A data import file |
 | SNMP | The SNMP facts poll, read from `sysDescr` |
 | Virtualization | A hypervisor sync - the [vCenter sync](virt-vcenter.md) fills an ESXi host's version |
-| Oxidized | Reserved for versions read from stored configurations |
+| Oxidized | A configuration read from [Oxidized](oxidized.md#software-version) |
 
 The rule: **a manual or imported version is never overwritten** by an
-automatic source. SNMP and the virtualization sync fill a blank version, or
-replace one an automatic source wrote, and stamp `software_version_seen_at`
-with when they set it. Clearing the field hands it back to them.
+automatic source. SNMP, Oxidized and the virtualization sync fill a blank
+version, or replace one an automatic source wrote, and stamp
+`software_version_seen_at` with when they set it. Clearing the field hands it
+back to them.
+
+Between automatic sources the **version read last wins**, with two
+exceptions:
+
+- The same version read by another source changes nothing: the source and
+  `seen_at` stay those of the source that set it, so SNMP and Oxidized do not
+  take turns writing it.
+- A less specific version never replaces a more specific one it is a prefix
+  of. An IOS config states only `version 17.9`; it keeps SNMP's `17.9.4a`
+  (or `17.09.04a`). A config that says `version 17.12` does replace it. One
+  consequence: a minor upgrade inside the same train (`17.9.4a` to
+  `17.9.5`) seen only in a config's `version 17.9` line is not picked up
+  until SNMP, or a `show version` comment in the config, reports it.
 
 ### Reading the version from SNMP
 
@@ -177,18 +191,22 @@ version.
 For anything else, set a **Version pattern** on the platform: a regular
 expression with one capture group, or a group named `version`, e.g.
 `FortiGate-\S+ v(\d+\.\d+\.\d+)`. It is tried first, on the first 512
-characters of `sysDescr`; when it does not match the built-in readers still
-apply. A pattern that does not compile, or captures nothing, is refused when
+characters of `sysDescr` and the first 200 lines of an Oxidized
+configuration; when it does not match the built-in readers still apply. A pattern that does not compile, or captures nothing, is refused when
 the platform is saved. A device uses its effective platform's pattern.
 
-Saving a new pattern reads the stored `sysDescr` of that platform's devices
-and VMs again in the background. To read every stored `sysDescr` again, for
+Saving a new pattern reads the version of that platform's devices and VMs
+again in the background: from the stored `sysDescr`, and from the current
+Oxidized configuration of each linked node. To read everything again, for
 example after an upgrade:
 
 ```sh
-manage.py extract_software_versions [--tenant <id>] [--platform <id>] [--enqueue]
+manage.py extract_software_versions [--tenant <id>] [--platform <id>] \
+    [--source all|snmp|oxidized] [--enqueue]
 ```
 
+`--source` limits it to the stored SNMP facts or to the Oxidized configs
+(default both; the Oxidized re-read fetches every confirmed link's config).
 `--enqueue` runs it as a job on the `low` queue.
 
 ## API

@@ -52,6 +52,7 @@ from .serializers import (
     require_connection_change,
 )
 from .sync import reasons_for, remember_unlinked, sync_nodes
+from .versions import enqueue_read_versions
 
 OID = re.compile(r"^[0-9a-f]{4,64}$")
 
@@ -88,6 +89,8 @@ class OxidizedConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         """Read the node list now and re-match every link that is not pinned."""
         conn = self.get_object()
         summary = sync_nodes(conn)
+        if not summary["error"]:
+            enqueue_read_versions(conn)
         summary = {
             **summary,
             "unmatched": reasons_for(summary.get("unmatched"), request.user, conn.tenant),
