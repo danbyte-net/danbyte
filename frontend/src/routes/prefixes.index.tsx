@@ -129,9 +129,11 @@ function PrefixesPage() {
   const allRows = useMemo(() => query.data?.results ?? [], [query.data])
 
   // "+ N more free": the rest of one parent's blocks, fetched on demand.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
-  useEffect(() => setExpanded(new Set()), [freeParams])
-  const expandedIds = useMemo(() => [...expanded], [expanded])
+  // Parents whose "+ N more free" row is open. View state, not a filter:
+  // it resets with the free-space settings and is not worth a URL.
+  const [expandedIds, setExpandedIds] = useState<readonly string[]>([])
+  useEffect(() => setExpandedIds([]), [freeParams])
+  const expanded = useMemo(() => new Set(expandedIds), [expandedIds])
   const extraQueries = useQueries({
     queries: expandedIds.map((id) => ({
       queryKey: ["prefix-available", id, freeParams],
@@ -389,7 +391,10 @@ function PrefixesPage() {
         ),
         {
           canAdd,
-          onExpand: (id) => setExpanded((prev) => new Set(prev).add(id)),
+          onExpand: (id) =>
+            setExpandedIds((prev) =>
+              prev.includes(id) ? prev : [...prev, id]
+            ),
         }
       ),
     [
