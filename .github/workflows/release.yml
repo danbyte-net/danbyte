@@ -34,10 +34,18 @@ jobs:
       contents: read
       packages: write
 
+  # ── Gate 1b: the lock is current, no critical/high runtime advisory ───────
+  # osv-scanner.toml is the allowlist; an entry needs a reason and an expiry.
+  dependencies:
+    name: Dependencies
+    uses: ./.github/workflows/dependencies.yml
+    permissions:
+      contents: read
+
   # ── Build the offline bundle (only after tests pass) ───────────────────────
   bundle:
     name: Build offline bundle
-    needs: test
+    needs: [test, dependencies]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -30,6 +30,7 @@ nav = [
     { "Upgrading"         = "getting-started/upgrading.md" },
     { "Backup and restore" = "getting-started/backup-restore.md" },
     { "Danbyte's SBOM"    = "getting-started/sbom.md" },
+    { "Dependencies"      = "getting-started/dependencies.md" },
     { "First-time setup"  = "features/onboarding.md" },
     { "Dev workflow"      = "getting-started/dev-workflow.md" },
   ] },
