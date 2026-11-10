@@ -164,6 +164,24 @@ class ConfigTextTests(SimpleTestCase):
                 if "frame-ancestors" in csp:
                     self.assertIn("frame-ancestors 'self'", csp)
 
+    def test_csp_allows_the_vector_basemap_and_nothing_wider(self):
+        # #467: MapLibre fetches tiles over fetch (connect-src) from the
+        # default vector host only, and runs its bundled worker; its style,
+        # fonts and sprites ship with Danbyte, so no other map host appears.
+        found = re.findall(r'add_header\s+Content-Security-Policy\s+"([^"]*)"',
+                           _server_level(TEMPLATES[1].read_text()))
+        self.assertEqual(len(found), 1)
+        csp = {d.split()[0]: d.split()[1:] for d in found[0].split(";") if d.strip()}
+        self.assertIn("https://vector.openstreetmap.org", csp["connect-src"])
+        self.assertEqual(csp["worker-src"], ["'self'", "blob:"])
+        self.assertNotIn("*", " ".join(csp["connect-src"]))
+        self.assertNotIn("https:", csp["connect-src"])
+        self.assertEqual(csp["script-src"], ["'self'", "'unsafe-inline'"])
+        self.assertNotIn("'unsafe-eval'", found[0])
+        from api.site_map_views import OSM_VECTOR_URL
+
+        self.assertTrue(OSM_VECTOR_URL.startswith("https://vector.openstreetmap.org/"))
+
     def test_edge_values_match_django(self):
         # Same value at both layers, so the answer does not depend on which
         # one a request went through.

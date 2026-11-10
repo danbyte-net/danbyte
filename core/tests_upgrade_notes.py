@@ -227,6 +227,42 @@ class RealNotesTests(APITestCase):
                     if re.search(r"\bmake\b", line):     # in the bundle, for the install
                         self.assertIn(" APP=", line)
 
+    def test_the_map_csp_step_turns_the_old_policy_into_the_shipped_one(self):
+        # #467: the step by hand, run on the 0.19 policy, gives the
+        # template's policy; the note hides once the site has worker-src.
+        import re
+        import shlex
+        import shutil
+        import subprocess
+
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-map-csp")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        new = re.search(r'add_header Content-Security-Policy "[^"]*" always;', template).group(0)
+        old = new.replace(" https://vector.openstreetmap.org", "").replace(
+            " worker-src 'self' blob:;", "")
+        self.assertNotEqual(old, new)
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            self.assertFalse(un._map_csp_allows_vector())
+        with patch("core.upgrade_notes._site_config", return_value=new):
+            self.assertTrue(un._map_csp_allows_vector())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._map_csp_allows_vector())
+        if not shutil.which("sed"):
+            return
+        command = note.snippet.replace("\\\n", " ")
+        line = next(ln for ln in command.splitlines() if ln.startswith("sudo sed"))
+        argv = shlex.split(line)[1:]
+        with tempfile.TemporaryDirectory() as d:
+            conf = Path(d) / "danbyte.conf"
+            conf.write_text(old + "\n")
+            argv[-1] = str(conf)
+            subprocess.run(argv, check=True)
+            self.assertEqual(conf.read_text(), new + "\n")
+
     def test_the_certificate_unit_alone_comes_from_the_bundle_too(self):
         # The root steps leave the unit out on an install without nginx;
         # make in the same bundle installs it for this install's directory.
