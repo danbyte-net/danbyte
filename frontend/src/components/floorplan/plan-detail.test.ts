@@ -30,30 +30,29 @@ import type { AreaShape, Pt } from "./shapes"
 // level draws, the rooms' facts and labels, short names, the area names'
 // collision pass and the building's footprint.
 
-const area = (id: string, patch: Partial<AreaShape> = {}): AreaShape =>
-  ({
-    kind: "area",
-    id,
-    shape: "rect",
-    x: 0,
-    y: 0,
-    width: 10,
-    height: 10,
-    rotation: 0,
-    points: [],
-    room: null,
-    location: null,
-    label: id,
-    color: "",
-    fill_opacity: 12,
-    border: "solid",
-    show_name: true,
-    z: 0,
-    locked: false,
-    created_at: "",
-    updated_at: "",
-    ...patch,
-  })
+const area = (id: string, patch: Partial<AreaShape> = {}): AreaShape => ({
+  kind: "area",
+  id,
+  shape: "rect",
+  x: 0,
+  y: 0,
+  width: 10,
+  height: 10,
+  rotation: 0,
+  points: [],
+  room: null,
+  location: null,
+  label: id,
+  color: "",
+  fill_opacity: 12,
+  border: "solid",
+  show_name: true,
+  z: 0,
+  locked: false,
+  created_at: "",
+  updated_at: "",
+  ...patch,
+})
 
 const tile = (
   id: string,
@@ -119,6 +118,12 @@ describe("the level", () => {
       lvl = detailLevel(ppm, lvl)
       expect(lvl).toBe("room")
     }
+  })
+
+  it("stays at the room level on a plan without rooms", () => {
+    expect(detailLevel(2, null, { rooms: false })).toBe("room")
+    expect(detailLevel(2, "room", { rooms: false })).toBe("room")
+    expect(detailLevel(80, null, { rooms: false })).toBe("detail")
   })
 
   it("jumps straight to detail from afar", () => {

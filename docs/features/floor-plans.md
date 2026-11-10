@@ -1593,6 +1593,9 @@ threshold back so a zoom that rests near one does not flicker:
 | **Room** | up to **60 px** a metre (back under 50 px): a hall fills much of the screen | Rows of racks as bars or racks without names, each row named once along it ([rows from afar](#rows-from-afar)). Cooling units, UPS and the rest as their icon tiles with no callouts. Aisles a light wash. Door swings come back. |
 | **Detail** | from 60 px a metre: racks big enough to read | Every tile with its icon and a **short name**. The rest as below. |
 
+A plan with no rooms or areas drawn on it has nothing to sum up from afar:
+it stops at the room level, its racks and icons still there.
+
 - **Room labels.** A label sits upright, or along a long narrow room
   (a plant room, a generator yard) when only that fits. A room too small
   for its name gets none; hover it and the name shows in a tooltip. Of two

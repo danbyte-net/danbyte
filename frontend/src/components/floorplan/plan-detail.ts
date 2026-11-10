@@ -52,13 +52,20 @@ export function pxPerMetre(pxPerCell: number, cellMm: number): number {
 /** The level at `ppm` px per metre, `prev` the level shown last. */
 export function detailLevel(
   ppm: number,
-  prev: DetailLevel | null = null
+  prev: DetailLevel | null = null,
+  {
+    rooms = true,
+  }: {
+    /** The plan has rooms (areas) to sum it up; without, it never goes
+     * further out than the room level - its racks would be all it has. */
+    rooms?: boolean
+  } = {}
 ): DetailLevel {
   const detailAt =
     prev === "detail" ? DETAIL_EXIT_PX_PER_M : DETAIL_ENTER_PX_PER_M
   const roomAt = prev === "overview" ? ROOM_ENTER_PX_PER_M : ROOM_EXIT_PX_PER_M
   if (ppm >= detailAt) return "detail"
-  if (ppm >= roomAt) return "room"
+  if (ppm >= roomAt || !rooms) return "room"
   return "overview"
 }
 

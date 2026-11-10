@@ -863,7 +863,9 @@ export function FloorCanvas({
   const autoDetail = detail === "auto" && !editable
   const [levelPrev, setLevelPrev] = useState<DetailLevel | null>(null)
   const level: DetailLevel = autoDetail
-    ? detailLevel(pxPerMetre(CELL * settledView.k, plan.cell_mm), levelPrev)
+    ? detailLevel(pxPerMetre(CELL * settledView.k, plan.cell_mm), levelPrev, {
+        rooms: shapes.some((s) => s.kind === "area"),
+      })
     : "detail"
   if (autoDetail && level !== levelPrev) setLevelPrev(level)
   const shows = useMemo(
