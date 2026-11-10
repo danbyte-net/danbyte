@@ -27,7 +27,7 @@ from rest_framework.permissions import IsAuthenticated
 from api.viewsets import StandardPagination
 
 #: Features whose add/change grant earns the people picker.
-PICKER_TYPES = ("task", "notificationsubscription", "script", "vulnerabilityexception")
+PICKER_TYPES = ("task", "notificationsubscription", "script")
 
 
 def _can_write(user, tenant, slug: str) -> bool:
@@ -58,8 +58,7 @@ def may_pick_people(user, tenant, *, kind: str = "user", custom_field=None) -> b
     """May ``user`` list the people (``kind="user"``) or groups of ``tenant``?
 
     Yes for user administrators, for anyone who may add or change tasks,
-    notification subscriptions, scripts or vulnerability exceptions (whose
-    owner is a tenant member), for a site editor when the tenant
+    notification subscriptions or scripts, for a site editor when the tenant
     lets site editors invite viewers (people only - that flow never takes a
     group), and for the picker of a user/group custom field on a type the
     caller may edit. Read-only accounts get no list.

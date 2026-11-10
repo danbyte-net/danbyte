@@ -336,9 +336,9 @@ class CountTests(ApiBase):
 
 class AccessTests(ApiBase):
     def test_site_editor_own_site_only(self):
-        self.member("site", [(["device", "virtualmachine", "vulnerabilityexception"],
-                              ["view", "add", "change", "delete"])], sites=[self.site_a])
-        r = self.client.post(URL, self.body(), format="json")
+        me = self.member("site", [(["device", "virtualmachine", "vulnerabilityexception"],
+                                   ["view", "add", "change", "delete"])], sites=[self.site_a])
+        r = self.client.post(URL, self.body(owner_id=me.pk), format="json")
         self.assertEqual(r.status_code, 201, r.content)
         r = self.client.post(URL, self.body(device_id=str(self.d_b.pk)), format="json")
         self.assertEqual(r.status_code, 400)
@@ -395,25 +395,51 @@ class AccessTests(ApiBase):
     def test_scopes_follow_the_role(self):
         self.login(self.admin)
         r = self.client.get(f"{URL}scopes/").json()
-        self.assertEqual(r, {"scopes": ["device", "virtual_machine", "platform",
-                                        "application", "tenant"], "site_limited": False})
+        self.assertEqual(r["scopes"], ["device", "virtual_machine", "platform",
+                                       "application", "tenant"])
+        self.assertEqual((r["site_limited"], r["can_pick_owner"], r["you"]["username"]),
+                         (False, True, "root"))
         self.member("site", [(["device", "virtualmachine", "vulnerabilityexception"],
                               ["view", "add"])], sites=[self.site_a])
-        self.assertEqual(self.client.get(f"{URL}scopes/").json(),
-                         {"scopes": ["device", "virtual_machine"], "site_limited": True})
+        r = self.client.get(f"{URL}scopes/").json()
+        self.assertEqual((r["scopes"], r["site_limited"]),
+                         (["device", "virtual_machine"], True))
         self.member("devonly", [(["device", "vulnerabilityexception"], ["view", "add"])])
         self.assertEqual(self.client.get(f"{URL}scopes/").json()["scopes"],
                          ["device", "tenant"])
         self.member("reader", [(["device", "vulnerabilityexception"], ["view"])])
         self.assertEqual(self.client.get(f"{URL}scopes/").status_code, 403)
 
-    def test_exception_writers_may_pick_the_owner(self):
-        self.member("writer", [(["device", "vulnerabilityexception"], ["view", "add"])])
-        r = self.client.get("/api/people/")
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertIn("alice", [p["username"] for p in r.json()["results"]])
-        self.member("reader", [(["device", "vulnerabilityexception"], ["view"])])
+    def test_owner_is_yourself_without_the_people_picker(self):
+        me = self.member("writer", [(["device", "vulnerabilityexception"],
+                                     ["view", "add", "change"])])
+        # Writing exceptions does not open the people list.
         self.assertEqual(self.client.get("/api/people/").status_code, 403)
+        r = self.client.get(f"{URL}scopes/").json()
+        self.assertEqual((r["can_pick_owner"], r["you"]["id"]), (False, me.pk))
+        r = self.client.post(URL, self.body(), format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(list(r.json()), ["owner_id"])
+        r = self.client.post(URL, self.body(owner_id=me.pk), format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        e = r.json()["id"]
+        r = self.client.patch(f"{URL}{e}/", {"owner_id": self.owner.pk}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("owner_id", r.json())
+        # Someone else's exception keeps its owner through an edit.
+        theirs = exc(self.tenant, self.mid, device=self.d_a)
+        theirs.owner = self.owner
+        theirs.save()
+        r = self.client.patch(f"{URL}{theirs.pk}/", {"owner_id": self.owner.pk,
+                                                     "reason": "Still off"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_people_pickers_may_name_another_owner(self):
+        self.member("tasker", [(["device", "vulnerabilityexception", "task"],
+                                ["view", "add"])])
+        self.assertTrue(self.client.get(f"{URL}scopes/").json()["can_pick_owner"])
+        r = self.client.post(URL, self.body(), format="json")
+        self.assertEqual(r.status_code, 201, r.content)
 
     def test_match_names_its_mapping_platform(self):
         self.login(self.admin)

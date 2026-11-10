@@ -92,6 +92,18 @@ const STATUS_ITEMS = (Object.keys(STATUS_LABELS) as VulnExceptionStatus[]).map(
   (v) => ({ value: v, label: STATUS_LABELS[v] })
 )
 
+/** The owner sent: the picked one with the people picker; else yourself on
+ * an add, and the current owner (unchanged) on an edit. */
+export function ownerFor(o: {
+  canPickOwner: boolean
+  editing: boolean
+  picked: number | null
+  you: number | null
+}): number | null {
+  if (o.canPickOwner || o.editing) return o.picked
+  return o.you
+}
+
 function fieldErrorsOf(err: unknown): Record<string, string> | null {
   if (!(err instanceof ApiError) || err.status !== 400) return null
   if (!err.body || typeof err.body !== "object") return null
@@ -156,9 +168,13 @@ function Body({
   const scopesQ = useQuery({
     queryKey: ["vulnerability-exception-scopes"],
     queryFn: () => api<VulnExceptionScopes>(`${EXCEPTIONS_ENDPOINT}scopes/`),
-    enabled: !editing,
     staleTime: 60_000,
+    // An edit needs only `change`; without `add` this answers 403 and the
+    // owner simply stays as it is.
+    retry: false,
   })
+  const canPickOwner = scopesQ.data?.can_pick_owner ?? false
+  const you = scopesQ.data?.you ?? null
   const options = useMemo(
     () => scopeOptions(matches, scopesQ.data?.scopes ?? [], kind),
     [matches, scopesQ.data, kind]
@@ -216,22 +232,30 @@ function Body({
   const setAnalysis = (patch: Partial<Analysis>) =>
     set({ analysis: { ...draft.analysis, ...patch } })
 
+  // Without the people picker the owner is you (or, on an edit, stays).
+  const owner = ownerFor({
+    canPickOwner,
+    editing,
+    picked: draft.owner,
+    you: you?.id ?? null,
+  })
+  const effective = useMemo(() => ({ ...draft, owner }), [draft, owner])
   const expiryMsg = expiryError(draft.status, draft.expires, today)
   const localErrors: Record<string, string> = {
     ...(draft.reason.trim() ? {} : { reason: "Say why." }),
-    ...(draft.owner === null ? { owner_id: "Pick an owner." } : {}),
+    ...(owner === null ? { owner_id: "Pick an owner." } : {}),
     ...(expiryMsg ? { expires_on: expiryMsg } : {}),
   }
   const shown = { ...(touched ? localErrors : {}), ...errors }
   const bodies = useMemo(
-    () => (scope ? createBodies(matches, scope, draft) : []),
-    [matches, scope, draft]
+    () => (scope ? createBodies(matches, scope, effective) : []),
+    [matches, scope, effective]
   )
 
   const save = useMutation({
     mutationFn: async () => {
       if (exception) {
-        const patch = editPatch(exception, draft)
+        const patch = editPatch(exception, effective)
         if (Object.keys(patch).length)
           await api(`${EXCEPTIONS_ENDPOINT}${exception.id}/`, {
             method: "PATCH",
@@ -407,15 +431,27 @@ function Body({
       />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <PersonPicker
-          label="Owner"
-          required
-          value={draft.owner as unknown as string | null}
-          onChange={(v) =>
-            set({ owner: v === null || v === "" ? null : Number(v) })
-          }
-          error={shown.owner_id}
-        />
+        {canPickOwner ? (
+          <PersonPicker
+            label="Owner"
+            required
+            value={draft.owner as unknown as string | null}
+            onChange={(v) =>
+              set({ owner: v === null || v === "" ? null : Number(v) })
+            }
+            error={shown.owner_id}
+          />
+        ) : (
+          <Field label="Owner" error={shown.owner_id}>
+            <span className="flex h-9 items-center text-sm">
+              {editing
+                ? exception?.owner_name || "-"
+                : you
+                  ? `You · ${you.display_name}`
+                  : "You"}
+            </span>
+          </Field>
+        )}
         <FormDate
           label="Expires"
           required={draft.status === "risk_accepted"}
