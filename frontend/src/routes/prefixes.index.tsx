@@ -1,36 +1,26 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query"
-import type {ColumnDef} from "@tanstack/react-table";
+import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { LayoutList } from "lucide-react"
 
-import {
-  api
-  
-  
-  
-} from "@/lib/api"
-import type {BulkStatusEntry, Paginated, Prefix} from "@/lib/api";
+import { api } from "@/lib/api"
+import type { BulkStatusEntry, Paginated, Prefix } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import {
-  annotateNesting,
-  contains,
-  parseCidr
-  
-} from "@/lib/prefix-tree"
-import type {NestedPrefix} from "@/lib/prefix-tree";
+import { annotateNesting, contains, parseCidr } from "@/lib/prefix-tree"
+import type { NestedPrefix } from "@/lib/prefix-tree"
 import {
   blocksByParent,
   isFreeRow,
   layoutFreeRows,
   parseSize,
-  scopeError
-  
-  
+  scopeError,
 } from "@/lib/prefix-free"
-import type {FreeBlock, ListRow} from "@/lib/prefix-free";
+import type { FreeBlock, ListRow } from "@/lib/prefix-free"
+import { createSearch } from "@/lib/prefix-free"
 import { PrefixFreeRail, withFreeCells } from "@/components/prefix-free-rows"
+import { cn } from "@/lib/utils"
 import { PrefixPlanDialog } from "@/components/prefix-plan-dialog"
 import type { FilterSnapshot } from "@/components/table-filters"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -91,6 +81,7 @@ type FreePage = Paginated<Prefix> & {
 function PrefixesPage() {
   const { canDo } = useMe()
   const canAdd = canDo("prefix", "add")
+  const navigate = useNavigate()
   const canEdit = canDo("prefix", "change")
   const canDelete = canDo("prefix", "delete")
   const [q, setQ] = useUrlSearch()
@@ -480,7 +471,17 @@ function PrefixesPage() {
           groupBy="vrfName"
           renderGroupHeader={renderVrfGroupHeader}
           isPlaceholderRow={isFreeRow}
-          rowClassName={(r) => (r._free?.next ? "bg-muted" : undefined)}
+          onRowClick={(r) => {
+            // A free block's whole row opens the form, like its Create.
+            if (canAdd && r._free && r._free.kind !== "more")
+              void navigate({ to: "/prefixes/new", search: createSearch(r) })
+          }}
+          rowClassName={(r) =>
+            cn(
+              r._free?.next && "bg-muted",
+              canAdd && r._free && r._free.kind !== "more" && "cursor-pointer"
+            )
+          }
           onSelectedRowsChange={(picked) =>
             setSelectedRows(picked.filter((r) => !isFreeRow(r)))
           }

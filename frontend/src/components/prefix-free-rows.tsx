@@ -1,4 +1,4 @@
-import type {ColumnDef} from "@tanstack/react-table";
+import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 import { CornerDownRight, Plus } from "lucide-react"
 
@@ -8,8 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { SuggestInput } from "@/components/ui/suggest-input"
 import { FacetHeading } from "@/components/filter-rail"
-import { createSearch, freeSizeLabel  } from "@/lib/prefix-free"
-import type {ListRow} from "@/lib/prefix-free";
+import { createSearch, freeSizeLabel } from "@/lib/prefix-free"
+import type { ListRow } from "@/lib/prefix-free"
 
 /**
  * Free rows in the prefix list (lib/prefix-free): the list's own columns,
@@ -87,7 +87,17 @@ function freeCell(
       return (
         <div className="flex items-center gap-0.5">
           <Indent depth={row._depth} />
-          <span className="font-mono text-muted-foreground">{mark.cidr}</span>
+          {opts.canAdd ? (
+            <Link
+              to="/prefixes/new"
+              search={createSearch(row)}
+              className="font-mono text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {mark.cidr}
+            </Link>
+          ) : (
+            <span className="font-mono text-muted-foreground">{mark.cidr}</span>
+          )}
         </div>
       )
     case "status":
