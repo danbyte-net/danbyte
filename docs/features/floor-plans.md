@@ -1333,6 +1333,10 @@ the plan reads over them - a satellite map keeps its colours
 (on unless the plan turns it off; see [Background image](#site-wide-floor-plans));
 **Tile icons** draws each tile as a solid block with an icon of what it is
 (on unless the plan turns it off - see [Tile icons](#tile-icons));
+**Detail** chooses how much the plan draws as you zoom - **Auto** (the
+default) shows rooms from afar, rows closer and every rack up close,
+**Always full** draws everything at every zoom (see
+[Detail by zoom](#detail-by-zoom));
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;
 **Camera FOV cones** shows/hides the camera views and **Camera coverage**
@@ -1569,6 +1573,69 @@ can switch it for the session.
 A spread keeps a row in its order: two icons side by side (or one above
 the other) never end up the other way round from the racks they stand
 for, so a row of R-A01 to R-A04 still reads left to right.
+
+#### Detail by zoom {#detail-by-zoom}
+
+A floor plan holds a lot: rooms, racks, cooling units, aisles, cameras,
+doors, trays. Drawn all at once it is a tangle from afar. **Display →
+Detail: Auto** (the default) draws one clear picture per zoom and adds
+detail as you come closer. **Always full** draws everything at every zoom,
+as plans looked before. The choice is saved on the plan with the other
+Display choices; a viewer can switch it for the session. While you edit
+the plan it always draws everything.
+
+The level follows how big a metre of the plan is on screen, with a wider
+threshold back so a zoom that rests near one does not flicker:
+
+| Level | When | What the plan draws |
+| --- | --- | --- |
+| **Overview** | a metre under **11 px** (back under 9 px): the floor or the building on screen | Rooms only. Each room a flat block in its area type's colour, its walls, and one label in its middle: the room's name and, where something stands in it, one muted line of facts - **72 racks · 61% full**, **3 UPS**, **6 cooling units**. No tiles, rows, callouts, aisles, camera cones, hatching, trays, cables, raised floors or door swings. |
+| **Room** | up to **60 px** a metre (back under 50 px): a hall fills much of the screen | Rows of racks as bars or racks without names, each row named once along it ([rows from afar](#rows-from-afar)). Cooling units, UPS and the rest as their icon tiles with no callouts. Aisles a light wash. Door swings come back. |
+| **Detail** | from 60 px a metre: racks big enough to read | Every tile with its icon and a **short name**. The rest as below. |
+
+- **Room labels.** A label sits upright, or along a long narrow room
+  (a plant room, a generator yard) when only that fits. A room too small
+  for its name gets none; hover it and the name shows in a tooltip. Of two
+  labels that would touch, the bigger room's stays. A room inside a room
+  (a cage in its hall, a fit-out zone) is named in a lighter weight. An
+  area drawn round other rooms - a building's or a site's outline - is
+  named by its rooms, not over them.
+- **Facts.** What stands in the room, its inner rooms included: its racks
+  and how full they are (units used of their height, from the rack figures
+  or the live poll), else its two most numerous kinds by tile type or
+  object kind. Aisles and other zones are not counted, nor a lone tile the
+  room is named for (the stairs in *Stair N*).
+- **Alarms.** A room with a rack or a device down, stale or degraded shows
+  it on its label as a badge in that colour - **2 down**; closer in, the
+  tiles carry their own alarm rings.
+- **Room names** never overlap at the room and detail levels either: a
+  name that runs past its room, or onto a bigger room's name, is left out
+  and shows on hover.
+- **The base map** is blanked inside the building - the outer walls'
+  outline and every area - so the map's own words never show through the
+  rooms. Outside it the map stays as it is (muted, with **Muted
+  background**).
+- **Short names.** At the detail level a rack in a row drops what its row
+  already says: `DH5-A01` reads **A01** beside **Row A**. The hovered and
+  selected rack, its popover, the rack table, search and every export keep
+  the full name.
+- **Capacity bars** show on the hovered and selected rack, or on every
+  rack while **Color by** is a capacity measure. The front-edge marker
+  stays, fainter.
+- **Camera cones** (with **Camera FOV cones** on) draw for the hovered or
+  selected camera only, or for every camera while **Camera coverage** is
+  on. By default you see the camera's icon.
+- **Hatching** (an area type's pattern) is left out from afar and drawn
+  fine and faint up close.
+- **Plan labels** too small to read from afar (a row's letter) are left
+  out at the overview; a label that opens a plan always shows.
+- The selected tile, a tile pointed at from the rack table, and one found
+  by search always draw, whatever the level.
+- With **Detail: Auto** a hall's rows never fold into one room summary
+  plate: from afar the room's label says it.
+- The level is worked out when a zoom settles. **Export PDF** and the SVG
+  are not affected: they print the full detail at the paper's scale, with
+  full names. The 3D view has its own levels.
 
 #### Callouts {#callouts}
 
