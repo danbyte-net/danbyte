@@ -719,6 +719,8 @@ urlpatterns = [
     path("prtg/", include("prtg.api_urls")),
     # Device profiles: /api/device-profiles/ and /api/device-profile-assignments/.
     path("", include("profiles.api_urls")),
+    # Vulnerability mappings, matches, policy and per-object lists (#451).
+    path("", include("vulnerabilities.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) - gated on jobs.manage.

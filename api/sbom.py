@@ -154,8 +154,6 @@ def _hosts(request, tenant, params):
     installs = restrict_queryset(
         InstalledSoftware.objects.filter(tenant=tenant), request.user, tenant,
         "installedsoftware", "view",
-    ).select_related("application", "application__manufacturer").order_by(
-        natural("application__name"), "version",
     )
 
     def narrow(qs, ids):
@@ -172,22 +170,37 @@ def _hosts(request, tenant, params):
     devices = restrict_queryset(
         Device.objects.filter(tenant=tenant), request.user, tenant, "device", "view",
     )
-    devices = narrow(devices, device_ids).select_related(
-        "site", "role", "device_type__manufacturer", "platform__manufacturer",
-    ).prefetch_related(
-        Prefetch("installed_software", queryset=installs),
-    ).order_by(natural("name"))
-
     vms = restrict_queryset(
         VirtualMachine.objects.filter(tenant=tenant), request.user, tenant,
         "virtualmachine", "view",
     )
-    vms = narrow(vms, vm_ids).select_related(
+    devices, vms = what_runs_where(narrow(devices, device_ids), narrow(vms, vm_ids),
+                                   installs)
+    return devices, vms, sites
+
+
+def what_runs_where(devices, vms, installs):
+    """The hosts with what runs on them: each device and VM with its
+    platform (a device's type's platform too), its device type and every
+    install of ``installs`` with its application, in a fixed number of
+    queries however many hosts there are. The SBOM and the vulnerability
+    matcher (``vulnerabilities.matching``) both read these rows; the caller
+    scopes the three querysets (by tenant, by RBAC, by filters)."""
+    installs = installs.select_related("application", "application__manufacturer").order_by(
+        natural("application__name"), "version",
+    )
+    devices = devices.select_related(
+        "site", "role", "device_type__manufacturer", "device_type__platform",
+        "platform__manufacturer",
+    ).prefetch_related(
+        Prefetch("installed_software", queryset=installs),
+    ).order_by(natural("name"))
+    vms = vms.select_related(
         "site", "role", "cluster", "platform__manufacturer",
     ).prefetch_related(
         Prefetch("installed_software", queryset=installs),
     ).order_by(natural("name"))
-    return devices, vms, sites
+    return devices, vms
 
 
 # ─── components ──────────────────────────────────────────────────────────────

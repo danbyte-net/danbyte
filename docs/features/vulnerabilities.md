@@ -11,13 +11,13 @@ installed applications run software with known vulnerabilities, inside your
 tenant and site scope ([#451](https://github.com/danbyte-net/danbyte/issues/451)).
 
 !!! note "Work in progress"
-    This page grows with the feature. Today Danbyte has the **data store**:
-    the settings, the vulnerability records, the upload import and the
-    [server fetch](#server-mode). Product mappings (which platform or
-    application is which CPE name or package URL), matching against your
-    inventory, the Vulnerabilities tabs and page and browser sync are still
-    to come. Until mappings exist, an NVD or OSV upload is refused and a
-    server fetch asks for nothing, because nothing would be kept.
+    This page grows with the feature. Today Danbyte has the **data store**
+    (settings, records, upload import), the [server fetch](#server-mode),
+    **product mappings**, and **matching** against your inventory with a
+    **priority**, plus the API for them. The Vulnerabilities tabs and page,
+    the mapping picker and browser sync are still to come. Until a mapping
+    exists, an NVD or OSV upload keeps nothing and a server fetch asks for
+    nothing.
 
 It is **off by default** and deployment-wide. By default nothing is fetched
 and nothing leaves the server: the update source is *upload* until a
@@ -247,3 +247,143 @@ NVD answers are cached for 24 hours. A user may search 30 times a minute
 (`429` past that), and the deployment asks NVD at most 2 times per 30
 seconds without an API key (20 with one), well under NVD's limit, so the
 picker cannot starve a running fetch.
+
+## Map your products
+
+A **product mapping** says which public product one of your catalog entries
+is. Matching only looks at mapped products, and the store only keeps records
+for products some tenant maps.
+
+| Subject | Maps to | Example | Version tested |
+|---|---|---|---|
+| Platform | CPE 2.3 operating system (`o`), or a package URL | `cpe:2.3:o:cisco:ios_xe` | each device's and VM's running version |
+| Application | package URL, or a CPE application (`a`) | `pkg:pypi/django`, `cpe:2.3:a:postgresql:postgresql` | each install's version |
+| Device type | CPE 2.3 hardware (`h`) | `cpe:2.3:h:cisco:catalyst_9300` | none: hardware context only |
+
+A subject can have several mappings. A device without its own platform uses
+its device type's. Only the product part of the identifier is kept: a full
+CPE (`cpe:2.3:o:cisco:ios_xe:17.9.4a:*:…`) or a package URL with a version
+(`pkg:pypi/django@5.2`) is cut to the product. Without an identifier the
+mapping takes the subject's own SBOM package URL or CPE template (the
+**Package URL** and **CPE** fields, see [SBOM](sbom.md#package-urls-and-cpes)).
+
+Mappings are per tenant. Reading one needs `view` on its subject, changing
+one `change` on it - a site-scoped role edits the mappings of the platforms
+and applications it may edit. Mapping changes are in the
+[change log](change-log.md).
+
+| Field | Meaning |
+|---|---|
+| `version_scheme` | How versions are read and ordered. `auto` (default) picks from the product, see below. |
+| `enabled` | Off stops matching it; its open matches are resolved. |
+
+## Version schemes
+
+| Scheme | Reads | Order | `auto` for |
+|---|---|---|---|
+| `cisco_iosxe` | `17.9.4a`, `17.09.04a` (zero padding ignored) | 17.9.4 < 17.9.4a < 17.9.5 | `cisco:ios_xe` |
+| `cisco_ios` | `15.2(7)E8`, `12.2(55)SE12` | within one train only (15.2 E): a range in another train never matches | `cisco:ios` |
+| `cisco_nxos` | `9.3(10)`, `10.2(5)M`, `7.0(3)I7(9)` | numbers; the F/M tag of a 10.x release is not an order | `cisco:nx-os` |
+| `junos` | `21.4R3-S5.4` | release then service; the build (`.4`) is dropped; X releases (`15.1X49-D200`) only against X releases | `juniper:junos` |
+| `arista_eos` | `4.28.3M` | numbers; the letter is a tag | `arista:eos` |
+| `semver` | `1.24.0`, `1.0.0-rc.1`, `16.4`, `14.13 (Debian …)`, `1.1.1w`, `9.6beta1` | semver precedence; a letter after the number sorts after it | CPE applications, `npm`, `cargo`, `golang` |
+| `pep440` | Python versions | PEP 440 | `pypi` |
+| `dpkg` | `1:2.3-4+deb12u1` | dpkg's own (epoch, `~` before anything) | `deb` |
+| `apk` | `1.2.3_rc1-r0` | Alpine's | `apk` |
+| `generic` | anything with a digit | exact matches only | every other product |
+
+A version the scheme cannot read matches no range; a record that lists that
+exact version string still matches. Blank versions never match.
+
+## How matching works
+
+Matching runs on the server, per tenant, over every enabled mapping.
+
+**NVD records.** Each configuration entry is tested on its own; any entry
+that holds is a match. Inside an entry, nodes combine with the entry's AND/OR
+and a node's CPE list is OR (`negate` is honoured). A CPE naming the mapped
+product tests the version: an exact CPE version must equal it (Junos takes
+the CPE update field, `21.4:r3-s5`), a `*` version must fall within the
+start/end bounds. A bound the scheme cannot read makes that entry unusable.
+A CPE naming another product is context:
+
+| Context in the record | Holds when |
+|---|---|
+| Hardware (`h`) | the device type's hardware mapping names it. A device type with no hardware mapping, and every VM, skips the node: the match is **partial**. |
+| Operating system (`o`), for an application | the host's platform mapping names it; skipped (partial) when the platform has none. |
+
+Rejected records never match; neither do records NVD has not analysed yet
+(no configurations).
+
+**OSV advisories.** An advisory for the mapped package matches when it lists
+the version (`exact`) or one of its `ECOSYSTEM` or `SEMVER` ranges covers it
+(`range`). An `ECOSYSTEM` range uses the mapping's scheme; under `generic`
+(Maven, NuGet, RubyGems, …) only listed versions match. `GIT` ranges are not
+used.
+
+Each match records its `confidence`: `exact`, `range` or `partial`.
+
+### Match history
+
+A match is one row per record, host, mapping and install. When the version
+moves off the record the row is **resolved** (`resolved_at`) and kept, so the
+time to patch can be read back; going back to a vulnerable version opens a
+new row. Matches are not in the change log: they are computed, thousands at a
+time.
+
+### When matching runs
+
+| Event | Recomputes |
+|---|---|
+| Records, KEV or EPSS stored (upload, sync) | every tenant whose mappings name a changed record, once per burst (60 s) |
+| A mapping created, changed or deleted | the tenant |
+| A device's or VM's running version, platform or device type changes | that host |
+| An install created, deleted or its version or application changed | its host |
+| The policy changed | the priorities of the tenant's open matches |
+| The feature switched on | every tenant with a mapping |
+
+All of it runs as background jobs on the `low` queue; a bulk edit queues one
+job. A job re-reads its scope when it runs: nothing happens while the
+feature is off or for an inactive tenant.
+
+## Priority
+
+Every match carries a priority from the record's CVSS score, EPSS and KEV
+entry, with thresholds per tenant:
+
+| Priority | When (defaults) |
+|---|---|
+| Fix first | in CISA KEV; or EPSS ≥ 0.5 and CVSS ≥ 9.0 |
+| High | CVSS ≥ 9.0; or CVSS ≥ 7.0 and EPSS ≥ 0.1 |
+| Medium | CVSS ≥ 4.0 |
+| Low | everything else, including a record without a score |
+
+`GET/PATCH /api/vulnerabilities/policy/` reads and sets them:
+`kev_is_fix_first`, `fix_first_epss`, `fix_first_cvss`, `high_cvss`,
+`high_epss`, `high_epss_cvss`, `medium_cvss` (EPSS 0-1, CVSS 0-10). Anyone
+who may view devices or VMs reads the policy; a tenant admin changes it, and
+the change is in the change log.
+
+## API
+
+Every endpoint below answers 404 while vulnerability data is off and works
+on the active tenant. A match is visible when its device or VM is to the
+caller; an application match also needs `view` on installed software. So a
+site role sees only its own sites' matches, everywhere.
+
+| Endpoint | Answers |
+|---|---|
+| `GET/POST /api/vulnerabilities/mappings/`, `GET/PATCH/DELETE …/<id>/` | Mappings. `POST {platform\|device_type\|application, identifier?, version_scheme?, enabled?}`. Filters `platform`, `device_type`, `application`, `kind`, `enabled`. |
+| `GET /api/vulnerabilities/` | One row per matched record: score, severity, KEV, EPSS, worst priority, devices and VMs affected, first seen. |
+| `GET /api/vulnerabilities/<id>/` | The record (CVE id, OSV id or an alias) with its open matches (`affected`, first 1,000; `affected_count`). 404 unless the tenant matched it or maps one of its products. |
+| `GET /api/vulnerabilities/matches/` | Match rows, worst priority first. |
+| `GET /api/devices/<id>/vulnerabilities/` | One device's matches; likewise `virtual-machines`, `platforms` (through its mappings) and `applications`. |
+| `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, devices and VMs affected. |
+| `GET /api/vulnerabilities/coverage/` | Per mapping: objects tested, matched, with a blank version, with a version the scheme cannot read; and from the last run the records it could not decide (`unparsed_bounds`, `range_not_understood`). Filters `platform`, `device_type`, `application`. |
+| `GET/PATCH /api/vulnerabilities/policy/` | Priority thresholds. |
+
+The record and match lists take `status` (`open` by default, `resolved`,
+`all`), `device`, `virtual_machine`, `platform`, `application`, `mapping`,
+`site`, `cve`, `priority`, `confidence`, `via` (`platform`/`application`),
+`severity`, `kev`, `epss_min` and `q` (id or description). Values of one
+filter are comma-separated or repeated.

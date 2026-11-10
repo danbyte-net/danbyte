@@ -144,8 +144,16 @@ def vulnerability_settings(request):
     clean, secrets, errors = _validate(request.data)
     if errors:
         return Response(errors, status=400)
+    switched_on = clean.get("enabled") is True and not row.enabled
     for k, v in clean.items():
         setattr(row, k, v)
+    if switched_on:
+        # Matches were not kept up while the feature was off.
+        from django.db import transaction
+
+        from .jobs import enqueue_all
+
+        transaction.on_commit(enqueue_all)
     if secrets:
         merged = dict(row.secrets or {})
         for k, v in secrets.items():
