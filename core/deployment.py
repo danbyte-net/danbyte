@@ -273,7 +273,8 @@ def _require_manage(request):
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
         description="Registered providers: kind, label, description, and the "
-        "settings fields each one needs (text | password | checkbox).",
+        "settings fields each one needs (text | password | checkbox); plus "
+        "monitoring_keys, how many MONITORING_SECRET_KEY entries are configured.",
     ),
 )
 @api_view(["GET"])
@@ -281,9 +282,21 @@ def _require_manage(request):
 def secret_store_providers_view(request):
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
-    from monitoring.secret_store import secret_store_providers
+    from django.core.exceptions import ImproperlyConfigured
 
-    return Response({"providers": [p.payload() for p in secret_store_providers()]})
+    from monitoring.secret_store import secret_store_providers
+    from monitoring.secrets import monitoring_keys
+
+    # How many MONITORING_SECRET_KEY entries are configured (#493) - a count
+    # only, never a key, so an operator can see a rotation is in progress.
+    try:
+        key_count = len(monitoring_keys())
+    except ImproperlyConfigured:
+        key_count = 0
+    return Response({
+        "providers": [p.payload() for p in secret_store_providers()],
+        "monitoring_keys": key_count,
+    })
 
 
 @extend_schema(

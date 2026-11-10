@@ -575,6 +575,68 @@ deployment-wide singleton `core.DeploymentSettings`; the SMTP password is
 Fernet-encrypted at rest. See
 [Notifications](../features/monitoring.md#notifications).
 
+### What the monitoring key protects
+
+`MONITORING_SECRET_KEY` encrypts every `EncryptedJSONField` column - every
+credential Danbyte keeps in its own database:
+
+- monitoring: check-template and SNMP-profile secrets, Redfish endpoint
+  credentials, monitoring-engine tokens and SSH credentials, the Outpost
+  repository token, notification-channel secrets, certificate-issuer secrets,
+  and the local secret store (device credentials, CSR/ACME private keys,
+  FHRP auth keys);
+- integrations: webhook signing secrets, automation-target tokens, NetBox
+  import tokens, Windows Server and virtualization-source credentials;
+- Zabbix, PRTG and Oxidized connection credentials, and PRTG credentials;
+- backup-target credentials;
+- SSO and LDAP secrets (identity providers, user profiles), and the SMTP and
+  LDAP passwords in deployment, tenant and site settings.
+
+It is also the secret [backup archives](../getting-started/backup-restore.md#the-key-rule)
+are encrypted under. `DJANGO_SECRET_KEY` (sessions, signed tokens) is separate.
+
+### Rotating the monitoring key
+
+`MONITORING_SECRET_KEY` takes a comma-separated list, newest first. New values
+are always encrypted under the first key; every key in the list is tried on
+read. To replace a key without losing a stored secret:
+
+1. **Add the new key first** on every process that reads the database - the
+   web service, the WebSocket service and every worker
+   (`MONITORING_SECRET_KEY=<new>,<old>` in `.env` or the unit's
+   `Environment=`) - and restart them all. A process without the new key
+   cannot read values written under it, so do all of them before step 2.
+2. **Re-encrypt** the stored values under the new key:
+
+    ```bash
+    .venv/bin/python manage.py rotate_monitoring_key --dry-run   # counts only
+    .venv/bin/python manage.py rotate_monitoring_key
+    ```
+
+    `--dry-run` prints, per model and field, how many values would be
+    re-encrypted and how many are already current. The real run works in
+    batches (`--batch-size`, default 500), one transaction per batch, and
+    skips values already under the new key, so it can be stopped and run
+    again. It writes one change-log entry for the run (who, when, counts)
+    rather than one per row, and never prints a value. A value no configured
+    key can open is left as it is and named by model and primary key; the
+    command then exits non-zero.
+3. **Verify** nothing is left under an older key:
+
+    ```bash
+    .venv/bin/python manage.py rotate_monitoring_key --check
+    ```
+
+    It exits non-zero while any value still needs an older key.
+4. **Remove the old key** from the list on every process and restart them
+   again.
+
+Backups made before the rotation are encrypted under the old key: keep a copy
+of it for as long as you keep those archives, and put it back in the list
+(after the current key) to restore one. **Settings → Security** shows how many
+keys are configured, never the keys themselves. A custom
+`MONITORING_SECRETS_BACKEND` without rotate support is refused by the command.
+
 ## Monitoring
 
 Settings for the [Monitoring / check engine](../features/monitoring.md). All
@@ -582,7 +644,7 @@ have working defaults, so the feature runs with none of them set.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `MONITORING_SECRET_KEY` | derived from `SECRET_KEY` in DEBUG; **required when `DEBUG=False`** | Encryption key for SNMP/SSH/SMTP/LDAP credentials at rest (Fernet). A dedicated key gives credential encryption an independent lifecycle: rotating `SECRET_KEY` doesn't void stored secrets, and a `SECRET_KEY` leak can't decrypt them. The app refuses to start in production without it. `scripts/install.sh` generates one (and backfills older installs *from* the existing `SECRET_KEY` so already-stored secrets stay decryptable). **Never change it once secrets are stored** - old ciphertext becomes unreadable. |
+| `MONITORING_SECRET_KEY` | derived from `SECRET_KEY` in DEBUG; **required when `DEBUG=False`** | Encryption key for stored credentials at rest (Fernet) - see [What the monitoring key protects](#what-the-monitoring-key-protects). A dedicated key gives credential encryption an independent lifecycle: rotating `SECRET_KEY` doesn't void stored secrets, and a `SECRET_KEY` leak can't decrypt them. The app refuses to start in production without it. `scripts/install.sh` generates one (and backfills older installs *from* the existing `SECRET_KEY` so already-stored secrets stay decryptable). May be a **comma-separated list, newest first**: the first key encrypts, every key decrypts. An empty entry (a stray comma) or a key listed twice stops the service at start. **Never just replace it once secrets are stored** - old ciphertext becomes unreadable; [rotate it](#rotating-the-monitoring-key) instead. |
 | `MONITORING_SECRETS_BACKEND` | empty (Fernet) | Dotted path to a factory returning a `SecretsBackend`. Swap in an external store (OpenBao/Vault) without touching models. |
 | `MONITORING_CONCURRENCY` | `100` | Max concurrent check attempts in one worker job's asyncio loop. Raising it needs a matching `LimitNOFILE` bump on the worker unit. |
 | `MONITORING_GLOBAL_INTERVAL_SECONDS` | `300` | Default schedule (seconds) for assignments in `follow_global` mode. |

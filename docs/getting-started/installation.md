@@ -162,8 +162,9 @@ The other tabs cover building from source and a local dev checkout.
         **After first login:** change the admin password (User → Preferences) and
         remove `DJANGO_SUPERUSER_PASSWORD` from `.env`. The long machine keys
         (`DJANGO_SECRET_KEY`, `MONITORING_SECRET_KEY`, `DB_PASSWORD`) stay in
-        `.env` permanently - don't change `MONITORING_SECRET_KEY` once credentials
-        are stored or existing ciphertext becomes unreadable.
+        `.env` permanently - don't just replace `MONITORING_SECRET_KEY` once
+        credentials are stored or existing ciphertext becomes unreadable;
+        [rotate it](../reference/settings.md#rotating-the-monitoring-key) instead.
 
 === "From source"
 

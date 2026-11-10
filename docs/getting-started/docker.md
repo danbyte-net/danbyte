@@ -219,7 +219,7 @@ commented list). The essentials:
 | Variable | Purpose |
 | --- | --- |
 | `DJANGO_SECRET_KEY` | Django secret; unique per deployment. |
-| `MONITORING_SECRET_KEY` | Encrypts stored credentials; **required** with `DEBUG=False`, never change once secrets are stored. |
+| `MONITORING_SECRET_KEY` | Encrypts stored credentials; **required** with `DEBUG=False`. Never just replace it once secrets are stored - [rotate it](../reference/settings.md#rotating-the-monitoring-key) (comma-separated list, newest first). |
 | `DB_PASSWORD` | Postgres password (db + app). |
 | `ALLOWED_HOSTS` | Hosts/IPs served (no scheme/port). |
 | `CSRF_TRUSTED_ORIGINS` | Origins allowed to POST (scheme + host [+ port]). |
