@@ -115,6 +115,7 @@ SCHEDULED_TASKS = [
     {"name": "discover", "label": "Subnet discovery", "cadence": "every 5 min"},
     {"name": "snmp-poll", "label": "Scheduled SNMP polls", "cadence": "every 5 min"},
     {"name": "utilization", "label": "Interface utilization", "cadence": "every 15 min"},
+    {"name": "inventory", "label": "Package inventory", "cadence": "every 15 min"},
     {"name": "auto-upgrade", "label": "Auto-upgrade check", "cadence": "every 20 min"},
     {"name": "digest", "label": "Email digest", "cadence": "daily 07:00"},
     {"name": "eol-refresh", "label": "End-of-life data", "cadence": "daily 05:35"},

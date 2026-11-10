@@ -282,6 +282,9 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
     device_name = serializers.CharField(
         source="device.name", read_only=True, default=None
     )
+    virtual_machine_name = serializers.CharField(
+        source="virtual_machine.name", read_only=True, default=None
+    )
     public_key_line = serializers.CharField(
         write_only=True, required=False, trim_whitespace=False,
         help_text="An OpenSSH public-key line: 'ssh-ed25519 AAAA… comment'.",
@@ -290,15 +293,16 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
     class Meta:
         model = SSHHostKey
         fields = [
-            "id", "device", "device_name", "key_type", "public_key",
+            "id", "device", "device_name", "virtual_machine",
+            "virtual_machine_name", "key_type", "public_key",
             "fingerprint_sha256", "comment", "bits", "origin", "observed",
             "uploaded", "first_seen", "last_seen", "created_at", "updated_at",
             "public_key_line",
         ]
         # Every fact is derived from the pasted key or the collector; the client
-        # only supplies device + public_key_line.
+        # only supplies device (or virtual_machine) + public_key_line.
         read_only_fields = [
-            "id", "device", "key_type", "public_key", "fingerprint_sha256",
+            "id", "device", "virtual_machine", "key_type", "public_key", "fingerprint_sha256",
             "comment", "bits", "origin", "observed", "uploaded", "first_seen",
             "last_seen", "created_at", "updated_at",
         ]
@@ -323,6 +327,9 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
     device_name = serializers.CharField(
         source="device.name", read_only=True, default=None
     )
+    virtual_machine_name = serializers.CharField(
+        source="virtual_machine.name", read_only=True, default=None
+    )
     # Write-only secret material - accepted on create/update, never returned.
     password = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
@@ -343,7 +350,8 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
     class Meta:
         model = DeviceCredential
         fields = [
-            "id", "device", "device_name", "name", "kind", "username", "port",
+            "id", "device", "device_name", "virtual_machine",
+            "virtual_machine_name", "name", "kind", "username", "port",
             "scheme", "secret_managed", "secret_provider", "secret_path",
             "secret_set", "password", "private_key", "passphrase",
             "description", "created_at", "updated_at",
@@ -352,6 +360,13 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        # Exactly one host: a device or (#451) a VM.
+        device = attrs.get("device", getattr(self.instance, "device", None))
+        vm = attrs.get("virtual_machine", getattr(self.instance, "virtual_machine", None))
+        if (device is None) == (vm is None):
+            raise serializers.ValidationError(
+                {"device": "Give a device or a virtual machine, not both."}
+            )
         managed = attrs.get(
             "secret_managed",
             getattr(self.instance, "secret_managed", True),

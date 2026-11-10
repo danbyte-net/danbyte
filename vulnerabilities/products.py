@@ -17,6 +17,11 @@ from dataclasses import dataclass, field
 ProductKey = tuple[str, str, str, str]
 
 _PROVIDERS: list[Callable[[], Iterable[ProductKey]]] = []
+#: Sources of ``{product key: {release or None}}`` for tracked distro
+#: packages (``fetch.package_releases`` merges them): the hosts' releases a
+#: package is installed on, so OSV is asked per ``Debian:12`` rather than
+#: for every release at once. Discovery's inventoried packages register one.
+_RELEASE_PROVIDERS: list[Callable[[], dict]] = []
 
 
 def register_provider(fn: Callable[[], Iterable[ProductKey]]) -> None:
@@ -28,6 +33,26 @@ def register_provider(fn: Callable[[], Iterable[ProductKey]]) -> None:
 def unregister_provider(fn: Callable[[], Iterable[ProductKey]]) -> None:
     if fn in _PROVIDERS:
         _PROVIDERS.remove(fn)
+
+
+def register_release_provider(fn: Callable[[], dict]) -> None:
+    """Add a source of distro releases per tracked package (idempotent)."""
+    if fn not in _RELEASE_PROVIDERS:
+        _RELEASE_PROVIDERS.append(fn)
+
+
+def unregister_release_provider(fn: Callable[[], dict]) -> None:
+    if fn in _RELEASE_PROVIDERS:
+        _RELEASE_PROVIDERS.remove(fn)
+
+
+def provided_releases() -> dict:
+    """Every release provider's answer, merged."""
+    out: dict = {}
+    for fn in list(_RELEASE_PROVIDERS):
+        for key, releases in (fn() or {}).items():
+            out.setdefault(tuple(key), set()).update(releases)
+    return out
 
 
 @dataclass

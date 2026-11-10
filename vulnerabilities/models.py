@@ -266,7 +266,8 @@ VERSION_SCHEMES = [
     ("apk", "Alpine package"),
     ("generic", "Exact only"),
 ]
-MATCH_VIAS = [("platform", "Platform"), ("application", "Application")]
+MATCH_VIAS = [("platform", "Platform"), ("application", "Application"),
+              ("package", "Package")]
 CONFIDENCES = [("exact", "Exact"), ("range", "Range"), ("partial", "Partial")]
 PRIORITIES = [
     ("fix_first", "Fix first"),
@@ -547,7 +548,9 @@ class VulnerabilityException(NumIdMixin, TimestampedModel):
 class VulnerabilityMatch(models.Model):
     """One record affecting one device or VM through one mapping: its
     platform's (``via="platform"``, the host's running version) or an
-    installed application's (``via="application"``, the install's version).
+    installed application's (``via="application"``, the install's version)
+    - or through a package discovery read from the host (``via="package"``,
+    ``host_package`` set and no mapping, #451 B2).
 
     Machine-computed and written in bulk by the recompute, never change-
     logged. A match whose version moved off the record keeps its row with
@@ -565,7 +568,11 @@ class VulnerabilityMatch(models.Model):
         related_name="vulnerability_matches")
     via = models.CharField(max_length=12, choices=MATCH_VIAS)
     mapping = models.ForeignKey(ProductMapping, on_delete=models.CASCADE,
-                                related_name="matches")
+                                related_name="matches", null=True, blank=True)
+    #: The inventoried package that matched (``via="package"``).
+    host_package = models.ForeignKey(
+        "discovery.HostPackage", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="vulnerability_matches")
     installed_software = models.ForeignKey(
         "api.InstalledSoftware", on_delete=models.CASCADE, null=True, blank=True,
         related_name="vulnerability_matches")
@@ -597,10 +604,19 @@ class VulnerabilityMatch(models.Model):
                 ),
                 name="vulnmatch_one_host",
             ),
+            # A mapping, or an inventoried package - never both or neither.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(mapping__isnull=False, host_package__isnull=True)
+                    | models.Q(mapping__isnull=True, host_package__isnull=False)
+                ),
+                name="vulnmatch_one_source",
+            ),
             models.UniqueConstraint(
-                fields=["cve", "device", "virtual_machine", "mapping", "installed_software"],
+                fields=["cve", "device", "virtual_machine", "mapping", "installed_software",
+                        "host_package"],
                 condition=models.Q(resolved_at__isnull=True),
-                name="uniq_vulnmatch_open",
+                name="uniq_vulnmatch_open_v2",
                 nulls_distinct=False,
             ),
         ]

@@ -1921,7 +1921,7 @@ UNIT_PROPS = [
     "NextElapseUSecRealtime", "LastTriggerUSec", "TriggeredBy", "Description",
 ]
 GOOD, BAD, WARN, DIMA = 1, 2, 3, 4      # colour pair numbers; attrs resolved at start
-RQ_QUEUES = ("high", "default", "low")
+RQ_QUEUES = ("high", "default", "low", "discovery")
 MIN_COLS, MIN_LINES = 80, 24
 
 

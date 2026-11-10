@@ -132,7 +132,7 @@ services:
   workers:
     <<: *app-build
     environment: *app-env
-    command: ["python", "manage.py", "rqworker-pool", "default", "high", "low", "--num-workers", "${RQ_WORKERS:-4}"]
+    command: ["python", "manage.py", "rqworker-pool", "default", "high", "low", "discovery", "--num-workers", "${RQ_WORKERS:-4}"]
     # Backups and restores run here: the worker dumps and restores the
     # database over the network and swaps the media tree in place.
     volumes:

@@ -1,0 +1,16 @@
+[Unit]
+Description=Danbyte package inventory beat (opt-in discovery)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py inventory_dispatch
+
+# Triggered every 15 minutes by danbyte-inventory.timer. Queues nothing unless
+# DANBYTE_DISCOVERY_ENABLED is on and a tenant turned the Discovery
+# integration on; then queues the authorised inventory profiles that are due
+# and inside their window onto the RQ "discovery" queue (danbyte-workers).
+# Logs: journalctl --user -fu danbyte-inventory

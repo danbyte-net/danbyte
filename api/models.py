@@ -2379,6 +2379,12 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         max_length=16, choices=SOFTWARE_VERSION_SOURCES, blank=True, default="",
         db_default="", editable=False,
     )
+    #: Never contacted by built-in discovery (#451 decision 9), whatever a
+    #: profile's scope says. Deny subnets apply on top.
+    scan_exempt = models.BooleanField(
+        "exempt from discovery", default=False, db_default=False,
+        help_text="Built-in discovery never contacts it.",
+    )
     # Hardware warranty of this unit, for coverage without a support contract
     # (#421). The last covered day; blank = no warranty on record.
     warranty_end = models.DateField(
@@ -3074,6 +3080,12 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="Opt in to periodic ICMP discovery - responders not yet "
         "recorded are auto-created as IPs (see monitoring settings).",
     )
+    #: Never contacted by built-in discovery (#451 decision 9), for every address
+    #: inside it, whatever a profile's scope says. Deny subnets apply on top.
+    scan_exempt = models.BooleanField(
+        "exempt from discovery", default=False, db_default=False,
+        help_text="Built-in discovery never contacts it.",
+    )
     last_discovered_at = models.DateTimeField(
         null=True, blank=True,
         help_text="Last time discovery swept this prefix. Engine-set; gates the "
@@ -3429,6 +3441,12 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # The NOT NULL columns also carry a database default (api 0184): a
     # process still on the release before 0183 inserts addresses without
     # naming them, and must not fail while an upgrade is in flight.
+    #: Never contacted by built-in discovery (#451 decision 9), whatever a
+    #: profile's scope says. Deny subnets apply on top.
+    scan_exempt = models.BooleanField(
+        "exempt from discovery", default=False, db_default=False,
+        help_text="Built-in discovery never contacts it.",
+    )
     monitoring_excluded = models.BooleanField(
         "excluded from monitoring", default=False, db_default=False,
         help_text=("Every check on this address is parked: nothing runs, no "
@@ -5437,6 +5455,12 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
     software_version_source = models.CharField(
         max_length=16, choices=SOFTWARE_VERSION_SOURCES, blank=True, default="",
         db_default="", editable=False,
+    )
+    #: Never contacted by built-in discovery (#451 decision 9), whatever a
+    #: profile's scope says. Deny subnets apply on top.
+    scan_exempt = models.BooleanField(
+        "exempt from discovery", default=False, db_default=False,
+        help_text="Built-in discovery never contacts it.",
     )
     primary_ip = models.ForeignKey(
         IPAddress,

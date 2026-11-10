@@ -24,6 +24,13 @@ KEYS = {
     "zabbix": "zabbix_enabled",
     "prtg": "prtg_enabled",
     "oxidized": "oxidized_enabled",
+    "discovery": "discovery_enabled",
+}
+
+#: Keys that also need a deployment-wide switch: the tenant toggle alone
+#: does not turn them on (``settings`` attribute name).
+DEPLOYMENT_GATES = {
+    "discovery": "DISCOVERY_ENABLED",
 }
 
 #: Umbrella keys, true when any of their members is. A page that serves both
@@ -44,6 +51,12 @@ def integration_enabled(tenant, key: str) -> bool:
     field = KEYS.get(key)
     if field is None:
         return False
+    gate = DEPLOYMENT_GATES.get(key)
+    if gate is not None:
+        from django.conf import settings
+
+        if not getattr(settings, gate, False):
+            return False
     from .models import IntegrationSettings
 
     row = IntegrationSettings.objects.filter(tenant=tenant).only(field).first()

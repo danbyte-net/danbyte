@@ -477,12 +477,13 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
     * **accept-observed** declares an observed key as the expected one, clearing
       any ``ssh_host_key_mismatch`` for that device+type.
 
-    Filters: ``?device=<id>``, ``?origin=observed|uploaded|both``, ``?key_type=``.
+    Filters: ``?device=<id>``, ``?virtual_machine=<id>`` (a VM's keys, #451),
+    ``?origin=observed|uploaded|both``, ``?key_type=``.
     """
     # Unambiguous id aliases (core.query_params).
-    query_param_aliases = {"device_id": "device"}
+    query_param_aliases = {"device_id": "device", "virtual_machine_id": "virtual_machine"}
 
-    queryset = SSHHostKey.objects.select_related("device").all()
+    queryset = SSHHostKey.objects.select_related("device", "virtual_machine").all()
     serializer_class = SSHHostKeySerializer
     parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
     http_method_names = ["get", "post", "delete", "head", "options"]
@@ -492,6 +493,8 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
         p = self.request.query_params
         if p.get("device"):
             qs = qs.filter(device_id=p["device"])
+        if p.get("virtual_machine"):
+            qs = qs.filter(virtual_machine_id=p["virtual_machine"])
         if p.get("key_type"):
             qs = qs.filter(key_type=p["key_type"])
         origin = p.get("origin")
@@ -504,23 +507,28 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
-        from api.models import Device
+        from api.models import Device, VirtualMachine
 
         from .ssh_host_keys import HostKeyUploadError, upload_host_key
 
         tenant = self._tenant_or_403()
         device_id = request.data.get("device")
+        vm_id = request.data.get("virtual_machine")
         line = request.data.get("public_key_line")
-        if not device_id:
+        if not device_id and not vm_id:
             raise ValidationError({"device": "This field is required."})
+        if device_id and vm_id:
+            raise ValidationError({"device": "Give a device or a virtual machine, not both."})
         if not line:
             raise ValidationError({"public_key_line": "This field is required."})
+        field, model, pk = (("device", Device, device_id) if device_id
+                            else ("virtual_machine", VirtualMachine, vm_id))
         try:
-            device = Device.objects.filter(pk=device_id, tenant=tenant).first()
+            device = model.objects.filter(pk=pk, tenant=tenant).first()
         except (ValueError, DjangoValidationError):
             device = None  # not a UUID
         if device is None:
-            raise ValidationError({"device": "Not found in this tenant."})
+            raise ValidationError({field: "Not found in this tenant."})
         # This create skips the base create(), so it runs the same post-save
         # site-scope guard itself: a site-scoped user may only put a key on a
         # device in their sites (#458).
@@ -555,12 +563,13 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
     reveal it without the verb), re-checks that the caller may view the target
     device, audits the disclosure, and fails closed when no store is enabled.
 
-    Filter: ``?device=<id>``.
+    Filter: ``?device=<id>``, ``?virtual_machine=<id>`` - a credential logs
+    in to a device or (#451) a VM.
     """
     # Unambiguous id aliases (core.query_params).
-    query_param_aliases = {"device_id": "device"}
+    query_param_aliases = {"device_id": "device", "virtual_machine_id": "virtual_machine"}
 
-    queryset = DeviceCredential.objects.select_related("device").all()
+    queryset = DeviceCredential.objects.select_related("device", "virtual_machine").all()
     serializer_class = DeviceCredentialSerializer
     # reveal is its own capability verb; everything else uses the CRUD defaults.
     rbac_action_map = {"reveal": "reveal"}
@@ -570,15 +579,19 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         device_id = self.request.query_params.get("device")
         if device_id:
             qs = qs.filter(device_id=device_id)
+        vm_id = self.request.query_params.get("virtual_machine")
+        if vm_id:
+            qs = qs.filter(virtual_machine_id=vm_id)
         return qs
 
     def _validate_device(self, serializer):
-        """A credential's device must belong to the active tenant - never trust a
-        posted device UUID to be in-tenant (the picker is only a convenience)."""
+        """A credential's device or VM must belong to the active tenant - never
+        trust a posted UUID to be in-tenant (the picker is only a convenience)."""
         tenant = self._tenant_or_403()
-        device = serializer.validated_data.get("device")
-        if device is not None and device.tenant_id != tenant.id:
-            raise ValidationError({"device": "Not found in this tenant."})
+        for field in ("device", "virtual_machine"):
+            host = serializer.validated_data.get(field)
+            if host is not None and host.tenant_id != tenant.id:
+                raise ValidationError({field: "Not found in this tenant."})
 
     def _validate_external_path(self, serializer):
         """Pointing a credential at an external path is a deployment-admin act.
@@ -695,7 +708,12 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
 
         cred = self.get_object()  # tenant- + reveal-row-scoped already
         tenant = self._tenant_or_403()
-        if not rbac.can_act_on(request.user, tenant, "device", "view", cred.device):
+        if cred.virtual_machine_id:
+            host_ok = rbac.can_act_on(request.user, tenant, "virtualmachine", "view",
+                                      cred.virtual_machine)
+        else:
+            host_ok = rbac.can_act_on(request.user, tenant, "device", "view", cred.device)
+        if not host_ok:
             raise PermissionDenied("You do not have access to this credential's device.")
         try:
             secret = cred.resolve_secret()

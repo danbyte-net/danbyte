@@ -595,6 +595,10 @@ class IntegrationSettings(TimestampedModel):
     #: Read monitoring status from an existing PRTG. Off until an admin turns
     #: it on, and re-checked at job time like Zabbix.
     prtg_enabled = models.BooleanField(default=False, db_default=False)
+    #: Built-in discovery (#451): package inventory over SSH. Off until an
+    #: admin turns it on, and only effective while the deployment switch
+    #: ``DANBYTE_DISCOVERY_ENABLED`` is on too (``discovery.gate``).
+    discovery_enabled = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         verbose_name_plural = "integration settings"

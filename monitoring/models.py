@@ -3024,8 +3024,14 @@ class SSHHostKey(TimestampedModel):
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="ssh_host_keys"
     )
+    #: The host presenting it: a device, or (#451) a VM. Exactly one.
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="ssh_host_keys"
+        "api.Device", on_delete=models.CASCADE, related_name="ssh_host_keys",
+        null=True, blank=True,
+    )
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, related_name="ssh_host_keys",
+        null=True, blank=True,
     )
     key_type = models.CharField(
         max_length=64,
@@ -3059,7 +3065,19 @@ class SSHHostKey(TimestampedModel):
             models.UniqueConstraint(
                 fields=["tenant", "device", "fingerprint_sha256"],
                 name="uniq_ssh_host_key_device_fp",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "virtual_machine", "fingerprint_sha256"],
+                condition=models.Q(virtual_machine__isnull=False),
+                name="uniq_ssh_host_key_vm_fp",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, virtual_machine__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                ),
+                name="ssh_host_key_one_host",
+            ),
         ]
         indexes = [
             models.Index(fields=["tenant", "device"]),
@@ -3123,8 +3141,15 @@ class DeviceCredential(TimestampedModel):
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="device_credentials"
     )
+    #: The host it logs in to: a device, or (#451 decision 6) a VM.
+    #: Exactly one of the two.
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="credentials"
+        "api.Device", on_delete=models.CASCADE, related_name="credentials",
+        null=True, blank=True,
+    )
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, related_name="credentials",
+        null=True, blank=True,
     )
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=16, choices=Kind.choices)
@@ -3159,7 +3184,19 @@ class DeviceCredential(TimestampedModel):
             models.UniqueConstraint(
                 fields=["tenant", "device", "name"],
                 name="uniq_device_credential_tenant_device_name",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "virtual_machine", "name"],
+                condition=models.Q(virtual_machine__isnull=False),
+                name="uniq_device_credential_tenant_vm_name",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, virtual_machine__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                ),
+                name="device_credential_one_host",
+            ),
         ]
         indexes = [models.Index(fields=["tenant", "device"])]
 

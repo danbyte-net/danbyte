@@ -24,7 +24,7 @@ from django.apps import apps
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
-           "view_credits", "set_default", "view_config", "view_cost", "provision"]
+           "view_credits", "set_default", "view_config", "view_cost", "provision", "scan"]
 
 # Types an "all object types" ("*") grant does NOT reach. Adding or changing
 # these IS administration - accounts, group membership and the grants
@@ -52,6 +52,10 @@ def grant_covers(object_types, slug: str) -> bool:
 # only governs what the picker surfaces.
 CAPABILITY_VERBS: dict[str, list[str]] = {
     "devicecredential": ["reveal"],
+    # Start a discovery run (#451): Danbyte logs in to the profile's hosts
+    # with their stored credentials. Never implied by change, and no
+    # built-in role carries it.
+    "inventoryprofile": ["scan"],
     # Execute a script, and mark one trusted (trusted scripts reach the
     # database directly, so that verb is its own grant).
     "script": ["run", "trust"],
@@ -387,6 +391,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.VirtNetwork", "Virtualization networks", "Integrations"),
     ("integrations.VirtPlacementRule", "Virtualization placement rules",
      "Integrations"),
+    # Built-in discovery (#451): what to read and who authorised it. Runs
+    # and their host results read with the profile's view.
+    ("discovery.InventoryProfile", "Inventory profiles", "Integrations"),
     # ─── Planning ───────────────────────────────────────────────────
     ("planning.Board", "Boards", "Planning"),
     ("planning.TaskStatus", "Task statuses", "Planning"),

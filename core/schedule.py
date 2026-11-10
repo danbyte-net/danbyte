@@ -228,6 +228,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
               "exceptions and purge old resolved matches",
     ),
     ScheduledTask(
+        unit="danbyte-inventory",
+        commands=("inventory_dispatch",),
+        every=15 * MINUTE,
+        label="Queue due package-inventory runs (when discovery is turned on)",
+    ),
+    ScheduledTask(
         unit="danbyte-certificate-expiry",
         commands=("certificate_expiry",),
         at=("06:30",),

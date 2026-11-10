@@ -57,8 +57,9 @@ SITE_PATHS: dict[str, str] = {
     "modulebay": "device__site",
     "module": "device__site",
     "macaddress": "assigned_interface__device__site",
-    "sshhostkey": "device__site",
-    "devicecredential": "device__site",
+    # A host key or a credential belongs to a device or (#451) a VM.
+    "sshhostkey": "device__site|virtual_machine__site",
+    "devicecredential": "device__site|virtual_machine__site",
     "vminterface": "vm__site",
     # Its own site, else the VM it lands on (#432) - an end at a provider
     # network bound to a VM interface belongs to that VM's site.

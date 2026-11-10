@@ -85,6 +85,7 @@ INSTALLED_APPS = [
     "assistant.apps.AssistantConfig",
     "routing.apps.RoutingConfig",
     "vulnerabilities.apps.VulnerabilitiesConfig",
+    "discovery.apps.DiscoveryConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
@@ -314,6 +315,14 @@ RQ_QUEUES = {
         "PORT": int(os.getenv("REDIS_PORT", "6379")),
         "DB": _RQ_DB,
         "DEFAULT_TIMEOUT": "24h",
+    },
+    # Discovery runs (package inventory): long, outbound, and kept off `low`
+    # so they never hold up vulnerability recomputes (#451 decision 8).
+    "discovery": {
+        "HOST": os.getenv("REDIS_HOST", "localhost"),
+        "PORT": int(os.getenv("REDIS_PORT", "6379")),
+        "DB": _RQ_DB,
+        "DEFAULT_TIMEOUT": "6h",
     },
 }
 
@@ -830,6 +839,13 @@ MONITORING_SECRETS_BACKEND = os.getenv("MONITORING_SECRETS_BACKEND", "")
 # endpoint is refused regardless. DANBYTE_SSRF_ALLOWLIST (shared with the
 # outbound guard in core/ssrf.py) lists CIDRs permitted even when this is on.
 CHECK_BLOCK_INTERNAL = os.getenv("DANBYTE_CHECK_BLOCK_INTERNAL", "False") == "True"
+
+# Built-in discovery (#451): package inventory over SSH with the tenants' own
+# device credentials. Off unless this deployment switch AND a tenant's
+# Discovery integration are both on; nothing is contacted otherwise. The
+# check runner's target policy above (block_internal, SSRF allow-list)
+# applies to every host discovery logs in to from the server.
+DISCOVERY_ENABLED = os.getenv("DANBYTE_DISCOVERY_ENABLED", "False") == "True"
 SSRF_ALLOWLIST = [
     p.strip() for p in os.getenv("DANBYTE_SSRF_ALLOWLIST", "").split(",") if p.strip()
 ]

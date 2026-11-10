@@ -504,10 +504,15 @@ def osv_queries(keys, releases: dict | None = None) -> tuple[list[dict], int]:
 def package_releases() -> dict:
     """The tracked distro packages' releases; ``{}`` when they cannot be read
     (the fetch then asks by purl, as before)."""
+    from . import products
     from .matching import package_releases as releases
 
     try:
-        return releases()
+        out = {k: set(v) for k, v in releases().items()}
+        # Inventoried packages (discovery) bring their hosts' releases.
+        for key, more in products.provided_releases().items():
+            out.setdefault(key, set()).update(more)
+        return out
     except Exception:  # noqa: BLE001 - never stop a fetch over the narrowing
         log.exception("vulnerabilities: reading distro releases failed")
         return {}

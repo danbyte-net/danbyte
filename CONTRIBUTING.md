@@ -45,7 +45,7 @@ make seed-demo                     # optional example data
 .venv/bin/python manage.py runserver    # :8000
 
 # Background jobs (scans, checks, imports), in a second terminal
-.venv/bin/python manage.py rqworker default high low
+.venv/bin/python manage.py rqworker default high low discovery
 
 # Frontend, in a third terminal
 cd frontend && npm ci && npm run dev    # :3000, proxies the API to :8000
