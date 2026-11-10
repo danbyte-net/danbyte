@@ -21,6 +21,7 @@ from core.expressions import ExpressionError, leaves, regex_error
 from core.expressions import validate as validate_expression
 
 from .engine import (
+    _link,
     detail_for,
     evaluate,
     evaluate_for_object,
@@ -34,6 +35,7 @@ from .models import (
     EOL_OBJECT_TYPES,
     OBJECT_TYPES,
     SOFTWARE_TARGET_OBJECT_TYPES,
+    VULN_OBJECT_TYPES,
     ComplianceRule,
 )
 
@@ -264,6 +266,7 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             "refs", "check_type",
             "check_type_display", "field", "pattern", "tag", "cf_key",
             "eol_fail_on", "coverage_fail_on", "fail_on_unknown", "include_software",
+            "vuln_fail_on", "cvss_min",
             "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
@@ -370,6 +373,24 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"coverage_fail_on": "Pick what the check fails on."}
                 )
+        if ct == "vulnerabilities":
+            if not set(types) <= set(VULN_OBJECT_TYPES):
+                raise serializers.ValidationError({
+                    type_key: "A known vulnerabilities check applies to devices or "
+                              "virtual machines."
+                })
+            if not get("vuln_fail_on"):
+                raise serializers.ValidationError(
+                    {"vuln_fail_on": "Pick what the check fails on."}
+                )
+            cvss_min = attrs.get("cvss_min", getattr(self.instance, "cvss_min", None))
+            if get("vuln_fail_on") == "cvss":
+                if cvss_min is None or not 0 < cvss_min <= 10:
+                    raise serializers.ValidationError(
+                        {"cvss_min": "A CVSS score from 0.1 to 10."}
+                    )
+            else:
+                attrs["cvss_min"] = None
         if ct == "software_target":
             if not set(types) <= set(SOFTWARE_TARGET_OBJECT_TYPES):
                 raise serializers.ValidationError({
@@ -768,6 +789,7 @@ def compliance_device_status(request, device_id):
             "remediation": rule.remediation,
             **_check_fields(rule, refs),
             "detail": detail_for(rule, device),
+            "link": _link(rule, "device", device),
         }
         for rule in failed
     ]
@@ -808,6 +830,8 @@ def _check_fields(rule, refs: dict) -> dict:
         "eol_fail_on": rule.eol_fail_on,
         "coverage_fail_on": rule.coverage_fail_on,
         "fail_on_unknown": rule.fail_on_unknown,
+        "vuln_fail_on": rule.vuln_fail_on,
+        "cvss_min": rule.cvss_min,
         "object_types": rule.types,
         "scope": rule.scope,
         "condition": rule.condition,
@@ -1023,7 +1047,8 @@ def compliance_summary(request):
             rows.append({
                 **row, "check_type": "", "field": "", "pattern": "", "tag": "",
                 "cf_key": "", "eol_fail_on": "", "coverage_fail_on": "",
-                "fail_on_unknown": False, "scope": None, "condition": None, "refs": {},
+                "fail_on_unknown": False, "vuln_fail_on": "", "cvss_min": None,
+                "scope": None, "condition": None, "refs": {},
             })
     # Worst first: open failures by severity, then by how many, then name.
     rows.sort(key=lambda r: (

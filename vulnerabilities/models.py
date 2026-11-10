@@ -6,8 +6,9 @@ the product index that lets a mapping find its candidates, the per-product
 sync cursor and the sync runs.
 
 Tenant-scoped: what a tenant maps (``ProductMapping``), its priority
-thresholds (``VulnerabilityPolicy``) and what matches its inventory
-(``VulnerabilityMatch``).
+thresholds (``VulnerabilityPolicy``), what matches its inventory
+(``VulnerabilityMatch``) and its decisions about records
+(``VulnerabilityException``).
 
 Nothing is seeded: the catalog is filled only by an update a deployment admin
 runs, mappings are made by users, and the settings and policy rows are
@@ -404,6 +405,145 @@ class VulnerabilityPolicy(TimestampedModel):
         return obj
 
 
+EXCEPTION_STATUSES = [
+    ("not_applicable", "Not applicable"),
+    ("risk_accepted", "Risk accepted"),
+]
+#: Days a risk acceptance may run at most (decision 13).
+MAX_RISK_DAYS = 365
+#: CycloneDX 1.5 ``analysis`` vocabulary, so a VEX export carries the
+#: exception as written (addendum C).
+ANALYSIS_STATES = [
+    ("not_affected", "Not affected"),
+    ("false_positive", "False positive"),
+    ("exploitable", "Exploitable"),
+]
+ANALYSIS_JUSTIFICATIONS = [
+    ("code_not_present", "Code not present"),
+    ("code_not_reachable", "Code not reachable"),
+    ("requires_configuration", "Requires configuration"),
+    ("requires_dependency", "Requires dependency"),
+    ("requires_environment", "Requires environment"),
+    ("protected_by_compiler", "Protected by compiler"),
+    ("protected_at_runtime", "Protected at runtime"),
+    ("protected_at_perimeter", "Protected at perimeter"),
+    ("protected_by_mitigating_control", "Protected by mitigating control"),
+]
+ANALYSIS_RESPONSES = [
+    ("can_not_fix", "Can not fix"),
+    ("will_not_fix", "Will not fix"),
+    ("update", "Update"),
+    ("rollback", "Rollback"),
+    ("workaround_available", "Workaround available"),
+]
+#: The analysis states each status may carry; the first is the default.
+STATUS_STATES = {
+    "not_applicable": ("not_affected", "false_positive"),
+    "risk_accepted": ("exploitable",),
+}
+EXCEPTION_SCOPES = ("device", "virtual_machine", "platform", "application")
+
+
+class VulnerabilityException(NumIdMixin, TimestampedModel):
+    """A decision about one record in a tenant (decision 13): it does not
+    apply (``not_applicable``) or the risk is accepted until a date
+    (``risk_accepted``). Scoped to one device, VM, platform or application,
+    or with none of them to the whole tenant. Matches it covers are marked
+    ``excepted`` and drop out of counts, priority lists, the compliance rule
+    and notifications; they stay listed with a filter.
+
+    An expired row stays as history and stops applying; the daily job
+    reopens its matches and tells the owner once. Change-logged."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="vulnerability_exceptions")
+    cve = models.ForeignKey(Cve, on_delete=models.PROTECT, related_name="exceptions")
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="vulnerability_exceptions")
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="vulnerability_exceptions")
+    platform = models.ForeignKey(
+        "api.Platform", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="vulnerability_exceptions")
+    application = models.ForeignKey(
+        "api.Application", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="vulnerability_exceptions")
+    status = models.CharField(max_length=16, choices=EXCEPTION_STATUSES)
+    reason = models.TextField()
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+")
+    #: The owner's name when it was set, kept after the account goes.
+    owner_name = models.CharField(max_length=150, blank=True, default="", db_default="")
+    #: The last day it applies. Required for a risk acceptance.
+    expires_on = models.DateField(null=True, blank=True)
+    analysis_state = models.CharField(
+        max_length=16, choices=ANALYSIS_STATES, blank=True, default="", db_default="")
+    analysis_justification = models.CharField(
+        max_length=32, choices=ANALYSIS_JUSTIFICATIONS, blank=True, default="",
+        db_default="")
+    analysis_response = models.JSONField(default=list, blank=True, db_default=[])
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+")
+    #: When the expiry job reopened its matches and told the owner;
+    #: bookkeeping by UPDATE, out of the change log.
+    expiry_notified_at = models.DateTimeField(null=True, blank=True, editable=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "vulnerability exception"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(virtual_machine__isnull=True, platform__isnull=True,
+                             application__isnull=True)
+                    | models.Q(device__isnull=True, platform__isnull=True,
+                               application__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=True,
+                               application__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=True,
+                               platform__isnull=True)
+                ),
+                name="vulnexception_one_scope",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(status="risk_accepted", expires_on__isnull=True),
+                name="vulnexception_risk_expires",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "cve"], name="vuln_exception_cve"),
+            models.Index(fields=["tenant", "expires_on"], name="vuln_exception_expiry"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.cve.vuln_id if self.cve_id else '?'} {self.get_status_display().lower()}"
+
+    @property
+    def scope(self) -> str:
+        """``device`` / ``virtual_machine`` / ``platform`` / ``application``,
+        or ``tenant`` when it names none of them."""
+        for name in EXCEPTION_SCOPES:
+            if getattr(self, f"{name}_id"):
+                return name
+        return "tenant"
+
+    @property
+    def subject(self):
+        return (self.device or self.virtual_machine or self.platform or self.application
+                or None)
+
+    def is_active(self, today=None) -> bool:
+        from django.utils import timezone
+
+        today = today or timezone.localdate()
+        return self.expires_on is None or self.expires_on >= today
+
+
 class VulnerabilityMatch(models.Model):
     """One record affecting one device or VM through one mapping: its
     platform's (``via="platform"``, the host's running version) or an
@@ -433,10 +573,19 @@ class VulnerabilityMatch(models.Model):
     version = models.CharField(max_length=128, blank=True, default="", db_default="")
     confidence = models.CharField(max_length=8, choices=CONFIDENCES)
     priority = models.CharField(max_length=10, choices=PRIORITIES)
+    #: The exception that covers it now (the most specific active one), or
+    #: null. Kept by the recompute, by every exception save or delete and by
+    #: the daily expiry job.
+    excepted = models.ForeignKey(
+        VulnerabilityException, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="matches")
     first_seen_at = models.DateTimeField()
     last_seen_at = models.DateTimeField()
     resolved_at = models.DateTimeField(null=True, blank=True)
+    #: When a notification named it; ``notified_kev`` whether it was in KEV
+    #: then, so a match that joins KEV later is named once more.
     notified_at = models.DateTimeField(null=True, blank=True)
+    notified_kev = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         ordering = ["-first_seen_at"]
@@ -459,6 +608,8 @@ class VulnerabilityMatch(models.Model):
             models.Index(fields=["tenant", "priority", "resolved_at"],
                          name="vuln_match_priority"),
             models.Index(fields=["tenant", "cve"], name="vuln_match_cve"),
+            models.Index(fields=["resolved_at"], name="vuln_match_resolved",
+                         condition=models.Q(resolved_at__isnull=False)),
         ]
 
     def __str__(self) -> str:

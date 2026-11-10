@@ -122,8 +122,12 @@ def _software_target_violates(rule: ComplianceRule, obj) -> bool:
     return version != target_of(obj)
 
 
-def detail_for(rule: ComplianceRule, obj, eol_cfg=None) -> str:
+def detail_for(rule: ComplianceRule, obj, eol_cfg=None, vuln=None) -> str:
     """A one-line reason for a violation, where the check has one."""
+    if rule.check_type == "vulnerabilities":
+        from .vuln_rule import VulnIndex
+
+        return (vuln or VulnIndex(obj.tenant_id, hosts=[obj.pk])).detail(rule, obj)
     if rule.check_type == "software_target":
         from api.software_target import describe
 
@@ -134,6 +138,16 @@ def detail_for(rule: ComplianceRule, obj, eol_cfg=None) -> str:
     return ""
 
 
+def _link(rule: ComplianceRule, object_type: str, obj) -> str:
+    """Where a violation's fix is looked up, for checks that have such a
+    page: a vulnerabilities rule links to the object's vulnerabilities."""
+    if rule.check_type == "vulnerabilities":
+        from .vuln_rule import link_for
+
+        return link_for(object_type, obj)
+    return ""
+
+
 def _needs_tags(rule: ComplianceRule) -> bool:
     return rule.check_type == "required_tag" or (
         rule.check_type == "coverage" and bool(rule.tag)
@@ -141,8 +155,10 @@ def _needs_tags(rule: ComplianceRule) -> bool:
 
 
 def _violates(rule: ComplianceRule, obj, tag_slugs, eol_cfg=None,
-              coverage_days=None) -> bool:
+              coverage_days=None, vuln=None) -> bool:
     ct = rule.check_type
+    if ct == "vulnerabilities":
+        return vuln is not None and vuln.fails(rule, obj)
     if ct == "eol_status":
         return _eol_violates(rule, obj, eol_cfg)
     if ct == "coverage":
@@ -382,6 +398,7 @@ def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
     tag_slugs: set[str] | None = None
     eol_cfg = None
     coverage_days = None
+    vuln = None
     failed = []
     for rule in rules:
         if plan.error(rule) or rule.id in outside:
@@ -400,7 +417,11 @@ def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
             from core.effective_settings import coverage_warning_days
 
             coverage_days = coverage_warning_days(tenant)
-        if _violates(rule, obj, tag_slugs or set(), eol_cfg, coverage_days):
+        if rule.check_type == "vulnerabilities" and vuln is None:
+            from .vuln_rule import VulnIndex
+
+            vuln = VulnIndex(tenant, hosts=[obj.pk])
+        if _violates(rule, obj, tag_slugs or set(), eol_cfg, coverage_days, vuln):
             failed.append(rule)
     return failed
 
@@ -668,7 +689,7 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None,
             shown_cache[object_type] = shown
         return shown_cache[object_type]
 
-    def record(rule, object_type, obj, tags, eol_cfg=None):
+    def record(rule, object_type, obj, tags, eol_cfg=None, vuln=None):
         """List one failure, while the flat list has room."""
         if len(violations) >= list_cap:
             return
@@ -689,7 +710,8 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None,
                 "object_route": _ROUTES.get(object_type),
                 "object_id": str(obj.pk),
                 "object_repr": str(obj)[:120],
-                "detail": detail_for(rule, obj, eol_cfg),
+                "detail": detail_for(rule, obj, eol_cfg, vuln),
+                "link": _link(rule, object_type, obj),
                 "site_id": site_id,
                 "site_name": site_name,
                 "tags": sorted(t.slug for t in tags),
@@ -752,6 +774,12 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None,
                 # The installs and their mappings: one query for every row.
                 qs = qs.prefetch_related("installed_software__eol_mapping",
                                          "installed_software__application")
+        vuln = None
+        if any(r.check_type == "vulnerabilities" for r in type_rules):
+            from .vuln_rule import VulnIndex
+
+            # The failing hosts of each rule: one query per rule, not per row.
+            vuln = VulnIndex(tenant)
         if any(r.check_type == "software_target" for r in type_rules):
             # The target rides the row: the platform, and a device's type's.
             qs = qs.select_related(
@@ -765,7 +793,7 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None,
                 alias = in_scope.get(rule.id)
                 # Out of scope reads as passing.
                 fails = (not alias or bool(getattr(obj, alias))) and _violates(
-                    rule, obj, tag_slugs, eol_cfg, coverage_days
+                    rule, obj, tag_slugs, eol_cfg, coverage_days, vuln
                 )
                 if not fails:
                     if acked:
@@ -779,7 +807,7 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None,
                 # Bound the flat list, but keep it generous: per-object UI
                 # markers (the violation badge) rely on object_ids being
                 # present here, not just the aggregate per-rule counts.
-                record(rule, object_type, obj, tags, eol_cfg)
+                record(rule, object_type, obj, tags, eol_cfg, vuln)
 
     # Condition rules: SQL per (rule, type), exact counts. A rule whose query
     # fails on any of its types reports the error and nothing else.

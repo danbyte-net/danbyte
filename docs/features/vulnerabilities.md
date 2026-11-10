@@ -16,10 +16,12 @@ tenant and site scope ([#451](https://github.com/danbyte-net/danbyte/issues/451)
     **product mappings** with their [picker](#map-your-products),
     **matching** against your inventory with a [priority](#priority), the
     [Vulnerabilities tab](#where-it-shows) on devices, VMs, platforms and
-    applications, and the API for them. The Vulnerabilities list page, a
-    page per record, exceptions and browser sync are still to come. Until a
-    mapping exists, an NVD or OSV upload keeps nothing and a server fetch
-    asks for nothing.
+    applications, [exceptions](#exceptions), the
+    [compliance rule](#compliance-rule), [notifications](#notifications) and
+    [match history retention](#match-history), plus the API for them. The
+    Vulnerabilities list page, a page per record, the exception screens and
+    browser sync are still to come. Until a mapping exists, an NVD or OSV
+    upload keeps nothing and a server fetch asks for nothing.
 
 It is **off by default** and deployment-wide. By default nothing is fetched
 and nothing leaves the server: the update source is *upload* until a
@@ -246,7 +248,9 @@ lists them, and what did arrive is stored.
 - The `danbyte-vuln-refresh` timer (`manage.py vuln_refresh`, daily at
   05:50; `run_scheduler` in a container) does the same and appears under
   **Jobs → Scheduled tasks**. In any mode but server it records a skip and
-  contacts nothing.
+  contacts nothing. The same unit then runs `manage.py vuln_maintenance`
+  ([exception expiry](#expiry) and the [match purge](#match-history)), even
+  when the fetch failed; it has its own row, **Vulnerability upkeep**.
 - Mapping a new product - or enabling a mapping, or pointing one at
   another product - fetches just that product at once in server mode, on
   the `low` queue. The same product asked for again within five minutes
@@ -378,12 +382,17 @@ time to patch can be read back; going back to a vulnerable version opens a
 new row. Matches are not in the change log: they are computed, thousands at a
 time.
 
+Resolved matches are kept for **365 days** after they were resolved, then
+deleted by the daily `vuln_maintenance` run (open matches are never deleted).
+The purge runs even while vulnerability data is off.
+
 ### When matching runs
 
 | Event | Recomputes |
 |---|---|
 | Records, KEV or EPSS stored (upload, sync) | every tenant whose mappings name a changed record, once per burst (60 s) |
 | A mapping created, changed or deleted | the tenant |
+| An exception created, changed or deleted | the `excepted` mark on that record's matches, at once |
 | A device's or VM's running version, platform or device type changes | that host |
 | An install created, deleted or its version or application changed | its host |
 | The policy changed | the priorities of the tenant's open matches |
@@ -437,6 +446,119 @@ history, which adds a Resolved column), priority, severity, KEV, confidence
 and via. The filters are in the address (`?vstatus=resolved&priority=fix_first`),
 so a link keeps them. The tab is gone entirely while the feature is off.
 
+## Exceptions
+
+An **exception** records a decision about one record in your tenant:
+
+| Status | Means | Expiry |
+|---|---|---|
+| `not_applicable` | The record does not apply here (the feature is not used, the code is not reachable, …). | Optional; not in the past |
+| `risk_accepted` | It applies, and the risk is accepted until a date. | Required: from today to 365 days ahead |
+
+Each exception has a **reason** and an **owner** (a member of the tenant),
+both required, and one scope:
+
+| Scope | Covers the record's matches on |
+|---|---|
+| Device | that device (its platform and its installs) |
+| Virtual machine | that VM |
+| Platform | every host, through a mapping of that platform |
+| Application | every install, through a mapping of that application |
+| *none* | the whole tenant |
+
+A covered match is marked **excepted**: it stays listed, with its exception,
+but drops out of the counts, the priority lists, the summary, the
+[compliance rule](#compliance-rule) and [notifications](#notifications).
+When several exceptions cover one match, the most specific wins (host, then
+platform or application, then tenant). An exception applies through its
+expiry date. A record and scope have at most one exception in force; the
+record and scope of an exception do not change (remove it and add another).
+
+### CycloneDX analysis
+
+Each exception also carries the CycloneDX 1.5 VEX `analysis` fields, so the
+SBOM's vulnerabilities section can say what was decided:
+
+| Field | Values | Default |
+|---|---|---|
+| `analysis_state` | `not_affected` or `false_positive` for not applicable; `exploitable` for risk accepted | `not_affected` / `exploitable` |
+| `analysis_justification` | `code_not_present`, `code_not_reachable`, `requires_configuration`, `requires_dependency`, `requires_environment`, `protected_by_compiler`, `protected_at_runtime`, `protected_at_perimeter`, `protected_by_mitigating_control`; only with `not_affected` | blank |
+| `analysis_response` | a list of `can_not_fix`, `will_not_fix`, `update`, `rollback`, `workaround_available` | `["will_not_fix"]` for risk accepted |
+
+The reason (and the expiry date) becomes the analysis `detail`. Reads return
+the whole analysis as `cyclonedx`.
+
+### Expiry
+
+The day after its expiry date an exception stops applying. The daily
+`vuln_maintenance` run (05:50, after the fetch) then, once per exception:
+
+- reopens its matches (another exception may still cover some);
+- sends one message per tenant to its notification channels listing what
+  expired and how many matches reopened (when the policy's
+  `notify_enabled` is on); the reopened matches are not announced again as
+  new;
+- tells each owner in the notifications bell.
+
+Expired exceptions stay as history. Moving the expiry date of one into the
+future makes it apply again, and it is told about again when it next
+expires. Expiry is skipped for an inactive tenant and while vulnerability
+data is off.
+
+### Who may do what
+
+Exceptions are their own permission type, **Vulnerability exceptions**
+(`vulnerabilityexception`): *view*, *add*, *change*, *delete*. The built-in
+Administrator, Operator and Read-only roles cover it as they cover every
+type. An exception for a device or VM follows the host's site: a role
+limited to sites writes them only for hosts at its sites, and reads those
+plus the ones without a site. An exception for a platform, an application or
+the whole tenant has no site, so a role limited to sites cannot write one
+(the API answers with a field error). The subject must be one you may view,
+on create and when listing. Exceptions are in the [change log](change-log.md).
+
+## Compliance rule
+
+The **Known vulnerabilities** [compliance check](compliance.md#check-types)
+fails a device or VM with an open match that no exception covers, of a
+record that meets `vuln_fail_on`:
+
+| `vuln_fail_on` | Fails on |
+|---|---|
+| `kev` | a record in CISA KEV |
+| `fix_first` | a match with priority fix first |
+| `high` | priority high or fix first |
+| `cvss` | a CVSS score at or over `cvss_min` (0.1 - 10) |
+
+The violation names the worst three records (`CVE-2023-20198 (KEV),
+CVE-2024-1234 and 4 more`) and links to the object's vulnerabilities. While
+vulnerability data is off the rule passes everything.
+
+## Notifications
+
+After each recompute, a tenant gets **one** message through its
+[notification channels](monitoring.md#notifications) (email and webhook)
+when it found matches the policy asks about (`notify_on`):
+
+| `notify_on` | A new match whose |
+|---|---|
+| `fix_first` | priority is fix first |
+| `critical` | record's CVSS severity is critical |
+| `kev` | record is in CISA KEV; also an earlier match whose record has since joined KEV |
+
+For example *3 new vulnerabilities to fix first on 12 devices*, then one line
+per record (`CVE-2023-20198 (KEV, CVSS 10.0, fix first) on 9 devices`, at
+most 20) and a link when the deployment's public URL is set. A webhook gets
+`{"event": "vulnerabilities_matched", "count", "records", "hosts",
+"matches": [the first 200], "url"}`; each match has `vuln_id`, `kind`
+(`new` or `kev`), `priority`, `cvss_score`, `kev`, `version`, `host_type`
+and `host`. When every match is at one site, the site's mail settings apply.
+
+Each match is told about once: replaying a sync, a second recompute or a
+resync says nothing more. Matches an exception covers are never named.
+`notify_enabled: false` in the policy sends nothing; matches found while it
+was off are told about in the next message after it is turned on.
+
 ## API
 
 Every endpoint below answers 404 while vulnerability data is off and works
@@ -453,10 +575,18 @@ site role sees only its own sites' matches, everywhere.
 | `GET /api/devices/<id>/vulnerabilities/` | One device's matches; likewise `virtual-machines`, `platforms` (through its mappings) and `applications`. |
 | `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, devices and VMs affected. |
 | `GET /api/vulnerabilities/coverage/` | Per mapping: objects tested, matched, with a blank version, with a version the scheme cannot read; and from the last run the records it could not decide (`unparsed_bounds`, `range_not_understood`). Filters `platform`, `device_type`, `application`. |
-| `GET/PATCH /api/vulnerabilities/policy/` | Priority thresholds. |
+| `GET/PATCH /api/vulnerabilities/policy/` | Priority thresholds and notification settings (`notify_on`, `notify_enabled`). |
+| `GET/POST /api/vulnerability-exceptions/`, `GET/PATCH/DELETE …/<id>/`, `POST …/bulk-delete/` | [Exceptions](#exceptions). `POST {vuln_id, status, reason, owner_id, expires_on?, device_id \| virtual_machine_id \| platform_id \| application_id?, analysis_state?, analysis_justification?, analysis_response?}`. Reads add `cve`, `scope`, the subject, `owner`, `owner_name`, `active`, `cyclonedx`, `matches` (open matches it covers that you may see) and `expiry_notified_at`. Filters `vuln_id`, `status`, `scope` (`device`, `virtual_machine`, `platform`, `application`, `tenant`), `device`, `virtual_machine`, `platform`, `application`, `owner`, `active` and `q`. |
 
 The record and match lists take `status` (`open` by default, `resolved`,
 `all`), `device`, `virtual_machine`, `platform`, `application`, `mapping`,
 `site`, `cve`, `priority`, `confidence`, `via` (`platform`/`application`),
-`severity`, `kev`, `epss_min` and `q` (id or description). Values of one
-filter are comma-separated or repeated.
+`severity`, `kev`, `epss_min`, `q` (id or description) and `excepted`:
+`false` (the default) leaves out matches an exception covers, `true` lists
+only them, `all` both. Values of one filter are comma-separated or repeated.
+
+Every match carries `exception` (`id`, `numid`, `status`, `scope`,
+`expires_on`, `owner_name`, or `null`). The record list adds `excepted` (its
+matches an exception covers); a record's page lists every open match by
+default (`excepted=all`) with `excepted_count`; the summary adds `excepted`
+and `excepted_records`.

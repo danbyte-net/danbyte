@@ -343,6 +343,10 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # public catalog lacks. Tenant-wide like applications and platforms; the
     # sources' catalog rows (tenant NULL) are not reachable through it.
     ("compliance.EolProduct", "End-of-life products", "Governance"),
+    # A decision about one vulnerability record (#451): not applicable or
+    # risk accepted, for a device, VM, platform, application or the tenant.
+    # Site scope follows the host; the rest is tenant-wide.
+    ("vulnerabilities.VulnerabilityException", "Vulnerability exceptions", "Governance"),
     # ─── Customize ──────────────────────────────────────────────────
     ("api.Status", "Statuses", "Customize"),
     ("api.SensitivityLabel", "Sensitivity labels", "Customize"),

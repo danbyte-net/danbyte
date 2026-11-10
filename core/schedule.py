@@ -222,9 +222,10 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
     ),
     ScheduledTask(
         unit="danbyte-vuln-refresh",
-        commands=("vuln_refresh",),
+        commands=("vuln_refresh", "vuln_maintenance"),
         at=("05:50",),
-        label="Fetch vulnerability data (when turned on in server mode)",
+        label="Fetch vulnerability data (when turned on in server mode); expire "
+              "exceptions and purge old resolved matches",
     ),
     ScheduledTask(
         unit="danbyte-certificate-expiry",
