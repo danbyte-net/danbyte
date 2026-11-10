@@ -424,7 +424,9 @@ sandbox.
 User-configured outbound URLs - webhooks, notification channels, automation
 targets, device-type import URLs, virtualization sources (Proxmox, vCenter,
 Cloud Director), Windows server connections, a public assistant provider, the
-[end-of-life data](../features/end-of-life-data.md) source, and
+[end-of-life data](../features/end-of-life-data.md) source, the
+[vulnerability data](../features/vulnerabilities.md#server-mode) services and
+mirrors (NVD, OSV, CISA KEV, FIRST EPSS), and
 **per-tenant** SMTP/LDAP hosts - are
 validated before each request: the host is resolved and rejected if it points at
 a loopback / RFC1918 / link-local / `169.254.0.0/16` (cloud metadata) / ULA /
@@ -592,6 +594,7 @@ credential Danbyte keeps in its own database:
   import tokens, Windows Server and virtualization-source credentials;
 - Zabbix, PRTG and Oxidized connection credentials, and PRTG credentials;
 - backup-target credentials;
+- the NVD API key for [vulnerability data](../features/vulnerabilities.md#rate-limits-and-retries);
 - SSO and LDAP secrets (identity providers, user profiles), and the SMTP and
   LDAP passwords in deployment, tenant and site settings.
 

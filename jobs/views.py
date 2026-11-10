@@ -118,6 +118,7 @@ SCHEDULED_TASKS = [
     {"name": "auto-upgrade", "label": "Auto-upgrade check", "cadence": "every 20 min"},
     {"name": "digest", "label": "Email digest", "cadence": "daily 07:00"},
     {"name": "eol-refresh", "label": "End-of-life data", "cadence": "daily 05:35"},
+    {"name": "vuln-refresh", "label": "Vulnerability data", "cadence": "daily 05:50"},
     {"name": "acme-renew", "label": "ACME renewal", "cadence": "every 4h"},
     {"name": "update-check", "label": "Update check", "cadence": "every 6h"},
     {"name": "cleanup-ips", "label": "Stale-IP cleanup", "cadence": "daily"},

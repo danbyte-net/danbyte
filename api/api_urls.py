@@ -91,6 +91,7 @@ from vulnerabilities.api import (
     vulnerability_settings,
     vulnerability_sync_run,
 )
+from vulnerabilities.fetch_api import vulnerability_cpe_search, vulnerability_refresh
 from core import (
     deployment,
     service_api,
@@ -636,6 +637,9 @@ urlpatterns = [
     path("vulnerabilities/import/", vulnerability_import, name="vulnerability-import"),
     path("vulnerabilities/sync/<uuid:run_id>/", vulnerability_sync_run,
          name="vulnerability-sync-run"),
+    path("vulnerabilities/refresh/", vulnerability_refresh, name="vulnerability-refresh"),
+    path("vulnerabilities/cpe/search/", vulnerability_cpe_search,
+         name="vulnerability-cpe-search"),
     path("rbac/object-types/", rbac_object_types, name="rbac-object-types"),
     path("rbac/site-role/", create_site_role, name="rbac-site-role"),
     path("users/<int:user_id>/access-summary/", user_access_summary,
