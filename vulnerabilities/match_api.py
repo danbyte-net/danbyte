@@ -101,10 +101,15 @@ def visible_matches(request, tenant):
     devices = _restricted(Device, request, tenant, "device")
     vms = _restricted(VirtualMachine, request, tenant, "virtualmachine")
     installs = _restricted(InstalledSoftware, request, tenant, "installedsoftware")
-    return qs.filter(
+    qs = qs.filter(
         Q(device__in=devices.values("pk")) | Q(virtual_machine__in=vms.values("pk"))
     ).filter(Q(installed_software__isnull=True)
              | Q(installed_software__in=installs.values("pk")))
+    # An inventoried package is software on the host: its matches read with
+    # installed-software view, as a host's package list does (#451 B2).
+    if not rbac.has_action(request.user, tenant, "installedsoftware", "view"):
+        qs = qs.filter(host_package__isnull=True)
+    return qs
 
 
 def visible_mappings(request, tenant, action: str = "view"):
@@ -256,8 +261,10 @@ def match_dict(r: VulnerabilityMatch) -> dict:
         "installed_software": None if inst is None else {
             "id": str(inst.pk), "version": inst.version,
             "application": _ref(inst.application)},
-        "mapping": {"id": str(r.mapping_id), "identifier": r.mapping.identifier,
-                    "platform": _ref(r.mapping.platform)},
+        "mapping": None if r.mapping_id is None else {
+            "id": str(r.mapping_id), "identifier": r.mapping.identifier,
+            "platform": _ref(r.mapping.platform)},
+        "host_package": _package_ref(r.host_package),
         "exception": exception_brief(r.excepted),
         "first_seen_at": r.first_seen_at,
         "last_seen_at": r.last_seen_at,
@@ -265,9 +272,16 @@ def match_dict(r: VulnerabilityMatch) -> dict:
     }
 
 
+def _package_ref(p) -> dict | None:
+    if p is None:
+        return None
+    return {"id": str(p.pk), "name": p.name, "version": p.version, "arch": p.arch,
+            "source_name": p.source_name, "ecosystem": p.ecosystem, "purl": p.purl}
+
+
 def _match_rows(qs):
     return qs.select_related("cve", "device", "virtual_machine", "mapping__platform",
-                             "installed_software__application", "excepted")
+                             "installed_software__application", "excepted", "host_package")
 
 
 # ─── match filters ───────────────────────────────────────────────────────────
@@ -319,7 +333,7 @@ def _filter_matches(request, qs, *, status_default="open", excepted=True,
     for name, field, allowed in (
             ("priority", "priority", prio.LEVELS),
             ("confidence", "confidence", ("exact", "range", "partial")),
-            ("via", "via", ("platform", "application")),
+            ("via", "via", ("platform", "application", "package")),
             ("severity", "cve__cvss_severity", ("critical", "high", "medium", "low", "none"))):
         vals = _values(request, name)
         if vals:
@@ -666,7 +680,19 @@ def _relevant(request, tenant, cve: Cve) -> bool:
     q = Q()
     for kind, part, vendor, product in keys:
         q |= Q(kind=kind, part=part, vendor=vendor, product=product)
-    return bool(keys) and ProductMapping.objects.filter(q, tenant=tenant).exists()
+    if not keys:
+        return False
+    if ProductMapping.objects.filter(q, tenant=tenant).exists():
+        return True
+    # A record naming a package discovery found on one of its hosts.
+    from discovery.models import HostPackage
+
+    pq = Q()
+    for kind, _part, vendor, product in keys:
+        if kind == "purl":
+            pq |= Q(purl_type=vendor, match_name=product)
+    return bool(pq) and HostPackage.objects.filter(pq, tenant=tenant,
+                                                   removed_at__isnull=True).exists()
 
 
 def cve_detail(c: Cve, policy) -> dict:

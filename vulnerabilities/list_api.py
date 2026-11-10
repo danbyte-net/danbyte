@@ -197,7 +197,8 @@ MATCH_FACETS: dict[str, MatchFacet] = {
     **RECORD_FACETS,
     "confidence": MatchFacet(values=lambda: {v: Q(confidence=v)
                                              for v in ("exact", "range", "partial")}),
-    "via": MatchFacet(values=lambda: {v: Q(via=v) for v in ("platform", "application")}),
+    "via": MatchFacet(values=lambda: {v: Q(via=v)
+                                      for v in ("platform", "application", "package")}),
 }
 
 

@@ -131,7 +131,8 @@ def _notify(tenant) -> int:
 
 
 def tenants_for(vuln_ids) -> set:
-    """Tenants whose enabled mappings name a product of these records."""
+    """Tenants whose enabled mappings - or inventoried packages, while
+    Discovery is on for them - name a product of these records."""
     from django.db.models import Q
 
     from .models import CveProduct, ProductMapping
@@ -143,8 +144,30 @@ def tenants_for(vuln_ids) -> set:
     q = Q()
     for kind, part, vendor, product in keys:
         q |= Q(kind=kind, part=part, vendor=vendor, product=product)
-    return set(ProductMapping.objects.filter(q, enabled=True)
-               .values_list("tenant_id", flat=True).distinct())
+    out = set(ProductMapping.objects.filter(q, enabled=True)
+              .values_list("tenant_id", flat=True).distinct())
+    return out | _package_tenants(vuln_ids)
+
+
+def _package_tenants(vuln_ids=None) -> set:
+    """Tenants with Discovery on whose current packages these records name
+    (any record when ``vuln_ids`` is None). One query, by a join."""
+    from django.db.models import Exists, OuterRef
+
+    from discovery.gate import active_tenant_ids
+    from discovery.models import HostPackage
+
+    from .models import CveProduct
+
+    active = active_tenant_ids()
+    if not active:
+        return set()
+    named = CveProduct.objects.filter(kind="purl", part="", vendor=OuterRef("purl_type"),
+                                      product=OuterRef("match_name"))
+    if vuln_ids is not None:
+        named = named.filter(cve__vuln_id__in=list(vuln_ids))
+    return set(HostPackage.objects.filter(tenant_id__in=active, removed_at__isnull=True)
+               .filter(Exists(named)).values_list("tenant_id", flat=True).distinct())
 
 
 def after_store(changed: set[str]) -> None:
@@ -164,7 +187,7 @@ def enqueue_all() -> None:
     from .models import ProductMapping
 
     for tenant_id in set(ProductMapping.objects.filter(enabled=True)
-                         .values_list("tenant_id", flat=True)):
+                         .values_list("tenant_id", flat=True)) | _package_tenants():
         enqueue_recompute(tenant_id)
 
 

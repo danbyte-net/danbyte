@@ -18,6 +18,14 @@ package (deb, rpm, apk) also takes the host's release and, for Debian and
 Ubuntu, the source package name (``package_target``): OSV writes those
 advisories per release and per source package.
 
+Packages discovery read from a host (``discovery.HostPackage``, #451 B2)
+are a third source, ``via="package"``, with no mapping: each current
+package is tested under the OSV name its advisories use (the source package
+for Debian and Ubuntu) at the release its host reported. Only while
+Discovery is on for the tenant, and only packages some stored record names
+- one query finds those (``_package_rows``), one more their records, so the
+cost does not grow with the packages nobody advises.
+
 ``objects`` narrows a run to some hosts (a version, platform or install
 changed); ``cves`` to some records. Either way only the rows inside the scope
 are diffed.
@@ -31,15 +39,23 @@ from collections import defaultdict
 from collections.abc import Iterable
 
 from django.db import connection, transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from api.package_ids import render_purl
 
 from . import evaluate, priority
 from .exceptions import Resolver
-from .identifiers import DISTRO_TYPES, distro_release, platform_release, purl_key, purl_qualifiers
+from .identifiers import (
+    DISTRO_TYPES,
+    distro_release,
+    ecosystem_release,
+    platform_release,
+    purl_key,
+    purl_qualifiers,
+)
 from .models import Cve, CveProduct, ProductMapping, VulnerabilityMatch, VulnerabilityPolicy
+from .versions import resolve_scheme
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +116,51 @@ def _candidates(keys: Iterable[tuple], cve_ids: Iterable[str] | None):
     ids = set().union(*by_key.values()) if by_key else set()
     cves = {c.pk: c for c in Cve.objects.filter(pk__in=ids).only(*_CVE_FIELDS)}
     return {k: [cves[i] for i in v if i in cves] for k, v in by_key.items()}
+
+
+def _package_rows(tenant, objects, cves) -> list[tuple]:
+    """``(pk, device, vm, purl type, match name, version, ecosystem)`` of
+    the tenant's current inventoried packages that some stored record names
+    - none while Discovery is off for the tenant."""
+    from discovery.gate import active
+    from discovery.models import HostPackage
+
+    if not active(tenant):
+        return []
+    named = CveProduct.objects.filter(
+        kind="purl", part="", vendor=OuterRef("purl_type"), product=OuterRef("match_name"),
+        cve__rejected=False)
+    if cves is not None:
+        named = named.filter(cve__vuln_id__in=list(cves))
+    qs = HostPackage.objects.filter(tenant=tenant, removed_at__isnull=True).filter(Exists(named))
+    if objects is not None:
+        qs = qs.filter(Q(device_id__in=list(objects.get("device") or []))
+                       | Q(virtual_machine_id__in=list(objects.get("virtual_machine") or [])))
+    return list(qs.values_list("pk", "device_id", "virtual_machine_id", "purl_type",
+                               "match_name", "match_version", "ecosystem"))
+
+
+def _package_candidates(tenant, objects, cves) -> dict:
+    """``{product key: [Cve]}`` for the inventoried packages in scope, by a
+    join rather than one OR term per package."""
+    from discovery.models import HostPackage
+
+    have = HostPackage.objects.filter(
+        tenant=tenant, removed_at__isnull=True, purl_type=OuterRef("vendor"),
+        match_name=OuterRef("product"))
+    if objects is not None:
+        have = have.filter(Q(device_id__in=list(objects.get("device") or []))
+                           | Q(virtual_machine_id__in=list(objects.get("virtual_machine") or [])))
+    rows = CveProduct.objects.filter(kind="purl", part="", vendor__in=sorted(DISTRO_TYPES),
+                                     cve__rejected=False).filter(Exists(have))
+    if cves is not None:
+        rows = rows.filter(cve__vuln_id__in=list(cves))
+    by_key: dict[tuple, set] = defaultdict(set)
+    for cve_id, vendor, product in rows.values_list("cve_id", "vendor", "product"):
+        by_key[("purl", "", vendor, product)].add(cve_id)
+    ids = set().union(*by_key.values()) if by_key else set()
+    found = {c.pk: c for c in Cve.objects.filter(pk__in=ids).only(*_CVE_FIELDS)}
+    return {k: [found[i] for i in v if i in found] for k, v in by_key.items()}
 
 
 def _platform_of(host):
@@ -250,8 +311,28 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                     levels[cve.pk] = priority.of_cve(cve, policy)
                 excepted = resolver.covering(cve.pk, *host_key, m.platform_id,
                                              m.application_id) if resolver else None
-                desired[(cve.pk, *host_key, m.pk, install_id)] = (
+                desired[(cve.pk, *host_key, m.pk, install_id, None)] = (
                     target.version, conf, levels[cve.pk], via, excepted)
+
+        def consider_package(pk, device_id, vm_id, ptype, name, version, ecosystem):
+            key = ("purl", "", ptype, name)
+            target = evaluate.Target(
+                kind="purl", part="", vendor=ptype, product=name,
+                scheme=resolve_scheme("auto", "purl", "", ptype, name), version=version,
+                release=ecosystem_release(ecosystem) if ecosystem else None)
+            for cve in pkg_candidates.get(key, ()):
+                ck = (cve.pk, target)
+                if ck not in cache:
+                    cache[ck] = evaluate.match(cve.configurations, cve.osv, target)
+                conf = cache[ck][0]
+                if conf is None:
+                    continue
+                if cve.pk not in levels:
+                    levels[cve.pk] = priority.of_cve(cve, policy)
+                excepted = resolver.covering(cve.pk, device_id, vm_id, None, None) \
+                    if resolver else None
+                desired[(cve.pk, device_id, vm_id, None, None, pk)] = (
+                    target.version, conf, levels[cve.pk], "package", excepted)
 
         items = list(_targets(tenant, by_platform, by_app, hardware, os_of, objects, counts))
         source_keys = {(item[0].kind, item[0].part, item[0].vendor, item[7]) for item in items
@@ -259,6 +340,10 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
         candidates = _candidates({*(m.product_key for m in matching), *source_keys}, cves)
         for item in items:
             consider(*item)
+        pkg_rows = _package_rows(tenant, objects, cves)
+        pkg_candidates = _package_candidates(tenant, objects, cves) if pkg_rows else {}
+        for row in pkg_rows:
+            consider_package(*row)
 
         counts.update(_diff(tenant, desired, cves=cves, objects=objects))
         if cves is None and objects is None:
@@ -284,7 +369,8 @@ def _diff(tenant, desired: dict, *, cves, objects) -> dict:
             | Q(virtual_machine_id__in=list(objects.get("virtual_machine") or [])))
     existing = {}
     for row in open_rows.values_list("pk", "cve_id", "device_id", "virtual_machine_id",
-                                     "mapping_id", "installed_software_id", "version",
+                                     "mapping_id", "installed_software_id",
+                                     "host_package_id", "version",
                                      "confidence", "priority", "excepted_id"):
         pk, *key, version, conf, prio, excepted = row
         existing[tuple(key)] = (pk, version, conf, prio, excepted)
@@ -293,10 +379,11 @@ def _diff(tenant, desired: dict, *, cves, objects) -> dict:
     for key, (version, conf, prio, via, excepted) in desired.items():
         have = existing.pop(key, None)
         if have is None:
-            cve_id, device_id, vm_id, mapping_id, install_id = key
+            cve_id, device_id, vm_id, mapping_id, install_id, package_id = key
             new.append(VulnerabilityMatch(
                 tenant=tenant, cve_id=cve_id, device_id=device_id, virtual_machine_id=vm_id,
                 via=via, mapping_id=mapping_id, installed_software_id=install_id,
+                host_package_id=package_id,
                 version=version, confidence=conf, priority=prio, excepted_id=excepted,
                 first_seen_at=now, last_seen_at=now))
         elif have[1:] != (version, conf, prio, excepted):

@@ -122,7 +122,9 @@ def section(tenant, devices, vms, os_refs: dict, install_refs: dict) -> list[dic
     if tenant is None or not VulnerabilitySettings.objects.filter(pk=1, enabled=True).exists():
         return None
     matches = (
-        VulnerabilityMatch.objects.filter(tenant=tenant, resolved_at__isnull=True)
+        # A package discovery found is not a component of the document.
+        VulnerabilityMatch.objects.filter(tenant=tenant, resolved_at__isnull=True,
+                                          host_package__isnull=True)
         .filter(Q(device__in=devices.order_by().values("pk"))
                 | Q(virtual_machine__in=vms.order_by().values("pk")))
         .select_related("cve", "excepted")
