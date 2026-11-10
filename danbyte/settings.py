@@ -796,6 +796,16 @@ if not MONITORING_SECRET_KEY and TESTING:
     # Deterministic key for the test DB (DEBUG is off under the test runner, so
     # the fail-closed derivation guard would otherwise abort migrations).
     MONITORING_SECRET_KEY = "test-monitoring-secret-key-not-for-production"
+# A comma-separated list rotates the key (#493): newest first, the first key
+# encrypts, every key decrypts. A malformed list stops the service here.
+try:
+    from danbyte.secret_keys import parse_monitoring_keys
+
+    parse_monitoring_keys(MONITORING_SECRET_KEY)
+except ValueError as _exc:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(str(_exc)) from None
 MONITORING_SECRETS_BACKEND = os.getenv("MONITORING_SECRETS_BACKEND", "")
 
 # SSRF policy for the CENTRAL check runner. When True, a check target that

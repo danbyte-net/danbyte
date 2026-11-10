@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { api, type SecretStoreField, type SecretStoreProvider } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
 import { Field, FormCheckbox, FormSelect, FormText } from "@/components/forms"
 import { Button } from "@/components/ui/button"
@@ -85,7 +86,7 @@ function SecretStoreCard() {
   const providers = useQuery({
     queryKey: ["secret-store-providers"],
     queryFn: () =>
-      api<{ providers: SecretStoreProvider[] }>(
+      api<{ providers: SecretStoreProvider[]; monitoring_keys?: number }>(
         "/api/deployment/secret-stores/"
       ),
     staleTime: 10 * 60_000,
@@ -94,6 +95,7 @@ function SecretStoreCard() {
   const [values, setValues] = useState<Record<string, FieldValue>>({})
 
   const list = providers.data?.providers ?? []
+  const keyCount = providers.data?.monitoring_keys
   const selected = list.find((p) => p.kind === provider)
   const stored = (data ?? {}) as unknown as Record<string, unknown>
 
@@ -193,6 +195,22 @@ function SecretStoreCard() {
             )
           })}
         </div>
+      )}
+      {keyCount !== undefined && (
+        <p className="text-[11px] text-muted-foreground">
+          {keyCount === 1
+            ? "1 encryption key configured"
+            : `${keyCount} encryption keys configured`}{" "}
+          ·{" "}
+          <a
+            className="link"
+            href={docsUrl("reference/settings/#rotating-the-monitoring-key")}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Docs
+          </a>
+        </p>
       )}
     </SettingsCard>
   )

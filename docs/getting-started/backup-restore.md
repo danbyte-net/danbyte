@@ -39,6 +39,11 @@ first**. An archive made under another key is refused at upload and at
 preview with a clear message, instead of restoring a database whose
 credentials silently decrypt to nothing.
 
+With a key list (`MONITORING_SECRET_KEY=<new>,<old>`, see
+[Rotating the monitoring key](../reference/settings.md#rotating-the-monitoring-key))
+new archives use the first key and a restore tries each, so keep an old key
+for as long as you keep archives made under it.
+
 The file format is `.dbk`: a small header (magic, salt, key check) followed
 by the encrypted stream. Nothing else reads it; download it, keep it, upload
 it back.

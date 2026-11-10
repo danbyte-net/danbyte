@@ -298,7 +298,10 @@ enables under **Settings → Security → Secret store**:
   features stay off (fail closed).
 - **Local** - keys live in an encrypted table, at rest under
   `MONITORING_SECRET_KEY`, exactly like every other stored credential. Works out
-  of the box and airgap-friendly.
+  of the box and airgap-friendly. The card shows how many keys are configured
+  (more than one while a
+  [rotation](../reference/settings.md#rotating-the-monitoring-key) is under
+  way), never the keys.
 - **Vault / OpenBao** - keys live in an external HashiCorp Vault / OpenBao and
   Danbyte holds only a reference. Configure the address, KV v2 mount (default
   `danbyte`), TLS verification, and a token in the same settings card; the token
