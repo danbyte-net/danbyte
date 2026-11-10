@@ -172,27 +172,46 @@ const show = (v: unknown) =>
     <span className="font-mono text-xs">{String(v)}</span>
   )
 
+const HELD_COLUMNS: SimpleColumn<DriftRow>[] = [
+  { id: "field", header: "Field", cell: (r) => r.field },
+  { id: "intended", header: "Danbyte", cell: (r) => show(r.intended) },
+  { id: "observed", header: "Hypervisor", cell: (r) => show(r.observed) },
+]
+
 const DRIFT_COLUMNS: SimpleColumn<DriftRow>[] = [
   { id: "field", header: "Field", cell: (r) => r.field },
   { id: "intended", header: "Intended", cell: (r) => show(r.intended) },
   { id: "observed", header: "Hypervisor", cell: (r) => show(r.observed) },
 ]
 
-/** Where an intended VM and its hypervisor disagree. Hidden when they
- * agree. Shares the interfaces pane's query. */
-export function VmDriftCard({ vmId }: { vmId: string }) {
+/** The VM's open drift: where Danbyte and its hypervisor disagree. */
+export function useVmDrift(vmId: string, enabled = true): DriftRow[] {
   const q = useQuery({
     queryKey: ["vm-drift", vmId],
     queryFn: () => apiAll<DriftChange>(`/api/virt-changes/?vm=${vmId}`),
     retry: false,
+    enabled,
   })
-  const rows = driftRows(q.data?.results ?? [])
+  return driftRows(q.data?.results ?? [])
+}
+
+/** Where a VM and its hypervisor disagree. Hidden when they agree. */
+export function VmDriftCard({
+  vmId,
+  intended = true,
+}: {
+  vmId: string
+  /** An intended VM's own values are its intent; a synced one's are just
+   * what Danbyte holds. */
+  intended?: boolean
+}) {
+  const rows = useVmDrift(vmId)
   if (rows.length === 0) return null
   return (
     <OverviewTable
       title="Drift"
       count={rows.length}
-      columns={DRIFT_COLUMNS}
+      columns={intended ? DRIFT_COLUMNS : HELD_COLUMNS}
       data={rows}
       getRowKey={(r) => r.key}
     />

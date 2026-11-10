@@ -26,6 +26,11 @@ import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
@@ -57,6 +62,7 @@ import {
   VmBuildCard,
   VmDisks,
   VmDriftCard,
+  useVmDrift,
   VmProvisionButton,
   hasBuild,
 } from "@/components/vm-build"
@@ -158,6 +164,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "history"
   >("overview")
   const vuln = useVulnSettings()
+  const drift = useVmDrift(vm.id, vm.drift_count > 0)
   const pkgs = usePackagesTab("virtual_machine", vm.id)
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
@@ -264,10 +271,30 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                 </Link>
               )}
               {vm.drift_count > 0 && (
-                <Badge variant="warning" className="gap-1 text-[10px]">
-                  <GitCompareArrows className="h-3 w-3" />
-                  {vm.drift_count} drift
-                </Badge>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="warning"
+                      className="gap-1 text-[10px]"
+                      asChild
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setTab("components")}
+                      >
+                        <GitCompareArrows className="h-3 w-3" />
+                        {vm.drift_count} drift
+                      </button>
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent variant="panel">
+                    {drift.length > 0
+                      ? `Differs from the hypervisor: ${drift
+                          .map((r) => r.field)
+                          .join(", ")}`
+                      : "Differs from the hypervisor"}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </>
           }
@@ -363,7 +390,12 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         />
       </DetailTab>
       <DetailTab value="components">
-        <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
+        <div className="space-y-6">
+          {vm.drift_count > 0 && (
+            <VmDriftCard vmId={vm.id} intended={vm.intended} />
+          )}
+          <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
+        </div>
       </DetailTab>
       <DetailTab value="routing">
         <RoutingPanel owner={{ kind: "vm", id: vm.id, name: vm.name }} />
@@ -719,7 +751,9 @@ function VmOverview({
           <KvCard title="Management" rows={managementRows} />
         </div>
       </div>
-      {vm.intended && <VmDriftCard vmId={vm.id} />}
+      {vm.drift_count > 0 && (
+        <VmDriftCard vmId={vm.id} intended={vm.intended} />
+      )}
       <VmDisks vm={vm} />
       <VmTopologyCard
         vmId={vm.id}

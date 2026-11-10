@@ -236,6 +236,11 @@ On an intended VM's page the Overview has a **Build** card with these
 fields, and a **Drift** card with what the hypervisor reports where it
 differs from the intent.
 
+Any VM with open drift - intended or synced - shows the **Drift** card on
+its Overview and at the top of its Components tab: one row per field, with
+what Danbyte holds and what the hypervisor reports. The **N drift** badge
+in the header names the fields on hover and opens the Components tab.
+
 ### Building it: render and provision
 
 A rebuild script reads everything from the API: the VM with its
