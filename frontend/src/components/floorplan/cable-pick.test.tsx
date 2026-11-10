@@ -38,7 +38,8 @@ Element.prototype.hasPointerCapture = () => false
 Element.prototype.scrollIntoView = () => {}
 
 const CELL = 40
-const plan = testmap.plan as unknown as FloorPlan
+// The fixture predates the plan's saved view state.
+const plan = { state: {}, ...testmap.plan } as unknown as FloorPlan
 const tiles = testmap.tiles as unknown as FloorPlanTile[]
 const trays = testmap.trays as unknown as FloorPlanTray[]
 const cables = testmap.cables as unknown as FloorPlanCablePath[]

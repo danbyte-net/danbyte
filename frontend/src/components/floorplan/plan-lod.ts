@@ -287,12 +287,16 @@ export function planLod(
     rooms,
     scale,
     prev = null,
+    fold = true,
   }: {
     tiles: readonly FloorPlanTile[]
     iconIds: ReadonlySet<string>
     rooms: readonly PlanRoom[]
     scale: number
     prev?: PlanLod | null
+    /** Rooms fold their rows into a summary; off (Detail by zoom: from
+     * afar the room's label sums it up) the rows stay bars. */
+    fold?: boolean
   }
 ): PlanLod {
   if (!(scale > 0) || !iconIds.size || !rows.length)
@@ -316,7 +320,7 @@ export function planLod(
   // A room folds when its rows run together, or are all down to icons.
   const folded = new Set<string>()
   for (const [room, list] of byRoom) {
-    if (list.length < 2) continue
+    if (!fold || list.length < 2) continue
     const was = list.some((r) => prevHall.has(r.members[0]))
     if (
       rowPitch(list) * scale < (was ? HALL_EXIT_PX : HALL_ENTER_PX) ||

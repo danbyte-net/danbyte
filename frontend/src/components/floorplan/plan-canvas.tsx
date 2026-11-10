@@ -246,7 +246,9 @@ export function PlanCanvas({
     showPhotoOutlines,
     objectSize,
     iconTiles,
+    tileIcons,
     callouts,
+    detail,
     muteBackground,
     showTrays,
     showCableLinks,
@@ -419,8 +421,10 @@ export function PlanCanvas({
         photoOutlines={showPhotoOutlines}
         objectSize={objectSize}
         iconTiles={iconTiles}
+        tileIcons={tileIcons}
         callouts={callouts}
         calloutLines={calloutLines}
+        detail={detail}
         muteBackground={muteBackground}
         mode={mode}
         trays={trays}

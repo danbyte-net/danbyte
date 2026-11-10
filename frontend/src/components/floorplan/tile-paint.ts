@@ -28,6 +28,9 @@ import {
   rackPowerRatio,
 } from "@/lib/rack-capacity"
 
+import { inkOn, solidBorder, solidFill } from "./tile-face"
+import type { TileTheme } from "./tile-face"
+
 /** What the plan colours its racks by. `type` is the plan as it always
  * looked: every tile in its type's colour. */
 export const COLOR_BY = [
@@ -199,6 +202,11 @@ export interface TilePaintInput {
   selected?: boolean
   /** Outside the rack table's filter: the plan fades it. */
   dimmed?: boolean
+  /** Display > Tile icons: a solid fill with a contrast ink (tile-face.ts)
+   * instead of the pale tint. */
+  solid?: boolean
+  /** The page the solid tile stands on. */
+  theme?: TileTheme
 }
 
 /** One tile's paint. Positions and sizes stay `TileShape`'s. */
@@ -223,6 +231,13 @@ export interface TilePaint {
   muted: boolean
   /** The whole tile's opacity: faded when decommissioning or filtered out. */
   opacity: number
+  /** Solid (Display > Tile icons): the ink its glyph, name, marks and
+   * figure take on the fill; null on a pale tile, which draws them in the
+   * page's own text colour. */
+  ink: string | null
+  /** The capacity bar's share: the measure's level colour - the ink where
+   * the tile is already filled with that colour, so it never vanishes. */
+  barColor: string | null
 }
 
 /** Fill strength of a tile coloured by what it says about its rack. */
@@ -250,6 +265,8 @@ export function tilePaint({
   check = null,
   selected = false,
   dimmed = false,
+  solid = false,
+  theme = "light",
 }: TilePaintInput): TilePaint {
   const alarmColor = check ? CHECK_COLOR[check] : undefined
   const alarm = !!alarmColor
@@ -292,6 +309,37 @@ export function tilePaint({
     }
   }
 
+  // Solid: the colour as a block, its ink by contrast. A tile the
+  // colouring is not about stays pale - it recedes so the racks read.
+  if (solid && !muted) {
+    const own =
+      colorBy !== "type" ||
+      !!(
+        tile.color ||
+        tile.tile_type?.color ||
+        tile.role_type?.color ||
+        tile.linked?.role?.color
+      )
+    const block = solidFill(fill, { linked: !!tile.linked, theme, own })
+    const ink = inkOn(block)
+    return {
+      fill: block,
+      fillOpacity: 1,
+      stroke:
+        alarmColor ??
+        (selected ? "var(--foreground)" : solidBorder(block, theme)),
+      strokeOpacity: 1,
+      strokeWidth: selected || alarm ? 2 : 1,
+      alarm,
+      figure,
+      muted,
+      opacity,
+      ink,
+      // On a tile filled with the measure's own colour, the bar is ink.
+      barColor: figure ? (colorBy === "type" ? figure.color : ink) : null,
+    }
+  }
+
   return {
     fill,
     fillOpacity,
@@ -302,6 +350,8 @@ export function tilePaint({
     figure,
     muted,
     opacity,
+    ink: null,
+    barColor: figure?.color ?? null,
   }
 }
 

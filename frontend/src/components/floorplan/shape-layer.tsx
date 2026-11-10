@@ -44,6 +44,8 @@ const ICON_PX = 12
 const ICON_GAP = 4
 /** ~Average glyph width of the name's semibold sans, per em. */
 const NAME_EM = 0.6
+/** A fine pattern's share of the usual stroke opacity (Detail by zoom). */
+const FINE_PATTERN = 0.45
 
 /** An area type's pattern: its strokes over the fill, clipped to the
  * area's own outline (`clip`: a rect or polygon in world px). */
@@ -54,12 +56,15 @@ function PatternStrokes({
   clip,
   box,
   zoom,
+  fine = false,
 }: {
   id: string
   area: AreaShape
   color: string
   clip: React.ReactNode
   box: { x: number; y: number; w: number; h: number }
+  /** Detail by zoom: thinner and fainter lines. */
+  fine?: boolean
   /** The canvas zoom: the lines keep their spacing and width on screen,
    * so a hatch stays readable zoomed out. */
   zoom: number
@@ -75,8 +80,8 @@ function PatternStrokes({
         clipPath={`url(#${id})`}
         data-pattern={areaPattern(area)}
         stroke={color}
-        strokeOpacity={PATTERN_STROKE.opacity}
-        strokeWidth={PATTERN_STROKE.width / zoom}
+        strokeOpacity={PATTERN_STROKE.opacity * (fine ? FINE_PATTERN : 1)}
+        strokeWidth={(PATTERN_STROKE.width * (fine ? 0.7 : 1)) / zoom}
         pointerEvents="none"
       >
         {runs.map((run, r) => (
@@ -239,8 +244,12 @@ export function AreaShapeView({
   multiSelected = false,
   minNamePx,
   nameAt,
+  pattern = "full",
 }: {
   area: AreaShape
+  /** Detail by zoom: the type's pattern as drawn, fine and faint, or left
+   * out (a flat tint). */
+  pattern?: "full" | "fine" | "none"
   /** Readable: the name never under this on screen (px). */
   minNamePx?: number
   /** Where the plan's label pass put the name - its box's top left
@@ -296,19 +305,22 @@ export function AreaShapeView({
         aria-label={name || "Area"}
       >
         <polygon points={outline} strokeLinejoin="round" {...common} />
-        <PatternStrokes
-          id={clipId}
-          area={area}
-          color={color}
-          zoom={zoom}
-          clip={<polygon points={outline} />}
-          box={{
-            x: bx,
-            y: by,
-            w: Math.max(...xs) - bx,
-            h: Math.max(...ys) - by,
-          }}
-        />
+        {pattern !== "none" && (
+          <PatternStrokes
+            id={clipId}
+            area={area}
+            color={color}
+            zoom={zoom}
+            fine={pattern === "fine"}
+            clip={<polygon points={outline} />}
+            box={{
+              x: bx,
+              y: by,
+              w: Math.max(...xs) - bx,
+              h: Math.max(...ys) - by,
+            }}
+          />
+        )}
         {onEdgeDoubleClick &&
           pts.map((p, i) => {
             const q = pts[(i + 1) % pts.length]
@@ -371,16 +383,19 @@ export function AreaShapeView({
         rx={3}
         {...common}
       />
-      <PatternStrokes
-        id={clipId}
-        area={area}
-        color={color}
-        zoom={zoom}
-        clip={
-          <rect x={px(area.x)} y={px(area.y)} width={w} height={h} rx={3} />
-        }
-        box={{ x: px(area.x), y: px(area.y), w, h }}
-      />
+      {pattern !== "none" && (
+        <PatternStrokes
+          id={clipId}
+          area={area}
+          color={color}
+          zoom={zoom}
+          fine={pattern === "fine"}
+          clip={
+            <rect x={px(area.x)} y={px(area.y)} width={w} height={h} rx={3} />
+          }
+          box={{ x: px(area.x), y: px(area.y), w, h }}
+        />
+      )}
       {name && (nameAt || (w > 30 && h > 18) || grow > 1) && (
         <AreaName
           area={area}
