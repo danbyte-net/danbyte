@@ -118,6 +118,35 @@ class MultiKeyBackendTests(SimpleTestCase):
         self.assertEqual(FernetSecretsBackend(key).key_count, 1)
 
 
+class BackupArchiveKeyListTests(SimpleTestCase):
+    def _header(self, secret):
+        import tempfile
+
+        from backups.archive import Writer
+
+        with tempfile.NamedTemporaryFile(suffix=".dbk", delete=False) as fh:
+            path = fh.name
+        with Writer(path, secret) as w:
+            w.add_bytes("manifest.json", b"{}")
+        return path
+
+    def test_old_archive_opens_with_the_key_list_and_new_ones_use_the_first_key(self):
+        from backups.archive import KeyMismatch, open_header
+
+        old = self._header("old")
+        new = self._header("new,old")
+        try:
+            with open(old, "rb") as fh:
+                open_header(fh, "new,old")
+            with open(new, "rb") as fh:
+                open_header(fh, "new")
+            with open(old, "rb") as fh, self.assertRaises(KeyMismatch):
+                open_header(fh, "new")
+        finally:
+            os.unlink(old)
+            os.unlink(new)
+
+
 class RotateCommandTests(TestCase):
     def setUp(self):
         org = Organization.objects.create(name="O", slug="o-rot")
