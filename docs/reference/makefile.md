@@ -51,6 +51,9 @@ These use the project venv automatically.
 | `make test` | `python manage.py test` |
 | `make check` | `python manage.py check` |
 | `make sbom` | Write Danbyte's own CycloneDX SBOM to `sbom.cdx.json` (see [Danbyte's SBOM](../getting-started/sbom.md)) |
+| `make lock` | Regenerate `requirements.lock` from `requirements.txt`: exact versions and the sha256 of every file, keeping the versions already pinned. Every install from the lock is hash-checked (`--require-hashes`); see [Dependencies](../getting-started/dependencies.md) |
+| `make lock-upgrade` | The same, moving every package to its newest release |
+| `make lock-check` | Fail when `make lock` would change `requirements.lock` (CI runs it; needs the package index) |
 | `make seed-demo` | Opt-in demo IPAM data (`seed_demo`, `seed_demo_172`); idempotent |
 | `make seed-fabric` | Opt-in leaf/spine EVPN fabric for the routing pages (`seed_fabric`); idempotent |
 | `make seed-floorplan-demo TENANT=<slug>` | Opt-in demo floor plan in that tenant (`seed_floorplan_demo`, see [Floor plans](../features/floor-plans.md#try-it-the-demo-floor-plan)); idempotent |

@@ -238,6 +238,10 @@ if [ "$KIND" = git ]; then
   # shellcheck disable=SC2016
   run 1800 sh -c 'cd "$1" && npm run build' _ "$SRC/frontend" \
     || fail "frontend build failed: $(tail_out)" true
+  # A release with requirements.lock installs exactly its pins, each file
+  # checked against its sha256 (#451); an older target, its floors.
+  REQ=requirements.txt; HASHES=""
+  [ -f "$SRC/requirements.lock" ] && { REQ=requirements.lock; HASHES=--require-hashes; }
   UV=""
   for _u in "$(command -v uv 2>/dev/null)" "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv" "$APP/.venv/bin/uv"; do
     [ -n "$_u" ] && [ -x "$_u" ] && { UV="$_u"; break; }
@@ -247,11 +251,13 @@ if [ "$KIND" = git ]; then
     # the install during the downtime needs nothing new.
     run 600 "$UV" venv -q --python "$PY" "$WORK/depcheck" \
       || fail "a scratch virtualenv could not be made: $(tail_out)" true
-    run 1800 "$UV" pip install -q --python "$WORK/depcheck/bin/python" -r "$SRC/requirements.txt" \
+    # shellcheck disable=SC2086  # $HASHES is one flag or none
+    run 1800 "$UV" pip install -q --python "$WORK/depcheck/bin/python" $HASHES -r "$SRC/$REQ" \
       || fail "the new dependencies could not be resolved: $(tail_out)" true
     rm -rf "$WORK/depcheck"
   elif [ -x "$APP/.venv/bin/pip" ]; then
-    run 1800 "$APP/.venv/bin/pip" download -q -d "$WORK/wheels" -r "$SRC/requirements.txt" \
+    # shellcheck disable=SC2086
+    run 1800 "$APP/.venv/bin/pip" download -q -d "$WORK/wheels" $HASHES -r "$SRC/$REQ" \
       || fail "the new dependencies could not be downloaded: $(tail_out)" true
   else
     fail "no uv or pip to install the dependencies with"
@@ -335,10 +341,12 @@ step_begin deps 55
 j_set deps_started 1
 if [ "$KIND" = git ]; then
   if [ -n "$UV" ]; then
-    run 1800 "$UV" pip install -q --python "$PY" -r "$APP/requirements.txt" \
+    # shellcheck disable=SC2086
+    run 1800 "$UV" pip install -q --python "$PY" $HASHES -r "$APP/$REQ" \
       || fail "dependency install failed: $(tail_out)"
   else
-    run 1800 "$APP/.venv/bin/pip" install -q --find-links "$WORK/wheels" -r "$APP/requirements.txt" \
+    # shellcheck disable=SC2086
+    run 1800 "$APP/.venv/bin/pip" install -q --find-links "$WORK/wheels" $HASHES -r "$APP/$REQ" \
       || fail "dependency install failed: $(tail_out)"
   fi
 else

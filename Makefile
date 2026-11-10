@@ -33,7 +33,7 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         migrate makemigrations superuser bootstrap seed-demo seed-fabric seed-floorplan-demo seed-building-demo shell test check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
-        linger service-user cad-tools sbom
+        linger service-user cad-tools sbom lock lock-upgrade lock-check
 
 help:
 	@echo "Danbyte dev shortcuts"
@@ -60,6 +60,7 @@ help:
 	@echo "    make migrate / makemigrations / superuser / shell / test / check"
 	@echo "    make cad-tools  Build LibreDWG's dwg2dxf into vendor/cad (DWG floor plans)"
 	@echo "    make sbom       Write Danbyte's own CycloneDX SBOM to sbom.cdx.json"
+	@echo "    make lock       Regenerate requirements.lock (hashes) from requirements.txt"
 	@echo ""
 	@echo "  Reverse proxy (everything on https/443)"
 	@echo "    make proxy-install     One-time: nginx + self-signed cert + config"
@@ -451,6 +452,24 @@ cad-tools:
 # /api/system/sbom/ serves it. Release bundles and images ship one already.
 sbom:
 	@$(PY) scripts/release/sbom.py --output sbom.cdx.json
+
+# requirements.lock: requirements.txt's floors resolved to exact versions with
+# the sha256 of every file, for the platform the bundle ships (#451). `lock`
+# keeps the versions already pinned and only resolves what requirements.txt
+# changed; `lock-upgrade` moves every package to its newest release.
+# `lock-check` fails when `lock` would change the file (CI runs it).
+UV         ?= $(shell command -v uv 2>/dev/null || echo $(HOME)/.local/bin/uv)
+LOCK_FLAGS := --generate-hashes --python-version 3.13 --python-platform x86_64-manylinux_2_28 \
+              --custom-compile-command "make lock" --quiet
+lock:
+	@$(UV) pip compile requirements.txt $(LOCK_FLAGS) -o requirements.lock
+lock-upgrade:
+	@$(UV) pip compile requirements.txt $(LOCK_FLAGS) --upgrade -o requirements.lock
+lock-check:
+	@tmp=$$(mktemp) && cp requirements.lock $$tmp \
+	  && $(UV) pip compile requirements.txt $(LOCK_FLAGS) -o $$tmp \
+	  && diff -u requirements.lock $$tmp; rc=$$?; rm -f $$tmp; \
+	  [ $$rc -eq 0 ] || { echo "requirements.lock is out of date: run make lock" >&2; exit 1; }
 
 # Gather Django static (admin + DRF assets) into STATIC_ROOT so nginx serves
 # them from disk in production (gunicorn doesn't serve static with DEBUG off).

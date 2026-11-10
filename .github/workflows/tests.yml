@@ -48,6 +48,7 @@ jobs:
         with:
           python-version: '3.13'
           cache: pip
+          cache-dependency-path: requirements.lock
       - name: System deps
         run: |
           sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* || true
@@ -56,7 +57,8 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt ruff
+          pip install --require-hashes -r requirements.lock
+          pip install ruff
       - name: Migrations + undefined-name gate
         run: |
           python manage.py migrate --noinput
