@@ -91,11 +91,17 @@ server {
     # ship with Danbyte, so no other map host is needed. A custom vector
     # source goes here instead. worker-src 'self' blob: is MapLibre's tile
     # worker (a bundled file; blob: only for a worker it wraps itself).
+    # connect-src also allows services.nvd.nist.gov, api.first.org and
+    # api.osv.dev - vulnerability data in browser mode (#451): an admin's
+    # browser fetches the public records and hands them to Danbyte, so a
+    # server without internet stays current. A configured mirror goes here
+    # too. Those are read-only public APIs; nothing is sent there but the
+    # product names being looked up.
     # frame-ancestors 'self' (and X-Frame-Options SAMEORIGIN): the topology
     # report draws each saved view in a hidden same-origin frame of the map.
     # report-uri feeds /api/csp-report/ so any real-browser violation is logged
     # (danbyte.csp) rather than silently breaking - watch it before tightening.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://vector.openstreetmap.org https://raw.githubusercontent.com https://api.github.com; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://vector.openstreetmap.org https://raw.githubusercontent.com https://api.github.com https://services.nvd.nist.gov https://api.first.org https://api.osv.dev; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
     # Only /assets/ gets a value (the map above); not `always`, so a 404
     # there is never cached.
     add_header Cache-Control $danbyte_asset_cache;

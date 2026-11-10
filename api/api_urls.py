@@ -91,6 +91,7 @@ from vulnerabilities.api import (
     vulnerability_settings,
     vulnerability_sync_run,
 )
+from vulnerabilities import browser_api as vuln_browser
 from vulnerabilities.fetch_api import vulnerability_cpe_search, vulnerability_refresh
 from core import (
     deployment,
@@ -635,8 +636,21 @@ urlpatterns = [
     path("vulnerabilities/settings/", vulnerability_settings,
          name="vulnerability-settings"),
     path("vulnerabilities/import/", vulnerability_import, name="vulnerability-import"),
+    path("vulnerabilities/sync/", vuln_browser.sync_start, name="vulnerability-sync"),
     path("vulnerabilities/sync/<uuid:run_id>/", vulnerability_sync_run,
          name="vulnerability-sync-run"),
+    path("vulnerabilities/sync/<uuid:run_id>/nvd/", vuln_browser.sync_nvd,
+         name="vulnerability-sync-nvd"),
+    path("vulnerabilities/sync/<uuid:run_id>/epss-plan/", vuln_browser.sync_epss_plan,
+         name="vulnerability-sync-epss-plan"),
+    path("vulnerabilities/sync/<uuid:run_id>/epss/", vuln_browser.sync_epss,
+         name="vulnerability-sync-epss"),
+    path("vulnerabilities/sync/<uuid:run_id>/osv-ids/", vuln_browser.sync_osv_ids,
+         name="vulnerability-sync-osv-ids"),
+    path("vulnerabilities/sync/<uuid:run_id>/osv/", vuln_browser.sync_osv,
+         name="vulnerability-sync-osv"),
+    path("vulnerabilities/sync/<uuid:run_id>/finish/", vuln_browser.sync_finish,
+         name="vulnerability-sync-finish"),
     path("vulnerabilities/refresh/", vulnerability_refresh, name="vulnerability-refresh"),
     path("vulnerabilities/cpe/search/", vulnerability_cpe_search,
          name="vulnerability-cpe-search"),

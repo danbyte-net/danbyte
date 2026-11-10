@@ -156,6 +156,7 @@ const ROWS: Row[] = [
   ["vulnerabilities", "Vulnerabilities", "Software & lifecycle", null],
   ["vulnerability-matches", "Vulnerabilities · By object", "Software & lifecycle", null],
   ["vulnerability-affected", "Vulnerability · Affected", "Software & lifecycle", null, sub],
+  ["vuln-sync-products", "Vulnerability browser sync", "Software & lifecycle", null, sub],
   ["application-children", "Application · Child applications", "Software & lifecycle", "/api/applications/", sub],
   ["application-groups", "Application groups", "Software & lifecycle", "/api/application-groups/", { ioType: "applicationgroup" }],
   ["application-group-members", "Application group · Applications", "Software & lifecycle", "/api/application-groups/", sub],

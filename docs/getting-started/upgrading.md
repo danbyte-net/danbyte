@@ -538,6 +538,14 @@ stays up until the site's CSP has `worker-src`. Until then a deployment set
 to vector tiles shows the raster tiles. An upgraded install stays on raster
 tiles until an admin picks vector under **Settings → Site map → Basemap**.
 
+Also from 0.20, vulnerability data has a [browser
+mode](../features/vulnerabilities.md#browser-mode): an admin's browser
+fetches NVD, FIRST EPSS and OSV, so `connect-src` gains
+`https://services.nvd.nist.gov https://api.first.org https://api.osv.dev`.
+The step *Let the browser sync vulnerability data* stays up until the site's
+CSP names `services.nvd.nist.gov`; it is only needed for the Browser update
+source, and a mirror host set there must be added by hand.
+
 !!! warning "Root runs only files root owns"
     The app directory belongs to the service account. A script or template
     changed there would run as root, or become root's configuration, so no

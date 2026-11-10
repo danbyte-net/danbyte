@@ -182,6 +182,20 @@ class ConfigTextTests(SimpleTestCase):
 
         self.assertTrue(OSM_VECTOR_URL.startswith("https://vector.openstreetmap.org/"))
 
+    def test_csp_allows_the_vulnerability_sources(self):
+        # #451 browser mode: the admin's browser reads NVD, FIRST EPSS and OSV
+        # by fetch (connect-src); the hosts are named, never a wildcard. The
+        # Docker config sets no CSP, so it needs nothing.
+        found = re.findall(r'add_header\s+Content-Security-Policy\s+"([^"]*)"',
+                           _server_level(TEMPLATES[1].read_text()))
+        csp = {d.split()[0]: d.split()[1:] for d in found[0].split(";") if d.strip()}
+        from vulnerabilities import fetch
+
+        for base in (fetch.NVD_BASE, fetch.EPSS_BASE, fetch.OSV_BASE):
+            self.assertIn(base, csp["connect-src"])
+        self.assertNotIn("https://www.cisa.gov", csp["connect-src"])
+        self.assertNotIn("Content-Security-Policy", DOCKER.read_text())
+
     def test_edge_values_match_django(self):
         # Same value at both layers, so the answer does not depend on which
         # one a request went through.
