@@ -31,6 +31,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from . import shared_scope
+
 log = logging.getLogger(__name__)
 
 HOSTS_PARALLEL_MAX = 16
@@ -109,6 +111,8 @@ def address_queryset(profile, user=None):
         own = VirtualMachine.objects.filter(tenant=tenant, pk__in=vm_ids)
         q |= (Q(assigned_vm_id__in=vm_ids) | Q(assigned_vm_interface__vm_id__in=vm_ids)
               | Q(pk__in=own.values("primary_ip_id")))
+    wider = shared_scope.address_ids(profile, ips)
+    q = Q() if wider is None else q | Q(pk__in=wider)
     return ips.filter(q).select_related(
         "prefix", "assigned_device", "assigned_interface__device", "assigned_vm",
         "assigned_vm_interface__vm").order_by("ip_address", "pk")

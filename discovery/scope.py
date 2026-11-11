@@ -5,7 +5,10 @@ profile's tenant only:
 
 1. In scope: a named device or VM, one at a named site, or one whose
    primary address (a device's OOB address when it has no primary) lies in
-   a named prefix of the same VRF.
+   a named prefix of the same VRF - or, for the monitoring policy kinds
+   (region, VRF, platform, device type and role) and the explicit global
+   choice, one the monitoring resolver puts in them
+   (``discovery.shared_scope``).
 2. Run now by a person: only hosts that person may view, whose SSH
    credential they may view (``devicecredential`` view, site scope
    included). A scheduled run reads the whole scope its authorisation
@@ -48,6 +51,8 @@ from dataclasses import dataclass, field
 
 from django.db.models import Q
 from django.utils import timezone
+
+from . import shared_scope
 
 MAX_HOSTS = 4096
 SSH_KINDS = ("ssh_key", "ssh_password")
@@ -154,13 +159,18 @@ def _host_querysets(profile, user=None):
 
     dev_q = Q(pk__in=dev_ids) | Q(site_id__in=site_ids)
     vm_q = Q(pk__in=vm_ids) | Q(site_id__in=site_ids)
-    dev_extra = by_prefix(devices.filter(Q(primary_ip__isnull=False) | Q(oob_ip__isnull=False)),
-                          ("primary_ip", "oob_ip"))
-    vm_extra = by_prefix(vms.filter(primary_ip__isnull=False), ("primary_ip",))
-    devices = devices.filter(dev_q | Q(pk__in=dev_extra)).select_related(
+    # The monitoring policy kinds, decided by the monitoring resolver; None
+    # is the explicit whole-tenant choice.
+    wider = shared_scope.host_ids(profile, devices, vms)
+    if wider is not None:
+        dev_extra = by_prefix(devices.filter(
+            Q(primary_ip__isnull=False) | Q(oob_ip__isnull=False)), ("primary_ip", "oob_ip"))
+        vm_extra = by_prefix(vms.filter(primary_ip__isnull=False), ("primary_ip",))
+        devices = devices.filter(dev_q | Q(pk__in=[*dev_extra, *wider[0]]))
+        vms = vms.filter(vm_q | Q(pk__in=[*vm_extra, *wider[1]]))
+    devices = devices.select_related(
         "primary_ip", "oob_ip", "primary_ip__prefix", "oob_ip__prefix").prefetch_related("tags")
-    vms = vms.filter(vm_q | Q(pk__in=vm_extra)).select_related(
-        "primary_ip", "primary_ip__prefix").prefetch_related("tags")
+    vms = vms.select_related("primary_ip", "primary_ip__prefix").prefetch_related("tags")
     return devices.order_by("name", "pk"), vms.order_by("name", "pk")
 
 

@@ -8,6 +8,8 @@ while Discovery is off for the active tenant (``gate.require``).
 ``discovery/profiles/``                     inventory profiles, CRUD
 ``discovery/profiles/<id>/run/``            POST: Run now (``scan``)
 ``discovery/profiles/<id>/hosts/``          GET: the scope as it resolves now
+``discovery/policy-scopes/[<id>/]``         GET: monitoring policy scopes as profile
+                                            fields, to copy into a profile
 ``discovery/runs/``                         runs (``?profile=``), read-only
 ``discovery/runs/<id>/hosts/``              per-host results of one run
 ``discovery/exempt/``                       POST: set ``scan_exempt`` on a host,
@@ -37,16 +39,28 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from api.models import Device, IPAddress, Prefix, Site, VirtualMachine
+from api.models import (
+    VRF,
+    Device,
+    DeviceRole,
+    DeviceType,
+    IPAddress,
+    Platform,
+    Prefix,
+    Region,
+    Site,
+    VirtualMachine,
+)
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import StandardPagination, TenantScopedViewSet
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin, can_manage_deployment
 from danbyte_checks import nmap as danbyte_nmap
 from danbyte_checks import service_scan
-from monitoring.models import MonitoringEngine, SharedCredential
+from monitoring.models import MonitoringEngine, MonitoringPolicy, SharedCredential
+from monitoring.policy_scopes import BY_VALUE as POLICY_SCOPES
 
-from . import gate, outposts, runner, scope, services
+from . import gate, outposts, runner, scope, services, shared_scope
 from . import nmap as nmap_engine
 from .models import (
     PROFILE_KINDS,
@@ -64,13 +78,24 @@ DENY_MAX = 500
 TRANSPORT_FIELDS = {"ssh_key": "ssh_key_enabled", "ssh_password": "ssh_password_enabled",
                     "winrm": "winrm_enabled"}
 ID_FIELDS = {"sites": "site_ids", "prefixes": "prefix_ids", "devices": "device_ids",
-             "virtual_machines": "virtual_machine_ids"}
+             "virtual_machines": "virtual_machine_ids", "regions": "region_ids",
+             "vrfs": "vrf_ids", "platforms": "platform_ids",
+             "device_types": "device_type_ids", "device_roles": "device_role_ids"}
+#: Profile scope field → (model, RBAC slug). The monitoring kinds take
+#: their slug from the policy scope registry, as the policy form does.
 SCOPE_MEMBERS = {
     "sites": (Site, "site"),
     "prefixes": (Prefix, "prefix"),
     "devices": (Device, "device"),
     "virtual_machines": (VirtualMachine, "virtualmachine"),
+    **{field: (model, POLICY_SCOPES[kind].rbac_slug)
+       for kind, field, model in (("region", "regions", Region), ("vrf", "vrfs", VRF),
+                                  ("platform", "platforms", Platform),
+                                  ("device_type", "device_types", DeviceType),
+                                  ("device_role", "device_roles", DeviceRole))},
 }
+#: The profile fields that name a monitoring policy scope kind, by field.
+WIDE_FIELDS = {f: k for k, f in shared_scope.RESOLVED_FIELDS.items()}
 
 
 def _ref(obj, label="name") -> dict | None:
@@ -344,6 +369,17 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
     virtual_machine_ids = TenantScopedPrimaryKeyRelatedField(
         source="virtual_machines", many=True, required=False,
         queryset=VirtualMachine.objects.all())
+    region_ids = TenantScopedPrimaryKeyRelatedField(
+        source="regions", many=True, required=False, queryset=Region.objects.all())
+    vrf_ids = TenantScopedPrimaryKeyRelatedField(
+        source="vrfs", many=True, required=False, queryset=VRF.objects.all())
+    platform_ids = TenantScopedPrimaryKeyRelatedField(
+        source="platforms", many=True, required=False, queryset=Platform.objects.all())
+    device_type_ids = TenantScopedPrimaryKeyRelatedField(
+        source="device_types", many=True, required=False, queryset=DeviceType.objects.all())
+    device_role_ids = TenantScopedPrimaryKeyRelatedField(
+        source="device_roles", many=True, required=False, queryset=DeviceRole.objects.all())
+    scope_global = serializers.BooleanField(required=False)
     shared_credential_id = TenantScopedPrimaryKeyRelatedField(
         source="shared_credential", required=False, allow_null=True,
         queryset=SharedCredential.objects.all())
@@ -365,7 +401,9 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
         model = InventoryProfile
         fields = [
             "id", "numid", "name", "description", "enabled", "kind",
-            "site_ids", "prefix_ids", "device_ids", "virtual_machine_ids", "scope",
+            "site_ids", "prefix_ids", "device_ids", "virtual_machine_ids",
+            "region_ids", "vrf_ids", "platform_ids", "device_type_ids", "device_role_ids",
+            "scope_global", "scope",
             "shared_credential_id", "shared_credential",
             "interval_hours", "window_start", "window_end", "max_concurrency",
             "timeout_seconds", "ports", "connects_per_second", "rate_cap",
@@ -384,6 +422,12 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
             "prefixes": [_ref(p, "cidr") for p in obj.prefixes.all()],
             "devices": [_ref(d) for d in obj.devices.all()],
             "virtual_machines": [_ref(v) for v in obj.virtual_machines.all()],
+            "regions": [_ref(r) for r in obj.regions.all()],
+            "vrfs": [_ref(v) for v in obj.vrfs.all()],
+            "platforms": [_ref(p) for p in obj.platforms.all()],
+            "device_types": [_ref(t) for t in obj.device_types.all()],
+            "device_roles": [_ref(r) for r in obj.device_roles.all()],
+            "global": obj.scope_global,
         }
 
     def get_outpost(self, obj) -> dict | None:
@@ -481,6 +525,7 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
                 if visible.filter(pk__in=ids).count() != len(ids):
                     raise ValidationError({ID_FIELDS[field]: "Not found."})
         kind = attrs.get("kind") or (self.instance.kind if self.instance else "inventory")
+        self._check_wide_scope(attrs, tenant, user, kind)
         runs_on = attrs.get("runs_on") or (self.instance.runs_on if self.instance else "server")
         if runs_on == "outpost":
             outpost = attrs["outpost"] if "outpost" in attrs else (
@@ -512,12 +557,51 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
                 raise ValidationError({"shared_credential_id": "Not found."})
         return attrs
 
+    def _check_wide_scope(self, attrs, tenant, user, kind):
+        """Global is chosen on purpose, and the kinds not tied to one site are
+        added only by someone who sees every host they can reach: a site
+        role may add a region only when every site in it is theirs."""
+        inst = self.instance
+        if attrs.get("scope_global") and not (inst and inst.scope_global):
+            confirm = self.context["request"].data.get("confirm_global")
+            if confirm is not True:
+                raise ValidationError({"scope_global": "Confirm scanning everything in "
+                                                       "the tenant (confirm_global)."})
+        added = {}
+        if attrs.get("scope_global") and not (inst and inst.scope_global):
+            added["scope_global"] = True
+        for field in WIDE_FIELDS:
+            if field not in attrs:
+                continue
+            before = set(getattr(inst, field).values_list("pk", flat=True)) if inst else set()
+            new = [o for o in attrs[field] if o.pk not in before]
+            if new:
+                added[field] = new
+        if not added or user.is_superuser:
+            return
+        slugs = ["device", "virtualmachine"] + (["ipaddress"] if kind == "service_scan" else [])
+        if all(rbac.row_filter(user, tenant, s, "view") is True for s in slugs):
+            return
+        for field in added:
+            if field == "regions":
+                sites = set(shared_scope.region_site_ids(tenant, [r.pk for r in added[field]]))
+                scopes = [rbac.site_scope(user, tenant, s, "view") for s in slugs]
+                # Every granting permission is site-scoped and those sites
+                # cover the region (site_scope None = unscoped or no site).
+                if all(sc is not None and sites <= sc for sc in scopes) and all(
+                        rbac.row_filter(user, tenant, s, "view") is not None for s in slugs):
+                    continue
+                raise ValidationError({"region_ids": "Only a region whose sites are all "
+                                                     "yours."})
+            key = "scope_global" if field == "scope_global" else ID_FIELDS[field]
+            raise ValidationError({key: "Needs access to every site."})
+
 
 def _scope_ids(profile) -> tuple:
     """What an authorisation covers: the scope, and for a service scan the
     ports too (a wider port list is a new authorisation)."""
-    ids = tuple(frozenset(getattr(profile, f).values_list("pk", flat=True))
-                for f in SCOPE_MEMBERS)
+    ids = (*(frozenset(getattr(profile, f).values_list("pk", flat=True))
+             for f in SCOPE_MEMBERS), profile.scope_global)
     # Where it runs is part of what was authorised: another vantage point
     # reaches other networks.
     ids = (*ids, profile.runs_on, str(profile.outpost_id or ""))
@@ -535,7 +619,8 @@ class InventoryProfileViewSet(TenantScopedViewSet):
 
     queryset = InventoryProfile.objects.select_related(
         "shared_credential", "outpost").prefetch_related(
-        "sites", "prefixes", "devices", "virtual_machines")
+        "sites", "prefixes", "devices", "virtual_machines", "regions", "vrfs", "platforms",
+        "device_types", "device_roles")
     serializer_class = InventoryProfileSerializer
     rbac_action_map = {"run": "scan", "hosts": "view", "host_keys": "view"}
 
@@ -557,6 +642,13 @@ class InventoryProfileViewSet(TenantScopedViewSet):
         kind = (p.get("kind") or "").strip()
         if kind:
             qs = qs.filter(kind__in=[k for k in kind.split(",") if k])
+        policy = (p.get("policy") or "").strip()
+        if policy:
+            # Profiles whose own scope names what this monitoring policy is
+            # about - the policy page's Discovery line.
+            target = _visible_policy(self.request, gate.require(self.request), policy)
+            q = shared_scope.covered_by_policy_q(target) if target is not None else None
+            qs = qs.filter(q).distinct() if q is not None else qs.none()
         return qs.order_by("name", "pk")
 
     def _stamp(self, profile, data, before_scope):
@@ -679,6 +771,101 @@ class InventoryProfileViewSet(TenantScopedViewSet):
         rows = pending_host_keys(request, profile.tenant, devices.values("pk"),
                                  vms.values("pk"))
         return Response({"results": rows, "count": len(rows)})
+
+
+def _visible_policy(request, tenant, pk):
+    """The monitoring policy ``pk`` if the caller may view it - by the policy
+    list's own rules (grant, site scope, target visibility)."""
+    from monitoring.viewsets import MonitoringPolicyViewSet
+
+    try:
+        uuid.UUID(str(pk))
+    except ValueError:
+        return None
+    view = MonitoringPolicyViewSet()
+    view.request, view.format_kwarg, view.kwargs, view.action = request, None, {}, "retrieve"
+    qs = MonitoringPolicy.objects.filter(tenant=tenant, pk=pk).select_related(
+        "vrf", "device_type", "device_role", "device", "prefix", "target_site", "region",
+        "platform")
+    return view._scope_configuration_queryset(qs, action="view").first()
+
+
+def policy_scope_dict(policy) -> dict:
+    """What copying ``policy``'s scope into a profile gives: the profile
+    field, the member, and why it cannot be copied when it cannot."""
+    spec = POLICY_SCOPES.get(policy.scope)
+    field = shared_scope.COPY_FIELDS.get(policy.scope)
+    target = getattr(policy, spec.field) if spec is not None and spec.field else None
+    label = "cidr" if policy.scope == "prefix" else "name"
+    out = {"id": str(policy.pk), "scope": policy.scope,
+           "scope_label": spec.label if spec else policy.scope,
+           "target": _ref(target, label), "global": policy.scope == shared_scope.GLOBAL,
+           "field": ID_FIELDS.get(field) if field else None,
+           "filters": bool(policy.match_tags or policy.match_name or policy.match_interface
+                           or policy.match_hardware or policy.target != "all"),
+           "copyable": True, "reason": ""}
+    if spec is None or (spec.field and target is None):
+        out["copyable"] = False
+        out["reason"] = ("A Global VRF policy names no VRF to copy." if policy.scope == "vrf"
+                         else "This policy names nothing to copy.")
+    return out
+
+
+def _may_shape_profiles(request, tenant) -> None:
+    user = request.user
+    if not user.is_superuser and not (
+            rbac.has_action(user, tenant, "inventoryprofile", "add")
+            or rbac.has_action(user, tenant, "inventoryprofile", "change")):
+        raise PermissionDenied("inventoryprofile.add or change required.")
+
+
+@extend_schema(summary="Monitoring policy scopes, to copy into a profile",
+               tags=["discovery"], responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def discovery_policy_scopes(request):
+    """The monitoring policies the caller may view, each as the profile
+    fields copying its scope gives (see ``policy-scopes/<id>/``), for the
+    profile dialog's picker. Whoever may add or change profiles. Filter:
+    ``search`` (scope or target name)."""
+    from monitoring.viewsets import MonitoringPolicyViewSet
+
+    tenant = gate.require(request)
+    _may_shape_profiles(request, tenant)
+    view = MonitoringPolicyViewSet()
+    view.request, view.format_kwarg, view.kwargs, view.action = request, None, {}, "list"
+    qs = view._scope_configuration_queryset(
+        MonitoringPolicy.objects.filter(tenant=tenant).select_related(
+            "vrf", "device_type", "device_role", "device", "prefix", "target_site", "region",
+            "platform"), action="view")
+    q = (request.query_params.get("search") or "").strip().lower()
+    rows = []
+    for policy in qs.order_by("scope", "created_at")[:2000]:
+        row = policy_scope_dict(policy)
+        text = f"{row['scope_label']} {(row['target'] or {}).get('name', '')}".lower()
+        if q and q not in text:
+            continue
+        rows.append(row)
+        if len(rows) >= 500:
+            break
+    return Response({"results": rows, "count": len(rows)})
+
+
+@extend_schema(summary="A monitoring policy's scope, to copy into a profile",
+               tags=["discovery"], responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def discovery_policy_scope(request, pk):
+    """The scope of monitoring policy ``pk`` as profile fields (``field`` and
+    ``target``, or ``global``), for the profile dialog's copy. Whoever may
+    add or change profiles, for a policy they may view. A copy, never a
+    link: nothing here changes when the policy does."""
+    tenant = gate.require(request)
+    _may_shape_profiles(request, tenant)
+    policy = _visible_policy(request, tenant, pk)
+    if policy is None:
+        raise NotFound()
+    return Response(policy_scope_dict(policy))
 
 
 # ─── runs ────────────────────────────────────────────────────────────────────

@@ -127,9 +127,12 @@ class DiscoverySettings(TimestampedModel):
 class InventoryProfile(NumIdMixin, TimestampedModel):
     """What to read packages from, when, and who authorised it.
 
-    Scope is the union of the named sites, prefixes, devices and VMs; a host
-    is in scope when it is named, sits at a named site, or its primary
-    address lies in a named prefix. A profile runs (on schedule or Run now)
+    Scope is the union of the named sites, prefixes, devices and VMs, the
+    monitoring policy kinds (regions, VRFs, platforms, device types and
+    roles, resolved as a policy of that scope would be) and, when
+    ``scope_global`` is set, everything in the tenant; a host is in scope
+    when it is named, sits at a named site, its primary address lies in a
+    named prefix, or the monitoring resolver puts it in a named kind. A profile runs (on schedule or Run now)
     only while it is enabled, Discovery is on and ``authorised_at`` is set;
     changing the scope clears the authorisation. Audited."""
 
@@ -144,6 +147,16 @@ class InventoryProfile(NumIdMixin, TimestampedModel):
     devices = models.ManyToManyField("api.Device", blank=True, related_name="+")
     virtual_machines = models.ManyToManyField("api.VirtualMachine", blank=True,
                                               related_name="+")
+    #: The monitoring policy scope kinds (``discovery.shared_scope``),
+    #: resolved by the monitoring resolver. Union with the four above.
+    regions = models.ManyToManyField("api.Region", blank=True, related_name="+")
+    vrfs = models.ManyToManyField("api.VRF", blank=True, related_name="+")
+    platforms = models.ManyToManyField("api.Platform", blank=True, related_name="+")
+    device_types = models.ManyToManyField("api.DeviceType", blank=True, related_name="+")
+    device_roles = models.ManyToManyField("api.DeviceRole", blank=True, related_name="+")
+    #: Everything in the tenant. Only ever set on purpose (the API wants a
+    #: confirmation); an empty scope reads nothing.
+    scope_global = models.BooleanField(default=False, db_default=False)
     #: Hours between scheduled runs; 0 = Run now only.
     interval_hours = models.PositiveIntegerField(default=24, db_default=24)
     #: Daily window (server time) runs may start in; both blank = any time.
