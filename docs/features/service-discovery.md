@@ -6,66 +6,54 @@ icon: lucide/radar
 
 A **service scan** connects to TCP ports of addresses already in IPAM, reads
 what answers - a greeting, a web server's `Server` header and page title, a
-TLS certificate, an SSH host key - and names the product and version where
-it can. What it finds goes to a **review queue**: add the service, add the
+TLS certificate, an SSH host key - and names the product and version where it
+can. What it finds goes to **Findings** for review: add the service, add the
 installed software, map the product to a CPE. Nothing is created until a
 person accepts it ([#451](https://github.com/danbyte-net/danbyte/issues/451)).
 
-It is a second kind of [discovery profile](discovery.md), beside package
-inventory, under the same switches, authorisation, deny subnets, exempt
-flags, maintenance events and windows. It logs in nowhere and sends no
-credential.
+It is the second kind of [discovery profile](discovery.md), under the same
+switches, authorisation, deny subnets, **Do not scan** flags, maintenance
+events and windows ([Scope and safety](discovery-safety.md)). It logs in
+nowhere and sends no credential. To set one up, see [Getting
+started](discovery-getting-started.md#b-a-first-service-scan).
+
+!!! info "Where to find it"
+    - Profiles, **Findings**, **Open ports**: the **Discovery** tab of the
+      **Monitoring** page. A service-scan profile and each of its runs also
+      have **Findings** and **Open ports** tabs.
+    - The **nmap** switch: the **Host discovery** section (**Monitoring**
+      page → **Settings** tab).
 
 !!! warning "Scanning needs permission"
     Port scans can be against policy, a contract or the law unless someone
-    with the authority over those addresses agreed. Old printers, OT and ICS
+    with authority over those addresses agreed. Old printers, OT and ICS
     equipment and some embedded devices can misbehave even on a connect
-    scan: exempt them (below) or leave their prefixes out of the scope, and
-    start with a low rate.
-
-## Turn it on
-
-Exactly as for package inventory ([Turn it on](discovery.md#turn-it-on)):
-the deployment allows discovery, a tenant admin turns the Discovery
-integration on, and a profile records who authorised it. Then **Add
-profile** on the **Discovery** tab of the Monitoring page, **Kind** *Service
-scan*. Its settings (nmap, deny subnets) are in **Host discovery** under
-**Monitoring → Settings**.
-
-| Field | Meaning |
-|---|---|
-| Scope | The same kinds as an inventory profile ([Scope](discovery.md#scope)). The scan's targets are the **IP addresses in IPAM**: every address in a named prefix (or a prefix inside it, same VRF), every address of a named site (its own site, or its device's or VM's), every address of a named device or VM (assigned directly or through an interface, primary and out-of-band), every address a monitoring policy on a named region, VRF, platform, device type or role would cover (decided by the monitoring resolver, so the policy and the scan agree), or - only when chosen and confirmed - every address in the tenant. A monitoring policy's scope can be copied in with **Use a monitoring policy's scope**; it is a copy, never a link, so editing the policy does not widen the scan. Nothing outside IPAM is scanned, and no range is typed at run time. |
-| Ports | Ports and ranges (`22, 80, 8000-8100`), at most 1,024. Empty means the default list below. |
-| Connects per second | New TCP connections per second for the whole run. Default 20; the deployment caps it (`DANBYTE_DISCOVERY_SCAN_MAX_RATE`, default 200). |
-| Hosts at once | Addresses scanned in parallel, 1 to 16. Default 4. |
-| Every, Window | As for package inventory. |
-| Authorisation | Who authorised scanning this scope. Changing the scope **or the ports** without a new statement clears it, and the profile stops running. |
-
-The kind is fixed once the profile is created.
-
-**Run now** needs the `scan` permission on the profile, nothing else: a
-service scan reads no credential. A run started with Run now scans only the
-addresses the person who pressed it may view.
+    scan: mark them **Do not scan** or leave their prefixes out of the
+    scope, and start with a low rate.
 
 ## What is sent to a host
 
-These are the only packets Danbyte's own engine sends
-(`danbyte_checks/service_scan.py`), from the Danbyte server's workers:
+These are the only packets the built-in engine sends
+(`danbyte_checks/service_scan.py`), from the Danbyte workers or the Outpost
+that runs the profile:
 
-1. A TCP connect (a normal three-way handshake from an unprivileged process;
-   no raw packets, no SYN scan, no root) to each port of the list. At most
-   8 ports of one address at once, each connect paced by the run's rate, a
-   1.5 s connect timeout, no retries.
-2. On an open port, by its number:
+1. **A TCP connect** to each port of the list: a normal three-way handshake
+   from an unprivileged process - no raw packets, no SYN scan, no root. At
+   most 8 ports of one address at once, every connect paced by the run's
+   rate, a 1.5 s connect timeout, no retries.
+2. **On an open port**, by its number:
     - **TLS ports** (443, 465, 636, 993, 995, 5986, 6443, 8443, 9443): a TLS
-      handshake (TLS 1.2 or later) that reads the certificate the server
-      presents. The scan does not verify it - it records the public facts
-      (subject, issuer, names, expiry, fingerprint); the
-      [certificate inventory](../monitoring/certificates.md) judges it. When
-      the certificate is already in that inventory, the row links to it.
-    - **HTTP and HTTPS ports** (80, 3000, 5985, 8000, 8008, 8080, 8081,
-      8888, 9090, 9200; and 443, 5986, 6443, 8443, 9443 over TLS): one
-      request, exactly:
+      handshake (TLS 1.2 or later), within 4.5 s, that reads the certificate
+      the server presents. It is not verified: the scan keeps its public
+      facts (subject and issuer names, DNS names, expiry, SHA-256
+      fingerprint, self-signed or not), and the [certificate
+      inventory](../monitoring/certificates.md) judges certificates. A row
+      links to the certificate when the inventory already holds it. A TLS
+      port that does not complete a handshake is connected to once more
+      without TLS and treated as the other ports below.
+    - **HTTP and HTTPS ports** (80, 3000, 5985, 8000, 8008, 8080, 8081, 8888,
+      9090, 9200; and 443, 5986, 6443, 8443, 9443 over TLS): one request,
+      exactly:
 
         ```http
         GET / HTTP/1.1
@@ -75,28 +63,30 @@ These are the only packets Danbyte's own engine sends
         Connection: close
         ```
 
-        Danbyte reads the status, `Server`, `X-Powered-By`, `Location` and
-        the page `<title>` from at most 64 KB, for at most 5 s. A redirect is
-        recorded, **never followed**. No other path, no cookies, no
-        credentials.
-    - **Every other port**: nothing. Danbyte waits up to 2 s for the greeting
-      the server sends by itself (SSH, FTP, SMTP, POP3, IMAP, MySQL, telnet)
-      and reads at most 2 KB.
+        Danbyte reads the status, `Server`, `X-Powered-By`, `Location` and the
+        page `<title>` from at most 64 KB within 5 s. A redirect is recorded,
+        never followed. No other path, no cookies, no credentials.
+    - **Every other port**: nothing is sent. Danbyte waits up to 2 s for the
+      greeting the server sends by itself (SSH, FTP, SMTP, POP3, IMAP, MySQL,
+      telnet) and reads at most 2 KB, up to the first line end.
     - **An SSH greeting**: the server's host key, read with a key exchange
-      only - no login - and filed as *observed* in the
-      [SSH host-key inventory](../monitoring/ssh-host-keys.md); nobody's key
-      is accepted by a scan.
-3. Close.
+      only - no login - and filed as *observed* in the [SSH host-key
+      inventory](../monitoring/ssh-host-keys.md) when the address belongs to
+      a device or VM. A scan never accepts a key.
+3. **Close.**
 
-No logins, no protocol commands, no payloads, nothing else. Never: exploit,
-brute-force, default-credential, fuzzing, denial-of-service or other
-intrusive checks; never a third-party lookup of what was found.
+No logins, no protocol commands, no payloads. Never exploit, brute-force,
+default-credential, fuzzing, denial-of-service or other intrusive checks;
+never a third-party lookup of what was found.
 
-So that security teams can recognise the traffic: it comes from the
-Danbyte server's address (its workers), the HTTP requests carry the
-User-Agent above, and the pattern is a paced connect sweep of the port list.
+So that security teams can recognise the traffic: it comes from the Danbyte
+server's address (or the Outpost's), the HTTP requests carry the User-Agent
+above, and the pattern is a paced connect sweep of the port list.
 
 ### The default port list
+
+An empty **Ports** field scans these 43 ports. UDP is not scanned; SNMP stays
+with [SNMP discovery](snmp-discovery.md).
 
 | Port | Service | Port | Service | Port | Service |
 |---|---|---|---|---|---|
@@ -116,58 +106,44 @@ User-Agent above, and the pattern is a paced connect sweep of the port list.
 | 443 | https | 3306 | mysql | 11211 | memcached |
 | | | | | 27017 | mongodb |
 
-UDP is not scanned. SNMP stays with [SNMP discovery](snmp-discovery.md).
-
-## Which addresses are left alone
-
-When a run starts - never when it was queued - the scope is resolved again
-inside the profile's tenant, and an address is not contacted when:
-
-| Result | Why |
-|---|---|
-| Exempt | The address, its prefix, a prefix around it, or its device or VM is *exempt from discovery* ([how](discovery.md#exempting-a-host-address-or-prefix)). |
-| Deny subnet | The address is in a discovery deny subnet (any VRF) or a monitoring deny subnet of its VRF. |
-| Blocked target | The server's target policy refuses it: link-local and cloud-metadata addresses always, internal ranges where `DANBYTE_CHECK_BLOCK_INTERNAL` is on unless they are in `DANBYTE_SSRF_ALLOWLIST`. |
-| In maintenance | Its device or VM is in an open [maintenance event](maintenance.md). |
-
-A run scans at most 4,096 addresses. Each run's **Addresses** tab lists
-every address it considered and what happened; its **Overview** states the
-ports, the rate and the parallelism it used, and who started it. Starting a
-run is in the change log.
+Your own list takes ports and ranges (`22, 80, 8000-8100`), 1 to 65535, at
+most 1,024 ports in all.
 
 ## Safety limits
 
 | Limit | Value |
 |---|---|
-| Connects per second, per run | the profile's (default 20), never above `DANBYTE_DISCOVERY_SCAN_MAX_RATE` (default 200, at most 2000) |
-| Addresses at once | the profile's Hosts at once, 1 to 16 |
+| Connects per second, per run | the profile's **Connects per second** (default 20), never above `DANBYTE_DISCOVERY_SCAN_MAX_RATE` (default 200, at most 2000). On Outposts each Outpost paces its own connects to that rate. |
+| Addresses at once | the profile's **Hosts at once**, 1 to 16 |
 | Ports at once per address | 8 |
 | Ports per profile | 1,024 |
 | Addresses per run | 4,096 |
 | Connect timeout | 1.5 s, no retries |
+| TLS handshake | 4.5 s |
 | Greeting | 2 s, 2 KB |
 | HTTP answer | 5 s, 64 KB |
-| TLS handshake | 4.5 s |
-| Kept per port | 512 characters of banner, control characters removed; 200 of a page title |
+| Kept per port | 512 characters of banner, control characters removed; header values 200; a page title 200 |
 
 A host that trickles bytes, floods, or sends binary junk costs at most these
-deadlines and caps; what it sends is stored as plain text and never
+deadlines and caps. What it sends is stored as plain text and never
 interpreted.
 
 ## How a product is named
 
-Two fingerprint sources, in this order:
+Each piece of evidence (the SSH, FTP, SMTP, POP3, IMAP or telnet greeting;
+the HTTP `Server` and `X-Powered-By` headers; the page title) is tried
+against two fingerprint sources, in this order:
 
-1. **Danbyte's own rules** for the servers seen most (OpenSSH, Dropbear,
-   nginx, Apache, IIS, lighttpd, Caddy, vsftpd, ProFTPD, Postfix, Exim,
-   Dovecot) and the MySQL/MariaDB handshake.
-2. **[Rapid7 Recog](https://github.com/rapid7/recog)** fingerprint data
-   (BSD-2-Clause), for SSH, FTP, SMTP, POP3, IMAP and telnet greetings, the
-   HTTP `Server` and `X-Powered-By` headers and page titles.
+1. **Danbyte's own rules** for the servers seen most: OpenSSH, Dropbear,
+   nginx, Apache HTTP Server, IIS, lighttpd, Caddy, vsftpd, ProFTPD, Postfix,
+   Exim and Dovecot, plus the MySQL and MariaDB handshake packet.
+2. **[Recog](https://github.com/rapid7/recog)** fingerprint data by Rapid7
+   (BSD-2-Clause licence).
 
-Each observation records the source (*Danbyte rule*, *Recog*, *Banner* when
-the protocol was recognised but not the product, *Port number* when only
-the port told), the rule that matched, and a confidence:
+Each open port records the source - *Danbyte rule*, *Recog*, *nmap*,
+*Banner* (the protocol was recognised, not the product) or *Port number*
+(only the port told) - the rule that matched, a CPE 2.3 guess, and a
+confidence:
 
 | Confidence | When |
 |---|---|
@@ -175,59 +151,113 @@ the port told), the rule that matched, and a confidence:
 | Medium | a fingerprint named the product without a version, or the protocol was recognised |
 | Low | only the port number |
 
-What a banner can and cannot tell: it shows the **upstream** version
-(`OpenSSH_9.6p1`), not the distro's patch level, so a Debian or Ubuntu
-build with backported fixes looks vulnerable when it is not. Hidden
-versions (`server_tokens off`), proxies and load balancers hide the real
-server. Banner results therefore **never create vulnerability matches**;
-for CVEs use [package inventory](discovery.md).
+### Why a banner never makes a CVE match
+
+A banner shows the **upstream** version (`OpenSSH_9.6p1`), not the
+distribution's patch level, so a Debian or Ubuntu build with backported fixes
+looks vulnerable when it is not. Hidden versions (`server_tokens off`),
+proxies and load balancers hide the real server. Service-scan results
+therefore **never create vulnerability matches**. For CVEs, run a [package
+inventory](discovery-packages.md) on the host. A *Map to CPE* finding you
+accept maps an application, whose installs are then matched like any other.
 
 ### The Recog data
 
-Danbyte ships Recog's data, converted, not its code:
+Danbyte ships Recog's data, converted; no Recog code.
 
-- Pinned to tag **v3.3.2**, commit `1714aaed118861b4567bb6754920b4b929f59380`.
-  `danbyte_checks/data/RECOG-NOTICE` holds the SHA-256 of each source file
-  and of the converted `recog.json`, and the licence.
+- Pinned to tag **v3.3.2** (released 2026-10-12), commit
+  `1714aaed118861b4567bb6754920b4b929f59380`. The files used are the SSH,
+  FTP, SMTP, IMAP, POP and telnet banner databases, HTTP servers, HTTP
+  `X-Powered-By` and HTML titles.
+- `danbyte_checks/data/RECOG-NOTICE` holds the licence, the SHA-256 of each
+  source file and of the converted `recog.json`.
 - `scripts/recog_build.py` converts it at build time. It refuses a source
-  file whose hash is not the pinned one and any file with a DOCTYPE or
-  ENTITY declaration, so no XML parser runs in a deployment.
-- Recog's patterns are regular expressions applied to text a host sends.
-  The build drops every pattern that does not compile under Python, does
-  not reproduce its own examples, or is slow on hostile 512-character input
-  (Python's regular expressions have no timeout). Three of 1,532 were
-  dropped. At run time every pattern sees at most 512 characters.
-- Updating: change the pin in the script after reading the upstream diff,
-  download the files of the new commit, run the script, review the dropped
-  list and the JSON diff, run the discovery tests, update `RECOG-NOTICE` and
+  file whose hash is not the pinned one and any file with a DOCTYPE or ENTITY
+  declaration, so no XML parser runs in a deployment.
+- Recog's patterns are regular expressions applied to text a host sends. The
+  build drops every pattern that does not compile under Python, does not
+  reproduce its own examples, or is slow on hostile 512-character input
+  (Python's regular expressions have no timeout). 1,529 are kept and 3 were
+  dropped. At run time a pattern sees at most 512 characters.
+- **Updating**: read the upstream diff, change the tag, commit and file
+  hashes in the script, download the files of the new commit, run
+  `python3 -I scripts/recog_build.py <dir>`, review the dropped list and the
+  JSON diff, run `manage.py test discovery`, and update `RECOG-NOTICE` and
   this section.
+
+## What is stored
+
+Each open port is one **observed service**: address (and its device or VM),
+port, service name, banner excerpt, product, vendor, version, CPE guess, an
+OS guess, source, rule, confidence, the HTTP and TLS facts, first and last
+seen. A port a later scan of the address found closed is marked closed; it
+is current again when it opens. Observed services are machine data, not in
+the change log, and read with *view* on the address.
+
+**Open ports** lists the current ones (on a profile or run, the ones it
+found).
+
+## Findings
+
+<span id="the-review-queue"></span>**Findings** lists what the current observations propose, with the host and
+address, port, the proposal, confidence, source, the evidence (banner
+excerpt or rule) and when it was last seen. The same list holds the package
+inventory's proposals - *Set platform*, *Add application*, *Link packages* -
+described on [Package inventory](discovery-packages.md#what-a-read-feeds).
+
+| Proposal | When | **Accept** creates | Needs |
+|---|---|---|---|
+| **Add service** | the address's device or VM has no service on that port, and the scan recognised the service or the product | a service on the host, on that address and port | *add* on services, on that host |
+| **Add software** | a fingerprint named a product and the host has no install of an application of that name | an [installed software](applications.md) row, source *Discovery*, at the banner's version - and the application when the tenant has none of that name | *add* on installed software; *add* on applications, not limited to sites, for a new one |
+| **Map to CPE** | vulnerability data is on, the product has a CPE guess, and the tenant's application of that name has no product mapping and no CPE or package URL template | a [product mapping](vulnerabilities.md#map-your-products), through the vulnerability data's own bulk create | *change* on the application |
+
+- Everything accepted is an ordinary object, in the change log as you.
+  Permissions are checked on what is created, site scope included; a row you
+  may not create is refused with the reason and nothing of it stays.
+- An existing install is never changed: a banner's version never overwrites
+  one someone recorded or a package inventory keeps.
+- Tick several rows of the same proposal and press **Accept N · kind** to
+  accept them together.
+- **Ignore** hides a finding until the observation changes (its service
+  name, product, version or CPE); **Show ignored** lists them again, and
+  **Show** on a row brings it back. Ignoring needs what accepting needs.
+- An open port on an address with no device or VM, or a port nothing
+  recognised, proposes nothing; it shows under **Open ports** only.
+
+*Nothing to review* means there is no open proposal you may see.
 
 ## The nmap engine
 
-A service-scan profile can use **nmap** instead of the built-in engine,
-for better service and version recognition. It is optional: everything
-above works with nothing installed.
+A service-scan profile can use **nmap** instead of the built-in engine, for
+better service and version recognition. It is optional: everything above
+works with nothing installed.
 
-**Turn it on.** Install nmap yourself, under its own licence, on the
-Danbyte server (`apt install nmap` on Debian and Ubuntu). Danbyte never
-installs or bundles it. It looks for the binary once per process, when it
-is first asked: `NMAP_BINARY` (an absolute path) when set, else `nmap` on
-the service user's PATH. The **nmap** switch in **Host discovery** under
-**Monitoring → Settings** shows
-what it found - *nmap 7.98 at /usr/bin/nmap*, or *Not found* - and a tenant
-admin can switch it on only when one was found. Restart the web and worker
-units after installing it. `DANBYTE_DISCOVERY_NMAP_ALLOWED=False` forbids it
-for every tenant (*Forbidden by the deployment*).
+**Turning it on**
 
-Then a service-scan profile's **Engine** can be *nmap*, with **Version
-probes** (`--version-intensity`, 0 to 5, default 2) and **Timing** (`-T2`
-polite, `-T3` normal, `-T4` aggressive; default `-T3`). When a run starts
-Danbyte checks again that the deployment allows nmap, the binary is there,
-the switch is on and the worker is not running as root; otherwise the run
-fails without starting nmap.
+1. Install nmap on the Danbyte server yourself, under its own licence
+   (`apt install nmap` on Debian and Ubuntu). Danbyte never installs or
+   bundles it.
+2. Danbyte looks for it once per process, at the first ask: `NMAP_BINARY`
+   (an absolute path) when set, else `nmap` on the service user's PATH. It
+   must be a file the service user can execute and must answer
+   `nmap --version` like nmap. Restart the web and worker units after
+   installing it.
+3. In **Host discovery**, the **nmap** row shows what was found - *nmap 7.98
+   at /usr/bin/nmap*, *Not found*, or *Forbidden by the deployment* when
+   `DANBYTE_DISCOVERY_NMAP_ALLOWED=False`. A tenant admin switches it on;
+   that is possible only while the server or one of the tenant's Outposts
+   has an nmap.
+4. In the profile, **Engine** *nmap*, with **Version probes**
+   (`--version-intensity`, 0 to 5, default 2) and **Timing** (*Polite
+   (-T2)*, *Normal (-T3)*, *Aggressive (-T4)*; default -T3).
+
+When a run starts, Danbyte checks again that the deployment allows nmap, the
+binary is still there, the tenant's switch is on and the worker does not run
+as root; otherwise the run fails without starting nmap, with the reason
+(*Refusing to run nmap as root.*, *nmap: Not found.*).
 
 **What runs.** Danbyte builds the whole argument list itself
-(`danbyte_checks/nmap.py`), from fixed flags and bounded numbers; nothing a
+(`danbyte_checks/nmap.py`) from fixed flags and bounded numbers; nothing a
 person types reaches it:
 
 ```
@@ -238,126 +268,48 @@ nmap -sT -sV --version-intensity <0-5> --unprivileged -Pn -n
 ```
 
 - Targets are the scan's IPAM addresses, each checked to be an IP literal
-  and written in canonical form - never a host name or other text.
-- `-sT`: TCP connect only. No SYN scan, no OS detection (`-O`), no `-A`,
-  and **no NSE scripts at all** in this version - nothing that could brute
-  force, exploit or send what was found to a third party.
+  and written in canonical form - never a host name or other text. `-n`: no
+  DNS lookups.
+- `-sT`: TCP connect only. Never a SYN scan (`-sS`), OS detection (`-O`) or
+  `-A`, and **no NSE scripts at all** in this version - nothing that could
+  brute-force, exploit or send what was found to a third party.
 - `-sV` sends nmap's own service probes to open ports, more than the
-  built-in engine's single greeting read or GET: expect more traffic per
-  open port, especially at higher version-probe settings.
-- It runs without a shell (an argument list), as the unprivileged service
-  user (refused as root), in a fresh temporary directory, with a minimal
-  environment and standard input closed. At most 32 MB of output is read;
-  nmap is killed with its process group after 300 s per batch of addresses
-  (at most 5 h).
+  built-in engine's single greeting read or `GET`: expect more traffic per
+  open port, more at higher **Version probes**.
+- It runs without a shell, as the unprivileged service user (refused as
+  root), in a fresh temporary directory, with a minimal environment and
+  standard input closed. At most 32 MB of output is read. The whole scan has
+  a deadline of one minute plus 300 s per batch of **Hosts at once**
+  addresses, at most 5 h; past it nmap is killed with its process group.
 - The XML is read with the standard library. The only DOCTYPE accepted is
   nmap's own bare `<!DOCTYPE nmaprun>`; any other, and any ENTITY
-  declaration, is refused. Only open TCP ports of the addresses that were
-  asked for are kept.
+  declaration, is refused. Only open TCP ports of the addresses asked for
+  are kept.
 
 Results are the same observed services, source *nmap*: the service name,
 product and version nmap reports, its first application or OS CPE
-(converted to CPE 2.3), and a confidence from how nmap decided - *High* for
-a probed match with a version, *Medium* for a probed match without one,
-*Low* when nmap only guessed from the port number. They feed the same
-review queue and, like banners, never create vulnerability matches.
+(converted to CPE 2.3), and a confidence from how nmap decided - *High* for a
+probed match with product and version, *Medium* for a probed match without
+them, *Low* when nmap only went by the port number. nmap results carry no TLS
+certificate facts or SSH host keys. They feed the same **Findings** and, like
+banners, never create vulnerability matches.
 
 **Licence.** Nothing of nmap is bundled with Danbyte: no binary, no data
 files, no code. Danbyte runs a binary the administrator installed and reads
-the results the administrator asked for. nmap's data files (such as
-`nmap-service-probes`) are never read by Danbyte's own engine. nmap is
-distributed under the Nmap Public Source License; using it is between you
-and its authors.
+the results the administrator asked for; Danbyte's own engine never reads
+nmap's data files (such as `nmap-service-probes`). nmap is distributed under
+the Nmap Public Source License; using it is between you and its authors.
 
-**Outposts** do not run nmap: service scans run on the server only.
+On an Outpost the nmap is the Outpost's own ([On an
+Outpost](discovery-outposts.md#nmap-on-an-outpost)).
 
-### nmap on an Outpost
+## Older links
 
-On an Outpost, the nmap is the Outpost's: the agent looks for
-`OUTPOST_NMAP_BINARY` (else `nmap` on its PATH) when it starts, refuses to
-use it when the agent runs as root, and says in its hello which version it
-found. The nmap switch in Host discovery can be turned on when the server or
-any Outpost has one; the Runs on picker says per Outpost whether it has.
-
-## The review queue
-
-**Findings** on the Discovery tab of the Monitoring page (and on each service-scan profile and
-run) lists what the current observations propose. Its columns read left to
-right: host and address, port, the proposal (kind, product and version),
-confidence, source, the evidence (banner excerpt or rule, the full evidence
-of every port on hover), when it was last seen, and the actions:
-
-| Proposal | When | Accept creates | Needs |
-|---|---|---|---|
-| Add service | the address's device or VM has no service on that port and the scan recognised the service or product | a [Service](../dcim/services.md) on the host, on that address and port | *add* on services |
-| Add software | a fingerprint named a product and the host has no install of an application of that name | an [installed software](applications.md) row (source *Discovery*, the banner's version), and the application when the tenant has none of that name | *add* on installed software; *add* on applications for a new one |
-| Map to CPE | the product has a CPE and the tenant's application of that name has no product mapping | a [product mapping](vulnerabilities.md) through the vulnerability data's own bulk create | *change* on the application; vulnerability data on |
-
-- Everything accepted is an ordinary object, in the change log as you.
-  Permissions are checked on what is created, site scope included; a row you
-  may not create is refused and nothing of it stays.
-- An install that already exists is never changed: a banner's version never
-  overwrites one someone recorded or inventoried.
-- Select several rows of the same proposal to accept them together.
-- **Ignore** hides a finding until the observation changes (product,
-  version, CPE or service name); **Show ignored** lists them again.
-- An open port on an address with no device or VM, or a port nothing
-  recognised, proposes nothing; it is listed under **Open ports** only.
-
-The same queue holds the package inventory's proposals - **Set platform**,
-**Add application** and **Link packages** - with the OS release or the
-packages as evidence; see [What a read
-feeds](discovery.md#what-a-read-feeds). They need *view* on installed
-software rather than on IP addresses.
-
-## What is stored
-
-Each open port is one **observed service** row: address (and its device or
-VM), port, service name, banner excerpt, product, vendor, version, CPE
-guess, source, rule, confidence, the HTTP and TLS facts, first and last
-seen, and *closed* when a later scan found the port closed (it is current
-again when it opens). Observed services are machine data, not
-change-logged, and read with *view* on the address.
-
-## Where it runs
-
-On the Danbyte server's workers, on the RQ queue `discovery`, like package
-inventory - or, with **Runs on**, on an Outpost: one named Outpost, or the
-Outpost each address is bound to (device, location, prefix, site, the
-tenant default). The server resolves the addresses and every rule above;
-the Outpost runs the same scan (`danbyte_checks.service_scan`, the same
-probes, rates and fingerprints) from its own network and posts the open
-ports back. No credential is sent. The Outpost applies its own target
-policy, not the server's internal-range block. The rate is per Outpost: each
-one paces its own connects to the profile's rate.
-
-An address whose Outpost is offline, runs an agent older than **0.10.0**, or
-(for the nmap engine) has no nmap it may run, is left alone with a host
-result that says so; it is never scanned from the server instead. See
-[Discovery on an Outpost](discovery.md#on-an-outpost) for the rules, and
-[Outposts](../monitoring/outposts.md#discovery-on-an-outpost) for the agent.
-
-What an Outpost posts back is checked: only the address and the ports it was
-given, the same caps on banners and fields as the built-in probes, CPEs in
-2.3 form; an answer that is not one of those fails the address.
-
-## Permissions
-
-| Action | Needs |
-|---|---|
-| Create, change, delete a service-scan profile | as for inventory profiles: *add* / *change* / *delete* on Discovery profiles, *view* on the scope |
-| Run now | the **scan** verb on the profile |
-| Open ports, findings | *view* on IP addresses (rows of addresses you may view) |
-| Accept, ignore | what accepting creates (table above) |
-
-## API
-
-| Endpoint | |
-|---|---|
-| `/api/discovery/profiles/` | `kind` (`inventory`, `service_scan`; fixed once created), `ports`, `connects_per_second`, `rate_cap` (read-only), `scan_engine` (`builtin`, `nmap`), `nmap_version_intensity` (0-5), `nmap_timing` (2-4); `?kind=` filters |
-| `GET`, `PATCH /api/discovery/settings/` | `nmap`: `{available, enabled, path, version, label, reason}`; `PATCH {"nmap": true}` (tenant admin, only while available) |
-| `GET /api/discovery/runs/` | `kind` on each run; `?kind=` filters |
-| `GET /api/discovery/services/` | Observed services (`?run=`, `?profile=`, `?ip_address=`, `?device=`, `?virtual_machine=`, `?confidence=`, `?search=`, `?current=false` for closed ones too) |
-| `GET /api/discovery/findings/` | Proposals (`?kind=service,software,cpe`, `?ignored=true`, and the filters above); `totals` by kind |
-| `POST /api/discovery/findings/accept/` | `{ids: [...]}` of `service:` and `software:` findings; answers `created` and `refused` |
-| `POST /api/discovery/findings/ignore/` | `{ids: [...], ignore: true|false}` |
+<span id="turn-it-on"></span>
+<span id="which-addresses-are-left-alone"></span>
+<span id="where-it-runs"></span><span id="nmap-on-an-outpost"></span>
+<span id="permissions"></span><span id="api"></span>
+Setting up a scan is on [Getting started](discovery-getting-started.md#b-a-first-service-scan);
+what is left alone, and permissions, on [Scope and safety](discovery-safety.md);
+running on an Outpost on [On an Outpost](discovery-outposts.md); the
+endpoints on [API](discovery-api.md#service-scans-and-findings).
