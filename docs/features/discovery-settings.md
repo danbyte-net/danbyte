@@ -10,8 +10,9 @@ upgrade. Profile fields are on [Scope and safety](discovery-safety.md#profile-fi
 
 !!! info "Where to find it"
     - **This deployment**, the transports, **nmap**, **Deny subnets**: the
-      **Host discovery** section (**Monitoring** page → **Settings** tab, or
-      **Settings → Monitoring**).
+      **Host discovery** section of **Monitoring → Settings**
+      (`/monitoring/settings`, under *Setup*; also **Settings →
+      Monitoring**).
     - The tenant switch: the **Discovery** card under **Settings →
       Integrations**.
     - The timer's last run: **Jobs → Scheduled tasks**, row *Package

@@ -12,8 +12,8 @@ Linux hosts ([Package inventory](discovery-packages.md)).
 
 !!! info "Where to find it"
     - Transports: **SSH key login**, **SSH password login** and **WinRM over
-      HTTPS** in the **Host discovery** section (**Monitoring** page →
-      **Settings** tab).
+      HTTPS** in the **Host discovery** section of **Monitoring → Settings**
+      (`/monitoring/settings`).
     - A host's own WinRM certificate: kind **WinRM certificate** on its
       **Credentials** card (a device's **Access** tab, a VM's **Monitoring**
       tab). Shared ones: **Settings → Devices & polling → Credentials**.
@@ -34,7 +34,7 @@ shared ones; within each, in this order:
 | 2 | **SSH password login** | *SSH password* | on |
 | 3 | **WinRM over HTTPS** | *WinRM certificate* | off |
 
-The next transport is tried only when the one before did not answer (SSH
+The next login is tried only when the one before did not answer (SSH
 unreachable or timed out → WinRM), or after an SSH key was refused (no
 password was sent yet). A refused password stops there unless its shared
 credential allows trying the next, so no account is locked out

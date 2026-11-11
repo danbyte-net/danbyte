@@ -13,8 +13,8 @@ logins and host keys are on [Credentials and host keys](discovery-credentials.md
 !!! info "Where to find it"
     - A host's packages: the **Packages** tab of a device or VM.
     - Its CVE matches: the **Vulnerabilities** tab, **Via: Package**.
-    - Proposals a read raises: **Findings** on the **Discovery** tab of the
-      **Monitoring** page.
+    - Proposals a read raises: **Monitoring → Discovery → Findings**
+      (`/discovery/findings`).
     - An application's package names: the application's edit form,
       **Package names**.
 
@@ -59,8 +59,9 @@ monitoring [exec check](monitoring.md#check-types) switch does not apply.
 
 An ordinary account is enough: os-release, `dpkg-query`, `rpm -q` and the apk
 database are readable without root, and Danbyte never runs `sudo`. Give the
-account a key and nothing else it does not need. Fill in the credential's
-**User name**: a credential without one logs in as `root`.
+account a key and nothing else it does not need. An SSH credential must
+name its **User name**: one saved without it is skipped (*The credential has
+no user name.*), never tried as `root`.
 
 ## Limits
 

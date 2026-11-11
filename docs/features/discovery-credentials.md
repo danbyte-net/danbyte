@@ -17,8 +17,8 @@ and uses none of this.
     - Keys to review: the **Host keys** tab of a profile or a run.
     - All recorded keys of one host: the **SSH host keys** panel on a
       device's **Certificates & keys** tab, a VM's **Certificates** tab.
-    - The transport switches: **Host discovery** (**Monitoring** page →
-      **Settings** tab).
+    - The transport switches: **Host discovery** in **Monitoring → Settings**
+      (`/monitoring/settings`).
 
 ## Host credentials and shared credentials
 

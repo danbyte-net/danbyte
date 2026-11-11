@@ -18,11 +18,12 @@ nowhere and sends no credential. To set one up, see [Getting
 started](discovery-getting-started.md#b-a-first-service-scan).
 
 !!! info "Where to find it"
-    - Profiles, **Findings**, **Open ports**: the **Discovery** tab of the
-      **Monitoring** page. A service-scan profile and each of its runs also
-      have **Findings** and **Open ports** tabs.
-    - The **nmap** switch: the **Host discovery** section (**Monitoring**
-      page → **Settings** tab).
+    - Profiles, **Findings**, **Open ports**: **Monitoring → Discovery**
+      (`/discovery`, `/discovery/findings`, `/discovery/services`). A
+      service-scan profile and each of its runs also have **Findings** and
+      **Open ports** tabs.
+    - The **nmap** switch: the **Host discovery** section of **Monitoring →
+      Settings** (`/monitoring/settings`).
 
 !!! warning "Scanning needs permission"
     Port scans can be against policy, a contract or the law unless someone

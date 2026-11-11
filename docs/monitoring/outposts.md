@@ -47,7 +47,7 @@ each level **inherits** from the next when it has no engine of its own:
    left on *Inherit* falls through to its parent),
 3. the IP's **Prefix**,
 4. the IP's **Site**,
-5. the tenant **default engine** (set on the Monitoring engines page),
+5. the tenant **default engine** (set on **Monitoring → Engines**),
 6. the built-in **Local** engine.
 
 A level bound to an engine that cannot answer right now is treated as though it
@@ -274,7 +274,7 @@ when you add the Outpost.
 
 The Danbyte instance is a **version store** for the Outpost, so remote hosts only
 ever pull from Danbyte (never GitHub/PyPI) - which is what makes airgapped
-installs work. On the **Monitoring engines** page an admin adds Outpost builds
+installs work. On **Monitoring → Engines** (`/monitoring-engines`) an admin adds Outpost builds
 four ways:
 
 - **From your repo (dropdown)** - set the agent repo once (**Outpost repo** field,

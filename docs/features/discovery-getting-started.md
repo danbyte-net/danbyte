@@ -9,10 +9,10 @@ and a **service scan** of a prefix. Both start with the same two switches.
 What each field means in full is in [Scope and safety](discovery-safety.md#profile-fields).
 
 !!! info "Where to find it"
-    - **Host discovery** settings: **Monitoring** page → **Settings** tab →
-      **Host discovery** section.
+    - **Host discovery** settings: **Monitoring → Settings**
+      (`/monitoring/settings`), section **Host discovery**.
     - **Discovery** card: **Settings → Integrations**.
-    - Profiles: **Monitoring** page → **Discovery** tab.
+    - Profiles: **Monitoring → Discovery** (`/discovery`), tab **Profiles**.
     - A device's own credentials: its **Access** tab, **Credentials** card. A
       VM's: its **Monitoring** tab, **Credentials** card.
     - Shared credentials: **Settings → Devices & polling → Credentials**.
@@ -45,7 +45,7 @@ deployment*; change the variable instead
 
 A tenant admin switches on the **Discovery** card. While step 1 is missing the
 card says *Off for this deployment* and a toast says so when you switch it on.
-Once both are on, the card's **Discovery** button opens the Discovery tab, and
+Once both are on, the card's **Discovery** button opens the Discovery page, and
 **Host discovery** shows the transports, **nmap** and **Deny subnets**.
 
 With either switch off, every Discovery page and API answers *not found*, no
@@ -73,15 +73,15 @@ Danbyte its key. Then either:
   machines**, then **Roles**, **Device types**, **Platforms**, **Sites**,
   **Tags**, or **All hosts**). The dialog counts the hosts it matches.
 
-Fill in **User name**. A credential without one logs in as `root`.
+**User name** is required on an SSH credential; nothing guesses `root`.
 
 Which login a host gets when it has several is on
 [Credentials and host keys](discovery-credentials.md#which-login-a-host-gets).
 
 ### A3. Create the profile
 
-On the **Discovery** tab, press **Add profile** (needs *add* on Inventory
-profiles):
+On the Discovery page's **Profiles** tab, press **Add profile** (needs *add*
+on Discovery profiles):
 
 1. **Name**.
 2. **Kind**: *Package inventory*. It cannot be changed later.
@@ -163,7 +163,7 @@ failed, there was nothing to read with.
 - The host's **Packages** tab lists every package, with the OS release above
   the list, the **Application** a package belongs to and its **CVEs**.
 - The host's **Vulnerabilities** tab shows the matches, **Via: Package**.
-- **Findings** on the Discovery tab may propose *Set platform*, *Add
+- **Findings** on the Discovery page may propose *Set platform*, *Add
   application* or *Link packages* ([what they do](discovery-packages.md#what-a-read-feeds)).
 
 CVEs show only when [vulnerability data](vulnerabilities.md) is on and holds

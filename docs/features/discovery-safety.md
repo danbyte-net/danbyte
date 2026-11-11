@@ -11,13 +11,13 @@ tenant; a *deployment admin* is a superuser or holds that grant without
 tenant narrowing.
 
 !!! info "Where to find it"
-    - Profiles: the **Discovery** tab of the **Monitoring** page; each
-      profile's **Hosts** (or **Addresses**) tab previews its scope.
-    - **Deny subnets**: the **Host discovery** section (**Monitoring** page →
-      **Settings** tab).
+    - Profiles: **Monitoring → Discovery** (`/discovery`); each profile's
+      **Hosts** (or **Addresses**) tab previews its scope.
+    - **Deny subnets**: the **Host discovery** section of **Monitoring →
+      Settings** (`/monitoring/settings`).
     - **Do not scan**: the edit form of a device, VM, IP address or prefix.
     - A monitoring policy's **Discovery** section: the policy's menu on
-      **Monitoring** → **Configuration**.
+      **Monitoring → Policies** (`/monitoring/policies`).
 
 ## Profile fields
 
@@ -104,7 +104,7 @@ unless someone with the authority said yes. A profile therefore records it:
   statement again, when an edit without a new statement in the same save:
     - changes the scope (any kind, the whole-tenant choice included);
     - for a service scan, changes the ports or the **Engine** (*Built-in*
-      ↔ *nmap*), or raises nmap's **Version intensity** or **Timing**:
+      ↔ *nmap*), or raises nmap's **Version probes** or **Timing**:
       each changes what is sent to the hosts (lowering them does not
       clear it);
     - changes **Runs on**, or the Outpost it names: another vantage point
@@ -112,8 +112,9 @@ unless someone with the authority said yes. A profile therefore records it:
     - empties the statement.
 - A profile without an authorisation never runs, on schedule or by hand.
 
-Changing the schedule, the rate, the engine, **Hosts at once**, the timeout
-or the pinned credential keeps the authorisation.
+Changing the schedule, the rate, **Hosts at once**, the timeout or the
+pinned credential keeps the authorisation, and so does lowering nmap's
+**Version probes** or **Timing**.
 
 ## When a run starts
 
@@ -195,8 +196,9 @@ other address Discovery would contact:
   `DANBYTE_CHECK_BLOCK_INTERNAL` is on;
 - `DANBYTE_SSRF_ALLOWLIST` lets its CIDRs through.
 
-On an Outpost the Outpost's own policy applies instead: link-local and the
-unspecified address refused, internal ranges allowed - reaching them is what
+On an Outpost the Outpost's own policy applies instead of the server's
+(link-local addresses never reach it): the unspecified address refused,
+internal ranges allowed - reaching them is what
 an Outpost is for ([Settings](../reference/settings.md#check-engine-targets-central-runner-ssrf)).
 
 ## Schedules and limits
@@ -245,7 +247,7 @@ Discovery profiles are the RBAC type **Discovery profiles** (slug
 
 | Action | Needs |
 |---|---|
-| See the Discovery tab, profiles, runs | *view* on Discovery profiles; run host rows only for hosts (or addresses) you may view |
+| See the Discovery page, profiles, runs | *view* on Discovery profiles; run host rows only for hosts (or addresses) you may view |
 | Create, change, delete a profile | *add* / *change* / *delete* on Discovery profiles, and *view* on every scope member ([who may name what](#who-may-name-what)) |
 | Copy a monitoring policy's scope | *add* or *change* on Discovery profiles, and *view* on the policy |
 | Pin a shared credential | *view* on that shared credential |

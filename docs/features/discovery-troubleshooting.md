@@ -10,7 +10,8 @@ ones the run page shows.
 
 !!! info "Where to find it"
     - A run's status, summary line and **Messages**: the run page (from
-      **Recent runs** on the **Discovery** tab, or a profile's **Runs** tab).
+      **Recent runs** on **Monitoring → Discovery → Profiles**, or a
+      profile's **Runs** tab).
     - Each host's result and message: the run's **Hosts** (or **Addresses**)
       tab; hover **Transport** for every login tried.
     - Before a run: the profile's **Hosts** / **Addresses** tab and the reason

@@ -14,8 +14,8 @@ scans, with the built-in engine or the Outpost's own nmap.
       (*Ready*, *Offline*, *Cannot run this*, *No Outpost*) and the reason.
     - Where a run went: **Ran on** on the run's **Overview**, and **Read by**
       on each host row.
-    - Outposts, their agent version and rollout: **Governance → Monitoring
-      engines**.
+    - Outposts, their agent version and rollout: **Monitoring → Engines**
+      (`/monitoring-engines`, under *Setup*), with **Outpost versions**.
 
 ## Runs on
 

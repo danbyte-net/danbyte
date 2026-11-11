@@ -12,13 +12,13 @@ deployment admin and a tenant admin both turn it on, and a profile runs only
 after someone has written down who authorised it.
 
 !!! info "Where to find it"
-    - **Profiles, runs, Findings, Open ports**: the **Discovery** tab of the
-      **Monitoring** page (`/monitoring?view=discovery`). `/discovery` and
-      **Discovery** in the sidebar (under **Governance**) open it. Profile and
-      run pages keep their `/discovery/…` addresses.
+    - **Profiles, runs, Findings, Open ports**: **Monitoring → Discovery** in
+      the sidebar (`/discovery`), with the tabs **Profiles**, **Findings**
+      (`/discovery/findings`) and **Open ports** (`/discovery/services`).
+      Profile and run pages are under `/discovery/…`.
     - **Switches, transports, nmap, deny subnets**: the **Host discovery**
-      section of the **Settings** tab on the **Monitoring** page (also
-      **Settings → Monitoring**).
+      section of **Monitoring → Settings** (`/monitoring/settings`, under
+      *Setup*; also **Settings → Monitoring**).
     - **The tenant switch**: the **Discovery** card under **Settings →
       Integrations**.
     - **Results on a host**: the **Packages** and **Vulnerabilities** tabs of
