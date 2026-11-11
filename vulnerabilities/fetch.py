@@ -16,7 +16,7 @@ never makes a request. What is contacted, in order:
    that is new or modified since it was stored.
 3. **Microsoft (MSRC CVRF)** - only when discovery has read a Windows host:
    the index of monthly security update documents, then each document of
-   the last :data:`MSRC_MONTHS` months that Microsoft revised since it was
+   the last :func:`msrc_months` months that Microsoft revised since it was
    read, or that was read for fewer Windows products than are tracked now.
    Only month ids (``2026-Nov``) are in the requests.
 4. **CISA KEV** - the catalog JSON, one request.
@@ -70,6 +70,7 @@ KEV_URL = ("https://www.cisa.gov/sites/default/files/feeds/"
 MSRC_BASE = "https://api.msrc.microsoft.com/cvrf/v3.0"
 #: Monthly documents kept: builds are cumulative, so a host behind by more
 #: than this still matches every month in the window.
+#: The default of ``settings.VULN_MSRC_MONTHS`` (``DANBYTE_VULN_MSRC_MONTHS``).
 MSRC_MONTHS = 12
 MSRC_SPACING = 2.0
 #: A monthly document is 4 to 30 MB of JSON (2026-Oct: 30 MB, 3,491 CVEs).
@@ -645,9 +646,20 @@ def _sync_osv(client: Client, tracked, state: _State) -> None:
     state.save()
 
 
+def msrc_months() -> int:
+    """How many months back the fetch reads (the deployment setting, 1-36)."""
+    from django.conf import settings
+
+    try:
+        n = int(getattr(settings, "VULN_MSRC_MONTHS", MSRC_MONTHS))
+    except (TypeError, ValueError):
+        return MSRC_MONTHS
+    return max(1, min(36, n))
+
+
 def msrc_index(payload, now: datetime) -> list[tuple[str, datetime | None]]:
     """``(month, current release)`` of the index's monthly documents of the
-    last :data:`MSRC_MONTHS` months, newest first. Entries that are not a
+    last :func:`msrc_months` months, newest first. Entries that are not a
     month id are skipped."""
     from .store import month_start
 
@@ -655,7 +667,7 @@ def msrc_index(payload, now: datetime) -> list[tuple[str, datetime | None]]:
     if not isinstance(values, list):
         raise FetchError("Microsoft answered an index without a 'value' list.")
     first = now.date().replace(day=1)
-    for _ in range(MSRC_MONTHS - 1):
+    for _ in range(msrc_months() - 1):
         first = (first - timedelta(days=1)).replace(day=1)
     out = {}
     for v in values[:5000]:

@@ -784,6 +784,14 @@ DEVICE_MODEL_MAX_BYTES = int(os.getenv("DEVICE_MODEL_MAX_BYTES", str(25 * 1024 *
 # zips, KEV, EPSS. Keep it at or under nginx client_max_body_size (512m).
 VULN_IMPORT_MAX_BYTES = int(
     os.getenv("DANBYTE_VULN_IMPORT_MAX_BYTES", str(512 * 1024 * 1024)))
+# How many months of Microsoft's security update documents the server fetch
+# reads (#451): each costs 4 to 30 MB per refresh. 1 to 36, default 12.
+try:
+    VULN_MSRC_MONTHS = max(1, min(36, int(os.getenv("DANBYTE_VULN_MSRC_MONTHS", "12"))))
+except ValueError:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("DANBYTE_VULN_MSRC_MONTHS must be a number.") from None
 
 # Uploaded media (device-type rack images, …). Served through
 # api.media_views, never straight from disk: a new upload and the folders

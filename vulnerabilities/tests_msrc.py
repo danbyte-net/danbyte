@@ -685,6 +685,29 @@ class FetchTests(NetMixin, TestCase):
         self.run_once()
         self.assertEqual(len(self.docs_fetched()), 2)
 
+    def test_the_month_window_is_a_deployment_setting(self):
+        payload = json.loads(index(("2026-Nov", "2026-11-10T08:00:00Z"),
+                                   ("2026-Oct", "2026-11-10T14:50:30Z"),
+                                   ("2024-Jan", "2026-11-05T00:00:00Z")))
+        now = timezone.now()
+
+        def months():
+            return [m for m, _ in fetch.msrc_index(payload, now)]
+
+        self.assertEqual(months(), ["2026-Nov", "2026-Oct"])          # default 12
+        with override_settings(VULN_MSRC_MONTHS=1):
+            self.assertEqual(months(), ["2026-Nov"])
+        with override_settings(VULN_MSRC_MONTHS=36):
+            self.assertEqual(months(), ["2026-Nov", "2026-Oct", "2024-Jan"])
+        with override_settings(VULN_MSRC_MONTHS=500):                  # capped at 36
+            self.assertEqual(fetch.msrc_months(), 36)
+        with override_settings(VULN_MSRC_MONTHS=0):
+            self.assertEqual(fetch.msrc_months(), 1)
+        with override_settings(VULN_MSRC_MONTHS=1):
+            self.net.calls.clear()
+            self.run_once()
+            self.assertEqual(self.docs_fetched(), ["/cvrf/v3.0/cvrf/2026-Nov"])
+
     def test_a_product_only_run_keeps_the_months_bookkeeping(self):
         self.run_once()
         before = {m.month: m.current_release for m in MsrcMonth.objects.all()}

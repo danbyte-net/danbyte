@@ -210,7 +210,7 @@ on the default *upload* source never makes a request.
 |---|---|---|---|
 | NVD (`services.nvd.nist.gov`) | `GET /rest/json/cves/2.0?virtualMatchString=cpe:2.3:<part>:<vendor>:<product>&resultsPerPage=2000&startIndex=…` | once per mapped CPE product, one request per 2000 CVEs | the CPE product, the date window; the API key as the `apiKey` header when one is set |
 | OSV (`api.osv.dev`) | `POST /v1/querybatch`, then `GET /v1/vulns/<id>` | one batch per 1000 mapped packages, then one request per advisory that is new or changed | the package URLs, without versions; for a Debian, Ubuntu or Alpine package whose hosts' releases are all known, the ecosystem and package name instead (`Debian:12` + `openssl`, see [Distro packages](#distro-packages)) |
-| Microsoft (`api.msrc.microsoft.com`) | `GET /cvrf/v3.0/updates`, then `GET /cvrf/v3.0/cvrf/<month>` | when `sync_msrc` is on and discovery has read a Windows host: the index once per run, then each changed month of the last twelve | month ids (`2026-Nov`) only - never a host, a build or a product name |
+| Microsoft (`api.msrc.microsoft.com`) | `GET /cvrf/v3.0/updates`, then `GET /cvrf/v3.0/cvrf/<month>` | when `sync_msrc` is on and discovery has read a Windows host: the index once per run, then each changed month of the last twelve ([`DANBYTE_VULN_MSRC_MONTHS`](../reference/settings.md#microsoft-data-window-danbyte_vuln_msrc_months)) | month ids (`2026-Nov`) only - never a host, a build or a product name |
 | CISA (`www.cisa.gov`) | `GET` the KEV catalog JSON | once per run, when `sync_kev` is on | nothing |
 | FIRST (`api.first.org`) | `GET /data/v1/epss?cve=…` | 100 CVEs per request, when `sync_epss` is on | CVE ids of stored records |
 
@@ -250,7 +250,8 @@ same validation and CVSS recomputation apply.
   for. An empty answer to a batch fails that batch.
 - **KEV** - the catalog is one file and is read whole each run.
 - **Microsoft** - the index lists each month's `CurrentReleaseDate`. A month
-  of the last twelve is read when it was never read, when Microsoft revised
+  of the last twelve (the deployment setting [`DANBYTE_VULN_MSRC_MONTHS`](../reference/settings.md#microsoft-data-window-danbyte_vuln_msrc_months), 1 to 36) is read when
+  it was never read, when Microsoft revised
   it since, or when it was read for fewer Windows releases than discovery
   now sees. Microsoft revises old months often (every month of the past two
   years had a revision in the first ten days of November 2026), so in

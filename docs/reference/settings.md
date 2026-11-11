@@ -343,6 +343,17 @@ on the feature page. Uploads wait in `MEDIA_ROOT/vuln-imports/` until their
 job has parsed them, then are deleted; the folder is not served under
 `/media/`.
 
+## Microsoft data window (`DANBYTE_VULN_MSRC_MONTHS`)
+
+`DANBYTE_VULN_MSRC_MONTHS` is how many months of Microsoft's monthly
+security update documents the [server fetch](../features/vulnerabilities.md#windows-hosts-microsoft-data)
+reads, counting the current month. The default is `12`; values are held to
+`1`-`36`, and a value that is not a number stops the server at start. Each
+month is 4 to 30 MB and Microsoft revises old months often, so most of the
+window is read again on a weekly refresh: a longer window costs bandwidth
+and time on every run. Windows builds are cumulative, so twelve months find
+every fix a host that is patched at least once a year is missing.
+
 ## PDF reports (`DANBYTE_REPORT_JOB_TIMEOUT`)
 
 A [PDF report](../features/reports.md) too large to render within a request
