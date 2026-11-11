@@ -127,7 +127,7 @@ def resolve(profile, *, user=None, now=None, outpost: bool = False) -> list[Addr
     from monitoring.models import MonitoringDenySubnet
 
     from .models import DiscoverySettings
-    from .scope import MAX_HOSTS, _in, _nets, _open_maintenance
+    from .scope import LINK_LOCAL, MAX_HOSTS, _in, _nets, _open_maintenance, link_local
 
     tenant = profile.tenant
     now = now or timezone.now()
@@ -147,6 +147,9 @@ def resolve(profile, *, user=None, now=None, outpost: bool = False) -> list[Addr
             addr = ipaddress.ip_address(address)
         except ValueError:
             t.skip, t.message = "no_address", "The address is not valid."
+            continue
+        if link_local(addr):
+            t.skip, t.message = "blocked", LINK_LOCAL
             continue
         if ip.scan_exempt or (ip.prefix_id and ip.prefix.scan_exempt) \
                 or (host is not None and host.scan_exempt) or _in(addr, exempt_nets, ip.vrf_id):

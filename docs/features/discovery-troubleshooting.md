@@ -51,7 +51,7 @@ already running, set to *An Outpost* without one, or Discovery is off.
 | **Exempt** | The host, its address or a prefix around it is marked **Do not scan**. | Intended. Clear **Do not scan** to include it. |
 | **Deny subnet** | The address is in a discovery or monitoring deny subnet. | Intended. Edit the deny subnets. |
 | **In maintenance** | The host is in an open maintenance event. | Intended. It is read on the next run after the event. |
-| **Blocked target** | *The server's target policy refuses this address.* - link-local, or internal while `DANBYTE_CHECK_BLOCK_INTERNAL` is on. | Add the range to `DANBYTE_SSRF_ALLOWLIST`, or run the profile on an Outpost. |
+| **Blocked target** | *Link-local (cloud metadata) addresses are never discovered.*, or *The server's target policy refuses this address.* - internal while `DANBYTE_CHECK_BLOCK_INTERNAL` is on. | A link-local address is never read: give the host another address. For an internal one, add the range to `DANBYTE_SSRF_ALLOWLIST`, or run the profile on an Outpost. |
 | **No Outpost** | The host is bound to no Outpost, or the named one was deleted. | [On an Outpost](discovery-outposts.md#what-a-host-row-says) |
 | **Outpost offline** | The Outpost is disabled, not seen recently, or did not pick the work up within 30 minutes. | Bring it back; run again. |
 | **Outpost cannot run it** | The agent is too old, the Outpost is driven over SSH, or it has no nmap it may run. | [Which agent version](discovery-outposts.md#which-agent-version) |

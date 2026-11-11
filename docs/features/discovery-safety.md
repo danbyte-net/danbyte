@@ -143,7 +143,7 @@ row on the run with no connection made:
 | **No address** | the host has no primary (or out-of-band) address, or it is not valid | the address is not valid |
 | **Exempt** | the host, its address, the address's prefix or any prefix around it in the same VRF is marked [Do not scan](#do-not-scan) | the address, its prefix, a prefix around it, or its device or VM is marked |
 | **Deny subnet** | the address is in a [discovery deny subnet](#deny-subnets) (any VRF) or a [monitoring deny subnet](monitoring.md) of its VRF | the same |
-| **Blocked target** | the server's target policy refuses it ([below](#the-target-policy)) | the same |
+| **Blocked target** | a link-local address, always; or the server's target policy refuses it ([below](#the-target-policy)) | the same |
 | **In maintenance** | the host is in an open [maintenance event](maintenance.md) | its device or VM is |
 | **No credential** | no login on a transport that is on ([which login](discovery-credentials.md#which-login-a-host-gets)) | - |
 | **Host key not accepted** | only SSH logins, and no accepted SSH host key ([host keys](discovery-credentials.md#host-keys)) | - |
@@ -181,14 +181,19 @@ well, each in its own VRF.
 
 ### The target policy
 
-On the server, the check engine's target policy applies to every address
-Discovery would contact:
+Link-local addresses (`169.254.0.0/16`, `fe80::/10`, IPv4-mapped forms
+included; the cloud metadata endpoint is among them) are never a Discovery
+target, on the server or on an Outpost, whatever `DANBYTE_SSRF_ALLOWLIST`
+says: the host is *Blocked target* with *Link-local (cloud metadata)
+addresses are never discovered.*, and no work for it goes to an Outpost.
 
-- link-local addresses (`169.254.0.0/16`, `fe80::/10`, which includes the
-  cloud metadata endpoint) and the unspecified address are always refused;
+On the server, the check engine's target policy then applies to every
+other address Discovery would contact:
+
+- the unspecified address is always refused;
 - loopback, private, reserved and multicast addresses are refused too when
   `DANBYTE_CHECK_BLOCK_INTERNAL` is on;
-- `DANBYTE_SSRF_ALLOWLIST` lets its CIDRs through either way.
+- `DANBYTE_SSRF_ALLOWLIST` lets its CIDRs through.
 
 On an Outpost the Outpost's own policy applies instead: link-local and the
 unspecified address refused, internal ranges allowed - reaching them is what

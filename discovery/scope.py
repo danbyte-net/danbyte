@@ -22,9 +22,11 @@ profile's tenant only:
    ``denied``       the address is in a deny subnet: the tenant's
                     discovery list (any VRF) or a monitoring deny subnet
                     (its VRF)
-   ``blocked``      the check runner's target policy refuses it (link-local,
-                    metadata, and internal ranges where the server blocks
-                    them; ``danbyte_checks.netguard``)
+   ``blocked``      a link-local address (169.254.0.0/16, fe80::/10, the
+                    cloud metadata range), always, on the server and on
+                    Outposts; or the check runner's target policy refuses
+                    it (internal ranges where the server blocks them;
+                    ``danbyte_checks.netguard``)
    ``maintenance``  the host is in an open maintenance event
    ``no_credential`` no login for the host on a transport the tenant has
                     on: none of its own, none pinned on the profile, no
@@ -66,6 +68,20 @@ TRANSPORT_LABELS = {"ssh_key": "SSH key", "ssh_password": "SSH password",
                     "winrm": "WinRM HTTPS"}
 OUTPOST_NO_WINRM = "Outposts read over SSH only"
 NO_USER_NAME = "The credential has no user name."
+LINK_LOCAL = "Link-local (cloud metadata) addresses are never discovered."
+#: Never a Discovery target, whatever the target policy or its allowlist
+#: says: the cloud metadata endpoint lives here.
+_LINK_LOCAL = (ipaddress.ip_network("169.254.0.0/16"), ipaddress.ip_network("fe80::/10"))
+
+
+def link_local(addr) -> bool:
+    """Whether ``addr`` (an ``ip_address``) is link-local, IPv4-mapped
+    IPv6 included. Checked for every target, on the server and before
+    work is handed to an Outpost."""
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        addr = mapped
+    return any(addr.version == n.version and addr in n for n in _LINK_LOCAL)
 
 
 def transports(settings_row) -> tuple[list[str], dict[str, str]]:
@@ -258,6 +274,9 @@ def resolve(profile, *, user=None, now=None, outpost: bool = False) -> list[Targ
             addr = ipaddress.ip_address(t.address)
         except ValueError:
             t.skip, t.message = "no_address", "The address is not valid."
+            continue
+        if link_local(addr):
+            t.skip, t.message = "blocked", LINK_LOCAL
             continue
         if host.scan_exempt or ip.scan_exempt or (ip.prefix_id and ip.prefix.scan_exempt) \
                 or _in(addr, exempt_nets, ip.vrf_id):

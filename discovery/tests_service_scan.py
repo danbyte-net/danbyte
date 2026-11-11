@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import ipaddress
 import json
 import socket
 import ssl
@@ -429,6 +430,25 @@ class ScopeAndRunTests(ScanBase):
         self.p.sites.clear()
         self.p.devices.set([self.b])
         self.assertEqual(set(self.statuses()), {"10.0.0.2"})
+
+    def test_link_local_is_never_scanned_whatever_the_allowlist(self):
+        from . import scope
+
+        ll = Prefix.objects.create(tenant=self.tenant, cidr="169.254.0.0/16")
+        v6 = Prefix.objects.create(tenant=self.tenant, cidr="fe80::/10")
+        for address, prefix in (("169.254.169.254", ll), ("fe80::1", v6)):
+            IPAddress.objects.create(tenant=self.tenant, ip_address=address, prefix=prefix)
+        self.p.prefixes.set([ll, v6])
+        netguard.configure(block_internal=False, allowlist=["169.254.0.0/16", "fe80::/10"])
+        self.addCleanup(netguard.configure, block_internal=False)
+        self.assertFalse(netguard.target_blocked("169.254.169.254"))
+        for outpost in (False, True):
+            targets = services.resolve(self.p, outpost=outpost)
+            self.assertEqual({t.address: (t.skip, t.message) for t in targets},
+                             {"169.254.169.254": ("blocked", scope.LINK_LOCAL),
+                              "fe80::1": ("blocked", scope.LINK_LOCAL)})
+        self.assertTrue(scope.link_local(ipaddress.ip_address("::ffff:169.254.169.254")))
+        self.assertFalse(scope.link_local(ipaddress.ip_address("10.0.0.1")))
 
     def test_skip_rules(self):
         IPAddress.objects.filter(pk=self.loose.pk).update(scan_exempt=True)

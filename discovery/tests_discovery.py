@@ -147,6 +147,20 @@ class ScopeTests(Base):
                                             "v": "ready"})
         self.assertNotIn(str(c.pk), [str(a.pk)])
 
+    def test_link_local_is_never_read_whatever_the_allowlist(self):
+        from danbyte_checks import netguard
+
+        ll = Prefix.objects.create(tenant=self.tenant, cidr="169.254.0.0/16")
+        self.host("meta", "169.254.169.254", site=self.site, prefix=ll)
+        p = self.profile()
+        p.sites.add(self.site)
+        netguard.configure(block_internal=False, allowlist=["169.254.0.0/16"])
+        self.addCleanup(netguard.configure, block_internal=False)
+        for outpost in (False, True):
+            (t,) = scope.resolve(p, outpost=outpost)
+            self.assertEqual((t.skip, t.message), ("blocked", scope.LINK_LOCAL))
+            self.assertEqual(t.logins, [])
+
     def test_reasons_not_to_contact(self):
         exempt = self.host("exempt", "10.0.0.10", site=self.site)
         exempt.scan_exempt = True

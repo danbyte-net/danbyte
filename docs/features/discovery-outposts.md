@@ -109,8 +109,9 @@ as you, with the run as the cause.
   a WinRM login is *No credential* there, and its row says *Outposts read
   over SSH only* for WinRM.
 - **The server's internal-range block.** The Outpost applies its own target
-  policy: link-local (cloud metadata) and the unspecified address are
-  refused, internal ranges are allowed.
+  policy: the unspecified address is refused, internal ranges are allowed.
+  Link-local (cloud metadata) addresses are refused by the server before
+  any work is queued for an Outpost.
 - **nmap as root** ([below](#nmap-on-an-outpost)).
 - **SSH-transport Outposts** run no discovery.
 
