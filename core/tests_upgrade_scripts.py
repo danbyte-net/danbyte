@@ -298,6 +298,9 @@ class Host:
             "DANBYTE_UPGRADE_HEALTH_WAIT": "4", "DANBYTE_UPGRADE_FRONTEND_WAIT": "4",
             "DANBYTE_UPGRADE_ONESHOT_WAIT": "2", "DANBYTE_UPGRADE_TRIGGER": "button",
             "DANBYTE_UPGRADE_CGROUP": str(self.root / "cgroup"),
+            # link-units' sandboxing drop-ins (#500): "off" only removes them,
+            # without the fake systemctl having to start a probe unit.
+            "DANBYTE_UNIT_HARDENING": "off",
             "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.test",
             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.test",
         }
@@ -335,7 +338,7 @@ class Host:
             (dest / "services" / "danbyte-newtimer.timer").write_text("[Timer]\nOnCalendar=daily\n")
         (dest / "Makefile").write_text(makefile)
         (dest / "scripts" / "upgrade").mkdir(parents=True, exist_ok=True)
-        for name in ("danbyte-upgrade.sh", "danbyte-upgrade-bundle.sh"):
+        for name in ("danbyte-upgrade.sh", "danbyte-upgrade-bundle.sh", "unit-hardening.sh"):
             shutil.copy2(REPO / "scripts" / name, dest / "scripts" / name)
         for name in STAGE_FILES:
             shutil.copy2(REPO / "scripts" / "upgrade" / name, dest / "scripts" / "upgrade" / name)
@@ -687,6 +690,21 @@ class BundleStageTests(StageTestCase):
                 # the bundle's new file is gone, the dropped one back
                 self.assertFalse((h.app / "app" / "new.py").exists())
                 self.assertTrue((h.app / "app" / "old.py").exists())
+
+    def test_a_rollback_puts_the_unit_drop_ins_back(self):
+        # #500: link-units rewrites the drop-in folders (here "off" removes
+        # Danbyte's link); the undo restores them exactly, the admin's too.
+        h = self.host()
+        web = h.home / ".config" / "systemd" / "user" / "danbyte-web.service.d"
+        web.mkdir(parents=True)
+        target = str(h.app / "services" / "hardening" / "service.conf")
+        (web / "10-hardening.conf").symlink_to(target)
+        (web / "50-local.conf").write_text("[Service]\nReadWritePaths=/srv/x\n")
+        r = h.upgrade(env={"DANBYTE_UPGRADE_TEST": "1", "DANBYTE_UPGRADE_FAULT": "swap"})
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("unit hardening: off", (h.app / ".upgrade.log").read_text())
+        self.assertEqual(os.readlink(web / "10-hardening.conf"), target)
+        self.assertEqual((web / "50-local.conf").read_text(), "[Service]\nReadWritePaths=/srv/x\n")
 
     def test_a_migration_that_rolled_back_needs_no_restore(self):
         h = self.host()

@@ -501,6 +501,35 @@ systemctl restart redis-server && danbyte services restart
 # Docker: set REDIS_PASSWORD in the stack's .env, then docker compose up -d"""
 
 
+_UNIT_PATHS = """\
+# as the service user: every local backup directory outside the default one
+echo 'DANBYTE_UNIT_WRITABLE_PATHS=/srv/danbyte-backups' >> @@APP@@/.env
+cd @@APP@@ && make unit-hardening
+systemctl --user restart danbyte-web
+# what each unit got:  make unit-hardening-status"""
+
+
+def _local_targets_covered() -> bool:
+    """Done when every local backup target is the default backup directory
+    or listed in DANBYTE_UNIT_WRITABLE_PATHS: the web unit's sandbox then
+    lets the target's test write there."""
+    import os
+    from pathlib import Path
+
+    from django.conf import settings
+
+    from backups.models import BackupTarget
+
+    allowed = [Path(str(settings.DANBYTE_BACKUP_DIR))]
+    raw = os.getenv("DANBYTE_UNIT_WRITABLE_PATHS", "").replace(":", " ").replace(",", " ")
+    allowed += [Path(p) for p in raw.split()]
+    for cfg in BackupTarget.objects.filter(kind="local").values_list("config", flat=True):
+        path = Path(os.path.abspath(os.path.expanduser((cfg or {}).get("path") or "")))
+        if not any(path == a or a in path.parents for a in allowed):
+            return False
+    return True
+
+
 def _redis_auth_on() -> bool:
     """Done when Danbyte sends Redis a password or reaches it over a unix
     socket."""
@@ -555,6 +584,23 @@ NOTES: tuple[UpgradeNote, ...] = (
         ),
         snippet=_PREFIX_LOSS,
         docs="getting-started/upgrading/#prefixes-the-019-upgrade-deleted",
+    ),
+    UpgradeNote(
+        id="0.20.0-unit-sandbox",
+        version="0.20.0",
+        title="Let the sandboxed units write to your backup directory",
+        body=(
+            "The app units now run under systemd sandboxing drop-ins, which the "
+            "upgrade placed. Where the host gives user units a mount namespace "
+            "(Debian 13, for one), the web unit writes only to Danbyte's own "
+            "folders, so testing a local backup target elsewhere fails with "
+            "\"Read-only file system\". List such directories in .env and apply "
+            "the drop-ins again. DANBYTE_UNIT_HARDENING=off removes them."
+        ),
+        snippet=_UNIT_PATHS,
+        docs="getting-started/hardening/#systemd-sandboxing",
+        platforms=("systemd",),
+        check=_local_targets_covered,
     ),
     UpgradeNote(
         id="0.20.0-redis-password",

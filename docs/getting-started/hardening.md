@@ -168,13 +168,187 @@ with `--requirepass` and every Python service gets the same variable. Empty
 Sandboxed [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do)
 reach neither Redis's port nor any unix socket, password or not.
 
+## systemd sandboxing
+
+The app units run under sandboxing drop-ins. The install, every upgrade and
+`make install-services` on a source checkout place them, as the service
+user, in `~/.config/systemd/user/<unit>.d/`:
+
+| File | What it is |
+|---|---|
+| `10-hardening.conf` | a link to `services/hardening/<group>.conf` in the app tree |
+| `20-hardening-paths.conf` | the paths this install writes to, made from `.env` (only for units with the filesystem lines) |
+
+`scripts/unit-hardening.sh` writes them. Before it links a group's file it
+starts a throwaway unit under the same drop-ins. A file this host's systemd
+refuses drops to `base.conf`, and a refused `base.conf` leaves the unit
+without a drop-in, with a warning in the install or upgrade log. The log
+also says whether the filesystem lines apply on this host:
+
+```text
+unit hardening: service workers base; filesystem confinement: not available, systemd skips those lines (no user namespace with mount rights)
+```
+
+### What each group gets
+
+| Group | Units | Drop-in |
+|---|---|---|
+| web, websockets, frontend, docs | `danbyte-web`, `danbyte-ws`, `danbyte-frontend-prod`, `danbyte-docs` | `service.conf` |
+| fast lane, periodic jobs | `danbyte-fastlane` and every timer's service except the two below | `service.conf` |
+| workers | `danbyte-workers` | `workers.conf` |
+| code-writing | `danbyte-auto-upgrade`, `danbyte-acme-renew` | `base.conf` |
+| development | `danbyte-backend`, `danbyte-frontend`, `danbyte-mockups`, `danbyte-infra` | none |
+
+- **`base.conf`**: `NoNewPrivileges`, `LockPersonality`, `RestrictRealtime`,
+  `RestrictSUIDSGID`, `SystemCallArchitectures=native` and `UMask=0027`.
+  Every app unit gets these.
+- **`service.conf`**: the baseline, plus:
+  - filesystem: `ProtectSystem=strict`, `PrivateTmp`,
+    `ProtectKernelTunables`, `ProtectHostname` and the paths drop-in;
+  - network: `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK`;
+  - system calls: `RestrictNamespaces`,
+    `SystemCallFilter=@system-service`, with `SystemCallErrorNumber=EPERM`
+    so a refused call fails instead of killing the process.
+- **`workers.conf`**: the baseline, the same address families, and a
+  system-call filter that keeps the calls bubblewrap needs (the mount calls,
+  `pivot_root`, `sethostname`) and the ones Danbyte's own sandbox needs
+  (Landlock, seccomp). The workers keep these out on purpose:
+  - `RestrictNamespaces`, because sandboxed scripts and the DWG converter
+    run inside bubblewrap, which makes its own namespaces;
+  - the filesystem lines, because each puts a user unit in a user
+    namespace of systemd's. On Ubuntu 24.04 and later AppArmor then holds
+    the process to its `unprivileged_userns` profile, and bubblewrap cannot
+    start there. Scripts would fall back to Landlock alone, and DWG uploads
+    would be refused.
+- **The code-writing units** get the baseline only. The upgrade itself
+  runs as the transient `danbyte-upgrade.service`, which has no drop-in. It
+  rewrites the code tree, the virtualenv and the unit links. The ACME
+  renewal writes the certificate drop folder.
+- **The development units** are never linked on a production host.
+
+`UMask=0027` takes "other" off the files the units create, and the group
+keeps read access. nginx reads static files, frontend builds and the
+maintenance page as another user, but the upgrade writes those, not these
+units, and with explicit modes. Uploaded media is served through Danbyte.
+
+### What a user unit can apply
+
+Danbyte's units are `systemctl --user` units, and a user manager has no
+capabilities. What that means for each directive, measured on systemd 259
+(Ubuntu 26.04), and per systemd.exec(5) for the other supported releases:
+
+| Directive | Effect in a user unit |
+|---|---|
+| `NoNewPrivileges`, `LockPersonality`, `RestrictRealtime`, `RestrictSUIDSGID`, `SystemCallArchitectures`, `SystemCallFilter`, `RestrictAddressFamilies`, `RestrictNamespaces`, `UMask` | applies on every supported systemd (249 to 259). These are a prctl or a seccomp filter. |
+| `ProtectSystem`, `ProtectHome`, `PrivateTmp`, `ReadWritePaths`, `ReadOnlyPaths`, `InaccessiblePaths`, `ProtectKernelTunables`, `ProtectHostname` | need a mount namespace inside a user namespace. On 255 and later, systemd adds `PrivateUsers=` by itself (on 252 only when the unit sets it; on 249 not at all). On Ubuntu 24.04 and later, AppArmor gives that namespace no capabilities. systemd then skips the lines **without an error**, and `systemd-analyze security` still counts them. |
+| `PrivateDevices`, `ProtectClock`, `ProtectKernelLogs`, `ProtectKernelModules`, `CapabilityBoundingSet` | these drop capabilities. On Ubuntu 26.04 the unit **does not start** (status 218/CAPABILITIES). Not shipped. |
+| `PrivateUsers=identity`, `PrivatePIDs`, `ProtectControlGroups=strict` | the unit does not start (217/USER, 226/NAMESPACE). Not shipped. |
+| `ProtectControlGroups`, `ProtectProc`, `ProcSubset` | "only available for system services" on every release: a no-op that only flatters the score. Not shipped. |
+
+`CapabilityBoundingSet=` would add nothing anyway: a user unit has no
+capabilities to drop. The filesystem lines are in `service.conf` for hosts
+that grant the namespace, such as Debian 13. Where they apply, the
+web, websocket, frontend, docs, fast-lane and job units cannot write the
+system, the code tree, the virtualenv or the rest of the home directory.
+
+### Scores
+
+`systemd-analyze --user security`, on Ubuntu 26.04 with systemd 259:
+
+| Unit | Before | After |
+|---|---|---|
+| `danbyte-web`, `danbyte-ws`, `danbyte-frontend-prod`, `danbyte-docs` | 9.8 UNSAFE | 5.9 MEDIUM |
+| `danbyte-fastlane` and the periodic jobs | 9.8 UNSAFE | 5.9 MEDIUM |
+| `danbyte-workers` | 9.8 UNSAFE | 7.5 EXPOSED |
+| `danbyte-auto-upgrade`, `danbyte-acme-renew` | 9.8 UNSAFE | 9.1 UNSAFE |
+| development units | 9.8 UNSAFE | 9.8 UNSAFE |
+
+The score counts the filesystem lines even on a host that skips them, so
+on Ubuntu 24.04 and later the real gain is the system-call, address-family
+and privilege lines.
+
+### Writable paths
+
+`20-hardening-paths.conf` lists `media/`, `plugins_local/`
+(`DANBYTE_PLUGIN_DIR`), the backup directory (`DANBYTE_BACKUP_DIR`,
+default `danbyte-backups` beside the app), `DANBYTE_LOG_DIR` and the
+fontconfig cache. Each unit gets only what it needs:
+
+- **`danbyte-web` and `danbyte-prune`** also get the app directory itself,
+  for the upgrade's status and lock files, the uploaded bundle,
+  housekeeping and `deploy/nginx/certs`. Each code file and folder in it is
+  made read-only again.
+- **websockets** get the log directory only, and **the frontend** that and
+  `frontend/node_modules/.vite-temp`, where `vite preview` compiles its config.
+- **docs** gets `site/` and `.cache/` for Zensical.
+
+To give the units another directory, such as a local backup target outside
+the default one, list it in `.env` and apply the drop-ins again:
+
+```bash
+# as the service user
+echo 'DANBYTE_UNIT_WRITABLE_PATHS=/srv/danbyte-backups /mnt/nas' >> ~/danbyte/.env
+make -C ~/danbyte unit-hardening
+systemctl --user restart danbyte-web danbyte-workers
+make -C ~/danbyte unit-hardening-status
+```
+
+Or add a drop-in of your own with a later name. Your drop-in is never
+touched, and a later name wins for single-value settings:
+
+```ini
+# ~/.config/systemd/user/danbyte-web.service.d/50-local.conf
+[Service]
+ReadWritePaths=/srv/exports
+```
+
+A target the web unit cannot write fails its test with "Read-only file
+system", and the message says which setting to change.
+
+### Opting out
+
+Set `DANBYTE_UNIT_HARDENING` in `.env`, or in the environment of
+`install.sh`:
+
+- `auto` (the default) applies the drop-ins described above.
+- `base` gives every unit `base.conf` only.
+- `off` removes Danbyte's drop-ins.
+
+Then run `make -C ~/danbyte unit-hardening` and restart the units. The next
+upgrade keeps the setting. To loosen one unit, use a `50-local.conf`
+instead, for example `ProtectSystem=no` or `SystemCallFilter=`.
+
+### Upgrades and rollback
+
+The upgrade's *swap* step keeps a copy of every `danbyte-*.service.d`
+folder before it links the new units. A rollback puts those folders back
+exactly, and an upgrade from a release without drop-ins comes back without
+any. A unit that cannot start under its drop-in fails the *start* step in
+the usual way: the web health check, or a unit that keeps restarting. That
+triggers the rollback. A timer's job that fails is not caught there; the
+throwaway unit run before linking is what guards those.
+
+### Unit inventory
+
+| Unit | Runs | Writes | Connects to |
+|---|---|---|---|
+| `danbyte-web` | gunicorn | media, plugins, the app directory's upgrade files, certificate drop folder, logs | Postgres, Redis, the user bus (`systemd-run --user` for restarts and upgrades), SMTP, LDAP, outbound HTTPS |
+| `danbyte-ws` | daphne | logs | Postgres, Redis, devices over SSH (the terminal) |
+| `danbyte-frontend-prod` | `vite preview` (node) | `frontend/node_modules/.vite-temp` | the web unit |
+| `danbyte-docs` | `zensical serve` | `site/`, `.cache/` | nothing |
+| `danbyte-workers` | the RQ worker pool | media, backups, plugins, logs, temporary files | everything checks reach: ICMP, SNMP, SSH, WinRM, HTTP(S), nmap (`--unprivileged`), backup targets (SFTP, S3); runs bubblewrap |
+| `danbyte-fastlane` | sub-minute checks | logs | ICMP, TCP, HTTP |
+| periodic jobs (31 timers) | `manage.py <job>` oneshots | media, backups, logs; `danbyte-prune` also the wheelhouse and old upgrade folders | Postgres, Redis, the integrations they sync |
+| `danbyte-auto-upgrade` | starts `danbyte-upgrade.service` | the app directory | GitHub releases, the user bus |
+| `danbyte-acme-renew` | ACME renewal | the certificate drop folder | the ACME server |
+
 ## Planned
 
 Not done yet; tracked for a later release:
 
-- **systemd sandboxing** of the app units (`ProtectSystem`, `PrivateTmp`,
-  `NoNewPrivileges`, a system-call filter and friends), rolled out unit by
-  unit.
+- **System units with `User=danbyte`** instead of `systemctl --user` units,
+  so the filesystem part of the [sandbox](#systemd-sandboxing) applies on
+  every host and the capability lines become possible.
 - **A nonce-based Content-Security-Policy**, so `script-src` can drop
   `'unsafe-inline'`. The CSP report sink (`/api/csp-report/`) is already in
   place to watch for violations first.
