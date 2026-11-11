@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('api', '0270_scan_exempt'),
         ('core', '0066_deploymentsettings_discovery_enabled'),
-        ('discovery', '0005_nmap_engine'),
+        ('discovery', '0006_windows_install_arch'),
         ('monitoring', '0120_winrm_cert_kind'),
     ]
 
