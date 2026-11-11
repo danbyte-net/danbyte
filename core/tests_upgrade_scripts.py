@@ -80,8 +80,15 @@ case "$cmd" in
     for u; do
       case "$u" in
         --now) now=1 ;;
-        *) if [ "$cmd" = enable ]; then echo enabled >"$D/$u.enabled"; [ $now = 1 ] && echo active >"$D/$u.active"
-           else echo disabled >"$D/$u.enabled"; [ $now = 1 ] && echo inactive >"$D/$u.active"; fi ;;
+        *) if [ "$cmd" = enable ]; then
+             loaded "$u" || { echo "Failed to enable unit: Unit file $u does not exist." >&2; exit 1; }
+             echo enabled >"$D/$u.enabled"; [ $now = 1 ] && echo active >"$D/$u.active"
+           else
+             # As systemd does: a unit file that is a symlink to a file
+             # outside the unit path is "linked", and disable deletes it.
+             [ -L "$U/$u" ] && rm -f "$U/$u"
+             echo disabled >"$D/$u.enabled"; [ $now = 1 ] && echo inactive >"$D/$u.active"
+           fi ;;
       esac
     done ;;
   list-unit-files)
@@ -546,6 +553,16 @@ class StageTestCase(SimpleTestCase):
         self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
         self.assertFalse((h.units / "danbyte-upgrade-recover.service").exists())
         self.assertFalse((h.units / "danbyte-newtimer.timer").exists())
+        self.assertLinked(h)
+
+    def assertLinked(self, h: Host) -> None:
+        """Every unit the install linked is still a link to its file."""
+        units = [f"{u}.service" for u in PROD_UNITS]
+        for t in h.timers:
+            units += [f"{t}.service", f"{t}.timer"]
+        for unit in units:
+            self.assertTrue((h.units / unit).is_symlink(), f"{unit} is no longer linked")
+            self.assertEqual(os.readlink(h.units / unit), str(h.app / "services" / unit), unit)
 
 
 class BundleStageTests(StageTestCase):
@@ -789,6 +806,9 @@ class BundleStageTests(StageTestCase):
         self.assertIn("danbyte-admin upgrade recover", st["error"])
         for unit in PROD_UNITS:
             self.assertEqual(h.state(f"{unit}.service"), ("disabled", "inactive"), unit)
+        # Disabled, but still linked: systemd's disable deletes a linked
+        # unit's link, and the stage makes it again.
+        self.assertLinked(h)
         # The retry restores with the target release's restore code.
         recover = h.home / ".danbyte-upgrade" / "recover"
         self.assertEqual((recover / "pgswap.py").read_text(),
@@ -802,8 +822,55 @@ class BundleStageTests(StageTestCase):
         r = h.recover("--retry")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(h.db(), "schema=v1")
-        self.assertEqual(h.state("danbyte-web.service")[0], "enabled")
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service"), ("enabled", "active"), unit)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("enabled", "active"))
+        self.assertEqual(h.state("danbyte-digest.timer"), ("disabled", "inactive"))
+        self.assertLinked(h)
         self.assertEqual(h.status()["outcome"]["code"], "restored")
+        self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
+
+    def test_recovery_links_again_what_an_older_stages_disable_deleted(self):
+        # The journal of a stage before the fix: its disable took the links.
+        h = self.host()
+        h.upgrade(env={"FAKE_VERIFY_RC": "1", "FAKE_RESTORE_FAIL": "1"})
+        for unit in [f"{u}.service" for u in PROD_UNITS] + ["danbyte-dispatch.timer"]:
+            (h.units / unit).unlink()
+        r = h.recover("--retry")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertLinked(h)
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service"), ("enabled", "active"), unit)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("enabled", "active"))
+        self.assertIn("linked danbyte-web.service again", (h.app / ".upgrade.log").read_text())
+
+    def test_a_recovery_that_cannot_start_the_previous_release_says_so(self):
+        h = self.host()
+        h.upgrade(env={"FAKE_VERIFY_RC": "1", "FAKE_RESTORE_FAIL": "1"})
+        # A unit whose file is gone from the tree cannot be linked again.
+        (h.units / "danbyte-ws.service").unlink()
+        (h.app / "services" / "danbyte-ws.service").unlink()
+        r = h.recover("--retry")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        st = h.status()
+        self.assertEqual((st["outcome"]["database"], st["outcome"]["services"]),
+                         ("restored", "stopped"), st)
+        self.assertIn("NOT running", st["error"])
+        self.assertIn("danbyte-ws.service", st["error"])
+        self.assertIn("make install-prod-services", st["error"])
+        self.assertIn("systemctl --user enable --now danbyte-web.service", st["error"])
+        self.assertIn("NOT running", r.stderr)
+        self.assertNotIn("started the previous release", st["error"])
+        # Left open: the next retry restores nothing again, it only starts.
+        self.assertTrue((h.home / ".danbyte-upgrade" / "active").exists())
+        restores = len([c for c in h.calls_list() if c.startswith("py dbtool restore ")])
+        shutil.copy2(REPO / "services" / "danbyte-ws.service", h.app / "services" / "danbyte-ws.service")
+        r = h.recover("--retry")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(len([c for c in h.calls_list() if c.startswith("py dbtool restore ")]),
+                         restores)
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service"), ("enabled", "active"), unit)
         self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
 
     def test_a_success_removes_an_earlier_failed_runs_folder(self):

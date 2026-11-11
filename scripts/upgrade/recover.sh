@@ -70,29 +70,57 @@ fi
 
 log "recover: finishing the upgrade to $VERSION from the journal"
 # From inside a boot transaction a blocking start would wait for this very
-# unit (the app units are ordered after it): queue the starts instead.
+# unit (the app units are ordered after it): queue the starts instead. A
+# person's retry (danbyte-admin upgrade recover) waits, and checks.
 NO_BLOCK=1
+[ "$RETRY" = 1 ] && NO_BLOCK=0
 if j_has restore_failed; then
   # A second try at the restore, then the units the failure disabled. A
   # journal with nothing migrated has nothing to restore: an older stage
   # still ended such an upgrade in restore_failed (#278).
-  if db_touched; then
+  if db_touched && ! j_has db_restored; then
     if ! db_restore; then
       log "recover: the restore failed again: $DB_DETAIL"
+      log "recover: Danbyte stays stopped; the database is as the failed upgrade left it. Retry with: danbyte-admin upgrade recover${BACKUP_ID:+, or restore the pre-upgrade backup: danbyte-admin backup restore $BACKUP_ID --yes}"
       exit 1
     fi
-    OUT_DB=restored
-    ERROR="the upgrade to $VERSION failed; recovery restored the database from the snapshot and started the previous release."
-  else
-    OUT_DB=unchanged
-    ERROR="the upgrade to $VERSION failed; the database was not changed and recovery started the previous release."
   fi
+  if db_touched; then OUT_DB=restored; else OUT_DB=unchanged; fi
+  # The units' links first (an older stage's disable deleted them), then
+  # their enablement, then the start - and only what is there counts.
+  relink_units || :
   if [ -f "$STATE_DIR/disabled" ]; then
-    while IFS= read -r _u; do sc enable "$_u" >/dev/null 2>&1 || :; done <"$STATE_DIR/disabled"
-    rm -f "$STATE_DIR/disabled"
+    while IFS= read -r _u; do
+      unit_loaded "$_u" && sc enable "$_u" >/dev/null 2>&1 || log "recover: $_u could not be enabled"
+    done <"$STATE_DIR/disabled"
   fi
   run 120 "$PY" "$TOOL" maintenance-off || :
-  start_recorded 1 || warn "some units did not start"
+  start_recorded "$NO_BLOCK" || warn "some units did not start"
+  _gone=$(units_missing)
+  _down=""
+  if [ "$NO_BLOCK" = 0 ]; then
+    if [ -n "$(wanted service danbyte-web danbyte-backend)" ]; then
+      wait_health "${DANBYTE_UPGRADE_HEALTH_WAIT:-120}" || _down="health: $HEALTH; "
+    fi
+    _down="$_down$(units_down)"
+  fi
+  if [ -n "$_gone" ] || [ -n "$_down" ]; then
+    _what="the database was not changed"
+    [ "$OUT_DB" = restored ] && _what="the database was restored from the snapshot"
+    ERROR="the upgrade to $VERSION failed; $_what, but the previous release is NOT running (${_gone:+missing: $_gone}${_down:+not active: $_down}). Start it by hand, $(manual_start)"
+    log "recover: $ERROR"
+    printf '%s\n' "$ERROR" >&2
+    OUTCOME=restored
+    OUT_SVC=stopped
+    finish failed open
+    exit 1
+  fi
+  rm -f "$STATE_DIR/disabled"
+  if [ "$OUT_DB" = restored ]; then
+    ERROR="the upgrade to $VERSION failed; recovery restored the database from the snapshot and started the previous release."
+  else
+    ERROR="the upgrade to $VERSION failed; the database was not changed and recovery started the previous release."
+  fi
   OUTCOME=restored
   OUT_SVC=running
   remove_recover

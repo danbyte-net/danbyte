@@ -416,6 +416,36 @@ it, never half restored. A restore that was killed part-way is put back by
 the next attempt before it starts. Other sessions on the database are ended
 first (the upgrade has stopped every service already).
 
+### When the restore fails
+
+The Updates page and the status say *Rollback failed - Danbyte is stopped*.
+The previous release's files are back, but its database still has the new
+release's migrations, so its units stay **disabled**, which means nothing
+starts them, not even a reboot. Their unit files stay linked. Recover with:
+
+```bash
+sudo danbyte-admin upgrade recover        # restores the snapshot again, then starts
+```
+
+It restores the snapshot (unless an earlier attempt already did), links
+again any unit file that is missing, enables and starts what ran before,
+and waits for `/api/health/`. It says *recovered* only when every unit is
+there and running. Otherwise it exits with an error that lists the missing
+or stopped units and the commands to start them by hand, as the service
+user:
+
+```bash
+cd ~/danbyte && make install-prod-services     # links every unit file again
+systemctl --user daemon-reload
+systemctl --user enable --now danbyte-web.service danbyte-ws.service …   # the list it printed
+```
+
+If the snapshot itself cannot be restored, restore the pre-upgrade backup
+instead (`danbyte-admin backup restore <id> --yes`, the id is in the error).
+A rollback that restored the database but could not find a unit says so
+too: *rolled back: but the previous release is NOT running*, with the same
+commands.
+
 Downtime is the time from *quiesce* to *resume*: a dump of the database when
 migrations are pending, the migrations, and the checks - the frontend build
 and the dependency download happen before it.
