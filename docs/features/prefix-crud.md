@@ -117,6 +117,13 @@ editors may not move into another site's or the shared space. You need
 change on every kind the preview lists, within your sites; the refusal names
 what is missing.
 
+The preview shows only what you may view, each row by the rule of its own
+page: an ARP entry or BMC address of a device at another site is not listed.
+Those rows are counted together under **Not shown**, with nothing else about
+them; they stay as they are. When something the renumber would have to
+rewrite is one you can't view, it is refused and says how many such objects
+there are, so another site's records are never changed on your behalf.
+
 Every changed object gets a change-log entry with the cause *Renumbered X to
 Y*, and the prefix's journal records *Renumbered from X to Y.* The API is
 `POST /api/prefixes/<id>/renumber/` - see

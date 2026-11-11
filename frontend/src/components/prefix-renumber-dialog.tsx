@@ -65,6 +65,8 @@ export interface RenumberPreview {
   unchanged_total: number
   unchanged: RenumberUnchanged[]
   linked: KindCount[]
+  /** References the caller may not view: counted only (#504). */
+  hidden_total: number
 }
 
 /** Why `value` can't be the new network for `current`, or null when it can:
@@ -237,6 +239,11 @@ export function PrefixRenumberDialog({
                     {c.label} {c.count} linked
                   </Badge>
                 ))}
+                {current.hidden_total > 0 && (
+                  <Badge variant="outline">
+                    Not shown {current.hidden_total}
+                  </Badge>
+                )}
               </div>
               <DataTable
                 data={changes}

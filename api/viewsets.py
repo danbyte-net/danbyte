@@ -1181,9 +1181,22 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
         """What deleting this prefix does to the addresses on it: how many
         move to a containing prefix (and which one takes most), how many have
         no container and are removed."""
+        from auth_api import rbac
+
         from .views import reparent_ips_out_of
 
-        return Response(reparent_ips_out_of(self.get_object(), dry_run=True))
+        prefix = self.get_object()
+        out = reparent_ips_out_of(prefix, dry_run=True)
+        # The landing prefix is named only when the caller may view it: the
+        # counts are of this prefix's own addresses, its container may be
+        # another site's (#504).
+        if out["parent"] and not self.request.user.is_superuser:
+            landing = Prefix.objects.filter(
+                tenant_id=prefix.tenant_id, vrf_id=prefix.vrf_id, cidr=out["parent"])
+            if not rbac.restrict_queryset(landing, self.request.user, self._tenant_or_403(),
+                                          "prefix", "view").exists():
+                out["parent"] = None
+        return Response(out)
 
     @action(detail=True, methods=["post"], url_path="renumber")
     def renumber(self, request, pk=None):
@@ -1203,7 +1216,8 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
         tenant = self._tenant_or_403()
         try:
             if dry_run:
-                plan = rn.build_plan(prefix, body.get("new_prefix"))
+                plan = rn.build_plan(prefix, body.get("new_prefix"),
+                                     viewer=rn.Viewer(request.user, tenant))
                 blocked = rn.blockers(plan, request.user, tenant)
                 if blocked:
                     raise rn.RenumberError(
@@ -1214,7 +1228,8 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
             if exc.status == 403:
                 raise PermissionDenied(exc.message) from None
             raise ValidationError({exc.field_name: [exc.message]}) from None
-        return Response(rn.describe(plan, dry_run=dry_run, applied=not dry_run))
+        return Response(rn.describe(plan, dry_run=dry_run, applied=not dry_run,
+                                    user=request.user, tenant=tenant))
 
     @object_report.describe_schema(object_report.PREFIX)
     @object_report.report_schema(object_report.PREFIX)

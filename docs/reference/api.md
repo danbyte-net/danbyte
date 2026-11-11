@@ -433,7 +433,8 @@ Both answer:
   "unchanged_total": 1,
   "unchanged": [{"kind": "dhcpscope", "id": "…", "label": "…", "value": "…",
                  "reason": "On a DHCP server: change it there, the next sync follows."}],
-  "linked": [{"kind": "fhrpgroup", "label": "Fhrp groups", "count": 2}]
+  "linked": [{"kind": "fhrpgroup", "label": "Fhrp groups", "count": 2}],
+  "hidden_total": 0
 }
 ```
 
@@ -444,6 +445,16 @@ current network, a `vrf_id`, or a prefix, address or range already in the
 new network answers `400` under `new_prefix`. A kind the caller may not
 change, or a row outside their sites, answers `403` naming it - for the
 preview too. Nothing is written by a refusal.
+
+Every row in `changes`, `unchanged` and `linked` is one the caller may view,
+by the same rule as that object's own API (an ARP sighting through its device
+or VM and `macaddress` view, a BMC endpoint or SNMP binding through its
+target). The others are only counted, all kinds together, in `hidden_total`:
+no address, label or id. A row the renumber would rewrite that the caller
+can't view refuses it with `403` ("N objects you can't view"), and a
+conflicting prefix, address or range they can't view is not named in the
+`400`. Rows counted in `hidden_total` on a successful renumber are references
+left unchanged, which the apply answer counts too.
 
 ## Free space in prefixes
 
