@@ -170,7 +170,7 @@ def nmap_why_not(tenant) -> str:
     if not nmap_engine.allowed():
         return "nmap: Forbidden by the deployment."
     if not DiscoverySettings.for_tenant(tenant).nmap_enabled:
-        return "nmap is switched off on the Discovery card."
+        return "nmap is switched off in the Host discovery settings."
     return ""
 
 

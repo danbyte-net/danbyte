@@ -123,7 +123,10 @@ describe("advisory note", () => {
 
   it("upload and server modes", () => {
     render(<AdvisoryNote value={{ ...base, mode: "upload" }} />)
-    screen.getByText("Import OSV file")
+    const link = screen.getByText("Import OSV file")
+    // The Vulnerability data card, not the top of the page.
+    expect(link.getAttribute("data-to")).toBe("/settings/admin")
+    expect(link.getAttribute("hash")).toBe("vulnerability-data")
     cleanup()
     render(
       <AdvisoryNote value={{ ...base, mode: "server", state: "queued" }} />

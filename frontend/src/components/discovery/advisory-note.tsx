@@ -33,7 +33,7 @@ export function AdvisoryNote({
     text = "Vulnerability data for these packages has not been imported"
     if (value.can_sync)
       action = (
-        <Link to="/settings/admin" className="link">
+        <Link to="/settings/admin" hash="vulnerability-data" className="link">
           Import OSV file
         </Link>
       )

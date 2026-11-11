@@ -398,7 +398,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
      "Integrations"),
     # Built-in discovery (#451): what to read and who authorised it. Runs
     # and their host results read with the profile's view.
-    ("discovery.InventoryProfile", "Inventory profiles", "Integrations"),
+    # Labelled as the UI names them; the slug stays ``inventoryprofile``.
+    ("discovery.InventoryProfile", "Discovery profiles", "Integrations"),
     # ─── Planning ───────────────────────────────────────────────────
     ("planning.Board", "Boards", "Planning"),
     ("planning.TaskStatus", "Task statuses", "Planning"),

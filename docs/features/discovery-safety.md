@@ -79,7 +79,7 @@ names nothing to copy.
 From the other side, a monitoring policy's menu has a **Discovery** section:
 the profiles whose own scope names the same object (*No profile names this*
 when none) and **New discovery profile from this scope**, which opens the
-profile dialog with the scope copied (needs *add* on Inventory profiles).
+profile dialog with the scope copied (needs *add* on Discovery profiles).
 Saving a monitoring policy never starts or schedules a scan.
 
 ### Who may name what
@@ -239,15 +239,15 @@ history](vulnerabilities.md#match-history)).
 
 ## Permissions
 
-Discovery profiles are the RBAC type **Inventory profiles** (group
-*Integrations*), with the extra verb **scan**. No built-in group holds
+Discovery profiles are the RBAC type **Discovery profiles** (slug
+`inventoryprofile`, group *Integrations*), with the extra verb **scan**. No built-in group holds
 *scan*: grant it to the people who may start runs.
 
 | Action | Needs |
 |---|---|
-| See the Discovery tab, profiles, runs | *view* on Inventory profiles; run host rows only for hosts (or addresses) you may view |
-| Create, change, delete a profile | *add* / *change* / *delete* on Inventory profiles, and *view* on every scope member ([who may name what](#who-may-name-what)) |
-| Copy a monitoring policy's scope | *add* or *change* on Inventory profiles, and *view* on the policy |
+| See the Discovery tab, profiles, runs | *view* on Discovery profiles; run host rows only for hosts (or addresses) you may view |
+| Create, change, delete a profile | *add* / *change* / *delete* on Discovery profiles, and *view* on every scope member ([who may name what](#who-may-name-what)) |
+| Copy a monitoring policy's scope | *add* or *change* on Discovery profiles, and *view* on the policy |
 | Pin a shared credential | *view* on that shared credential |
 | **Run now**, package inventory | **scan** on the profile and *view* on device credentials |
 | **Run now**, service scan | **scan** on the profile |
@@ -255,7 +255,7 @@ Discovery profiles are the RBAC type **Inventory profiles** (group
 | The **Hosts** / **Addresses** tab | *view* on the profile; rows you may view |
 | A profile's or run's **Host keys** | *view* on SSH host keys |
 | **Accept N keys** | *change* on SSH host keys, site scope included |
-| List Outposts for **Runs on** | *view* on Inventory profiles |
+| List Outposts for **Runs on** | *view* on Discovery profiles |
 | A host's **Packages** tab, package and OS-build matches | *view* on the host and on installed software |
 | **Open ports** | *view* on IP addresses; rows of addresses you may view |
 | **Findings**: service-scan rows | *view* on IP addresses |
@@ -266,7 +266,7 @@ Discovery profiles are the RBAC type **Inventory profiles** (group
 | Accept or ignore *Set platform* | *change* on the host; *add* on platforms not limited to sites to create one; *change* on a platform to map it |
 | Accept or ignore *Add application* / *Link packages* | *add* on applications not limited to sites / *change* on the application |
 | **Do not scan** | *change* on the object |
-| Read **Host discovery** (transports, nmap, deny subnets) | tenant admin, or *view* on Inventory profiles |
+| Read **Host discovery** (transports, nmap, deny subnets) | tenant admin, or *view* on Discovery profiles |
 | Change transports, nmap, deny subnets | tenant admin |
 | The tenant's **Discovery** switch | tenant admin |
 | **This deployment** | deployment admin; nobody while `DANBYTE_DISCOVERY_ENABLED` is set |

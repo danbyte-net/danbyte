@@ -149,11 +149,11 @@ export function DeploymentRow({ status }: { status: DiscoveryStatus }) {
 
 const TRANSPORT_INFO = {
   ssh_key:
-    "SSH to Linux and Windows hosts with a key login, after the host's SSH key was accepted. Tried first.",
+    "SSH to Linux and Windows hosts with a key login, after the host's SSH key was accepted. Tried before a password of the same credential source.",
   ssh_password:
-    "SSH with a password login, after the host's SSH key was accepted. Turning it off also stops password logins to Linux hosts.",
+    "SSH with a password login, after the host's SSH key was accepted. Turning it off stops every password login, Linux and Windows.",
   winrm:
-    "WinRM over HTTPS with the server certificate verified and a client certificate. Tried last, for hosts without SSH. Plain HTTP, NTLM, Basic and CredSSP are never used.",
+    "WinRM over HTTPS with the server certificate verified and a client certificate. Tried after SSH of the same credential source, for hosts without SSH. Plain HTTP, NTLM, Basic and CredSSP are never used.",
 }
 
 export function TransportRows({ active }: { active: boolean }) {

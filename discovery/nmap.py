@@ -69,7 +69,7 @@ def why_not(tenant) -> str:
     if not s["available"]:
         return f"nmap: {s['label']}."
     if not DiscoverySettings.for_tenant(tenant).nmap_enabled:
-        return "nmap is switched off on the Discovery card."
+        return "nmap is switched off in the Host discovery settings."
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         return "Refusing to run nmap as root."
     return ""
