@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type {
   DiscoveryOutpost,
+  DiscoveryPolicyScope,
   DiscoveryRunsOn,
   DiscoverySettings,
   DiscoveryProfileKind,
@@ -34,10 +35,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { TimePicker } from "@/components/ui/time-picker"
 import { DevicePicker } from "@/components/device-picker"
 import { VMPicker } from "@/components/vm-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
+import { DeviceTypePicker } from "@/components/device-type-picker"
 import { ObjectPicker } from "@/components/object-picker"
 import type { ObjectPickerSpec } from "@/components/object-picker"
 
@@ -48,41 +60,86 @@ import type { ObjectPickerSpec } from "@/components/object-picker"
 // profile never runs.
 
 type Ref = { id: string; label: string }
-type ScopeKey = "sites" | "prefixes" | "devices" | "virtual_machines"
+type ScopeKey =
+  | "sites"
+  | "prefixes"
+  | "devices"
+  | "virtual_machines"
+  | "regions"
+  | "vrfs"
+  | "platforms"
+  | "device_types"
+  | "device_roles"
 const ID_FIELD: Record<ScopeKey, string> = {
   sites: "site_ids",
   prefixes: "prefix_ids",
   devices: "device_ids",
   virtual_machines: "virtual_machine_ids",
+  regions: "region_ids",
+  vrfs: "vrf_ids",
+  platforms: "platform_ids",
+  device_types: "device_type_ids",
+  device_roles: "device_role_ids",
 }
+const SCOPE_ERRORS = [...Object.values(ID_FIELD), "scope_global"]
+const FIELD_KEY = Object.fromEntries(
+  Object.entries(ID_FIELD).map(([k, v]) => [v, k as ScopeKey])
+) as Record<string, ScopeKey>
 
-function SitePicker(props: {
+/** A plain catalog's ObjectPicker preset, for the scope pickers that have
+ *  none of their own (site, region, VRF, platform, device role). */
+function CatalogPicker(props: {
   label: string
+  noun: string
+  path: string
   excludeIds: string[]
   onPickMany: (items: Ref[]) => void
 }) {
+  const { noun, path, ...rest } = props
   const spec = useMemo<ObjectPickerSpec<Site>>(
     () => ({
-      noun: "site",
-      pickerEndpoint: "/api/sites/?picker=1",
-      pickerQueryKey: ["sites-picker"],
-      detailEndpoint: (id) => `/api/sites/${id}/`,
-      detailQueryKey: (id) => ["site", id],
-      listEndpoint: "/api/sites/",
+      noun,
+      pickerEndpoint: `/api/${path}/?picker=1`,
+      pickerQueryKey: [`${path}-picker`],
+      detailEndpoint: (id) => `/api/${path}/${id}/`,
+      detailQueryKey: (id) => [path, id],
+      listEndpoint: `/api/${path}/`,
       searchHint: "Search name…",
       filters: [],
       columns: [{ header: "Name", cell: (s) => s.name }],
     }),
-    []
+    [noun, path]
   )
   return (
     <ObjectPicker
       spec={spec}
       value={null}
       onChange={() => undefined}
-      {...props}
+      {...rest}
     />
   )
+}
+
+/** The pickers of the monitoring policy kinds, in the registry's order. */
+const POLICY_KINDS: {
+  key: ScopeKey
+  label: string
+  noun: string
+  path: string
+}[] = [
+  { key: "regions", label: "Regions", noun: "region", path: "regions" },
+  { key: "vrfs", label: "VRFs", noun: "VRF", path: "vrfs" },
+  { key: "platforms", label: "Platforms", noun: "platform", path: "platforms" },
+  {
+    key: "device_roles",
+    label: "Device roles",
+    noun: "device role",
+    path: "device-roles",
+  },
+]
+
+export function policyScopeLabel(p: DiscoveryPolicyScope): string {
+  return p.global ? "Global" : `${p.scope_label} · ${p.target?.name ?? "none"}`
 }
 
 function Chips({
@@ -120,6 +177,11 @@ function initialScope(p: InventoryProfile | null): Record<ScopeKey, Ref[]> {
     prefixes: map(p?.scope.prefixes),
     devices: map(p?.scope.devices),
     virtual_machines: map(p?.scope.virtual_machines),
+    regions: map(p?.scope.regions),
+    vrfs: map(p?.scope.vrfs),
+    platforms: map(p?.scope.platforms),
+    device_types: map(p?.scope.device_types),
+    device_roles: map(p?.scope.device_roles),
   }
 }
 
@@ -197,12 +259,15 @@ export function ProfileDialog({
   onOpenChange,
   profile,
   onSaved,
+  fromPolicy,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   /** The profile to change; null creates one. */
   profile: InventoryProfile | null
   onSaved?: (p: InventoryProfile) => void
+  /** A new profile starts with this monitoring policy's scope, copied. */
+  fromPolicy?: DiscoveryPolicyScope | null
 }) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
@@ -212,6 +277,9 @@ export function ProfileDialog({
   const [scope, setScope] = useState<Record<ScopeKey, Ref[]>>(
     initialScope(null)
   )
+  const [scopeGlobal, setScopeGlobal] = useState(false)
+  /** Global waits for this confirm before it is ticked. */
+  const [confirmGlobal, setConfirmGlobal] = useState(false)
   const [interval, setInterval] = useState("24")
   const [windowStart, setWindowStart] = useState<string | null>(null)
   const [windowEnd, setWindowEnd] = useState<string | null>(null)
@@ -263,6 +331,7 @@ export function ProfileDialog({
     setDescription(profile?.description ?? "")
     setEnabled(profile?.enabled ?? false)
     setScope(initialScope(profile))
+    setScopeGlobal(profile?.scope_global ?? false)
     setInterval(String(profile?.interval_hours ?? 24))
     setWindowStart(profile?.window_start?.slice(0, 5) ?? null)
     setWindowEnd(profile?.window_end?.slice(0, 5) ?? null)
@@ -278,7 +347,41 @@ export function ProfileDialog({
     setTiming(String(profile?.nmap_timing ?? 3))
     setRunsOn(profile?.runs_on ?? "server")
     setOutpostId(profile?.outpost_id ?? null)
-  }, [open, profile, reset])
+    if (!profile && fromPolicy) copyPolicy(fromPolicy)
+    // copyPolicy only reads its argument and the setters.
+  }, [open, profile, reset, fromPolicy])
+
+  const policies = useQuery({
+    queryKey: ["discovery", "policy-scopes"],
+    queryFn: () =>
+      api<{ results: DiscoveryPolicyScope[] }>("/api/discovery/policy-scopes/"),
+    enabled: open,
+  })
+
+  /** Copy a monitoring policy's scope into this profile's own. A copy, not
+   *  a link: the policy changing later never widens what this scans. */
+  function copyPolicy(p: DiscoveryPolicyScope) {
+    if (!p.copyable) {
+      toast.error(p.reason || "Nothing to copy.")
+      return
+    }
+    if (p.global) {
+      setConfirmGlobal(true)
+    } else if (p.field && p.target) {
+      const key = FIELD_KEY[p.field]
+      const item = { id: p.target.id, label: p.target.name }
+      setScope((s) =>
+        s[key].some((x) => x.id === item.id)
+          ? s
+          : { ...s, [key]: [...s[key], item] }
+      )
+    }
+    if (p.filters)
+      toast.info("Scope copied", {
+        description:
+          "The policy's filters and IP target are not part of a profile's scope.",
+      })
+  }
 
   const add = (key: ScopeKey) => (items: Ref[]) =>
     setScope((s) => ({
@@ -320,6 +423,8 @@ export function ProfileDialog({
       }
       for (const k of Object.keys(ID_FIELD) as ScopeKey[])
         body[ID_FIELD[k]] = ids(k)
+      body.scope_global = scopeGlobal
+      if (scopeGlobal && !profile?.scope_global) body.confirm_global = true
       // Only a new or changed statement re-records the authoriser.
       if (!profile || authorisation.trim() !== profile.authorisation)
         body.authorisation = authorisation
@@ -446,14 +551,39 @@ export function ProfileDialog({
             group
             info={
               scan
-                ? "Scans IPAM addresses only: every address in a named prefix, of a named site, or of a named device or VM. Exempt objects, deny subnets and open maintenance events always win."
-                : "A host is read when it is named here, sits at a named site, or its primary address is in a named prefix. Exempt hosts, deny subnets and open maintenance events always win."
+                ? "Scans IPAM addresses only: every address in a named prefix, of a named site, or of a named device or VM, and every address a monitoring policy on a named region, VRF, platform, device type or role would cover. Exempt objects, deny subnets and open maintenance events always win."
+                : "A host is read when it is named here, sits at a named site, its primary address is in a named prefix, or a monitoring policy on a named region, VRF, platform, device type or role would cover its primary address. Exempt hosts, deny subnets and open maintenance events always win."
             }
           >
             <div className="space-y-3">
+              <FormCombobox
+                label="Use a monitoring policy's scope"
+                value={null}
+                onChange={(id) => {
+                  const p = policies.data?.results.find((x) => x.id === id)
+                  if (p) copyPolicy(p)
+                }}
+                noneLabel="Pick a policy"
+                searchPlaceholder="Search policies…"
+                options={(policies.data?.results ?? []).map((p) => ({
+                  value: p.id,
+                  label: policyScopeLabel(p),
+                }))}
+                info="Copies the policy's scope into this profile once. It is not a link: editing the policy later never changes what this profile scans, because a wider scope needs a new authorisation."
+              />
+              <FormCheckbox
+                label="Everything in this tenant"
+                checked={scopeGlobal}
+                onChange={(v) =>
+                  v ? setConfirmGlobal(true) : setScopeGlobal(false)
+                }
+                info="Every device, VM and address in the tenant. Never implied by an empty scope; saving asks once more."
+              />
               <div className="space-y-1">
-                <SitePicker
+                <CatalogPicker
                   label="Sites"
+                  noun="site"
+                  path="sites"
                   excludeIds={ids("sites")}
                   onPickMany={add("sites")}
                 />
@@ -492,15 +622,36 @@ export function ProfileDialog({
                   onRemove={remove("virtual_machines")}
                 />
               </div>
-              {(fieldErrors.site_ids ||
-                fieldErrors.prefix_ids ||
-                fieldErrors.device_ids ||
-                fieldErrors.virtual_machine_ids) && (
+              {POLICY_KINDS.map((k) => (
+                <div key={k.key} className="space-y-1">
+                  <CatalogPicker
+                    label={k.label}
+                    noun={k.noun}
+                    path={k.path}
+                    excludeIds={ids(k.key)}
+                    onPickMany={add(k.key)}
+                  />
+                  <Chips items={scope[k.key]} onRemove={remove(k.key)} />
+                </div>
+              ))}
+              <div className="space-y-1">
+                <DeviceTypePicker
+                  label="Device types"
+                  value={null}
+                  onChange={() => undefined}
+                  excludeIds={ids("device_types")}
+                  onPickMany={add("device_types")}
+                />
+                <Chips
+                  items={scope.device_types}
+                  onRemove={remove("device_types")}
+                />
+              </div>
+              {SCOPE_ERRORS.some((f) => fieldErrors[f]) && (
                 <p className="text-xs text-destructive">
-                  {fieldErrors.site_ids ||
-                    fieldErrors.prefix_ids ||
-                    fieldErrors.device_ids ||
-                    fieldErrors.virtual_machine_ids}
+                  {SCOPE_ERRORS.map((f) => fieldErrors[f])
+                    .filter(Boolean)
+                    .join(" ")}
                 </p>
               )}
             </div>
@@ -560,7 +711,7 @@ export function ProfileDialog({
                   (o) => o.value === "builtin" || nmapOn || engine === "nmap"
                 )}
                 error={fieldErrors.scan_engine}
-                info="Built-in needs nothing installed. nmap recognises more services and versions; it is offered once a tenant admin switches it on on the Discovery card."
+                info="Built-in needs nothing installed. nmap recognises more services and versions; it is offered once a tenant admin switches it on under Monitoring → Settings → Host discovery."
               />
               {engine === "nmap" && (
                 <FormSelect
@@ -655,6 +806,30 @@ export function ProfileDialog({
           />
         </form>
       </DialogContent>
+      <AlertDialog open={confirmGlobal} onOpenChange={setConfirmGlobal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Everything in this tenant?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {scan
+                ? "Every IPAM address in the tenant is scanned, including ones added later."
+                : "Every device and VM in the tenant is read, including ones added later."}{" "}
+              Exempt hosts, deny subnets and maintenance still apply.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setScopeGlobal(true)
+                setConfirmGlobal(false)
+              }}
+            >
+              Scope to everything
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }
