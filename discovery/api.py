@@ -42,10 +42,12 @@ from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import StandardPagination, TenantScopedViewSet
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin, can_manage_deployment
+from danbyte_checks import nmap as danbyte_nmap
 from danbyte_checks import service_scan
 from monitoring.models import SharedCredential
 
 from . import gate, runner, scope, services
+from . import nmap as nmap_engine
 from .models import (
     PROFILE_KINDS,
     DiscoverySettings,
@@ -233,6 +235,7 @@ def discovery_settings(request):
         raise PermissionDenied("inventoryprofile.view required.")
     row = DiscoverySettings.for_tenant(tenant)
     winrm_ok, winrm_label, winrm_reason = gate.winrm_state()
+    nmap_state = nmap_engine.state()
     if request.method == "PATCH":
         if not admin:
             raise PermissionDenied("Tenant admin required.")
@@ -253,12 +256,21 @@ def discovery_settings(request):
             for key, value in t.items():
                 setattr(row, TRANSPORT_FIELDS[key], value)
                 fields.append(TRANSPORT_FIELDS[key])
+        if "nmap" in request.data:
+            on = request.data["nmap"]
+            if not isinstance(on, bool):
+                raise ValidationError({"nmap": "true or false."})
+            if on and not nmap_state["available"]:
+                raise ValidationError({"nmap": f"nmap: {nmap_state['label']}."})
+            row.nmap_enabled = on
+            fields.append("nmap_enabled")
         if fields:
             row.save(update_fields=[*fields, "updated_at"])
     return Response({
         "deny_subnets": row.deny_subnets,
         "transports": {key: getattr(row, f) for key, f in TRANSPORT_FIELDS.items()},
         "winrm": {"available": winrm_ok, "label": winrm_label, "reason": winrm_reason},
+        "nmap": {**nmap_state, "enabled": row.nmap_enabled and nmap_state["available"]},
         "can_change": admin, "updated_at": row.updated_at})
 
 
@@ -295,6 +307,7 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
             "shared_credential_id", "shared_credential",
             "interval_hours", "window_start", "window_end", "max_concurrency",
             "timeout_seconds", "ports", "connects_per_second", "rate_cap",
+            "scan_engine", "nmap_version_intensity", "nmap_timing",
             "authorisation", "authorised", "authorised_by_name",
             "authorised_at", "blocked_reason", "last_run_at", "last_run",
             "created_at", "updated_at",
@@ -333,6 +346,18 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
         cap = services.rate_cap()
         if not 1 <= value <= cap:
             raise ValidationError(f"From 1 to {cap} (this deployment's cap).")
+        return value
+
+    def validate_nmap_version_intensity(self, value):
+        lo, hi = danbyte_nmap.INTENSITY_RANGE
+        if not lo <= value <= hi:
+            raise ValidationError(f"From {lo} to {hi}.")
+        return value
+
+    def validate_nmap_timing(self, value):
+        lo, hi = danbyte_nmap.TIMING_RANGE
+        if not lo <= value <= hi:
+            raise ValidationError(f"From {lo} to {hi} (-T{lo} to -T{hi}).")
         return value
 
     def get_blocked_reason(self, obj) -> str:
@@ -389,6 +414,15 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
                 ids = {o.pk for o in picked}
                 if visible.filter(pk__in=ids).count() != len(ids):
                     raise ValidationError({ID_FIELDS[field]: "Not found."})
+        kind = attrs.get("kind") or (self.instance.kind if self.instance else "inventory")
+        engine = attrs.get("scan_engine")
+        if engine == "nmap" and (self.instance is None
+                                 or self.instance.scan_engine != "nmap"):
+            if kind != "service_scan":
+                raise ValidationError({"scan_engine": "Only a service scan has an engine."})
+            reason = nmap_engine.why_not(tenant)
+            if reason:
+                raise ValidationError({"scan_engine": reason})
         pinned = attrs.get("shared_credential")
         if pinned is not None:
             if pinned.kind not in (*scope.SSH_KINDS, scope.WINRM_KIND):

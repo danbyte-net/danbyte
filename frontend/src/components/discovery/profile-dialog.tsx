@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type {
+  DiscoverySettings,
   DiscoveryProfileKind,
   InventoryProfile,
   SharedCredential,
@@ -120,6 +121,20 @@ function initialScope(p: InventoryProfile | null): Record<ScopeKey, Ref[]> {
   }
 }
 
+const ENGINE_OPTIONS = [
+  { value: "builtin", label: "Built-in" },
+  { value: "nmap", label: "nmap" },
+]
+const INTENSITY_OPTIONS = [0, 1, 2, 3, 4, 5].map((n) => ({
+  value: String(n),
+  label: n === 2 ? "2 (light)" : String(n),
+}))
+const TIMING_OPTIONS = [
+  { value: "2", label: "Polite (-T2)" },
+  { value: "3", label: "Normal (-T3)" },
+  { value: "4", label: "Aggressive (-T4)" },
+]
+
 /** "22, 80, 8000-8100" -> [22, 80, "8000-8100"]; the server validates. */
 function parsePorts(text: string): (number | string)[] {
   return text
@@ -159,8 +174,16 @@ export function ProfileDialog({
   const [kind, setKind] = useState<DiscoveryProfileKind>("inventory")
   const [ports, setPorts] = useState("")
   const [rate, setRate] = useState("20")
+  const [engine, setEngine] = useState<"builtin" | "nmap">("builtin")
+  const [intensity, setIntensity] = useState("2")
+  const [timing, setTiming] = useState("3")
   const scan = kind === "service_scan"
   const { canDo } = useMe()
+  const nmapOn = !!useQuery({
+    queryKey: ["discovery", "settings"],
+    queryFn: () => api<DiscoverySettings>("/api/discovery/settings/"),
+    enabled: open && scan,
+  }).data?.nmap.enabled
   const shared = useQuery({
     queryKey: ["shared-credentials", "ssh"],
     queryFn: () =>
@@ -189,6 +212,9 @@ export function ProfileDialog({
     setKind(profile?.kind ?? "inventory")
     setPorts((profile?.ports ?? []).join(", "))
     setRate(String(profile?.connects_per_second ?? 20))
+    setEngine(profile?.scan_engine ?? "builtin")
+    setIntensity(String(profile?.nmap_version_intensity ?? 2))
+    setTiming(String(profile?.nmap_timing ?? 3))
   }, [open, profile, reset])
 
   const add = (key: ScopeKey) => (items: Ref[]) =>
@@ -218,6 +244,11 @@ export function ProfileDialog({
       if (scan) {
         body.ports = parsePorts(ports)
         body.connects_per_second = Number(rate)
+        body.scan_engine = engine
+        if (engine === "nmap") {
+          body.nmap_version_intensity = Number(intensity)
+          body.nmap_timing = Number(timing)
+        }
       } else {
         body.timeout_seconds = Number(timeout)
         body.shared_credential_id = sharedId
@@ -404,6 +435,40 @@ export function ProfileDialog({
                 error={fieldErrors.connects_per_second}
                 info="New TCP connections per second across the whole run. The deployment caps it."
               />
+            </FormRow>
+          )}
+          {scan && (
+            <FormRow>
+              <FormSelect
+                label="Engine"
+                value={engine}
+                onChange={(v) => setEngine(v === "nmap" ? "nmap" : "builtin")}
+                options={ENGINE_OPTIONS.filter(
+                  (o) => o.value === "builtin" || nmapOn || engine === "nmap"
+                )}
+                error={fieldErrors.scan_engine}
+                info="Built-in needs nothing installed. nmap recognises more services and versions; it is offered once a tenant admin switches it on on the Discovery card."
+              />
+              {engine === "nmap" && (
+                <FormSelect
+                  label="Version probes"
+                  value={intensity}
+                  onChange={(v) => setIntensity(v ?? "2")}
+                  options={INTENSITY_OPTIONS}
+                  error={fieldErrors.nmap_version_intensity}
+                  info="nmap --version-intensity: how many service probes it tries per port. Higher finds more and sends more."
+                />
+              )}
+              {engine === "nmap" && (
+                <FormSelect
+                  label="Timing"
+                  value={timing}
+                  onChange={(v) => setTiming(v ?? "3")}
+                  options={TIMING_OPTIONS}
+                  error={fieldErrors.nmap_timing}
+                  info="nmap's timing template. The connects-per-second cap applies as --max-rate either way."
+                />
+              )}
             </FormRow>
           )}
           <FormRow>

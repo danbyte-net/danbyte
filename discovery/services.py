@@ -208,7 +208,11 @@ def execute(run, profile, *, user=None, now=None, scanner=None) -> tuple[dict, l
         p = plan(profile)
     except ValueError as exc:
         return {"hosts": len(targets)}, [f"The port list is not valid: {exc}"[:300]]
-    scanner = scanner or _engine(profile)
+    if scanner is None:
+        try:
+            scanner = _engine(profile)
+        except Exception as exc:  # noqa: BLE001 - nmap refused: fail the run, scan nothing
+            return {"hosts": len(targets)}, [str(exc)[:300]]
     todo = [t for t in targets if not t.skip]
     by_address: dict[str, object] = {}
     if todo:
@@ -252,6 +256,10 @@ def execute(run, profile, *, user=None, now=None, scanner=None) -> tuple[dict, l
 
 
 def _engine(profile):
+    if profile.scan_engine == "nmap":
+        from . import nmap
+
+        return nmap.scanner(profile)
     return builtin_scan
 
 

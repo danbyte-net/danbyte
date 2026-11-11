@@ -306,6 +306,13 @@ function Overview({ profile: p }: { profile: InventoryProfile }) {
             ),
           },
           {
+            label: "Engine",
+            value:
+              p.scan_engine === "nmap"
+                ? `nmap, version probes ${p.nmap_version_intensity}, -T${p.nmap_timing}`
+                : "Built-in",
+          },
+          {
             label: "Connects per second",
             value: (
               <span className="num">

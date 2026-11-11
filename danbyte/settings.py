@@ -877,6 +877,14 @@ except ValueError:
     from django.core.exceptions import ImproperlyConfigured
 
     raise ImproperlyConfigured("DANBYTE_DISCOVERY_SCAN_MAX_RATE must be a number.") from None
+# nmap for service scans (#451 B4): never installed or bundled by Danbyte.
+# NMAP_BINARY is the absolute path of one the admin installed; unset, `nmap`
+# is looked up on the service user's PATH. DANBYTE_DISCOVERY_NMAP_ALLOWED=
+# False forbids it for every tenant.
+NMAP_BINARY = os.getenv("NMAP_BINARY", "").strip()
+DISCOVERY_NMAP_ALLOWED = (
+    os.getenv("DANBYTE_DISCOVERY_NMAP_ALLOWED", "True").strip().lower()
+    not in ("false", "0", "no", "off"))
 SSRF_ALLOWLIST = [
     p.strip() for p in os.getenv("DANBYTE_SSRF_ALLOWLIST", "").split(",") if p.strip()
 ]

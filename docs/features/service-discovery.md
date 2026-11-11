@@ -200,6 +200,74 @@ Danbyte ships Recog's data, converted, not its code:
   list and the JSON diff, run the discovery tests, update `RECOG-NOTICE` and
   this section.
 
+## The nmap engine
+
+A service-scan profile can use **nmap** instead of the built-in engine,
+for better service and version recognition. It is optional: everything
+above works with nothing installed.
+
+**Turn it on.** Install nmap yourself, under its own licence, on the
+Danbyte server (`apt install nmap` on Debian and Ubuntu). Danbyte never
+installs or bundles it. It looks for the binary once per process, when it
+is first asked: `NMAP_BINARY` (an absolute path) when set, else `nmap` on
+the service user's PATH. The **nmap** switch on the Discovery card shows
+what it found - *nmap 7.98 at /usr/bin/nmap*, or *Not found* - and a tenant
+admin can switch it on only when one was found. Restart the web and worker
+units after installing it. `DANBYTE_DISCOVERY_NMAP_ALLOWED=False` forbids it
+for every tenant (*Forbidden by the deployment*).
+
+Then a service-scan profile's **Engine** can be *nmap*, with **Version
+probes** (`--version-intensity`, 0 to 5, default 2) and **Timing** (`-T2`
+polite, `-T3` normal, `-T4` aggressive; default `-T3`). When a run starts
+Danbyte checks again that the deployment allows nmap, the binary is there,
+the switch is on and the worker is not running as root; otherwise the run
+fails without starting nmap.
+
+**What runs.** Danbyte builds the whole argument list itself
+(`danbyte_checks/nmap.py`), from fixed flags and bounded numbers; nothing a
+person types reaches it:
+
+```
+nmap -sT -sV --version-intensity <0-5> --unprivileged -Pn -n
+     -p <the profile's ports> -T<2-4> --max-rate <connects per second>
+     --max-retries 1 --host-timeout 300s --max-hostgroup <hosts at once>
+     -oX - <IP addresses>
+```
+
+- Targets are the scan's IPAM addresses, each checked to be an IP literal
+  and written in canonical form - never a host name or other text.
+- `-sT`: TCP connect only. No SYN scan, no OS detection (`-O`), no `-A`,
+  and **no NSE scripts at all** in this version - nothing that could brute
+  force, exploit or send what was found to a third party.
+- `-sV` sends nmap's own service probes to open ports, more than the
+  built-in engine's single greeting read or GET: expect more traffic per
+  open port, especially at higher version-probe settings.
+- It runs without a shell (an argument list), as the unprivileged service
+  user (refused as root), in a fresh temporary directory, with a minimal
+  environment and standard input closed. At most 32 MB of output is read;
+  nmap is killed with its process group after 300 s per batch of addresses
+  (at most 5 h).
+- The XML is read with the standard library. The only DOCTYPE accepted is
+  nmap's own bare `<!DOCTYPE nmaprun>`; any other, and any ENTITY
+  declaration, is refused. Only open TCP ports of the addresses that were
+  asked for are kept.
+
+Results are the same observed services, source *nmap*: the service name,
+product and version nmap reports, its first application or OS CPE
+(converted to CPE 2.3), and a confidence from how nmap decided - *High* for
+a probed match with a version, *Medium* for a probed match without one,
+*Low* when nmap only guessed from the port number. They feed the same
+review queue and, like banners, never create vulnerability matches.
+
+**Licence.** Nothing of nmap is bundled with Danbyte: no binary, no data
+files, no code. Danbyte runs a binary the administrator installed and reads
+the results the administrator asked for. nmap's data files (such as
+`nmap-service-probes`) are never read by Danbyte's own engine. nmap is
+distributed under the Nmap Public Source License; using it is between you
+and its authors.
+
+**Outposts** do not run nmap: service scans run on the server only.
+
 ## The review queue
 
 **Findings** on the Discovery page (and on each service-scan profile and
@@ -253,7 +321,8 @@ server cannot reach is not scanned.
 
 | Endpoint | |
 |---|---|
-| `/api/discovery/profiles/` | `kind` (`inventory`, `service_scan`; fixed once created), `ports`, `connects_per_second`, `rate_cap` (read-only); `?kind=` filters |
+| `/api/discovery/profiles/` | `kind` (`inventory`, `service_scan`; fixed once created), `ports`, `connects_per_second`, `rate_cap` (read-only), `scan_engine` (`builtin`, `nmap`), `nmap_version_intensity` (0-5), `nmap_timing` (2-4); `?kind=` filters |
+| `GET`, `PATCH /api/discovery/settings/` | `nmap`: `{available, enabled, path, version, label, reason}`; `PATCH {"nmap": true}` (tenant admin, only while available) |
 | `GET /api/discovery/runs/` | `kind` on each run; `?kind=` filters |
 | `GET /api/discovery/services/` | Observed services (`?run=`, `?profile=`, `?ip_address=`, `?device=`, `?virtual_machine=`, `?confidence=`, `?search=`, `?current=false` for closed ones too) |
 | `GET /api/discovery/findings/` | Proposals (`?kind=service,software,cpe`, `?ignored=true`, and the filters above); `totals` by kind |

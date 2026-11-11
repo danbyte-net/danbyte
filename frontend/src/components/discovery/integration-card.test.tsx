@@ -49,6 +49,14 @@ const SETTINGS: DiscoverySettings = {
   deny_subnets: [],
   transports: { ssh_key: true, ssh_password: true, winrm: false },
   winrm: { available: true, label: "", reason: "" },
+  nmap: {
+    available: true,
+    enabled: false,
+    path: "/usr/bin/nmap",
+    version: "7.98",
+    label: "nmap 7.98 at /usr/bin/nmap",
+    reason: "",
+  },
   can_change: true,
   updated_at: "2026-11-11T00:00:00Z",
 }
@@ -125,6 +133,7 @@ describe("the transports", () => {
       "SSH key login",
       "SSH password login",
       "WinRM over HTTPS",
+      "nmap",
     ])
     expect(sw("WinRM over HTTPS").getAttribute("data-state")).toBe("unchecked")
     fireEvent.click(sw("SSH password login"))
@@ -152,5 +161,45 @@ describe("the transports", () => {
       expect(screen.getByText("Forbidden by the deployment")).toBeTruthy()
     )
     expect(sw("WinRM over HTTPS").hasAttribute("disabled")).toBe(true)
+  })
+})
+
+describe("the nmap switch", () => {
+  it("shows what was found and saves", async () => {
+    apiMock.mockImplementation((_path, init) =>
+      Promise.resolve(
+        init?.method === "PATCH"
+          ? { ...SETTINGS, nmap: { ...SETTINGS.nmap, enabled: true } }
+          : SETTINGS
+      )
+    )
+    wrap(status({ enabled: true }))
+    await waitFor(() =>
+      expect(screen.getByText("nmap 7.98 at /usr/bin/nmap")).toBeTruthy()
+    )
+    fireEvent.click(sw("nmap"))
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/api/discovery/settings/",
+        expect.objectContaining({ body: JSON.stringify({ nmap: true }) })
+      )
+    )
+  })
+
+  it("is disabled when nmap is not found", async () => {
+    apiMock.mockResolvedValue({
+      ...SETTINGS,
+      nmap: {
+        available: false,
+        enabled: false,
+        path: "",
+        version: "",
+        label: "Not found",
+        reason: "No nmap the service user can run.",
+      },
+    })
+    wrap(status({ enabled: true }))
+    await waitFor(() => expect(screen.getByText("Not found")).toBeTruthy())
+    expect(sw("nmap").hasAttribute("disabled")).toBe(true)
   })
 })

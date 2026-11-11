@@ -17,11 +17,12 @@ credentials](device-access.md#shared-credentials), and reads only. Nothing
 is installed on the host, nothing is written there, and no command runs
 that is not listed on this page.
 
-!!! note "What comes later"
-    A service scan of your own address space and an optional nmap adapter
-    are planned as separate switches on the same card. They are not here
-    yet. Windows CVEs from Microsoft's advisories (by OS build) are
-    [here](#windows-builds).
+!!! note "Service scans"
+    A second kind of profile scans TCP ports of your IPAM addresses and
+    proposes services and installed software for review, with the built-in
+    engine or an nmap you installed: see
+    [Discovery: service scan](service-discovery.md). Windows CVEs from
+    Microsoft's advisories (by OS build) are [here](#windows-builds).
 
 ## Turn it on
 

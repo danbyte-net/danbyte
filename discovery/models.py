@@ -41,6 +41,7 @@ PROFILE_KINDS = [("inventory", "Package inventory"), ("service_scan", "Service s
 #: Service-scan connections per second, per profile; the deployment cap
 #: ``DANBYTE_DISCOVERY_SCAN_MAX_RATE`` is the ceiling.
 SCAN_RATE_DEFAULT = 20
+SCAN_ENGINES = [("builtin", "Built-in"), ("nmap", "nmap")]
 #: Per-host outcomes. The first block comes from the collector
 #: (``danbyte_checks.inventory``), the rest from the scope checks that run
 #: before any connection is made.
@@ -94,6 +95,10 @@ class DiscoverySettings(TimestampedModel):
     ssh_key_enabled = models.BooleanField(default=True, db_default=True)
     ssh_password_enabled = models.BooleanField(default=True, db_default=True)
     winrm_enabled = models.BooleanField(default=False, db_default=False)
+    #: Service scans may use nmap (B4): only while the server finds an nmap
+    #: binary and the deployment allows it (``discovery.nmap``). Off by
+    #: default.
+    nmap_enabled = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         verbose_name = "discovery settings"
@@ -160,6 +165,14 @@ class InventoryProfile(NumIdMixin, TimestampedModel):
     #: Service scan: new connections per second across the run.
     connects_per_second = models.PositiveSmallIntegerField(default=SCAN_RATE_DEFAULT,
                                                            db_default=SCAN_RATE_DEFAULT)
+    #: Service scan engine: Danbyte's own, or an nmap the admin installed
+    #: (B4). Both write the same observed services.
+    scan_engine = models.CharField(max_length=8, choices=SCAN_ENGINES, default="builtin",
+                                   db_default="builtin")
+    #: nmap only: ``--version-intensity`` (0-5) and the timing template
+    #: ``-T2``-``-T4``.
+    nmap_version_intensity = models.PositiveSmallIntegerField(default=2, db_default=2)
+    nmap_timing = models.PositiveSmallIntegerField(default=3, db_default=3)
     #: Bookkeeping, by UPDATE (out of the change log).
     last_run_at = models.DateTimeField(null=True, blank=True, editable=False)
 

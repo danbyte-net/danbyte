@@ -18206,6 +18206,17 @@ export interface DiscoverySettings {
     label: string
     reason: string
   }
+  /** Service scans may use an nmap the admin installed (#451 B4). */
+  nmap: {
+    /** Found, runnable and not forbidden by the deployment. */
+    available: boolean
+    enabled: boolean
+    path: string
+    version: string
+    /** "nmap 7.95 at /usr/bin/nmap", "Not found", … */
+    label: string
+    reason: string
+  }
   can_change: boolean
   updated_at: string
 }
@@ -18259,6 +18270,11 @@ export interface InventoryProfile {
   connects_per_second: number
   /** The deployment's ceiling on connects_per_second. */
   rate_cap: number
+  /** Service scan engine (#451 B4). */
+  scan_engine: "builtin" | "nmap"
+  /** nmap only: --version-intensity 0-5 and the timing template -T2..-T4. */
+  nmap_version_intensity: number
+  nmap_timing: number
   site_ids: string[]
   prefix_ids: string[]
   device_ids: string[]

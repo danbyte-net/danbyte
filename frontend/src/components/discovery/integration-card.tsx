@@ -206,11 +206,64 @@ export function TransportRows({ active }: { active: boolean }) {
   )
 }
 
+export function NmapRow({ active }: { active: boolean }) {
+  const qc = useQueryClient()
+  const q = useQuery({
+    queryKey: ["discovery", "settings"],
+    queryFn: () => api<DiscoverySettings>("/api/discovery/settings/"),
+    enabled: active,
+  })
+  const save = useMutation({
+    mutationFn: (nmap: boolean) =>
+      api<DiscoverySettings>("/api/discovery/settings/", {
+        method: "PATCH",
+        body: JSON.stringify({ nmap }),
+      }),
+    onSuccess: (d) => {
+      qc.setQueryData(["discovery", "settings"], d)
+      toast.success(d.nmap.enabled ? "nmap on" : "nmap off")
+    },
+    onError: (err) => apiErrorToast(err),
+  })
+  if (!active || !q.data?.nmap) return null
+  const s = q.data
+  const n = s.nmap
+  return (
+    <div className="space-y-1.5 border-t border-border pt-2">
+      <SwitchRow
+        label="nmap"
+        info={
+          <>
+            Service scans may use an nmap the administrator installed, for
+            better service and version recognition. Danbyte never installs it;
+            set <code className="font-mono">NMAP_BINARY</code> or put nmap on
+            the service user&apos;s PATH. Unprivileged connect scans only, no
+            scripts.
+          </>
+        }
+        checked={n.enabled}
+        disabled={!s.can_change || !n.available || save.isPending}
+        reason={!n.available ? n.reason : "Tenant admins change this."}
+        badge={
+          <Badge
+            variant={n.available ? "secondary" : "warning"}
+            className="font-mono"
+          >
+            {n.label}
+          </Badge>
+        }
+        onChange={(v) => save.mutate(v)}
+      />
+    </div>
+  )
+}
+
 export function DiscoveryCardBody({ status }: { status: DiscoveryStatus }) {
   return (
     <div className="space-y-2">
       <DeploymentRow status={status} />
       <TransportRows active={status.active} />
+      <NmapRow active={status.active} />
     </div>
   )
 }

@@ -14,3 +14,8 @@ danbyte_checks/data/recog.json is converted from Rapid7 Recog (v3.3.2),
 Copyright (c) 2014-2015, Rapid7, licensed under the BSD 2-Clause License.
 The source, pinned hashes and the full licence text are in
 danbyte_checks/data/RECOG-NOTICE.
+
+nmap is not part of Danbyte. The optional nmap engine for service scans runs
+an nmap binary the administrator installed and reads the XML it writes;
+no nmap code, binary or data file is distributed with Danbyte, and nmap's
+data files are not read by Danbyte's own scan engine.
