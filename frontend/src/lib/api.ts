@@ -278,6 +278,9 @@ export interface Prefix {
   id: string
   numid: number | null
   cidr: string
+  /** Built-in discovery never contacts it (#451). Read-only here - set with
+   * POST /api/discovery/exempt/. */
+  scan_exempt?: boolean
   /** Backs a DHCP scope. */
   dhcp?: boolean
   status: StatusMini | null
@@ -1025,6 +1028,12 @@ export interface IPAddress {
   /** Every check parked: nothing runs, nothing counts. Read-only here - set
    * with POST /api/monitoring/ips/<id>/exclude/. */
   monitoring_excluded?: boolean
+  /** Built-in discovery never contacts it (#451). Read-only here - set with
+   * POST /api/discovery/exempt/. */
+  scan_exempt?: boolean
+  /** The exempt prefix that covers it (detail only); ids null when the
+   * prefix is not visible to the caller. */
+  scan_exempt_via?: { id: string | null; cidr: string | null } | null
   /** Availability counts from here (a reset); null = all history counts. */
   availability_since?: string | null
   is_primary_for_device: boolean
@@ -1846,6 +1855,9 @@ export interface Device {
   id: string
   numid: number | null
   name: string
+  /** Built-in discovery never contacts it (#451). Read-only here - set with
+   * POST /api/discovery/exempt/. */
+  scan_exempt?: boolean
   /** Download URL of the device's own 3D model, or null (inherits). */
   model_3d?: string | null
   model_3d_fit?: Model3DFit
@@ -6608,6 +6620,9 @@ export interface VirtualMachine {
   id: string
   numid: number | null
   name: string
+  /** Built-in discovery never contacts it (#451). Read-only here - set with
+   * POST /api/discovery/exempt/. */
+  scan_exempt?: boolean
   /** This VM's own config-context data, merged last; null = none. */
   local_context_data?: Record<string, unknown> | null
   /** PRTG registration: follow policies, always, or never. */

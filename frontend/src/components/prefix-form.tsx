@@ -30,7 +30,11 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { useSaveObject } from "@/lib/save-object"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import {
+  ScanExemptField,
+  useScanExemptDraft,
+} from "@/components/discovery/scan-exempt-field"
 
 // Pure form body - no dialog chrome. Rendered by /prefixes/new and
 // /prefixes/$id/edit routes. Replaces PrefixFormDialog.
@@ -69,6 +73,10 @@ export function PrefixForm({
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  // Discovery's "Do not scan" (#451): written once the prefix saved; not
+  // offered while planning (the exempt call is not staged).
+  const planning = !!usePlanTarget()
+  const scanExempt = useScanExemptDraft("prefix", planning ? null : prefix)
   // Cloneable fields read from the edit object or the clone seed; the CIDR reads
   // from `prefix`/`initial` only, so a clone starts it blank.
   const seed = prefix ?? clone
@@ -177,12 +185,14 @@ export function PrefixForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      return saveObject<Prefix>({
+      const saved = await saveObject<Prefix>({
         objectType: "api.prefix",
         endpoint: "/api/prefixes/",
         id: isEdit ? prefix!.id : undefined,
         payload,
       })
+      await scanExempt.commit()
+      return saved
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["prefixes"] })
@@ -373,6 +383,11 @@ export function PrefixForm({
               error={fieldErrors.description}
             />
           </FormSection>
+          {scanExempt.show && (
+            <FormSection title="Discovery" card>
+              <ScanExemptField draft={scanExempt} />
+            </FormSection>
+          )}
         </FormColumn>
       </FormColumns>
 

@@ -123,9 +123,17 @@ the whole scope its authorisation covers. A run reads at most 4,096 hosts.
 
 A device, VM, IP address or prefix can be marked *exempt from discovery*;
 nothing in discovery contacts it, whatever a profile says. A prefix exempts
-every address inside it. On a profile's **Hosts** tab, **Exempt** and
-**Include** set it for a device or VM (they need *change* on it); the API
-sets it on all four:
+every address inside it. While Discovery is on, the edit form of a device,
+VM, IP address or prefix has **Do not scan** under *Discovery* (shown to
+users who may change the object; not offered in plan mode); it is saved with
+the form. An address inside an exempt prefix says *Exempt through
+10.0.0.0/24* there, read-only - change it on the prefix (a prefix you may
+not view is named *a prefix*). On a profile's **Hosts** tab, **Exempt** and
+**Include** set it for a device or VM. Both need *change* on the object,
+site scope included. The device, VM, IP address and prefix APIs return the
+flag read-only as `scan_exempt` (an address's detail also has
+`scan_exempt_via`: `{id, cidr}` of the exempt prefix covering it, or null);
+a `PATCH` does not change it. The API sets it on all four:
 
 ```http
 POST /api/discovery/exempt/

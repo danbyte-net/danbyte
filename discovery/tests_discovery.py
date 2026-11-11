@@ -694,6 +694,44 @@ class ExemptAndSettingsApiTests(ApiBase):
         self.assertTrue(ChangeLogEntry.objects.filter(object_id=str(a.pk),
                                                       changes__has_key="scan_exempt").exists())
 
+    def test_the_flag_reads_on_every_object_and_a_patch_cannot_set_it(self):
+        a = self.host("a", "10.0.0.1", site=self.site)
+        vm = self.host("v", "10.0.0.2", vm=True)
+        self.login(self.su)
+        for url in (f"/api/devices/{a.pk}/", f"/api/virtual-machines/{vm.pk}/",
+                    f"/api/ips/{a.primary_ip.pk}/", f"/api/prefixes/{self.prefix.pk}/"):
+            self.assertIs(self.client.get(url).json()["scan_exempt"], False, url)
+            r = self.client.patch(url, {"scan_exempt": True}, format="json")
+            self.assertIn(r.status_code, (200, 400), url)
+            self.assertIs(self.client.get(url).json()["scan_exempt"], False, url)
+        rows = self.client.get("/api/devices/").json()["results"]
+        self.assertTrue(all("scan_exempt" in r for r in rows))
+
+    def test_an_address_names_the_prefix_it_is_exempt_through(self):
+        from api.models import Prefix
+
+        a = self.host("a", "10.0.0.1", site=self.site)
+        url = f"/api/ips/{a.primary_ip.pk}/"
+        self.login(self.su)
+        self.assertIsNone(self.client.get(url).json()["scan_exempt_via"])
+        # Another tenant's exempt prefix around the same address counts for nothing.
+        Prefix.objects.create(tenant=self.other, cidr="10.0.0.0/8", scan_exempt=True)
+        self.assertIsNone(self.client.get(url).json()["scan_exempt_via"])
+        wide = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/16", scan_exempt=True)
+        self.assertEqual(self.client.get(url).json()["scan_exempt_via"],
+                         {"id": str(wide.pk), "cidr": "10.0.0.0/16"})
+        Prefix.objects.filter(pk=self.prefix.pk).update(scan_exempt=True)
+        self.assertEqual(self.client.get(url).json()["scan_exempt_via"]["cidr"],
+                         "10.0.0.0/24")
+        # A reader without prefix view learns it is exempt, not which prefix.
+        self.member("ip-only", {"ipaddress": ["view"]})
+        self.assertEqual(self.client.get(url).json()["scan_exempt_via"],
+                         {"id": None, "cidr": None})
+        # Lists never pay for it.
+        self.login(self.su)
+        rows = self.client.get("/api/ips/").json()["results"]
+        self.assertTrue(all(r["scan_exempt_via"] is None for r in rows))
+
     def test_deny_subnets(self):
         self.login(self.su)
         r = self.client.patch("/api/discovery/settings/",

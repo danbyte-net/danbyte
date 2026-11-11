@@ -1767,12 +1767,13 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
             "allocate_from_ranges", "allocation", "auto_gateway",
-            "monitoring_engine",
+            "monitoring_engine", "scan_exempt",
             "tags",
             "custom_fields",
             "permissions",
             "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        # scan_exempt: set through /api/discovery/exempt/ (#451).
+        read_only_fields = ["id", "numid", "scan_exempt", "created_at", "updated_at"]
 
 
 # ─── Picker payloads ────────────────────────────────────────────────────
@@ -1959,6 +1960,20 @@ class IPAddressSerializer(HiddenRelatedFieldsMixin, ObjectPermsSerializerMixin, 
         required=False, allow_null=True, min_value=0, max_value=128
     )
     cidr = serializers.CharField(read_only=True)
+    # Discovery (#451): set through /api/discovery/exempt/, never by a PATCH.
+    scan_exempt = serializers.BooleanField(read_only=True)
+    scan_exempt_via = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_scan_exempt_via(self, obj):
+        """The exempt prefix that keeps discovery off this address, when one
+        does (``{id, cidr}``, or ``{id: null, cidr: null}`` for a prefix the
+        caller may not view); None otherwise."""
+        from discovery.exempt import exempt_through
+
+        request = self.context.get("request")
+        return exempt_through(obj, getattr(request, "user", None))
 
     def to_internal_value(self, data):
         raw = data.get("ip_address") if hasattr(data, "get") else None
@@ -2261,6 +2276,7 @@ class IPAddressSerializer(HiddenRelatedFieldsMixin, ObjectPermsSerializerMixin, 
             "discovered",
             "flap_exclude",
             "monitoring_excluded", "availability_since",
+            "scan_exempt", "scan_exempt_via",
             "is_primary_for_device",
             "is_primary_for_vm",
             "is_secondary_for_device",
@@ -4126,9 +4142,10 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
                   "contact_count", "document_count", "install_count", "device_profiles",
-                  "backing_vm",
+                  "backing_vm", "scan_exempt",
                   "permissions", "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "u_height", "rack_width",
+        # scan_exempt: set through /api/discovery/exempt/ (#451).
+        read_only_fields = ["id", "numid", "u_height", "rack_width", "scan_exempt",
                             "model_3d", "model_3d_effective",
                             "software_version_seen_at", "software_version_source",
                             "created_at", "updated_at"]
@@ -7292,8 +7309,9 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
                   "ip_count",
                   "device_profiles", "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields", "prtg_sync", "prtg_plan", "prtg_host",
-                  "created_at", "updated_at"]
-        read_only_fields = ["id", "power_state", "power_state_at",
+                  "scan_exempt", "created_at", "updated_at"]
+        # scan_exempt: set through /api/discovery/exempt/ (#451).
+        read_only_fields = ["id", "power_state", "power_state_at", "scan_exempt",
                             "synced_from", "synced_from_id", "drift_count",
                             "missing_since",
                             "software_version_seen_at", "software_version_source",

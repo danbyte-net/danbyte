@@ -41,6 +41,10 @@ import {
 } from "@/components/forms"
 import { InfoTip } from "@/components/ui/info-tip"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import {
+  ScanExemptField,
+  useScanExemptDraft,
+} from "@/components/discovery/scan-exempt-field"
 
 export interface IpFormInitial {
   address?: string
@@ -71,6 +75,9 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
   const planning = !!usePlanTarget()
+  // Discovery's "Do not scan" (#451): written once the address saved; not
+  // offered while planning (the exempt call is not staged).
+  const scanExempt = useScanExemptDraft("ipaddress", planning ? null : ip)
   // Cloneable fields read from the edit object or the clone seed; the address
   // and device/interface assignment read from `ip`/`initial` only, so a clone
   // starts unaddressed and unassigned.
@@ -431,6 +438,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
         id: isEdit ? ip!.id : undefined,
         payload,
       })
+      await scanExempt.commit()
       // Primary IP lives on the device/VM, so it takes a second request.
       // Unticking has to clear it, or the box would only ever turn on.
       if (saved.assigned_device && isPrimary !== !!ip?.is_primary_for_device) {
@@ -896,6 +904,11 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
               </div>
             )}
           </FormSection>
+          {scanExempt.show && (
+            <FormSection title="Discovery" card>
+              <ScanExemptField draft={scanExempt} via={ip?.scan_exempt_via} />
+            </FormSection>
+          )}
         </FormColumn>
       </FormColumns>
 

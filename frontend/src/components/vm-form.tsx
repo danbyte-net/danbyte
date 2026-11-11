@@ -40,9 +40,13 @@ import {
   ApplicationGroupsField,
   useHostGroupsDraft,
 } from "@/components/application-group-assign"
-import { useSaveObject } from "@/lib/save-object"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 import { jsonObjectText, parseJsonObject } from "@/lib/json-object"
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
+import {
+  ScanExemptField,
+  useScanExemptDraft,
+} from "@/components/discovery/scan-exempt-field"
 import {
   PrtgSyncSelect,
   showPrtgSaveToast,
@@ -77,6 +81,10 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
   const groupsDraft = useHostGroupsDraft(vm ? { kind: "vm", id: vm.id } : null)
+  // Discovery's "Do not scan" (#451): written once the VM saved; not offered
+  // while planning (the exempt call is not staged).
+  const planning = !!usePlanTarget()
+  const scanExempt = useScanExemptDraft("virtual_machine", planning ? null : vm)
   const profilesDraft = useHostProfilesDraft(
     vm ? { kind: "vm", id: vm.id } : null
   )
@@ -246,6 +254,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         id: isEdit ? vm!.id : undefined,
         payload,
       })
+      await scanExempt.commit()
       // Application groups (#436): written once the VM saved.
       await groupsDraft.commit({ kind: "vm", id: saved.id })
       await profilesDraft.commit({ kind: "vm", id: saved.id })
@@ -611,6 +620,11 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
                 onHostChange={setPrtgHost}
                 hostError={fieldErrors.prtg_host}
               />
+            </FormSection>
+          )}
+          {scanExempt.show && (
+            <FormSection title="Discovery" card>
+              <ScanExemptField draft={scanExempt} />
             </FormSection>
           )}
         </FormColumn>
