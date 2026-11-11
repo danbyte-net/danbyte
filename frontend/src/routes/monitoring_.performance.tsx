@@ -1,10 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
-import {
-  monitoringSearch,
-  PERFORMANCE_VIEWS,
-  type PerformanceView,
-} from "@/lib/monitoring-nav"
+import { monitoringSearch, PERFORMANCE_VIEWS } from "@/lib/monitoring-nav"
+import type { PerformanceView } from "@/lib/monitoring-nav"
 import { ExploreView } from "@/components/monitoring/explore-view"
 import { LatencyView } from "@/components/monitoring/latency-view"
 import { MonitoringTabs } from "@/components/monitoring/monitoring-tabs"

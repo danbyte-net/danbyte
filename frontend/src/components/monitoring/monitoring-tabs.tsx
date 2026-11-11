@@ -1,6 +1,8 @@
-import { createContext, useContext, type ReactNode } from "react"
+import { createContext, useContext } from "react"
+import type { ReactNode } from "react"
 
-import { SegmentedTabs, type SegmentedTab } from "@/components/segmented-tabs"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import type { SegmentedTab } from "@/components/segmented-tabs"
 import { EngineHealthBanner } from "./engine-health-banner"
 
 /**
@@ -10,7 +12,7 @@ import { EngineHealthBanner } from "./engine-health-banner"
  * (`ListPageShell`, the policy rail) fills the frame; a dashboard pads and
  * scrolls in it.
  */
-export function MonitoringTabs<V extends string>({
+export function MonitoringTabs<TView extends string>({
   label,
   items,
   value,
@@ -22,9 +24,9 @@ export function MonitoringTabs<V extends string>({
 }: {
   /** What the tabs switch between, for screen readers ("Status views"). */
   label: string
-  items?: readonly SegmentedTab<V>[]
-  value?: V
-  onValueChange?: (value: V) => void
+  items?: readonly SegmentedTab<TView>[]
+  value?: TView
+  onValueChange?: (value: TView) => void
   /** Pad and scroll the body (a dashboard), rather than fill it. */
   padded?: boolean
   /** The engine-health banner; off where engines are not the subject. */

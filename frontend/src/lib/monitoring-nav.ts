@@ -1,8 +1,6 @@
 import type { CheckStatus } from "@/lib/api"
-import {
-  CONFIG_TABS,
-  type ConfigTab,
-} from "@/components/monitoring/configuration/tabs"
+import { CONFIG_TABS } from "@/components/monitoring/configuration/tabs"
+import type { ConfigTab } from "@/components/monitoring/configuration/tabs"
 
 // Monitoring is a sidebar section of its own: Status, Checks, Performance,
 // SLAs, Policies and Settings are routes under /monitoring, each with at most
@@ -45,11 +43,11 @@ export const MONITORING_FILTER_KEYS = [
 ] as const
 export type MonitoringFilterKey = (typeof MONITORING_FILTER_KEYS)[number]
 
-export interface MonitoringSearch<V extends string = string> extends Partial<
-  Record<MonitoringFilterKey, string>
-> {
+export interface MonitoringSearch<
+  TView extends string = string,
+> extends Partial<Record<MonitoringFilterKey, string>> {
   /** The page's tab; absent means its first one. */
-  view?: V
+  view?: TView
   status?: CheckStatus | "all"
   /** Policies: the scope tab; absent means the default. */
   scope?: ConfigTab
@@ -65,9 +63,11 @@ export type PerformanceView = (typeof PERFORMANCE_VIEWS)[number]
 /** A page's `validateSearch`: its own tabs (`tab` read as an alias of
  * `view`), the status filter, the policy scope and the shared filters. The
  * first tab is the default and never written. */
-export function monitoringSearch<V extends string>(views: readonly V[]) {
-  return (s: Record<string, unknown>): MonitoringSearch<V> => {
-    const view = (s.view ?? s.tab) as V
+export function monitoringSearch<TView extends string>(
+  views: readonly TView[]
+) {
+  return (s: Record<string, unknown>): MonitoringSearch<TView> => {
+    const view = (s.view ?? s.tab) as TView
     return {
       ...(views.includes(view) && view !== views[0] ? { view } : {}),
       ...(typeof s.status === "string" && s.status !== "all"
