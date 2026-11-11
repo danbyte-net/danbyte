@@ -1,10 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
-import {
-  CHECKS_VIEWS,
-  monitoringSearch,
-  type ChecksView,
-} from "@/lib/monitoring-nav"
+import { CHECKS_VIEWS, monitoringSearch } from "@/lib/monitoring-nav"
+import type { ChecksView } from "@/lib/monitoring-nav"
 import { ChecksList } from "@/components/monitoring/checks-list"
 import { MonitoringTabs } from "@/components/monitoring/monitoring-tabs"
 import { TemplatesList } from "@/components/monitoring/templates-list"
@@ -34,14 +31,9 @@ function ChecksPage() {
         { value: "checks", label: "Checks" },
         { value: "templates", label: "Templates" },
       ]}
-      padded={view === "templates"}
     >
       {view === "checks" && <ChecksList />}
-      {view === "templates" && (
-        <div className="mx-auto max-w-7xl">
-          <TemplatesList />
-        </div>
-      )}
+      {view === "templates" && <TemplatesList />}
     </MonitoringTabs>
   )
 }

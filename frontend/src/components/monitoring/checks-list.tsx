@@ -232,16 +232,21 @@ export function ChecksList({
           activeCount: railActiveCount(railFilters) + (strip ? 1 : 0),
         },
       }}
+      // The status quick-tabs sit over the table, so the header stays one
+      // row: title, saved views, search, the seven-day switch.
+      summary={
+        <SegmentedTabs
+          label="Status"
+          wrap
+          value={TABS.some((t) => t.value === status) ? status : "all"}
+          onValueChange={(s) =>
+            patch({ status: s === "all" ? "all" : s, page: undefined })
+          }
+          items={TABS.map((t) => ({ ...t, count: counts[t.value] ?? 0 }))}
+        />
+      }
       actions={
         <>
-          <SegmentedTabs
-            wrap
-            value={TABS.some((t) => t.value === status) ? status : "all"}
-            onValueChange={(s) =>
-              patch({ status: s === "all" ? "all" : s, page: undefined })
-            }
-            items={TABS.map((t) => ({ ...t, count: counts[t.value] ?? 0 }))}
-          />
           {!flappingOnly && (
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Switch
