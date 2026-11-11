@@ -551,6 +551,183 @@ def iter_osv_json(reader, *, errors: list | None = None) -> Iterator[dict]:
     stream.end()
 
 
+# ─── Microsoft (MSRC CVRF) ───────────────────────────────────────────────────
+
+#: Envelope fields of a monthly CVRF document (the product tree of a busy
+#: month is about 150 KB).
+MSRC_HEADER_MAX = 4 * 1024 * 1024
+MSRC_PRODUCTS_MAX = 50_000
+MSRC_MONTH = re.compile(r"^(\d{4})-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$")
+_KB = re.compile(r"^(?:KB)?(\d{6,8})$")
+#: CVRF remediation type 2: a vendor fix (the update and its fixed build).
+_VENDOR_FIX = 2
+#: CVRF product status type 3: known affected.
+_KNOWN_AFFECTED = 3
+
+
+def msrc_month(value) -> str | None:
+    """``2026-Nov`` when ``value`` is a CVRF month id."""
+    return value if isinstance(value, str) and MSRC_MONTH.match(value) else None
+
+
+def _value(obj) -> str:
+    """CVRF wraps most strings as ``{"Value": ...}``."""
+    v = obj.get("Value") if isinstance(obj, dict) else obj
+    return v if isinstance(v, str) else ""
+
+
+def _msrc_header(header: dict) -> tuple[str, datetime | None, dict[str, str]]:
+    """``(month, current release, {product id: product key})`` of a CVRF
+    document's envelope, or :class:`ImportFormatError`."""
+    from .msrc_products import key_for_name
+
+    tracking = header.get("DocumentTracking")
+    ident = tracking.get("Identification") if isinstance(tracking, dict) else None
+    month = msrc_month(_value(ident.get("ID")) if isinstance(ident, dict) else "")
+    tree = header.get("ProductTree")
+    names = tree.get("FullProductName") if isinstance(tree, dict) else None
+    if month is None or not isinstance(names, list):
+        raise ImportFormatError(
+            "Not a Microsoft security update document (CVRF JSON with "
+            "DocumentTracking and ProductTree before Vulnerability).")
+    if len(names) > MSRC_PRODUCTS_MAX:
+        raise LimitExceeded(f"More than {MSRC_PRODUCTS_MAX} products.")
+    ids: dict[str, str] = {}
+    for p in names:
+        if not isinstance(p, dict):
+            continue
+        pid, key = p.get("ProductID"), key_for_name(p.get("Value"))
+        if isinstance(pid, str) and 0 < len(pid) <= 32 and key:
+            ids[pid] = key
+    return month, parse_datetime(tracking.get("CurrentReleaseDate")), ids
+
+
+def _pids(entry) -> list[str]:
+    raw = entry.get("ProductID") if isinstance(entry, dict) else None
+    return [p for p in raw if isinstance(p, str)][:5000] if isinstance(raw, list) else []
+
+
+def _msrc_cvss(sets, wanted: set[str]) -> tuple[dict | None, bool]:
+    """Microsoft's CVSS for the products this store keeps: the highest base
+    score among the score sets naming one of them."""
+    best = None
+    for s in sets if isinstance(sets, list) else []:
+        if not isinstance(s, dict) or not wanted & set(_pids(s)):
+            continue
+        vector = s.get("Vector")
+        version = "3.1" if str(vector).startswith("CVSS:3.1/") else "3.0"
+        metric, mismatch = _metric(version, vector, s.get("BaseScore"))
+        if metric is None:
+            if best is None and mismatch:
+                best = (None, True)
+            continue
+        if best is None or best[0] is None or metric["score"] > best[0]["score"]:
+            best = (metric, False)
+    return best if best is not None else (None, False)
+
+
+def normalise_msrc(v, *, month: str, ids: dict[str, str],
+                   released: datetime | None) -> dict:
+    """One ``Vulnerability`` of a CVRF document. Only the Windows products of
+    :mod:`vulnerabilities.msrc_products` are kept: per product its fixed
+    builds on the product's own build line and the KB numbers."""
+    from . import versions
+    from .msrc_products import PRODUCTS
+
+    if not isinstance(v, dict):
+        raise RecordError("A record is not an object.")
+    vuln_id = v.get("CVE")
+    if not is_cve_id(vuln_id):
+        raise RecordError(f"Not a CVE id: {str(vuln_id)[:40]!r}.")
+    affected: set[str] = set()
+    for status in v.get("ProductStatuses") or []:
+        if isinstance(status, dict) and status.get("Type") == _KNOWN_AFFECTED:
+            affected.update(p for p in _pids(status) if p in ids)
+    products: dict[str, dict] = {ids[p]: {"fixed": set(), "kbs": set()} for p in affected}
+    for r in v.get("Remediations") or []:
+        if not isinstance(r, dict) or r.get("Type") != _VENDOR_FIX:
+            continue
+        build = r.get("FixedBuild")
+        key = versions.parse(build, "winbuild") if isinstance(build, str) else None
+        kb = _KB.match(_value(r.get("Description")).strip())
+        for pid in _pids(r):
+            if pid not in affected:
+                continue
+            pkey = ids[pid]
+            if key is not None and key.group == PRODUCTS[pkey].line:
+                products[pkey]["fixed"].add(key.text)
+                if kb:
+                    products[pkey]["kbs"].add(kb[1])
+    dates = [d for d in (parse_datetime(h.get("Date")) for h in v.get("RevisionHistory") or []
+                         if isinstance(h, dict)) if d is not None and d.year > 1900]
+    revised = max(dates) if dates else released
+    if revised is None:
+        raise RecordError(f"{vuln_id}: no revision date.")
+    metric, mismatch = _msrc_cvss(v.get("CVSSScoreSets"), affected)
+    cwes = []
+    for w in v.get("CWE") or []:
+        cid = w.get("ID") if isinstance(w, dict) else None
+        if isinstance(cid, str) and _CWE.match(cid) and cid not in cwes:
+            cwes.append(cid)
+    from .msrc_products import product_key
+
+    return {
+        "kind": "msrc",
+        "vuln_id": vuln_id,
+        "aliases": [],
+        "summary": _text(_value(v.get("Title")), SUMMARY_MAX),
+        "published": min(dates) if dates else released,
+        "last_modified": revised,
+        "vuln_status": "",
+        "rejected": False,
+        "cvss": metric,
+        "cvss_mismatch": mismatch,
+        "cwes": cwes[:20],
+        "references": [],
+        "configurations": [],
+        "configurations_truncated": False,
+        "fixed_in": [],
+        "kev": None,
+        "products": {product_key(k) for k in products},
+        "osv": None,
+        "msrc": {"month": month, "revised": revised.isoformat(), "products": {
+            k: {"fixed": sorted(p["fixed"], key=lambda b: versions.parse(b, "winbuild").sort),
+                "kbs": sorted(p["kbs"])}
+            for k, p in sorted(products.items())}},
+    }
+
+
+def iter_msrc(reader, *, header: dict | None = None,
+              errors: list | None = None) -> Iterator[dict]:
+    """Each normalised record of one monthly CVRF JSON document, streamed.
+    ``header`` receives ``month`` and ``current_release`` (and the envelope
+    fields). The product tree must come before the vulnerabilities, as
+    Microsoft writes it."""
+    header = {} if header is None else header
+    stream = JsonStream(reader, value_cap=RECORD_MAX)
+    if stream.peek() != "{":
+        raise ImportFormatError("Not a Microsoft CVRF JSON document.")
+    parsed = None
+    for _key, item in stream.iter_object(stream_keys={"Vulnerability"},
+                                         header_cap=MSRC_HEADER_MAX,
+                                         max_items=RECORDS_MAX, header=header):
+        if parsed is None:
+            parsed = _msrc_header(header)
+            header["month"], header["current_release"] = parsed[0], parsed[1]
+        if isinstance(item, dict) and str(item.get("CVE", "")).startswith("ADV"):
+            # Microsoft's own advisories (ADV260001) have no CVE id: skipped.
+            continue
+        try:
+            yield normalise_msrc(item, month=parsed[0], ids=parsed[2], released=parsed[1])
+        except RecordError as exc:
+            if errors is not None:
+                errors.append(str(exc))
+    stream.end()
+    if parsed is None:
+        month, current, _ids = _msrc_header(header)
+        header["month"], header["current_release"] = month, current
+
+
 # ─── CISA KEV ────────────────────────────────────────────────────────────────
 
 

@@ -26,6 +26,13 @@ Discovery is on for the tenant, and only packages some stored record names
 - one query finds those (``_package_rows``), one more their records, so the
 cost does not grow with the packages nobody advises.
 
+Windows hosts discovery read are a fourth source, ``via="os_build"``, with
+neither a mapping nor a package: the host's build (``10.0.20348.2849``) is
+tested against the fixed builds Microsoft lists for its product
+(:mod:`vulnerabilities.msrc_products`, ``evaluate.match_msrc``). A host
+whose product or UBR is not known gets no match. Also only while Discovery
+is on for the tenant.
+
 ``objects`` narrows a run to some hosts (a version, platform or install
 changed); ``cves`` to some records. Either way only the rows inside the scope
 are diffed.
@@ -163,6 +170,63 @@ def _package_candidates(tenant, objects, cves) -> dict:
         by_key[("purl", "", vendor, product)].add(cve_id)
     ids = set().union(*by_key.values()) if by_key else set()
     found = {c.pk: c for c in Cve.objects.filter(pk__in=ids).only(*_CVE_FIELDS)}
+    return {k: [found[i] for i in v if i in found] for k, v in by_key.items()}
+
+
+_MSRC_CVE_FIELDS = ("id", "vuln_id", "msrc", "cvss_score", "epss", "kev_added", "rejected")
+
+
+def os_build_hosts(tenant, objects=None) -> list[tuple]:
+    """``(device id, vm id, HostProduct)`` of the tenant's Windows hosts as
+    discovery last read them - none while Discovery is off for the tenant.
+    One query; the host must still be in the tenant."""
+    from discovery.gate import active
+    from discovery.models import HostOsFact
+
+    from .msrc_products import resolve_fact
+
+    if not active(tenant):
+        return []
+    qs = HostOsFact.objects.filter(tenant=tenant, os_id="windows").filter(
+        Q(device__tenant=tenant) | Q(virtual_machine__tenant=tenant))
+    if objects is not None:
+        qs = qs.filter(Q(device_id__in=list(objects.get("device") or []))
+                       | Q(virtual_machine_id__in=list(objects.get("virtual_machine") or [])))
+    return [(f.device_id, f.virtual_machine_id, resolve_fact(f)) for f in qs]
+
+
+def os_build_summary(tenant, kind: str, host, fact) -> dict | None:
+    """For a Windows host's package list: which Microsoft product it was
+    matched as (or why not) and its open OS-build matches no exception
+    covers. One count query; None for a host that is not Windows."""
+    from .models import VulnerabilityMatch, VulnerabilitySettings
+    from .msrc_products import resolve_fact
+
+    if fact is None or fact.os_id != "windows":
+        return None
+    hp = resolve_fact(fact)
+    enabled = VulnerabilitySettings.objects.filter(pk=1, enabled=True).exists()
+    open_ = VulnerabilityMatch.objects.filter(
+        tenant=tenant, via="os_build", resolved_at__isnull=True, excepted__isnull=True,
+        **{kind: host}).count() if enabled else 0
+    return {"product": hp.label, "build": hp.build, "flag": hp.flag, "open": open_}
+
+
+def _msrc_candidates(keys: set, cves) -> dict:
+    """``{product key: [Cve]}`` for Windows product keys."""
+    from .msrc_products import KIND, VENDOR
+
+    if not keys:
+        return {}
+    rows = CveProduct.objects.filter(kind=KIND, part="", vendor=VENDOR,
+                                     product__in=sorted(keys), cve__rejected=False)
+    if cves is not None:
+        rows = rows.filter(cve__vuln_id__in=list(cves))
+    by_key: dict[str, set] = defaultdict(set)
+    for cve_id, product in rows.values_list("cve_id", "product"):
+        by_key[product].add(cve_id)
+    ids = set().union(*by_key.values()) if by_key else set()
+    found = {c.pk: c for c in Cve.objects.filter(pk__in=ids).only(*_MSRC_CVE_FIELDS)}
     return {k: [found[i] for i in v if i in found] for k, v in by_key.items()}
 
 
@@ -347,6 +411,27 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
         pkg_candidates = _package_candidates(tenant, objects, cves) if pkg_rows else {}
         for row in pkg_rows:
             consider_package(*row)
+
+        windows = [h for h in os_build_hosts(tenant, objects) if not h[2].flag]
+        counts["windows_hosts"] = len(windows)
+        if windows:
+            msrc_candidates = _msrc_candidates(
+                {k for *_ids, hp in windows for k in hp.keys}, cves)
+            for device_id, vm_id, hp in windows:
+                seen = {c.pk: c for k in hp.keys for c in msrc_candidates.get(k, ())}
+                for cve in seen.values():
+                    ck = ("msrc", cve.pk, hp.keys, hp.line, hp.ubr)
+                    if ck not in cache:
+                        cache[ck] = evaluate.match_msrc(cve.msrc, hp.keys, hp.line, hp.ubr)
+                    conf = cache[ck][0]
+                    if conf is None:
+                        continue
+                    if cve.pk not in levels:
+                        levels[cve.pk] = priority.of_cve(cve, policy)
+                    excepted = resolver.covering(cve.pk, device_id, vm_id, None, None) \
+                        if resolver else None
+                    desired[(cve.pk, device_id, vm_id, None, None, None)] = (
+                        hp.build, conf, levels[cve.pk], "os_build", excepted)
 
         counts.update(_diff(tenant, desired, cves=cves, objects=objects))
         if cves is None and objects is None:

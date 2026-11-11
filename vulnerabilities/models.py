@@ -51,10 +51,14 @@ RECORD_SOURCES = [
     ("nvd_feed", "NVD feed"),
     ("browser", "Browser"),
     ("osv", "OSV"),
+    ("msrc", "Microsoft"),
 ]
 NVD_SOURCES = ("nvd_api", "nvd_feed", "browser")
 CPE_PARTS = [("o", "Operating system"), ("a", "Application"), ("h", "Hardware")]
 PRODUCT_KINDS = [("cpe", "CPE"), ("purl", "Package URL")]
+#: What a record names: a mappable product, or a Windows release in
+#: Microsoft's advisory data (``msrc``, matched by OS build, never mapped).
+CVE_PRODUCT_KINDS = [*PRODUCT_KINDS, ("msrc", "Windows release")]
 RUN_VIAS = UPDATE_SOURCES
 RUN_STATUSES = [
     ("running", "Running"),
@@ -84,6 +88,11 @@ class VulnerabilitySettings(TimestampedModel):
     osv_url = models.CharField(max_length=255, blank=True, default="", db_default="")
     sync_epss = models.BooleanField(default=True, db_default=True)
     sync_kev = models.BooleanField(default=True, db_default=True)
+    #: Microsoft's monthly security update documents (server and upload
+    #: modes; Microsoft's API sends no CORS headers, so not browser mode).
+    #: Nothing is fetched until discovery has read a Windows host.
+    sync_msrc = models.BooleanField(default=True, db_default=True)
+    msrc_url = models.CharField(max_length=255, blank=True, default="", db_default="")
     #: ``{"nvd_api_key": ...}``, Fernet-encrypted, write-only over the API.
     secrets = EncryptedJSONField(default=dict, blank=True, db_default="")
     # Run bookkeeping, written by UPDATE so it stays out of the change log.
@@ -143,6 +152,10 @@ class Cve(models.Model):
     fixed_in = models.JSONField(default=list, blank=True, db_default=[])
     #: ``{osv id: {modified, affected, fixed_in}}`` per OSV advisory filed here.
     osv = models.JSONField(default=dict, blank=True, db_default={})
+    #: Microsoft's data per monthly document that lists it: ``{"2026-Nov":
+    #: {revised, products: {product key: {fixed: [build], kbs: [kb]}}}}``
+    #: (:mod:`vulnerabilities.msrc_products` keys).
+    msrc = models.JSONField(default=dict, blank=True, db_default={})
     kev_added = models.DateField(null=True, blank=True)
     kev_due = models.DateField(null=True, blank=True)
     kev_action = models.TextField(blank=True, default="", db_default="")
@@ -176,7 +189,7 @@ class CveProduct(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     cve = models.ForeignKey(Cve, on_delete=models.CASCADE, related_name="products")
-    kind = models.CharField(max_length=4, choices=PRODUCT_KINDS, default="cpe",
+    kind = models.CharField(max_length=4, choices=CVE_PRODUCT_KINDS, default="cpe",
                             db_default="cpe")
     #: o / a / h for a CPE; blank for a package.
     part = models.CharField(max_length=1, blank=True, default="", db_default="")
@@ -251,6 +264,34 @@ class SyncRun(TimestampedModel):
         return f"{self.via} run {self.started_at:%Y-%m-%d %H:%M}"
 
 
+class MsrcMonth(models.Model):
+    """One of Microsoft's monthly security update documents in the store:
+    when Microsoft last revised it, when it was read and for which Windows
+    products. The server fetch reads a month again when Microsoft revised it
+    or a Windows product appeared that it was not read for."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    #: ``2026-Nov``, Microsoft's document id.
+    month = models.CharField(max_length=8, unique=True)
+    #: The first day of that month, for ordering.
+    starts_on = models.DateField()
+    #: The document's ``CurrentReleaseDate`` when it was read.
+    current_release = models.DateTimeField(null=True, blank=True)
+    read_at = models.DateTimeField()
+    via = models.CharField(max_length=8, choices=UPDATE_SOURCES)
+    #: The product keys it was read for (:mod:`vulnerabilities.msrc_products`).
+    products = models.JSONField(default=list, blank=True, db_default=[])
+    #: Records it holds for those products.
+    records = models.PositiveIntegerField(default=0, db_default=0)
+
+    class Meta:
+        ordering = ["-starts_on"]
+        verbose_name = "Microsoft update month"
+
+    def __str__(self) -> str:
+        return self.month
+
+
 # ─── Tenant side: mappings, policy, matches ──────────────────────────────────
 
 VERSION_SCHEMES = [
@@ -267,7 +308,7 @@ VERSION_SCHEMES = [
     ("generic", "Exact only"),
 ]
 MATCH_VIAS = [("platform", "Platform"), ("application", "Application"),
-              ("package", "Package")]
+              ("package", "Package"), ("os_build", "OS build")]
 CONFIDENCES = [("exact", "Exact"), ("range", "Range"), ("partial", "Partial")]
 PRIORITIES = [
     ("fix_first", "Fix first"),
@@ -550,7 +591,9 @@ class VulnerabilityMatch(models.Model):
     platform's (``via="platform"``, the host's running version) or an
     installed application's (``via="application"``, the install's version)
     - or through a package discovery read from the host (``via="package"``,
-    ``host_package`` set and no mapping, #451 B2).
+    ``host_package`` set and no mapping, #451 B2) - or through the host's
+    Windows build against Microsoft's fixed builds (``via="os_build"``,
+    neither a mapping nor a package; ``version`` is the host's build).
 
     Machine-computed and written in bulk by the recompute, never change-
     logged. A match whose version moved off the record keeps its row with
@@ -604,13 +647,16 @@ class VulnerabilityMatch(models.Model):
                 ),
                 name="vulnmatch_one_host",
             ),
-            # A mapping, or an inventoried package - never both or neither.
+            # A mapping, or an inventoried package, or the host's Windows
+            # build (``os_build``: neither) - never both.
             models.CheckConstraint(
                 condition=(
                     models.Q(mapping__isnull=False, host_package__isnull=True)
                     | models.Q(mapping__isnull=True, host_package__isnull=False)
+                    | models.Q(mapping__isnull=True, host_package__isnull=True,
+                               via="os_build")
                 ),
-                name="vulnmatch_one_source",
+                name="vulnmatch_one_source_v2",
             ),
             models.UniqueConstraint(
                 fields=["cve", "device", "virtual_machine", "mapping", "installed_software",

@@ -106,9 +106,10 @@ def visible_matches(request, tenant):
     ).filter(Q(installed_software__isnull=True)
              | Q(installed_software__in=installs.values("pk")))
     # An inventoried package is software on the host: its matches read with
-    # installed-software view, as a host's package list does (#451 B2).
+    # installed-software view, as a host's package list does (#451 B2). So
+    # do the OS-build matches, from the same inventory read.
     if not rbac.has_action(request.user, tenant, "installedsoftware", "view"):
-        qs = qs.filter(host_package__isnull=True)
+        qs = qs.filter(host_package__isnull=True).exclude(via="os_build")
     return qs
 
 
@@ -207,7 +208,7 @@ def cve_brief(c: Cve) -> dict:
         "kev_due": c.kev_due,
         "epss": c.epss,
         "epss_percentile": c.epss_percentile,
-        "analysed": bool(c.configurations) or bool(c.osv),
+        "analysed": bool(c.configurations) or bool(c.osv) or bool(c.msrc),
     }
 
 
@@ -333,7 +334,7 @@ def _filter_matches(request, qs, *, status_default="open", excepted=True,
     for name, field, allowed in (
             ("priority", "priority", prio.LEVELS),
             ("confidence", "confidence", ("exact", "range", "partial")),
-            ("via", "via", ("platform", "application", "package")),
+            ("via", "via", ("platform", "application", "package", "os_build")),
             ("severity", "cve__cvss_severity", ("critical", "high", "medium", "low", "none"))):
         vals = _values(request, name)
         if vals:
@@ -695,6 +696,23 @@ def _relevant(request, tenant, cve: Cve) -> bool:
                                                    removed_at__isnull=True).exists()
 
 
+def msrc_fixed_in(msrc) -> list[dict]:
+    """``[{product, month, fixed, kbs}]`` of Microsoft's data on a record:
+    per Windows product the builds that fix it and their KB numbers."""
+    from .msrc_products import PRODUCTS
+
+    out = []
+    for month, data in sorted((msrc or {}).items()):
+        for key, p in sorted(((data or {}).get("products") or {}).items()):
+            product = PRODUCTS.get(key)
+            if product is None or not isinstance(p, dict):
+                continue
+            out.append({"product": product.name, "month": month,
+                        "fixed": list(p.get("fixed") or [])[:20],
+                        "kbs": list(p.get("kbs") or [])[:20]})
+    return out[:200]
+
+
 def cve_detail(c: Cve, policy) -> dict:
     out = cve_brief(c)
     out.update({
@@ -709,6 +727,7 @@ def cve_detail(c: Cve, policy) -> dict:
         "fixed_in": c.fixed_in,
         "osv_fixed_in": [f for adv in (c.osv or {}).values()
                          for f in adv.get("fixed_in") or []][:200],
+        "msrc_fixed_in": msrc_fixed_in(c.msrc),
         "kev_action": c.kev_action,
         "kev_ransomware": c.kev_ransomware,
         "epss_date": c.epss_date,

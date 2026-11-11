@@ -92,6 +92,10 @@ def _open_matches(request, kind: str):
             "installedsoftware", "view")
         m = m.filter(Q(installed_software__isnull=True)
                      | Q(installed_software__in=installs.values("pk")))
+        if not rbac.has_action(user, tenant, "installedsoftware", "view"):
+            # Inventory-read matches (packages, the Windows build) read with
+            # installed-software view, as in ``match_api.visible_matches``.
+            m = m.filter(host_package__isnull=True).exclude(via="os_build")
     # A match an exception covers is not open work.
     return m.filter(excepted__isnull=True)
 

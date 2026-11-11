@@ -13,6 +13,7 @@ class VulnerabilitiesConfig(AppConfig):
         # The store keeps records for the products tenants map, and every
         # store recomputes the tenants it can reach.
         products.register_provider(jobs.tracked_keys)
+        products.register_provider(jobs.msrc_tracked_keys)
         store.register_after_store(jobs.after_store)
         signals.connect()
         exceptions.connect()

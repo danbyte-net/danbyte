@@ -27,6 +27,9 @@ Schemes:
 * ``rpm``         RHEL, Rocky, AlmaLinux, SUSE: ``epoch:version-release``,
   each part by rpmvercmp (``~`` before the end, ``^`` after it, letters
   before digits, separators ignored).
+* ``winbuild``    a Windows build ``10.0.20348.2849`` (major, minor, build,
+  UBR): ordered by the UBR within one build line (``10.0.20348``) only, so
+  builds of different lines never compare. All four parts are required.
 * ``generic``     digits and letters as tokens; exact matches only - no range
   is evaluated under it.
 
@@ -38,7 +41,7 @@ import re
 from dataclasses import dataclass
 
 SCHEMES = ("cisco_ios", "cisco_iosxe", "cisco_nxos", "junos", "arista_eos",
-           "semver", "pep440", "dpkg", "apk", "rpm", "generic")
+           "semver", "pep440", "dpkg", "apk", "rpm", "winbuild", "generic")
 #: Schemes whose order is good enough to test a version range.
 RANGE_SCHEMES = frozenset(SCHEMES) - {"generic"}
 MAX_LEN = 128
@@ -338,6 +341,25 @@ def _rpm(text: str) -> Key | None:
     return Key("rpm", "", (int(m[1] or 0), _rpm_part(m[2]), _rpm_part(m[3] or "")), text)
 
 
+# ─── Windows build ───────────────────────────────────────────────────────────
+
+_WINBUILD = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,6})\.(\d{1,7})$")
+
+
+def _winbuild(text: str) -> Key | None:
+    m = _WINBUILD.match(text)
+    if not m:
+        return None
+    major, minor, build, ubr = (int(p) for p in m.groups())
+    return Key("winbuild", f"{major}.{minor}.{build}", (ubr,),
+               f"{major}.{minor}.{build}.{ubr}")
+
+
+def build_line(key: Key) -> str:
+    """``10.0.20348`` of a ``winbuild`` key."""
+    return key.group
+
+
 # ─── generic ─────────────────────────────────────────────────────────────────
 
 
@@ -361,6 +383,7 @@ _PARSERS = {
     "dpkg": _dpkg,
     "apk": _apk,
     "rpm": _rpm,
+    "winbuild": _winbuild,
     "generic": _generic,
 }
 

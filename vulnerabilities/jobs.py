@@ -146,7 +146,43 @@ def tenants_for(vuln_ids) -> set:
         q |= Q(kind=kind, part=part, vendor=vendor, product=product)
     out = set(ProductMapping.objects.filter(q, enabled=True)
               .values_list("tenant_id", flat=True).distinct())
+    if any(k[0] == "msrc" for k in keys):
+        out |= _windows_tenants()
     return out | _package_tenants(vuln_ids)
+
+
+def _windows_tenants() -> set:
+    """Tenants with Discovery on that have a Windows host read (Microsoft's
+    data can reach them). One query."""
+    from discovery.gate import active_tenant_ids
+    from discovery.models import HostOsFact
+
+    active = active_tenant_ids()
+    if not active:
+        return set()
+    return set(HostOsFact.objects.filter(tenant_id__in=active, os_id="windows")
+               .values_list("tenant_id", flat=True).distinct())
+
+
+def msrc_tracked_keys():
+    """``products.register_provider`` hook: the Windows products of every
+    Windows host discovery read in a tenant with Discovery on, as
+    :mod:`vulnerabilities.msrc_products` keys. The server fetch keeps only
+    Microsoft records naming one of them; nothing about the hosts leaves
+    the deployment."""
+    from discovery.gate import active_tenant_ids
+    from discovery.models import HostOsFact
+
+    from .msrc_products import product_key, resolve_fact
+
+    active = active_tenant_ids()
+    if not active:
+        return set()
+    keys = set()
+    for fact in HostOsFact.objects.filter(tenant_id__in=active, os_id="windows"):
+        hp = resolve_fact(fact)
+        keys.update(product_key(k) for k in hp.keys)
+    return keys
 
 
 def _package_tenants(vuln_ids=None) -> set:
@@ -189,8 +225,9 @@ def enqueue_all() -> None:
     """Every tenant with a mapping (the feature was just switched on)."""
     from .models import ProductMapping
 
-    for tenant_id in set(ProductMapping.objects.filter(enabled=True)
-                         .values_list("tenant_id", flat=True)) | _package_tenants():
+    for tenant_id in (set(ProductMapping.objects.filter(enabled=True)
+                          .values_list("tenant_id", flat=True)) | _package_tenants()
+                      | _windows_tenants()):
         enqueue_recompute(tenant_id)
 
 

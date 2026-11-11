@@ -14,8 +14,13 @@ never makes a request. What is contacted, in order:
 2. **OSV** - one ``querybatch`` for the tracked packages (1000 per call,
    paged by ``next_page_token``), then ``/v1/vulns/<id>`` for each advisory
    that is new or modified since it was stored.
-3. **CISA KEV** - the catalog JSON, one request.
-4. **FIRST EPSS** - the scores of the stored CVEs, 100 per request, for
+3. **Microsoft (MSRC CVRF)** - only when discovery has read a Windows host:
+   the index of monthly security update documents, then each document of
+   the last :data:`MSRC_MONTHS` months that Microsoft revised since it was
+   read, or that was read for fewer Windows products than are tracked now.
+   Only month ids (``2026-Nov``) are in the requests.
+4. **CISA KEV** - the catalog JSON, one request.
+5. **FIRST EPSS** - the scores of the stored CVEs, 100 per request, for
    CVEs without a score from yesterday or today.
 
 Every request goes through :class:`core.ssrf.SafeSession` (public address,
@@ -62,6 +67,14 @@ EPSS_BASE = "https://api.first.org"
 EPSS_PATH = "/data/v1/epss"
 KEV_URL = ("https://www.cisa.gov/sites/default/files/feeds/"
            "known_exploited_vulnerabilities.json")
+MSRC_BASE = "https://api.msrc.microsoft.com/cvrf/v3.0"
+#: Monthly documents kept: builds are cumulative, so a host behind by more
+#: than this still matches every month in the window.
+MSRC_MONTHS = 12
+MSRC_SPACING = 2.0
+#: A monthly document is 4 to 30 MB of JSON (2026-Oct: 30 MB, 3,491 CVEs).
+MSRC_DOC_MAX_BYTES = 192 * 1024 * 1024
+MSRC_INDEX_MAX_BYTES = 8 * 1024 * 1024
 
 NVD_PAGE = 2000
 #: Younger cursors fetch only what changed; the API refuses a window over 120 days.
@@ -128,6 +141,8 @@ class Config:
     kev: str
     sync_epss: bool
     sync_kev: bool
+    msrc: str = MSRC_BASE
+    sync_msrc: bool = True
     #: Kept out of ``repr`` so a traceback or a log line never prints it.
     api_key: str = ""
 
@@ -161,6 +176,8 @@ def config(row: VulnerabilitySettings | None = None) -> Config:
         kev=_https(row.kev_url, KEV_URL, "KEV"),
         sync_epss=row.sync_epss,
         sync_kev=row.sync_kev,
+        msrc=_https(row.msrc_url, MSRC_BASE, "Microsoft"),
+        sync_msrc=row.sync_msrc,
         api_key=str((row.secrets or {}).get("nvd_api_key") or ""),
     )
 
@@ -251,6 +268,7 @@ class Client:
             "osv": Pacer(OSV_SPACING),
             "epss": Pacer(EPSS_SPACING),
             "kev": Pacer(KEV_SPACING),
+            "msrc": Pacer(MSRC_SPACING),
         }
         self.requests = 0
         self.retries = 0
@@ -628,6 +646,102 @@ def _sync_osv(client: Client, tracked, state: _State) -> None:
     state.save()
 
 
+def msrc_index(payload, now: datetime) -> list[tuple[str, datetime | None]]:
+    """``(month, current release)`` of the index's monthly documents of the
+    last :data:`MSRC_MONTHS` months, newest first. Entries that are not a
+    month id are skipped."""
+    from .store import month_start
+
+    values = payload.get("value") if isinstance(payload, dict) else None
+    if not isinstance(values, list):
+        raise FetchError("Microsoft answered an index without a 'value' list.")
+    first = now.date().replace(day=1)
+    for _ in range(MSRC_MONTHS - 1):
+        first = (first - timedelta(days=1)).replace(day=1)
+    out = {}
+    for v in values[:5000]:
+        month = sources.msrc_month(v.get("ID")) if isinstance(v, dict) else None
+        if month is None or month_start(month) < first or month_start(month) > now.date():
+            continue
+        out[month] = sources.parse_datetime(v.get("CurrentReleaseDate"))
+    return sorted(out.items(), key=lambda kv: month_start(kv[0]), reverse=True)
+
+
+def msrc_stale(index, keys: set[str]) -> list[str]:
+    """The months to read: never read, revised by Microsoft since, or read
+    for fewer of the tracked Windows products than now."""
+    from .models import MsrcMonth
+
+    have = {m.month: m for m in MsrcMonth.objects.filter(month__in=[k for k, _ in index])}
+    out = []
+    for month, current in index:
+        row = have.get(month)
+        if row is None or not keys <= set(row.products or []) \
+                or (current is not None and (row.current_release is None
+                                             or current > row.current_release)):
+            out.append(month)
+    return out
+
+
+def _sync_msrc(client: Client, tracked, state: _State, now: datetime) -> None:
+    """Microsoft's monthly documents, for the tracked Windows products only.
+    The requests name months, never a host or a product."""
+    keys = {k[3] for k in tracked.keys if k[0] == "msrc"}
+    p = state.progress.setdefault("msrc", {})
+    if not keys or p.get("done"):
+        return
+    counts = state.section("msrc")
+    _gate()
+    try:
+        resp = client.request("msrc", f"{client.cfg.msrc}/updates")
+        index = msrc_index(read_json(resp, MSRC_INDEX_MAX_BYTES, "The Microsoft index"), now)
+    except (FetchError, ImportFormatError) as exc:
+        state.errors.append(f"Microsoft index: {exc}")
+        p["error"] = str(exc)[:300]
+        state.save()
+        return
+    todo = p.get("todo")
+    if todo is None:
+        todo = p["todo"] = msrc_stale(index, keys)
+    done = p.setdefault("months", [])
+    counts["months"] = len(todo)
+    state.save()
+    failed = 0
+    errors = imports.ErrorLog()
+    for month in todo:
+        if month in done:
+            continue
+        _gate()
+        header: dict = {}
+        doc_counts: dict = {}
+        try:
+            resp = client.request("msrc", f"{client.cfg.msrc}/cvrf/{quote(month, safe='')}")
+            try:
+                store.store_records(
+                    sources.iter_msrc(body(resp, MSRC_DOC_MAX_BYTES, f"Microsoft {month}"),
+                                      header=header, errors=errors),
+                    source="msrc", tracked=tracked, counts=doc_counts)
+            finally:
+                resp.close()
+            if header.get("month") != month:
+                raise FetchError(f"Microsoft answered another document for {month}.")
+        except (FetchError, ImportFormatError) as exc:
+            failed += 1
+            state.errors.append(f"Microsoft {month}: {exc}")
+        else:
+            store.record_msrc_month(
+                month, current_release=header.get("current_release"), via="server",
+                products=keys, records=doc_counts["records"] - doc_counts["not_tracked"])
+            done.append(month)
+        for k, v in doc_counts.items():
+            counts[k] = counts.get(k, 0) + v
+        counts["invalid"] = errors.count
+        state.save()
+    if not failed:
+        p["done"] = True
+    state.save()
+
+
 def _sync_kev(client: Client, state: _State) -> None:
     p = state.progress.setdefault("kev", {})
     if p.get("done"):
@@ -696,6 +810,8 @@ def execute(run_id, *, session=None) -> SyncRun | None:
         client = Client(cfg, session=session)
         _sync_nvd(client, tracked, state, now)
         _sync_osv(client, tracked, state)
+        if cfg.sync_msrc:
+            _sync_msrc(client, tracked, state, now)
         if cfg.sync_kev:
             _sync_kev(client, state)
         if cfg.sync_epss:

@@ -5,7 +5,10 @@ it is newer (NVD ``lastModified``, per-advisory OSV ``modified``), so
 replaying a page or a file writes nothing. NVD owns a row's description,
 CVSS, configurations and KEV dates; OSV adds its advisories' affected
 packages under ``osv`` and fills the NVD fields only while no NVD record has
-arrived. ``CveProduct`` is rebuilt from the stored row whenever it changes.
+arrived. Microsoft's monthly data adds its Windows fixed builds under
+``msrc`` (per month, replaced when Microsoft revised it) and fills the
+description and CVSS while no NVD record has arrived, ahead of OSV's.
+``CveProduct`` is rebuilt from the stored row whenever it changes.
 
 Rows are written with ``bulk_create`` / ``bulk_update``: no signals, no
 change log - this is fetched public data, thousands of rows per run.
@@ -33,8 +36,8 @@ _NVD_FIELDS = (
     "cvss_version", "cvss_score", "cvss_severity", "cvss_vector", "attack_vector",
     "cvss_verified", "cwes", "references", "configurations", "fixed_in", "source",
 )
-_UPDATE_FIELDS = (*_NVD_FIELDS, "aliases", "osv", "kev_added", "kev_due", "kev_action",
-                  "fetched_at")
+_UPDATE_FIELDS = (*_NVD_FIELDS, "aliases", "osv", "msrc", "kev_added", "kev_due",
+                  "kev_action", "fetched_at")
 
 
 def register_after_store(fn: Callable[[set[str]], None]) -> None:
@@ -96,8 +99,25 @@ def _apply_osv(row: Cve, rec: dict) -> bool:
         "modified": adv["modified"], "affected": adv["affected"],
         "fixed_in": adv["fixed_in"]}}
     if row.source in ("", "osv"):
-        # No NVD record yet: the advisory's own description and severity.
+        # No NVD or Microsoft record yet: the advisory's own description
+        # and severity.
         _apply_common(row, rec, "osv")
+    return True
+
+
+def _apply_msrc(row: Cve, rec: dict) -> bool:
+    """Microsoft's monthly data, filed under its month. Microsoft is the CNA
+    for its own CVEs: its title and CVSS fill the row while no NVD record
+    has arrived (over OSV's), and NVD's replace them when it does."""
+    data = rec["msrc"]
+    month = data["month"]
+    stored = (row.msrc or {}).get(month)
+    entry = {"revised": data["revised"], "products": data["products"]}
+    if stored == entry or (stored and stored.get("revised", "") > data["revised"]):
+        return False
+    row.msrc = {**(row.msrc or {}), month: entry}
+    if row.source in ("", "osv", "msrc"):
+        _apply_common(row, rec, "msrc")
     return True
 
 
@@ -115,6 +135,9 @@ def products_of(row: Cve) -> set[tuple[str, str, str, str]]:
         for a in adv.get("affected") or []:
             if a.get("purl_type") and a.get("package"):
                 keys.add(("purl", "", a["purl_type"], a["package"]))
+    for month in (row.msrc or {}).values():
+        for key in (month.get("products") or {}):
+            keys.add(("msrc", "", "microsoft", key))
     return keys
 
 
@@ -132,6 +155,8 @@ def _write_batch(records: list[dict], *, source: str, now: datetime,
             row = Cve(vuln_id=vid)
         if rec["kind"] == "nvd":
             touched = _apply_nvd(row, rec, source)
+        elif rec["kind"] == "msrc":
+            touched = _apply_msrc(row, rec)
         else:
             touched = _apply_osv(row, rec)
         touched = _merge_aliases(row, rec["aliases"]) or touched
@@ -193,6 +218,29 @@ def store_records(records: Iterable[dict], *, source: str, tracked: TrackedProdu
         changed |= _write_batch(batch, source=source, now=now, counts=counts)
     after_store(changed)
     return counts
+
+
+_MONTHS = {m: i for i, m in enumerate(
+    ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1)}
+
+
+def month_start(month: str):
+    """``date(2026, 11, 1)`` of ``2026-Nov``."""
+    from datetime import date
+
+    year, _, name = month.partition("-")
+    return date(int(year), _MONTHS[name], 1)
+
+
+def record_msrc_month(month: str, *, current_release, via: str, products, records: int) -> None:
+    """Note that a monthly Microsoft document was read (bookkeeping, by
+    upsert)."""
+    from .models import MsrcMonth
+
+    MsrcMonth.objects.update_or_create(month=month, defaults={
+        "starts_on": month_start(month), "current_release": current_release,
+        "read_at": timezone.now(), "via": via, "products": sorted(products),
+        "records": records})
 
 
 def store_kev(rows: Iterable[dict], counts: dict | None = None) -> dict:

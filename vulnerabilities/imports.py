@@ -2,7 +2,8 @@
 
 For airgapped installs. A deployment admin uploads an NVD JSON 2.0 feed or a
 saved NVD API page (``.json``, ``.json.gz``, ``.zip``), OSV records (an
-ecosystem's ``all.zip`` or ``.json``), the CISA KEV catalog (``.json`` /
+ecosystem's ``all.zip`` or ``.json``), one of Microsoft's monthly security
+update documents (CVRF JSON, ``.json`` / ``.json.gz``), the CISA KEV catalog (``.json`` /
 ``.csv``) or the EPSS scores (``.csv`` / ``.csv.gz``). The request only saves
 the file and opens a :class:`~vulnerabilities.models.SyncRun`; a job on the
 ``low`` queue parses it (a year feed is too large to parse in a request) and
@@ -37,7 +38,9 @@ from .streaming import (
 
 log = logging.getLogger(__name__)
 
-KINDS = ("nvd", "osv", "kev", "epss")
+KINDS = ("nvd", "osv", "msrc", "kev", "epss")
+#: One monthly Microsoft document unpacked (the largest seen is 30 MB).
+MSRC_MAX_BYTES = 256 * 1024 * 1024
 #: Largest unpacked content of one upload (an NVD year feed is well under).
 MAX_UNPACKED_BYTES = 3 * 1024 * 1024 * 1024
 KEV_MAX_BYTES = 64 * 1024 * 1024
@@ -112,6 +115,10 @@ def start_upload(user, upload, kind: str) -> SyncRun:
                 "No product is mapped to "
                 + ("a CPE name" if kind == "nvd" else "a package URL")
                 + " yet, so nothing in this file would be kept.")
+    if kind == "msrc" and "msrc" not in products.tracked().kinds():
+        raise ImportRefused(
+            "Discovery has not read a Windows host Microsoft's data names yet, so "
+            "nothing in this file would be kept.")
     abandon_stale()
     now = timezone.now()
     try:
@@ -205,7 +212,7 @@ def process(kind: str, fh, *, tracked=None, progress=None) -> dict:
     """Parse and store one opened file. Raises ``ImportFormatError`` for a
     file that is not what ``kind`` expects."""
     errors = ErrorLog()
-    if tracked is None and kind in ("nvd", "osv"):
+    if tracked is None and kind in ("nvd", "osv", "msrc"):
         tracked = products.tracked()
     if kind == "nvd":
         counts = store.store_records(_nvd_records(fh, errors), source="nvd_feed",
@@ -213,6 +220,17 @@ def process(kind: str, fh, *, tracked=None, progress=None) -> dict:
     elif kind == "osv":
         counts = store.store_records(_osv_records(fh, errors), source="osv",
                                      tracked=tracked, progress=progress)
+    elif kind == "msrc":
+        header: dict = {}
+        counts = store.store_records(
+            sources.iter_msrc(open_stream(fh, max_bytes=MSRC_MAX_BYTES), header=header,
+                              errors=errors),
+            source="msrc", tracked=tracked, progress=progress)
+        store.record_msrc_month(
+            header["month"], current_release=header.get("current_release"), via="upload",
+            products={k[3] for k in tracked.keys if k[0] == "msrc"},
+            records=counts["records"] - counts["not_tracked"])
+        counts["month"] = header["month"]
     elif kind == "kev":
         counts = store.store_kev(sources.iter_kev(
             open_stream(fh, max_bytes=KEV_MAX_BYTES), errors=errors))

@@ -342,6 +342,59 @@ def match_osv(osv, target: Target) -> tuple[str | None, set]:
     return best, flags
 
 
+# ─── Microsoft fixed builds ──────────────────────────────────────────────────
+
+#: Microsoft lists the product but no fixed build on its build line.
+NO_FIXED_BUILD = "no_fixed_build"
+#: The host's installation type or architecture is not known and its
+#: variants disagree (one affected, another not).
+VARIANT_UNKNOWN = "variant_unknown"
+MSRC_FLAGS = (NO_FIXED_BUILD, VARIANT_UNKNOWN)
+
+
+def _msrc_variant(msrc: dict, key: str, line: str, ubr: int, flags: set) -> bool | None:
+    named, lowest = False, None
+    for month in (msrc or {}).values():
+        p = (month.get("products") or {}).get(key) if isinstance(month, dict) else None
+        if not isinstance(p, dict):
+            continue
+        named = True
+        for raw in p.get("fixed") or []:
+            k = versions.parse(raw, "winbuild")
+            if k is not None and k.group == line and (lowest is None or k.sort < lowest):
+                lowest = k.sort
+    if not named:
+        return False
+    if lowest is None:
+        flags.add(NO_FIXED_BUILD)
+        return None
+    # Builds are cumulative: the host is fixed from the lowest build that
+    # carries the fix (a hotpatch build counts; it sits between the previous
+    # and the next regular build).
+    return (ubr,) < lowest
+
+
+def match_msrc(msrc, keys, line: str, ubr) -> tuple[str | None, set]:
+    """``(confidence or None, flags)`` of Microsoft's data for a Windows host
+    that can be any of the products ``keys`` (one when its installation type
+    and architecture are known), on build line ``line`` at ``ubr``.
+
+    Affected when the host's UBR is below the lowest fixed build Microsoft
+    lists for its product on its own build line. With several candidate
+    products every one must agree; when they disagree the record does not
+    match and is flagged ``variant_unknown``. A product listed without a
+    fixed build on the line is flagged ``no_fixed_build`` and not matched."""
+    flags: set = set()
+    if not keys or not line or not isinstance(ubr, int) or isinstance(ubr, bool):
+        return None, flags
+    verdicts = [_msrc_variant(msrc, k, line, ubr, flags) for k in keys]
+    if all(v is True for v in verdicts):
+        return "range", flags
+    if any(v is True for v in verdicts) and any(v is False for v in verdicts):
+        flags.add(VARIANT_UNKNOWN)
+    return None, flags
+
+
 def match(record_configurations, record_osv, target: Target) -> tuple[str | None, set]:
     if target.kind == "purl":
         return match_osv(record_osv, target)

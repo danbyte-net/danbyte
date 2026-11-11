@@ -805,6 +805,10 @@ def host_packages(request, kind: str, pk):
 
     response = _paginate(request, rows.order_by("name", "arch", "pk"), page_rows)
     response.data["os"] = os_dict(fact)
+    from vulnerabilities.matching import os_build_summary
+
+    # Windows: the Microsoft product it matches as and its open OS-build CVEs.
+    response.data["os_build"] = os_build_summary(tenant, kind, host, fact)
     return response
 
 

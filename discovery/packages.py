@@ -124,6 +124,10 @@ def rows_for(packages, os_facts: dict, manager: str) -> dict[tuple, dict]:
 
 _COMPARED = ("version", "source_name", "source_version", "ecosystem", "match_name",
              "match_version", "namespace", "purl", "publisher")
+#: OS facts whose change re-matches the host (the Windows build line, UBR
+#: and what tells its product apart).
+_OS_COMPARED = ("os_id", "version_id", "build", "ubr", "edition", "display_version",
+                "pretty_name")
 
 
 def store(tenant, host, run, result, now=None, transport="") -> dict:
@@ -136,7 +140,8 @@ def store(tenant, host, run, result, now=None, transport="") -> dict:
     wanted = rows_for(result.packages, result.os, result.manager)
     namespace, ecosystem = release_of(result.os, result.manager)
     with transaction.atomic():
-        HostOsFact.objects.update_or_create(
+        before = HostOsFact.objects.filter(**on_host).values_list(*_OS_COMPARED).first()
+        fact, _ = HostOsFact.objects.update_or_create(
             **on_host, defaults={
                 "tenant": tenant, "os_id": result.os.get("id", "")[:64],
                 "id_like": result.os.get("id_like") or [],
@@ -150,6 +155,9 @@ def store(tenant, host, run, result, now=None, transport="") -> dict:
                 "hotfixes": list(win.get("hotfixes") or []),
                 "features": list(win.get("features") or []),
                 "transport": transport[:16], "collected_at": now, "run": run})
+        # A new Windows build (or edition, release) re-matches the host
+        # against Microsoft's fixed builds even when no package moved.
+        os_moved = before != tuple(getattr(fact, f) for f in _OS_COMPARED)
         have = {}
         for row in HostPackage.objects.filter(**on_host).values(
                 "pk", "purl_type", "name", "arch", "removed_at", *_COMPARED):
@@ -181,7 +189,7 @@ def store(tenant, host, run, result, now=None, transport="") -> dict:
             last_seen=now, run=run)
     updated = len(changed) - back
     return {"packages": len(wanted), "added": len(new) + back, "removed": len(gone),
-            "updated": updated, "changed": bool(new or changed or gone)}
+            "updated": updated, "changed": bool(new or changed or gone or os_moved)}
 
 
 def purge_removed(now=None) -> int:

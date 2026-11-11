@@ -15,7 +15,7 @@ No endpoint here makes an outbound request.
 """
 from __future__ import annotations
 
-from django.db.models import Count
+from django.db.models import Count, Max
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, parser_classes, permission_classes
@@ -26,12 +26,19 @@ from rest_framework.response import Response
 from auth_api.permissions import can_manage_deployment
 
 from . import imports
-from .models import UPDATE_SOURCES, Cve, CveProduct, SyncRun, VulnerabilitySettings
+from .models import (
+    UPDATE_SOURCES,
+    Cve,
+    CveProduct,
+    MsrcMonth,
+    SyncRun,
+    VulnerabilitySettings,
+)
 
 _OFF = {"detail": "Vulnerability data is off."}
 _ADMIN = {"detail": "users.manage required."}
-_URL_FIELDS = ("nvd_url", "epss_url", "kev_url", "osv_url")
-_BOOL_FIELDS = ("enabled", "sync_epss", "sync_kev")
+_URL_FIELDS = ("nvd_url", "epss_url", "kev_url", "osv_url", "msrc_url")
+_BOOL_FIELDS = ("enabled", "sync_epss", "sync_kev", "sync_msrc")
 _SOURCES = tuple(k for k, _ in UPDATE_SOURCES)
 _KEY_MAX = 128
 
@@ -52,6 +59,14 @@ def run_dict(run: SyncRun | None) -> dict | None:
     }
 
 
+def _msrc_status() -> dict:
+    """Microsoft's monthly documents in the store: how many, the newest and
+    when one was last read."""
+    agg = MsrcMonth.objects.aggregate(n=Count("id"), read=Max("read_at"))
+    newest = MsrcMonth.objects.order_by("-starts_on").values_list("month", flat=True).first()
+    return {"months": agg["n"], "newest": newest, "last_read_at": agg["read"]}
+
+
 def _settings_dict(row: VulnerabilitySettings, *, full: bool) -> dict:
     out = {"enabled": row.enabled}
     if not full:
@@ -65,6 +80,8 @@ def _settings_dict(row: VulnerabilitySettings, *, full: bool) -> dict:
         **{f: getattr(row, f) for f in _URL_FIELDS},
         "sync_epss": row.sync_epss,
         "sync_kev": row.sync_kev,
+        "sync_msrc": row.sync_msrc,
+        "msrc": _msrc_status(),
         "nvd_api_key_set": bool((row.secrets or {}).get("nvd_api_key")),
         "last_sync_at": row.last_sync_at,
         "last_sync_status": row.last_sync_status,
@@ -72,7 +89,8 @@ def _settings_dict(row: VulnerabilitySettings, *, full: bool) -> dict:
         "last_sync_via": row.last_sync_via,
         "last_run": run_dict(last),
         "records": Cve.objects.count(),
-        "records_by_kind": {"cpe": by_kind.get("cpe", 0), "purl": by_kind.get("purl", 0)},
+        "records_by_kind": {"cpe": by_kind.get("cpe", 0), "purl": by_kind.get("purl", 0),
+                            "msrc": by_kind.get("msrc", 0)},
         "import_kinds": list(imports.KINDS),
         "import_max_bytes": imports.max_upload_bytes(),
         "can_manage": True,

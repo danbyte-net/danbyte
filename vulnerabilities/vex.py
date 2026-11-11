@@ -122,9 +122,12 @@ def section(tenant, devices, vms, os_refs: dict, install_refs: dict) -> list[dic
     if tenant is None or not VulnerabilitySettings.objects.filter(pk=1, enabled=True).exists():
         return None
     matches = (
-        # A package discovery found is not a component of the document.
+        # A package discovery found is not a component of the document, nor
+        # is the Windows build it read (``os_build``): both are inventory
+        # observations, not the documented platform.
         VulnerabilityMatch.objects.filter(tenant=tenant, resolved_at__isnull=True,
                                           host_package__isnull=True)
+        .exclude(via="os_build")
         .filter(Q(device__in=devices.order_by().values("pk"))
                 | Q(virtual_machine__in=vms.order_by().values("pk")))
         .select_related("cve", "excepted")
