@@ -259,6 +259,50 @@ describe("MonitoringSettingsForm - Poll devices every", () => {
   })
 })
 
+describe("MonitoringSettingsForm - Nameservers", () => {
+  it("keeps a typed comma and saves every address", async () => {
+    apiMock.mockImplementation(async (path, init) => {
+      if (path === "/api/monitoring/settings/" && !init?.method)
+        return {
+          ...SETTINGS,
+          dns_sync_enabled: true,
+          dns_resolvers: ["10.0.0.45"],
+        }
+      if (init?.method === "PATCH") return JSON.parse(String(init.body))
+      return { results: [] }
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <MonitoringSettingsForm />
+      </QueryClientProvider>
+    )
+    const input = (await screen.findByLabelText(
+      "Nameservers"
+    )) as HTMLInputElement
+    expect(input.value).toBe("10.0.0.45")
+    // The comma stays while the next address is still to come.
+    fireEvent.change(input, { target: { value: "10.0.0.45," } })
+    expect(input.value).toBe("10.0.0.45,")
+    fireEvent.change(input, { target: { value: "10.0.0.45, 10.0.0.46" } })
+    expect(input.value).toBe("10.0.0.45, 10.0.0.46")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save monitoring settings" })
+    )
+    await vi.waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(([, init]) => init?.method === "PATCH")
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(([, i]) => i?.method === "PATCH")!
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      dns_resolvers: ["10.0.0.45", "10.0.0.46"],
+    })
+  })
+})
+
 describe("MonitoringSettingsForm - accessible names (#461)", () => {
   it("names every input and select by its visible label", async () => {
     const qc = new QueryClient({

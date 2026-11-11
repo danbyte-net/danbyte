@@ -450,19 +450,11 @@ export function MonitoringSettingsForm() {
                   Clear the DNS name when the lookup returns nothing
                 </span>
               </label>
-              <FormText
+              <ListText
                 label="Nameservers"
                 info="IP addresses, comma separated, asked in this order. They are queried directly, so this machine does not need DNS configured itself - which is the point on a split-horizon network where the host resolves the wrong view. Leave empty to use the host's own resolver. Note that PTR lookups always run here, never on an Outpost."
-                value={(draft.dns_resolvers ?? []).join(", ")}
-                onChange={(v) =>
-                  set(
-                    "dns_resolvers",
-                    v
-                      .split(",")
-                      .map((x) => x.trim())
-                      .filter(Boolean)
-                  )
-                }
+                value={draft.dns_resolvers ?? []}
+                onChange={(v) => set("dns_resolvers", v)}
                 placeholder="10.0.0.45, 10.0.0.46"
               />
             </div>
@@ -859,6 +851,52 @@ export function MonitoringSettingsForm() {
 /** One titled group. A card rather than a border-t divider, so the groups can
  * flow into a masonry grid and use the page width instead of stacking in one
  * narrow column. */
+const parseList = (text: string) =>
+  text
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)
+
+/**
+ * A comma-separated list typed as free text. The text is kept as typed -
+ * rebuilding it from the parsed list on every keystroke would swallow the
+ * comma the moment it is typed - and only follows `value` when that changes
+ * to something the text does not already say (a load, a reset).
+ */
+function ListText({
+  label,
+  info,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string
+  info?: ReactNode
+  value: readonly string[]
+  onChange: (v: string[]) => void
+  placeholder?: string
+}) {
+  const [text, setText] = useState(value.join(", "))
+  const joined = value.join(",")
+  useEffect(() => {
+    setText((t) => (parseList(t).join(",") === joined ? t : value.join(", ")))
+    // `joined` stands for `value`: a new array with the same items is no change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joined])
+  return (
+    <FormText
+      label={label}
+      info={info}
+      value={text}
+      onChange={(v) => {
+        setText(v)
+        onChange(parseList(v))
+      }}
+      placeholder={placeholder}
+    />
+  )
+}
+
 function Section({
   title,
   hint,
