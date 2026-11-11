@@ -53,6 +53,7 @@ class SecretPathError(SecretStoreError):
 #: where tenant folders are a database column rather than part of the path.
 MANAGED_REF_PREFIXES = (
     "device-credentials/",
+    "shared-credentials/",
     "wireless-lans/",
     "ipsec-profiles/",
     "routing-keychains/",

@@ -18163,6 +18163,8 @@ export interface DiscoveryStatus {
   /** Both on. */
   active: boolean
   can_manage: boolean
+  /** Run now may offer "Accept new host keys" on this deployment. */
+  first_use_keys_allowed: boolean
 }
 
 export interface DiscoverySettings {
@@ -18172,7 +18174,13 @@ export interface DiscoverySettings {
 }
 
 export type InventoryRunStatus =
-  "queued" | "running" | "ok" | "partial" | "failed" | "skipped"
+  | "queued"
+  | "running"
+  | "ok"
+  | "partial"
+  | "failed"
+  | "skipped"
+  | "nothing_read"
 
 export type InventoryHostStatus =
   | "ok"
@@ -18222,6 +18230,9 @@ export interface InventoryProfile {
   authorised: boolean
   authorised_by_name: string
   authorised_at: string | null
+  /** A shared credential tried right after each host's own. */
+  shared_credential_id: string | null
+  shared_credential: { id: string; name: string; kind: string } | null
   /** Why it cannot run now; "" when it can. */
   blocked_reason: string
   last_run_at: string | null
@@ -18247,6 +18258,10 @@ export interface InventoryRun {
   started_at: string | null
   finished_at: string | null
   counts: InventoryRunCounts
+  /** One line by reason: "61 without a credential". */
+  summary: string
+  /** Run now with "Accept new host keys" ticked. */
+  accept_new_host_keys: boolean
   errors: string[]
 }
 
@@ -18257,6 +18272,10 @@ export interface InventoryHostResult {
   address: string
   status: InventoryHostStatus
   transport: "ssh" | ""
+  /** "host", "shared: <name>", or "" when nothing was tried. */
+  credential_source: string
+  /** The host's key was accepted on first use by this run. */
+  key_first_use: boolean
   message: string
   packages: number
   added: number
@@ -18274,7 +18293,76 @@ export interface InventoryScopeHost {
   status: InventoryHostStatus | "ready"
   message: string
   credential: { id: string; name: string } | null
+  credential_source: string
   scan_exempt: boolean
+}
+
+/** An observed SSH host key nobody has accepted yet (`…/host-keys/`). */
+export interface PendingHostKey {
+  id: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  address: string
+  key_type: string
+  fingerprint: string
+  first_seen: string | null
+  last_seen: string | null
+  /** The host has an accepted key of this type and this one differs. */
+  mismatch: boolean
+  can_accept: boolean
+}
+
+export interface HostKeyAcceptResult {
+  accepted: string[]
+  refused: { id: string; reason: string }[]
+  not_found: number
+}
+
+export type SharedCredentialKind =
+  | "ssh_password"
+  | "ssh_key"
+  | "https_login"
+  | "windows_login"
+  | "proxmox"
+  | "vmware"
+
+/** A login shared by every host its scope matches (Settings → Credentials). */
+export interface SharedCredential {
+  id: string
+  name: string
+  kind: SharedCredentialKind
+  username: string
+  port: number | null
+  secret_managed: boolean
+  secret_provider: string
+  secret_path: string
+  secret_set: boolean
+  description: string
+  enabled: boolean
+  weight: number
+  fall_through: boolean
+  applies_to_devices: boolean
+  applies_to_vms: boolean
+  all_hosts: boolean
+  role_ids: string[]
+  device_type_ids: string[]
+  platform_ids: string[]
+  site_ids: string[]
+  tag_ids: string[]
+  scope: {
+    roles: { id: string; name: string; color: string }[]
+    device_types: { id: string; name: string }[]
+    platforms: { id: string; name: string }[]
+    sites: { id: string; name: string }[]
+    tags: { id: string; name: string; color: string }[]
+  }
+  created_at: string
+  updated_at: string
+}
+
+export interface SharedCredentialMatches {
+  count: number
+  sample: { kind: "device" | "virtual_machine"; id: string; name: string }[]
 }
 
 export interface HostPackage {

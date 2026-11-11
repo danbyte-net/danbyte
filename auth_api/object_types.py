@@ -52,6 +52,8 @@ def grant_covers(object_types, slug: str) -> bool:
 # only governs what the picker surfaces.
 CAPABILITY_VERBS: dict[str, list[str]] = {
     "devicecredential": ["reveal"],
+    # A shared credential reveals like a device credential.
+    "sharedcredential": ["reveal"],
     # Start a discovery run (#451): Danbyte logs in to the profile's hosts
     # with their stored credentials. Never implied by change, and no
     # built-in role carries it.
@@ -305,6 +307,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Device credentials link a device to an externally-stored secret. Danbyte
     # holds only the reference; revealing the secret is its own `reveal` verb.
     ("monitoring.DeviceCredential", "Device credentials", "Monitoring"),
+    ("monitoring.SharedCredential", "Shared credentials", "Monitoring"),
     ("monitoring.ConnectProtocol", "Connect protocols", "Monitoring"),
     ("monitoring.SnmpSensor", "SNMP sensors", "Monitoring"),
     ("monitoring.WatchedEndpoint", "Watched endpoints", "Monitoring"),

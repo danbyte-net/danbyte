@@ -284,6 +284,7 @@ const ROWS: Row[] = [
   ["check-templates", "Check templates", "Monitoring", "/api/monitoring/templates/"],
   ["maintenance-events", "Maintenance", "Monitoring", "/api/monitoring/maintenance-events/"],
   ["watched-endpoints", "Watched endpoints", "Monitoring", "/api/monitoring/watched-endpoints/"],
+  ["shared-credentials", "Shared credentials", "Monitoring", "/api/monitoring/shared-credentials/"],
   ["certificates", "Certificates", "Monitoring", "/api/monitoring/certificates/"],
   ["certificate-requests", "Certificate requests", "Monitoring", "/api/monitoring/certificate-requests/"],
   ["certificate-issuers", "Certificate authorities", "Monitoring", "/api/monitoring/issuers/"],
@@ -367,6 +368,7 @@ const ROWS: Row[] = [
   ["inventory-runs", "Discovery · Runs", "Integrations", null, sub],
   ["inventory-run-hosts", "Discovery run · Hosts", "Integrations", null, sub],
   ["inventory-scope-hosts", "Inventory profile · Hosts", "Integrations", null, sub],
+  ["inventory-host-keys", "Discovery · Host keys to review", "Integrations", null, sub],
   ["device-packages", "Device · Packages", "Software & lifecycle", null, sub],
   ["vm-packages", "Virtual machine · Packages", "Software & lifecycle", null, sub],
 

@@ -50,7 +50,7 @@ inside Danbyte's own managed namespace of **any** tenant - on Vault that is
 `<mount>/data/<tenant id>/…` in every KV v2 form (`data`, `metadata`,
 `subkeys`, …), on Azure Key Vault a `danbyte-<tenant id>-…` name, and on the
 local store a `device-credentials/`, `wireless-lans/`, `ipsec-profiles/`,
-`routing-keychains/`, `csr/` or `issuer/` ref. Paths are compared after
+`routing-keychains/`, `shared-credentials/`, `csr/` or `issuer/` ref. Paths are compared after
 percent-decoding. A credential saved before these rules whose path breaks them
 is refused at reveal and connect time with the reason; one that follows them
 keeps working.
@@ -63,6 +63,54 @@ Either way the value is never returned in the API.
 - SSH credentials (password or key) are what the in-browser terminal
   authenticates with; the secret is fetched at connect time and never sent to
   the browser.
+
+## Shared credentials
+
+A **shared credential** is one login for many hosts: "the ops account on
+every Linux VM at HQ". Manage them under **Settings → Devices & polling →
+Credentials**. Each has a kind, user name and port like a device
+credential, and its secret is held exactly the same way - managed or
+external, write-only, in the secret store under
+`shared-credentials/<credential id>`, readable only through **reveal** with
+the *reveal* permission, change-logged without the value.
+
+**Scope** decides which hosts it is for:
+
+- **Devices** and **Virtual machines** say which kinds of host it applies to.
+- **Roles**, **Device types**, **Platforms**, **Sites** and **Tags** each
+  narrow it: a host matches when it has one of the picked values in *every*
+  list you filled in. A VM has no device type, so a set naming device types
+  never matches a VM.
+- With every list empty it matches **nothing**, unless **All hosts** is on.
+  A shared credential never applies everywhere by accident.
+
+The dialog shows how many hosts the scope matches as you edit it
+(`POST /api/monitoring/shared-credentials/preview/`; a saved one answers
+`GET …/<id>/matches/`).
+
+### Which login a host gets
+
+One rule, in `monitoring/credentials.py`, picks the logins for a host:
+
+1. the host's own **device credential** of a fitting kind (for SSH a key
+   before a password);
+2. a shared credential a consumer pinned - an [inventory
+   profile](discovery.md#credentials-and-host-keys) can pin one;
+3. every enabled shared credential whose scope matches: lowest **Weight**
+   first, then the scope that names more, then the name.
+
+Only the **first** of those is tried. The next is tried only when the one
+before was refused *and* has **Try the next if refused** on, and never more
+than three for one host: trying one password after another against the same
+account is how accounts get locked out. Today [discovery](discovery.md) uses
+this rule; Connect and the terminal still use the device's own credentials.
+
+### Permissions
+
+Shared credentials are their own permission type (**Shared credentials**),
+with the **reveal** verb like device credentials. A person whose grant is
+limited to sites sees and changes only shared credentials scoped to those
+sites, must name at least one of them, and cannot set **All hosts**.
 
 ## Connect protocols
 

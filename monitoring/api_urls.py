@@ -50,6 +50,7 @@ from .viewsets import (
     CertificateViewSet,
     ConnectProtocolViewSet,
     DeviceCredentialViewSet,
+    SharedCredentialViewSet,
     IssuerViewSet,
     SSHHostKeyViewSet,
     CheckAssignmentViewSet,
@@ -183,6 +184,9 @@ router.register(r"acme-orders", AcmeOrderViewSet, basename="acmeorder")
 router.register(r"ssh-host-keys", SSHHostKeyViewSet, basename="ssh-host-key")
 router.register(
     r"device-credentials", DeviceCredentialViewSet, basename="device-credential"
+)
+router.register(
+    r"shared-credentials", SharedCredentialViewSet, basename="shared-credential"
 )
 router.register(
     r"connect-protocols", ConnectProtocolViewSet, basename="connect-protocol"

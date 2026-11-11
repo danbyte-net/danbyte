@@ -3261,6 +3261,74 @@ class DeviceCredential(TimestampedModel):
         store.put(self.tenant_id, self.secret_path, value or {})
 
 
+class SharedCredential(TimestampedModel):
+    """A login shared by many hosts, chosen by scope rather than attached to
+    one host - "the ops account on every Linux VM at HQ".
+
+    The secret is held exactly as a :class:`DeviceCredential`'s: only a
+    reference (``secret_provider`` + ``secret_path``) is on the row, the value
+    lives in the local ``StoredSecret`` store or Vault, and it is read only by
+    :meth:`resolve_secret` at use time. Same write-only API fields, same
+    ``reveal`` verb, same managed/external rules.
+
+    Scope: a host matches when the set is enabled, applies to its kind
+    (devices, VMs), and for every dimension that names something (roles,
+    device types, platforms, sites, tags) the host has one of the named
+    values. With every dimension empty nothing matches unless ``all_hosts``
+    is set - never implicitly. Which set wins for a host:
+    ``monitoring.credentials`` (lowest ``weight``, then the most specific
+    scope, then the name). Audited; tenant-scoped; its own RBAC type."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="shared_credentials"
+    )
+    name = models.CharField(max_length=120)
+    kind = models.CharField(max_length=16, choices=DeviceCredential.Kind.choices)
+    username = models.CharField(max_length=255, blank=True, default="")
+    port = models.PositiveIntegerField(null=True, blank=True)
+    secret_provider = models.CharField(
+        max_length=8, choices=DeviceCredential.Provider.choices, blank=True, default="")
+    secret_managed = models.BooleanField(default=True)
+    secret_path = models.CharField(max_length=200, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    enabled = models.BooleanField(default=True)
+    #: Lower is tried first.
+    weight = models.PositiveIntegerField(default=100)
+    #: A refused login may go on to the next matching credential. Off by
+    #: default: trying several passwords against one account can lock it.
+    fall_through = models.BooleanField(default=False)
+    applies_to_devices = models.BooleanField(default=True)
+    applies_to_vms = models.BooleanField(default=True)
+    #: Match every host of the kinds above. Never implied by an empty scope.
+    all_hosts = models.BooleanField(default=False)
+    roles = models.ManyToManyField("api.DeviceRole", blank=True, related_name="+")
+    device_types = models.ManyToManyField("api.DeviceType", blank=True, related_name="+")
+    platforms = models.ManyToManyField("api.Platform", blank=True, related_name="+")
+    sites = models.ManyToManyField("api.Site", blank=True, related_name="+")
+    tags = models.ManyToManyField("core.Tag", blank=True, related_name="+")
+
+    MANAGED_REF_PREFIX = "shared-credentials"
+
+    class Meta:
+        ordering = ["weight", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"],
+                                    name="uniq_shared_credential_tenant_name"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def managed_secret_ref(self) -> str:
+        return f"{self.MANAGED_REF_PREFIX}/{self.id}"
+
+    # The secret handling is DeviceCredential's, line for line: both read
+    # only tenant_id, secret_managed, secret_path and secret_provider.
+    resolve_secret = DeviceCredential.resolve_secret
+    store_managed_secret = DeviceCredential.store_managed_secret
+
+
 class ConnectProtocol(TimestampedModel):
     """A user-defined way to *reach* a device - a launch template a Connect menu
     turns into a URL the operator's browser hands to the OS.

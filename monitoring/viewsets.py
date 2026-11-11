@@ -38,6 +38,7 @@ from .models import (
     CertificateRequest,
     ConnectProtocol,
     DeviceCredential,
+    SharedCredential,
     Issuer,
     SSHHostKey,
     CertificateBinding,
@@ -63,6 +64,7 @@ from .serializers import (
     CertificateRequestSerializer,
     ConnectProtocolSerializer,
     DeviceCredentialSerializer,
+    SharedCredentialSerializer,
     IssuerSerializer,
     CertificateBindingSerializer,
     CertificateSerializer,
@@ -689,7 +691,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
             user_name=(u.get_username() if authed else ""),
             action=ChangeAction.REVEAL,
             object_type=cred._meta.label_lower,
-            object_label="Device credential",
+            object_label=str(cred._meta.verbose_name).capitalize(),
             object_id=str(cred.pk),
             object_repr=str(cred),
             object_site_id=entry_site_id(cred),
@@ -724,6 +726,118 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
             raise ValidationError({"detail": str(exc)}) from exc
         self._audit_reveal(cred)
         return Response({"secret": secret})
+
+
+class SharedCredentialViewSet(DeviceCredentialViewSet):
+    """Shared credentials: one login for every host its scope matches
+    (``monitoring.credentials``). The secret handling, the managed/external
+    rules and ``reveal`` are the device credential's (inherited), with this
+    type's own RBAC slug ``sharedcredential``.
+
+    A person whose ``sharedcredential`` grant is limited to sites sees and
+    changes only sets scoped to those sites, and cannot create a tenant-wide
+    one (the serializer refuses it).
+
+    * ``preview`` (POST, ``view``): how many hosts a scope would match, from
+      the same body as a create - nothing is written;
+    * ``matches`` (GET): the hosts a saved set matches now.
+
+    Filters: ``?kind=``, ``?enabled=``, ``?search=``."""
+
+    query_param_aliases = {}
+    queryset = SharedCredential.objects.prefetch_related(
+        "roles", "device_types", "platforms", "sites", "tags")
+    serializer_class = SharedCredentialSerializer
+    rbac_action_map = {"reveal": "reveal", "preview": "view", "matches": "view"}
+
+    def get_queryset(self):
+        from .serializers import shared_credential_site_limit
+
+        qs = TenantScopedViewSet.get_queryset(self)
+        verb = {"reveal": "reveal", "destroy": "delete", "update": "change",
+                "partial_update": "change"}.get(getattr(self, "action", ""), "view")
+        limit = shared_credential_site_limit(self.request.user, self._tenant_or_403(), verb)
+        if limit is not None:
+            from api.models import Site
+
+            qs = qs.filter(all_hosts=False, sites__isnull=False).exclude(
+                sites__in=Site.objects.exclude(pk__in=limit)).distinct()
+        p = self.request.query_params
+        if p.get("kind"):
+            qs = qs.filter(kind=p["kind"])
+        enabled = (p.get("enabled") or "").lower()
+        if enabled in ("1", "true"):
+            qs = qs.filter(enabled=True)
+        elif enabled in ("0", "false"):
+            qs = qs.filter(enabled=False)
+        q = (p.get("search") or "").strip()
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(username__icontains=q)
+                           | Q(description__icontains=q))
+        return qs.order_by("weight", "name", "pk")
+
+    def _validate_device(self, serializer):
+        """No host on a shared credential; the scope ids are tenant-checked
+        by their fields."""
+
+    def _hosts_payload(self, devices, vms):
+        user = self.request.user
+        tenant = self._tenant_or_403()
+        if not user.is_superuser:
+            devices = rbac.restrict_queryset(devices, user, tenant, "device", "view")
+            vms = rbac.restrict_queryset(vms, user, tenant, "virtualmachine", "view")
+        sample = [{"kind": "device", "id": str(d.pk), "name": d.name}
+                  for d in devices.order_by("name")[:20]]
+        sample += [{"kind": "virtual_machine", "id": str(v.pk), "name": v.name}
+                   for v in vms.order_by("name")[:max(0, 20 - len(sample))]]
+        return {"count": devices.count() + vms.count(), "sample": sample}
+
+    @action(detail=False, methods=["post"], url_path="preview")
+    def preview(self, request):
+        """The hosts a scope in the request body would match. Writes nothing."""
+        tenant = self._tenant_or_403()
+        ser = self.get_serializer(data={**request.data, "name": request.data.get("name") or "x",
+                                        "kind": request.data.get("kind") or "ssh_key"},
+                                  partial=True)
+        ser.is_valid(raise_exception=True)
+        vd = ser.validated_data
+        shell = SharedCredential(
+            tenant=tenant, applies_to_devices=vd.get("applies_to_devices", True),
+            applies_to_vms=vd.get("applies_to_vms", True),
+            all_hosts=vd.get("all_hosts", False))
+        from .credentials import matching_hosts_for
+
+        devices, vms = matching_hosts_for(shell, {
+            "roles": [o.pk for o in vd.get("roles", [])],
+            "device_types": [o.pk for o in vd.get("device_types", [])],
+            "platforms": [o.pk for o in vd.get("platforms", [])],
+            "sites": [o.pk for o in vd.get("sites", [])],
+            "tags": [o.pk for o in vd.get("tags", [])],
+        })
+        return Response(self._hosts_payload(devices, vms))
+
+    @action(detail=True, methods=["get"], url_path="matches")
+    def matches(self, request, pk=None):
+        """The hosts this set's scope matches now (those the caller may view)."""
+        from .credentials import matching_hosts
+
+        devices, vms = matching_hosts(self.get_object())
+        return Response(self._hosts_payload(devices, vms))
+
+    def reveal(self, request, pk=None):
+        """As a device credential's, without the host check: a shared
+        credential has no host. Needs ``reveal`` on it; audited."""
+        from .secret_store import SecretStoreDisabled, SecretStoreError
+
+        cred = self.get_object()
+        try:
+            secret = cred.resolve_secret()
+        except (SecretStoreDisabled, SecretStoreError) as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        self._audit_reveal(cred)
+        return Response({"secret": secret})
+
+    reveal = action(detail=True, methods=["post"], url_path="reveal")(reveal)
 
 
 class ConnectProtocolViewSet(TenantScopedViewSet):

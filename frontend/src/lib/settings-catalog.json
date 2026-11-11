@@ -208,6 +208,23 @@
       "keywords": ["ssh", "console", "https", "rdp", "vnc", "launch"]
     },
     {
+      "key": "credentials",
+      "label": "Credentials",
+      "description": "Logins shared by many hosts",
+      "to": "/settings/credentials",
+      "group": "devices",
+      "scopes": ["tenant"],
+      "keywords": [
+        "ssh",
+        "password",
+        "key",
+        "login",
+        "shared",
+        "discovery",
+        "credential"
+      ]
+    },
+    {
       "key": "branding",
       "label": "Branding & identity",
       "description": "Name, logo, IDs and faceplates",
@@ -577,6 +594,13 @@
       "description": "The launch actions on a device's Connect menu",
       "page": "connect-protocols",
       "keywords": ["ssh", "rdp", "vnc", "https", "telnet", "launch"]
+    },
+    {
+      "key": "devices.credentials",
+      "label": "Shared credentials",
+      "description": "One login for every host a scope matches",
+      "page": "credentials",
+      "keywords": ["ssh", "password", "key", "role", "device type", "discovery"]
     },
     {
       "key": "install.version",

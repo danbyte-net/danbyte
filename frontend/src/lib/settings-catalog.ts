@@ -111,6 +111,7 @@ const ICONS: Record<string, LucideIcon> = {
   "snmp-profiles": Radio,
   "snmp-sensors": Cable,
   "connect-protocols": Plug,
+  credentials: KeyRound,
   branding: Puzzle,
   "tenant-policy": CalendarClock,
   updates: Bell,

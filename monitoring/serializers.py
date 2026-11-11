@@ -13,7 +13,8 @@ from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
-from api.models import Device, DeviceRole, DeviceType, IPAddress, Status, Prefix, VRF
+from api.models import Device, DeviceRole, DeviceType, IPAddress, Platform, Prefix, Site, Status, VRF
+from core.models import Tag
 from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 
 from .checkers import CheckConfigError, get_checker
@@ -36,6 +37,7 @@ from .models import (
     CheckTemplate,
     ConnectProtocol,
     DeviceCredential,
+    SharedCredential,
     DeviceSnmp,
     MonitoringEngine,
     MonitoringDenySubnet,
@@ -402,6 +404,136 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
             active_secret_store,
             validate_external_path,
         )
+
+        try:
+            validate_external_path(active_secret_store(), path)
+        except SecretPathError as exc:
+            raise serializers.ValidationError({"secret_path": str(exc)}) from exc
+        return attrs
+
+
+def shared_credential_site_limit(user, tenant, action: str):
+    """The sites a person's ``sharedcredential`` grant for ``action`` is
+    limited to: ``None`` = any (superuser, or one grant without sites),
+    else the union of the granting permissions' sites. A shared credential
+    is not one site's row (its sites are a match scope), so this is checked
+    by the serializer and viewset rather than through a site path."""
+    if user is None or user.is_superuser:
+        return None
+    from auth_api import rbac
+
+    perms = rbac._granting_perms(user, tenant, "sharedcredential", action)
+    if not perms:
+        return None  # not granted at all: the RBAC gate refuses it first
+    ids: set = set()
+    for perm in perms:
+        sids = {s.pk for s in perm.sites.all()}
+        if not sids:
+            return None
+        ids |= sids
+    return ids
+
+
+class SharedCredentialSerializer(TenantScopedModelSerializer):
+    """A shared login. Write-only secret fields as on a device credential
+    (``password``, ``private_key``, ``passphrase``); reads carry
+    ``secret_set`` only. Scope ids resolve inside the active tenant."""
+
+    password = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    private_key = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    passphrase = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    secret_set = serializers.SerializerMethodField()
+    role_ids = TenantScopedPrimaryKeyRelatedField(
+        source="roles", many=True, required=False, queryset=DeviceRole.objects.all())
+    device_type_ids = TenantScopedPrimaryKeyRelatedField(
+        source="device_types", many=True, required=False, queryset=DeviceType.objects.all())
+    platform_ids = TenantScopedPrimaryKeyRelatedField(
+        source="platforms", many=True, required=False, queryset=Platform.objects.all())
+    site_ids = TenantScopedPrimaryKeyRelatedField(
+        source="sites", many=True, required=False, queryset=Site.objects.all())
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", many=True, required=False, queryset=Tag.objects.all())
+    scope = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SharedCredential
+        fields = [
+            "id", "name", "kind", "username", "port", "secret_managed",
+            "secret_provider", "secret_path", "secret_set", "password", "private_key",
+            "passphrase", "description", "enabled", "weight", "fall_through",
+            "applies_to_devices", "applies_to_vms", "all_hosts", "role_ids",
+            "device_type_ids", "platform_ids", "site_ids", "tag_ids", "scope",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "secret_set", "scope", "created_at", "updated_at"]
+
+    def get_secret_set(self, obj) -> bool:
+        return bool(obj.secret_path)
+
+    def get_scope(self, obj) -> dict:
+        return {
+            "roles": [{"id": str(r.pk), "name": r.name, "color": getattr(r, "color", "")}
+                      for r in obj.roles.all()],
+            "device_types": [{"id": str(d.pk), "name": d.name or d.model}
+                             for d in obj.device_types.all()],
+            "platforms": [{"id": str(p.pk), "name": p.name} for p in obj.platforms.all()],
+            "sites": [{"id": str(x.pk), "name": x.name} for x in obj.sites.all()],
+            "tags": [{"id": str(t.pk), "name": t.name, "color": getattr(t, "color", "")}
+                     for t in obj.tags.all()],
+        }
+
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Required.")
+        return value
+
+    def validate_weight(self, value):
+        if not 0 <= value <= 10000:
+            raise serializers.ValidationError("From 0 to 10000.")
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inst = self.instance
+
+        def cur(name, m2m=False):
+            if name in attrs:
+                return attrs[name]
+            if inst is None:
+                return [] if m2m else None
+            return list(getattr(inst, name).all()) if m2m else getattr(inst, name)
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        from api.views import _get_active_tenant
+
+        tenant = _get_active_tenant(request) if request is not None else None
+        limit = shared_credential_site_limit(
+            user, tenant, "change" if inst is not None else "add")
+        if limit is not None:
+            sites = {s.pk for s in cur("sites", m2m=True)}
+            if cur("all_hosts") or not sites or not sites <= limit:
+                raise serializers.ValidationError(
+                    {"site_ids": "Name only sites you manage; a site role cannot share a "
+                                 "credential tenant-wide."})
+        # Managed / external secret: the DeviceCredential rules.
+        managed = attrs.get("secret_managed", getattr(inst, "secret_managed", True))
+        if managed:
+            attrs.pop("secret_path", None)
+            if inst is not None and not inst.secret_managed:
+                attrs["secret_path"] = ""
+            return attrs
+        path = attrs.get("secret_path", getattr(inst, "secret_path", ""))
+        if not path:
+            raise serializers.ValidationError(
+                {"secret_path": "Required for an external-reference credential."})
+        if inst is not None and not inst.secret_managed and path == inst.secret_path:
+            return attrs
+        from .secret_store import SecretPathError, active_secret_store, validate_external_path
 
         try:
             validate_external_path(active_secret_store(), path)

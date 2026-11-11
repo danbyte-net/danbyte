@@ -31,7 +31,7 @@ The four things a permission can allow on a type of object are **view**, **add**
 
 A few extra **capability** verbs apply to specific types and are never implied
 by *change*: **connect** (on devices - open a [Connect launcher or the SSH
-terminal](device-access.md)), **reveal** (on device credentials, wireless
+terminal](device-access.md)), **reveal** (on device credentials, [shared credentials](device-access.md#shared-credentials), wireless
 LANs and IPSec profiles - read the referenced secret), **subscribe** (on notification channels -
 self-service opt-in/out), **view credits** (on SLA agreements - see the
 [service credits](sla.md#service-credits) an agreement owes), **view cost**
