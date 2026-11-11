@@ -27,6 +27,7 @@ import {
 import type { CheckColumnId } from "@/components/columns/check-columns"
 import { MonitoringRail, RAIL_KEYS, railActiveCount } from "./monitoring-rail"
 import type { RailFilters } from "./monitoring-rail"
+import { useMonitoringCrumb } from "./monitoring-tabs"
 
 // Quick-filter tabs: "all" first, then the states an operator scans for
 // most. One click sets the whole status filter; the rail's Status facet
@@ -64,7 +65,7 @@ function sortingToOrdering(s: SortingState): string | undefined {
 }
 
 /**
- * `/monitoring?view=checks` - every check in the tenant on the same rail the
+ * `/monitoring/checks` - every check in the tenant on the same rail the
  * History view has, with server paging and sorting. The status quick-tabs
  * and the dashboard donut both write `?status=`; the rail widens it to a
  * list. `?strip=7` draws each row's last seven days to scale.
@@ -76,6 +77,7 @@ export function ChecksList({
    * selectable, a bulk *Confirm not flapping* on the selection. */
   flappingOnly?: boolean
 }) {
+  const crumb = useMonitoringCrumb()
   const search = useSearch({ strict: false })
   const patch = useUrlPatch()
   const qc = useQueryClient()
@@ -198,6 +200,7 @@ export function ChecksList({
 
   return (
     <ListPageShell
+      {...crumb}
       title={flappingOnly ? "Flapping" : "Checks"}
       count={data ? total : undefined}
       rail={

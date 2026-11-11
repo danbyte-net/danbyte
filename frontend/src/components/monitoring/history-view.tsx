@@ -33,6 +33,7 @@ import { MonitoringRail, RAIL_KEYS, railActiveCount } from "./monitoring-rail"
 import type { RailFilters } from "./monitoring-rail"
 import { statusColor, statusLabel, useStatusLabels } from "./status-palette"
 import { useDateFormat } from "@/lib/datetime"
+import { useMonitoringCrumb } from "./monitoring-tabs"
 
 const WINDOWS = ["1", "7", "30", "90"] as const
 const PAGE = 50
@@ -70,6 +71,7 @@ const isoToDay = (iso: string | undefined): string => {
  * live in it, so a view is a link and a saved view is a snapshot of one.
  */
 export function HistoryView() {
+  const crumb = useMonitoringCrumb()
   const { formatCustom } = useDateFormat()
   const search = useSearch({ strict: false })
   const patch = useUrlPatch()
@@ -187,6 +189,7 @@ export function HistoryView() {
 
   return (
     <ListPageShell
+      {...crumb}
       title="History"
       count={data ? total : undefined}
       rail={

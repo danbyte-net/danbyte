@@ -165,15 +165,9 @@ function DiscoveryLink({ home }: { home: boolean }) {
   return (
     <Button size="sm" variant="outline" asChild>
       {home ? (
-        <Link to="/monitoring" search={{ view: "discovery", status: "all" }}>
-          Discovery
-        </Link>
+        <Link to="/discovery">Discovery</Link>
       ) : (
-        <Link
-          to="/monitoring"
-          search={{ view: "settings", status: "all" }}
-          hash="host-discovery"
-        >
+        <Link to="/monitoring/settings" hash="host-discovery">
           Discovery
         </Link>
       )}

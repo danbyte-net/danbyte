@@ -145,8 +145,13 @@ describe("sidebar layout ids (#285)", () => {
       for (const cluster of section.clusters)
         for (const { url } of cluster.items) {
           const base = url.slice(1).replace(/\//g, ".")
+          // `monitoring_.checks.index.tsx`: a page under /monitoring that
+          // opts out of the /monitoring layout.
+          const escaped = base.replace(/^([^.]+)\./, "$1_.")
           expect(
-            files.has(`${base}.tsx`) || files.has(`${base}.index.tsx`),
+            [base, escaped].some(
+              (b) => files.has(`${b}.tsx`) || files.has(`${b}.index.tsx`)
+            ),
             url
           ).toBe(true)
         }
@@ -200,5 +205,75 @@ describe("sidebar active entry (#418)", () => {
     expect(activeNavUrl("/plugins/x/sub/1", [...urls].reverse())).toBe(
       "/plugins/x/sub"
     )
+  })
+
+  it("gives Monitoring its own section: the work, then its setup", () => {
+    const monitoring = sections.find((s) => s.id === "monitoring")!
+    expect(monitoring.label).toBe("Monitoring")
+    expect(
+      monitoring.clusters.map((c) => [c.label, c.items.map((i) => i.url)])
+    ).toEqual([
+      [
+        undefined,
+        [
+          "/monitoring",
+          "/monitoring/checks",
+          "/alerts",
+          "/monitoring/sla",
+          "/monitoring/performance",
+          "/discovery",
+        ],
+      ],
+      [
+        "Setup",
+        ["/monitoring/policies", "/monitoring/settings", "/monitoring-engines"],
+      ],
+    ])
+    const ids = sections.map((s) => s.id)
+    expect(ids.indexOf("governance")).toBe(ids.indexOf("monitoring") + 1)
+    for (const url of ["/monitoring", "/alerts", "/discovery"])
+      expect(urlsOf("Governance")).not.toContain(url)
+  })
+
+  it("keeps the gate each Monitoring tab had", () => {
+    const item = (url: string) =>
+      sections
+        .flatMap((s) => s.clusters.flatMap((c) => c.items))
+        .find((x) => x.url === url)!
+    const monitoring = ["checktemplate", "checkassignment", "silence"]
+    for (const url of [
+      "/monitoring",
+      "/monitoring/checks",
+      "/monitoring/sla",
+      "/monitoring/performance",
+      "/monitoring/policies",
+    ])
+      expect(item(url).anyOf, url).toEqual(monitoring)
+    expect(item("/monitoring/settings").perm).toBe("users.manage")
+    expect(item("/monitoring-engines").perm).toBe("users.manage")
+    expect(item("/discovery").objectType).toBe("inventoryprofile")
+    expect(item("/discovery").integration).toEqual(["discovery"])
+    expect(item("/alerts").anyOf).toEqual([
+      "alertrule",
+      "notificationchannel",
+      "silence",
+    ])
+  })
+
+  it("lights the Monitoring page a URL belongs to", () => {
+    const urls = sections.flatMap((s) =>
+      s.clusters.flatMap((c) => c.items.map((i) => i.url))
+    )
+    expect(activeNavUrl("/monitoring", urls)).toBe("/monitoring")
+    expect(activeNavUrl("/monitoring/checks/abc", urls)).toBe(
+      "/monitoring/checks"
+    )
+    expect(activeNavUrl("/monitoring/sla/templates/x", urls)).toBe(
+      "/monitoring/sla"
+    )
+    expect(activeNavUrl("/monitoring-engines", urls)).toBe(
+      "/monitoring-engines"
+    )
+    expect(activeNavUrl("/discovery/findings", urls)).toBe("/discovery")
   })
 })

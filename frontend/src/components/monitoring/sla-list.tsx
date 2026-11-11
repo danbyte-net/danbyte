@@ -21,12 +21,14 @@ import { HolidayCalendarsButton } from "./holiday-calendars-dialog"
 import { SlaCausesButton } from "./sla-follow-up"
 import { SlaOverviewSchedulesDialog } from "./sla-report-schedules"
 import { SlaTemplatesButton } from "./sla-templates"
+import { useMonitoringCrumb } from "./monitoring-tabs"
 
 /**
- * `/monitoring?view=sla` - every agreement with this period's figure against
+ * `/monitoring/sla` - every agreement with this period's figure against
  * its target, the budget left and how much of the time was measured.
  */
 export function SlaList() {
+  const crumb = useMonitoringCrumb()
   const { canDo } = useMe()
   const [q, setQ] = useState("")
   const [scheduling, setScheduling] = useState(false)
@@ -46,6 +48,7 @@ export function SlaList() {
   const columns = useMemo(() => slaAgreementColumns({ credits }), [credits])
   return (
     <ListPageShell
+      {...crumb}
       title="SLAs"
       count={query.data?.count}
       search={{

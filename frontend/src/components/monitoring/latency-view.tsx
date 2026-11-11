@@ -27,7 +27,7 @@ const COLUMNS = [
 ]
 
 /**
- * `/monitoring?view=latency` - one check kind at a time: its percentiles
+ * `/monitoring/performance?view=latency` - one check kind at a time: its percentiles
  * over the window, then the checks furthest from their own normal and the
  * ones spiking most. Never an average across kinds.
  */

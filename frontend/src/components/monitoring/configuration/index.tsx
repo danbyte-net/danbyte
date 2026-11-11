@@ -24,8 +24,8 @@ import type { ConfigTab } from "./tabs"
 export function MonitoringConfiguration() {
   // The tab is a URL parameter so a link to "the platforms policies" exists
   // and a reload lands where it was.
-  const { scope } = useSearch({ from: "/monitoring" })
-  const navigate = useNavigate({ from: "/monitoring" })
+  const { scope } = useSearch({ from: "/monitoring_/policies" })
+  const navigate = useNavigate({ from: "/monitoring/policies" })
   const tab: ConfigTab = scope ?? "prefixes"
   const setTab = (next: ConfigTab) =>
     void navigate({

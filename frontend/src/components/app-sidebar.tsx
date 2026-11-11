@@ -5,6 +5,7 @@ import {
   AppWindow,
   ArrowDownUp,
   BellRing,
+  CircleCheck,
   BookOpen,
   Bookmark,
   Boxes,
@@ -75,6 +76,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
+  Target,
   Snowflake,
   Split,
   SquareKanban,
@@ -1238,31 +1240,27 @@ export const sections: NavSection[] = [
     ],
   },
   {
-    id: "governance",
-    label: "Governance",
-    icon: ShieldCheck,
+    // One entry per Monitoring page (it was one entry with eleven tabs): the
+    // pages operators work in first, then the ones that set it up. Each page
+    // keeps the gate its tab had - the Monitoring gate, Settings and Engines
+    // users.manage, Discovery its own.
+    id: "monitoring",
+    label: "Monitoring",
+    icon: Activity,
     clusters: [
       {
         items: [
           {
-            title: "Monitoring",
+            title: "Status",
             url: "/monitoring",
             icon: Activity,
             anyOf: ["checktemplate", "checkassignment", "silence"],
           },
           {
-            title: "Monitoring engines",
-            url: "/monitoring-engines",
-            icon: Radio,
-            perm: "users.manage",
-          },
-          {
-            // Part of Monitoring since #451; /discovery opens its tab there.
-            title: "Discovery",
-            url: "/discovery",
-            icon: ScanSearch,
-            objectType: "inventoryprofile",
-            integration: ["discovery"],
+            title: "Checks",
+            url: "/monitoring/checks",
+            icon: CircleCheck,
+            anyOf: ["checktemplate", "checkassignment", "silence"],
           },
           {
             title: "Alerts",
@@ -1270,7 +1268,59 @@ export const sections: NavSection[] = [
             icon: BellRing,
             anyOf: ["alertrule", "notificationchannel", "silence"],
           },
-
+          {
+            title: "SLAs",
+            url: "/monitoring/sla",
+            icon: Target,
+            anyOf: ["checktemplate", "checkassignment", "silence"],
+          },
+          {
+            title: "Performance",
+            url: "/monitoring/performance",
+            icon: Gauge,
+            anyOf: ["checktemplate", "checkassignment", "silence"],
+          },
+          {
+            title: "Discovery",
+            url: "/discovery",
+            icon: ScanSearch,
+            objectType: "inventoryprofile",
+            integration: ["discovery"],
+          },
+        ],
+      },
+      {
+        label: "Setup",
+        items: [
+          {
+            title: "Policies",
+            url: "/monitoring/policies",
+            icon: SlidersHorizontal,
+            anyOf: ["checktemplate", "checkassignment", "silence"],
+          },
+          {
+            title: "Settings",
+            url: "/monitoring/settings",
+            icon: SettingsIcon,
+            perm: "users.manage",
+          },
+          {
+            title: "Engines",
+            url: "/monitoring-engines",
+            icon: Radio,
+            perm: "users.manage",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "governance",
+    label: "Governance",
+    icon: ShieldCheck,
+    clusters: [
+      {
+        items: [
           {
             title: "Certificates",
             url: "/certificates",

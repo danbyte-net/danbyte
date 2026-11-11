@@ -166,7 +166,7 @@ function Body({ a }: { a: SlaAgreement }) {
     onSuccess: () => {
       toast.success(`Deleted ${a.name}`)
       qc.invalidateQueries({ queryKey: ["sla-agreements"] })
-      nav({ to: "/monitoring", search: { view: "sla", status: "all" } })
+      nav({ to: "/monitoring/sla" })
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -192,8 +192,7 @@ function Body({ a }: { a: SlaAgreement }) {
 
   return (
     <DetailShell
-      backTo="/monitoring"
-      backSearch={{ view: "sla", status: "all" }}
+      backTo="/monitoring/sla"
       backLabel="SLAs"
       title={a.name}
       presence={{ type: "slaagreement", id: a.id }}

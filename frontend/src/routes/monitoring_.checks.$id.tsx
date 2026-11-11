@@ -88,8 +88,7 @@ function Body({
   )
   return (
     <DetailShell
-      backTo="/monitoring"
-      backSearch={{ view: "checks", status: "all" }}
+      backTo="/monitoring/checks"
       backLabel="Checks"
       title={
         <span>

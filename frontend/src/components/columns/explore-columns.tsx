@@ -45,8 +45,8 @@ export function exploreColumns(
         )
         return (
           <Link
-            to="/monitoring"
-            search={{ view: "checks", status: "all", [groupBy]: r.key }}
+            to="/monitoring/checks"
+            search={{ [groupBy]: r.key }}
             className="link"
           >
             {label}

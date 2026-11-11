@@ -99,7 +99,7 @@ function Body({ t }: { t: SlaTemplate }) {
     onSuccess: () => {
       toast.success(`Deleted ${t.name}`)
       qc.invalidateQueries({ queryKey: ["sla-templates"] })
-      nav({ to: "/monitoring", search: { view: "sla", status: "all" } })
+      nav({ to: "/monitoring/sla" })
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -173,8 +173,7 @@ function Body({ t }: { t: SlaTemplate }) {
 
   return (
     <DetailShell
-      backTo="/monitoring"
-      backSearch={{ view: "sla", status: "all" }}
+      backTo="/monitoring/sla"
       backLabel="SLAs"
       title={t.name}
       presence={{ type: "slatemplate", id: t.id }}

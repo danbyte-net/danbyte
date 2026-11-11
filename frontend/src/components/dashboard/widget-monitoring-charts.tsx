@@ -47,7 +47,7 @@ export function AlertsPerDay({
     const end = new Date(new Date(p.t).getTime() + 86_400_000).toISOString()
     void navigate({
       to: "/monitoring",
-      search: { view: "history", status: "all", since: p.t, until: end },
+      search: { view: "history", since: p.t, until: end },
     })
   }
   const data = rows.map((p) => ({
@@ -122,8 +122,8 @@ export function LatencyWeek({
     <LatencyByKindChart
       onPick={() =>
         void navigate({
-          to: "/monitoring",
-          search: { view: "latency", status: "all" },
+          to: "/monitoring/performance",
+          search: { view: "latency" },
         })
       }
       kinds={kinds}

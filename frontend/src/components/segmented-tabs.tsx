@@ -22,6 +22,7 @@ export function SegmentedTabs<V extends string = string>({
   onValueChange,
   className,
   wrap = false,
+  label,
 }: {
   items: readonly SegmentedTab<V>[]
   value: V
@@ -31,12 +32,15 @@ export function SegmentedTabs<V extends string = string>({
    * containers (e.g. a popover column) where a scrolling strip would push the
    * last option out of sight. */
   wrap?: boolean
+  /** Names the strip for screen readers ("Status views"). */
+  label?: string
 }) {
   return (
     // min-w-0 lets the strip shrink inside flex rows; the overflow then
     // scrolls INSIDE the nav (swipeable on touch, scrollbar hidden) instead
     // of escalating to the page and dragging the whole layout sideways.
     <nav
+      aria-label={label}
       className={cn(
         "flex min-w-0 items-center gap-1",
         wrap

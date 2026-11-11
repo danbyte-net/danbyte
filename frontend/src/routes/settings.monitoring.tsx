@@ -53,11 +53,7 @@ function MonitoringSettingsPage() {
           <>
             Schedule, stale thresholds, skip policy, reverse DNS, alerting,
             discovery and cleanup. The same settings appear under{" "}
-            <Link
-              to="/monitoring"
-              search={{ view: "settings", status: "all" }}
-              className="link"
-            >
+            <Link to="/monitoring/settings" className="link">
               Monitoring → Settings
             </Link>
             .

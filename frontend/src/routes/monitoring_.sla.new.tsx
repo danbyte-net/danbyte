@@ -16,15 +16,11 @@ function NewSlaAgreementPage() {
   const { full } = Route.useSearch()
   const created = (a: { id: string }) =>
     nav({ to: "/monitoring/sla/$id", params: { id: a.id } })
-  const cancel = () =>
-    nav({ to: "/monitoring", search: { view: "sla", status: "all" } })
+  const cancel = () => nav({ to: "/monitoring/sla" })
   return (
     <EditPageShell
       wide
-      crumbs={[
-        { label: "Monitoring", to: "/monitoring" },
-        { label: "New SLA" },
-      ]}
+      crumbs={[{ label: "SLAs", to: "/monitoring/sla" }, { label: "New SLA" }]}
       title="New service level agreement"
     >
       {full ? (

@@ -151,11 +151,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
       backTo="/monitoring"
       backLabel="Monitoring"
       crumbs={
-        <Link
-          to="/monitoring"
-          search={{ view: "discovery", status: "all" }}
-          className="hover:text-foreground"
-        >
+        <Link to="/discovery" className="hover:text-foreground">
           Discovery
         </Link>
       }
@@ -268,12 +264,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
       <DeleteDialog
         profile={deleting ? p : null}
         onOpenChange={(o) => !o && setDeleting(false)}
-        onDeleted={() =>
-          nav({
-            to: "/monitoring",
-            search: { view: "discovery", status: "all" },
-          })
-        }
+        onDeleted={() => nav({ to: "/discovery" })}
       />
     </DetailShell>
   )

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react"
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Link,
+  redirect,
+  useNavigate,
+} from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { Activity } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -27,9 +31,7 @@ import { labelTicks } from "@/lib/chart-axis"
 import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { useMe } from "@/lib/use-me"
 import { useDateFormat } from "@/lib/datetime"
-import { EngineHealthBanner } from "@/components/monitoring/engine-health-banner"
 import {
   Card,
   CardAction,
@@ -60,116 +62,36 @@ import {
 } from "@/components/monitoring/mixed-status-badge"
 import { StateTip } from "@/components/monitoring/monitoring-bar"
 import { Kpi } from "@/components/kpi-card"
-import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
 import { HistoryView } from "@/components/monitoring/history-view"
-import { TemplatesList } from "@/components/monitoring/templates-list"
-import { MonitoringConfiguration } from "@/components/monitoring/configuration"
-import { CONFIG_TABS } from "@/components/monitoring/configuration/tabs"
-import type { ConfigTab } from "@/components/monitoring/configuration/tabs"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 import { SourceBadge } from "@/components/monitoring/source-badge"
-import { ExploreView } from "@/components/monitoring/explore-view"
 import { LatencyByKindChart } from "@/components/monitoring/latency-by-kind"
-import { LatencyView } from "@/components/monitoring/latency-view"
-import { SlaList } from "@/components/monitoring/sla-list"
-import {
-  DiscoveryTab,
-  useDiscoveryTab,
-} from "@/components/discovery/discovery-tab"
 import { usePageTitle } from "@/lib/page-title"
-
-type MonitoringView =
-  | "overview"
-  | "history"
-  | "checks"
-  | "explore"
-  | "latency"
-  | "sla"
-  | "flapping"
-  | "templates"
-  | "configuration"
-  | "discovery"
-  | "settings"
-
-// The filter params the history and checks views keep in the URL. Declared so
-// they survive navigation: a param the route does not validate is dropped
-// when the router rebuilds the location, which is what reset filters on
-// Back elsewhere (#109).
-const FILTER_KEYS = [
-  "to_status",
-  "from_status",
-  "kind",
-  "source",
-  "site",
-  "device_type",
-  "role",
-  "platform",
-  "template",
-  "engine",
-  "region",
-  "device",
-  "prefix",
-  "vrf",
-  "vlan",
-  "tag",
-  "port",
-  "ip",
-  "q",
-  "page",
-  "ordering",
-  "days",
-  "since",
-  "until",
-  "strip",
-  "flapping",
-  "excluded",
-  "dow",
-  "hour",
-  "group_by",
-] as const
-type FilterKey = (typeof FILTER_KEYS)[number]
-
-interface MonitoringSearch extends Partial<Record<FilterKey, string>> {
-  view: MonitoringView
-  status: CheckStatus | "all"
-  /** Configuration tab; absent means the default. */
-  scope?: ConfigTab
-}
-
-const VIEWS: MonitoringView[] = [
-  "overview",
-  "history",
-  "checks",
-  "explore",
-  "latency",
-  "sla",
-  "flapping",
-  "templates",
-  "configuration",
-  "discovery",
-  "settings",
-]
+import {
+  legacyHref,
+  legacyMonitoringTarget,
+  type MonitoringSearch,
+  monitoringSearch,
+  STATUS_VIEWS,
+  type StatusView,
+} from "@/lib/monitoring-nav"
+import { MonitoringTabs } from "@/components/monitoring/monitoring-tabs"
 
 export const Route = createFileRoute("/monitoring")({
   component: MonitoringPage,
-  validateSearch: (s: Record<string, unknown>): MonitoringSearch => ({
-    // `tab` is read as an alias of `view`, so ?tab=discovery lands too.
-    view: VIEWS.includes((s.view ?? s.tab) as MonitoringView)
-      ? ((s.view ?? s.tab) as MonitoringView)
-      : "overview",
-    status:
-      typeof s.status === "string" ? (s.status as CheckStatus | "all") : "all",
-    ...(CONFIG_TABS.includes(s.scope as ConfigTab)
-      ? { scope: s.scope as ConfigTab }
-      : {}),
-    ...Object.fromEntries(
-      FILTER_KEYS.filter((k) => typeof s[k] === "string" && s[k] !== "").map(
-        (k) => [k, String(s[k])]
-      )
-    ),
-  }),
+  validateSearch: monitoringSearch(STATUS_VIEWS),
+  // The page used to hold every Monitoring tab; an old `?view=` (or `?tab=`)
+  // link lands on the page that tab moved to, filters and all.
+  beforeLoad: ({ location }) => redirectLegacy(location),
 })
+
+function redirectLegacy(location: { search: unknown; hash: string }): void {
+  const target = legacyMonitoringTarget(
+    location.search as Record<string, unknown>
+  )
+  if (target) throw redirect({ href: legacyHref(target, location.hash) })
+}
 
 const STATUS_ORDER: CheckStatus[] = [
   "up",
@@ -198,31 +120,16 @@ const KIND_PALETTE = [
 function MonitoringPage() {
   usePageTitle("Monitoring")
   const { formatCustom } = useDateFormat()
-  const { view } = Route.useSearch()
+  const search: MonitoringSearch<StatusView> = Route.useSearch()
+  const view: StatusView = search.view ?? "overview"
   const labels = useStatusLabels()
-  // Same gate the settings page uses - the tab is hidden without it, and the
-  // panel is guarded too so a hand-typed ?view=settings shows nothing.
-  const { canManage } = useMe()
-  // Discovery lives here too (#451), while it is on and you may view
-  // its profiles.
-  const discoveryTab = useDiscoveryTab()
   const nav = useNavigate()
-  // Changing view starts clean - a history filter has no business on the
-  // Templates tab; changing anything else keeps the rest of the URL.
-  const go = (next: Partial<MonitoringSearch>) =>
+  // Changing tab starts clean - a history filter has no business on the
+  // Overview.
+  const go = (next: StatusView) =>
     nav({
       to: "/monitoring",
-      search: (prev): MonitoringSearch =>
-        next.view && next.view !== prev.view
-          ? { view: next.view, status: "all" }
-          : {
-              ...(prev as MonitoringSearch),
-              view: (prev.view as MonitoringView) ?? "overview",
-              status:
-                next.status ??
-                (prev.status as MonitoringSearch["status"]) ??
-                "all",
-            },
+      search: next === "overview" ? {} : { view: next },
     })
 
   const [mounted, setMounted] = useState(false)
@@ -234,6 +141,8 @@ function MonitoringPage() {
     queryFn: () =>
       api<MonitoringStats>(`/api/monitoring/stats/?hours=${hours}`),
     placeholderData: keepPreviousData,
+    // The Overview's figures; History and Flapping read their own.
+    enabled: view === "overview",
   })
   const d = stats.data
 
@@ -322,516 +231,438 @@ function MonitoringPage() {
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/30">
-      {/* The view tabs take the room beside the title and wrap onto more
-          rows when they need them - never scrolled out of sight. */}
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2 lg:px-6">
-        <h1 className="flex shrink-0 items-center gap-2 text-base font-semibold">
-          <Activity className="h-4 w-4 text-muted-foreground" />
-          Monitoring
-        </h1>
-        <SegmentedTabs
-          className="ml-2 min-w-[min(100%,18rem)] flex-1"
-          wrap
-          value={view}
-          onValueChange={(v) => go({ view: v as MonitoringView })}
-          items={[
-            { value: "overview", label: "Overview" },
-            { value: "history", label: "History" },
-            { value: "checks", label: "Checks" },
-            { value: "explore", label: "Explore" },
-            { value: "latency", label: "Latency" },
-            { value: "sla", label: "SLAs" },
-            ...(flaps.length > 0
-              ? [{ value: "flapping", label: "Flapping", count: flaps.length }]
-              : []),
-            { value: "templates", label: "Templates" },
-            { value: "configuration", label: "Configuration" },
-            ...(discoveryTab
-              ? [{ value: "discovery", label: "Discovery" }]
-              : []),
-            ...(canManage ? [{ value: "settings", label: "Settings" }] : []),
-          ]}
-        />
-        {d && total > 0 && (
-          <span className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <StatusSummary
-              counts={d.by_status}
-              onOpen={(status) =>
-                nav({ to: "/monitoring", search: { view: "checks", status } })
-              }
-            />
-            <span className="num whitespace-nowrap">
-              {pct(d.by_status.up ?? 0)}% reachable
+    <MonitoringTabs
+      crumb={false}
+      label="Status views"
+      value={view}
+      onValueChange={go}
+      padded={view === "overview"}
+      items={[
+        { value: "overview", label: "Overview" },
+        ...(flaps.length > 0 || view === "flapping"
+          ? [
+              {
+                value: "flapping" as const,
+                label: "Flapping",
+                count: flaps.length,
+              },
+            ]
+          : []),
+        { value: "history", label: "History" },
+      ]}
+    >
+      {stats.isError && view === "overview" && (
+        <QueryError error={stats.error} />
+      )}
+
+      {view === "history" && <HistoryView />}
+      {view === "flapping" && <ChecksList flappingOnly />}
+
+      {view === "overview" && d && (
+        <div className="mx-auto mb-4 flex max-w-7xl items-center gap-3 lg:mb-6">
+          <h1 className="text-base font-semibold">Overview</h1>
+          {total > 0 && (
+            <span className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <StatusSummary
+                counts={d.by_status}
+                onOpen={(status) =>
+                  nav({
+                    to: "/monitoring/checks",
+                    search: status === "all" ? {} : { status },
+                  })
+                }
+              />
+              <span className="num whitespace-nowrap">
+                {pct(d.by_status.up ?? 0)}% reachable
+              </span>
             </span>
-          </span>
-        )}
-      </header>
-
-      {/* Dead-Outpost banner - impossible to miss when checks are stalling. */}
-      <EngineHealthBanner />
-
-      {/* Configuration lays out its own full-height rail + table shell (like
-          /prefixes), so the shared padding lives on the other views instead. */}
-      <div
-        className={
-          view === "configuration" ||
-          view === "history" ||
-          view === "checks" ||
-          view === "explore" ||
-          view === "sla" ||
-          view === "discovery" ||
-          view === "flapping"
-            ? "flex min-h-0 flex-1 flex-col"
-            : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
-        }
-      >
-        {stats.isError && <QueryError error={stats.error} />}
-
-        {view === "history" && <HistoryView />}
-
-        {view === "checks" && <ChecksList />}
-        {view === "explore" && <ExploreView />}
-        {view === "latency" && <LatencyView />}
-        {view === "sla" && <SlaList />}
-        {view === "flapping" && <ChecksList flappingOnly />}
-
-        {view === "templates" && (
-          <div className="mx-auto max-w-7xl">
-            <TemplatesList />
+          )}
+        </div>
+      )}
+      {view === "overview" && d && (
+        <div className="mx-auto max-w-7xl space-y-4 lg:space-y-6">
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <Kpi label="Total checks" value={total} />
+            <Kpi label="Monitored IPs" value={d.monitored_ips} />
+            {d.availability_pct != null && (
+              <Kpi
+                label={`Availability · ${windowLabel}`}
+                value={d.availability_pct}
+                unit="%"
+                tone={
+                  d.availability_pct >= 99.9
+                    ? "up"
+                    : d.availability_pct >= 99
+                      ? "flapping"
+                      : "down"
+                }
+              />
+            )}
+            <Kpi
+              label="Up"
+              value={d.by_status.up ?? 0}
+              tone="up"
+              badge={`${pct(d.by_status.up ?? 0)}%`}
+            />
+            <Kpi
+              label="Down"
+              value={d.by_status.down ?? 0}
+              tone="down"
+              badge={(d.by_status.down ?? 0) > 0 ? "alert" : undefined}
+            />
+            <Kpi label="Stale" value={d.by_status.stale ?? 0} tone="stale" />
+            <Kpi
+              label="Skipped"
+              value={d.by_status.skipped ?? 0}
+              tone="skipped"
+            />
+            {d.fast_lane.fast_checks > 0 && (
+              <Kpi
+                label="Fast lane"
+                value={d.fast_lane.fast_checks}
+                tone={d.fast_lane.alive ? undefined : "down"}
+                badge={
+                  d.fast_lane.alive ? `${d.fast_lane.probes_per_s}/s` : "alert"
+                }
+              />
+            )}
+            {flaps.length > 0 && (
+              <Link
+                to="/monitoring"
+                search={{ view: "flapping" }}
+                className="block"
+              >
+                <Kpi
+                  label="Flapping now"
+                  value={flaps.length}
+                  tone="flapping"
+                  badge="alert"
+                />
+              </Link>
+            )}
           </div>
-        )}
 
-        {view === "configuration" && <MonitoringConfiguration />}
-        {view === "discovery" && <DiscoveryTab />}
+          {/* Certificate & key health - expiry buckets, SSH drift, firing
+                alerts, each opening the matching list. Hidden with no certs. */}
+          <CertKeyHealthCard />
 
-        {/* Its own tab rather than a card at the foot of Overview: a dashboard
-            is for reading and settings are for changing, and burying a form
-            below the charts made it hard to find (#63). */}
-        {view === "settings" && canManage && (
-          <div className="space-y-4">
+          {/* Hero: results over time (shadcn stacked area) */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Check results</CardTitle>
+              <CardDescription>
+                Outcomes per {d.series_bucket} over the last {windowLabel}
+              </CardDescription>
+              <CardAction>
+                <SegmentedTabs
+                  value={String(hours)}
+                  onValueChange={(v) => setHours(Number(v) as StatsHours)}
+                  items={[
+                    { value: "24", label: "24h" },
+                    { value: "168", label: "7d" },
+                    { value: "720", label: "30d" },
+                  ]}
+                />
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {!mounted || seriesData.length === 0 ? (
+                <Placeholder
+                  h="h-[250px]"
+                  hint={`No results recorded in the last ${windowLabel}.`}
+                />
+              ) : (
+                <ChartContainer
+                  config={seriesConfig}
+                  className="aspect-auto h-[250px] w-full"
+                >
+                  <LineChart
+                    accessibilityLayer
+                    data={seriesData}
+                    margin={{ left: 12, right: 12 }}
+                  >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="t"
+                      tickFormatter={labelTicks(seriesData, "t")}
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      minTickGap={32}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={countAxisWidth(
+                        seriesData.map((p) =>
+                          Math.max(p.up, p.degraded, p.down)
+                        )
+                      )}
+                      allowDecimals={false}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent indicator="line" />}
+                    />
+                    {(["up", "degraded", "down"] as const).map((k) => (
+                      <Line
+                        key={k}
+                        dataKey={k}
+                        type="monotone"
+                        stroke={`var(--color-${k})`}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    ))}
+                    <ChartLegend content={<ChartLegendContent />} />
+                  </LineChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* The estate's latency and the alert flow, over the same window */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Settings &amp; defaults</CardTitle>
+                <CardTitle>Latency</CardTitle>
                 <CardDescription>
-                  Stale thresholds, the skip policy, and the global schedule
+                  Median and 95th percentile per check kind, per{" "}
+                  {d.series_bucket === "day" ? "day" : "bucket"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <MonitoringSettingsForm />
+                {!mounted ? (
+                  <Placeholder h="h-[200px]" hint="" />
+                ) : (
+                  <LatencyByKindChart
+                    kinds={d.latency_by_kind ?? []}
+                    formatLabel={latencyLabel}
+                    empty={
+                      <Placeholder
+                        h="h-[200px]"
+                        hint={`No latency recorded in the last ${windowLabel}.`}
+                      />
+                    }
+                    chartClassName="h-[200px]"
+                  />
+                )}
               </CardContent>
             </Card>
-            <p className="text-[11px] text-muted-foreground">
-              Deployment-wide scheduling for drift runs and the email digest
-              lives in{" "}
-              <Link
-                to="/settings/monitoring"
-                search={{ scope: "deployment" }}
-                className="link"
-              >
-                Settings → Monitoring
-              </Link>
-              .
-            </p>
-          </div>
-        )}
 
-        {view === "overview" && d && (
-          <div className="mx-auto max-w-7xl space-y-4 lg:space-y-6">
-            {/* KPI cards */}
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-              <Kpi label="Total checks" value={total} />
-              <Kpi label="Monitored IPs" value={d.monitored_ips} />
-              {d.availability_pct != null && (
-                <Kpi
-                  label={`Availability · ${windowLabel}`}
-                  value={d.availability_pct}
-                  unit="%"
-                  tone={
-                    d.availability_pct >= 99.9
-                      ? "up"
-                      : d.availability_pct >= 99
-                        ? "flapping"
-                        : "down"
-                  }
-                />
-              )}
-              <Kpi
-                label="Up"
-                value={d.by_status.up ?? 0}
-                tone="up"
-                badge={`${pct(d.by_status.up ?? 0)}%`}
-              />
-              <Kpi
-                label="Down"
-                value={d.by_status.down ?? 0}
-                tone="down"
-                badge={(d.by_status.down ?? 0) > 0 ? "alert" : undefined}
-              />
-              <Kpi label="Stale" value={d.by_status.stale ?? 0} tone="stale" />
-              <Kpi
-                label="Skipped"
-                value={d.by_status.skipped ?? 0}
-                tone="skipped"
-              />
-              {d.fast_lane.fast_checks > 0 && (
-                <Kpi
-                  label="Fast lane"
-                  value={d.fast_lane.fast_checks}
-                  tone={d.fast_lane.alive ? undefined : "down"}
-                  badge={
-                    d.fast_lane.alive
-                      ? `${d.fast_lane.probes_per_s}/s`
-                      : "alert"
-                  }
-                />
-              )}
-              {flaps.length > 0 && (
-                <Link
-                  to="/monitoring"
-                  search={{ view: "flapping", status: "all" }}
-                  className="block"
-                >
-                  <Kpi
-                    label="Flapping now"
-                    value={flaps.length}
-                    tone="flapping"
-                    badge="alert"
-                  />
-                </Link>
-              )}
-            </div>
-
-            {/* Certificate & key health - expiry buckets, SSH drift, firing
-                alerts, each opening the matching list. Hidden with no certs. */}
-            <CertKeyHealthCard />
-
-            {/* Hero: results over time (shadcn stacked area) */}
             <Card>
               <CardHeader>
-                <CardTitle>Check results</CardTitle>
+                <CardTitle>Alerts</CardTitle>
                 <CardDescription>
-                  Outcomes per {d.series_bucket} over the last {windowLabel}
+                  Opened against resolved, per day
                 </CardDescription>
-                <CardAction>
-                  <SegmentedTabs
-                    value={String(hours)}
-                    onValueChange={(v) => setHours(Number(v) as StatsHours)}
-                    items={[
-                      { value: "24", label: "24h" },
-                      { value: "168", label: "7d" },
-                      { value: "720", label: "30d" },
-                    ]}
-                  />
-                </CardAction>
               </CardHeader>
               <CardContent>
-                {!mounted || seriesData.length === 0 ? (
-                  <Placeholder
-                    h="h-[250px]"
-                    hint={`No results recorded in the last ${windowLabel}.`}
-                  />
+                {!mounted || alertsData.length === 0 ? (
+                  <Placeholder h="h-[200px]" hint="No alerts in this window." />
                 ) : (
                   <ChartContainer
-                    config={seriesConfig}
-                    className="aspect-auto h-[250px] w-full"
+                    config={ALERTS_CONFIG}
+                    className="aspect-auto h-[200px] w-full"
                   >
-                    <LineChart
+                    <BarChart
                       accessibilityLayer
-                      data={seriesData}
-                      margin={{ left: 12, right: 12 }}
+                      data={alertsData}
+                      margin={{ left: 0, right: 12 }}
                     >
                       <CartesianGrid vertical={false} />
                       <XAxis
                         dataKey="t"
-                        tickFormatter={labelTicks(seriesData, "t")}
+                        tickFormatter={labelTicks(alertsData, "t")}
                         tickLine={false}
                         axisLine={false}
                         tickMargin={8}
-                        minTickGap={32}
+                        minTickGap={24}
                       />
                       <YAxis
                         tickLine={false}
                         axisLine={false}
                         width={countAxisWidth(
-                          seriesData.map((p) =>
-                            Math.max(p.up, p.degraded, p.down)
-                          )
+                          alertsData.map((p) => Math.max(p.opened, p.resolved))
                         )}
                         allowDecimals={false}
                       />
                       <ChartTooltip
                         cursor={false}
-                        content={<ChartTooltipContent indicator="line" />}
+                        content={<ChartTooltipContent />}
                       />
-                      {(["up", "degraded", "down"] as const).map((k) => (
-                        <Line
-                          key={k}
-                          dataKey={k}
-                          type="monotone"
-                          stroke={`var(--color-${k})`}
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      ))}
+                      <Bar
+                        dataKey="opened"
+                        fill="var(--color-opened)"
+                        radius={3}
+                      />
+                      <Bar
+                        dataKey="resolved"
+                        fill="var(--color-resolved)"
+                        radius={3}
+                      />
                       <ChartLegend content={<ChartLegendContent />} />
-                    </LineChart>
+                    </BarChart>
                   </ChartContainer>
                 )}
               </CardContent>
             </Card>
+          </div>
 
-            {/* The estate's latency and the alert flow, over the same window */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Latency</CardTitle>
-                  <CardDescription>
-                    Median and 95th percentile per check kind, per{" "}
-                    {d.series_bucket === "day" ? "day" : "bucket"}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!mounted ? (
-                    <Placeholder h="h-[200px]" hint="" />
-                  ) : (
-                    <LatencyByKindChart
-                      kinds={d.latency_by_kind ?? []}
-                      formatLabel={latencyLabel}
-                      empty={
-                        <Placeholder
-                          h="h-[200px]"
-                          hint={`No latency recorded in the last ${windowLabel}.`}
-                        />
-                      }
-                      chartClassName="h-[200px]"
-                    />
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Alerts</CardTitle>
-                  <CardDescription>
-                    Opened against resolved, per day
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!mounted || alertsData.length === 0 ? (
-                    <Placeholder
-                      h="h-[200px]"
-                      hint="No alerts in this window."
-                    />
-                  ) : (
-                    <ChartContainer
-                      config={ALERTS_CONFIG}
-                      className="aspect-auto h-[200px] w-full"
-                    >
-                      <BarChart
-                        accessibilityLayer
-                        data={alertsData}
-                        margin={{ left: 0, right: 12 }}
-                      >
-                        <CartesianGrid vertical={false} />
-                        <XAxis
-                          dataKey="t"
-                          tickFormatter={labelTicks(alertsData, "t")}
-                          tickLine={false}
-                          axisLine={false}
-                          tickMargin={8}
-                          minTickGap={24}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          width={countAxisWidth(
-                            alertsData.map((p) =>
-                              Math.max(p.opened, p.resolved)
-                            )
-                          )}
-                          allowDecimals={false}
-                        />
-                        <ChartTooltip
-                          cursor={false}
-                          content={<ChartTooltipContent />}
-                        />
-                        <Bar
-                          dataKey="opened"
-                          fill="var(--color-opened)"
-                          radius={3}
-                        />
-                        <Bar
-                          dataKey="resolved"
-                          fill="var(--color-resolved)"
-                          radius={3}
-                        />
-                        <ChartLegend content={<ChartLegendContent />} />
-                      </BarChart>
-                    </ChartContainer>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Distribution + by-kind */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
-              {/* Donut with text (shadcn) */}
-              <Card className="flex flex-col">
-                <CardHeader className="items-center pb-0">
-                  <CardTitle>Status distribution</CardTitle>
-                  <CardDescription>
-                    Current status of all checks
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1 pb-0">
-                  {!mounted || statusData.length === 0 ? (
-                    <Placeholder h="h-[250px]" hint="No checks yet." />
-                  ) : (
-                    <>
-                      {/* The legend lives outside the chart on purpose. A
+          {/* Distribution + by-kind */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
+            {/* Donut with text (shadcn) */}
+            <Card className="flex flex-col">
+              <CardHeader className="items-center pb-0">
+                <CardTitle>Status distribution</CardTitle>
+                <CardDescription>Current status of all checks</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 pb-0">
+                {!mounted || statusData.length === 0 ? (
+                  <Placeholder h="h-[250px]" hint="No checks yet." />
+                ) : (
+                  <>
+                    {/* The legend lives outside the chart on purpose. A
                           recharts Legend inside the PieChart shrinks the
                           plot area, the pie moves up, and the centre label
                           keeps the un-shrunk centre - so "22 checks" sat
                           below the ring. Outside, the ring, its label and
                           the legend each centre in their own box. */}
-                      <ChartContainer
-                        config={statusConfig}
-                        className="mx-auto aspect-square max-h-[220px]"
-                      >
-                        <PieChart>
-                          <ChartTooltip
-                            cursor={false}
-                            content={<ChartTooltipContent hideLabel />}
-                          />
-                          <Pie
-                            data={statusData}
-                            dataKey="value"
-                            nameKey="status"
-                            innerRadius={60}
-                            strokeWidth={5}
-                          >
-                            <Label content={<TotalLabel total={total} />} />
-                          </Pie>
-                        </PieChart>
-                      </ChartContainer>
-                      <ul className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 pb-3 text-xs">
-                        {statusData.map((s) => (
-                          <li
-                            key={s.status}
-                            className="flex items-center gap-1.5 text-muted-foreground"
-                          >
-                            <span
-                              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                              style={{
-                                backgroundColor: statusColor(s.status, labels),
-                              }}
-                            />
-                            {statusLabel(s.status, labels)}
-                            <span className="num text-foreground">
-                              {s.value}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Horizontal bars, one colour per protocol (shadcn) */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Checks by type</CardTitle>
-                  <CardDescription>
-                    How the checks break down by protocol
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!mounted || kindData.length === 0 ? (
-                    <Placeholder h="h-[250px]" hint="No checks yet." />
-                  ) : (
                     <ChartContainer
-                      config={kindConfig}
-                      className="aspect-auto h-[250px] w-full"
+                      config={statusConfig}
+                      className="mx-auto aspect-square max-h-[220px]"
                     >
-                      <BarChart
-                        accessibilityLayer
-                        data={kindData}
-                        layout="vertical"
-                        margin={{ left: 8, right: 24 }}
-                      >
-                        <CartesianGrid horizontal={false} />
-                        <XAxis type="number" dataKey="value" hide />
-                        <YAxis
-                          type="category"
-                          dataKey="kind"
-                          width={64}
-                          tickLine={false}
-                          axisLine={false}
-                          tickFormatter={(v: string) => v.toUpperCase()}
-                        />
+                      <PieChart>
                         <ChartTooltip
                           cursor={false}
                           content={<ChartTooltipContent hideLabel />}
                         />
-                        <Bar dataKey="value" radius={5}>
-                          <LabelList
-                            dataKey="value"
-                            position="right"
-                            offset={8}
-                            fill="var(--foreground)"
-                            fontSize={12}
-                          />
-                        </Bar>
-                      </BarChart>
+                        <Pie
+                          data={statusData}
+                          dataKey="value"
+                          nameKey="status"
+                          innerRadius={60}
+                          strokeWidth={5}
+                        >
+                          <Label content={<TotalLabel total={total} />} />
+                        </Pie>
+                      </PieChart>
                     </ChartContainer>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                    <ul className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 pb-3 text-xs">
+                      {statusData.map((s) => (
+                        <li
+                          key={s.status}
+                          className="flex items-center gap-1.5 text-muted-foreground"
+                        >
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                            style={{
+                              backgroundColor: statusColor(s.status, labels),
+                            }}
+                          />
+                          {statusLabel(s.status, labels)}
+                          <span className="num text-foreground">{s.value}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </CardContent>
+            </Card>
 
-            {/* Recent changes */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent changes</CardTitle>
-                  <CardDescription>
-                    The latest status changes, newest first
-                  </CardDescription>
-                  <CardAction>
-                    <Link
-                      to="/monitoring"
-                      search={{ view: "history", status: "all" }}
-                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+            {/* Horizontal bars, one colour per protocol (shadcn) */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Checks by type</CardTitle>
+                <CardDescription>
+                  How the checks break down by protocol
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!mounted || kindData.length === 0 ? (
+                  <Placeholder h="h-[250px]" hint="No checks yet." />
+                ) : (
+                  <ChartContainer
+                    config={kindConfig}
+                    className="aspect-auto h-[250px] w-full"
+                  >
+                    <BarChart
+                      accessibilityLayer
+                      data={kindData}
+                      layout="vertical"
+                      margin={{ left: 8, right: 24 }}
                     >
-                      All history
-                    </Link>
-                  </CardAction>
-                </CardHeader>
-                <CardContent>
-                  {d.recent_transitions.length === 0 ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">
-                      No status changes recorded yet.
-                    </p>
-                  ) : (
-                    <RecentChanges rows={d.recent_transitions} />
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <p className="text-[11px] text-muted-foreground">
-              Configure individual checks from an{" "}
-              <Link to="/prefixes" className="underline underline-offset-2">
-                IP or prefix
-              </Link>{" "}
-              page. Alerts go out via notification channels.
-            </p>
+                      <CartesianGrid horizontal={false} />
+                      <XAxis type="number" dataKey="value" hide />
+                      <YAxis
+                        type="category"
+                        dataKey="kind"
+                        width={64}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v: string) => v.toUpperCase()}
+                      />
+                      <ChartTooltip
+                        cursor={false}
+                        content={<ChartTooltipContent hideLabel />}
+                      />
+                      <Bar dataKey="value" radius={5}>
+                        <LabelList
+                          dataKey="value"
+                          position="right"
+                          offset={8}
+                          fill="var(--foreground)"
+                          fontSize={12}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
           </div>
-        )}
-      </div>
-    </div>
+
+          {/* Recent changes */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent changes</CardTitle>
+                <CardDescription>
+                  The latest status changes, newest first
+                </CardDescription>
+                <CardAction>
+                  <Link
+                    to="/monitoring"
+                    search={{ view: "history" }}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    All history
+                  </Link>
+                </CardAction>
+              </CardHeader>
+              <CardContent>
+                {d.recent_transitions.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No status changes recorded yet.
+                  </p>
+                ) : (
+                  <RecentChanges rows={d.recent_transitions} />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            Configure individual checks from an{" "}
+            <Link to="/prefixes" className="underline underline-offset-2">
+              IP or prefix
+            </Link>{" "}
+            page. Alerts go out via notification channels.
+          </p>
+        </div>
+      )}
+    </MonitoringTabs>
   )
 }
 

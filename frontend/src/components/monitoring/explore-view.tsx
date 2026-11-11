@@ -9,6 +9,7 @@ import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { exploreColumns } from "@/components/columns/explore-columns"
+import { useMonitoringCrumb } from "./monitoring-tabs"
 
 const DIMENSIONS: { value: ExploreDimension; label: string }[] = [
   { value: "site", label: "Site" },
@@ -36,11 +37,12 @@ export function frameQuery(days: string): string {
 }
 
 /**
- * `/monitoring?view=explore` - the tenant's checks grouped by one dimension,
+ * `/monitoring/performance` - the tenant's checks grouped by one dimension,
  * worst availability first, with latency kept per check kind. A group's name
  * opens the checks list filtered to it.
  */
 export function ExploreView() {
+  const crumb = useMonitoringCrumb()
   const search = useSearch({ strict: false })
   const patch = useUrlPatch()
   const groupBy = (
@@ -63,6 +65,7 @@ export function ExploreView() {
   const rows = query.data?.rows ?? []
   return (
     <ListPageShell
+      {...crumb}
       title="Explore"
       count={query.data ? rows.length : undefined}
       actions={

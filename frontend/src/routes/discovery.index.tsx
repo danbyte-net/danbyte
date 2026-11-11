@@ -1,16 +1,16 @@
-import { createFileRoute, redirect } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 
-// Discovery's home is the Monitoring page's Discovery tab (#451). /discovery
-// still answers - bookmarks and links into it keep working - by opening
-// that tab; the profile, run, findings and open-ports pages stay where they
-// were.
+import { DiscoveryFrame } from "@/components/discovery/discovery-frame"
+import { DiscoveryTab } from "@/components/discovery/discovery-tab"
+
+// Monitoring → Discovery (#451): the tenant's discovery profiles and their
+// latest runs, with Findings and Open ports as the next tabs. It was a tab
+// of the one-page Monitoring; /monitoring?view=discovery redirects here.
 
 export const Route = createFileRoute("/discovery/")({
-  beforeLoad: () => {
-    throw redirect({
-      to: "/monitoring",
-      search: { view: "discovery", status: "all" },
-      replace: true,
-    })
-  },
+  component: () => (
+    <DiscoveryFrame value="profiles">
+      <DiscoveryTab />
+    </DiscoveryFrame>
+  ),
 })

@@ -369,7 +369,7 @@ export const CATALOG: WidgetDef[] = [
       <RadialGauge
         value={d.reachable_pct}
         label="reachable"
-        link={{ to: "/monitoring", search: { view: "checks" } }}
+        link={{ to: "/monitoring/checks" }}
       />
     ),
   },
@@ -529,10 +529,8 @@ export const CATALOG: WidgetDef[] = [
         data={d.check_by_status}
         unit="checks"
         link={(x) => ({
-          to: "/monitoring",
-          search: x.key
-            ? { view: "checks", status: x.key }
-            : { view: "checks" },
+          to: "/monitoring/checks",
+          search: x.key ? { status: x.key } : {},
         })}
       />
     ),
@@ -577,7 +575,7 @@ export const CATALOG: WidgetDef[] = [
         value={d.availability_7d}
         label="7-day availability"
         color="var(--color-emerald-500)"
-        link={{ to: "/monitoring", search: { view: "explore" } }}
+        link={{ to: "/monitoring/performance" }}
       />
     ),
   },

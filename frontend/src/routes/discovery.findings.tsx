@@ -1,8 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 
-import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
+import { DiscoveryFrame } from "@/components/discovery/discovery-frame"
+import { useMonitoringCrumb } from "@/components/monitoring/monitoring-tabs"
 import { FindingsPanel } from "@/components/discovery/findings-panel"
 import { useDiscoveryStatus } from "@/components/discovery/status"
 
@@ -15,7 +16,16 @@ export const Route = createFileRoute("/discovery/findings")({
 })
 
 function FindingsPage() {
+  return (
+    <DiscoveryFrame value="findings">
+      <FindingsPageBody />
+    </DiscoveryFrame>
+  )
+}
+
+function FindingsPageBody() {
   const status = useDiscoveryStatus()
+  const crumb = useMonitoringCrumb()
   if (status.data && !status.data.active)
     return (
       <div className="p-6">
@@ -25,13 +35,7 @@ function FindingsPage() {
   return (
     <ListPageShell
       title="Findings"
-      backTo="/discovery"
-      backLabel="Discovery"
-      actions={
-        <Button size="sm" variant="outline" asChild>
-          <Link to="/discovery/services">Open ports</Link>
-        </Button>
-      }
+      {...crumb}
       query={
         status.isLoading
           ? { isLoading: true, isError: false, error: null }

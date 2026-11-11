@@ -553,12 +553,8 @@ function CheckRow({
             <p className="text-[11px] text-muted-foreground">
               Applied by a monitoring policy (profile or template). Change its
               scope, frequency, and checks on{" "}
-              <Link
-                to="/monitoring"
-                search={{ view: "configuration", status: "all" }}
-                className="link"
-              >
-                Monitoring → Configuration
+              <Link to="/monitoring/policies" className="link">
+                Monitoring → Policies
               </Link>
               .
             </p>

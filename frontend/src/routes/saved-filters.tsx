@@ -138,8 +138,7 @@ const LISTS: Record<
   },
   "monitoring-check": {
     label: "Monitoring checks",
-    to: "/monitoring",
-    search: { view: "checks" },
+    to: "/monitoring/checks",
     api: "/api/monitoring/checks/",
   },
   manufacturer: {
