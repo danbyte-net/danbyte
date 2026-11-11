@@ -442,7 +442,7 @@ NOTES: tuple[UpgradeNote, ...] = (
             "server cannot reach. That needs Outpost agent 0.10.0 or later: an "
             "older agent is handed no discovery work, and its hosts show "
             "\"Outpost cannot run it\" with the version it needs. Upload the new "
-            "agent under Governance, Monitoring engines, Outpost versions and roll "
+            "agent under Monitoring, Engines, Outpost versions and roll "
             "it out to those sites. Checks keep working on older agents."
         ),
         docs="monitoring/outposts/#discovery-on-an-outpost",
