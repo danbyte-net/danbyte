@@ -416,8 +416,38 @@ def _vuln_csp_allows_browser_sync() -> bool:
     return "services.nvd.nist.gov" in text
 
 
+def _outposts_run_discovery() -> bool:
+    """Done when every Outpost a discovery profile runs on says it can run
+    discovery work (or no profile runs on an Outpost)."""
+    try:
+        from discovery.models import InventoryProfile
+        from discovery.outposts import capabilities
+        from monitoring.models import MonitoringEngine
+    except ImportError:
+        return True
+    if not InventoryProfile.objects.exclude(runs_on="server").exists():
+        return True
+    return all(capabilities(e).get("kinds") for e in MonitoringEngine.objects.filter(
+        kind=MonitoringEngine.REMOTE, enabled=True))
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.20.0-outpost-discovery",
+        version="0.20.0",
+        title="Update the Outposts that should run discovery",
+        body=(
+            "A discovery profile can now run on an Outpost, for hosts the "
+            "server cannot reach. That needs Outpost agent 0.10.0 or later: an "
+            "older agent is handed no discovery work, and its hosts show "
+            "\"Outpost cannot run it\" with the version it needs. Upload the new "
+            "agent under Governance, Monitoring engines, Outpost versions and roll "
+            "it out to those sites. Checks keep working on older agents."
+        ),
+        docs="monitoring/outposts/#discovery-on-an-outpost",
+        check=_outposts_run_discovery,
+    ),
     UpgradeNote(
         id="0.20.0-nginx-vuln-csp",
         version="0.20.0",

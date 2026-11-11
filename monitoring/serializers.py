@@ -1632,11 +1632,13 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
             "ssh_host_key", "ssh_configured",
             "dns_resolve_locally", "dns_resolvers",
             "last_seen_at", "stale_since", "agent_version", "agent_hostname", "agent_ip",
+            "agent_capabilities",
             "binding_count", "check_count", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "token_set", "is_local", "ssh_configured",
             "last_seen_at", "stale_since", "agent_version", "agent_hostname", "agent_ip",
+            "agent_capabilities",
             "created_at", "updated_at",
         ]
 

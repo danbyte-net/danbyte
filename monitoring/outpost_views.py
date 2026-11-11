@@ -156,6 +156,7 @@ def _client_ip(request) -> str:
             "version": serializers.CharField(required=False),
             "hostname": serializers.CharField(required=False),
             "ip": serializers.CharField(required=False),
+            "capabilities": serializers.JSONField(required=False),
         },
     ),
     responses=OpenApiResponse(
@@ -180,10 +181,15 @@ def outpost_hello_view(request):
     # An agent that runs a fast lane says so; until it does, its sub-minute
     # checks are handed out on the beat like everything else.
     eng.agent_fast = bool(request.data.get("fast", False))
+    # What it can do beyond checks (discovery work kinds, nmap). An agent
+    # that predates this sends nothing and is handed no such work.
+    from discovery.outposts import clean_capabilities
+
+    eng.agent_capabilities = clean_capabilities(request.data.get("capabilities"))
     eng.save(
         update_fields=[
             "last_seen_at", "agent_version", "agent_hostname", "agent_ip",
-            "agent_fast", "updated_at",
+            "agent_fast", "agent_capabilities", "updated_at",
         ]
     )
     return Response(
@@ -197,6 +203,9 @@ def outpost_hello_view(request):
             # This core has the fast-lane endpoints; an agent that also has
             # a lane pulls its sub-minute set from them.
             "fast": True,
+            # This core has the discovery work endpoints. An agent pulls from
+            # them only when a work answer says discovery_pending.
+            "discovery": True,
         }
     )
 
@@ -270,7 +279,16 @@ def outpost_work_view(request):
         # Reverse DNS this Outpost should do itself. An agent too old to know
         # this key simply ignores it and the core keeps resolving centrally.
         "dns": _dns_directive(eng),
+        # Discovery work waits for this Outpost (/discovery-work/). An agent
+        # that predates discovery ignores the key and is never given any.
+        "discovery_pending": _discovery_pending(eng),
     })
+
+
+def _discovery_pending(engine) -> bool:
+    from discovery.models import DiscoveryWorkItem
+
+    return DiscoveryWorkItem.objects.filter(engine=engine, status="pending").exists()
 
 
 def _dns_directive(engine) -> dict:

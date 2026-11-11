@@ -60,7 +60,18 @@ HOST_STATUSES = [
     ("denied", "Deny subnet"),
     ("maintenance", "In maintenance"),
     ("blocked", "Blocked target"),
+    # A run on Outposts: why a host was not handed to one.
+    ("no_outpost", "No Outpost"),
+    ("outpost_offline", "Outpost offline"),
+    ("outpost_unsupported", "Outpost cannot run it"),
 ]
+#: Host results that say an Outpost was the reason, not the host.
+OUTPOST_STATUSES = ("no_outpost", "outpost_offline", "outpost_unsupported")
+#: Where a profile runs: the server's workers, one named Outpost, or the
+#: Outpost each host is bound to (the monitoring engine binding rules).
+RUNS_ON = [("server", "Server"), ("outpost", "An Outpost"), ("host", "The host's Outpost")]
+WORK_STATUSES = [("pending", "Pending"), ("claimed", "Claimed"), ("done", "Done"),
+                 ("expired", "Expired")]
 #: How a host was read, most secure first. ``ssh`` is a run from before the
 #: transports were told apart.
 TRANSPORTS = [
@@ -173,6 +184,14 @@ class InventoryProfile(NumIdMixin, TimestampedModel):
     #: ``-T2``-``-T4``.
     nmap_version_intensity = models.PositiveSmallIntegerField(default=2, db_default=2)
     nmap_timing = models.PositiveSmallIntegerField(default=3, db_default=3)
+    #: Where it runs. ``server`` (the default) is the core's own workers;
+    #: ``outpost`` the one in :attr:`outpost`; ``host`` the Outpost each
+    #: host is bound to. A run on Outposts never falls back to the server:
+    #: a host whose Outpost cannot take the work is left alone and says why.
+    runs_on = models.CharField(max_length=8, choices=RUNS_ON, default="server",
+                               db_default="server")
+    outpost = models.ForeignKey("monitoring.MonitoringEngine", on_delete=models.SET_NULL,
+                                null=True, blank=True, related_name="+")
     #: Bookkeeping, by UPDATE (out of the change log).
     last_run_at = models.DateTimeField(null=True, blank=True, editable=False)
 
@@ -272,6 +291,9 @@ class InventoryHostResult(models.Model):
     #: Service scan: open ports found, and connections made.
     services = models.PositiveIntegerField(default=0, db_default=0)
     connects = models.PositiveIntegerField(default=0, db_default=0)
+    #: What read it: ``server``, or ``outpost: <name>``.
+    engine = models.CharField(max_length=64, blank=True, default="server",
+                              db_default="server")
     finished_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -509,4 +531,45 @@ class FindingDecision(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["observed", "kind"],
                                     name="uniq_disc_finding_decision"),
+        ]
+
+
+class DiscoveryWorkItem(models.Model):
+    """One host of a run on Outposts, waiting for or handed to its Outpost.
+
+    Holds what the Outpost needs to know about the host *except* any
+    secret: credentials are referenced by id and resolved from the secret
+    store only when the Outpost claims the item, and go out in that one
+    answer. An item is claimed once; one not claimed in time, or claimed and
+    not reported, expires (``discovery.outposts.expire``). Machine data,
+    never change-logged; deleted with its run."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE, related_name="+")
+    run = models.ForeignKey(InventoryRun, on_delete=models.CASCADE, related_name="work_items")
+    engine = models.ForeignKey("monitoring.MonitoringEngine", on_delete=models.CASCADE,
+                               related_name="+")
+    kind = models.CharField(max_length=16, choices=PROFILE_KINDS)
+    status = models.CharField(max_length=8, choices=WORK_STATUSES, default="pending",
+                              db_default="pending")
+    address = models.CharField(max_length=64)
+    device = models.ForeignKey("api.Device", on_delete=models.CASCADE, null=True, blank=True,
+                               related_name="+")
+    virtual_machine = models.ForeignKey("api.VirtualMachine", on_delete=models.CASCADE,
+                                        null=True, blank=True, related_name="+")
+    ip_address = models.ForeignKey("api.IPAddress", on_delete=models.CASCADE, null=True,
+                                   blank=True, related_name="+")
+    #: Never a secret: login references, accepted public keys, the port
+    #: list and rates.
+    payload = models.JSONField(default=dict, blank=True, db_default={})
+    created_at = models.DateTimeField(auto_now_add=True)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    #: Pending: claim by then. Claimed: report by then.
+    deadline = models.DateTimeField()
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["engine", "status", "created_at"], name="disc_work_engine"),
+            models.Index(fields=["status", "deadline"], name="disc_work_deadline"),
         ]

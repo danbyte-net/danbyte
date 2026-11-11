@@ -33,6 +33,7 @@ TIMEOUT_RANGE = (10, 600)
 OPEN = ("queued", "running")
 #: Host results that mean "left alone by a rule", not "something is wrong".
 DELIBERATE = ("exempt", "denied", "maintenance")
+OUTSIDE_WINDOW = "Outside the profile's window."
 
 
 class RunRefused(Exception):
@@ -66,8 +67,10 @@ def can_run(profile) -> str:
         return "The profile is disabled."
     if not profile.authorised:
         return "Record who authorised this profile before it runs."
+    if profile.runs_on == "outpost" and profile.outpost_id is None:
+        return "Pick the Outpost this profile runs on."
     if not in_window(profile):
-        return "Outside the profile's window."
+        return OUTSIDE_WINDOW
     return ""
 
 
@@ -117,13 +120,16 @@ def _skip(run, message: str) -> None:
         status="skipped", finished_at=timezone.now(), errors=[message])
 
 
-def _still_allowed(run) -> str:
-    """Why a queued run must not go ahead now; "" when it may."""
+def _still_allowed(run, *, window: bool = True) -> str:
+    """Why a queued run must not go ahead now; "" when it may. ``window``:
+    also the profile's window (a run on Outposts is checked again when an
+    Outpost picks its work up, and a run that started inside its window may
+    finish after it)."""
     from auth_api import rbac
 
     profile = run.profile
     reason = can_run(profile)
-    if reason:
+    if reason and (window or reason != OUTSIDE_WINDOW):
         return reason
     if run.trigger == "manual":
         user = run.started_by
@@ -158,12 +164,6 @@ def _credential(login, known_hosts) -> dict | None:
     return out
 
 
-def _known_hosts_line(address: str, port: int, key: dict) -> bytes:
-    from .scope import _known_hosts
-
-    return _known_hosts(address, [(key["key_type"], key["public_key"], port)]) or b""
-
-
 def transport_of(login) -> str:
     from .scope import KIND_TRANSPORT
 
@@ -171,74 +171,41 @@ def transport_of(login) -> str:
 
 
 def try_next(login, status: str, nxt) -> bool:
-    """After ``login`` answered ``status``, may ``nxt`` be tried?
+    """After ``login`` answered ``status``, may ``nxt`` be tried? The rule
+    is ``danbyte_checks.inventory.may_try_next``, shared with Outposts."""
+    from danbyte_checks.inventory import may_try_next
 
-    * the transport did not answer (unreachable, timed out): only a login
-      on another transport (SSH down → WinRM);
-    * the login was refused: after a refused SSH key (no password was
-      sent), or when the credential says it may fall through - never one
-      password after another by default, so no account gets locked out;
-    * anything else (read, host key refused, unsupported, failed): stop.
-    """
-    if nxt is None:
-        return False
-    family = {"ssh_key": "ssh", "ssh_password": "ssh", "winrm": "winrm"}
-    if status in ("unreachable", "timeout"):
-        return family.get(transport_of(nxt)) != family.get(transport_of(login))
-    if status == "auth_failed":
-        return login.kind == "ssh_key" or login.fall_through
-    return False
+    return may_try_next(transport_of(login), login.fall_through, status,
+                        transport_of(nxt) if nxt is not None else None)
+
+
+def login_dicts(creds) -> list[dict]:
+    """``[(Login, cred)]`` as the plain logins
+    ``danbyte_checks.inventory.read_with_logins`` takes."""
+    return [{"transport": transport_of(login), "port": login.credential.port,
+             "fall_through": login.fall_through, "credential": cred}
+            for login, cred in creds]
 
 
 async def _read_all(work: list, concurrency: int, timeout: float, collect, observe,
                     collect_winrm=None):
     """``work``: ``(target, mode)`` - ``read`` tries the target's logins
-    most secure transport first (:func:`try_next` says when the next may
-    follow), ``observe`` only reads the host key (a key exchange, no
-    login). Returns ``(target, result, observed, login, attempts)``."""
+    most secure transport first (``danbyte_checks.inventory.read_with_logins``,
+    the loop Outposts run too), ``observe`` only reads the host key (a key
+    exchange, no login). Returns ``(target, result, observed, login,
+    attempts)``."""
+    from danbyte_checks.inventory import read_with_logins
+
     sem = asyncio.Semaphore(concurrency)
 
     async def read(target):
-        result, used, tried = None, None, []
-        known = target.known_hosts
-        first_use = bool(target.extra.get("first_use"))
         creds = target.extra["creds"]
-        dead = set()
-        for i, (login, cred) in enumerate(creds):
-            transport = transport_of(login)
-            fam = "winrm" if transport == "winrm" else "ssh"
-            if fam in dead:
-                tried.append({"transport": transport, "outcome": "skipped",
-                              "reason": "Not reachable on this transport"})
-                continue
-            if transport == "winrm":
-                result = await collect_winrm(
-                    target.address, port=login.credential.port, timeout=timeout,
-                    server_name=target.extra.get("server_name") or "", **cred)
-            else:
-                port = login.credential.port or 22
-                taken = result.host_key if result is not None else None
-                if first_use and taken:
-                    # A later try is pinned to the key the first one took.
-                    known, first_use = _known_hosts_line(target.address, port, taken), False
-                extra = {"first_use": True} if first_use else {}
-                result = await collect(target.address, port=port, timeout=timeout,
-                                       **{**cred, "known_hosts": known}, **extra)
-                if taken and not result.host_key:
-                    result.host_key = taken
-            used = login
-            tried.append({"transport": transport, "outcome": result.status,
-                          "reason": (result.message or "")[:200]})
-            if result.status in ("unreachable", "timeout"):
-                dead.add(fam)
-            nxt = creds[i + 1][0] if i + 1 < len(creds) else None
-            if not try_next(login, result.status, nxt):
-                break
-        observed = None
-        if result is not None and result.status == "host_key_refused":
-            port = used.credential.port or 22
-            observed = await observe(target.address, port=port, timeout=min(timeout, 10))
-        return target, result, observed, used, tried
+        result, observed, used, tried = await read_with_logins(
+            target.address, login_dicts(creds), known_hosts=target.known_hosts,
+            first_use=bool(target.extra.get("first_use")), timeout=timeout,
+            collect=collect, observe=observe, collect_winrm=collect_winrm,
+            server_name=target.extra.get("server_name") or "")
+        return target, result, observed, creds[used][0] if used is not None else None, tried
 
     async def one(target, mode):
         async with sem:
@@ -371,7 +338,7 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
     for a service scan (``services.execute``)."""
     from danbyte_checks import inventory
 
-    from . import packages, scope, winrm
+    from . import winrm
     from .models import InventoryHostResult, InventoryProfile, InventoryRun
 
     collect = collect or inventory.collect
@@ -393,6 +360,13 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
     InventoryProfile.objects.filter(pk=profile.pk).update(last_run_at=now)
 
     user = run.started_by if run.trigger == "manual" else None
+    if profile.runs_on != "server":
+        # On Outposts: the scope and its rules are resolved here, the work
+        # is queued for the Outposts, and the run finishes as their results
+        # come back (``discovery.outposts``). Never on the server instead.
+        from . import outposts
+
+        return outposts.dispatch(run, profile, user=user, now=now)
     if run.kind == "service_scan":
         from . import services
 
@@ -404,7 +378,73 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
         InventoryRun.objects.filter(pk=run.pk).update(
             status=status, finished_at=timezone.now(), counts=counts, errors=errors[:50])
         return counts
-    targets = scope.resolve(profile, user=user, now=now)
+    targets, work, errors = inventory_work(run, profile, user=user, now=now)
+    read = []
+    for t, mode in work:
+        if mode == "observe":
+            read.append((t, mode))
+            continue
+        creds = []
+        for login in t.logins:
+            cred = _credential(login, t.known_hosts)
+            if cred is not None:
+                creds.append((login, cred))
+        if not creds:
+            t.skip, t.message = "no_credential", "The credential's secret cannot be read."
+            continue
+        t.extra["creds"] = creds
+        read.append((t, "read"))
+    work = read
+    concurrency = max(1, min(CONCURRENCY_MAX, profile.max_concurrency or 1))
+    timeout = host_timeout(profile)
+    try:
+        results = asyncio.run(_read_all(work, concurrency, timeout, collect, observe,
+                                        collect_winrm)) if work else []
+    finally:
+        # The secrets go with the work list.
+        for t, _mode in work:
+            t.extra.pop("creds", None)
+        work.clear()
+
+    counts = {"hosts": len(targets), "ok": 0, "packages": 0, "changed": 0}
+    by_target = {id(t): (r, o, login, tried) for t, r, o, login, tried in results}
+    rows, outcome, changed_hosts = [], [], {"device": set(), "virtual_machine": set()}
+    windows_products: set[str] = set()
+    for t in targets:
+        r, observed, login, tried = by_target.get(id(t), (None, None, None, []))
+        row = inventory_row(
+            run, t, r, observed, user=user, counts=counts, changed_hosts=changed_hosts,
+            transport=transport_of(login) if (r is not None and login is not None) else "",
+            credential_source=login.source if login is not None else "", tried=tried,
+            windows_products=windows_products)
+        rows.append(row)
+        outcome.append((row.status, r is not None))
+    InventoryHostResult.objects.bulk_create(rows, batch_size=1000)
+
+    InventoryRun.objects.filter(pk=run.pk).update(
+        status=run_outcome(outcome), finished_at=timezone.now(), counts=counts,
+        errors=errors)
+    if any(changed_hosts.values()):
+        _recompute(tenant, changed_hosts)
+    if windows_products:
+        _fetch_windows(windows_products)
+    return counts
+
+
+def host_timeout(profile) -> float:
+    return float(max(TIMEOUT_RANGE[0], min(TIMEOUT_RANGE[1], profile.timeout_seconds or 60)))
+
+
+def inventory_work(run, profile, *, user=None, now=None, outpost: bool = False):
+    """Resolve an inventory run's scope and say what to do with each host:
+    ``(targets, work, errors)`` with ``work`` a list of ``(target, mode)``,
+    ``read`` (log in with ``target.logins``) or ``observe`` (only read the
+    key it presents). First-use acceptance is decided here. Shared by server
+    runs and runs on Outposts; no secret is read."""
+    from . import scope
+
+    tenant = profile.tenant
+    targets = scope.resolve(profile, user=user, now=now, outpost=outpost)
     errors: list[str] = []
     if scope.truncated(profile, user=user):
         errors.append(f"More than {scope.MAX_HOSTS} hosts in scope; the rest were not read.")
@@ -426,83 +466,64 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
             continue
         if t.skip:
             continue
-        creds = []
-        for login in t.logins:
-            cred = _credential(login, t.known_hosts)
-            if cred is not None:
-                creds.append((login, cred))
-        if not creds:
-            t.skip, t.message = "no_credential", "The credential's secret cannot be read."
-            continue
-        t.extra["creds"] = creds
         work.append((t, "read"))
-    concurrency = max(1, min(CONCURRENCY_MAX, profile.max_concurrency or 1))
-    timeout = float(max(TIMEOUT_RANGE[0], min(TIMEOUT_RANGE[1], profile.timeout_seconds or 60)))
-    try:
-        results = asyncio.run(_read_all(work, concurrency, timeout, collect, observe,
-                                        collect_winrm)) if work else []
-    finally:
-        # The secrets go with the work list.
-        for t, _mode in work:
-            t.extra.pop("creds", None)
-        work.clear()
+    return targets, work, errors
 
-    counts = {"hosts": len(targets), "ok": 0, "packages": 0, "changed": 0}
-    by_target = {id(t): (r, o, login, tried) for t, r, o, login, tried in results}
-    rows, outcome, changed_hosts = [], [], {"device": set(), "virtual_machine": set()}
-    windows_products: set[str] = set()
-    for t in targets:
-        r, observed, login, tried = by_target.get(id(t), (None, None, None, []))
-        status, message = (t.skip, t.message) if r is None else (r.status, r.message)
-        row = InventoryHostResult(
-            tenant=tenant, run=run, address=t.address, status=status or "failed",
-            message=(message or "")[:300], finished_at=timezone.now(),
-            transport=transport_of(login) if (r is not None and login is not None) else "",
-            credential_source=(login.source if login is not None else "")[:140],
-            attempts=[*t.extra.get("skipped", []), *tried][:10],
-            **{t.kind: t.host})
-        if r is not None and t.extra.get("first_use") and r.host_key:
-            try:
-                row.key_first_use = _accept_first_use(run, tenant, t.host, r.host_key, user)
-            except Exception:  # noqa: BLE001 - bookkeeping never fails the run
-                log.exception("discovery: accepting a first-use key failed")
-            if row.key_first_use:
-                counts["keys_accepted"] = counts.get("keys_accepted", 0) + 1
-        if r is not None and r.status == "ok":
-            try:
-                stored = packages.store(tenant, t.host, run, r, transport=row.transport)
-            except Exception:  # noqa: BLE001 - one bad host never fails the run
-                log.exception("discovery: storing packages for %s failed", t.host.pk)
-                row.status, row.message = "failed", "Its packages could not be stored."
-            else:
-                row.packages, row.added = stored["packages"], stored["added"]
-                row.removed, row.updated = stored["removed"], stored["updated"]
-                counts["ok"] += 1
-                counts["packages"] += stored["packages"]
+
+def inventory_row(run, t, r, observed, *, user, counts: dict, changed_hosts: dict,
+                  transport: str = "", credential_source: str = "", tried=(),
+                  engine: str = "server", windows_products: set | None = None):
+    """The (unsaved) host result for target ``t`` and its read ``r`` (an
+    ``InventoryResult``, ``None`` when it was never contacted): accepts a
+    first-use key, stores the packages of a read host, records an observed
+    key, and adds to ``counts`` / ``changed_hosts``. Shared by server runs
+    and the Outpost ingest, so both store a host the same way."""
+    from danbyte_checks import inventory
+
+    from . import packages
+    from .models import InventoryHostResult
+
+    tenant = run.tenant
+    status, message = (t.skip, t.message) if r is None else (r.status, r.message)
+    row = InventoryHostResult(
+        tenant=tenant, run=run, address=t.address, status=status or "failed",
+        message=(message or "")[:300], finished_at=timezone.now(),
+        transport=transport if r is not None else "",
+        credential_source=(credential_source or "")[:140],
+        attempts=[*t.extra.get("skipped", []), *tried][:10], engine=engine[:64],
+        **{t.kind: t.host})
+    if r is not None and t.extra.get("first_use") and r.host_key:
+        try:
+            row.key_first_use = _accept_first_use(run, tenant, t.host, r.host_key, user)
+        except Exception:  # noqa: BLE001 - bookkeeping never fails the run
+            log.exception("discovery: accepting a first-use key failed")
+        if row.key_first_use:
+            counts["keys_accepted"] = counts.get("keys_accepted", 0) + 1
+    if r is not None and r.status == "ok":
+        try:
+            stored = packages.store(tenant, t.host, run, r, transport=row.transport)
+        except Exception:  # noqa: BLE001 - one bad host never fails the run
+            log.exception("discovery: storing packages for %s failed", t.host.pk)
+            row.status, row.message = "failed", "Its packages could not be stored."
+        else:
+            row.packages, row.added = stored["packages"], stored["added"]
+            row.removed, row.updated = stored["removed"], stored["updated"]
+            counts["ok"] = counts.get("ok", 0) + 1
+            counts["packages"] = counts.get("packages", 0) + stored["packages"]
+            if windows_products is not None:
                 windows_products.update(stored.get("windows_products") or ())
-                if stored["changed"]:
-                    counts["changed"] += 1
-                    changed_hosts[t.kind].add(t.host.pk)
-                if r.truncated:
-                    row.message = f"Only the first {inventory.MAX_PACKAGES} packages were kept."
-        if observed:
-            _record_key(tenant, t.host, observed)
-        if row.status != "ok":
-            # Per-host reasons live on the host results, which read with
-            # the host's own view; the run's errors name no host.
-            counts[row.status] = counts.get(row.status, 0) + 1
-        rows.append(row)
-        outcome.append((row.status, r is not None))
-    InventoryHostResult.objects.bulk_create(rows, batch_size=1000)
-
-    InventoryRun.objects.filter(pk=run.pk).update(
-        status=run_outcome(outcome), finished_at=timezone.now(), counts=counts,
-        errors=errors)
-    if any(changed_hosts.values()):
-        _recompute(tenant, changed_hosts)
-    if windows_products:
-        _fetch_windows(windows_products)
-    return counts
+            if stored["changed"]:
+                counts["changed"] = counts.get("changed", 0) + 1
+                changed_hosts[t.kind].add(t.host.pk)
+            if r.truncated:
+                row.message = f"Only the first {inventory.MAX_PACKAGES} packages were kept."
+    if observed:
+        _record_key(tenant, t.host, observed)
+    if row.status != "ok":
+        # Per-host reasons live on the host results, which read with
+        # the host's own view; the run's errors name no host.
+        counts[row.status] = counts.get(row.status, 0) + 1
+    return row
 
 
 def _record_key(tenant, host, observed: dict) -> None:
@@ -538,22 +559,29 @@ def _fetch_windows(keys: set[str]) -> None:
 
 
 def abandon_stale(now=None) -> int:
-    from .models import InventoryRun
+    from .models import DiscoveryWorkItem, InventoryRun
 
     now = now or timezone.now()
-    return InventoryRun.objects.filter(status__in=OPEN, created_at__lt=now - STALE_AFTER).update(
+    # A run on Outposts whose items are still within their deadlines is
+    # not stale: they expire on their own (``outposts.expire``).
+    stale = InventoryRun.objects.filter(
+        status__in=OPEN, created_at__lt=now - STALE_AFTER).exclude(
+        work_items__status__in=("pending", "claimed"), work_items__deadline__gte=now)
+    DiscoveryWorkItem.objects.filter(run__in=stale, status__in=OPEN).update(status="expired")
+    return stale.update(
         status="failed", finished_at=now, errors=["The run did not finish; given up."])
 
 
 def dispatch(now=None) -> dict:
     """The timer's beat: purge long-removed packages, give up stale runs,
     queue every due profile in a tenant with Discovery on."""
-    from . import packages
+    from . import outposts, packages
     from .gate import active_tenant_ids
     from .models import InventoryProfile, InventoryRun
 
     now = now or timezone.now()
-    out = {"purged": packages.purge_removed(now), "abandoned": abandon_stale(now), "queued": 0}
+    out = {"purged": packages.purge_removed(now), "expired": outposts.expire(now),
+           "abandoned": abandon_stale(now), "queued": 0}
     tenants = active_tenant_ids()
     if not tenants:
         return out

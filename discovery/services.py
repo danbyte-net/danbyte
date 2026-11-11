@@ -114,9 +114,10 @@ def address_queryset(profile, user=None):
         "assigned_vm_interface__vm").order_by("ip_address", "pk")
 
 
-def resolve(profile, *, user=None, now=None) -> list[AddressTarget]:
+def resolve(profile, *, user=None, now=None, outpost: bool = False) -> list[AddressTarget]:
     """Every address in scope as an :class:`AddressTarget`, skipped ones with
-    their reason. At most ``scope.MAX_HOSTS``."""
+    their reason. At most ``scope.MAX_HOSTS``. ``outpost``: scanned by
+    Outposts, which apply their own target policy instead of the server's."""
     from api.models import Prefix
     from danbyte_checks import netguard
     from monitoring.models import MonitoringDenySubnet
@@ -150,7 +151,7 @@ def resolve(profile, *, user=None, now=None) -> list[AddressTarget]:
         if _in(addr, deny_any, any_vrf=True) or _in(addr, deny_vrf, ip.vrf_id):
             t.skip, t.message = "denied", "In a deny subnet."
             continue
-        if netguard.target_blocked(address):
+        if not outpost and netguard.target_blocked(address):
             t.skip, t.message = "blocked", "The server's target policy refuses this address."
             continue
         if host is not None:
@@ -225,34 +226,43 @@ def execute(run, profile, *, user=None, now=None, scanner=None) -> tuple[dict, l
     counts = {"hosts": len(targets), "ok": 0, "services": 0, "new": 0, "gone": 0,
               "connects": 0, "ports": len(p["ports"]), "rate": p["rate"],
               "hosts_parallel": p["hosts_parallel"]}
-    rows = []
-    for t in targets:
-        r = by_address.get(t.address) if not t.skip else None
-        status, message = t.skip, t.message
-        n_open = 0
-        if not t.skip:
-            if r is None:
-                status, message = "failed", "Not scanned."
-            elif r.status != "ok":
-                status, message = r.status, r.message
-            else:
-                status = "ok"
-                stored = store(tenant, t, run, r.open, now)
-                n_open = len(r.open)
-                counts["ok"] += 1
-                counts["services"] += n_open
-                counts["new"] += stored["new"]
-                counts["gone"] += stored["gone"]
-            counts["connects"] += getattr(r, "connects", 0) if r is not None else 0
-        if status != "ok":
-            counts[status] = counts.get(status, 0) + 1
-        rows.append(InventoryHostResult(
-            tenant=tenant, run=run, ip_address=t.ip, address=t.address, status=status,
-            message=(message or "")[:300], finished_at=timezone.now(), services=n_open,
-            connects=getattr(r, "connects", 0) if r is not None else 0,
-            **({t.kind: t.host} if t.host is not None else {})))
+    rows = [host_row(tenant, run, t, by_address.get(t.address) if not t.skip else None, now,
+                     counts) for t in targets]
     InventoryHostResult.objects.bulk_create(rows, batch_size=1000)
     return counts, errors
+
+
+def host_row(tenant, run, t, r, now, counts: dict, *, engine: str = "server"):
+    """The (unsaved) host result for target ``t`` and its scan result ``r``
+    (``None``: skipped, or nothing came back), storing the open ports of a
+    scanned host and adding to ``counts``. Shared by server runs and the
+    Outpost ingest."""
+    from .models import InventoryHostResult
+
+    status, message = t.skip, t.message
+    n_open = 0
+    if not t.skip:
+        if r is None:
+            status, message = "failed", "Not scanned."
+        elif r.status != "ok":
+            status, message = r.status, r.message
+        else:
+            status = "ok"
+            stored = store(tenant, t, run, r.open, now)
+            n_open = len(r.open)
+            counts["ok"] = counts.get("ok", 0) + 1
+            counts["services"] = counts.get("services", 0) + n_open
+            counts["new"] = counts.get("new", 0) + stored["new"]
+            counts["gone"] = counts.get("gone", 0) + stored["gone"]
+        counts["connects"] = counts.get("connects", 0) + (
+            getattr(r, "connects", 0) if r is not None else 0)
+    if status != "ok":
+        counts[status] = counts.get(status, 0) + 1
+    return InventoryHostResult(
+        tenant=tenant, run=run, ip_address=t.ip, address=t.address, status=status,
+        message=(message or "")[:300], finished_at=timezone.now(), services=n_open,
+        connects=getattr(r, "connects", 0) if r is not None else 0, engine=engine,
+        **({t.kind: t.host} if t.host is not None else {}))
 
 
 def _engine(profile):

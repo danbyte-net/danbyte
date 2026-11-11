@@ -555,3 +555,283 @@ async def observe_host_key(host: str, *, port: int = 22, timeout: float = 10.0) 
     if key is None:
         return None
     return _key_dict(key)
+
+
+# ─── one host, its logins in order ───────────────────────────────────────────
+#
+# The loop below is shared by the core's runner and the Outpost agent, so a
+# host is tried the same way wherever it is read. A login is a plain dict:
+# ``{transport, port, fall_through, credential}`` where ``transport`` is
+# ``ssh_key`` / ``ssh_password`` / ``winrm`` and ``credential`` holds the
+# connect arguments (``username`` and ``password`` or ``private_key`` +
+# ``passphrase``; WinRM its certificate).
+
+#: Transport families: an SSH port that does not answer says nothing about
+#: WinRM, and the other way round.
+FAMILY = {"ssh_key": "ssh", "ssh_password": "ssh", "winrm": "winrm"}
+
+
+def known_hosts_lines(address: str, keys) -> bytes | None:
+    """known_hosts lines pinning ``address`` to ``keys`` (``[(key_type,
+    blob, port)]``): the bare address for port 22, ``[address]:port``
+    otherwise. ``None`` when there are no keys."""
+    lines = []
+    for key_type, blob, port in keys:
+        name = address if port in (None, 22) else f"[{address}]:{port}"
+        lines.append(f"{name} {key_type} {blob}")
+    return ("\n".join(lines) + "\n").encode() if lines else None
+
+
+def may_try_next(transport: str, fall_through: bool, status: str,
+                 next_transport: str | None) -> bool:
+    """After a login on ``transport`` answered ``status``, may the next one
+    be tried?
+
+    * the transport did not answer (unreachable, timed out): only a login
+      on another transport family (SSH down → WinRM);
+    * the login was refused: after a refused SSH key (no password was
+      sent), or when the credential says it may fall through - never one
+      password after another by default, so no account gets locked out;
+    * anything else (read, host key refused, unsupported, failed): stop.
+    """
+    if next_transport is None:
+        return False
+    if status in (UNREACHABLE, TIMEOUT):
+        return FAMILY.get(next_transport) != FAMILY.get(transport)
+    if status == AUTH_FAILED:
+        return transport == "ssh_key" or bool(fall_through)
+    return False
+
+
+async def read_with_logins(address: str, logins: list[dict], *, known_hosts: bytes | None,
+                           first_use: bool, timeout: float, collect, observe,
+                           collect_winrm=None, server_name: str = ""):
+    """Read one host trying ``logins`` most secure first (:func:`may_try_next`
+    says when the next may follow). With ``first_use`` the first SSH login
+    takes the host's key and every later one is pinned to it. A host whose
+    key was refused has the key it presents read (a key exchange, no login)
+    so a person can review it.
+
+    Returns ``(result, observed, used, tried)``: the last
+    :class:`InventoryResult` (``None`` when nothing was tried), the observed
+    key or ``None``, the index of the login that answered (``None``), and
+    ``[{transport, outcome, reason}]`` - never a secret."""
+    result, used, tried = None, None, []
+    known = known_hosts
+    dead: set[str] = set()
+    for i, login in enumerate(logins):
+        transport = login.get("transport") or ""
+        fam = "winrm" if transport == "winrm" else "ssh"
+        if fam in dead:
+            tried.append({"transport": transport, "outcome": "skipped",
+                          "reason": "Not reachable on this transport"})
+            continue
+        cred = login.get("credential") or {}
+        if transport == "winrm":
+            if collect_winrm is None:
+                result = InventoryResult(UNSUPPORTED, "WinRM is not available here.")
+            else:
+                result = await collect_winrm(address, port=login.get("port"), timeout=timeout,
+                                             server_name=server_name, **cred)
+        else:
+            port = login.get("port") or 22
+            taken = result.host_key if result is not None else None
+            if first_use and taken:
+                # A later try is pinned to the key the first one took.
+                known = known_hosts_lines(address, [(taken["key_type"], taken["public_key"],
+                                                     port)])
+                first_use = False
+            extra = {"first_use": True} if first_use else {}
+            result = await collect(address, port=port, timeout=timeout,
+                                   **{**cred, "known_hosts": known}, **extra)
+            if taken and not result.host_key:
+                result.host_key = taken
+        used = i
+        tried.append({"transport": transport, "outcome": result.status,
+                      "reason": (result.message or "")[:200]})
+        if result.status in (UNREACHABLE, TIMEOUT):
+            dead.add(fam)
+        nxt = logins[i + 1].get("transport") if i + 1 < len(logins) else None
+        if not may_try_next(transport, bool(login.get("fall_through")), result.status, nxt):
+            break
+    observed = None
+    if result is not None and result.status == HOST_KEY_REFUSED and used is not None:
+        port = logins[used].get("port") or 22
+        observed = await observe(address, port=port, timeout=min(timeout, 10))
+    return result, observed, used, tried
+
+
+# ─── the wire: a result as JSON and back ─────────────────────────────────────
+#
+# An Outpost posts its results in this shape; the core reads them back with
+# :func:`result_from_dict`, which trusts nothing: every package must pass the
+# same name/version checks the parsers apply, every string is capped, and a
+# result that does not is refused whole.
+
+#: Statuses a remote read may report (``blocked``: its target policy refused
+#: the address before any connection).
+WIRE_STATUSES = (OK, AUTH_FAILED, HOST_KEY_REFUSED, UNREACHABLE, TIMEOUT, UNSUPPORTED, FAILED,
+                 "blocked")
+_MANAGER_TYPE = {"dpkg": "deb", "rpm": "rpm", "apk": "apk", "windows": "generic"}
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_KEY_TYPES = ("ssh-ed25519", "ssh-ed448", "ssh-rsa", "ecdsa-sha2-nistp256",
+              "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521", "ssh-dss")
+_B64 = re.compile(r"^[A-Za-z0-9+/]{16,8192}={0,2}$")
+MAX_HOTFIXES = 2000
+MAX_FEATURES = 2000
+
+
+class WireError(ValueError):
+    """A posted result that is not one this code could have produced."""
+
+
+def _s(value, cap: int, *, field_name: str = "") -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise WireError(f"{field_name or 'A field'} is not text.")
+    return _CONTROL.sub("", value)[:cap]
+
+
+def result_as_dict(r: InventoryResult) -> dict:
+    """``r`` as JSON-able data. Packages are rows ``[type, name, version,
+    arch, source_name, source_version, publisher]``."""
+    return {
+        "status": r.status, "message": r.message or "", "os": r.os or {},
+        "manager": r.manager or "",
+        "packages": [[p.type, p.name, p.version, p.arch, p.source_name, p.source_version,
+                      p.publisher] for p in r.packages],
+        "skipped": int(r.skipped or 0), "truncated": bool(r.truncated),
+        "host_key": r.host_key,
+    }
+
+
+def verify_host_key(value) -> dict | None:
+    """A posted host key ``{key_type, public_key, fingerprint}`` checked and
+    normalised: the blob must parse as a public key of the named type, and
+    the fingerprint is computed here (a posted one is ignored). ``None`` for
+    ``None``; raises :class:`WireError` otherwise."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise WireError("A host key is an object.")
+    key_type = value.get("key_type")
+    blob = value.get("public_key")
+    if key_type not in _KEY_TYPES or not isinstance(blob, str) or not _B64.match(blob):
+        raise WireError("Not a host key.")
+    import asyncssh
+
+    try:
+        key = asyncssh.import_public_key(f"{key_type} {blob}")
+    except (asyncssh.KeyImportError, ValueError, TypeError):
+        raise WireError("Not a host key.") from None
+    if key.get_algorithm() != key_type:
+        raise WireError("The host key's type does not match.")
+    out = _key_dict(key)
+    if out is None:
+        raise WireError("Not a host key.")
+    return out
+
+
+def _os_from(value) -> dict:
+    if value in (None, {}):
+        return {}
+    if not isinstance(value, dict):
+        raise WireError("os is an object.")
+    os_id = _s(value.get("id"), 64, field_name="os.id")
+    if os_id and not _OS_ID.match(os_id):
+        raise WireError("os.id is not an os-release ID.")
+    like = value.get("id_like") or []
+    if not isinstance(like, list) or len(like) > 8 or not all(
+            isinstance(w, str) and _OS_ID.match(w) for w in like):
+        raise WireError("os.id_like is not a list of IDs.")
+    out = {"id": os_id, "id_like": list(like),
+           "version_id": _s(value.get("version_id"), 32).strip(),
+           "version_codename": _s(value.get("version_codename"), 32).strip().lower(),
+           "pretty_name": _s(value.get("pretty_name"), MAX_FIELD).strip(),
+           "name": _s(value.get("name"), MAX_FIELD).strip()}
+    win = value.get("windows")
+    if win is not None:
+        if not isinstance(win, dict):
+            raise WireError("os.windows is an object.")
+        ubr = win.get("ubr")
+        if ubr is not None and (isinstance(ubr, bool) or not isinstance(ubr, int)
+                                or not 0 <= ubr < 10**7):
+            raise WireError("os.windows.ubr is not a number.")
+        hotfixes = win.get("hotfixes") or []
+        features = win.get("features") or []
+        if not isinstance(hotfixes, list) or len(hotfixes) > MAX_HOTFIXES \
+                or not all(isinstance(h, dict) for h in hotfixes):
+            raise WireError("os.windows.hotfixes is not a list of objects.")
+        if not isinstance(features, list) or len(features) > MAX_FEATURES \
+                or not all(isinstance(f, str) for f in features):
+            raise WireError("os.windows.features is not a list of names.")
+        out["windows"] = {
+            "product_name": _s(win.get("product_name"), 128),
+            "edition": _s(win.get("edition"), 64),
+            "display_version": _s(win.get("display_version"), 16),
+            "build": _s(win.get("build"), 16), "ubr": ubr,
+            "installation_type": _s(win.get("installation_type"), 32),
+            "architecture": _s(win.get("architecture"), 32),
+            "hotfixes": [{"id": _s(h.get("id"), 16), "description": _s(h.get("description"), 64),
+                          "installed_on": _s(h.get("installed_on"), 32)} for h in hotfixes],
+            "features": [_s(f, 64) for f in features],
+        }
+    return out
+
+
+def _package_from(row, ptype: str) -> Package:
+    if not isinstance(row, list) or len(row) != 7 or not all(
+            isinstance(x, str) for x in row):
+        raise WireError("A package is a row of seven strings.")
+    kind, name, version, arch, src, src_version, publisher = row
+    if kind != ptype:
+        raise WireError("A package's type does not match the host's package manager.")
+    if ptype == "generic":
+        name = _s(name, MAX_FIELD).strip()
+        if not name or arch not in ("", "x64", "x86"):
+            raise WireError("Not a Windows program.")
+        return Package("generic", name, _s(version, MAX_FIELD), arch,
+                       publisher=_s(publisher, MAX_FIELD))
+    name_re = _DEB_NAME if ptype == "deb" else _RPM_NAME
+    if not name_re.match(name) or not _VERSION.match(version) \
+            or (arch and not _ARCH.match(arch)) or (src and not name_re.match(src)) \
+            or (src_version and not _VERSION.match(src_version)) or publisher:
+        raise WireError("A package does not parse.")
+    return Package(ptype, name, version, arch, src or name, src_version or version)
+
+
+def result_from_dict(value) -> InventoryResult:
+    """Read back a posted :func:`result_as_dict`. Raises :class:`WireError`
+    for anything this module could not have produced."""
+    if not isinstance(value, dict):
+        raise WireError("A result is an object.")
+    status = value.get("status")
+    if status not in WIRE_STATUSES:
+        raise WireError("Not a result status.")
+    manager = value.get("manager") or ""
+    if manager not in ("", *_MANAGER_TYPE):
+        raise WireError("Not a package manager.")
+    rows = value.get("packages") or []
+    if not isinstance(rows, list) or len(rows) > MAX_PACKAGES:
+        raise WireError(f"At most {MAX_PACKAGES} packages.")
+    if rows and (status != OK or not manager):
+        raise WireError("Only a read host has packages.")
+    skipped = value.get("skipped") or 0
+    if isinstance(skipped, bool) or not isinstance(skipped, int) or skipped < 0:
+        raise WireError("skipped is a count.")
+    truncated = value.get("truncated", False)
+    if not isinstance(truncated, bool):
+        raise WireError("truncated is true or false.")
+    os_facts = _os_from(value.get("os"))
+    if status == OK and not os_facts.get("id"):
+        raise WireError("A read host names its OS.")
+    ptype = _MANAGER_TYPE.get(manager, "")
+    packages = [_package_from(r, ptype) for r in rows]
+    if len({(p.name.lower() if p.type == "generic" else p.name, p.arch)
+            for p in packages}) != len(packages):
+        raise WireError("A package is listed twice.")
+    return InventoryResult(
+        status=status, message=_s(value.get("message"), 300), os=os_facts, manager=manager,
+        packages=packages, skipped=skipped, truncated=truncated,
+        host_key=verify_host_key(value.get("host_key")))

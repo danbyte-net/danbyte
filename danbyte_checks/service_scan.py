@@ -423,3 +423,134 @@ async def scan(addresses: list[str], ports: list[int], *, rate: float, hosts_par
             return await scan_host(a, ports, limiter, observe_key=observe_key, **timeouts)
 
     return list(await asyncio.gather(*(one(a) for a in addresses)))
+
+
+# ─── the wire: a host result as JSON and back ────────────────────────────────
+#
+# An Outpost posts its scan results in this shape; the core reads them back
+# with :func:`host_result_from_dict`, which accepts only the address and the
+# ports it asked for and caps every string the way the probes above do.
+
+WIRE_STATUSES = ("ok", "blocked", "unreachable", "failed")
+SOURCES = ("danbyte", "recog", "nmap", "banner", "port")
+CONFIDENCES = ("high", "medium", "low")
+_FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
+
+
+class WireError(ValueError):
+    """A posted result that is not one this code could have produced."""
+
+
+def host_result_as_dict(h: HostResult) -> dict:
+    return {"address": h.address, "status": h.status, "message": h.message or "",
+            "open": [p.as_dict() for p in h.open], "connects": int(h.connects or 0)}
+
+
+def _text(value, cap: int) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise WireError("A field is not text.")
+    return clean(value, cap)
+
+
+def _tls_from(value) -> dict | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise WireError("tls is an object.")
+    fp = value.get("fingerprint_sha256") or ""
+    if fp and (not isinstance(fp, str) or not _FINGERPRINT.match(fp)):
+        raise WireError("Not a certificate fingerprint.")
+    sans = value.get("san_dns") or []
+    if not isinstance(sans, list) or len(sans) > 20:
+        raise WireError("san_dns is a short list.")
+    self_signed = value.get("self_signed", False)
+    if not isinstance(self_signed, bool):
+        raise WireError("self_signed is true or false.")
+    return {"fingerprint_sha256": fp, "subject_cn": _text(value.get("subject_cn"), 200),
+            "issuer_cn": _text(value.get("issuer_cn"), 200),
+            "san_dns": [_text(s, 255) for s in sans],
+            "not_after": _text(value.get("not_after"), 40), "self_signed": self_signed,
+            "tls_version": _text(value.get("tls_version"), 16)}
+
+
+def _http_from(value) -> dict | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise WireError("http is an object.")
+    status = value.get("status", 0)
+    if isinstance(status, bool) or not isinstance(status, int) or not 0 <= status <= 999:
+        raise WireError("http.status is a status code.")
+    return {"status": status, "server": _text(value.get("server"), 200),
+            "powered_by": _text(value.get("powered_by"), 200),
+            "location": _text(value.get("location"), 200),
+            "title": _text(value.get("title"), TITLE_KEEP)}
+
+
+def _port_from(value, wanted: set[int]) -> PortResult:
+    from .inventory import WireError as KeyWireError
+    from .inventory import verify_host_key
+
+    if not isinstance(value, dict):
+        raise WireError("A port is an object.")
+    port = value.get("port")
+    if isinstance(port, bool) or not isinstance(port, int) or port not in wanted:
+        raise WireError("A port that was not asked for.")
+    if value.get("protocol", "tcp") != "tcp":
+        raise WireError("Only TCP ports are scanned.")
+    source = value.get("source") or "port"
+    confidence = value.get("confidence") or "low"
+    if source not in SOURCES or confidence not in CONFIDENCES:
+        raise WireError("Not a source or confidence.")
+    cpe = _text(value.get("cpe"), 255)
+    if cpe and not cpe.startswith("cpe:2.3:"):
+        raise WireError("Not a CPE 2.3 name.")
+    try:
+        host_key = verify_host_key(value.get("host_key"))
+    except KeyWireError as exc:
+        raise WireError(str(exc)) from None
+    return PortResult(
+        port=port, protocol="tcp", service=_text(value.get("service"), 40),
+        banner=_text(value.get("banner"), BANNER_KEEP), product=_text(value.get("product"), 128),
+        vendor=_text(value.get("vendor"), 128), version=_text(value.get("version"), 64),
+        cpe=cpe, os=_text(value.get("os"), 128), source=source,
+        rule=_text(value.get("rule"), 200), confidence=confidence,
+        tls=_tls_from(value.get("tls")), http=_http_from(value.get("http")),
+        host_key=host_key)
+
+
+def host_result_from_dict(value, *, address: str, ports) -> HostResult:
+    """Read back a posted :func:`host_result_as_dict` for ``address``,
+    scanned on ``ports``. Raises :class:`WireError` for anything outside
+    that: another address, a port not in the list, a port twice, a status
+    or a field this module never writes."""
+    if not isinstance(value, dict):
+        raise WireError("A result is an object.")
+    try:
+        same = ipaddress.ip_address(str(value.get("address", ""))) == \
+            ipaddress.ip_address(address)
+    except ValueError:
+        same = False
+    if not same:
+        raise WireError("A result for an address that was not asked for.")
+    status = value.get("status")
+    if status not in WIRE_STATUSES:
+        raise WireError("Not a result status.")
+    wanted = {int(p) for p in ports}
+    rows = value.get("open") or []
+    if not isinstance(rows, list) or len(rows) > len(wanted):
+        raise WireError("More open ports than were scanned.")
+    if rows and status != "ok":
+        raise WireError("Only a scanned host has open ports.")
+    found = [_port_from(r, wanted) for r in rows]
+    if len({p.port for p in found}) != len(found):
+        raise WireError("A port is listed twice.")
+    connects = value.get("connects", 0)
+    # A TLS port may connect twice (TLS, then plain).
+    if isinstance(connects, bool) or not isinstance(connects, int) \
+            or not 0 <= connects <= 2 * len(wanted):
+        raise WireError("connects is a count.")
+    return HostResult(address=address, status=status, message=_text(value.get("message"), 300),
+                      open=found, connects=connects)

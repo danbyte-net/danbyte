@@ -44,12 +44,13 @@ from auth_api import rbac
 from auth_api.permissions import can_manage_admin, can_manage_deployment
 from danbyte_checks import nmap as danbyte_nmap
 from danbyte_checks import service_scan
-from monitoring.models import SharedCredential
+from monitoring.models import MonitoringEngine, SharedCredential
 
-from . import gate, runner, scope, services
+from . import gate, outposts, runner, scope, services
 from . import nmap as nmap_engine
 from .models import (
     PROFILE_KINDS,
+    RUNS_ON,
     DiscoverySettings,
     HostOsFact,
     HostPackage,
@@ -100,6 +101,9 @@ def run_dict(r: InventoryRun) -> dict:
         "summary": runner.summary(r.counts or {}),
         "accept_new_host_keys": r.accept_new_host_keys,
         "errors": r.errors or [],
+        # A run on Outposts: hosts still waiting for or with their Outpost.
+        "outstanding": r.work_items.filter(status__in=outposts.OPEN).count()
+        if r.engine != "server" and r.status == "running" else 0,
     }
 
 
@@ -260,7 +264,7 @@ def discovery_settings(request):
             on = request.data["nmap"]
             if not isinstance(on, bool):
                 raise ValidationError({"nmap": "true or false."})
-            if on and not nmap_state["available"]:
+            if on and not nmap_state["available"] and not _outposts_with_nmap(tenant):
                 raise ValidationError({"nmap": f"nmap: {nmap_state['label']}."})
             row.nmap_enabled = on
             fields.append("nmap_enabled")
@@ -270,8 +274,61 @@ def discovery_settings(request):
         "deny_subnets": row.deny_subnets,
         "transports": {key: getattr(row, f) for key, f in TRANSPORT_FIELDS.items()},
         "winrm": {"available": winrm_ok, "label": winrm_label, "reason": winrm_reason},
-        "nmap": {**nmap_state, "enabled": row.nmap_enabled and nmap_state["available"]},
+        "nmap": {**nmap_state,
+                 "enabled": row.nmap_enabled and (nmap_state["available"]
+                                                  or bool(_outposts_with_nmap(tenant))),
+                 "outposts": _outposts_with_nmap(tenant)},
         "can_change": admin, "updated_at": row.updated_at})
+
+
+def _outposts_with_nmap(tenant) -> list[str]:
+    """The names of the tenant's Outposts whose agent found an nmap it may
+    run (as their last hello said)."""
+    if not nmap_engine.allowed():
+        return []
+    return sorted(e.name for e in MonitoringEngine.objects.filter(
+        tenant=tenant, kind=MonitoringEngine.REMOTE, enabled=True)
+        if (outposts.capabilities(e).get("nmap") or {}).get("version"))
+
+
+def outpost_dict(engine, now=None) -> dict:
+    """An Outpost as the Runs on picker shows it: online, agent, and per
+    work kind whether it can take it now and why not."""
+    caps = outposts.capabilities(engine)
+    can = {}
+    for key, kind, scan_engine in (("inventory", "inventory", "builtin"),
+                                   ("service_scan", "service_scan", "builtin"),
+                                   ("nmap", "service_scan", "nmap")):
+        status, message = outposts.why_not(engine, kind, scan_engine, now=now)
+        can[key] = {"ok": not status, "status": status, "reason": message}
+    return {"id": str(engine.pk), "name": engine.name, "enabled": engine.enabled,
+            "transport": engine.transport, "online": outposts.online(engine, now),
+            "last_seen_at": engine.last_seen_at, "agent_version": engine.agent_version,
+            "kinds": caps.get("kinds") or [],
+            "nmap_version": (caps.get("nmap") or {}).get("version", ""),
+            "can": can}
+
+
+@extend_schema(summary="Outposts discovery can run on", tags=["discovery"],
+               responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def discovery_outposts(request):
+    """The tenant's Outposts with what each can run now (``can``: inventory,
+    service_scan, nmap - ``ok`` or the reason), for the Runs on picker.
+    Whoever may view profiles. Filter: ``search``."""
+    tenant = gate.require(request)
+    if not request.user.is_superuser and not rbac.has_action(
+            request.user, tenant, "inventoryprofile", "view"):
+        raise PermissionDenied("inventoryprofile.view required.")
+    qs = MonitoringEngine.objects.filter(tenant=tenant, kind=MonitoringEngine.REMOTE)
+    q = (request.query_params.get("search") or "").strip()
+    if q:
+        qs = qs.filter(name__icontains=q)
+    now = timezone.now()
+    rows = [outpost_dict(e, now) for e in qs.select_related("tenant").order_by("name", "pk")[:500]]
+    return Response({"results": rows, "count": len(rows),
+                     "agent_version": outposts.AGENT_VERSION})
 
 
 # ─── profiles ────────────────────────────────────────────────────────────────
@@ -291,6 +348,11 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
         source="shared_credential", required=False, allow_null=True,
         queryset=SharedCredential.objects.all())
     shared_credential = serializers.SerializerMethodField()
+    runs_on = serializers.ChoiceField(choices=[k for k, _l in RUNS_ON], required=False)
+    outpost_id = TenantScopedPrimaryKeyRelatedField(
+        source="outpost", required=False, allow_null=True,
+        queryset=MonitoringEngine.objects.filter(kind=MonitoringEngine.REMOTE))
+    outpost = serializers.SerializerMethodField()
     scope = serializers.SerializerMethodField()
     authorised = serializers.BooleanField(read_only=True)
     kind = serializers.ChoiceField(choices=[k for k, _l in PROFILE_KINDS], required=False)
@@ -308,6 +370,7 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
             "interval_hours", "window_start", "window_end", "max_concurrency",
             "timeout_seconds", "ports", "connects_per_second", "rate_cap",
             "scan_engine", "nmap_version_intensity", "nmap_timing",
+            "runs_on", "outpost_id", "outpost",
             "authorisation", "authorised", "authorised_by_name",
             "authorised_at", "blocked_reason", "last_run_at", "last_run",
             "created_at", "updated_at",
@@ -322,6 +385,9 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
             "devices": [_ref(d) for d in obj.devices.all()],
             "virtual_machines": [_ref(v) for v in obj.virtual_machines.all()],
         }
+
+    def get_outpost(self, obj) -> dict | None:
+        return None if obj.outpost is None else outpost_dict(obj.outpost)
 
     def get_shared_credential(self, obj) -> dict | None:
         c = obj.shared_credential
@@ -415,12 +481,24 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
                 if visible.filter(pk__in=ids).count() != len(ids):
                     raise ValidationError({ID_FIELDS[field]: "Not found."})
         kind = attrs.get("kind") or (self.instance.kind if self.instance else "inventory")
+        runs_on = attrs.get("runs_on") or (self.instance.runs_on if self.instance else "server")
+        if runs_on == "outpost":
+            outpost = attrs["outpost"] if "outpost" in attrs else (
+                self.instance.outpost if self.instance else None)
+            if outpost is None:
+                raise ValidationError({"outpost_id": "Pick the Outpost it runs on."})
+        else:
+            attrs["outpost"] = None
         engine = attrs.get("scan_engine")
-        if engine == "nmap" and (self.instance is None
+        moved = self.instance is not None and runs_on != self.instance.runs_on
+        if engine == "nmap" and (self.instance is None or moved
                                  or self.instance.scan_engine != "nmap"):
             if kind != "service_scan":
                 raise ValidationError({"scan_engine": "Only a service scan has an engine."})
-            reason = nmap_engine.why_not(tenant)
+            # On the server, the server's nmap; on Outposts, theirs (a run
+            # says per host when one has none).
+            reason = nmap_engine.why_not(tenant) if runs_on == "server" \
+                else outposts.nmap_why_not(tenant)
             if reason:
                 raise ValidationError({"scan_engine": reason})
         pinned = attrs.get("shared_credential")
@@ -440,6 +518,9 @@ def _scope_ids(profile) -> tuple:
     ports too (a wider port list is a new authorisation)."""
     ids = tuple(frozenset(getattr(profile, f).values_list("pk", flat=True))
                 for f in SCOPE_MEMBERS)
+    # Where it runs is part of what was authorised: another vantage point
+    # reaches other networks.
+    ids = (*ids, profile.runs_on, str(profile.outpost_id or ""))
     if profile.kind == "service_scan":
         return (*ids, json.dumps(profile.ports or [], sort_keys=True))
     return ids
@@ -452,7 +533,8 @@ class InventoryProfileViewSet(TenantScopedViewSet):
     without one clears the authorisation, and a profile without one never
     runs. Filters: ``enabled``, ``search``."""
 
-    queryset = InventoryProfile.objects.select_related("shared_credential").prefetch_related(
+    queryset = InventoryProfile.objects.select_related(
+        "shared_credential", "outpost").prefetch_related(
         "sites", "prefixes", "devices", "virtual_machines")
     serializer_class = InventoryProfileSerializer
     rbac_action_map = {"run": "scan", "hosts": "view", "host_keys": "view"}
@@ -557,7 +639,10 @@ class InventoryProfileViewSet(TenantScopedViewSet):
         alone. Nothing is contacted."""
         profile = self.get_object()
         user = None if request.user.is_superuser else request.user
+        remote = profile.runs_on != "server"
         if profile.kind == "service_scan":
+            targets = services.resolve(profile, user=user, outpost=remote)
+            where = outposts.preview(profile, targets) if remote else {}
             rows = [{
                 "kind": t.kind or "ipaddress", "id": str(t.host.pk if t.host else t.ip.pk),
                 "name": str(t.host) if t.host is not None else t.address,
@@ -565,16 +650,20 @@ class InventoryProfileViewSet(TenantScopedViewSet):
                 "address": t.address, "status": t.skip or "ready", "message": t.message,
                 "credential": None, "credential_source": "",
                 "scan_exempt": bool(t.host.scan_exempt if t.host else t.ip.scan_exempt),
-            } for t in services.resolve(profile, user=user)]
+                "engine": where.get(id(t), "server"),
+            } for t in targets]
             return Response({"results": rows, "count": len(rows),
                              "truncated": services.truncated(profile, user=user)})
         out = []
-        for t in scope.resolve(profile, user=user):
+        targets = scope.resolve(profile, user=user, outpost=remote)
+        where = outposts.preview(profile, targets) if remote else {}
+        for t in targets:
             out.append({
                 "kind": t.kind, "id": str(t.host.pk), "name": str(t.host),
                 "address": t.address, "status": t.skip or "ready", "message": t.message,
                 "credential": _ref(t.credential), "scan_exempt": t.host.scan_exempt,
                 "credential_source": t.logins[0].source if t.logins else "",
+                "engine": where.get(id(t), "server"),
             })
         return Response({"results": out, "count": len(out),
                          "truncated": scope.truncated(profile, user=user)})
@@ -696,7 +785,7 @@ class InventoryRunViewSet(viewsets.ViewSet):
                 "message": h.message, "packages": h.packages, "added": h.added,
                 "removed": h.removed, "updated": h.updated, "finished_at": h.finished_at,
                 "ip_address": str(h.ip_address_id) if h.ip_address_id else None,
-                "services": h.services, "connects": h.connects,
+                "services": h.services, "connects": h.connects, "engine": h.engine,
             } for h in page]
 
         return _paginate(request, qs.order_by("status", "address", "pk"), rows)

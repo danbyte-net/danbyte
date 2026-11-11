@@ -16,6 +16,7 @@ urlpatterns = [
     path("discovery/deployment/", api.discovery_deployment, name="discovery-deployment"),
     path("discovery/settings/", api.discovery_settings, name="discovery-settings"),
     path("discovery/exempt/", api.discovery_exempt, name="discovery-exempt"),
+    path("discovery/outposts/", api.discovery_outposts, name="discovery-outposts"),
     path("discovery/host-keys/accept/", api.discovery_accept_host_keys,
          name="discovery-accept-host-keys"),
     path("discovery/services/", findings_api.discovery_services, name="discovery-services"),

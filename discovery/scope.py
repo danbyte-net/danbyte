@@ -58,6 +58,7 @@ TRANSPORT_KINDS = (("ssh_key", "ssh_key"), ("ssh_password", "ssh_password"),
 KIND_TRANSPORT = {k: t for t, k in TRANSPORT_KINDS}
 TRANSPORT_LABELS = {"ssh_key": "SSH key", "ssh_password": "SSH password",
                     "winrm": "WinRM HTTPS"}
+OUTPOST_NO_WINRM = "Outposts read over SSH only"
 
 
 def transports(settings_row) -> tuple[list[str], dict[str, str]]:
@@ -179,17 +180,20 @@ def _known_hosts(address: str, keys) -> bytes | None:
     """known_hosts lines pinning ``address`` to the accepted keys. Port 22
     and other ports both: the lines name the bare address and the
     ``[address]:port`` form the credential's port gives."""
-    lines = []
-    for key_type, blob, port in keys:
-        name = address if port in (None, 22) else f"[{address}]:{port}"
-        lines.append(f"{name} {key_type} {blob}")
-    return ("\n".join(lines) + "\n").encode() if lines else None
+    from danbyte_checks.inventory import known_hosts_lines
+
+    return known_hosts_lines(address, keys)
 
 
-def resolve(profile, *, user=None, now=None) -> list[Target]:
+def resolve(profile, *, user=None, now=None, outpost: bool = False) -> list[Target]:
     """Every host in ``profile``'s scope as a :class:`Target`, skipped ones
     with their reason. At most :data:`MAX_HOSTS` (the rest are dropped and
-    the run reports it)."""
+    the run reports it).
+
+    ``outpost``: the hosts are read by Outposts, not the server. The
+    server's target policy is then not the one that applies (the Outpost
+    applies its own, as it does to checks), and WinRM is left out: an
+    Outpost reads over SSH only."""
     from api.models import Prefix
     from danbyte_checks import netguard
     from monitoring.credentials import MAX_TRIES, CredentialResolver
@@ -208,6 +212,9 @@ def resolve(profile, *, user=None, now=None) -> list[Target]:
     settings_row = DiscoverySettings.for_tenant(tenant)
     deny_any = _nets((c, None) for c in settings_row.deny_subnets or [])
     on, off = transports(settings_row)
+    if outpost and "winrm" in on:
+        on.remove("winrm")
+        off["winrm"] = OUTPOST_NO_WINRM
     kinds = tuple(k for t, k in TRANSPORT_KINDS if t in on)
     deny_vrf = _nets(MonitoringDenySubnet.objects.filter(tenant=tenant)
                      .values_list("cidr", "vrf_id"))
@@ -247,7 +254,7 @@ def resolve(profile, *, user=None, now=None) -> list[Target]:
         if _in(addr, deny_any, any_vrf=True) or _in(addr, deny_vrf, ip.vrf_id):
             t.skip, t.message = "denied", "In a deny subnet."
             continue
-        if netguard.target_blocked(t.address):
+        if not outpost and netguard.target_blocked(t.address):
             t.skip, t.message = "blocked", "The server's target policy refuses this address."
             continue
         label = "api.device" if kind == "device" else "api.virtualmachine"
