@@ -41,6 +41,7 @@ import {
   buildInventoryRunColumns,
   buildInventoryScopeHostColumns,
   PROFILE_KIND_LABELS,
+  runsOnLabel,
   scheduleLabel,
 } from "@/components/columns/inventory-columns"
 import { ProfileDialog } from "@/components/discovery/profile-dialog"
@@ -294,6 +295,7 @@ function Overview({ profile: p }: { profile: InventoryProfile }) {
   const scan = p.kind === "service_scan"
   const schedule: KvRow[] = [
     { label: "Kind", value: PROFILE_KIND_LABELS[p.kind] ?? p.kind },
+    { label: "Runs on", value: runsOnLabel(p) },
     { label: "Schedule", value: scheduleLabel(p) },
     ...(scan
       ? [

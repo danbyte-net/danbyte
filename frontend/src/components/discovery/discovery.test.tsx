@@ -11,12 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { InventoryProfile, VulnMatch } from "@/lib/api"
 import {
+  runsOnLabel,
   scheduleLabel,
   scopeLabel,
 } from "@/components/columns/inventory-columns"
 import { VIA_LABELS } from "@/components/columns/vulnerability-match-columns"
 import { subjectOf } from "@/components/vulnerabilities/exception-rules"
-import { HostStatusBadge, RunStatusBadge } from "./status"
+import { engineLabel, HostStatusBadge, RunStatusBadge } from "./status"
 import { OsBuildNote, usePackagesTab } from "./packages-tab"
 
 const { apiMock, canDoMock } = vi.hoisted(() => ({
@@ -48,6 +49,9 @@ function profile(over: Partial<InventoryProfile> = {}): InventoryProfile {
     scan_engine: "builtin",
     nmap_version_intensity: 2,
     nmap_timing: 3,
+    runs_on: "server",
+    outpost_id: null,
+    outpost: null,
     site_ids: [],
     prefix_ids: [],
     device_ids: [],
@@ -109,6 +113,38 @@ describe("inventory profile labels", () => {
     })
     expect(scopeLabel(p)).toBe("1 site, 2 prefixes, 1 VM")
   })
+
+  it("says where it runs", () => {
+    expect(runsOnLabel(profile())).toBe("Server")
+    expect(runsOnLabel(profile({ runs_on: "host" }))).toBe("The host's Outpost")
+    expect(
+      runsOnLabel(
+        profile({
+          runs_on: "outpost",
+          outpost_id: "e1",
+          outpost: {
+            id: "e1",
+            name: "branch-op",
+            enabled: true,
+            transport: "pull",
+            online: true,
+            last_seen_at: null,
+            agent_version: "0.10.0",
+            kinds: ["inventory"],
+            nmap_version: "",
+            can: {
+              inventory: { ok: true, status: "", reason: "" },
+              service_scan: { ok: true, status: "", reason: "" },
+              nmap: { ok: false, status: "outpost_unsupported", reason: "x" },
+            },
+          },
+        })
+      )
+    ).toBe("branch-op")
+    expect(engineLabel("server")).toBe("Server")
+    expect(engineLabel("outpost: branch-op")).toBe("branch-op")
+    expect(engineLabel("")).toBe("")
+  })
 })
 
 describe("status pills", () => {
@@ -117,7 +153,11 @@ describe("status pills", () => {
       <>
         <RunStatusBadge status="partial" />
         <HostStatusBadge status="host_key_refused" />
+        <HostStatusBadge status="outpost_unsupported" />
       </>
+    )
+    expect(screen.getByText("Outpost cannot run it").dataset.variant).toBe(
+      "warning"
     )
     expect(screen.getByText("Partial").dataset.variant).toBe("warning")
     expect(screen.getByText("Host key not accepted").dataset.variant).toBe(

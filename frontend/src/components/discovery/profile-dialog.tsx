@@ -5,6 +5,8 @@ import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type {
+  DiscoveryOutpost,
+  DiscoveryRunsOn,
   DiscoverySettings,
   DiscoveryProfileKind,
   InventoryProfile,
@@ -135,6 +137,52 @@ const TIMING_OPTIONS = [
   { value: "4", label: "Aggressive (-T4)" },
 ]
 
+/** The Runs on picker's value for "each host's Outpost"; an Outpost is its
+ *  id and the server is the empty value. */
+const HOST_OUTPOST = "__host__"
+
+const OUTPOST_STATE: Record<string, string> = {
+  outpost_offline: "Offline",
+  outpost_unsupported: "Cannot run this",
+  no_outpost: "No Outpost",
+}
+
+/** Whether the picked Outpost can take this profile's work now. */
+function OutpostState({
+  outpost,
+  kind,
+  engine,
+}: {
+  outpost: DiscoveryOutpost
+  kind: DiscoveryProfileKind
+  engine: "builtin" | "nmap"
+}) {
+  const can =
+    kind === "service_scan" && engine === "nmap"
+      ? outpost.can.nmap
+      : outpost.can[kind]
+  if (can.ok)
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="success">Ready</Badge>
+        <span>
+          {outpost.agent_version ? `Agent ${outpost.agent_version}` : ""}
+          {kind === "service_scan" && outpost.nmap_version
+            ? `, nmap ${outpost.nmap_version}`
+            : ""}
+        </span>
+      </div>
+    )
+  return (
+    <div className="flex items-start gap-2 text-xs text-muted-foreground">
+      <Badge variant="warning" className="whitespace-nowrap">
+        {OUTPOST_STATE[can.status] ?? "Unavailable"}
+      </Badge>
+      <span>{can.reason}</span>
+    </div>
+  )
+}
+
 /** "22, 80, 8000-8100" -> [22, 80, "8000-8100"]; the server validates. */
 function parsePorts(text: string): (number | string)[] {
   return text
@@ -177,7 +225,20 @@ export function ProfileDialog({
   const [engine, setEngine] = useState<"builtin" | "nmap">("builtin")
   const [intensity, setIntensity] = useState("2")
   const [timing, setTiming] = useState("3")
+  const [runsOn, setRunsOn] = useState<DiscoveryRunsOn>("server")
+  const [outpostId, setOutpostId] = useState<string | null>(null)
   const scan = kind === "service_scan"
+  const outposts = useQuery({
+    queryKey: ["discovery", "outposts"],
+    queryFn: () =>
+      api<{ results: DiscoveryOutpost[] }>("/api/discovery/outposts/"),
+    enabled: open,
+  })
+  const picked =
+    runsOn === "outpost"
+      ? (outposts.data?.results.find((o) => o.id === outpostId) ??
+        (profile?.outpost?.id === outpostId ? profile.outpost : null))
+      : null
   const { canDo } = useMe()
   const nmapOn = !!useQuery({
     queryKey: ["discovery", "settings"],
@@ -215,6 +276,8 @@ export function ProfileDialog({
     setEngine(profile?.scan_engine ?? "builtin")
     setIntensity(String(profile?.nmap_version_intensity ?? 2))
     setTiming(String(profile?.nmap_timing ?? 3))
+    setRunsOn(profile?.runs_on ?? "server")
+    setOutpostId(profile?.outpost_id ?? null)
   }, [open, profile, reset])
 
   const add = (key: ScopeKey) => (items: Ref[]) =>
@@ -239,6 +302,8 @@ export function ProfileDialog({
         window_start: windowStart,
         window_end: windowEnd,
         max_concurrency: Number(concurrency),
+        runs_on: runsOn,
+        outpost_id: runsOn === "outpost" ? outpostId : null,
       }
       if (!profile) body.kind = kind
       if (scan) {
@@ -327,6 +392,54 @@ export function ProfileDialog({
             checked={enabled}
             onChange={setEnabled}
           />
+          <div className="space-y-1.5">
+            <FormCombobox
+              label="Runs on"
+              value={
+                runsOn === "server"
+                  ? null
+                  : runsOn === "host"
+                    ? HOST_OUTPOST
+                    : outpostId
+              }
+              onChange={(v) => {
+                if (!v) setRunsOn("server")
+                else if (v === HOST_OUTPOST) setRunsOn("host")
+                else {
+                  setRunsOn("outpost")
+                  setOutpostId(v)
+                }
+              }}
+              noneLabel="Server"
+              searchPlaceholder="Search Outposts…"
+              options={[
+                { value: HOST_OUTPOST, label: "The host's Outpost" },
+                ...(outposts.data?.results ?? []).map((o) => ({
+                  value: o.id,
+                  label: o.name,
+                  group: "Outposts",
+                })),
+                // Keep the saved one when the list does not carry it.
+                ...(profile?.outpost &&
+                !(outposts.data?.results ?? []).some(
+                  (o) => o.id === profile.outpost!.id
+                )
+                  ? [
+                      {
+                        value: profile.outpost.id,
+                        label: profile.outpost.name,
+                        group: "Outposts",
+                      },
+                    ]
+                  : []),
+              ]}
+              error={fieldErrors.runs_on || fieldErrors.outpost_id}
+              info="Server reads from the Danbyte workers. An Outpost reads from its own network, for hosts the server cannot reach. The host's Outpost follows the monitoring engine bindings. A host whose Outpost is offline or runs an older agent is left alone and says why; it is never read from the server instead."
+            />
+            {picked && (
+              <OutpostState outpost={picked} kind={kind} engine={engine} />
+            )}
+          </div>
 
           <Field
             label="Scope"

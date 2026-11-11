@@ -20,7 +20,11 @@ import {
   FindingsPanel,
   ObservedServicesPanel,
 } from "@/components/discovery/findings-panel"
-import { isRunActive, RunStatusBadge } from "@/components/discovery/status"
+import {
+  engineLabel,
+  isRunActive,
+  RunStatusBadge,
+} from "@/components/discovery/status"
 
 // One discovery run (#451 B2): what it did, then a row per host it
 // considered - read, refused, or left alone and why - and the host keys
@@ -87,7 +91,13 @@ function Body({ run: r }: { run: InventoryRun }) {
       label: "Started by",
       value: r.trigger === "schedule" ? "Schedule" : r.started_by_name || dash,
     },
-    { label: "Ran on", value: r.engine === "server" ? "Server" : r.engine },
+    {
+      label: "Ran on",
+      value:
+        r.outstanding && r.status === "running"
+          ? `${engineLabel(r.engine)}, ${r.outstanding} hosts to go`
+          : engineLabel(r.engine),
+    },
     { label: "Queued", value: <TimeCell iso={r.created_at} /> },
     {
       label: "Finished",

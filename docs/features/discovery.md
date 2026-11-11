@@ -55,7 +55,7 @@ schedule queues nothing, and package matches are resolved.
 | Partial | Some hosts were read, some not. |
 | Nothing read | No host was logged in to, because each was left alone before a login - no credential, no accepted host key, no address. Nothing failed; the run page says why by reason ("61 without a credential") and links to what fixes it. |
 | Failed | Logins were tried and none read (refused, unreachable, timed out). |
-| Skipped | The run did not start: Discovery, the profile or its authorisation changed after it was queued. |
+| Skipped | The run did not start: Discovery, the profile or its authorisation changed after it was queued. A run on Outposts is also *Skipped* when no host could be handed to one (offline, or an agent too old for the work); each host says why. |
 
 ## Inventory profiles
 
@@ -69,7 +69,8 @@ the tenant's inventory profiles. A profile has:
 | Window | A daily start and end time, server time, that runs may start in. An end before the start spans midnight. Empty means any time. |
 | Hosts at once | How many hosts one run reads in parallel, 1 to 16. Default 4. |
 | Per-host timeout | Seconds for one host from connect to the last line, 10 to 600. Default 60. |
-| Authorisation | The recorded statement of who authorised reading this scope. |
+| Runs on | **Server** (default), one **Outpost**, or **The host's Outpost**. See [Where it runs](#where-it-runs). |
+| Authorisation | The recorded statement of who authorised reading this scope. Changing the scope, or where the profile runs, clears it. |
 
 A profile page shows the scope as it resolves right now on its **Hosts**
 tab - each host, its address, the credential it would use and why it would
@@ -444,9 +445,56 @@ never holds up vulnerability recomputes on `low`. The timer
 queues the profiles that are due and inside their window, gives up runs
 whose worker died after six hours, and purges long-removed packages.
 
-The collector is written without Django in `danbyte_checks`, so Outposts
-can run the same code later; today every run is on the server, and the
-check runner's target policy applies to every host it logs in to.
+On the server, the check runner's target policy applies to every host it
+logs in to.
+
+### On an Outpost {#on-an-outpost}
+
+For hosts the server cannot reach, a profile's **Runs on** picks an
+Outpost (the agent at that site) instead:
+
+| Runs on | Hosts go to |
+|---|---|
+| Server | the Danbyte workers (default) |
+| An Outpost | that Outpost, every host in scope |
+| The host's Outpost | the Outpost each host is bound to, by the [monitoring engine bindings](../monitoring/outposts.md#how-an-engine-is-chosen-for-a-target) (device, location, site, the tenant default) |
+
+The run still starts on the server: the scope, exemptions, deny subnets,
+maintenance, the authorisation, the window and the person's view are
+resolved there exactly as for a server run, and so are the logins and the
+host keys to pin. Each host that passes is queued for its Outpost; the
+Outpost reads it with the same collector (`danbyte_checks.inventory`, the
+same fixed commands and parsers) and posts the packages, OS facts and
+presented host keys back. The run page says **Ran on** and how many hosts
+are still out; each host result says what read it.
+
+A host is **never read from the server instead** when its Outpost cannot
+take the work. It gets a host result that says why and the run moves on:
+
+| Host result | Why |
+|---|---|
+| No Outpost | *The host's Outpost*, and the host is bound to the server (or to a driver such as Zabbix), or the profile's Outpost was deleted. Use a server profile for those hosts. |
+| Outpost offline | The Outpost is disabled, has not been seen within its offline threshold, or did not pick the work up within 30 minutes. |
+| Outpost cannot run it | The Outpost's agent is older than **0.10.0** and does not offer discovery (the result names its version), or it is driven over SSH. |
+
+The Outpost sits on another network than the server: reading from the
+server would reach other hosts, through other firewalls, under an
+authorisation given for the Outpost's vantage point. That is why there is no
+fallback, and why moving a profile between the server and Outposts clears
+its authorisation.
+
+On an Outpost, discovery logs in over **SSH only** (key, then password, as
+the transport switches allow); WinRM is never sent to an Outpost, and a host
+with only a WinRM login is left *No credential*. The Outpost applies its own
+target policy (link-local and metadata addresses are always refused), not
+the server's internal-range block. Credentials go to the Outpost the way its
+SNMP credentials already do: in the answer to its authenticated work
+request, for its own tenant only, resolved from the secret store at that
+moment, handed out once per host and never stored with the queued work. The
+agent keeps them in memory for the connection and does not write or log
+them. What an Outpost posts back is checked like untrusted input: only hosts
+it was given, packages that pass the parsers' rules, host keys whose
+fingerprint the server computes itself; anything else fails that host.
 
 !!! note "Custom worker units"
     The shipped worker unit and compose file listen on `discovery`. A
@@ -464,6 +512,7 @@ check runner's target policy applies to every host it logs in to.
 | A profile's or run's host keys to review | *view* on SSH host keys |
 | Accept host keys from that list | *change* on SSH host keys |
 | Pin a shared credential on a profile | *change* on the profile and *view* on the shared credential |
+| Pick where a profile runs, list the Outposts it could run on | *change* / *view* on Inventory profiles (the Outposts of your tenant only) |
 | A host's packages, package matches | *view* on the host and on installed software |
 | Exempt a host, address or prefix | *change* on it |
 | Deny subnets | tenant admin to change; tenant admins and profile viewers read |
@@ -482,12 +531,13 @@ what it can see.
 | `GET /api/discovery/status/` | The deployment switch (`deployment`: `enabled`, `source` `env` or `setting`, last change), the tenant toggle, and whether both are on |
 | `PATCH /api/discovery/deployment/` | `{"enabled": true}`: the stored deployment switch. Deployment admins only; 409 while the environment locks it |
 | `GET`, `PATCH /api/discovery/settings/` | `deny_subnets`, `transports` (`{ssh_key, ssh_password, winrm}`); `winrm.available` says whether WinRM can be switched on here |
-| `/api/discovery/profiles/` | Inventory profiles, CRUD (`?enabled=`, `?search=`) |
+| `/api/discovery/profiles/` | Inventory profiles, CRUD (`?enabled=`, `?search=`); `runs_on` (`server`, `outpost`, `host`) and `outpost_id` |
 | `POST /api/discovery/profiles/<id>/run/` | Run now (202 with the run; 409 when one is open or the profile cannot run). Body `{"accept_new_host_keys": true}` for first use. |
 | `GET /api/discovery/profiles/<id>/host-keys/`, `/api/discovery/runs/<id>/host-keys/` | Host keys waiting for review |
 | `POST /api/discovery/host-keys/accept/` | Accept observed host keys, `{ids: [...]}` |
 | `GET /api/discovery/profiles/<id>/hosts/` | The scope as it resolves now |
 | `GET /api/discovery/runs/` | Runs (`?profile=`, `?status=`) |
-| `GET /api/discovery/runs/<id>/hosts/` | A run's per-host results (`?status=`) |
+| `GET /api/discovery/runs/<id>/hosts/` | A run's per-host results (`?status=`); `engine` is `server` or `outpost: <name>` |
+| `GET /api/discovery/outposts/` | The tenant's Outposts for **Runs on**: online, agent version, and per kind (`inventory`, `service_scan`, `nmap`) whether it can run it now and why not |
 | `POST /api/discovery/exempt/` | Set *exempt from discovery* |
 | `GET /api/devices/<id>/packages/`, `/api/virtual-machines/<id>/packages/` | A host's current packages (`?search=`) and its distro (`os`) |

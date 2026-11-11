@@ -204,6 +204,65 @@ device, even one in the same tenant, is ignored rather than written.
 **Refresh MACs** on a device an Outpost polls is queued for that Outpost,
 like Poll now; the agent reads the whole table on its next cycle.
 
+## Discovery on an Outpost {#discovery-on-an-outpost}
+
+A [package inventory](../features/discovery.md#on-an-outpost) or
+[service scan](../features/service-discovery.md#where-it-runs) profile can run
+on an Outpost, for hosts the server cannot reach. **Outpost 0.10.0** is the
+first agent that does; upload it under Governance → Monitoring engines →
+Outpost versions and roll it out to the sites that need it. Checks, SNMP and
+sweeps keep working on older agents.
+
+**Capabilities.** This is the first work the core and the agent negotiate. The
+agent's hello carries `capabilities`:
+`{"discovery": {"kinds": ["inventory", "service_scan"], "protocol": 1, "nmap":
+{"version": "7.95"} | null, "nmap_reason": "…"}}`, stored on the engine
+(`agent_capabilities`, read-only in the engine API). The core hands an Outpost
+only the kinds its last hello named, and nmap work only when it named an nmap.
+An older agent sends nothing, gets no discovery work, and its hosts' results
+say *Outpost cannot run it* with the version it needs. A newer agent against an
+older core sees no `discovery` in the hello answer and never asks for work.
+
+**Channel.** Two endpoints beside the others, with the same Bearer token:
+
+| Endpoint | |
+|---|---|
+| `GET /api/outpost/work/` | adds `discovery_pending` when discovery work waits |
+| `GET /api/outpost/discovery-work/` | claims the next batch (one run's hosts): `{jobs: [...]}`, `Cache-Control: no-store` |
+| `POST /api/outpost/discovery-results/` | `{results: [{item_id, result, …}]}` → `{accepted, refused}`; at most 200 per post |
+
+The server resolves everything first - the scope, exemptions, deny subnets,
+maintenance, the authorisation, the logins and the host keys to pin - and
+queues one item per host for its Outpost, with no secret in it. The Outpost
+claims a batch: the run, the profile and the starter's permission are checked
+again, the credentials are re-read by id (a host credential must still belong
+to the host, a shared one must still be enabled) and resolved from the secret
+store for that one answer, exactly as SNMP credentials reach an Outpost. An
+item is handed out once. An item not claimed within 30 minutes of the
+Outpost's last claim becomes *Outpost offline*; a claimed one not reported by
+its deadline becomes *Timed out*. WinRM credentials never go to an Outpost.
+
+**What the core accepts.** A result counts only for an item this Outpost
+claimed and has not reported; another Outpost's or another tenant's item, an
+unknown id or a second answer is refused and writes nothing. A result for its
+own item must parse with the collectors' own rules - the item's address and
+ports only, capped strings, packages whose names and versions pass the
+parsers, CPEs in 2.3 form, host keys whose fingerprint the core computes from
+the key - or that host fails with the reason. It is stored by the same code as
+a server run; host results record `outpost: <name>`.
+
+**The agent** runs the shared collectors (`danbyte_checks.inventory`,
+`service_scan`, `nmap`; the Recog data travels in `danbyte_checks/data`),
+applies its own target policy, keeps credentials in memory for the
+connection only, and runs discovery beside its check loop so a long scan
+never delays checks. nmap is optional and never installed by the agent: set
+`OUTPOST_NMAP_BINARY` (or `--nmap`) and run the agent as an unprivileged user,
+since it refuses nmap as root - the installer's unit runs as root, so as
+installed an Outpost offers the built-in scan only.
+
+SSH-transport Outposts (Danbyte dials in) do not run discovery: their hosts
+say so.
+
 ## Transports - which way traffic flows
 
 Sites differ in what their firewall allows, so an Outpost's **transport** is set

@@ -18233,6 +18233,8 @@ export interface DiscoverySettings {
     /** "nmap 7.95 at /usr/bin/nmap", "Not found", … */
     label: string
     reason: string
+    /** Outposts whose agent found an nmap it may run. */
+    outposts?: string[]
   }
   can_change: boolean
   updated_at: string
@@ -18262,6 +18264,10 @@ export type InventoryHostStatus =
   | "denied"
   | "maintenance"
   | "blocked"
+  /** A run on Outposts: why a host was not handed to one. */
+  | "no_outpost"
+  | "outpost_offline"
+  | "outpost_unsupported"
 
 export interface InventoryRunCounts {
   hosts?: number
@@ -18273,6 +18279,35 @@ export interface InventoryRunCounts {
 
 /** `inventory` reads packages; `service_scan` scans TCP ports (#451 B3). */
 export type DiscoveryProfileKind = "inventory" | "service_scan"
+
+/** Where a profile runs: the server, one Outpost, or each host's Outpost. */
+export type DiscoveryRunsOn = "server" | "outpost" | "host"
+
+export interface DiscoveryOutpostAbility {
+  ok: boolean
+  /** The host status a run would record when it cannot ("" when it can). */
+  status: "" | "no_outpost" | "outpost_offline" | "outpost_unsupported"
+  reason: string
+}
+
+/** An Outpost as the Runs on picker shows it (`/api/discovery/outposts/`). */
+export interface DiscoveryOutpost {
+  id: string
+  name: string
+  enabled: boolean
+  transport: "pull" | "ssh"
+  online: boolean
+  last_seen_at: string | null
+  agent_version: string
+  /** The discovery kinds its agent advertised; empty for an older agent. */
+  kinds: DiscoveryProfileKind[]
+  nmap_version: string
+  can: {
+    inventory: DiscoveryOutpostAbility
+    service_scan: DiscoveryOutpostAbility
+    nmap: DiscoveryOutpostAbility
+  }
+}
 
 export interface InventoryProfile {
   id: string
@@ -18292,6 +18327,10 @@ export interface InventoryProfile {
   /** nmap only: --version-intensity 0-5 and the timing template -T2..-T4. */
   nmap_version_intensity: number
   nmap_timing: number
+  /** Where it runs; a run on Outposts never falls back to the server. */
+  runs_on: DiscoveryRunsOn
+  outpost_id: string | null
+  outpost: DiscoveryOutpost | null
   site_ids: string[]
   prefix_ids: string[]
   device_ids: string[]
@@ -18345,6 +18384,8 @@ export interface InventoryRun {
   /** Run now with "Accept new host keys" ticked. */
   accept_new_host_keys: boolean
   errors: string[]
+  /** A run on Outposts: hosts still waiting for or with their Outpost. */
+  outstanding?: number
 }
 
 /** How discovery read a host, most secure first; `ssh` is an older run. */
@@ -18374,6 +18415,8 @@ export interface InventoryHostResult {
   ip_address?: string | null
   services?: number
   connects?: number
+  /** What read it: "server", or "outpost: <name>"; "" when nothing did. */
+  engine?: string
 }
 
 export type ServiceConfidence = "high" | "medium" | "low"
@@ -18473,6 +18516,8 @@ export interface InventoryScopeHost {
   credential: { id: string; name: string } | null
   credential_source: string
   scan_exempt: boolean
+  /** "server", or the "outpost: <name>" that would read it. */
+  engine?: string
 }
 
 /** An observed SSH host key nobody has accepted yet (`…/host-keys/`). */

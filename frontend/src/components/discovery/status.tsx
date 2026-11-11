@@ -50,6 +50,9 @@ export const HOST_STATUS_LABELS: Record<InventoryHostStatus | "ready", string> =
     denied: "Deny subnet",
     maintenance: "In maintenance",
     blocked: "Blocked target",
+    no_outpost: "No Outpost",
+    outpost_offline: "Outpost offline",
+    outpost_unsupported: "Outpost cannot run it",
   }
 
 const HOST_VARIANT: Record<InventoryHostStatus | "ready", Variant> = {
@@ -68,6 +71,9 @@ const HOST_VARIANT: Record<InventoryHostStatus | "ready", Variant> = {
   denied: "secondary",
   maintenance: "secondary",
   blocked: "warning",
+  no_outpost: "warning",
+  outpost_offline: "warning",
+  outpost_unsupported: "warning",
 }
 
 export const TRANSPORT_LABELS: Record<string, string> = {
@@ -75,6 +81,14 @@ export const TRANSPORT_LABELS: Record<string, string> = {
   ssh_password: "SSH password",
   winrm: "WinRM HTTPS",
   ssh: "SSH",
+}
+
+/** Where a run or host was read: "Server", or the Outpost's name. */
+export function engineLabel(engine: string | undefined | null): string {
+  if (!engine) return ""
+  if (engine === "server") return "Server"
+  if (engine === "outposts") return "Outposts"
+  return engine.startsWith("outpost: ") ? engine.slice(9) : engine
 }
 
 export function isRunActive(s: InventoryRunStatus): boolean {

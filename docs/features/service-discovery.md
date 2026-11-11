@@ -268,6 +268,14 @@ and its authors.
 
 **Outposts** do not run nmap: service scans run on the server only.
 
+### nmap on an Outpost
+
+On an Outpost, the nmap is the Outpost's: the agent looks for
+`OUTPOST_NMAP_BINARY` (else `nmap` on its PATH) when it starts, refuses to
+use it when the agent runs as root, and says in its hello which version it
+found. The Discovery card's nmap switch can be turned on when the server or
+any Outpost has one; the Runs on picker says per Outpost whether it has.
+
 ## The review queue
 
 **Findings** on the Discovery page (and on each service-scan profile and
@@ -305,10 +313,24 @@ change-logged, and read with *view* on the address.
 ## Where it runs
 
 On the Danbyte server's workers, on the RQ queue `discovery`, like package
-inventory. The scan code is Django-free in `danbyte_checks`, but Outposts
-do not run service scans yet: the Outpost work channel has no scan work
-type, and adding one needs an agent release. A site whose addresses the
-server cannot reach is not scanned.
+inventory - or, with **Runs on**, on an Outpost: one named Outpost, or the
+Outpost each address is bound to (device, location, prefix, site, the
+tenant default). The server resolves the addresses and every rule above;
+the Outpost runs the same scan (`danbyte_checks.service_scan`, the same
+probes, rates and fingerprints) from its own network and posts the open
+ports back. No credential is sent. The Outpost applies its own target
+policy, not the server's internal-range block. The rate is per Outpost: each
+one paces its own connects to the profile's rate.
+
+An address whose Outpost is offline, runs an agent older than **0.10.0**, or
+(for the nmap engine) has no nmap it may run, is left alone with a host
+result that says so; it is never scanned from the server instead. See
+[Discovery on an Outpost](discovery.md#on-an-outpost) for the rules, and
+[Outposts](../monitoring/outposts.md#discovery-on-an-outpost) for the agent.
+
+What an Outpost posts back is checked: only the address and the ports it was
+given, the same caps on banners and fields as the built-in probes, CPEs in
+2.3 form; an answer that is not one of those fails the address.
 
 ## Permissions
 

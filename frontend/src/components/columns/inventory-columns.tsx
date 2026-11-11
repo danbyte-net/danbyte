@@ -19,6 +19,7 @@ import {
   RUN_STATUS_LABELS,
   RunStatusBadge,
   TRANSPORT_LABELS,
+  engineLabel,
 } from "@/components/discovery/status"
 import { InfoTip } from "@/components/ui/info-tip"
 
@@ -44,6 +45,12 @@ export function scheduleLabel(p: InventoryProfile): string {
   if (!p.window_start && !p.window_end) return every
   const t = (v: string | null) => (v ? v.slice(0, 5) : "")
   return `${every}, ${t(p.window_start) || "00:00"}–${t(p.window_end) || "23:59"}`
+}
+
+export function runsOnLabel(p: InventoryProfile): string {
+  if (p.runs_on === "host") return "The host's Outpost"
+  if (p.runs_on === "outpost") return p.outpost?.name ?? "Outpost (deleted)"
+  return "Server"
 }
 
 export function scopeLabel(p: InventoryProfile): string {
@@ -152,6 +159,18 @@ export function buildInventoryProfileColumns(): ColumnDef<
       meta: { label: "Scope" },
     },
     {
+      id: "runs_on",
+      accessorFn: runsOnLabel,
+      header: "Runs on",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="text-sm whitespace-nowrap">
+          {runsOnLabel(row.original)}
+        </span>
+      ),
+      meta: { label: "Runs on" },
+    },
+    {
       id: "schedule",
       accessorFn: scheduleLabel,
       header: "Schedule",
@@ -213,6 +232,7 @@ export type InventoryRunColumnId =
   | "ok"
   | "packages"
   | "services"
+  | "engine"
   | "finished"
 
 export function buildInventoryRunColumns(
@@ -313,6 +333,18 @@ export function buildInventoryRunColumns(
           dash
         ),
       meta: { label: "Open ports" },
+    },
+    {
+      id: "engine",
+      accessorFn: (r) => engineLabel(r.engine),
+      header: "Ran on",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="text-sm whitespace-nowrap">
+          {engineLabel(row.original.engine) || dash}
+        </span>
+      ),
+      meta: { label: "Ran on" },
     },
     {
       id: "finished",
@@ -424,6 +456,21 @@ export function buildInventoryHostResultColumns(
         </span>
       ),
       meta: { label: "Result", facet: statusFacet<InventoryHostResult>() },
+    },
+    {
+      id: "engine",
+      accessorFn: (h) => engineLabel(h.engine),
+      header: "Read by",
+      enableSorting: false,
+      cell: ({ row }) =>
+        engineLabel(row.original.engine) ? (
+          <span className="text-sm whitespace-nowrap">
+            {engineLabel(row.original.engine)}
+          </span>
+        ) : (
+          dash
+        ),
+      meta: { label: "Read by" },
     },
     {
       id: "credential",
