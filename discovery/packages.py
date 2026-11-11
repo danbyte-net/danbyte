@@ -140,9 +140,9 @@ def store(tenant, host, run, result, now=None, transport="") -> dict:
     wanted = rows_for(result.packages, result.os, result.manager)
     namespace, ecosystem = release_of(result.os, result.manager)
     with transaction.atomic():
-        before = HostOsFact.objects.filter(**on_host).values_list(*_OS_COMPARED).first()
-        fact, _ = HostOsFact.objects.update_or_create(
-            **on_host, defaults={
+        fact = HostOsFact.objects.select_for_update().filter(**on_host).first()
+        before = None if fact is None else tuple(getattr(fact, f) for f in _OS_COMPARED)
+        fields = {
                 "tenant": tenant, "os_id": result.os.get("id", "")[:64],
                 "id_like": result.os.get("id_like") or [],
                 "version_id": result.os.get("version_id", "")[:32],
@@ -154,7 +154,13 @@ def store(tenant, host, run, result, now=None, transport="") -> dict:
                 "display_version": str(win.get("display_version") or "")[:16],
                 "hotfixes": list(win.get("hotfixes") or []),
                 "features": list(win.get("features") or []),
-                "transport": transport[:16], "collected_at": now, "run": run})
+                "transport": transport[:16], "collected_at": now, "run": run}
+        if fact is None:
+            fact = HostOsFact.objects.create(**on_host, **fields)
+        else:
+            for k, v in fields.items():
+                setattr(fact, k, v)
+            fact.save()
         # A new Windows build (or edition, release) re-matches the host
         # against Microsoft's fixed builds even when no package moved.
         os_moved = before != tuple(getattr(fact, f) for f in _OS_COMPARED)

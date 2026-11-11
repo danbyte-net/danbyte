@@ -249,7 +249,7 @@ class StoreTests(Base):
     def test_unchanged_read_changes_nothing_and_costs_few_queries(self):
         h = self.host("a", "10.0.0.1")
         packages.store(self.tenant, h, None, result())
-        with self.assertNumQueries(8):
+        with self.assertNumQueries(6):
             out = packages.store(self.tenant, h, None, result())
         self.assertFalse(out["changed"])
 
