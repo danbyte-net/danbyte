@@ -22,6 +22,11 @@ import {
 import type { ConnectHost } from "@/lib/connect-host"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Input } from "@/components/ui/input"
 import {
   Dialog,
@@ -318,19 +323,24 @@ export function HostTerminalDialog({
             secret stays on the server.
           </DialogDescription>
           {showTerminal && (
-            <button
-              type="button"
-              onClick={() => setMaximized((m) => !m)}
-              // Sits left of the built-in close (X) button.
-              className="absolute top-4 right-11 rounded-sm opacity-70 transition-opacity hover:opacity-100"
-              title={maximized ? "Restore" : "Maximize"}
-            >
-              {maximized ? (
-                <Minimize2 className="h-4 w-4" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setMaximized((m) => !m)}
+                  // Beside the built-in close (X) button, same size and row.
+                  className="absolute top-4 right-12"
+                  aria-label={maximized ? "Restore" : "Maximize"}
+                >
+                  {maximized ? <Minimize2 /> : <Maximize2 />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {maximized ? "Restore" : "Maximize"}
+              </TooltipContent>
+            </Tooltip>
           )}
         </DialogHeader>
 
