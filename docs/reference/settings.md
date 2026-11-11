@@ -473,6 +473,33 @@ Environment=DANBYTE_SSRF_ALLOWLIST=192.168.0.0/24,10.1.2.3
 Comma-separated CIDRs/IPs whose resolved addresses are permitted. Empty by
 default (all internal addresses blocked).
 
+ACME issuers are not behind this guard: an internal CA on a private address
+is what an issuer is for, and only a user with the issuer `add`/`change`
+grant can set its directory URL
+(see [Certificates](../monitoring/certificates.md#when-the-ca-cannot-be-reached-or-trusted)).
+
+### CA trust for ACME issuers (`REQUESTS_CA_BUNDLE`)
+
+An ACME issuer with *Verify TLS* on trusts, in this order, the bundle in
+`REQUESTS_CA_BUNDLE` (or `CURL_CA_BUNDLE`) when the service environment
+sets it to a file, else the operating system's trust store
+(`/etc/ssl/certs/ca-certificates.crt` and the other distribution paths
+OpenSSL reports), else Python's `certifi` roots - **plus** the issuer's own
+*CA certificate* field. Before 0.20 only `certifi` was used, so a private
+root added with `update-ca-certificates` was ignored and
+`REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt` in `.env` was the
+workaround. That line still works - it replaces the system store as the
+base, and an issuer's CA certificate is still added on top - but it is no
+longer needed. Details:
+[Private CAs and trust](../monitoring/certificates.md#private-cas-and-trust).
+
+```text
+REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt   # optional now
+```
+
+`REQUESTS_CA_BUNDLE` is read by every `requests` call in the process, not
+just ACME; set it only when you want that.
+
 ### Check-engine targets (central-runner SSRF)
 
 The monitoring check engine runs both on remote **outpost agents** (deployed

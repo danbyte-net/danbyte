@@ -9521,12 +9521,26 @@ export interface Issuer {
   eab_kid: string
   eab_hmac_set: boolean
   verify_tls: boolean
+  /** PEM of the private CA's root(s), trusted on top of the server's store. */
+  ca_certificate: string
+  /** What is stored in `ca_certificate`, one entry per certificate. */
+  ca_certificate_info: IssuerCaCertificate[]
   dns_provider: DnsProvider
   dns_settings: Record<string, string | number>
   tsig_secret_set: boolean
   account_registered: boolean
   created_at: string
   updated_at: string
+}
+
+export interface IssuerCaCertificate {
+  subject: string
+  subject_cn: string
+  issuer: string
+  not_after: string
+  days_left: number
+  fingerprint_sha256: string
+  self_signed: boolean
 }
 
 export type AcmeOrderStatus =

@@ -177,10 +177,13 @@ def _chain_text(exc: BaseException) -> str:
 _X509_NOT_YET_VALID, _X509_EXPIRED = 9, 10
 _X509_HOSTNAME_MISMATCH, _X509_IP_MISMATCH = 62, 64
 #: What fixes a CA certificate this server does not trust.
-TRUST_HINT = "Add the CA's root certificate to this server's trust store."
+TRUST_HINT = ("Paste the CA's root certificate into the issuer's CA certificate field, "
+              "or add it to this server's trust store.")
+TRUST_HINT_WITH_CA = ("The issuer's CA certificate does not cover it: paste the root that "
+                      "signed the CA's TLS certificate.")
 
 
-def _tls_error(exc: BaseException, host: str) -> AcmeError:
+def _tls_error(exc: BaseException, issuer: Issuer, host: str) -> AcmeError:
     verr = _find(exc, ssl.SSLCertVerificationError)
     code = getattr(verr, "verify_code", None)
     why = clean_remote_text(getattr(verr, "verify_message", "") or "", 160)
@@ -205,9 +208,10 @@ def _tls_error(exc: BaseException, host: str) -> AcmeError:
             code="acme_tls_expired",
         )
     if verr is not None or "certificate verify failed" in text:
+        hint = TRUST_HINT_WITH_CA if (issuer.ca_certificate or "").strip() else TRUST_HINT
         return AcmeUpstreamError(
             f"The ACME directory's certificate at {host} is not trusted"
-            + (f" ({why})" if why else "") + f". {TRUST_HINT}",
+            + (f" ({why})" if why else "") + f". {hint}",
             code="acme_tls_untrusted",
         )
     reason = clean_remote_text(getattr(_find(exc, ssl.SSLError), "reason", "") or "", 120)
@@ -277,7 +281,7 @@ def _explain(exc: BaseException, issuer: Issuer, step: str) -> AcmeError | None:
     host, port = _host_port(issuer.directory_url)
     directory = step == "directory"
     if isinstance(exc, requests.exceptions.SSLError):
-        return _tls_error(exc, host)
+        return _tls_error(exc, issuer, host)
     if isinstance(exc, requests.exceptions.ConnectTimeout):
         return AcmeUpstreamError(
             f"Could not connect to the CA at {host}:{port} within {_NETWORK_TIMEOUT} "
@@ -292,7 +296,7 @@ def _explain(exc: BaseException, issuer: Issuer, step: str) -> AcmeError | None:
         )
     if isinstance(exc, requests.exceptions.ConnectionError):
         if _find(exc, ssl.SSLError) is not None:
-            return _tls_error(exc, host)
+            return _tls_error(exc, issuer, host)
         return _connection_error(exc, host, port, step)
     if isinstance(exc, requests.exceptions.RequestException):
         return AcmeUpstreamError(
@@ -648,8 +652,22 @@ def _jwk_and_alg(key):
 
 
 def _verify(issuer: Issuer):
-    """What ``requests`` checks the CA's TLS certificate against."""
-    return bool(issuer.verify_tls)
+    """What ``requests`` checks the CA's TLS certificate against: False with
+    *Verify TLS* off, else a CA bundle path - the server's trust store plus
+    the issuer's own CA certificate (:mod:`monitoring.acme_trust`)."""
+    from .acme_trust import CaCertificateError, verify_for
+
+    try:
+        return verify_for(issuer)
+    except CaCertificateError as exc:
+        raise AcmeError(str(exc), field="ca_certificate", code="acme_ca_certificate") from exc
+    except OSError as exc:
+        log.warning("ACME trust bundle for issuer %s could not be written: %s", issuer.pk, exc)
+        raise AcmeError(
+            "The CA bundle for this issuer could not be written to the server's "
+            f"temporary directory ({exc.strerror or type(exc).__name__}).",
+            status=503, code="acme_trust_store",
+        ) from exc
 
 
 def _network(issuer: Issuer, jwk, alg, account=None) -> client.ClientNetwork:

@@ -714,16 +714,38 @@ class IssuerSerializer(serializers.ModelSerializer):
     )
     tsig_secret_set = serializers.SerializerMethodField()
     account_registered = serializers.SerializerMethodField()
+    # The private CA's certificate(s), PEM. Public, so read and written in the
+    # clear; normalized to the certificates alone on save.
+    ca_certificate = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False,
+        max_length=64 * 1024 + 1024,
+    )
+    ca_certificate_info = serializers.SerializerMethodField()
 
     class Meta:
         model = Issuer
         fields = [
             "id", "name", "kind", "enabled", "directory_url", "contact_email",
-            "eab_kid", "eab_hmac", "eab_hmac_set", "verify_tls",
+            "eab_kid", "eab_hmac", "eab_hmac_set", "verify_tls", "ca_certificate",
+            "ca_certificate_info",
             "dns_provider", "dns_settings", "tsig_secret", "tsig_secret_set",
             "account_registered", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_ca_certificate(self, value: str) -> str:
+        from .acme_trust import CaCertificateError, normalize
+
+        try:
+            return normalize(value)
+        except CaCertificateError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+    def get_ca_certificate_info(self, obj) -> list[dict]:
+        """Subject, expiry and fingerprint of each stored CA certificate."""
+        from .acme_trust import describe
+
+        return describe(obj.ca_certificate) if obj.ca_certificate else []
 
     # Write-only secrets → the encrypted ``secrets`` map, keyed by field name.
     _SECRET_FIELDS = {"eab_hmac": "eab_hmac", "tsig_secret": "tsig_secret"}

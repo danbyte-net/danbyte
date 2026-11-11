@@ -3610,6 +3610,10 @@ class Issuer(TimestampedModel):
     # External Account Binding key id (public); the HMAC lives in ``secrets``.
     eab_kid = models.CharField(max_length=255, blank=True, default="")
     verify_tls = models.BooleanField(default=True)
+    # PEM of the CA certificate(s) that sign the directory's TLS certificate -
+    # a private root like step-ca's. Public, so plain text. Trusted *in
+    # addition to* the server's trust store (monitoring.acme_trust).
+    ca_certificate = models.TextField(blank=True, default="", db_default="")
 
     class DnsProvider(models.TextChoices):
         MANUAL = "", "Manual"
@@ -3645,6 +3649,16 @@ class Issuer(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.kind})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        from .acme_trust import CaCertificateError, normalize
+
+        try:
+            self.ca_certificate = normalize(self.ca_certificate)
+        except CaCertificateError as exc:
+            raise ValidationError({"ca_certificate": str(exc)}) from exc
 
 
 class AcmeOrder(TimestampedModel):

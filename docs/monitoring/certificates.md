@@ -387,8 +387,10 @@ On **Governance → Certificate requests**, tick rows - with the `change` or
 
 An **Issuer** is a connector to an external certificate authority - any ACME
 directory, public (Let's Encrypt / ZeroSSL) or internal (step-ca). Configure the
-directory URL, an optional contact e-mail, and - where the CA requires it -
-External Account Binding (a key id plus an HMAC, stored encrypted). The ACME
+directory URL, an optional contact e-mail, for a private CA its root
+certificate (see [Private CAs and trust](#private-cas-and-trust)), and - where
+the CA requires it - External Account Binding (a key id plus an HMAC, stored
+encrypted). The ACME
 account key is generated on first use and kept in the [secret
 store](#the-secret-store-for-issuance-keys); it never lands in the database.
 `GET/POST /api/monitoring/issuers/` manages them.
@@ -435,6 +437,55 @@ drives three steps:
    returns `202`; the order moves `processing → valid` (or `invalid` with the
    error recorded on the row).
 
+### Private CAs and trust
+
+An internal CA such as step-ca serves its ACME directory on a TLS
+certificate signed by its own root, which no public trust store contains.
+With **Verify the CA's TLS certificate** on (the default - keep it on),
+an issuer's calls trust:
+
+1. the bundle in `REQUESTS_CA_BUNDLE` (or `CURL_CA_BUNDLE`) when the
+   service environment sets one - an explicit choice wins;
+2. otherwise **the server's own trust store** - what `update-ca-certificates`
+   (Debian, Ubuntu) or `update-ca-trust` (RHEL, Fedora) maintain, found
+   through OpenSSL's default paths and the usual distribution locations;
+3. otherwise the public roots that ship with Python's `certifi`;
+
+**plus** the issuer's **CA certificate**, when one is pasted.
+
+So there are two ways to trust a private root: put it in the server's
+store once (every issuer and every renewal sees it, no Danbyte setting
+needed), or paste it on the issuer - for step-ca, the `root_ca.crt` it
+printed at `step ca init` (`step ca root` prints it again). The issuer's
+certificate is added to the server's trust, never a replacement for it:
+pasting a root cannot silently drop the public ones, and an issuer later
+pointed at a public CA keeps working. (Trusting only the pasted root would
+also refuse a public certificate for the CA's name, but no public CA issues
+one for an internal name, so pinning would buy nothing here.)
+
+The **CA certificate** field takes PEM text - one certificate or a chain of
+up to ten, 64 KB at most. On save each must be a CA certificate
+(basicConstraints `CA:TRUE`, or an old v1 self-signed root) and in date; a
+server's own certificate is refused (trusting it breaks at the CA's next
+renewal), a pasted private key is refused with a field error and never
+stored, and anything that is not a `CERTIFICATE` block is refused. What is
+stored is the certificates alone, re-encoded; it is public, kept as plain
+text and returned by the API (`ca_certificate`, with `ca_certificate_info`
+listing each one's subject, expiry, days left and fingerprint). The issuer
+form shows those under the field.
+
+The same trust applies to every call for that issuer - registering, orders,
+finalize, the background jobs, renewals and the site certificate. Because
+`requests` takes a bundle *file*, the combined bundle is written to
+`<tmp>/danbyte-acme-trust-<uid>/<sha256>.pem`: a `0700` directory owned by
+the service user (a path that is not, or is a link, is never used), a `0600`
+file written under a temporary name and renamed into place, named by its
+content so workers never race, and removed after a day unused.
+
+**Verify TLS off** skips verification entirely (the CA certificate is then
+ignored). Prefer pasting the root: with verification off, anything that can
+answer for the CA's address can issue your certificates.
+
 ### When the CA cannot be reached or trusted
 
 Every call Danbyte makes to a CA - the directory, the account, the order,
@@ -446,7 +497,7 @@ sentence on the order, where the order's error shows it.
 
 | What went wrong | Answer | Message names |
 |---|---|---|
-| The CA's TLS certificate is not trusted | `502`, `code: acme_tls_untrusted` | the host, OpenSSL's reason, and the fix: add the CA's root certificate |
+| The CA's TLS certificate is not trusted | `502`, `code: acme_tls_untrusted` | the host, OpenSSL's reason, and the fix: the issuer's CA certificate field or the server's store - or, when a CA certificate is set, that it does not cover this CA |
 | The certificate is for a different name | `502`, `acme_tls_hostname` | the host in the directory URL |
 | The certificate has expired or is not valid yet | `502`, `acme_tls_expired` | the host; renew it on the CA or check the clocks |
 | Another TLS handshake failure | `502`, `acme_tls_handshake` | the host and the TLS reason |
@@ -456,6 +507,7 @@ sentence on the order, where the order's error shows it.
 | The CA answered with an ACME error | `502`, `acme_ca_refused` | the CA's problem type and detail |
 | The CA answered HTTP 5xx, or something that is not ACME | `502`, `acme_ca_error` / `acme_not_acme` | the host and the HTTP status |
 | The directory URL is not an ACME directory | `400`, field error on `directory_url` | the URL and what it answered |
+| The stored CA certificate is no longer usable (expired) | `400`, field error on `ca_certificate` | which certificate and why |
 
 A `502` body is `{"detail": "...", "code": "..."}`: the CA's side failed,
 and the detail says what to change. A `400` names the issuer field to fix.

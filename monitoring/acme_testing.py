@@ -42,7 +42,7 @@ def make_ca(cn: str = "Throwaway Test Root", *, ca: bool = True, days: int = 30)
     builder = (
         x509.CertificateBuilder().subject_name(name).issuer_name(name)
         .public_key(key.public_key()).serial_number(x509.random_serial_number())
-        .not_valid_before(now - timedelta(days=1))
+        .not_valid_before(now - timedelta(days=2 + max(0, -days)))
         .not_valid_after(now + timedelta(days=days))
         .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True)
         .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
