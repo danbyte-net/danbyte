@@ -39,9 +39,13 @@ def _http2_for_this_nginx(site: str, modern: bool) -> str:
     return re.sub(r"(listen\s+\S+\s+ssl)(\s*;)", r"\1 http2\2", site)
 
 
+#: A location's optional modifier: exact (=), regex (~, ~*) or ^~.
+_MODIFIER = r"(?:(?:=|~\*?|\^~)\s+)?"
+
+
 def _locations(text: str):
-    """``(path, body)`` of each flat location block."""
-    return re.findall(r"location\s+(\S+)\s*\{([^{}]*)\}", text)
+    """``(path, body)`` of each flat location block, any modifier dropped."""
+    return re.findall(rf"location\s+{_MODIFIER}(\S+)\s*\{{([^{{}}]*)\}}", text)
 
 
 #: Headers Django's middleware sends on its own (SecurityMiddleware and
@@ -58,7 +62,7 @@ DJANGO_SECURITY_HEADERS = (
 
 def _server_level(text: str) -> str:
     text = re.sub(r"(?m)#.*$", "", text)
-    return re.sub(r"location\s+\S+\s*\{[^{}]*\}", "", text)
+    return re.sub(rf"location\s+{_MODIFIER}\S+\s*\{{[^{{}}]*\}}", "", text)
 
 
 def _edge_headers(text: str) -> dict[str, str]:
@@ -78,6 +82,14 @@ def _django_hsts() -> str:
     if re.search(r"SECURE_HSTS_PRELOAD\s*=\s*True", block):
         value += "; preload"
     return value
+
+
+#: Mozilla's "intermediate" TLS 1.2 suites (#497), in its order.
+INTERMEDIATE_CIPHERS = [
+    "ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-RSA-AES128-GCM-SHA256",
+    "ECDHE-ECDSA-AES256-GCM-SHA384", "ECDHE-RSA-AES256-GCM-SHA384",
+    "ECDHE-ECDSA-CHACHA20-POLY1305", "ECDHE-RSA-CHACHA20-POLY1305",
+]
 
 
 class ConfigTextTests(SimpleTestCase):
@@ -226,6 +238,23 @@ class ConfigTextTests(SimpleTestCase):
                 with self.subTest(path=path.name, placeholder=name):
                     self.assertIn(f"@@{name}@@", text)
 
+    def test_tls_is_mozilla_intermediate(self):
+        # #497: every TLS server says which protocols and suites it takes,
+        # rather than leaving it to the distro's nginx.conf: TLS 1.2 and 1.3,
+        # and on 1.2 only forward-secret AEAD suites, for ECDSA and RSA keys.
+        for path in [*TEMPLATES, DOCKER]:
+            level = _server_level(path.read_text())
+            with self.subTest(path=path.name):
+                self.assertEqual(re.findall(r"ssl_protocols\s+([^;]+);", level), ["TLSv1.2 TLSv1.3"])
+                ciphers = re.findall(r"ssl_ciphers\s+([^;]+);", level)
+                self.assertEqual(len(ciphers), 1)
+                self.assertEqual(ciphers[0].split(":"), INTERMEDIATE_CIPHERS)
+                self.assertEqual(re.findall(r"ssl_prefer_server_ciphers\s+(\w+);", level), ["off"])
+                self.assertEqual(re.findall(r"ssl_session_tickets\s+(\w+);", level), ["off"])
+                self.assertEqual(re.findall(r"ssl_session_timeout\s+(\S+);", level), ["1d"])
+                self.assertEqual(re.findall(r"ssl_session_cache\s+([^;]+);", level),
+                                 ["shared:DanbyteSSL:10m"])
+
     def test_the_build_writes_the_gzip_copies(self):
         import json
 
@@ -235,11 +264,22 @@ class ConfigTextTests(SimpleTestCase):
                          r"(?m)^frontend-build:.*npm run build$")
 
 
-def _render(site: str, t: Path, ports: dict[int, int] | None = None) -> Path:
+#: What a distro's nginx.conf sets for every site, at the http level: the
+#: Debian 12 and Ubuntu 22.04 packages ship these two lines. The site's own
+#: TLS settings must win over them (#497).
+DISTRO_HTTP_TLS = "    ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;\n    ssl_prefer_server_ciphers on;\n"
+
+
+def _render(site: str, t: Path, ports: dict[int, int] | None = None, key: str = "rsa",
+            http: str = "") -> Path:
     """The site rendered the way the installer does, on unprivileged ports
-    with a fresh certificate, inside a minimal nginx.conf under ``t``."""
+    with a fresh certificate (``key``: rsa or ec, the two kinds the site
+    certificate can be), inside a minimal nginx.conf under ``t`` with
+    ``http`` at the http level."""
+    newkey = ["-newkey", "rsa:2048"] if key == "rsa" else [
+        "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"]
     subprocess.run(
-        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        ["openssl", "req", "-x509", *newkey, "-nodes", "-days", "1",
          "-subj", "/CN=danbyte.test", "-keyout", t / "key.pem", "-out", t / "cert.pem"],
         check=True, capture_output=True,
     )
@@ -266,7 +306,7 @@ def _render(site: str, t: Path, ports: dict[int, int] | None = None) -> Path:
     mime = "    include /etc/nginx/mime.types;\n" if Path("/etc/nginx/mime.types").exists() else ""
     (t / "nginx.conf").write_text(
         f"pid {t}/nginx.pid;\nerror_log {t}/error.log;\nevents {{}}\n"
-        f"http {{\n{mime}    access_log {t}/access.log;\n{temp}\n"
+        f"http {{\n{mime}{http}    access_log {t}/access.log;\n{temp}\n"
         f"    include {t}/site.conf;\n}}\n"
     )
     return t / "nginx.conf"
@@ -443,3 +483,113 @@ class NginxSendsEachHeaderOnceTests(SimpleTestCase):
                                capture_output=True)
 
 
+
+
+class _RunningSite:
+    """The rendered production site, running unprivileged on free ports under
+    a scratch prefix; ``https`` is its TLS port."""
+
+    def __init__(self, site: str | None = None, **render):
+        self.site = site if site is not None else TEMPLATES[1].read_text()
+        self.render = render
+
+    def __enter__(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        (self.dir / "client/assets").mkdir(parents=True)
+        self.https = _free_port()
+        self.conf = _render(self.site, self.dir, {80: _free_port(), 443: self.https},
+                            **self.render)
+        r = subprocess.run(["nginx", "-p", str(self.dir), "-c", str(self.conf)],
+                           capture_output=True, text=True)
+        if r.returncode:
+            self._tmp.cleanup()
+            raise AssertionError(r.stderr)
+        return self
+
+    def __exit__(self, *exc):
+        subprocess.run(["nginx", "-p", str(self.dir), "-c", str(self.conf), "-s", "stop"],
+                       capture_output=True)
+        self._tmp.cleanup()
+
+
+def _handshake(port: int, *, version=None, ciphers: str | None = None):
+    """``(protocol, suite)`` the server agreed to, or None when it refused.
+    Raises SkipTest when this client cannot even offer what is asked."""
+    import socket
+    import ssl
+    from unittest import SkipTest
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # this run's own certificate
+    try:
+        if version is not None:
+            ctx.minimum_version = ctx.maximum_version = version
+        # Level 0, so the client offers the weak suites the server must refuse.
+        ctx.set_ciphers(f"{ciphers or 'ALL'}:@SECLEVEL=0")
+    except (ValueError, ssl.SSLError) as exc:
+        raise SkipTest(f"this OpenSSL cannot offer {version} {ciphers}: {exc}") from exc
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as raw, \
+                ctx.wrap_socket(raw) as tls:
+            return tls.version(), tls.cipher()[0]
+    except (ssl.SSLError, ConnectionResetError):
+        return None
+
+
+#: Accepted by a v0.19.0 site with the distro's defaults (#497); refused now.
+WEAK_TLS12 = ("AES128-SHA", "AES256-SHA", "AES128-GCM-SHA256", "AES256-SHA256",
+              "ECDHE-RSA-AES128-SHA", "ECDHE-RSA-AES256-SHA", "ECDHE-RSA-CAMELLIA128-SHA256")
+
+
+@skipUnless(shutil.which("nginx") and shutil.which("openssl"), "nginx and openssl needed")
+class NginxTlsTests(SimpleTestCase):
+    """The rendered production site, running behind a distro's http-level TLS
+    defaults: only TLS 1.2 and 1.3, and only AEAD suites with forward
+    secrecy on 1.2, for RSA and ECDSA certificates (#497)."""
+
+    def test_rsa_certificate(self):
+        import ssl
+
+        with _RunningSite(http=DISTRO_HTTP_TLS) as s:
+            self.assertEqual(_handshake(s.https)[0], "TLSv1.3")
+            for suite in ("ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384",
+                          "ECDHE-RSA-CHACHA20-POLY1305"):
+                with self.subTest(suite=suite):
+                    self.assertEqual(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                                ciphers=suite), ("TLSv1.2", suite))
+            for suite in WEAK_TLS12:
+                with self.subTest(suite=suite):
+                    self.assertIsNone(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                                 ciphers=suite))
+            for old in (ssl.TLSVersion.TLSv1, ssl.TLSVersion.TLSv1_1):
+                with self.subTest(version=old):
+                    self.assertIsNone(_handshake(s.https, version=old))
+
+    def test_ecdsa_certificate(self):
+        import ssl
+
+        with _RunningSite(http=DISTRO_HTTP_TLS, key="ec") as s:
+            self.assertEqual(_handshake(s.https)[0], "TLSv1.3")
+            for suite in ("ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-ECDSA-AES256-GCM-SHA384",
+                          "ECDHE-ECDSA-CHACHA20-POLY1305"):
+                with self.subTest(suite=suite):
+                    self.assertEqual(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                                ciphers=suite), ("TLSv1.2", suite))
+            for suite in ("ECDHE-ECDSA-AES128-SHA", "ECDHE-ECDSA-AES256-SHA384"):
+                with self.subTest(suite=suite):
+                    self.assertIsNone(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                                 ciphers=suite))
+
+    def test_the_weak_suites_are_offered_by_this_client(self):
+        # Without the site's lines the same server takes a weak suite, so a
+        # refusal above is the site's doing, not this client's.
+        import ssl
+
+        site = re.sub(r"(?m)^\s*ssl_(protocols|ciphers|prefer_server_ciphers)\s.*$", "",
+                      TEMPLATES[1].read_text())
+        with _RunningSite(site, http=DISTRO_HTTP_TLS) as s:
+            self.assertEqual(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                        ciphers="ECDHE-RSA-AES128-SHA"),
+                             ("TLSv1.2", "ECDHE-RSA-AES128-SHA"))

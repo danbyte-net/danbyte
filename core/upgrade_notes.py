@@ -416,6 +416,33 @@ def _vuln_csp_allows_browser_sync() -> bool:
     return "services.nvd.nist.gov" in text
 
 
+#: The TLS lines of the production template's 443 server (#497); a test
+#: pins them to the template.
+NGINX_TLS_LINES = """\
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:DanbyteSSL:10m;
+    ssl_session_tickets off;"""
+
+_NGINX_TLS = f"""\
+# in /etc/nginx/sites-available/danbyte.conf, in the 443 server, after
+# ssl_certificate_key:
+{NGINX_TLS_LINES}
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _tls_pinned() -> bool:
+    """Done when the site's nginx names its own TLS protocols and suites."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    return all(re.search(rf"(?m)^\s*{d}\s+[^;#]+;", text) for d in ("ssl_protocols", "ssl_ciphers"))
+
+
 def _outposts_run_discovery() -> bool:
     """Done when every Outpost a discovery profile runs on says it can run
     discovery work (or no profile runs on an Outpost)."""
@@ -433,6 +460,24 @@ def _outposts_run_discovery() -> bool:
 
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.20.0-nginx-tls",
+        version="0.20.0",
+        title="Pin modern TLS in nginx",
+        body=(
+            "The nginx site now takes TLS 1.2 and 1.3 only, and on TLS 1.2 only "
+            "forward-secret AEAD suites, instead of whatever the distro's "
+            "nginx.conf offers. Browsers from the last eight years or so are "
+            "unaffected; a very old client or script that only speaks TLS 1.0 "
+            "or 1.1, or has no ECDHE, stops connecting. Root runs this from the "
+            "bundle of this release, never from the app directory."
+        ),
+        snippet=_NGINX_TLS,
+        docs="getting-started/hardening/#tls",
+        platforms=("systemd",),
+        check=_tls_pinned,
+        host=True,
+    ),
     UpgradeNote(
         id="0.20.0-outpost-discovery",
         version="0.20.0",

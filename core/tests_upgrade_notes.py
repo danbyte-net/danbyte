@@ -301,6 +301,29 @@ class RealNotesTests(APITestCase):
                 subprocess.run(["sh", "-c", script], check=True)
                 self.assertEqual(conf.read_text(), new + "\n")
 
+    def test_the_tls_step_spells_out_the_templates_lines(self):
+        # #497: the lines by hand are the template's, and the note hides once
+        # the site names its own protocols and suites.
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-tls")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        self.assertIn(un.NGINX_TLS_LINES + "\n", template)
+        self.assertIn(un.NGINX_TLS_LINES, note.snippet)
+        with patch("core.upgrade_notes._site_config", return_value=template):
+            self.assertTrue(un._tls_pinned())
+        old = template.replace(un.NGINX_TLS_LINES + "\n", "")
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            self.assertFalse(un._tls_pinned())
+        commented = old.replace("server_tokens off;",
+                                "# ssl_protocols TLSv1.2;\n# ssl_ciphers HIGH;\nserver_tokens off;")
+        with patch("core.upgrade_notes._site_config", return_value=commented):
+            self.assertFalse(un._tls_pinned())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._tls_pinned())
+
     def test_the_certificate_unit_alone_comes_from_the_bundle_too(self):
         # The root steps leave the unit out on an install without nginx;
         # make in the same bundle installs it for this install's directory.

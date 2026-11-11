@@ -485,6 +485,9 @@ Any of these can change later without a reinstall:
 - [ ] `.env` is `chmod 600`, owned by `danbyte`, never committed.
 - [ ] Postgres / Redis bound to localhost (or firewalled).
 
+The nginx site's TLS settings and what else narrows the attack surface:
+[Hardening](hardening.md).
+
 ### Environment variables
 
 | Variable | Default | Purpose |

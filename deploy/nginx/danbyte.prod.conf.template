@@ -60,6 +60,19 @@ server {
     ssl_certificate     @@CERT@@;
     ssl_certificate_key @@KEY@@;
 
+    # Mozilla "intermediate" TLS (#497): TLS 1.2 and 1.3 only, and on 1.2
+    # only forward-secret AEAD suites, for ECDSA and RSA certificates alike.
+    # Set here, not left to the distro's nginx.conf, which differs per
+    # release and still offers CBC, SHA-1 and plain-RSA suites on 1.2.
+    # TLS 1.3 suites are OpenSSL's own and all strong. The session cache
+    # spares a reconnecting browser the full handshake; tickets stay off.
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:DanbyteSSL:10m;
+    ssl_session_tickets off;
+
     # Don't advertise the nginx version.
     server_tokens off;
 

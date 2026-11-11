@@ -546,6 +546,12 @@ The step *Let the browser sync vulnerability data* stays up until the site's
 CSP names `services.nvd.nist.gov`; it is only needed for the Browser update
 source, and a mirror host set there must be added by hand.
 
+From 0.20 the site pins its own TLS protocols and suites (TLS 1.2 and 1.3,
+forward-secret AEAD suites only; see [Hardening → TLS](hardening.md#tls)).
+The step *Pin modern TLS in nginx* stays up until the site has
+`ssl_protocols` and `ssl_ciphers`. A client that only speaks TLS 1.0 or 1.1
+stops connecting once it does.
+
 !!! warning "Root runs only files root owns"
     The app directory belongs to the service account. A script or template
     changed there would run as root, or become root's configuration, so no

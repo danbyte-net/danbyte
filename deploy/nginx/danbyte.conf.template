@@ -49,6 +49,14 @@ server {
     ssl_certificate     @@CERT@@;
     ssl_certificate_key @@KEY@@;
 
+    # Mozilla "intermediate" TLS, as the production template (#497).
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:DanbyteSSL:10m;
+    ssl_session_tickets off;
+
     # Allow reasonably large API payloads (bulk imports etc.).
     client_max_body_size 512m;
 
