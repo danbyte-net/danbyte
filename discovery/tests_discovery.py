@@ -499,9 +499,13 @@ class ApiGateTests(ApiBase):
             for url in self.URLS:
                 self.assertEqual(self.client.get(url).status_code, 404, url)
             r = self.client.get("/api/discovery/status/")
-            self.assertEqual(r.json(), {"deployment_enabled": False, "enabled": True,
-                                        "active": False, "can_manage": True,
-                                        "first_use_keys_allowed": True})
+            body = r.json()
+            self.assertEqual({k: body[k] for k in ("deployment_enabled", "enabled", "active",
+                                                   "can_manage", "first_use_keys_allowed")},
+                             {"deployment_enabled": False, "enabled": True,
+                              "active": False, "can_manage": True,
+                              "first_use_keys_allowed": True})
+            self.assertEqual(body["deployment"]["source"], "env")
 
     def test_status_needs_a_login(self):
         self.assertIn(self.client.get("/api/discovery/status/").status_code, (401, 403))

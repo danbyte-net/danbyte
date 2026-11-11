@@ -680,6 +680,16 @@ class DeploymentSettings(TimestampedModel):
         "through Danbyte. Sessions verify the host key and are audited.",
     )
 
+    # ─── built-in discovery (#451) ─────────────────────────────────────────
+    # The deployment switch while DANBYTE_DISCOVERY_ENABLED is unset; the
+    # environment wins when it is set (discovery.gate). Off by default; each
+    # tenant still turns its own Discovery integration on.
+    discovery_enabled = models.BooleanField(
+        default=False, db_default=False,
+        help_text="Allow built-in discovery on this deployment (unless "
+        "DANBYTE_DISCOVERY_ENABLED decides).",
+    )
+
     # ─── scheduled email digest (opt-in, off by default) ──────────────────
     # Deployment-wide DEFAULTS; a tenant can override the whole group via
     # TenantSettings.override_digest. Per-tenant send bookkeeping

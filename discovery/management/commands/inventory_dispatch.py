@@ -3,7 +3,7 @@
     manage.py inventory_dispatch
 
 Run by ``danbyte-inventory.timer`` every 15 minutes (and ``run_scheduler``
-in a container). While ``DANBYTE_DISCOVERY_ENABLED`` is off, or no tenant
+in a container). While the deployment switch is off, or no tenant
 has the Discovery integration on, it queues nothing; it still purges
 packages removed more than 30 days ago and gives up runs whose worker died.
 """

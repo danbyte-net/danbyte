@@ -5,8 +5,8 @@ Tenant-scoped throughout. Configuration is audited (``DiscoverySettings``,
 never change-logged (``InventoryRun`` bookkeeping, ``InventoryHostResult``,
 ``HostOsFact``, ``HostPackage``) - the same split as vulnerability matches.
 
-Nothing is seeded. Discovery is off until a deployment admin sets
-``DANBYTE_DISCOVERY_ENABLED`` **and** a tenant admin turns the Discovery
+Nothing is seeded. Discovery is off until a deployment admin allows it
+(``discovery.gate``) **and** a tenant admin turns the Discovery
 integration on; a profile then runs only once someone has recorded who
 authorised it (decision 11).
 

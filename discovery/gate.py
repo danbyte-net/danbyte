@@ -1,10 +1,15 @@
 """Is discovery on? (#451 decision 11)
 
-Two switches, both required: the deployment's ``DANBYTE_DISCOVERY_ENABLED``
-(env, default off) and the tenant's Discovery integration toggle
-(Settings → Integrations, default off). ``integrations.toggles`` already
-folds the deployment switch into ``integration_enabled(tenant,
-"discovery")``; this module is the one place the discovery code asks.
+Two switches, both required: the deployment's and the tenant's Discovery
+integration toggle (Settings → Integrations, default off).
+``integrations.toggles`` folds the deployment switch into
+``integration_enabled(tenant, "discovery")``; this module is the one place
+the discovery code asks.
+
+The deployment switch: ``DANBYTE_DISCOVERY_ENABLED`` when it is set (locked
+on, or locked off - nothing can change it), else the stored
+``DeploymentSettings.discovery_enabled`` (default off), which deployment
+admins change on the Discovery card.
 """
 from __future__ import annotations
 
@@ -12,8 +17,18 @@ from django.conf import settings
 from rest_framework.exceptions import NotFound, PermissionDenied
 
 
+def deployment_source() -> str:
+    """``env`` when ``DANBYTE_DISCOVERY_ENABLED`` decides, else ``setting``."""
+    return "setting" if getattr(settings, "DISCOVERY_ENABLED", None) is None else "env"
+
+
 def deployment_enabled() -> bool:
-    return bool(getattr(settings, "DISCOVERY_ENABLED", False))
+    value = getattr(settings, "DISCOVERY_ENABLED", None)
+    if value is not None:
+        return bool(value)
+    from core.models import DeploymentSettings
+
+    return DeploymentSettings.objects.filter(pk=1, discovery_enabled=True).exists()
 
 
 def first_use_keys_allowed() -> bool:

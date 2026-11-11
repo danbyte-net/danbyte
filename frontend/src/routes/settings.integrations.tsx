@@ -13,6 +13,7 @@ import { VendorLogo } from "@/components/settings/vendor-logo"
 import { PluginsSection } from "@/components/settings/plugins-section"
 import { Badge } from "@/components/ui/badge"
 import { useDiscoveryStatus } from "@/components/discovery/status"
+import { DiscoveryCardBody } from "@/components/discovery/integration-card"
 
 export const Route = createFileRoute("/settings/integrations")({
   component: IntegrationsSettingsPage,
@@ -128,9 +129,9 @@ const CARDS: IntegrationCard[] = [
   {
     key: "discovery_enabled",
     label: "Discovery",
-    info: "Logs in over SSH with each host's own device credential and reads os-release and the package list - fixed commands, no sudo, nothing written. Only hosts with an accepted SSH host key, inside a profile's scope and with a recorded authorisation, are read. The deployment must allow it too.",
+    info: "Logs in with each host's own credential or a shared one and reads the OS and the package list - fixed commands, no sudo, nothing written. Only hosts with an accepted SSH host key, inside a profile's scope and with a recorded authorisation, are read. The deployment must allow it too.",
     description:
-      "Read installed packages from Linux devices and VMs, so vulnerability matching sees exact distro versions.",
+      "Read installed packages from Linux and Windows devices and VMs, so vulnerability matching sees exact versions.",
     configure: { to: "/discovery", label: "Profiles" },
   },
   {
@@ -199,7 +200,8 @@ function IntegrationsSettingsPage() {
     )
 
   const settings = query.data
-  // Discovery also needs the deployment switch (DANBYTE_DISCOVERY_ENABLED).
+  // Discovery also needs the deployment switch, stored or set by
+  // DANBYTE_DISCOVERY_ENABLED; the card carries it.
   const deploymentOff = discovery.data && !discovery.data.deployment_enabled
   const notice = trademarkNotice(CARDS.flatMap((c) => c.names ?? []))
 
@@ -245,7 +247,11 @@ function IntegrationsSettingsPage() {
                     </Button>
                   )
                 }
-              />
+              >
+                {card.key === "discovery_enabled" && discovery.data && (
+                  <DiscoveryCardBody status={discovery.data} />
+                )}
+              </ToggleCard>
             ))}
           </ToggleCardGrid>
 

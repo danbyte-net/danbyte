@@ -18156,8 +18156,17 @@ export interface VulnPolicy {
 // ─── Discovery (#451 B2) ─────────────────────────────────────────────────
 
 export interface DiscoveryStatus {
-  /** DANBYTE_DISCOVERY_ENABLED on this deployment. */
+  /** The deployment switch, whichever way it is set. */
   deployment_enabled: boolean
+  deployment: {
+    enabled: boolean
+    /** `env`: DANBYTE_DISCOVERY_ENABLED locks it; `setting`: stored, changed
+     * on the Discovery card by deployment admins. */
+    source: "env" | "setting"
+    changed_by: string
+    changed_at: string | null
+    can_change: boolean
+  }
   /** The tenant's Discovery integration toggle. */
   enabled: boolean
   /** Both on. */
@@ -18169,6 +18178,15 @@ export interface DiscoveryStatus {
 
 export interface DiscoverySettings {
   deny_subnets: string[]
+  /** The transports discovery may log in with, tried in this order. */
+  transports: { ssh_key: boolean; ssh_password: boolean; winrm: boolean }
+  winrm: {
+    /** WinRM can be switched on: built in and not forbidden. */
+    available: boolean
+    /** Badge text when it cannot: "Not available in this build", … */
+    label: string
+    reason: string
+  }
   can_change: boolean
   updated_at: string
 }

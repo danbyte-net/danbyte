@@ -24,11 +24,17 @@ runs that is not listed on this page.
 
 Three things must all be true before Danbyte contacts any host:
 
-1. **The deployment allows it.** Set `DANBYTE_DISCOVERY_ENABLED=True` in the
-   environment of the web, worker and timer units and restart them (see
-   [Settings](../reference/settings.md#discovery)). It is off by default.
-2. **The tenant turns it on.** A tenant admin switches on **Discovery** under
-   **Settings → Integrations**. While the deployment switch is off the card
+1. **The deployment allows it.** A deployment admin switches on **This
+   deployment** on the **Discovery** card under **Settings → Integrations**.
+   It is off by default, and every change is in the change log (who, when);
+   the card shows the last one. Tenant admins see the switch but cannot
+   change it. A deployment that sets `DANBYTE_DISCOVERY_ENABLED` in the
+   environment of the web, worker and timer units decides there instead:
+   `True` shows *Locked on by the deployment*, any other value *Locked off
+   by the deployment*, and nobody can change it on the card (see
+   [Settings](../reference/settings.md#discovery)).
+2. **The tenant turns it on.** A tenant admin switches on **Discovery**
+   itself on the same card. While the deployment switch is off the card
    says *Off for this deployment*.
 3. **A profile is authorised.** An inventory profile names what to read. It
    runs only after someone has written down who authorised it - see
@@ -320,6 +326,7 @@ check runner's target policy applies to every host it logs in to.
 | Exempt a host, address or prefix | *change* on it |
 | Deny subnets | tenant admin to change; tenant admins and profile viewers read |
 | The Discovery switch | tenant admin |
+| This deployment (the deployment switch) | deployment admin (superuser, or an unscoped admin grant); never while `DANBYTE_DISCOVERY_ENABLED` is set |
 
 No built-in group holds *scan*: grant it to the people who may start runs.
 Inventory profiles are tenant-wide; a site role can scope a profile only to
@@ -329,7 +336,8 @@ what it can see.
 
 | Endpoint | |
 |---|---|
-| `GET /api/discovery/status/` | The deployment switch, the tenant toggle, and whether both are on |
+| `GET /api/discovery/status/` | The deployment switch (`deployment`: `enabled`, `source` `env` or `setting`, last change), the tenant toggle, and whether both are on |
+| `PATCH /api/discovery/deployment/` | `{"enabled": true}`: the stored deployment switch. Deployment admins only; 409 while the environment locks it |
 | `GET`, `PATCH /api/discovery/settings/` | `deny_subnets` |
 | `/api/discovery/profiles/` | Inventory profiles, CRUD (`?enabled=`, `?search=`) |
 | `POST /api/discovery/profiles/<id>/run/` | Run now (202 with the run; 409 when one is open or the profile cannot run). Body `{"accept_new_host_keys": true}` for first use. |

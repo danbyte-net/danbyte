@@ -2,6 +2,8 @@
 while Discovery is off for the active tenant (``gate.require``).
 
 ``discovery/status/``                       GET: the two switches
+``discovery/deployment/``                   PATCH (deployment admin): the stored
+                                            deployment switch
 ``discovery/settings/``                     GET, PATCH (tenant admin): deny subnets
 ``discovery/profiles/``                     inventory profiles, CRUD
 ``discovery/profiles/<id>/run/``            POST: Run now (``scan``)
@@ -38,7 +40,7 @@ from api.models import Device, IPAddress, Prefix, Site, VirtualMachine
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import StandardPagination, TenantScopedViewSet
 from auth_api import rbac
-from auth_api.permissions import can_manage_admin
+from auth_api.permissions import can_manage_admin, can_manage_deployment
 from monitoring.models import SharedCredential
 
 from . import gate, runner, scope
@@ -95,25 +97,99 @@ def run_dict(r: InventoryRun) -> dict:
 # ─── status, settings ────────────────────────────────────────────────────────
 
 
+def _deployment(request, tenant=None) -> dict:
+    """The deployment switch as the Discovery card shows it: on or off,
+    whether the environment locks it, and - for tenant and deployment
+    admins - the last change of the stored setting (who, when) from the
+    change log."""
+    from audit.models import ChangeLogEntry
+
+    source = gate.deployment_source()
+    out = {"enabled": gate.deployment_enabled(), "source": source, "changed_by": "",
+           "changed_at": None,
+           "can_change": source == "setting" and can_manage_deployment(request.user)}
+    if source == "setting" and (out["can_change"]
+                                or can_manage_admin(request.user, tenant)):
+        last = ChangeLogEntry.objects.filter(
+            object_type="core.deploymentsettings",
+            changes__has_key="discovery_enabled").order_by("-timestamp").first()
+        if last is not None:
+            out["changed_by"], out["changed_at"] = last.user_name, last.timestamp
+    return out
+
+
+def _status(request, tenant) -> dict:
+    from integrations.models import IntegrationSettings
+
+    toggle = IntegrationSettings.objects.filter(
+        tenant=tenant, discovery_enabled=True).exists()
+    deployment = _deployment(request, tenant)
+    return {"deployment_enabled": deployment["enabled"], "deployment": deployment,
+            "enabled": toggle, "active": gate.active(tenant),
+            "can_manage": can_manage_admin(request.user, tenant),
+            "first_use_keys_allowed": gate.first_use_keys_allowed()}
+
+
 @extend_schema(summary="Whether discovery is on", tags=["discovery"],
                responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def discovery_status(request):
-    """The deployment switch (``DANBYTE_DISCOVERY_ENABLED``), the tenant's
-    Discovery toggle, and whether both are on. Any tenant member."""
+    """The deployment switch (``deployment``: on/off, ``source`` env or
+    setting, the last change), the tenant's Discovery toggle, and whether
+    both are on. Any tenant member."""
     from api.views import _get_active_tenant
-    from integrations.models import IntegrationSettings
 
     tenant = _get_active_tenant(request)
     if tenant is None:
         raise PermissionDenied("No active tenant selected.")
-    toggle = IntegrationSettings.objects.filter(
-        tenant=tenant, discovery_enabled=True).exists()
-    return Response({"deployment_enabled": gate.deployment_enabled(), "enabled": toggle,
-                     "active": gate.active(tenant),
-                     "can_manage": can_manage_admin(request.user, tenant),
-                     "first_use_keys_allowed": gate.first_use_keys_allowed()})
+    return Response(_status(request, tenant))
+
+
+@extend_schema(summary="Allow discovery on this deployment", tags=["discovery"],
+               request=OpenApiTypes.OBJECT,
+               responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def discovery_deployment(request):
+    """``{enabled: bool}``: the stored deployment switch. Deployment admins
+    only (``can_manage_deployment``: a tenant admin is refused). Refused
+    with 409 while ``DANBYTE_DISCOVERY_ENABLED`` decides. Change-logged on
+    the deployment settings. Answers the status, as ``status/`` does."""
+    from api.views import _get_active_tenant
+    from core.models import DeploymentSettings
+
+    if not can_manage_deployment(request.user):
+        raise PermissionDenied("Deployment admin required.")
+    if gate.deployment_source() == "env":
+        return Response({"detail": "Locked by DANBYTE_DISCOVERY_ENABLED in the server "
+                                   "environment."}, status=409)
+    data = request.data if isinstance(request.data, dict) else {}
+    if not isinstance(data.get("enabled"), bool):
+        raise ValidationError({"enabled": "true or false."})
+    row = DeploymentSettings.load()
+    if row.discovery_enabled != data["enabled"]:
+        row.discovery_enabled = data["enabled"]
+        row.save(update_fields=["discovery_enabled", "updated_at"])
+        transaction.on_commit(_rematch_all)
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"deployment": _deployment(request)})
+    return Response(_status(request, tenant))
+
+
+def _rematch_all() -> None:
+    """Package matches exist only while discovery is on: the deployment
+    switch flipping re-matches every tenant with the Discovery toggle on."""
+    from integrations.models import IntegrationSettings
+    from vulnerabilities import jobs
+    from vulnerabilities.models import VulnerabilitySettings
+
+    if not VulnerabilitySettings.objects.filter(pk=1, enabled=True).exists():
+        return
+    for tenant_id in IntegrationSettings.objects.filter(
+            discovery_enabled=True).values_list("tenant_id", flat=True):
+        jobs.enqueue_recompute(tenant_id)
 
 
 def _clean_cidrs(value) -> list[str]:

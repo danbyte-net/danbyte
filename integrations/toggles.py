@@ -28,9 +28,9 @@ KEYS = {
 }
 
 #: Keys that also need a deployment-wide switch: the tenant toggle alone
-#: does not turn them on (``settings`` attribute name).
+#: does not turn them on (dotted path of a function answering it).
 DEPLOYMENT_GATES = {
-    "discovery": "DISCOVERY_ENABLED",
+    "discovery": "discovery.gate.deployment_enabled",
 }
 
 #: Umbrella keys, true when any of their members is. A page that serves both
@@ -53,9 +53,9 @@ def integration_enabled(tenant, key: str) -> bool:
         return False
     gate = DEPLOYMENT_GATES.get(key)
     if gate is not None:
-        from django.conf import settings
+        from django.utils.module_loading import import_string
 
-        if not getattr(settings, gate, False):
+        if not import_string(gate)():
             return False
     from .models import IntegrationSettings
 

@@ -845,7 +845,15 @@ CHECK_BLOCK_INTERNAL = os.getenv("DANBYTE_CHECK_BLOCK_INTERNAL", "False") == "Tr
 # Discovery integration are both on; nothing is contacted otherwise. The
 # check runner's target policy above (block_internal, SSRF allow-list)
 # applies to every host discovery logs in to from the server.
-DISCOVERY_ENABLED = os.getenv("DANBYTE_DISCOVERY_ENABLED", "False") == "True"
+#
+# Three states. Unset (or empty): the switch is a stored setting, off by
+# default, that deployment admins change on the Discovery card
+# (DeploymentSettings.discovery_enabled). "True" (true/1/yes/on): locked on.
+# Anything else, "False" included: locked off - nothing can enable it.
+_discovery_env = os.getenv("DANBYTE_DISCOVERY_ENABLED", "").strip()
+DISCOVERY_ENABLED = (
+    None if not _discovery_env
+    else _discovery_env.lower() in ("true", "1", "yes", "on"))
 # Whether Run now may offer "Accept new host keys" (trust a host's key the
 # first time it is seen, for hosts with no accepted key). False hides the
 # option everywhere and the API refuses it.

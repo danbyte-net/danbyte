@@ -13,6 +13,7 @@ router.register(r"discovery/runs", api.InventoryRunViewSet, basename="inventoryr
 
 urlpatterns = [
     path("discovery/status/", api.discovery_status, name="discovery-status"),
+    path("discovery/deployment/", api.discovery_deployment, name="discovery-deployment"),
     path("discovery/settings/", api.discovery_settings, name="discovery-settings"),
     path("discovery/exempt/", api.discovery_exempt, name="discovery-exempt"),
     path("discovery/host-keys/accept/", api.discovery_accept_host_keys,
