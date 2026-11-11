@@ -163,6 +163,40 @@ class NetMixin:
         return fetch.execute(run.pk)
 
 
+class ReadJsonTests(SimpleTestCase):
+    """An answer arrives in chunks; all of them are the answer."""
+
+    class _Resp:
+        def __init__(self, raw: bytes, size: int = 1 << 16):
+            self._raw, self._size, self.closed = raw, size, False
+
+        def iter_content(self, _n):
+            for i in range(0, len(self._raw), self._size):
+                yield self._raw[i:i + self._size]
+
+        def close(self):
+            self.closed = True
+
+    def test_an_answer_longer_than_one_chunk_is_read_whole(self):
+        payload = {"results": [{"vulns": [{"id": f"DSA-{n}"} for n in range(20000)]}]}
+        raw = json.dumps(payload).encode()
+        self.assertGreater(len(raw), 3 * (1 << 16))
+        resp = self._Resp(raw)
+        self.assertEqual(fetch.read_json(resp, 8 * 1024 * 1024, "An OSV answer"), payload)
+        self.assertTrue(resp.closed)
+
+    def test_the_cap_still_refuses_an_oversized_answer(self):
+        raw = json.dumps({"x": "y" * (1 << 20)}).encode()
+        from .streaming import LimitExceeded
+
+        with self.assertRaises(LimitExceeded):
+            fetch.read_json(self._Resp(raw), 256 * 1024, "An OSV answer")
+
+    def test_a_broken_answer_is_not_json(self):
+        with self.assertRaisesMessage(fetch.FetchError, "An OSV answer is not JSON."):
+            fetch.read_json(self._Resp(b'{"results": ['), 1024, "An OSV answer")
+
+
 class GatingTests(NetMixin, TestCase):
     def test_off_or_not_server_mode_makes_no_request(self):
         for kw in ({"enabled": False}, {"update_source": "upload"},

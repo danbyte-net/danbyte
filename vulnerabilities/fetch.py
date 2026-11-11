@@ -55,7 +55,7 @@ from core.ssrf import SafeSession, SSRFError
 from . import imports, products, sources, store
 from .identifiers import cpe_product, is_vuln_id, osv_ecosystems
 from .models import CpeProductSync, Cve, CveProduct, SyncRun, VulnerabilitySettings
-from .streaming import CappedReader, ImportFormatError
+from .streaming import CappedReader, ImportFormatError, read_all
 
 log = logging.getLogger(__name__)
 
@@ -239,8 +239,7 @@ def body(resp, max_bytes: int, what: str):
 
 def read_json(resp, max_bytes: int, what: str):
     try:
-        raw = body(resp, max_bytes, what).read(max_bytes + 1)
-        return json.loads(raw)
+        return json.loads(read_all(body(resp, max_bytes, what)))
     except (ValueError, UnicodeDecodeError) as exc:
         if isinstance(exc, ImportFormatError):
             raise

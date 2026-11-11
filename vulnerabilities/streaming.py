@@ -60,6 +60,16 @@ class CappedReader(io.RawIOBase):
         return len(data)
 
 
+def read_all(reader) -> bytes:
+    """Everything a :class:`CappedReader` holds. One ``read`` hands back a
+    single chunk of the stream under it, so read to the end; the cap raises
+    the moment the stream passes its limit."""
+    parts = []
+    while chunk := reader.read(1 << 16):
+        parts.append(chunk)
+    return b"".join(parts)
+
+
 def sniff(fileobj) -> str:
     """``gzip``, ``zip`` or ``plain`` from the first bytes; rewinds."""
     head = fileobj.read(4)

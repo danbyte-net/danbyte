@@ -36,7 +36,7 @@ from django.utils import timezone
 from . import fetch, imports, products, sources, store
 from .identifiers import cpe_product, is_vuln_id
 from .models import SyncRun, VulnerabilitySettings
-from .streaming import CappedReader, ImportFormatError
+from .streaming import CappedReader, ImportFormatError, read_all
 
 #: NVD records per browser page: a 500-CVE IOS XE page is about 3 MB.
 PAGE = 500
@@ -335,7 +335,7 @@ def ingest_epss(run_id, user, batch, reader) -> dict:
     """One FIRST EPSS API answer, verbatim, for batch number ``batch``."""
     batch = _int(batch, "batch", 0, RUN_EPSS_MAX)
     try:
-        raw = CappedReader(reader, EPSS_POST_MAX, "An EPSS answer").read(EPSS_POST_MAX + 1)
+        raw = read_all(CappedReader(reader, EPSS_POST_MAX, "An EPSS answer"))
         payload = json.loads(raw)
     except ImportFormatError as exc:
         raise Refused(str(exc), 413, "page") from None
@@ -397,8 +397,7 @@ def osv_ids(run_id, user, reader) -> dict:
     found. Answers which advisories to fetch (new or changed since they were
     stored); the records themselves are validated when they are posted."""
     try:
-        raw = CappedReader(reader, OSV_IDS_POST_MAX, "The OSV id list").read(
-            OSV_IDS_POST_MAX + 1)
+        raw = read_all(CappedReader(reader, OSV_IDS_POST_MAX, "The OSV id list"))
         payload = json.loads(raw)
     except ImportFormatError as exc:
         raise Refused(str(exc), 413, "vulns") from None
