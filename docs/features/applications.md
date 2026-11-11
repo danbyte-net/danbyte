@@ -33,7 +33,7 @@ devices.
 ### Package names
 
 **Package names** (one per line on the form) say which inventoried packages
-are the application, so [Discovery](discovery.md#applications-from-packages)
+are the application, so [Discovery](discovery-packages.md#applications-from-packages)
 records its installs from what it reads on each host:
 
 | Entry | Takes |

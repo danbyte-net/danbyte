@@ -942,13 +942,11 @@ Checks list.
 When the [Discovery](discovery.md) integration is on for the tenant and you
 may view discovery profiles, the Monitoring page has a **Discovery** tab: the
 profiles, the latest runs, and **Findings** and **Open ports** with their
-counts. `/discovery` opens it. A profile's scope takes the same kinds as a
-monitoring policy - region, VRF, platform, device type, device role - decided
-by the same resolver, and a policy's scope can be copied into a profile; see
-[Discovery: Scope](discovery.md#scope). Each policy's menu under
-**Configuration** lists the profiles that name the same object and offers
-**New discovery profile from this scope**. Saving a policy never starts or
-schedules a scan.
+counts. `/discovery` opens it. A profile's scope can take the same kinds as
+a monitoring policy, decided by the same resolver, and each policy's menu
+under **Configuration** has a **Discovery** section
+([Discovery: scope](discovery-safety.md#scope)). Saving a policy never starts
+or schedules a scan.
 
 ### The Settings tab
 
@@ -970,7 +968,7 @@ defaults**.
 | **Skip statuses** | IP statuses whose IPs should never be checked. |
 | **Reverse-DNS sync** | Keep IPs' DNS names current automatically (see below). |
 | **Address discovery** | The ping sweep that finds live addresses in prefixes, and stale-IP cleanup (see [below](#auto-discovery-and-cleanup)). |
-| **Host discovery** | [Discovery](discovery.md)'s settings: the deployment switch (deployment admins; shown even while the tenant switch is off), the tenant switch read-only with a link to Integrations, the SSH key / SSH password / WinRM transports, nmap with what was found, and the deny subnets. These save as they change and are changed only here. |
+| **Host discovery** | [Discovery](discovery.md)'s switches, transports, nmap and deny subnets ([Discovery: settings](discovery-settings.md#switches-in-danbyte)). They save as they change and are changed only here. |
 | **MAC tracking** | How learned MACs are shown, which ports count as uplinks, and how long they are kept (see below). |
 
 ### MAC tracking {#mac-tracking}
@@ -1374,9 +1372,9 @@ default off and are controlled from **Monitoring → Settings**.
 
 ### Address discovery {#address-discovery}
 
-Not to be confused with **host discovery** - [package inventory](discovery.md)
-and [service scans](service-discovery.md), which log in to devices and VMs or
-connect to their ports under an authorised profile. Address discovery logs in
+Not to be confused with **host discovery** - [package inventory and service
+scans](discovery.md), which log in to devices and VMs or connect to their
+ports under an authorised profile. Address discovery logs in
 nowhere and only finds which addresses answer a ping. The two sit side by
 side under **Monitoring → Settings** and have separate switches and backends.
 

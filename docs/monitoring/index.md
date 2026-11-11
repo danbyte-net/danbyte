@@ -16,6 +16,8 @@ way they should be**.
 | [SSH host keys](ssh-host-keys.md) | Capture and track the host keys your devices present. |
 | [Device access](../features/device-access.md) | Connect protocols and the opt-in in-browser SSH terminal. |
 | [Compliance](../features/compliance.md) | Define rules your objects must satisfy, and see what's violating them. |
+| [Known vulnerabilities](../features/vulnerabilities.md) | Match your inventory against NVD, OSV and Microsoft advisory data. Off by default. |
+| [Discovery](../features/discovery.md) | Read installed packages over SSH or WinRM and scan TCP ports of IPAM addresses, under an authorised profile. Off by default; its own section of these docs. |
 
 Background workers and the scheduler live under
 [Background jobs](../features/jobs.md) (Working with data).

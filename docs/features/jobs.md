@@ -39,7 +39,8 @@ systemctl --user start danbyte-workers
 | **Failed** | Raised an error. Open it to read the traceback. |
 | **Deferred** / **Scheduled** | Waiting on another job or a future time (only shown when present). |
 
-You can also narrow by **queue** (`default`, `high`, `low`). Each row shows the
+You can also narrow by **queue** (`default`, `high`, `low`, and `discovery` for
+[Discovery](discovery-settings.md#queue-and-timer) runs). Each row shows the
 job's function, queue, the worker handling it, when it was enqueued, and how long
 it ran. Click any row to open its detail.
 
@@ -53,7 +54,8 @@ utilisation, the [scheduled SNMP polls](snmp-discovery.md#scheduled-polling)
 [Oxidized node sync](oxidized.md#automatic-sync) (one job per due connection),
 alert maintenance, certificate expiry, the daily **email
 digest**, the backup schedule tick, scheduled scripts, the search-index
-rebuild, the [end-of-life data](end-of-life-data.md) refresh, and the various
+rebuild, the [end-of-life data](end-of-life-data.md) refresh, the
+[package inventory](discovery-settings.md#queue-and-timer) beat, and the various
 cleanup/prune jobs. These never appear in the RQ queue, so the **Scheduled
 tasks** section surfaces them directly.
 

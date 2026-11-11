@@ -21,16 +21,16 @@ other.
 ## Device credentials
 
 A **device credential** links a device - or a virtual machine - to a login
-secret. A VM's credentials are on its **Monitoring** tab; [discovery](discovery.md)
-uses them to read its packages. Add and manage them in
-the **Credentials** card on the device's **Monitoring** tab (SSH password, SSH
-key, HTTPS login, Windows login, Proxmox API token, VMware login or WinRM
-certificate). A *WinRM certificate* holds a client certificate and its
-private key (PEM) for [discovery](discovery.md#transports) over WinRM HTTPS. The last
-three are what PRTG's sensors get when a sensor profile sets credentials **on
-the device** with none picked (see [PRTG](prtg.md#where-credentials-go)):
-Windows takes `DOMAIN\user` as the username, Proxmox `user@realm!tokenid` with
-the token secret as the password.
+secret. Add and manage them in the **Credentials** card on a device's
+**Access** tab or a VM's **Monitoring** tab (SSH password, SSH key, HTTPS
+login, Windows login, Proxmox API token, VMware login or WinRM certificate).
+[Discovery](discovery-credentials.md) logs in with the SSH ones and the
+*WinRM certificate*, a client certificate and its private key (PEM) for
+[WinRM over HTTPS](discovery-windows.md#over-winrm). Windows login, Proxmox
+API token and VMware login are what PRTG's sensors get when a sensor profile
+sets credentials **on the device** with none picked (see
+[PRTG](prtg.md#where-credentials-go)): Windows takes `DOMAIN\user` as the
+username, Proxmox `user@realm!tokenid` with the token secret as the password.
 
 Each credential sources its secret one of two ways:
 
@@ -94,20 +94,13 @@ The dialog shows how many hosts the scope matches as you edit it
 
 ### Which login a host gets
 
-One rule, in `monitoring/credentials.py`, picks the logins for a host:
-
-1. the host's own **device credential** of a fitting kind (for SSH a key
-   before a password);
-2. a shared credential a consumer pinned - an [inventory
-   profile](discovery.md#credentials-and-host-keys) can pin one;
-3. every enabled shared credential whose scope matches: lowest **Weight**
-   first, then the scope that names more, then the name.
-
-Only the **first** of those is tried. The next is tried only when the one
-before was refused *and* has **Try the next if refused** on, and never more
-than three for one host: trying one password after another against the same
-account is how accounts get locked out. Today [discovery](discovery.md) uses
-this rule; Connect and the terminal still use the device's own credentials.
+One rule, in `monitoring/credentials.py`, picks the logins for a host: its
+own device credentials, then a shared credential a consumer pinned, then the
+enabled shared credentials whose scope matches, lowest **Weight** first. At
+most three are tried, and a refused password is followed by another only when
+its shared credential has **Try the next if refused** on. Today [Discovery](discovery-credentials.md#which-login-a-host-gets)
+uses this rule, and documents it in full; Connect and the terminal still use
+the device's own credentials.
 
 ### Permissions
 

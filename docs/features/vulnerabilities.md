@@ -595,7 +595,7 @@ way, with no mapping: each one under the name its distro advises (the
 source package for Debian and Ubuntu, the origin for Alpine) at the release
 the host's os-release names. Those matches say **Via: Package**, read with
 *installed software* view, and exist only while Discovery is on for the
-tenant ([Vulnerabilities](discovery.md#vulnerabilities)).
+tenant ([Package inventory: CVE matches](discovery-packages.md#cve-matches)).
 
 OSV writes Debian, Ubuntu, Alpine, Rocky Linux, AlmaLinux and Red Hat
 advisories **per release**: one advisory carries an entry for `Debian:11`,
@@ -654,7 +654,7 @@ Each match records its `confidence`: `exact`, `range` or `partial`.
 
 ### Windows hosts (Microsoft data)
 
-For Windows hosts [discovery](discovery.md#what-is-stored) reads, Danbyte uses
+For Windows hosts [discovery](discovery-windows.md#what-is-stored) reads, Danbyte uses
 Microsoft's own advisory data - the monthly security update documents of
 the Microsoft Security Response Center (MSRC), in CVRF form - rather than
 NVD's version ranges. Microsoft lists, per CVE and per Windows release, the
@@ -665,43 +665,13 @@ that ships it. Discovery reads the host's build and update build revision
 Those matches say **Via: OS build**, have no mapping and no package, and
 carry the host's build as their version.
 
-**Which product a host is.** Microsoft names products, not builds: *Windows
-Server 2022*, *Windows Server 2022 (Server Core installation)*, *Windows 11
-Version 24H2 for x64-based Systems*. Windows Server 2025 and Windows 11 24H2
-share build 26100 but have their own fixes, so the build alone is not
-enough. A table in the code (`vulnerabilities/msrc_products.py`) maps each
-release to its build line, and the host's caption, edition and release
-(`21H2`) decide between server and client and confirm the release:
-
-| Microsoft product | Build line |
-|---|---|
-| Windows Server 2012 / 2012 R2 (and Server Core) | `6.2.9200` / `6.3.9600` |
-| Windows Server 2016 (and Server Core) | `10.0.14393` |
-| Windows Server 2019 (and Server Core) | `10.0.17763` |
-| Windows Server 2022 (and Server Core) | `10.0.20348` |
-| Windows Server 2022, 23H2 Edition (Server Core) | `10.0.25398` |
-| Windows Server 2025 (and Server Core) | `10.0.26100` |
-| Windows 10 1607, 1809, 21H2, 22H2 (x64, ARM64, 32-bit) | `10.0.14393`, `10.0.17763`, `10.0.19044`, `10.0.19045` |
-| Windows 11 22H2, 23H2, 24H2, 25H2, 26H1, 26H2 (x64, ARM64) | `10.0.22621`, `10.0.22631`, `10.0.26100`, `10.0.26200`, `10.0.28000`, `10.0.26300` |
-
-Desktop Experience and Server Core are separate products, as are the CPU
-architectures of a client release. Discovery stores the registry's
-`InstallationType` (`Server` is Desktop Experience, `Server Core`) and the
-OS architecture (kept as `x64`, `arm64` or `x86`, whatever spelling the host
-used), so a Core host is matched only against Microsoft's Server Core
-products and a Windows 11 ARM64 host only against the ARM64 ones. When
-either is not known (an older read, an installation type Danbyte does not
-recognise) the host keeps every variant of its release, and a CVE matches
-only when **every** variant agrees it is affected. A change of either fact
-re-matches the host.
-
-**Never a guess.** A host gets no OS-build match, and its Packages tab says
-*OS build not matched*, when:
-
-- its build is not in the table (Windows 11 21H2, Windows Server semi-annual
-  releases, Azure Stack HCI, a release newer than the table), or its caption
-  names another release than its build;
-- it reported no UBR.
+**Which product a host is.** Microsoft names products, not builds, so
+Danbyte places each host among Microsoft's Windows products from its build
+line, caption, edition, release, installation type (Desktop Experience or
+Server Core) and architecture, and never guesses: a host it cannot place, or
+one that reported no UBR, gets no OS-build match and its Packages tab says
+*OS build not matched*. The products covered and the rules are on
+[Windows hosts: which product a host is](discovery-windows.md#which-product-a-host-is).
 
 **The comparison.** Builds are compared only within one build line
 (`10.0.20348.x` never against `10.0.17763.x`; the `winbuild` scheme). Windows

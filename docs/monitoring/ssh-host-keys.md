@@ -21,31 +21,14 @@ terminal](../features/device-access.md#the-in-browser-ssh-terminal) the same
 way a device's keys pin its own: every recorded key is trusted, any other
 key aborts the session, and a VM with none asks you to accept the new host.
 
-[Discovery](../features/discovery.md#host-keys-and-credentials) reads a host
-only when it presents an **accepted** key - uploaded, or observed and then
-accepted. A host it refuses has the key it presented recorded as observed,
-so you can check the fingerprint and accept it here.
-
-### Accepting many at once, and on first use
-
-A discovery profile's and a run's **Host keys** tab lists the keys its hosts
-presented that nobody accepted yet - host, address, type, SHA256
-fingerprint, first seen - with a box per row and **Accept N keys**
-(`POST /api/discovery/host-keys/accept/`, `{ids: [...]}`). It needs *change*
-on SSH host keys, inside your site scope, and each key accepted is
-change-logged. A key that differs from one already accepted for the same
-host and type is shown as **Differs from accepted key** and is never
-accepted from that list - check the host, then accept it here on its own.
-
-**Run now** can also *Accept new host keys*: for a host with no accepted key
-at all, the key it presents on that run is accepted and the login goes on
-over that same connection. This is **not advised** - if something sits
-between Danbyte and the host on that first contact, it is the one trusted.
-It is unticked every time, never used by scheduled runs, needs *change* on
-SSH host keys, and a deployment can switch it off
-(`DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS`). A host whose key differs from an
-accepted one is still refused. Each key accepted this way is change-logged
-as the person who started the run, with the run named as the cause.
+<span id="accepting-many-at-once-and-on-first-use"></span>
+[Discovery](../features/discovery-credentials.md#host-keys) logs in only to
+a host that presents an **accepted** key - uploaded, or observed and then
+accepted - and records the key a refused host presents as observed. Its
+bulk review (**Accept N keys** on a profile's or run's **Host keys** tab)
+and the not-advised **Accept new host keys** on **Run now** are described
+there: [reviewing host keys](../features/discovery-credentials.md#reviewing-host-keys),
+[accept on first use](../features/discovery-credentials.md#accept-new-host-keys-on-first-use).
 
 ## Recording an expected key
 

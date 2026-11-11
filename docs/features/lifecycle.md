@@ -148,7 +148,7 @@ Every software version records its **source**:
 | SNMP | The SNMP facts poll, read from `sysDescr` |
 | Virtualization | A hypervisor sync - the [vCenter sync](virt-vcenter.md) fills an ESXi host's version |
 | Oxidized | A configuration read from [Oxidized](oxidized.md#software-version) |
-| Discovery | A [package inventory](discovery.md#the-running-version) read of the host's own release data (`/etc/os-release`, the Windows build) |
+| Discovery | A [package inventory](discovery-packages.md#the-running-version) read of the host's own release data (`/etc/os-release`, the Windows build) |
 
 The rule: **a manual or imported version is never overwritten** by an
 automatic source. SNMP, Oxidized, the virtualization sync and Discovery fill

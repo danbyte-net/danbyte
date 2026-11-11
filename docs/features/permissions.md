@@ -44,8 +44,8 @@ and its row limits say which views), **view config** (on devices and on virtual
 machines, each its own grant - read the
 [configuration backups from Oxidized](oxidized.md#who-can-read-a-config);
 no built-in group holds it, because a config carries secrets), **scan** (on
-inventory profiles - start a [discovery run](discovery.md#permissions) that
-logs in to the profile's hosts; no built-in group holds it), and **grant
+inventory profiles - start a [discovery run](discovery-safety.md#permissions)
+with **Run now**; no built-in group holds it), and **grant
 superuser** (on users - see below). The
 permission form only offers these on the types that use them.
 
