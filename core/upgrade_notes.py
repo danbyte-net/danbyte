@@ -443,6 +443,50 @@ def _tls_pinned() -> bool:
     return all(re.search(rf"(?m)^\s*{d}\s+[^;#]+;", text) for d in ("ssl_protocols", "ssl_ciphers"))
 
 
+_NGINX_RATE_LIMITS = """\
+# in /etc/nginx/sites-available/danbyte.conf - at the top, beside the maps:
+limit_req_zone $binary_remote_addr zone=danbyte_auth:10m rate=1r/s;
+limit_req_zone $binary_remote_addr zone=danbyte_csp:10m rate=2r/s;
+# in the 443 server, before location /api/:
+    location ~ ^/api/auth/(login|mfa/verify|mfa/resend|password-reset|password-reset/confirm|set-password)/$ {
+        limit_req zone=danbyte_auth burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location = /api/csp-report/ {
+        limit_req zone=danbyte_csp burst=20 nodelay;
+        limit_req_status 429;
+        client_max_body_size 16k;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+# and at the end of the 443 server:
+    error_page 429 @danbyte_rate_limited;
+    location @danbyte_rate_limited {
+        internal;
+        default_type application/json;
+        return 429 '{"detail":"Too many attempts from this address. Wait a minute and try again."}';
+    }
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _rate_limited() -> bool:
+    """Done when the site's nginx limits the sign-in endpoints."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    return bool(re.search(r"(?m)^\s*limit_req\s+zone=danbyte_auth\b", text))
+
+
 def _outposts_run_discovery() -> bool:
     """Done when every Outpost a discovery profile runs on says it can run
     discovery work (or no profile runs on an Outpost)."""
@@ -460,6 +504,25 @@ def _outposts_run_discovery() -> bool:
 
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.20.0-nginx-rate-limits",
+        version="0.20.0",
+        title="Rate-limit sign-in at nginx",
+        body=(
+            "nginx now holds each client address to about one sign-in attempt a "
+            "second (a burst of five), across login, the second factor and "
+            "password reset, and limits the CSP report sink. A flood from one "
+            "address no longer ties up the web workers. An office behind one "
+            "NAT address shares the budget; behind another proxy, nginx needs "
+            "real_ip so it sees the client. Root runs this from the bundle of "
+            "this release, never from the app directory."
+        ),
+        snippet=_NGINX_RATE_LIMITS,
+        docs="getting-started/hardening/#edge-rate-limits",
+        platforms=("systemd",),
+        check=_rate_limited,
+        host=True,
+    ),
     UpgradeNote(
         id="0.20.0-nginx-tls",
         version="0.20.0",

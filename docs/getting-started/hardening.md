@@ -46,6 +46,53 @@ from the release's root steps (`sudo ./install.sh --host-only`, see
 is left alone: the step *Pin modern TLS in nginx* shows the lines to add
 and goes away once the site has `ssl_protocols` and `ssl_ciphers`.
 
+## Edge rate limits
+
+Danbyte counts failed sign-ins per account and per client in Django, and
+those limits stay. But every attempt still holds a web worker for the
+password hash, and a flood that changes the username each time never meets
+the per-account limit, so one address could slow the app down for
+everyone. The production nginx site therefore limits, per client address:
+
+| Where | Limit | Over it |
+|---|---|---|
+| `/api/auth/login/`, `mfa/verify/`, `mfa/resend/`, `password-reset/`, `password-reset/confirm/`, `set-password/` - one budget for all of them | 1 a second, bursts of 5 | `429` with a JSON `detail` the sign-in page shows |
+| `/api/csp-report/` (unauthenticated, logged) | 2 a second, bursts of 20; bodies up to 16 KB | `429`; a larger body `413` |
+
+- 1 a second with a burst of 5 is 60 attempts a minute - plenty for people,
+  but an office behind **one NAT address** shares it.
+- Single sign-on callbacks (`/api/auth/sso/…`) are not limited: an identity
+  provider's redirect must never fail at the edge. Nor is anything a
+  signed-in user does.
+- Only nginx's own refusals become the JSON 429; a 429 from Django passes
+  through as it is.
+- The development template and the Docker image carry no edge limits: the
+  first fronts a dev server, and in the second the address nginx sees depends
+  on how the container runtime publishes ports (rootless Podman and
+  Docker's userland proxy show one address for everyone). Put the limits on
+  the proxy in front of the stack instead.
+
+**Behind another proxy or load balancer** nginx sees the proxy's address,
+and every client would share one budget. Tell nginx which proxy to trust,
+in a file of its own at the http level (Danbyte never renders it, so the
+site stays re-renderable):
+
+```nginx
+# /etc/nginx/conf.d/danbyte-real-ip.conf
+set_real_ip_from 192.0.2.5;       # the proxy (or its subnet); repeat per proxy
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+```
+
+Then `nginx -t && systemctl reload nginx`. The limits key on the client,
+and Django finds it too: nginx forwards it at the right of
+`X-Forwarded-For`, so `DANBYTE_TRUSTED_PROXY_DEPTH` 1 or 2 both work. Only
+name proxies you run: a trusted address can claim to be anyone.
+
+**Upgrades.** A site still as Danbyte rendered it gets the limits from the
+release's root steps; a site edited by hand shows the step *Rate-limit
+sign-in at nginx* with the lines, until it has `limit_req zone=danbyte_auth`.
+
 ## Planned
 
 Not done yet; tracked for a later release:

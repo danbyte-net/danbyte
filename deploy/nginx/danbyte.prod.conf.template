@@ -31,6 +31,15 @@ map $uri $danbyte_asset_cache {
     default     "";
 }
 
+# Edge rate limits (#499), per client address. Every password check holds a
+# gunicorn worker for the hash, and a flood that changes the username each
+# time never meets Django's per-account limits, which stay as they are.
+# 1r/s with a burst of 5 is 60 attempts a minute: an office behind one NAT
+# address shares it. Behind another proxy, set real_ip in an http-level
+# conf.d file so this keys on the client, not the proxy (docs: Hardening).
+limit_req_zone $binary_remote_addr zone=danbyte_auth:10m rate=1r/s;
+limit_req_zone $binary_remote_addr zone=danbyte_csp:10m rate=2r/s;
+
 # Plain HTTP → redirect to HTTPS.
 server {
     listen 80;
@@ -214,6 +223,30 @@ server {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
     }
+    # The unauthenticated endpoints that check a password, a code or a
+    # reset token, or send mail (#499). SSO callbacks are not limited: an
+    # IdP redirect must never fail here.
+    location ~ ^/api/auth/(login|mfa/verify|mfa/resend|password-reset|password-reset/confirm|set-password)/$ {
+        limit_req zone=danbyte_auth burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    # The CSP report sink takes anyone's POST and logs it: a report is a
+    # few KB, a bigger body gets a 413 here.
+    location = /api/csp-report/ {
+        limit_req zone=danbyte_csp burst=20 nodelay;
+        limit_req_status 429;
+        client_max_body_size 16k;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
     location /api/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
@@ -268,5 +301,15 @@ server {
             return 503 '{"detail":"Danbyte is restarting or the request outran the backend - try again in a moment."}';
         }
         rewrite ^ /maintenance.html break;
+    }
+
+    # A request the rate limits above refused: JSON the sign-in page shows,
+    # not nginx's HTML page. Only nginx's own 429s land here; Django's pass
+    # through as they are.
+    error_page 429 @danbyte_rate_limited;
+    location @danbyte_rate_limited {
+        internal;
+        default_type application/json;
+        return 429 '{"detail":"Too many attempts from this address. Wait a minute and try again."}';
     }
 }

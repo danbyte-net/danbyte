@@ -552,6 +552,12 @@ The step *Pin modern TLS in nginx* stays up until the site has
 `ssl_protocols` and `ssl_ciphers`. A client that only speaks TLS 1.0 or 1.1
 stops connecting once it does.
 
+Also from 0.20 nginx rate-limits sign-in and the CSP report sink per client
+address ([Hardening → Edge rate limits](hardening.md#edge-rate-limits)).
+The step *Rate-limit sign-in at nginx* stays up until the site has
+`limit_req zone=danbyte_auth`. Behind another proxy, add the `real_ip`
+lines that page shows, or every client shares the proxy's budget.
+
 !!! warning "Root runs only files root owns"
     The app directory belongs to the service account. A script or template
     changed there would run as root, or become root's configuration, so no

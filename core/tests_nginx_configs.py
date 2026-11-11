@@ -238,6 +238,44 @@ class ConfigTextTests(SimpleTestCase):
                 with self.subTest(path=path.name, placeholder=name):
                     self.assertIn(f"@@{name}@@", text)
 
+    def test_edge_rate_limits(self):
+        # #499: zones at the http level the site is included in, keyed on
+        # the client address; the sign-in endpoints and the CSP sink limited
+        # before /api/, SSO callbacks never; refusals are JSON.
+        text = re.sub(r"(?m)#.*$", "", TEMPLATES[1].read_text())
+        zones = dict(re.findall(r"limit_req_zone\s+\$binary_remote_addr\s+zone=(\w+):10m\s+"
+                                r"rate=([\w/]+);", text))
+        self.assertEqual(zones, {"danbyte_auth": "1r/s", "danbyte_csp": "2r/s"})
+        self.assertLess(text.index("limit_req_zone"), text.index("server {"))
+        blocks = dict(_locations(text))
+        auth = next(v for k, v in blocks.items() if k.startswith("^/api/auth/"))
+        pattern = next(k for k in blocks if k.startswith("^/api/auth/"))
+        self.assertIn("limit_req zone=danbyte_auth burst=5 nodelay;", auth)
+        for path in ("login", "mfa/verify", "mfa/resend", "password-reset",
+                     "password-reset/confirm", "set-password"):
+            self.assertRegex(f"/api/auth/{path}/", pattern)
+        for path in ("/api/auth/sso/okta/callback/", "/api/auth/sso/okta/acs/",
+                     "/api/auth/login/x/", "/api/auth/logout/", "/api/auth/password/change/"):
+            self.assertNotRegex(path, pattern)
+        self.assertRegex(text, r"location\s+=\s+/api/csp-report/\s*\{")
+        csp = blocks["/api/csp-report/"]
+        self.assertIn("limit_req zone=danbyte_csp burst=20 nodelay;", csp)
+        self.assertIn("client_max_body_size 16k;", csp)
+        api_headers = set(re.findall(r"proxy_set_header[^;]+;", blocks["/api/"]))
+        for body in (auth, csp):
+            self.assertIn("limit_req_status 429;", body)
+            self.assertEqual(set(re.findall(r"proxy_set_header[^;]+;", body)), api_headers)
+            self.assertIn("proxy_pass http://127.0.0.1:8000;", body)
+        self.assertRegex(_server_level(TEMPLATES[1].read_text()),
+                         r"error_page 429 @danbyte_rate_limited;")
+        self.assertRegex(text, r"location @danbyte_rate_limited \{\s+internal;\s+"
+                               r"default_type application/json;\s+return 429 '\{\"detail\":")
+        self.assertNotIn("proxy_intercept_errors", text)   # Django's own 429s pass through
+        # The dev template fronts a dev server; the Docker image keys on
+        # whatever address its port publishing leaves (docs: Hardening).
+        for path in (TEMPLATES[0], DOCKER):
+            self.assertNotIn("limit_req", path.read_text())
+
     def test_tls_is_mozilla_intermediate(self):
         # #497: every TLS server says which protocols and suites it takes,
         # rather than leaving it to the distro's nginx.conf: TLS 1.2 and 1.3,
@@ -593,3 +631,124 @@ class NginxTlsTests(SimpleTestCase):
             self.assertEqual(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
                                         ciphers="ECDHE-RSA-AES128-SHA"),
                              ("TLSv1.2", "ECDHE-RSA-AES128-SHA"))
+
+
+class _CountingUpstream:
+    """A stand-in backend: 200 for everything it is sent, except a 429 of
+    its own on /api/own-429/, counting the requests that reach it."""
+
+    def __enter__(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        seen = self.seen = []
+        forwarded = self.forwarded = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def _answer(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                if n:
+                    self.rfile.read(n)
+                seen.append(self.path)
+                forwarded.append(self.headers.get("X-Forwarded-For"))
+                body = b'{"detail":"django says slow down"}' if self.path == "/api/own-429/" \
+                    else b"{}"
+                self.send_response(429 if self.path == "/api/own-429/" else 200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = do_POST = _answer
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@skipUnless(shutil.which("nginx") and shutil.which("openssl"), "nginx and openssl needed")
+class NginxRateLimitTests(SimpleTestCase):
+    """The rendered production site, running: what one client address gets
+    when it floods the sign-in endpoints and the CSP sink (#499)."""
+
+    def _send(self, port, method, path, body=b"", xff=None):
+        import http.client
+        import json
+        import ssl
+
+        ctx = ssl._create_unverified_context()  # this run's own certificate
+        c = http.client.HTTPSConnection("127.0.0.1", port, context=ctx, timeout=10)
+        headers = {"Content-Type": "application/json", **({"X-Forwarded-For": xff} if xff else {})}
+        c.request(method, path, body=body, headers=headers)
+        r = c.getresponse()
+        raw = r.read()
+        c.close()
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            data = raw
+        return r.status, r.msg, data
+
+    def test_one_address_is_held_to_the_limits(self):
+        with _CountingUpstream() as up:
+            site = re.sub(r"127\.0\.0\.1:(8000|8001|3000)", f"127.0.0.1:{up.port}",
+                          TEMPLATES[1].read_text())
+            with _RunningSite(site) as s:
+                codes = [self._send(s.https, "POST", "/api/auth/login/", b"{}")[0]
+                         for _ in range(10)]
+                # burst=5 nodelay: six straight away, then about one a second
+                self.assertEqual(codes[:6], [200] * 6, codes)
+                self.assertGreaterEqual(codes.count(429), 3, codes)
+                status, headers, data = self._send(s.https, "POST", "/api/auth/password-reset/",
+                                                   b"{}")
+                self.assertEqual(status, 429)       # one budget for every sign-in endpoint
+                self.assertEqual(headers["Content-Type"], "application/json")
+                self.assertIn("Too many attempts", data["detail"])
+                self.assertIsNotNone(headers["Strict-Transport-Security"])
+                # what is not a sign-in endpoint is not held back
+                for path in ("/api/me/", "/api/auth/sso/okta/callback/", "/api/auth/logout/"):
+                    with self.subTest(path=path):
+                        self.assertEqual(self._send(s.https, "GET", path)[0], 200)
+                # Django's own 429 passes through with its own body
+                status, _, data = self._send(s.https, "GET", "/api/own-429/")
+                self.assertEqual((status, data), (429, {"detail": "django says slow down"}))
+                self.assertEqual(up.seen.count("/api/auth/login/"), codes.count(200))
+
+                report = b'{"csp-report":{"blocked-uri":"x"}}'
+                self.assertEqual(self._send(s.https, "POST", "/api/csp-report/",
+                                            b"x" * 20000)[0], 413)
+                codes = [self._send(s.https, "POST", "/api/csp-report/", report)[0]
+                         for _ in range(30)]
+                # the 413 above took one of the 21 (burst=20 nodelay)
+                self.assertEqual(codes[:20], [200] * 20, codes)
+                self.assertIn(429, codes[20:])
+
+    def test_behind_a_proxy_real_ip_keys_on_the_client(self):
+        # The documented http-level real_ip lines, with this test standing in
+        # for the proxy at 127.0.0.1: each client gets its own budget, and
+        # Django sees the client at the right of X-Forwarded-For, so a
+        # DANBYTE_TRUSTED_PROXY_DEPTH of 1 or 2 finds it.
+        real_ip = ("    set_real_ip_from 127.0.0.1;\n    real_ip_header X-Forwarded-For;\n"
+                   "    real_ip_recursive on;\n")
+        with _CountingUpstream() as up:
+            site = re.sub(r"127\.0\.0\.1:(8000|8001|3000)", f"127.0.0.1:{up.port}",
+                          TEMPLATES[1].read_text())
+            with _RunningSite(site, http=real_ip) as s:
+                a = [self._send(s.https, "POST", "/api/auth/login/", b"{}", xff="192.0.2.10")[0]
+                     for _ in range(7)]
+                self.assertEqual(a[:6], [200] * 6, a)
+                self.assertEqual(a[6], 429, a)
+                self.assertEqual(self._send(s.https, "POST", "/api/auth/login/", b"{}",
+                                            xff="192.0.2.20")[0], 200)
+                # a client that forges an address of its own is still itself
+                self.assertEqual(self._send(s.https, "POST", "/api/auth/login/", b"{}",
+                                            xff="198.51.100.1, 192.0.2.10")[0], 429)
+                self.assertEqual(up.forwarded[0], "192.0.2.10, 192.0.2.10")

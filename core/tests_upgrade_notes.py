@@ -324,6 +324,28 @@ class RealNotesTests(APITestCase):
         with patch("core.upgrade_notes._site_config", return_value=None):
             self.assertFalse(un._tls_pinned())
 
+    def test_the_rate_limit_step_spells_out_the_templates_lines(self):
+        # #499: every line by hand is one of the template's, and the note
+        # hides once the site limits the sign-in endpoints.
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-rate-limits")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        lines = {ln.strip() for ln in template.splitlines()}
+        for line in note.snippet.splitlines():
+            if line.strip() and not line.lstrip().startswith("#"):
+                with self.subTest(line=line):
+                    self.assertIn(line.strip(), lines)
+        with patch("core.upgrade_notes._site_config", return_value=template):
+            self.assertTrue(un._rate_limited())
+        with patch("core.upgrade_notes._site_config",
+                   return_value=template.replace("limit_req zone=danbyte_auth", "# limit")):
+            self.assertFalse(un._rate_limited())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._rate_limited())
+
     def test_the_certificate_unit_alone_comes_from_the_bundle_too(self):
         # The root steps leave the unit out on an install without nginx;
         # make in the same bundle installs it for this install's directory.
