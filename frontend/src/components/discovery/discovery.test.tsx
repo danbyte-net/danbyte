@@ -19,6 +19,7 @@ import { VIA_LABELS } from "@/components/columns/vulnerability-match-columns"
 import { subjectOf } from "@/components/vulnerabilities/exception-rules"
 import { engineLabel, HostStatusBadge, RunStatusBadge } from "./status"
 import { OsBuildNote, usePackagesTab } from "./packages-tab"
+import { pinOptions } from "./profile-dialog"
 
 const { apiMock, canDoMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -323,5 +324,21 @@ describe("the Packages tab", () => {
     })
     await waitFor(() => expect(apiMock).toHaveBeenCalled())
     expect(result.current.show).toBe(false)
+  })
+})
+
+describe("profile Credential picker", () => {
+  it("offers every kind a profile can pin, grouped by kind", () => {
+    const opts = pinOptions([
+      { id: "w", name: "win", kind: "winrm_cert" },
+      { id: "p", name: "ops", kind: "ssh_password" },
+      { id: "h", name: "web", kind: "https_login" },
+      { id: "k", name: "deploy", kind: "ssh_key" },
+    ])
+    expect(opts).toEqual([
+      { value: "k", label: "deploy", group: "SSH key" },
+      { value: "p", label: "ops", group: "SSH password" },
+      { value: "w", label: "win", group: "WinRM certificate" },
+    ])
   })
 })

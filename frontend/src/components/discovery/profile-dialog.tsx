@@ -60,6 +60,25 @@ import type { ObjectPickerSpec } from "@/components/object-picker"
 // profile never runs.
 
 type Ref = { id: string; label: string }
+
+/** The shared-credential kinds a profile can pin: their order, and the
+ * group they are listed under in the picker. */
+const PIN_KINDS: Partial<Record<string, [number, string]>> = {
+  ssh_key: [0, "SSH key"],
+  ssh_password: [1, "SSH password"],
+  winrm_cert: [2, "WinRM certificate"],
+}
+
+/** The Credential picker's options: every kind a profile can pin, grouped
+ * by kind in the order they are tried. */
+export function pinOptions(
+  creds: readonly { id: string; name: string; kind: string }[]
+): { value: string; label: string; group: string }[] {
+  return creds
+    .filter((c) => PIN_KINDS[c.kind])
+    .sort((a, b) => PIN_KINDS[a.kind]![0] - PIN_KINDS[b.kind]![0])
+    .map((c) => ({ value: c.id, label: c.name, group: PIN_KINDS[c.kind]![1] }))
+}
 type ScopeKey =
   | "sites"
   | "prefixes"
@@ -314,14 +333,11 @@ export function ProfileDialog({
     enabled: open && scan,
   }).data?.nmap.enabled
   const shared = useQuery({
-    queryKey: ["shared-credentials", "ssh"],
+    queryKey: ["shared-credentials", "discovery"],
     queryFn: () =>
       apiAll<SharedCredential>("/api/monitoring/shared-credentials/?enabled=1"),
     enabled: open && canDo("sharedcredential", "view"),
-    select: (d) =>
-      d.results.filter(
-        (c) => c.kind === "ssh_key" || c.kind === "ssh_password"
-      ),
+    select: (d) => pinOptions(d.results),
   })
 
   useEffect(() => {
@@ -766,21 +782,13 @@ export function ProfileDialog({
               onChange={setSharedId}
               noneLabel="Host's own, then matching shared"
               options={[
-                ...(shared.data ?? []).map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                })),
+                ...(shared.data ?? []),
                 // Keep a pinned one the list does not carry (disabled since).
                 ...(profile?.shared_credential &&
                 !(shared.data ?? []).some(
-                  (c) => c.id === profile.shared_credential!.id
+                  (c) => c.value === profile.shared_credential!.id
                 )
-                  ? [
-                      {
-                        value: profile.shared_credential.id,
-                        label: profile.shared_credential.name,
-                      },
-                    ]
+                  ? pinOptions([profile.shared_credential])
                   : []),
               ]}
               error={fieldErrors.shared_credential_id}

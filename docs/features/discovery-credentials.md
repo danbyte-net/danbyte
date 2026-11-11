@@ -46,9 +46,10 @@ tried:
 
 1. the host's own device credential of each kind that is switched on (one
    per kind, the first by name);
-2. the shared credential the profile pins under **Credential** - used for
-   every host of the profile whatever its scope says, while it is enabled
-   and of a kind Discovery uses;
+2. the shared credential the profile pins under **Credential** (the picker
+   lists enabled SSH keys, SSH passwords and WinRM certificates, grouped by
+   kind) - used for every host of the profile whatever its scope says,
+   while it is enabled and its transport is switched on;
 3. every enabled shared credential whose scope matches the host: lowest
    **Weight** first (default 100); on a tie the scope that names more
    dimensions, then the name.

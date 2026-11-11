@@ -95,7 +95,7 @@ profiles):
    **Window from** / **Window to** limit when runs may start (server time).
 7. **Hosts at once** (default 4) and **Per-host timeout** (default 60 s).
 8. **Credential**: leave *Host's own, then matching shared*, or pin one shared
-   credential.
+   credential (an SSH key, SSH password or WinRM certificate).
 9. **Authorisation**: who approved reading these hosts, and the reference
    (a ticket, a change number). Saving records you and the time.
 10. **Create**. The profile's page opens.
