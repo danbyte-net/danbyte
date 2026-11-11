@@ -76,6 +76,41 @@ class ParserTests(SimpleTestCase):
         prtg = next(p for p in f.programs if p.name == "PRTG Network Monitor")
         self.assertEqual((prtg.version, prtg.publisher), ("24.3.100.1361", "Paessler AG"))
 
+    def test_server_2012_keeps_its_nt_version(self):
+        from types import SimpleNamespace
+
+        from vulnerabilities import evaluate
+        from vulnerabilities.msrc_products import resolve_fact
+
+        from .os_platform import version_of
+
+        base = {"schema": 1, "current_build": "9600", "ubr": 21620,
+                "caption": "Microsoft Windows Server 2012 R2 Standard",
+                "edition_id": "ServerStandard", "installation_type": "Server"}
+        for version in ("6.3.9600", ""):
+            with self.subTest(version=version):
+                f = win.parse_inventory(json.dumps({**base, "version": version}))
+                self.assertEqual(f.full_build, "6.3.9600.21620")
+        f = win.parse_inventory(json.dumps({**base, "current_build": "9200", "ubr": 25000,
+                                            "caption": "Microsoft Windows Server 2012"}))
+        self.assertEqual(f.full_build, "6.2.9200.25000")
+        self.assertEqual(win.nt_version("", "20348"), "10.0")
+        self.assertEqual(win.nt_version("", "7601"), "")
+        facts = win.os_facts(win.parse_inventory(json.dumps({**base, "version": "6.3.9600"})))
+        fact = SimpleNamespace(
+            os_id="windows", version_id=facts["version_id"], build="9600", ubr=21620,
+            pretty_name=facts["pretty_name"], edition="ServerStandard",
+            display_version="", installation_type="Server", architecture="64-bit")
+        self.assertEqual(version_of(fact), "6.3.9600.21620")
+        # Microsoft's fixed builds for 2012 R2 are on 6.3.9600 (msrc_2025_oct.json).
+        hp = resolve_fact(fact)
+        self.assertEqual((hp.keys, hp.line, hp.flag), (("windows_server_2012_r2",),
+                                                       "6.3.9600", ""))
+        msrc = {"2025-Oct": {"products": {"windows_server_2012_r2": {
+            "fixed": ["6.3.9600.22824"]}}}}
+        self.assertEqual(evaluate.match_msrc(msrc, hp.keys, hp.line, hp.ubr)[0], "range")
+        self.assertIsNone(evaluate.match_msrc(msrc, hp.keys, hp.line, 22824)[0])
+
     def test_one_program_is_a_bare_object(self):
         doc = {"schema": 1, "current_build": "26100", "ubr": None, "version": "10.0.26100",
                "programs": {"name": "Only", "version": "1", "arch": "x64"},

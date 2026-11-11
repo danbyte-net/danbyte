@@ -5,7 +5,8 @@ cycle.
 ``version_of(fact)`` is the host's ``software_version`` from the facts -
 ``/etc/os-release``'s ``VERSION_ID`` as the distribution writes it
 (``13`` for Debian 13, ``22.04`` for Ubuntu, ``9.4`` for a RHEL-like,
-``3.22.1`` for Alpine) and Windows' full build (``10.0.20348.2700``, the
+``3.22.1`` for Alpine) and Windows' full build (``10.0.20348.2700``;
+``6.3.9600.21620`` on Server 2012 R2 - the NT version the host reports, the
 form Microsoft's fixed builds are compared in). :func:`record_versions`
 writes it with source ``discovery`` through the one automatic writer
 (``api.software_versions.record``): never over a person's value, and
@@ -24,6 +25,8 @@ import re
 from dataclasses import dataclass
 
 from django.utils.text import slugify
+
+from danbyte_checks.inventory_windows import nt_version
 
 #: os-release ``ID`` → (the name people write, endoflife.date products to
 #: try in order, how many version parts name a release).
@@ -51,7 +54,11 @@ def version_of(fact) -> str:
         return ""
     if fact.os_id == "windows":
         if fact.build and fact.ubr is not None:
-            return f"10.0.{fact.build}.{fact.ubr}"
+            # The NT version the host reported (6.3 for Server 2012 R2),
+            # never a guessed 10.0.
+            head = nt_version(fact.version_id or "", fact.build)
+            if head:
+                return f"{head}.{fact.build}.{fact.ubr}"
         return (fact.version_id or "")[:64]
     return (fact.version_id or "").strip()[:64]
 

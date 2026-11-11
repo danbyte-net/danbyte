@@ -116,10 +116,34 @@ class WindowsFacts:
     @property
     def full_build(self) -> str:
         """``10.0.20348.2340``: major.minor from the version, build, UBR."""
-        head = ".".join(self.version.split(".")[:2]) if self.version else "10.0"
         if not self.build:
             return ""
+        head = nt_version(self.version, self.build)
+        if not head:
+            return ""
         return f"{head}.{self.build}" + (f".{self.ubr}" if self.ubr is not None else "")
+
+
+#: NT versions of the builds before Windows 10 (build 10240), for a host
+#: whose CIM version string was not read: Windows Server 2012 is 6.2.9200,
+#: 2012 R2 6.3.9600 (Microsoft's fixed builds are written so too).
+_OLD_NT = {"9200": "6.2", "9600": "6.3"}
+
+
+def nt_version(version: str, build: str) -> str:
+    """The NT ``major.minor`` of a Windows host: from its version string
+    (CIM's ``Version``, ``6.3.9600``) when it names this build, else from
+    the build - ``10.0`` from Windows 10 / Server 2016 (build 10240) on,
+    ``6.2`` / ``6.3`` for Server 2012 / 2012 R2, blank for anything else."""
+    if not (build or "").isdigit():
+        return ""
+    parts = (version or "").split(".")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit() and \
+            (len(parts) < 3 or parts[2] == build):
+        return f"{int(parts[0])}.{int(parts[1])}"
+    if int(build) >= 10240:
+        return "10.0"
+    return _OLD_NT.get(str(int(build)), "")
 
 
 def parse_ver(text: str) -> str | None:

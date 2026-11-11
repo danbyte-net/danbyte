@@ -143,7 +143,7 @@ The host's **software version** is set from its facts, with source
 | Ubuntu | `22.04` | `22.04` |
 | RHEL, Rocky Linux, AlmaLinux | `9.4` | `9` |
 | Alpine | `3.22.1` | `3.22` |
-| Windows | `10.0.20348.2849` (build and UBR) | none |
+| Windows | `10.0.20348.2849` (NT version, build and UBR; `6.3.9600.22824` on Server 2012 R2) | none |
 
 A version a person typed or imported is never overwritten. Discovery ranks
 above SNMP, virtualization and Oxidized, so its value replaces theirs and

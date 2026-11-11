@@ -175,7 +175,7 @@ capped.
 |---|---|
 | Product, edition | `Windows Server 2022 Standard`, `ServerStandard` |
 | Release | `21H2` (`DisplayVersion`, else `ReleaseId`) |
-| Build and UBR | kept together as `10.0.20348.2849`; this is also the host's running version |
+| Build and UBR | kept together with the NT version the host reports, as `10.0.20348.2849` (`6.3.9600.22824` on Server 2012 R2, `6.2.9200.…` on 2012); this is also the host's running version |
 | Installation type | `Server` (shown as *Desktop Experience*), `Server Core`, `Client` |
 | OS architecture | `x64`, `arm64` or `x86`, whatever spelling the host used |
 | Hotfixes | KB numbers with description and install date, at most 2,000 |
