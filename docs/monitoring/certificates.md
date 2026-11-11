@@ -437,6 +437,22 @@ drives three steps:
    returns `202`; the order moves `processing → valid` (or `invalid` with the
    error recorded on the row).
 
+When an order fails, its error says why, one line per name, from what the
+CA reported on that name's challenge:
+
+```text
+The CA could not validate 2 names:
+db.example.net: http-01 - unauthorized - Invalid response from http://db.example.net/.well-known/acme-challenge/…: 404
+www.example.net: http-01 - dns - no valid A records found for www.example.net
+```
+
+A poll that runs out of time (90 seconds) says what was still pending
+(`Still pending: db.example.net.`) and is left `errored`, so finalizing
+again retries; an order the CA refused to issue carries the CA's reason.
+Each line is the CA's problem type and detail with control characters
+removed and its length capped - it is untrusted remote text and is shown as
+plain text, on the request's order panel and on the site-certificate card.
+
 ### Private CAs and trust
 
 An internal CA such as step-ca serves its ACME directory on a TLS
@@ -600,6 +616,8 @@ fingerprint - and offers the ways to replace it:
   [renewal](#renewal) beat re-orders it and every renewal is installed the
   same way. A secret store must be on: the site's private key lives there
   between renewals, like every request's.
+  See [HTTP-01 and host names](#http-01-and-host-names) for what the
+  names need.
 - **Self-signed** - one click regenerates a pair for every name the site is
   reached as (what it serves now plus the public host), 825 days like the
   installer's; *Self-signed with other names* takes a list. *Renew
@@ -635,6 +653,44 @@ Private keys pass through the app in memory and into that one 0600 file;
 they are never stored on a row (the inventory refuses key material, above)
 and never returned by the API. From a shell, `manage.py site_certificate
 status|self-signed|upload|acme` drives the same flow.
+
+### HTTP-01 and host names
+
+The CA validates HTTP-01 by fetching
+`http://<name>/.well-known/acme-challenge/<token>` with the certificate's
+name as the `Host` header. Danbyte answers that path for **any** host name:
+a small middleware, first in the stack, serves it before Django checks the
+host against `ALLOWED_HOSTS`. So a name does **not** have to be in
+`ALLOWED_HOSTS` for its certificate to be issued - before 0.20 it did, and
+the CA got a `400` (the order then failed on that name).
+
+The exemption is exactly that path and nothing else:
+
+- `GET` or `HEAD` only (anything else is `405`);
+- a token of 22 to 128 base64url characters (`A-Z a-z 0-9 - _`), the
+  shape RFC 8555 gives tokens; any other shape is not exempt and gets the
+  normal host check;
+- the answer is the key authorization of a **pending** HTTP-01 challenge on
+  an open order, as `text/plain`, `no-store` - no session, no CSRF, no
+  login. An unknown, finished or malformed token is a `404`; nothing can be
+  listed.
+
+Every other path under a host that is not in `ALLOWED_HOSTS` is still
+refused with `400`, exactly as before. Danbyte never adds names to
+`ALLOWED_HOSTS` itself.
+
+What a name still needs:
+
+- **DNS** pointing at this server, and **port 80** reachable from the CA
+  (for Let's Encrypt, from the internet). The installer's nginx site is the
+  only site on port 80, so it receives every host name and hands the
+  challenge path to Danbyte; a hand-managed nginx needs a
+  `location /.well-known/acme-challenge/` that proxies to the app on the
+  server block that receives those names (for a name it has no
+  `server_name` for, that is the `default_server`).
+- **`ALLOWED_HOSTS`**, only so people can *open* the site under that name
+  once it has the certificate. The ACME dialog says when a name you typed
+  is not in `ALLOWED_HOSTS`; it does not stop the order.
 
 ## Certificate authorities and chains
 

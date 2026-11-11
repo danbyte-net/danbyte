@@ -287,6 +287,11 @@ listens on `127.0.0.1:8000`; Vite on `:3000` proxies to it.
 ALLOWED_HOSTS=localhost,127.0.0.1,<your-vpn-fqdn>,<your-vpn-ip>
 ```
 
+One path is answered for any host: `/.well-known/acme-challenge/<token>`,
+so a CA can validate a name for the site certificate before that name is
+added here. Everything else under an unlisted host is a `400`. See
+[HTTP-01 and host names](../monitoring/certificates.md#http-01-and-host-names).
+
 ## Backups (`DANBYTE_BACKUP_DIR`, `DANBYTE_SKIP_BACKUP`)
 
 `DANBYTE_BACKUP_DIR` is where the default local backup target and the

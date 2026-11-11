@@ -151,23 +151,97 @@ class AcmeHookTests(APITestCase):
             tenant=self.tenant, common_name="db.example", key_ref="csr/x",
         )
 
-    def test_challenge_content_answers_only_pending_tokens(self):
-        order = AcmeOrder.objects.create(
+    TOKEN = "abc-DEF_123" + "x" * 32  # 43 characters, like a real token
+
+    def _http01_order(self, token=TOKEN, *, status=AcmeOrder.Status.PENDING, content=None):
+        return AcmeOrder.objects.create(
             tenant=self.tenant, issuer=self.issuer, request=self.req,
-            challenge_type=AcmeOrder.Challenge.HTTP01, status=AcmeOrder.Status.PENDING,
+            challenge_type=AcmeOrder.Challenge.HTTP01, status=status,
             challenges=[{"identifier": "db.example", "type": "http-01", "status": "pending",
-                         "token": "abc-DEF_123", "path": "/.well-known/acme-challenge/abc-DEF_123",
-                         "content": "abc-DEF_123.thumb"}],
+                         "token": token, "path": f"/.well-known/acme-challenge/{token}",
+                         "content": content if content is not None else f"{token}.thumb"}],
         )
-        self.assertEqual(site_tls.challenge_content("abc-DEF_123"), "abc-DEF_123.thumb")
+
+    def test_challenge_content_answers_only_pending_tokens(self):
+        t = self.TOKEN
+        order = self._http01_order()
+        self.assertEqual(site_tls.challenge_content(t), f"{t}.thumb")
         self.assertIsNone(site_tls.challenge_content("nope"))
         self.assertIsNone(site_tls.challenge_content("../etc"))
-        r = self.client.get("/.well-known/acme-challenge/abc-DEF_123")
-        self.assertEqual((r.status_code, r.content), (200, b"abc-DEF_123.thumb"))
+        r = self.client.get(f"/.well-known/acme-challenge/{t}")
+        self.assertEqual((r.status_code, r.content), (200, f"{t}.thumb".encode()))
+        self.assertEqual(r["Content-Type"], "text/plain; charset=utf-8")
+        self.assertEqual(r["Cache-Control"], "no-store")
+        self.assertNotIn("Set-Cookie", r)
         self.assertEqual(self.client.get("/.well-known/acme-challenge/nope").status_code, 404)
         order.status = AcmeOrder.Status.VALID
         order.save()
-        self.assertEqual(self.client.get("/.well-known/acme-challenge/abc-DEF_123").status_code, 404)
+        self.assertEqual(self.client.get(f"/.well-known/acme-challenge/{t}").status_code, 404)
+
+    @override_settings(ALLOWED_HOSTS=["danbyte.example"])
+    def test_any_host_gets_the_challenge_and_nothing_else(self):
+        # The CA asks with the certificate's name as Host - a name not in
+        # ALLOWED_HOSTS - and must get the token; every other path under that
+        # Host is still refused by Django's host check.
+        t = self.TOKEN
+        self._http01_order()
+        new = "new-name.example"
+        r = self.client.get(f"/.well-known/acme-challenge/{t}", HTTP_HOST=new)
+        self.assertEqual((r.status_code, r.content), (200, f"{t}.thumb".encode()))
+        unknown = "Z" * 43
+        self.assertEqual(self.client.get(f"/.well-known/acme-challenge/{unknown}",
+                                         HTTP_HOST=new).status_code, 404)
+        for path in ("/api/health/", "/admin/", "/.well-known/acme-challenge/",
+                     f"/.well-known/acme-challenge/{t}/", f"/.well-known/acme-challenge/{t}x/y",
+                     "/.well-known/security.txt"):
+            self.assertEqual(self.client.get(path, HTTP_HOST=new).status_code, 400, path)
+        # A name in ALLOWED_HOSTS behaves as before.
+        r = self.client.get(f"/.well-known/acme-challenge/{t}", HTTP_HOST="danbyte.example")
+        self.assertEqual(r.status_code, 200)
+
+    @override_settings(ALLOWED_HOSTS=["danbyte.example"])
+    def test_token_shape_is_strict(self):
+        new = "new-name.example"
+        for bad in ("a" * 21, "a" * 129, "abc.def" + "a" * 20, "a" * 30 + "%2F", "a" * 30 + "="):
+            self._http01_order(bad)
+            r = self.client.get(f"/.well-known/acme-challenge/{bad}", HTTP_HOST=new)
+            self.assertEqual(r.status_code, 400, bad)  # not ours: Django's host check
+            self.assertIsNone(site_tls.challenge_content(bad))
+        for good in ("a" * 22, "a" * 128):
+            self._http01_order(good)
+            r = self.client.get(f"/.well-known/acme-challenge/{good}", HTTP_HOST=new)
+            self.assertEqual(r.status_code, 200, good)
+
+    @override_settings(ALLOWED_HOSTS=["danbyte.example"])
+    def test_get_and_head_only(self):
+        t = self.TOKEN
+        self._http01_order()
+        new = "new-name.example"
+        r = self.client.head(f"/.well-known/acme-challenge/{t}", HTTP_HOST=new)
+        self.assertEqual((r.status_code, r.content), (200, b""))
+        self.assertEqual(r["Content-Length"], str(len(f"{t}.thumb")))
+        for method in ("post", "put", "delete"):
+            r = getattr(self.client, method)(f"/.well-known/acme-challenge/{t}", HTTP_HOST=new)
+            self.assertEqual(r.status_code, 405, method)
+            self.assertEqual(r["Allow"], "GET, HEAD")
+
+    def test_only_a_key_authorization_is_served(self):
+        t = self.TOKEN
+        self._http01_order(content="<script>alert(1)</script>")
+        self.assertIsNone(site_tls.challenge_content(t))
+        self.assertEqual(self.client.get(f"/.well-known/acme-challenge/{t}").status_code, 404)
+
+    def test_dns01_orders_are_not_served(self):
+        t = self.TOKEN
+        order = self._http01_order()
+        order.challenge_type = AcmeOrder.Challenge.DNS01
+        order.save()
+        self.assertIsNone(site_tls.challenge_content(t))
+
+    def test_status_lists_the_names_django_answers_for(self):
+        with override_settings(ALLOWED_HOSTS=["danbyte.example", ".lan"]), \
+                mock.patch.object(site_tls, "served", return_value=None):
+            self.assertEqual(site_tls.status()["allowed_hosts"], ["danbyte.example", ".lan"])
 
     def test_issued_order_for_the_site_is_dropped(self):
         row = SiteCertificate.load()

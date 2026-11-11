@@ -34,6 +34,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { SettingsCard } from "@/components/settings/settings-card"
 import { ConfirmButton } from "@/components/settings/plugins-section"
+import { answersFor } from "@/lib/allowed-hosts"
 
 /** What `/api/system/site-certificate/` answers. */
 export interface SiteCertificateStatus {
@@ -58,6 +59,8 @@ export interface SiteCertificateStatus {
   dropped_sha256: string
   dropped_at: string | null
   dropped_reason: string
+  /** ALLOWED_HOSTS as Django sees it - the names the site answers for. */
+  allowed_hosts: string[]
   apply: {
     unit_installed: boolean
     /** The app can write the drop folder (an installer's umask can leave it root-only). */
@@ -305,9 +308,11 @@ export function SiteCertificateCard() {
           <p className="mt-1 text-xs text-muted-foreground">
             Order {d.acme.order.status} ({d.acme.order.challenge_type},{" "}
             {d.acme.order.identifiers.join(", ")})
-            {d.acme.order.error && (
-              <span className="text-destructive"> - {d.acme.order.error}</span>
-            )}
+          </p>
+        )}
+        {d.acme?.order?.error && (
+          <p className="mt-1 text-xs break-words whitespace-pre-line text-destructive">
+            {d.acme.order.error}
           </p>
         )}
       </div>
@@ -376,6 +381,7 @@ export function SiteCertificateCard() {
       {dialog === "acme" && (
         <AcmeDialog
           host={d.host}
+          allowedHosts={d.allowed_hosts}
           email={me.email ?? ""}
           secretStore={d.secret_store}
           onClose={() => setDialog(null)}
@@ -549,12 +555,14 @@ function SelfSignedDialog({
 
 function AcmeDialog({
   host,
+  allowedHosts,
   email: initialEmail,
   secretStore,
   onClose,
   onDone,
 }: {
   host: string
+  allowedHosts: string[]
   email: string
   secretStore: boolean
   onClose: () => void
@@ -574,6 +582,10 @@ function AcmeDialog({
   const chosen = rows.find((i) => i.id === issuer)
   const isLE = issuer === LE
   const hostIsIp = /^[0-9.]+$|:/.test(host)
+  const unanswered = text
+    .split(/[\s,]+/)
+    .map((n) => n.trim())
+    .filter((n) => n && !answersFor(n, allowedHosts))
   const m = useMutation({
     mutationFn: () =>
       api("/api/system/site-certificate/acme/", {
@@ -692,6 +704,14 @@ function AcmeDialog({
               <p className="text-xs text-muted-foreground">
                 A public CA signs DNS names, not addresses - put the site's DNS
                 name here.
+              </p>
+            )}
+            {unanswered.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Not in ALLOWED_HOSTS: {unanswered.join(", ")}. The certificate
+                can still be issued, but the site will not open under{" "}
+                {unanswered.length === 1 ? "that name" : "those names"} until it
+                is added.
               </p>
             )}
           </div>

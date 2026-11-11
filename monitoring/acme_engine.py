@@ -930,16 +930,21 @@ def _finalize_with(acme, jwk, orderr, order: AcmeOrder):
         order.error = message
         order.save(update_fields=["status", "error", "updated_at"])
         raise AcmeUpstreamError(message, code="acme_ca_refused") from exc
-    except (acme_errors.ValidationError, acme_errors.TimeoutError,
-            acme_errors.IssuanceError, acme_errors.PollError) as exc:
-        # A poll timeout must land in a terminal state, not stay PROCESSING -
-        # otherwise the UI polls it forever with no retry. ERRORED (vs
-        # INVALID) marks "didn't complete", retryable.
-        order.status = AcmeOrder.Status.ERRORED
-        order.error = str(exc)
-        order.save(update_fields=["status", "error", "updated_at"])
-        raise AcmeError(f"ACME order did not complete: {exc}") from exc
-    except Exception as exc:  # noqa: BLE001 - narrowed by _explain
+    except Exception as exc:  # noqa: BLE001 - narrowed below
+        if isinstance(exc, acme_errors.Error) and (
+            isinstance(exc, acme_errors.PollError)
+            or not isinstance(exc, acme_errors.ClientError)
+        ):
+            # Validation failed, a poll timed out, or the CA would not issue.
+            # It must land in a terminal state with the CA's reasons, not stay
+            # PROCESSING - otherwise the UI polls it forever with no retry.
+            status, message = _order_failure(acme, orderr, exc)
+            message = message[:_MAX_REASON_CHARS]
+            order.status = status
+            order.error = message
+            order.save(update_fields=["status", "error", "updated_at"])
+            log.info("ACME order %s did not complete: %s", order.pk, message)
+            raise AcmeUpstreamError(message, code="acme_order_failed") from exc
         err = _explain(exc, order.issuer, "finalize")
         if err is None:
             raise
@@ -966,6 +971,97 @@ def _finalize_with(acme, jwk, orderr, order: AcmeOrder):
 
     on_issued(order, finalized.fullchain_pem)
     return cert_row
+
+
+#: At most this many identifiers (and characters) go into an order's error.
+_MAX_REASON_LINES = 20
+_MAX_REASON_CHARS = 4000
+
+
+def _identifier(authzr) -> str:
+    return clean_remote_text(getattr(authzr.body.identifier, "value", "") or "?", 255)
+
+
+def _status_name(status) -> str:
+    return str(getattr(status, "name", None) or status or "")
+
+
+def _authz_reasons(authzrs) -> list[str]:
+    """One line per failed identifier: ``name: http-01 - <the CA's problem>``.
+    The text comes from the CA: cleaned, capped, plain."""
+    lines = []
+    for authzr in list(authzrs)[:_MAX_REASON_LINES]:
+        ident = _identifier(authzr)
+        errs = [
+            f"{clean_remote_text(getattr(c.chall, 'typ', '') or '?', 20)} - "
+            f"{describe_problem(c.error)}"
+            for c in getattr(authzr.body, "challenges", None) or []
+            if getattr(c, "error", None) is not None
+        ]
+        if errs:
+            lines += [f"{ident}: {e}" for e in errs[:3]]
+        elif _status_name(authzr.body.status) not in ("valid", "pending"):
+            lines.append(f"{ident}: {_status_name(authzr.body.status) or 'failed'} - "
+                         "the CA gave no reason")
+    return lines
+
+
+def _fresh_authorizations(acme, orderr) -> list | None:
+    """The order's authorizations as the CA sees them now, or None when they
+    cannot be fetched (the reason then rests on what is known)."""
+    try:
+        out = []
+        for authzr in list(orderr.authorizations)[:_MAX_REASON_LINES]:
+            resp = acme._post_as_get(authzr.uri)
+            out.append(messages.AuthorizationResource(
+                body=messages.Authorization.from_json(resp.json()), uri=authzr.uri))
+        return out
+    except Exception:  # noqa: BLE001 - best effort, the main error stands
+        return None
+
+
+def _names(n: int) -> str:
+    return "1 name" if n == 1 else f"{n} names"
+
+
+def _order_failure(acme, orderr, exc) -> tuple[str, str]:
+    """``(status, message)`` for an order that stopped: which identifiers
+    failed and the CA's reason for each, or what was still pending at a
+    timeout. Never an empty message."""
+    if isinstance(exc, acme_errors.ValidationError):
+        lines = _authz_reasons(exc.failed_authzrs)
+        head = f"The CA could not validate {_names(len(exc.failed_authzrs))}:"
+        return AcmeOrder.Status.INVALID, "\n".join([head, *lines])
+    current = _fresh_authorizations(acme, orderr)
+    failed = _authz_reasons(current) if current else []
+    if isinstance(exc, (acme_errors.TimeoutError, acme_errors.PollError)):
+        pending = [
+            _identifier(a) for a in current or []
+            if _status_name(a.body.status) == "pending"
+        ]
+        if failed:
+            head = f"The CA could not validate {_names(len(failed))}:"
+            return AcmeOrder.Status.INVALID, "\n".join([head, *failed])
+        if pending:
+            return AcmeOrder.Status.ERRORED, (
+                f"The CA had not validated every name after {_POLL_SECONDS} seconds. "
+                f"Still pending: {', '.join(pending)}. Check that the challenge is "
+                "published and reachable from the CA, then finalize again."
+            )
+        if current is None:
+            return AcmeOrder.Status.ERRORED, (
+                f"The CA did not finish the order within {_POLL_SECONDS} seconds, and "
+                "its authorizations could not be read back. Finalize again to retry."
+            )
+        return AcmeOrder.Status.ERRORED, (
+            f"The CA validated every name but had not issued the certificate after "
+            f"{_POLL_SECONDS} seconds. Finalize again to retry."
+        )
+    if isinstance(exc, acme_errors.IssuanceError):
+        head = f"The CA would not issue the certificate: {describe_problem(exc.error)}"
+    else:
+        head = clean_remote_text(exc) or "The CA stopped the order without a reason."
+    return AcmeOrder.Status.INVALID, "\n".join([head, *failed])
 
 
 def finalize_order(order: AcmeOrder):

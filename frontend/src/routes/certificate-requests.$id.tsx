@@ -541,7 +541,9 @@ function OrderCard({
       )}
 
       {order.error && (
-        <p className="mt-2 text-[12px] text-destructive">{order.error}</p>
+        <p className="mt-2 text-[12px] break-words whitespace-pre-line text-destructive">
+          {order.error}
+        </p>
       )}
 
       {order.challenges.length > 0 && order.status !== "valid" && (

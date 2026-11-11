@@ -168,6 +168,9 @@ else:
 INSTALLED_APPS.append("plugins.apps.PluginsConfig")
 
 MIDDLEWARE = [
+    # HTTP-01 tokens for the site certificate answer for any Host, before
+    # anything validates it; every other path is untouched (core/middleware.py).
+    "core.middleware.AcmeChallengeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # GZip sits high so it compresses responses after every other middleware
     # has written them. Cuts the space-map picker's ~300 KB Tailwind HTML

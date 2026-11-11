@@ -11,6 +11,7 @@ import os
 import socket
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -268,3 +269,100 @@ class OrderErrorTests(AcmeErrorsBase):
         order.refresh_from_db()
         self.assertEqual(order.status, AcmeOrder.Status.ERRORED)
         self.assertIn("server log", order.error)
+
+
+def _failed_authz(domain, detail, *, typ="urn:ietf:params:acme:error:unauthorized"):
+    from acme import challenges, messages
+
+    return SimpleNamespace(
+        uri=f"https://ca/authz/{domain}",
+        body=SimpleNamespace(
+            identifier=SimpleNamespace(value=domain),
+            status=messages.STATUS_INVALID,
+            challenges=[SimpleNamespace(chall=challenges.HTTP01(token=b"\x01" * 16),
+                                        error=messages.Error(typ=typ, detail=detail))],
+        ),
+    )
+
+
+class OrderFailureReasonTests(OrderErrorTests):
+    """A failed order says which identifier failed and why - never an
+    empty line after a colon."""
+
+    def finalize_with(self, side_effect, *, fresh=None, fetch_fails=False):
+        from acme import messages
+
+        order = self._order(order_url="https://ca/order/1",
+                            challenge_type=AcmeOrder.Challenge.HTTP01)
+        authzs = [SimpleNamespace(uri="https://ca/authz/a", body=SimpleNamespace(
+            identifier=SimpleNamespace(value="svc.example"),
+            status=messages.STATUS_VALID, challenges=[]))]
+        orderr = SimpleNamespace(uri="https://ca/order/1", authorizations=authzs,
+                                 body=SimpleNamespace(status=messages.STATUS_PENDING))
+        fake = mock.Mock()
+        fake.poll_and_finalize.side_effect = side_effect
+        if fetch_fails:
+            fake._post_as_get.side_effect = OSError("gone")
+        elif fresh is not None:
+            fake._post_as_get.return_value.json.return_value = fresh
+        with mock.patch.object(eng, "_client", return_value=(fake, mock.Mock())), \
+                mock.patch.object(eng, "_reload_order", return_value=orderr):
+            eng.finalize_order_job(order.id)
+        order.refresh_from_db()
+        return order
+
+    def test_validation_failure_lists_each_identifier_with_the_cas_reason(self):
+        from acme import errors
+
+        exc = errors.ValidationError([
+            _failed_authz("svc.example", "Invalid response from http://svc.example/"
+                          ".well-known/acme-challenge/x: 400\x07"),
+            _failed_authz("www.example", "no such host", typ="urn:ietf:params:acme:error:dns"),
+        ])
+        order = self.finalize_with(exc)
+        self.assertEqual(order.status, AcmeOrder.Status.INVALID)
+        lines = order.error.splitlines()
+        self.assertEqual(lines[0], "The CA could not validate 2 names:")
+        self.assertTrue(lines[1].startswith("svc.example: http-01 - unauthorized - Invalid"))
+        self.assertIn(": 400", lines[1])
+        self.assertNotIn("\x07", order.error)
+        self.assertEqual(lines[2], "www.example: http-01 - dns - no such host")
+
+    def test_a_long_reason_is_capped(self):
+        from acme import errors
+
+        order = self.finalize_with(errors.ValidationError(
+            [_failed_authz("svc.example", "x" * 5000)]))
+        self.assertLess(len(order.error), 500)
+        self.assertTrue(order.error.endswith("…"))
+
+    def test_timeout_names_what_is_still_pending(self):
+        from acme import errors
+
+        fresh = {"identifier": {"type": "dns", "value": "svc.example"}, "status": "pending",
+                 "challenges": [{"type": "http-01", "url": "https://ca/ch/1",
+                                 "status": "pending", "token": "a" * 43}]}
+        order = self.finalize_with(errors.TimeoutError(), fresh=fresh)
+        self.assertEqual(order.status, AcmeOrder.Status.ERRORED)
+        self.assertIn("Still pending: svc.example", order.error)
+        self.assertIn("90 seconds", order.error)
+
+    def test_timeout_after_validation_says_so(self):
+        from acme import errors
+
+        fresh = {"identifier": {"type": "dns", "value": "svc.example"}, "status": "valid",
+                 "challenges": []}
+        order = self.finalize_with(errors.TimeoutError(), fresh=fresh)
+        self.assertIn("validated every name but had not issued", order.error)
+
+    def test_issuance_refused_and_a_bare_failure_still_say_something(self):
+        from acme import errors, messages
+
+        problem = messages.Error(typ="urn:ietf:params:acme:error:badCSR", detail="key too weak")
+        order = self.finalize_with(errors.IssuanceError(problem), fetch_fails=True)
+        self.assertEqual(order.status, AcmeOrder.Status.INVALID)
+        self.assertIn("would not issue the certificate: badCSR - key too weak", order.error)
+        for exc in (errors.TimeoutError(), errors.Error()):
+            order = self.finalize_with(exc, fetch_fails=True)
+            self.assertTrue(order.error.strip())
+            self.assertFalse(order.error.rstrip().endswith(":"), order.error)

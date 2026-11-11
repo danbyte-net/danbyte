@@ -26,6 +26,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import socket
 import ssl
 from datetime import UTC, datetime, timedelta
@@ -467,19 +468,34 @@ def on_issued(order, fullchain_pem: str) -> None:
         log.exception("site certificate: issued but could not drop the pair")
 
 
+#: An HTTP-01 token: base64url, at least 128 bits (RFC 8555 §8.1) - 22
+#: characters - and at most 128. Shared with core.middleware.
+ACME_TOKEN = re.compile(r"[A-Za-z0-9_-]{22,128}")
+ACME_CHALLENGE_PATH = re.compile(r"/\.well-known/acme-challenge/([A-Za-z0-9_-]{22,128})")
+
+
 def challenge_content(token: str) -> str | None:
     """The key authorisation for a pending HTTP-01 token, from any open
-    order - what ``/.well-known/acme-challenge/<token>`` answers."""
+    order - what ``/.well-known/acme-challenge/<token>`` answers. None for
+    anything else: a malformed token, an unknown one, a closed order."""
     from monitoring.models import AcmeOrder
 
-    if not token or len(token) > 200 or not all(c.isalnum() or c in "-_" for c in token):
+    if not isinstance(token, str) or not ACME_TOKEN.fullmatch(token):
         return None
-    for order in AcmeOrder.objects.filter(
-            challenge_type=AcmeOrder.Challenge.HTTP01,
-            status__in=[AcmeOrder.Status.PENDING, AcmeOrder.Status.PROCESSING, "ready"]):
+    orders = AcmeOrder.objects.filter(
+        challenge_type=AcmeOrder.Challenge.HTTP01,
+        status__in=[AcmeOrder.Status.PENDING, AcmeOrder.Status.PROCESSING,
+                    AcmeOrder.Status.READY],
+        challenges__contains=[{"token": token}],
+    )
+    for order in orders[:5]:
         for ch in order.challenges or []:
-            if ch.get("token") == token:
-                return ch.get("content") or None
+            if ch.get("token") == token and ch.get("type") == AcmeOrder.Challenge.HTTP01:
+                content = ch.get("content") or ""
+                # A key authorization is ``<token>.<thumbprint>``; anything
+                # else on the row is never served.
+                if content.startswith(token + ".") and len(content) <= 300:
+                    return content
     return None
 
 
@@ -506,6 +522,9 @@ def status() -> dict:
         "dropped_at": row.dropped_at,
         "dropped_reason": row.dropped_reason,
         "apply": apply_state(),
+        # The names Django answers for, so the order form can warn about a
+        # name the site would not load under once it has a certificate.
+        "allowed_hosts": [str(h) for h in getattr(settings, "ALLOWED_HOSTS", [])][:50],
         "acme": None,
     }
     if row.source == SiteCertificate.Source.ACME and row.request_id:
