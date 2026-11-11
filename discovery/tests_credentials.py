@@ -13,8 +13,8 @@ from auth_api.models import ObjectPermission, UserProfile
 from danbyte_checks import inventory as inv
 from monitoring.models import DeviceCredential, SharedCredential, SSHHostKey
 
-from . import runner
-from .models import InventoryHostResult
+from . import outposts, runner, scope
+from .models import DiscoverySettings, InventoryHostResult
 from .tests_discovery import KEY, SECRET, ApiBase, Base, FakeCollector, result
 
 OTHER_KEY = "AAAAC3NzaC1lZDI1NTE5AAAAIOtherKeyOtherKeyOtherKeyOtherKeyOtherKeyOt"
@@ -177,6 +177,126 @@ class SharedInRunTests(Base):
                             accept_new_host_keys=True)
         self.assertEqual(fake.calls, [])
         self.assertIn("may no longer accept host keys", " ".join(run.errors))
+
+
+class LoginOrderTests(Base):
+    """The host's own credentials, then the pinned one, then the matching
+    shared ones by weight; a key before a password within each, WinRM after
+    SSH; the transport switches filter; three at most."""
+
+    def setUp(self):
+        self.a = self.host("a", "10.0.0.1", site=self.site, cred=None)
+        self.p = self.profile()
+        self.p.sites.add(self.site)
+        self.row = DiscoverySettings.for_tenant(self.tenant)
+
+    def own(self, kind, name=None):
+        return DeviceCredential.objects.create(
+            tenant=self.tenant, device=self.a, name=name or kind, kind=kind, username="u",
+            secret_managed=False, secret_path=f"x/{kind}")
+
+    def shared(self, name, kind, weight=100):
+        return SharedCredential.objects.create(
+            tenant=self.tenant, name=name, kind=kind, username="u", weight=weight,
+            all_hosts=True, secret_managed=False, secret_path=f"ext/{name}")
+
+    def order(self, **kw):
+        (t,) = scope.resolve(self.p, **kw)
+        return [(x.source, x.kind) for x in t.logins]
+
+    def test_own_password_before_a_shared_key(self):
+        self.own("ssh_password")
+        self.shared("k", "ssh_key", weight=1)
+        self.assertEqual(self.order(), [("host", "ssh_password"), ("shared: k", "ssh_key")])
+
+    def test_key_before_password_within_each_group(self):
+        self.own("ssh_password")
+        self.own("ssh_key")
+        self.shared("pw", "ssh_password", weight=1)
+        self.shared("key", "ssh_key", weight=5)
+        self.assertEqual(self.order(), [("host", "ssh_key"), ("host", "ssh_password"),
+                                        ("shared: key", "ssh_key")])
+        DeviceCredential.objects.filter(device=self.a).delete()
+        self.assertEqual(self.order(), [("shared: key", "ssh_key"),
+                                        ("shared: pw", "ssh_password")])
+
+    def test_weight_orders_shared_credentials_of_a_kind(self):
+        self.shared("b", "ssh_password", weight=2)
+        self.shared("a", "ssh_password", weight=1)
+        self.assertEqual(self.order(), [("shared: a", "ssh_password"),
+                                        ("shared: b", "ssh_password")])
+
+    def test_pinned_between_own_and_matching(self):
+        self.own("ssh_password")
+        self.shared("m", "ssh_key", weight=1)
+        self.p.shared_credential = self.shared("pin", "ssh_password")
+        self.p.save()
+        self.assertEqual(self.order(), [("host", "ssh_password"),
+                                        ("shared: pin", "ssh_password"),
+                                        ("shared: m", "ssh_key")])
+
+    def test_password_switch_drops_every_password(self):
+        self.own("ssh_password")
+        self.shared("pw", "ssh_password", weight=1)
+        self.shared("key", "ssh_key", weight=5)
+        DiscoverySettings.objects.filter(pk=self.row.pk).update(ssh_password_enabled=False)
+        self.assertEqual(self.order(), [("shared: key", "ssh_key")])
+
+    def test_winrm_after_ssh_of_the_same_source_and_only_when_on(self):
+        self.own("winrm_cert")
+        self.own("ssh_password")
+        self.shared("key", "ssh_key", weight=1)
+        self.assertEqual(self.order(), [("host", "ssh_password"), ("shared: key", "ssh_key")])
+        DiscoverySettings.objects.filter(pk=self.row.pk).update(winrm_enabled=True)
+        self.assertEqual(self.order(), [("host", "ssh_password"), ("host", "winrm_cert"),
+                                        ("shared: key", "ssh_key")])
+
+    def test_three_at_most(self):
+        self.own("ssh_key")
+        self.own("ssh_password")
+        self.shared("a", "ssh_key", weight=1)
+        self.shared("b", "ssh_key", weight=2)
+        self.assertEqual(len(self.order()), 3)
+
+    def test_outposts_get_the_same_order_without_winrm(self):
+        self.own("ssh_password")
+        self.own("winrm_cert")
+        self.shared("key", "ssh_key", weight=1)
+        DiscoverySettings.objects.filter(pk=self.row.pk).update(winrm_enabled=True)
+        (t,) = scope.resolve(self.p, outpost=True)
+        self.assertEqual([(r["source"], r["transport"]) for r in outposts._login_refs(t)],
+                         [("host", "ssh_password"), ("shared: key", "ssh_key")])
+
+
+class LoginLoopTests(SimpleTestCase):
+    """``read_with_logins``: an SSH port that does not answer moves on to
+    the next login on another transport, skipping the SSH ones between."""
+
+    def test_unreachable_ssh_skips_to_winrm(self):
+        import asyncio
+
+        calls = []
+
+        async def collect(address, **kw):
+            calls.append("ssh")
+            return inv.InventoryResult(inv.UNREACHABLE, "OSError")
+
+        async def winrm(address, **kw):
+            calls.append("winrm")
+            return inv.InventoryResult(inv.OK)
+
+        async def observe(*a, **kw):
+            return None
+
+        logins = [{"transport": "ssh_password", "credential": {"username": "u"}},
+                  {"transport": "ssh_key", "credential": {"username": "u"}},
+                  {"transport": "winrm", "credential": {}}]
+        result, _obs, used, tried = asyncio.run(inv.read_with_logins(
+            "10.0.0.1", logins, known_hosts=None, first_use=False, timeout=5,
+            collect=collect, observe=observe, collect_winrm=winrm))
+        self.assertEqual(calls, ["ssh", "winrm"])
+        self.assertEqual((result.status, used), (inv.OK, 2))
+        self.assertEqual([t["outcome"] for t in tried], [inv.UNREACHABLE, "skipped", inv.OK])
 
 
 class OutcomeTests(SimpleTestCase):

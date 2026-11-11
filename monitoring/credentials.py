@@ -5,13 +5,17 @@ order", so every consumer (Discovery today; Connect, the SSH terminal and
 others can adopt it) applies the same rule:
 
 1. the host's own :class:`~monitoring.models.DeviceCredential` of each
-   fitting kind, in the order of ``kinds`` (one per kind: the first by
-   name);
+   fitting kind (one per kind: the first by name);
 2. a shared credential the caller pinned (an inventory profile's
    ``shared_credential``), when it is enabled and of a fitting kind;
 3. every enabled :class:`~monitoring.models.SharedCredential` whose scope
    matches the host: lowest ``weight`` first, ties broken by the most
    specific scope (the most dimensions named), then the name.
+
+Within each of the three groups the kinds come in the order of ``kinds``
+(Discovery: SSH key, SSH password, WinRM certificate), so a key is tried
+before a password of the same source, and a shared key never before the
+host's own password.
 
 An empty scope never matches unless the set says ``all_hosts``.
 
@@ -178,7 +182,9 @@ class CredentialResolver:
         if self.pinned is not None:
             out.append(Login(self.pinned, f"shared: {self.pinned.name}"))
             seen.add(self.pinned.pk)
-        for row in self.shared_for(host):
+        rank = {k: i for i, k in enumerate(self.kinds)}
+        # Stable: weight order holds among the shared credentials of a kind.
+        for row in sorted(self.shared_for(host), key=lambda r: rank.get(r.kind, len(rank))):
             if row.pk not in seen:
                 out.append(Login(row, f"shared: {row.name}"))
                 seen.add(row.pk)

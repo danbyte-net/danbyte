@@ -606,8 +606,10 @@ def may_try_next(transport: str, fall_through: bool, status: str,
 async def read_with_logins(address: str, logins: list[dict], *, known_hosts: bytes | None,
                            first_use: bool, timeout: float, collect, observe,
                            collect_winrm=None, server_name: str = ""):
-    """Read one host trying ``logins`` most secure first (:func:`may_try_next`
-    says when the next may follow). With ``first_use`` the first SSH login
+    """Read one host trying ``logins`` in the order given - the host's own
+    credentials, the pinned one, the matching shared ones, a key before a
+    password within each (``monitoring.credentials``) - :func:`may_try_next`
+    says when the next may follow. With ``first_use`` the first SSH login
     takes the host's key and every later one is pinned to it. A host whose
     key was refused has the key it presents read (a key exchange, no login)
     so a person can review it.
@@ -651,7 +653,12 @@ async def read_with_logins(address: str, logins: list[dict], *, known_hosts: byt
                       "reason": (result.message or "")[:200]})
         if result.status in (UNREACHABLE, TIMEOUT):
             dead.add(fam)
-        nxt = logins[i + 1].get("transport") if i + 1 < len(logins) else None
+        later = [x.get("transport") or "" for x in logins[i + 1:]]
+        if result.status in (UNREACHABLE, TIMEOUT):
+            # The next login that can still answer: one on a transport
+            # family that did answer (the loop marks the dead ones skipped).
+            later = [x for x in later if ("winrm" if x == "winrm" else "ssh") not in dead]
+        nxt = later[0] if later else None
         if not may_try_next(transport, bool(login.get("fall_through")), result.status, nxt):
             break
     observed = None

@@ -190,8 +190,8 @@ def login_dicts(creds) -> list[dict]:
 
 async def _read_all(work: list, concurrency: int, timeout: float, collect, observe,
                     collect_winrm=None):
-    """``work``: ``(target, mode)`` - ``read`` tries the target's logins
-    most secure transport first (``danbyte_checks.inventory.read_with_logins``,
+    """``work``: ``(target, mode)`` - ``read`` tries the target's logins in
+    order (``danbyte_checks.inventory.read_with_logins``,
     the loop Outposts run too), ``observe`` only reads the host key (a key
     exchange, no login). Returns ``(target, result, observed, login,
     attempts)``."""

@@ -50,11 +50,12 @@ tried:
    **Weight** first (default 100); on a tie the scope that names more
    dimensions, then the name.
 
-The list is then put in **transport order** - every SSH key first, then
-every SSH password, then every WinRM certificate - keeping the order above
-inside each transport. So a shared SSH key is tried before the host's own
-SSH password. At most the first **three** are kept. A host with no accepted
-SSH host key loses its SSH logins at this point
+Within each of those three groups a key comes before a password, and a
+WinRM certificate after both (WinRM only while it is switched on). Inside a
+kind the order above holds, so among the matching shared credentials the
+lowest weight goes first. So the host's own SSH password is tried before
+any shared SSH key. At most the first **three** are kept. A host with no
+accepted SSH host key loses its SSH logins at this point
 ([below](#host-keys)); when nothing is left it is *Host key not accepted*,
 and when the list was empty to begin with it is *No credential*.
 
@@ -62,7 +63,7 @@ Then the logins are tried in order, and the next one only when:
 
 | The login answered | Next one tried |
 |---|---|
-| Unreachable, timed out | only on the other transport family (SSH down → WinRM, and the other way) |
+| Unreachable, timed out | only on the other transport family (SSH down → the next WinRM login, and the other way); the logins on the family that did not answer are skipped |
 | Refused, after an SSH key | yes: no password was sent yet |
 | Refused, after a password or certificate | only when its shared credential has **Try the next if refused** on |
 | Anything else (read, host key refused, unsupported, failed) | no |

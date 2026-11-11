@@ -32,8 +32,9 @@ profile's tenant only:
    ``host_key_refused`` only SSH logins, and no accepted host key
                     (decision 5)
 
-Transports are tried most secure first - SSH key, SSH password, WinRM over
-HTTPS - each only while the tenant has it on (``DiscoverySettings``); the
+Within each source (the host's own, the pinned one, the matching shared
+ones) the transports come SSH key, SSH password, WinRM over HTTPS, each
+only while the tenant has it on (``DiscoverySettings``); the
 password switch governs every password login, Linux and Windows alike. A
 host with no accepted SSH key can still be read over WinRM, whose server
 certificate is verified instead. ``Target.extra["skipped"]`` says why each
@@ -98,7 +99,7 @@ class Target:
     skip: str = ""            # a HOST_STATUSES word, or "" to read it
     message: str = ""
     credential: object = None
-    #: The logins that may be tried, most secure transport first
+    #: The logins that may be tried, in order
     #: (``credentials.Login``); ``credential`` is the first.
     logins: list = field(default_factory=list)
     known_hosts: bytes | None = None
@@ -271,8 +272,9 @@ def resolve(profile, *, user=None, now=None, outpost: bool = False) -> list[Targ
         if (label, str(host.pk)) in in_maintenance:
             t.skip, t.message = "maintenance", "In an open maintenance event."
             continue
-        rank = {k: i for i, k in enumerate(kinds)}
-        logins = sorted(resolver.logins(host), key=lambda x: rank.get(x.kind, 99))[:MAX_TRIES]
+        # The resolver's order: the host's own, the pinned one, the matching
+        # shared ones; a key before a password within each.
+        logins = resolver.logins(host)[:MAX_TRIES]
         skipped = [{"transport": tr, "outcome": "skipped", "reason": why}
                    for tr, why in off.items()]
         have = {KIND_TRANSPORT.get(x.kind) for x in logins}

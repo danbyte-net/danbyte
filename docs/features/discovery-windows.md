@@ -24,8 +24,9 @@ Linux hosts ([Package inventory](discovery-packages.md)).
 
 ## Transports
 
-Danbyte tries the most secure way first, and only the transports that are
-switched on:
+Danbyte tries only the transports that are switched on. The host's own
+credentials come first, then the profile's pinned one, then the matching
+shared ones; within each, in this order:
 
 | Order | Transport | Credential kind | Default |
 |---|---|---|---|
