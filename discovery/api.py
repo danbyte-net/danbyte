@@ -872,6 +872,7 @@ def os_dict(f: HostOsFact | None) -> dict | None:
             "pretty_name": f.pretty_name, "ecosystem": f.ecosystem,
             "package_manager": f.package_manager, "build": f.build, "ubr": f.ubr,
             "edition": f.edition, "display_version": f.display_version,
+            "installation_type": f.installation_type, "architecture": f.architecture,
             "hotfixes": f.hotfixes or [], "features": f.features or [],
             "transport": f.transport, "collected_at": f.collected_at}
 

@@ -18555,6 +18555,10 @@ export interface HostOsFact {
   ubr: number | null
   edition: string
   display_version: string
+  /** Windows: registry InstallationType (`Server` = Desktop Experience,
+   * `Server Core`, `Client`) and the OS architecture (`x64`, `arm64`, `x86`). */
+  installation_type: string
+  architecture: string
   hotfixes: { id: string; description: string; installed_on: string }[]
   features: string[]
   transport: InventoryTransport | ""

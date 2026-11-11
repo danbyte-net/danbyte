@@ -197,6 +197,17 @@ class ProductTableTests(SimpleTestCase):
         self.assertEqual(hp.keys, ("windows_server_2022", "windows_server_2022_core"))
         self.assertEqual(hp.flag, "")
 
+    def test_architecture_spellings(self):
+        from .msrc_products import normalise_arch
+
+        for raw, want in (("64-bit", "x64"), ("AMD64", "x64"), ("x64", "x64"),
+                          ("64 Bit", "x64"), ("64 bits", "x64"), ("x86_64", "x64"),
+                          ("ARM 64-bit Processor", "arm64"), ("ARM64", "arm64"),
+                          ("32-bit", "x86"), ("x86", "x86"), ("", ""), ("ARM", ""),
+                          ("Itanium", "")):
+            with self.subTest(raw):
+                self.assertEqual(normalise_arch(raw), want)
+
     def test_one_build_line_two_products(self):
         server = resolve(os_id="windows", version_id="10.0.26100.33000", build="26100",
                          ubr=33000, caption="Microsoft Windows Server 2025 Datacenter")
@@ -460,6 +471,31 @@ class MatchTests(Base):
         self.assertEqual({r.cve.vuln_id for r in self.open()},
                          {"CVE-2026-100223", "CVE-2026-105520"})
 
+    def test_installation_type_picks_the_variant(self):
+        # A record Microsoft wrote for the Desktop Experience only.
+        recs, _, _ = parse(NOV)
+        rec = copy.deepcopy(by_id(recs)["CVE-2026-105520"])
+        rec["vuln_id"] = "CVE-2026-199999"
+        rec["msrc"]["products"] = {"windows_server_2022":
+                                   rec["msrc"]["products"]["windows_server_2022"]}
+        rec["products"] = {S2022}
+        store.store_records([rec], source="msrc", tracked=products.tracked())
+        core = Device.objects.create(tenant=self.tenant, name="core", site=self.site)
+        desk = Device.objects.create(tenant=self.tenant, name="desk", site=self.site)
+        fact(self.tenant, core, installation_type="Server Core")
+        fact(self.tenant, desk, installation_type="Server")
+        matching.recompute(self.tenant)
+
+        def cves(host):
+            return {r.cve.vuln_id for r in self.open().filter(device=host)}
+
+        both = {"CVE-2026-100223", "CVE-2026-105520"}
+        self.assertEqual(cves(core), both)
+        self.assertEqual(cves(desk), both | {"CVE-2026-199999"})
+        # Unknown installation type: both variants, as before - a CVE only
+        # one variant lists does not match.
+        self.assertEqual(cves(self.srv), both)
+
     def test_discovery_off_resolves(self):
         matching.recompute(self.tenant)
         self.assertTrue(self.open().exists())
@@ -533,6 +569,13 @@ class MatchTests(Base):
         patched = text.replace('"ubr":2849', '"ubr":5870')
         self.assertTrue(packages.store(self.tenant, host, run,
                                        windows_result(patched))["changed"])
+        stored = HostOsFact.objects.get(device=host)
+        self.assertEqual((stored.installation_type, stored.architecture), ("Server", "x64"))
+        core = patched.replace('"installation_type":"Server"',
+                               '"installation_type":"Server Core"')
+        self.assertTrue(packages.store(self.tenant, host, run,
+                                       windows_result(core))["changed"])
+        self.assertEqual(HostOsFact.objects.get(device=host).installation_type, "Server Core")
 
 
 class MatchApiTests(APITestCase, Base):

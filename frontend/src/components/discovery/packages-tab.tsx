@@ -54,6 +54,13 @@ export function usePackagesTab(kind: PackageHost, id: string) {
   return { show: on && count > 0, count }
 }
 
+/** Windows `InstallationType`: a server's variant; nothing for a client. */
+export function installationLabel(value: string | undefined): string {
+  if (value === "Server") return "Desktop Experience"
+  if (value === "Server Core" || value === "Nano Server") return value
+  return ""
+}
+
 const OS_BUILD_FLAG_TIPS: Record<string, string> = {
   product_unknown:
     "This build could not be placed among Microsoft's Windows products, so Microsoft's data is not matched to it.",
@@ -124,6 +131,12 @@ export function PackagesTab({ kind, id }: { kind: PackageHost; id: string }) {
               </span>
             )}
             {os.display_version && <span>{os.display_version}</span>}
+            {installationLabel(os.installation_type) && (
+              <span>{installationLabel(os.installation_type)}</span>
+            )}
+            {os.architecture && (
+              <span className="font-mono">{os.architecture}</span>
+            )}
             {os.os_id === "windows" && (
               <span className="flex items-center gap-1">
                 {os.hotfixes.length}{" "}

@@ -25,6 +25,7 @@ from vulnerabilities.identifiers import (
     ecosystem_release,
     osv_ecosystems,
 )
+from vulnerabilities.msrc_products import normalise_arch
 
 from .models import HostOsFact, HostPackage
 
@@ -127,7 +128,7 @@ _COMPARED = ("version", "source_name", "source_version", "ecosystem", "match_nam
 #: OS facts whose change re-matches the host (the Windows build line, UBR
 #: and what tells its product apart).
 _OS_COMPARED = ("os_id", "version_id", "build", "ubr", "edition", "display_version",
-                "pretty_name")
+                "pretty_name", "installation_type", "architecture")
 
 
 def store(tenant, host, run, result, now=None, transport="") -> dict:
@@ -152,6 +153,8 @@ def store(tenant, host, run, result, now=None, transport="") -> dict:
                 "build": str(win.get("build") or "")[:16], "ubr": win.get("ubr"),
                 "edition": str(win.get("edition") or "")[:64],
                 "display_version": str(win.get("display_version") or "")[:16],
+                "installation_type": str(win.get("installation_type") or "").strip()[:32],
+                "architecture": normalise_arch(str(win.get("architecture") or "")),
                 "hotfixes": list(win.get("hotfixes") or []),
                 "features": list(win.get("features") or []),
                 "transport": transport[:16], "collected_at": now, "run": run}

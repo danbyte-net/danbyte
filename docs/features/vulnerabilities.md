@@ -665,11 +665,15 @@ release to its build line, and the host's caption, edition and release
 | Windows 11 22H2, 23H2, 24H2, 25H2, 26H1, 26H2 (x64, ARM64) | `10.0.22621`, `10.0.22631`, `10.0.26100`, `10.0.26200`, `10.0.28000`, `10.0.26300` |
 
 Desktop Experience and Server Core are separate products, as are the CPU
-architectures of a client release. Discovery does not store the
-installation type or the architecture yet, so a host keeps every variant of
-its release, and a CVE matches only when **every** variant agrees it is
-affected. Microsoft lists Desktop and Core with the same fixed build for
-nearly every CVE; when they disagree the CVE does not match.
+architectures of a client release. Discovery stores the registry's
+`InstallationType` (`Server` is Desktop Experience, `Server Core`) and the
+OS architecture (kept as `x64`, `arm64` or `x86`, whatever spelling the host
+used), so a Core host is matched only against Microsoft's Server Core
+products and a Windows 11 ARM64 host only against the ARM64 ones. When
+either is not known (an older read, an installation type Danbyte does not
+recognise) the host keeps every variant of its release, and a CVE matches
+only when **every** variant agrees it is affected. A change of either fact
+re-matches the host.
 
 **Never a guess.** A host gets no OS-build match, and its Packages tab says
 *OS build not matched*, when:

@@ -315,6 +315,13 @@ class HostOsFact(models.Model):
     display_version = models.CharField(max_length=16, blank=True, default="", db_default="")
     hotfixes = models.JSONField(default=list, blank=True, db_default=[])
     features = models.JSONField(default=list, blank=True, db_default=[])
+    #: Windows: the registry's ``InstallationType`` as the host wrote it
+    #: (``Server`` is Desktop Experience, ``Server Core``, ``Client``) and
+    #: the OS architecture in the product table's spelling (``x64``,
+    #: ``arm64``, ``x86``); blank when not known.
+    installation_type = models.CharField(max_length=32, blank=True, default="",
+                                         db_default="")
+    architecture = models.CharField(max_length=8, blank=True, default="", db_default="")
     #: How it was read (an InventoryHostResult transport).
     transport = models.CharField(max_length=16, blank=True, default="", db_default="")
     collected_at = models.DateTimeField()

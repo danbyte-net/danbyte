@@ -345,9 +345,11 @@ For every host read, Danbyte keeps:
   and its version, a package URL, and when it was first and last seen.
 - **Windows**: the product (`Windows Server 2022 Standard`), edition,
   release (`21H2`), build and UBR (kept as `10.0.20348.2849`), the
-  installed hotfixes (KB numbers) and server features, and how the host
-  was read. The **Packages** tab shows the build, release and hotfix count
-  above the list, and *N open OS-build CVEs* (or *OS build not matched*)
+  installation type (Desktop Experience or Server Core), the OS
+  architecture (`x64`, `arm64`, `x86`), the installed hotfixes (KB numbers)
+  and server features, and how the host was read. The **Packages** tab
+  shows the build, release, installation type, architecture and hotfix
+  count above the list, and *N open OS-build CVEs* (or *OS build not matched*)
   for [Windows builds](#windows-builds).
 - **Windows programs** from the Uninstall keys, as packages of type
   `generic` (`pkg:generic/windows/<name>@<version>?arch=x64`) with their

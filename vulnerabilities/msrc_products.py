@@ -186,15 +186,23 @@ def _install(installation_type: str, edition: str) -> str:
     return ""
 
 
-def _arch(architecture: str) -> str:
+def normalise_arch(architecture: str) -> str:
+    """One spelling for a host's OS architecture, the product table's:
+    ``64-bit`` / ``AMD64`` / ``x64`` -> ``x64``, ``ARM 64-bit Processor`` /
+    ``ARM64`` -> ``arm64``, ``32-bit`` / ``x86`` -> ``x86``; blank for
+    anything else. CIM's ``OSArchitecture`` is localised (``64 Bit``,
+    ``64 bits``), so the digits decide."""
     a = (architecture or "").strip().lower()
-    if "arm" in a and "64" in a:
-        return "arm64"
-    if a in ("64-bit", "x64", "amd64"):
+    if not a or len(a) > 64:
+        return ""
+    if "arm" in a or "aarch64" in a:
+        return "arm64" if "64" in a else ""
+    if "64" in a:
         return "x64"
-    if a in ("32-bit", "x86"):
+    if "32" in a or "86" in a:
         return "x86"
     return ""
+
 
 
 def resolve(*, os_id: str = "", version_id: str = "", build: str = "", ubr=None,
@@ -242,7 +250,7 @@ def resolve(*, os_id: str = "", version_id: str = "", build: str = "", ubr=None,
         install = _install(installation_type, edition)
         picked = [p for p in variants if p.install == install] if install else variants
     else:
-        arch = _arch(architecture)
+        arch = normalise_arch(architecture)
         picked = [p for p in variants if p.arch == arch] if arch else variants
     if not picked:
         # A Core host of a release Microsoft lists only as Desktop (or an

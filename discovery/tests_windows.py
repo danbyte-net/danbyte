@@ -63,6 +63,7 @@ class ParserTests(SimpleTestCase):
         self.assertEqual(f.edition, "ServerStandard")
         self.assertEqual(f.display_version, "21H2")
         self.assertEqual(f.caption, "Microsoft Windows Server 2022 Standard")
+        self.assertEqual((f.installation_type, f.architecture), ("Server", "64-bit"))
         self.assertEqual([h["id"] for h in f.hotfixes], ["KB5044024", "KB5012170", "KB5044281"])
         self.assertIn("Windows PowerShell 5.1", f.features)
         names = [(p.name, p.arch) for p in f.programs]
@@ -242,6 +243,11 @@ class TransportTests(Base):
         self.assertEqual((fact.os_id, fact.build, fact.ubr, fact.transport),
                          ("windows", "20348", 2849, "winrm"))
         self.assertEqual(fact.version_id, "10.0.20348.2849")
+        # Stored in the product table's spelling; resolves to Desktop only.
+        self.assertEqual((fact.installation_type, fact.architecture), ("Server", "x64"))
+        from vulnerabilities.msrc_products import resolve_fact
+
+        self.assertEqual(resolve_fact(fact).keys, ("windows_server_2022",))
         self.assertEqual(len(fact.hotfixes), 3)
         prtg = HostPackage.objects.get(device=self.a, name="PRTG Network Monitor")
         self.assertEqual((prtg.purl_type, prtg.arch, prtg.publisher, prtg.ecosystem),
