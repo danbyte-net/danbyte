@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import type {
   DiscoveryFinding,
+  FindingEvidence,
   FindingKind,
   ObservedService,
   ServiceConfidence,
@@ -12,6 +13,7 @@ import { dash } from "@/components/cells/dash"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Badge } from "@/components/ui/badge"
 import { InfoTip } from "@/components/ui/info-tip"
+import { TruncatedText } from "@/components/ui/truncated-text"
 
 // Service scan (#451 B3): one column factory each for observed services
 // (open ports a scan found) and the review queue's findings.
@@ -241,21 +243,108 @@ export function buildObservedServiceColumns(): ColumnDef<
   ]
 }
 
+function proposalText(f: DiscoveryFinding): string {
+  const p = f.proposal
+  if (f.kind === "service") return p.name ?? ""
+  if (f.kind === "software")
+    return [p.application?.name ?? p.application_name, p.version]
+      .filter(Boolean)
+      .join(" ")
+  return p.identifier ?? ""
+}
+
+function evidenceText(e: FindingEvidence): string {
+  return e.banner || e.rule || e.service_name || ""
+}
+
+/** The review queue, read left to right: where, which port, what is
+ * proposed, how sure, from what, the evidence (the elastic column), when.
+ * Actions stay pinned at the right edge. */
 export function buildFindingColumns(
   opts: { actions?: (f: DiscoveryFinding) => React.ReactNode } = {}
 ): ColumnDef<DiscoveryFinding, unknown>[] {
   const cols: ColumnDef<DiscoveryFinding, unknown>[] = [
     selectionColumn<DiscoveryFinding>(),
     {
+      id: "host",
+      accessorFn: (f) => f.host?.name ?? f.evidence.at(0)?.address ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Host" />,
+      cell: ({ row }) => {
+        const f = row.original
+        const first = f.evidence.at(0)
+        return (
+          <span className="flex max-w-[8rem] flex-col text-xs leading-tight whitespace-nowrap">
+            {f.host ? (
+              <TruncatedText title={f.host.name}>
+                <Host
+                  device={f.host.kind === "device" ? f.host : null}
+                  vm={f.host.kind === "virtual_machine" ? f.host : null}
+                />
+              </TruncatedText>
+            ) : f.evidence.length > 1 ? (
+              <span className="num">{f.evidence.length} hosts</span>
+            ) : null}
+            {first && (f.host || f.evidence.length === 1) && (
+              <span className="font-mono text-muted-foreground">
+                {first.address}
+              </span>
+            )}
+          </span>
+        )
+      },
+      meta: { label: "Host" },
+    },
+    {
+      id: "port",
+      accessorFn: (f) => f.proposal.port ?? f.evidence.at(0)?.port ?? 0,
+      header: ({ column }) => <SortHeader column={column} label="Port" />,
+      cell: ({ row }) => {
+        const f = row.original
+        const port = f.proposal.port ?? f.evidence.at(0)?.port
+        const protocol = f.proposal.protocol ?? f.evidence.at(0)?.protocol
+        if (port == null) return dash
+        const others = new Set(f.evidence.map((e) => e.port)).size - 1
+        return (
+          <span className="num font-mono text-xs whitespace-nowrap">
+            {protocol}/{port}
+            {others > 0 && (
+              <span className="text-muted-foreground"> +{others}</span>
+            )}
+          </span>
+        )
+      },
+      meta: { label: "Port" },
+    },
+    {
       id: "kind",
-      accessorKey: "kind",
+      accessorFn: (f) => `${f.kind} ${proposalText(f)}`,
       header: ({ column }) => <SortHeader column={column} label="Proposal" />,
-      cell: ({ row }) => (
-        <span className="flex items-center gap-1.5 text-sm whitespace-nowrap">
-          {labelOf(FINDING_KIND_LABELS, row.original.kind)}
-          {row.original.ignored && <Badge variant="secondary">Ignored</Badge>}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const f = row.original
+        const p = f.proposal
+        const what =
+          f.kind === "cpe" && p.application
+            ? `${proposalText(f)} for ${p.application.name}`
+            : proposalText(f)
+        return (
+          <span className="flex max-w-[10rem] flex-col leading-tight">
+            <TruncatedText
+              className={f.kind === "cpe" ? "font-mono text-xs" : "text-sm"}
+            >
+              {what}
+            </TruncatedText>
+            <span className="flex min-w-0 items-center gap-1">
+              <TruncatedText className="text-xs text-muted-foreground">
+                {labelOf(FINDING_KIND_LABELS, f.kind) +
+                  (f.kind === "software" && !p.application
+                    ? " · new application"
+                    : "")}
+              </TruncatedText>
+              {f.ignored && <Badge variant="secondary">Ignored</Badge>}
+            </span>
+          </span>
+        )
+      },
       meta: {
         label: "Proposal",
         facet: {
@@ -267,102 +356,6 @@ export function buildFindingColumns(
       },
     },
     {
-      id: "title",
-      accessorKey: "title",
-      header: ({ column }) => <SortHeader column={column} label="What" />,
-      cell: ({ row }) => {
-        const f = row.original
-        const p = f.proposal
-        const what =
-          f.kind === "service"
-            ? `${p.name} ${p.protocol}/${p.port}`
-            : f.kind === "software"
-              ? [p.application?.name ?? p.application_name, p.version]
-                  .filter(Boolean)
-                  .join(" ")
-              : p.identifier
-        return (
-          <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap">
-            <span className={f.kind === "cpe" ? "font-mono text-xs" : ""}>
-              {what}
-            </span>
-            {f.kind === "software" && !p.application && (
-              <Badge variant="secondary">New application</Badge>
-            )}
-            {f.kind === "cpe" && p.application && (
-              <span className="text-muted-foreground">
-                for {p.application.name}
-              </span>
-            )}
-          </span>
-        )
-      },
-      meta: { label: "What" },
-    },
-    {
-      id: "host",
-      accessorFn: (f) =>
-        f.host?.name ??
-        (f.evidence.length > 1 ? `${f.evidence.length} hosts` : ""),
-      header: ({ column }) => <SortHeader column={column} label="Host" />,
-      cell: ({ row }) => {
-        const f = row.original
-        if (f.host)
-          return (
-            <Host
-              device={f.host.kind === "device" ? f.host : null}
-              vm={f.host.kind === "virtual_machine" ? f.host : null}
-            />
-          )
-        return (
-          <span className="num text-sm whitespace-nowrap">
-            {f.evidence.length} {f.evidence.length === 1 ? "port" : "ports"}
-          </span>
-        )
-      },
-      meta: { label: "Host" },
-    },
-    {
-      id: "evidence",
-      accessorFn: (f) => f.evidence[0]?.banner ?? "",
-      header: "Evidence",
-      enableSorting: false,
-      cell: ({ row }) => {
-        const ev = row.original.evidence
-        if (ev.length === 0) return dash
-        const first = ev[0]
-        return (
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-xs">
-            <span className="font-mono whitespace-nowrap">
-              {first.address}:{first.port}
-            </span>
-            <span className="line-clamp-1 font-mono text-muted-foreground">
-              {first.banner || first.rule || first.service_name}
-            </span>
-            <InfoTip>
-              <ul className="space-y-1">
-                {ev.slice(0, 10).map((e) => (
-                  <li key={e.observed_id}>
-                    <span className="font-mono text-foreground">
-                      {e.address}:{e.port}/{e.protocol}
-                    </span>
-                    {" · "}
-                    {labelOf(SOURCE_LABELS, e.source)}
-                    {e.rule ? ` · ${e.rule}` : ""}
-                    {e.banner ? (
-                      <div className="font-mono break-all">{e.banner}</div>
-                    ) : null}
-                  </li>
-                ))}
-                {ev.length > 10 && <li>+{ev.length - 10} more</li>}
-              </ul>
-            </InfoTip>
-          </span>
-        )
-      },
-      meta: { label: "Evidence" },
-    },
-    {
       id: "confidence",
       accessorKey: "confidence",
       header: ({ column }) => <SortHeader column={column} label="Confidence" />,
@@ -371,6 +364,81 @@ export function buildFindingColumns(
         label: "Confidence",
         facet: confidenceFacet<DiscoveryFinding>(),
       },
+    },
+    {
+      id: "source",
+      accessorFn: (f) => f.evidence.at(0)?.source ?? "",
+      header: "Source",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const src = row.original.evidence.at(0)?.source
+        return src ? (
+          <span className="text-xs whitespace-nowrap">
+            {labelOf(SOURCE_LABELS, src)}
+          </span>
+        ) : (
+          dash
+        )
+      },
+      meta: {
+        label: "Source",
+        facet: {
+          kind: "enum",
+          label: "Source",
+          get: (f: DiscoveryFinding) => f.evidence.at(0)?.source ?? "",
+          formatValue: (v) => ({ label: labelOf(SOURCE_LABELS, v) }),
+        },
+      },
+    },
+    {
+      id: "evidence",
+      accessorFn: (f) => {
+        const first = f.evidence.at(0)
+        return first ? evidenceText(first) : ""
+      },
+      header: "Evidence",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const ev = row.original.evidence
+        if (ev.length === 0) return dash
+        const full = ev
+          .slice(0, 10)
+          .map(
+            (e) =>
+              `${e.address}:${e.port}/${e.protocol} · ${labelOf(SOURCE_LABELS, e.source)}` +
+              (e.rule ? ` · ${e.rule}` : "") +
+              (e.banner ? ` · ${e.banner}` : "")
+          )
+          .concat(ev.length > 10 ? [`+${ev.length - 10} more`] : [])
+          .join("; ")
+        // Zero intrinsic width: the column takes what the others leave and
+        // the text truncates inside it, the full evidence on hover.
+        return (
+          <span className="block w-0 min-w-full">
+            <TruncatedText
+              className="block font-mono text-xs text-muted-foreground"
+              title={full}
+            >
+              {evidenceText(ev[0]) || `${ev[0].address}:${ev[0].port}`}
+            </TruncatedText>
+          </span>
+        )
+      },
+      meta: { label: "Evidence" },
+    },
+    {
+      id: "last_seen",
+      accessorFn: (f) =>
+        f.evidence.reduce((m, e) => (e.last_seen > m ? e.last_seen : m), ""),
+      header: ({ column }) => <SortHeader column={column} label="Last seen" />,
+      cell: ({ row }) => {
+        const last = row.original.evidence.reduce(
+          (m, e) => (e.last_seen > m ? e.last_seen : m),
+          ""
+        )
+        return last ? <TimeCell iso={last} /> : dash
+      },
+      meta: { label: "Last seen" },
     },
   ]
   if (opts.actions) {

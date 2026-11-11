@@ -271,8 +271,10 @@ and its authors.
 ## The review queue
 
 **Findings** on the Discovery page (and on each service-scan profile and
-run) lists what the current observations propose, with the evidence -
-address, port, banner excerpt, source, rule, confidence:
+run) lists what the current observations propose. Its columns read left to
+right: host and address, port, the proposal (kind, product and version),
+confidence, source, the evidence (banner excerpt or rule, the full evidence
+of every port on hover), when it was last seen, and the actions:
 
 | Proposal | When | Accept creates | Needs |
 |---|---|---|---|

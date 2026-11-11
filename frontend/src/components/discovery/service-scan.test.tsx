@@ -40,8 +40,17 @@ describe("service scan columns", () => {
     ])
     const actions = (f: DiscoveryFinding) => f.id
     const fids = buildFindingColumns({ actions }).map((c) => c.id)
-    expect(fids).toContain("select")
-    expect(fids.at(-1)).toBe("actions")
+    expect(fids).toEqual([
+      "select",
+      "host",
+      "port",
+      "kind",
+      "confidence",
+      "source",
+      "evidence",
+      "last_seen",
+      "actions",
+    ])
     expect(buildFindingColumns().map((c) => c.id)).not.toContain("actions")
   })
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Check, Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -15,6 +16,11 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
@@ -32,6 +38,38 @@ import {
 // finding until the observation changes.
 
 type Scope = { run?: string; profile?: string }
+
+/** An icon-only row action, named by its tooltip and aria-label: the
+ * queue's columns need the width. */
+function RowAction({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7"
+          aria-label={label}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent variant="panel">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 function qs(scope: Scope, extra: Record<string, string> = {}) {
   const p = new URLSearchParams()
@@ -139,27 +177,27 @@ export function FindingsPanel({
       buildFindingColumns({
         actions: (f) =>
           may(f.kind) ? (
-            <span className="flex justify-end gap-1">
+            <span className="flex justify-end gap-0.5">
               {!f.ignored && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7"
+                <RowAction
+                  label="Accept"
                   disabled={busy}
                   onClick={() => accept.mutate([f])}
                 >
-                  Accept
-                </Button>
+                  <Check className="size-4" />
+                </RowAction>
               )}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7"
+              <RowAction
+                label={f.ignored ? "Show" : "Ignore"}
                 disabled={busy}
                 onClick={() => ignore.mutate({ rows: [f], on: !f.ignored })}
               >
-                {f.ignored ? "Show" : "Ignore"}
-              </Button>
+                {f.ignored ? (
+                  <Eye className="size-4" />
+                ) : (
+                  <EyeOff className="size-4" />
+                )}
+              </RowAction>
             </span>
           ) : null,
       }),
