@@ -92,6 +92,8 @@ import {
   usePackagesTab,
 } from "@/components/discovery/packages-tab"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
+import { HostConnectMenu } from "@/components/host-connect-menu"
+import { vmConnectHost } from "@/lib/connect-host"
 import { SSHHostKeysPanel } from "@/components/monitoring/ssh-host-keys-panel"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
@@ -212,6 +214,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       actions={
         <>
           <SpecSheetButton kind="vm" id={vm.id} />
+          <HostConnectMenu host={vmConnectHost(vm)} />
           {vm.intended && canDo("virtualmachine", "provision") && (
             <VmProvisionButton vm={vm} />
           )}

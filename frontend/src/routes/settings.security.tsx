@@ -456,12 +456,12 @@ function SshTerminalCard() {
         label="Enable the in-browser SSH terminal"
         checked={enabled}
         onChange={setEnabled}
-        hint="Off by default. When on, a user with the device 'connect' permission can open an SSH session to a device through Danbyte. Each session verifies the device's SSH host key, uses a stored credential without exposing it, and is audited."
+        hint="Off by default. When on, a user with the 'connect' permission on devices or virtual machines can open an SSH session to one through Danbyte. Each session verifies the host's SSH host key, uses a stored credential without exposing it, and is audited."
       />
       <p className="text-[11px] text-muted-foreground">
         A high-trust capability: it bridges the browser to a device shell. Grant
         the <span className="font-mono">connect</span> verb narrowly, and record
-        each device&apos;s SSH host key so sessions can be verified.
+        each host&apos;s SSH host key so sessions can be verified.
       </p>
     </SettingsCard>
   )

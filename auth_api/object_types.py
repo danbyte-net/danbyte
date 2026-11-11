@@ -77,7 +77,9 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     # The same for a virtual router modelled as a VM (#384).
     # Send an intended VM to an automation runner to be built. Danbyte
     # never calls a hypervisor's write API; the runner does the build.
-    "virtualmachine": ["view_config", "provision"],
+    # connect: the in-browser SSH terminal to the VM, as for a device. No
+    # built-in role carries it, for either type.
+    "virtualmachine": ["connect", "view_config", "provision"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
     # An agreement's service credits are money; seeing them is its own grant.

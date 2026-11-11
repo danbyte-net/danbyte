@@ -42,6 +42,15 @@ monitors it, the same monitoring pill as a device's header: the worst state
 across its addresses' checks and PRTG. Hovering it shows each source's state
 and counts.
 
+The header's **Connect** menu is the device one: the enabled [connect
+protocols](device-access.md#connect-protocols) filled from the VM (`{host}`
+is its primary IP, `{username}` one of its credentials' usernames) and, when
+the [in-browser SSH terminal](device-access.md#the-in-browser-ssh-terminal)
+is on, **Open web terminal**. It shows to holders of the **connect**
+permission on *Virtual machines*; the device verb does not reach VMs. The
+terminal authenticates with an SSH credential from the **Credentials** card
+on the Monitoring tab and verifies the VM's SSH host keys (Certificates tab).
+
 **Overview** carries the same **monitoring card** as a device's: with
 problems, full width on top with the worst three (each a link to the check or
 the PRTG sensor's panel) and a bar per source (checks, PRTG); all clear, one
@@ -80,7 +89,7 @@ interfaces a VLAN. Then:
 | **Monitoring** | Checks against its primary address, same engine as devices (`?state=` filters them, as the monitoring bar does), and one **PRTG** row while PRTG is on, whose chevron opens [in PRTG, managed, registration and planned](prtg.md#planned-changes) with **Register in PRTG** and **Add to PRTG now**. |
 | **Sensors** | Only when [PRTG monitoring](prtg.md#sensors) is on, with the sensor count: the same status strip, sensor cards and sensor panel as a device's, and before PRTG has sensors for the VM the same state cards (excluded, not in PRTG, planned with **Add to PRTG now**, needs attention, being added, no sensors yet). |
 | **SNMP** | Facts, the interface table, LLDP neighbours and the ARP table, when the VM answers SNMP. Each SNMP interface is read against the VM's own NICs by name; when the guest names a NIC differently from the hypervisor (`ether1` for `nic0`), set **SNMP name** on the interface and the row maps. |
-| **Certificates** | TLS certificates seen on its endpoints. |
+| **Certificates** | TLS certificates seen on its endpoints, and its [SSH host keys](../monitoring/ssh-host-keys.md#virtual-machines-and-discovery). |
 | **Config** | The rendered config context for this VM, with its sources in merge order, and the [Oxidized backup](oxidized.md) of a virtual router when that is on. The VM form's **Config context → Local context data** (`local_context_data` in the API) is merged last, over every matching context - see [Local context data](config-contexts.md#local-context-data). |
 | **Journal**, **Change log** | Notes you write, and the automatic change record. |
 

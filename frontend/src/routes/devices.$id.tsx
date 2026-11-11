@@ -205,7 +205,8 @@ import type { AssignIpTarget } from "@/components/assign-ip-dialog"
 import { useMe, objCan } from "@/lib/use-me"
 import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
 import { Switch } from "@/components/ui/switch"
-import { DeviceConnectMenu } from "@/components/device-connect-menu"
+import { HostConnectMenu } from "@/components/host-connect-menu"
+import { deviceConnectHost } from "@/lib/connect-host"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 import {
@@ -391,7 +392,7 @@ function Body({ device: d }: { device: Device }) {
             deviceId={d.id}
             hasCoords={d.latitude != null && d.longitude != null}
           />
-          <DeviceConnectMenu device={d} />
+          <HostConnectMenu host={deviceConnectHost(d)} />
           <PrintLabelButton
             objectType="device"
             ids={[d.id]}

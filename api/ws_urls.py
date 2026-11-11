@@ -16,4 +16,8 @@ websocket_urlpatterns = [
         r"^ws/ssh/(?P<device_id>[0-9a-fA-F-]{36})/$",
         SshTerminalConsumer.as_asgi(),
     ),
+    re_path(
+        r"^ws/ssh/vm/(?P<vm_id>[0-9a-fA-F-]{36})/$",
+        SshTerminalConsumer.as_asgi(),
+    ),
 ]

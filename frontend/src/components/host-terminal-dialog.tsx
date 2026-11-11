@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import {
   Loader2,
   Maximize2,
@@ -12,7 +14,12 @@ import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 
 import { apiAll } from "@/lib/api-all"
-import type { Device } from "@/lib/api"
+import {
+  hostFilterParam,
+  hostNoun,
+  terminalSocketPath,
+} from "@/lib/connect-host"
+import type { ConnectHost } from "@/lib/connect-host"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,26 +43,70 @@ interface SshCredentialRow {
 type Phase = "picking" | "connecting" | "open" | "error" | "closed"
 
 /**
- * The in-browser SSH terminal. Opens a WebSocket to the device shell consumer,
+ * A link to one tab of the host's own page: where its credentials live
+ * (a device's Access tab, a VM's Monitoring tab) or its SSH host keys
+ * (Certificates). Closes the dialog so the tab is visible.
+ */
+function HostTabLink({
+  host,
+  tab,
+  onNavigate,
+  children,
+}: {
+  host: ConnectHost
+  tab: "credentials" | "certificates"
+  onNavigate: () => void
+  children: ReactNode
+}) {
+  if (host.kind === "device") {
+    return (
+      <Link
+        to="/devices/$id"
+        params={{ id: host.id }}
+        search={{ tab: tab === "credentials" ? "access" : "certificates" }}
+        className="link font-medium"
+        onClick={onNavigate}
+      >
+        {children}
+      </Link>
+    )
+  }
+  return (
+    <Link
+      to="/virtual-machines/$id"
+      params={{ id: host.id }}
+      search={{ tab: tab === "credentials" ? "monitoring" : "certificates" }}
+      className="link font-medium"
+      onClick={onNavigate}
+    >
+      {children}
+    </Link>
+  )
+}
+
+/**
+ * The in-browser SSH terminal. Opens a WebSocket to the device/VM shell consumer,
  * which authorizes the session, verifies the host key, and bridges asyncssh; we
  * only render the PTY here via xterm.js. The credential's secret never reaches
  * the browser - we pass its id and the server fetches it. An unknown host key
  * surfaces an explicit "accept new host" retry (trust-on-first-use).
  */
-export function DeviceTerminalDialog({
-  device,
+export function HostTerminalDialog({
+  host,
   open,
   onOpenChange,
 }: {
-  device: Device
+  host: ConnectHost
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const noun = hostNoun(host)
+  const close = () => onOpenChange(false)
   const credsQ = useQuery({
-    queryKey: ["device-credentials", device.id, "ssh"],
+    queryKey: ["device-credentials", host.id, "ssh"],
     queryFn: () =>
       apiAll<SshCredentialRow>(
-        `/api/monitoring/device-credentials/?device=${device.id}`
+        `/api/monitoring/device-credentials/?${hostFilterParam(host)}=${host.id}`
       ),
     enabled: open,
   })
@@ -169,7 +220,7 @@ export function DeviceTerminalDialog({
       else params.set("credential", credentialId)
       if (acceptNew) params.set("accept_new", "1")
       const ws = new WebSocket(
-        `${proto}://${window.location.host}/ws/ssh/${device.id}/?${params}`
+        `${proto}://${window.location.host}${terminalSocketPath(host)}?${params}`
       )
       wsRef.current = ws
 
@@ -222,7 +273,7 @@ export function DeviceTerminalDialog({
         }
       })
     },
-    [authMode, credentialId, myUsername, myPassword, device.id, teardown]
+    [authMode, credentialId, myUsername, myPassword, host, teardown]
   )
 
   const showTerminal =
@@ -260,10 +311,10 @@ export function DeviceTerminalDialog({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <TerminalSquare className="h-4 w-4" /> Terminal - {device.name}
+            <TerminalSquare className="h-4 w-4" /> Terminal - {host.name}
           </DialogTitle>
           <DialogDescription>
-            An SSH session to this device, brokered by Danbyte. The credential's
+            An SSH session to this {noun}, brokered by Danbyte. The credential's
             secret stays on the server.
           </DialogDescription>
           {showTerminal && (
@@ -288,7 +339,21 @@ export function DeviceTerminalDialog({
             {phase === "error" && (
               <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
                 <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                <span>{message}</span>
+                <span>
+                  {message}
+                  {canAcceptHost && (
+                    <>
+                      {" "}
+                      <HostTabLink
+                        host={host}
+                        tab="certificates"
+                        onNavigate={close}
+                      >
+                        SSH host keys
+                      </HostTabLink>
+                    </>
+                  )}
+                </span>
               </div>
             )}
             {/* How to authenticate: a shared stored credential, or the
@@ -327,9 +392,19 @@ export function DeviceTerminalDialog({
                   <p className="text-sm text-muted-foreground">Loading…</p>
                 ) : sshCreds.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    This device has no stored SSH credential - add one on the
-                    device's <span className="font-medium">Access</span> tab, or
-                    use <span className="font-medium">My login</span> above.
+                    This {noun} has no stored SSH credential - add one on the{" "}
+                    {noun}&apos;s{" "}
+                    <HostTabLink
+                      host={host}
+                      tab="credentials"
+                      onNavigate={close}
+                    >
+                      {host.kind === "device"
+                        ? "Access tab"
+                        : "Credentials card"}
+                    </HostTabLink>
+                    , or use <span className="font-medium">My login</span>{" "}
+                    above.
                   </p>
                 ) : (
                   <Combobox

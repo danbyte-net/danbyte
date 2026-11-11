@@ -11,11 +11,13 @@ import {
 } from "lucide-react"
 
 import { apiAll } from "@/lib/api-all"
-import type { ConnectProtocol, Device } from "@/lib/api"
+import type { ConnectProtocol } from "@/lib/api"
 import { copyWithToast } from "@/lib/clipboard"
+import { hostFilterParam } from "@/lib/connect-host"
+import type { ConnectHost } from "@/lib/connect-host"
 import { useMe } from "@/lib/use-me"
 import { getLucideIcon } from "@/components/dynamic-icon"
-import { DeviceTerminalDialog } from "@/components/device-terminal-dialog"
+import { HostTerminalDialog } from "@/components/host-terminal-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -34,20 +36,9 @@ import {
 
 // Only the username is ever exposed by the credentials endpoint - the secret
 // stays server-side. We use it purely to offer choices for {username}.
-interface DeviceCredentialRow {
+interface CredentialRow {
   id: string
   username: string
-}
-
-/** Strip a CIDR mask ("10.0.0.1/24" → "10.0.0.1") before it lands in a URL. */
-function stripMask(ip: string): string {
-  return ip.split("/")[0]
-}
-
-/** The device's connect target: primary IP, then OOB IP, then its name. */
-function hostFor(device: Device): string {
-  const ip = device.primary_ip?.ip_address || device.oob_ip?.ip_address
-  return ip ? stripMask(ip) : device.name
 }
 
 // String.replaceAll isn't guaranteed by every tsconfig lib target, so replace
@@ -57,7 +48,7 @@ function replaceAll(s: string, from: string, to: string): string {
 }
 
 /**
- * Substitute a protocol's `url_template` for a device. When a value is absent
+ * Substitute a protocol's `url_template` for a host. When a value is absent
  * the placeholder is removed cleanly: no port collapses a trailing `:{port}`,
  * and no username collapses a dangling `{username}@` (and any resulting `//@`).
  */
@@ -109,33 +100,36 @@ function sshCommand(
 }
 
 /**
- * The device detail "Connect" dropdown. One item per enabled connect protocol,
- * each launching an OS scheme handler (ssh://, rdp://, …) with the template's
- * placeholders substituted client-side. Shown only to users who hold the device
+ * The "Connect" dropdown on a device or VM page. One item per enabled connect
+ * protocol, each launching an OS scheme handler (ssh://, rdp://, …) with the
+ * template's placeholders substituted client-side, plus the in-browser
+ * terminal when it is on. Shown only to users who hold the host type's
  * `connect` verb; the protocol catalog itself is managed in Settings.
  */
-export function DeviceConnectMenu({ device }: { device: Device }) {
+export function HostConnectMenu({ host: target }: { host: ConnectHost }) {
   const { canDo, me } = useMe()
-  const canConnect = canDo("device", "connect")
+  const canConnect = canDo(target.kind, "connect")
+  const param = hostFilterParam(target)
   const terminalEnabled = !!me.ssh_terminal_enabled
   const [open, setOpen] = useState(false)
   const [termOpen, setTermOpen] = useState(false)
 
   const protocolsQ = useQuery({
-    queryKey: ["connect-protocols", "enabled", device.id],
+    queryKey: ["connect-protocols", "enabled", target.id],
     queryFn: () =>
       apiAll<ConnectProtocol>(
-        // ?device= filters to protocols applicable to this device (untargeted,
-        // or targeted at its type/role). The server already orders by weight,name.
-        `/api/monitoring/connect-protocols/?enabled=1&device=${device.id}`
+        // ?device= / ?virtual_machine= filters to protocols applicable to this
+        // host (untargeted, or targeted at its type/role). The server already
+        // orders by weight,name.
+        `/api/monitoring/connect-protocols/?enabled=1&${param}=${target.id}`
       ),
     enabled: canConnect && open,
   })
   const credsQ = useQuery({
-    queryKey: ["device-credentials", device.id],
+    queryKey: ["device-credentials", target.id],
     queryFn: () =>
-      apiAll<DeviceCredentialRow>(
-        `/api/monitoring/device-credentials/?device=${device.id}`
+      apiAll<CredentialRow>(
+        `/api/monitoring/device-credentials/?${param}=${target.id}`
       ),
     enabled: canConnect && open,
   })
@@ -153,7 +147,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
     return out
   }, [credsQ.data])
 
-  const storeKey = `danbyte.connect.username.${device.id}`
+  const storeKey = `danbyte.connect.username.${target.id}`
   const [username, setUsername] = useState<string>(() => {
     try {
       return localStorage.getItem(storeKey) ?? ""
@@ -172,13 +166,14 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
 
   if (!canConnect) return null
 
-  const host = hostFor(device)
+  // The recorded address, else the name (resolved by the OS handler).
+  const host = target.address || target.name
   const protocols = protocolsQ.data?.results ?? []
 
   const launch = (proto: ConnectProtocol) => {
     const url = buildUrl(proto.url_template, {
       host,
-      name: device.name,
+      name: target.name,
       port: proto.default_port,
       username,
     })
@@ -261,7 +256,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
               const Icon = getLucideIcon(proto.icon) ?? Plug
               const url = buildUrl(proto.url_template, {
                 host,
-                name: device.name,
+                name: target.name,
                 port: proto.default_port,
                 username,
               })
@@ -309,8 +304,8 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
         </DropdownMenuContent>
       </DropdownMenu>
       {terminalEnabled && (
-        <DeviceTerminalDialog
-          device={device}
+        <HostTerminalDialog
+          host={target}
           open={termOpen}
           onOpenChange={setTermOpen}
         />

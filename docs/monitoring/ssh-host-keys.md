@@ -15,8 +15,11 @@ scoped to a device.
 
 A VM keeps host keys too (`"virtual_machine": "<vm-id>"` in place of
 `device`, `?virtual_machine=` on the list; the panel is on the VM's
-**Certificates** tab). They are inventory only: drift alerts attach to a
-device's address, so a VM's keys raise none.
+**Certificates** tab). Drift alerts attach to a device's address, so a VM's
+keys raise none. They pin the VM's [in-browser SSH
+terminal](../features/device-access.md#the-in-browser-ssh-terminal) the same
+way a device's keys pin its own: every recorded key is trusted, any other
+key aborts the session, and a VM with none asks you to accept the new host.
 
 [Discovery](../features/discovery.md#host-keys-and-credentials) reads a host
 only when it presents an **accepted** key - uploaded, or observed and then

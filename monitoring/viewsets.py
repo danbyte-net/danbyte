@@ -847,13 +847,14 @@ class ConnectProtocolViewSet(TenantScopedViewSet):
     """A tenant's Connect launch templates - plain tenant-scoped CRUD.
 
     No secret is involved: a protocol is a URL template the Connect menu renders
-    client-side. Managing them uses the CRUD verbs; *using* one (the device
-    Connect menu) is gated separately on the device ``connect`` verb.
+    client-side. Managing them uses the CRUD verbs; *using* one (the Connect
+    menu on a device or VM) is gated separately on that type's ``connect`` verb.
 
-    Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
+    Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows);
+    ``?device=<id>`` or ``?virtual_machine=<id>`` to those that apply to a host.
     """
     # Unambiguous id aliases (core.query_params).
-    query_param_aliases = {"device_id": "device"}
+    query_param_aliases = {"device_id": "device", "virtual_machine_id": "virtual_machine"}
 
     queryset = ConnectProtocol.objects.prefetch_related("device_types", "roles")
     serializer_class = ConnectProtocolSerializer
@@ -866,7 +867,31 @@ class ConnectProtocolViewSet(TenantScopedViewSet):
         device_id = self.request.query_params.get("device")
         if device_id:
             qs = self._scope_to_device(qs, device_id)
+        vm_id = self.request.query_params.get("virtual_machine")
+        if vm_id:
+            qs = self._scope_to_vm(qs, vm_id)
         return qs
+
+    def _scope_to_vm(self, qs, vm_id):
+        """The VM form of :meth:`_scope_to_device`: untargeted protocols, plus
+        any whose ``roles`` include the VM's role. A VM has no device type, so
+        that half of the match never applies."""
+        import uuid
+
+        from api.models import VirtualMachine
+
+        tenant = self._tenant_or_403()
+        try:
+            uuid.UUID(str(vm_id))
+        except ValueError:
+            return qs.none()
+        vm = VirtualMachine.objects.filter(pk=vm_id, tenant_id=tenant.id).first()
+        if vm is None:
+            return qs.none()
+        clauses = Q(device_types__isnull=True) & Q(roles__isnull=True)
+        if vm.role_id:
+            clauses |= Q(roles=vm.role_id)
+        return qs.filter(clauses).distinct()
 
     def _scope_to_device(self, qs, device_id):
         """Only protocols applicable to this device: untargeted ones, plus any
