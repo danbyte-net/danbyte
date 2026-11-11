@@ -7,6 +7,7 @@ secret store does.
 """
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 from collections.abc import Callable
@@ -95,7 +96,12 @@ class LocalBackend:
                 fh.write(b"ok")
             os.unlink(marker)
         except OSError as exc:
-            raise StorageError(f"{self.path}: {exc.strerror or exc}") from exc
+            hint = ""
+            if exc.errno == errno.EROFS:
+                # The web unit's sandbox (#500) writes only where its drop-in says.
+                hint = (" - add the directory to DANBYTE_UNIT_WRITABLE_PATHS in .env, "
+                        "then run make unit-hardening and restart the units")
+            raise StorageError(f"{self.path}: {exc.strerror or exc}{hint}") from exc
 
 
 class S3Backend:
