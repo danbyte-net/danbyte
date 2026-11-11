@@ -245,6 +245,40 @@ class EngineGateTests(ApiBase):
                              format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_engine_change_and_harder_nmap_clear_the_authorisation(self):
+        self.login(self.su)
+        url = "/api/discovery/profiles/"
+        with override_settings(NMAP_BINARY=self.fake):
+            engine.detect(fresh=True)
+            DiscoverySettings.objects.update_or_create(tenant=self.tenant,
+                                                       defaults={"nmap_enabled": True})
+            r = self.client.post(url, {"name": "n", "kind": "service_scan",
+                                       "authorisation": "CAB-1"}, format="json")
+            self.assertEqual(r.status_code, 201, r.data)
+            pid = r.data["id"]
+
+            def again():
+                self.client.patch(f"{url}{pid}/", {"authorisation": "CAB-2"}, format="json")
+
+            r = self.client.patch(f"{url}{pid}/", {"scan_engine": "nmap"}, format="json")
+            self.assertFalse(r.data["authorised"])
+            again()
+            # Lower is gentler: still authorised.
+            r = self.client.patch(f"{url}{pid}/", {"nmap_timing": 2,
+                                                   "nmap_version_intensity": 1},
+                                  format="json")
+            self.assertTrue(r.data["authorised"])
+            r = self.client.patch(f"{url}{pid}/", {"nmap_timing": 4}, format="json")
+            self.assertFalse(r.data["authorised"])
+            again()
+            r = self.client.patch(f"{url}{pid}/", {"nmap_version_intensity": 5},
+                                  format="json")
+            self.assertFalse(r.data["authorised"])
+            again()
+            # Back to the built-in engine is another change of what is sent.
+            r = self.client.patch(f"{url}{pid}/", {"scan_engine": "builtin"}, format="json")
+            self.assertFalse(r.data["authorised"])
+
     def test_run_rechecks_and_parses_into_observed_services(self):
         dev = self.host("a", "192.0.2.10", cred=None, key=False,
                         prefix=self._prefix("192.0.2.0/24"))

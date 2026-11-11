@@ -606,16 +606,30 @@ def _scope_ids(profile) -> tuple:
     # reaches other networks.
     ids = (*ids, profile.runs_on, str(profile.outpost_id or ""))
     if profile.kind == "service_scan":
-        return (*ids, json.dumps(profile.ports or [], sort_keys=True))
+        # The engine decides what is sent to each host (built-in connects or
+        # nmap's probes), so a change of engine is a new authorisation too.
+        return (*ids, json.dumps(profile.ports or [], sort_keys=True), profile.scan_engine)
     return ids
+
+
+def _nmap_rose(profile, before: tuple | None) -> bool:
+    """Whether an nmap service scan now probes harder than when it was
+    authorised: a higher version intensity or a faster timing template."""
+    if before is None or profile.kind != "service_scan" or profile.scan_engine != "nmap":
+        return False
+    intensity, timing = before
+    return (profile.nmap_version_intensity or 0) > (intensity or 0) \
+        or (profile.nmap_timing or 0) > (timing or 0)
 
 
 class InventoryProfileViewSet(TenantScopedViewSet):
     """Inventory profiles of the active tenant: what discovery reads, when,
     and who authorised it. Writing ``authorisation`` (a non-empty statement)
-    records the caller and the time as the authoriser; a change to the scope
-    without one clears the authorisation, and a profile without one never
-    runs. Filters: ``enabled``, ``search``."""
+    records the caller and the time as the authoriser; a change to what it
+    covers without one - the scope, Runs on, for a service scan the ports,
+    the engine, or a higher nmap intensity or timing - clears the
+    authorisation, and a profile without one never runs. Filters:
+    ``enabled``, ``search``."""
 
     queryset = InventoryProfile.objects.select_related(
         "shared_credential", "outpost").prefetch_related(
@@ -651,12 +665,13 @@ class InventoryProfileViewSet(TenantScopedViewSet):
             qs = qs.filter(q).distinct() if q is not None else qs.none()
         return qs.order_by("name", "pk")
 
-    def _stamp(self, profile, data, before_scope):
+    def _stamp(self, profile, data, before_scope, before_nmap=None):
         """The authorisation rule (see the class doc)."""
         user = self.request.user
         given = "authorisation" in data
         text = (data.get("authorisation") or "").strip() if given else profile.authorisation
-        changed_scope = before_scope is not None and before_scope != _scope_ids(profile)
+        changed_scope = (before_scope is not None and before_scope != _scope_ids(profile)) \
+            or _nmap_rose(profile, before_nmap)
         fields = []
         if given and text:
             profile.authorised_by = user
@@ -681,10 +696,11 @@ class InventoryProfileViewSet(TenantScopedViewSet):
 
     def perform_update(self, serializer):
         before = _scope_ids(serializer.instance)
+        nmap = (serializer.instance.nmap_version_intensity, serializer.instance.nmap_timing)
         try:
             with transaction.atomic():
                 super().perform_update(serializer)
-                self._stamp(serializer.instance, self.request.data, before)
+                self._stamp(serializer.instance, self.request.data, before, nmap)
         except IntegrityError:
             raise ValidationError({"name": "A profile with this name exists."}) from None
 

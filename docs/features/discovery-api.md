@@ -60,7 +60,7 @@ policy is about), `POST` creates, `GET`, `PUT`, `PATCH` and `DELETE` on
 | `scan_engine` | `builtin` or `nmap` (service scan only; refused while nmap cannot be used) |
 | `nmap_version_intensity`, `nmap_timing` | 0 to 5; 2 to 4 |
 | `runs_on`, `outpost_id` / `outpost` | `server`, `outpost` (needs `outpost_id`) or `host` / read-only: the Outpost as `outposts/` shows it |
-| `authorisation` | at most 2,000 characters. A non-empty value records the caller and the time; an empty one, or a scope, ports or `runs_on` change without one, clears it. |
+| `authorisation` | at most 2,000 characters. A non-empty value records the caller and the time; an empty one, or a change without one to the scope, `runs_on`, and for a service scan the ports, `scan_engine`, or a higher `nmap_version_intensity` or `nmap_timing`, clears it. |
 | `authorised`, `authorised_by_name`, `authorised_at` | read-only |
 | `blocked_reason` | read-only: why it cannot run now, or `""` |
 | `last_run_at`, `last_run` | read-only: the newest run's `id`, `status`, times and `counts` |

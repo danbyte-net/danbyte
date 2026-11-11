@@ -193,7 +193,8 @@ Steps 1 and 2 above done, press **Add profile**:
    **nmap** in **Host discovery** ([the nmap engine](service-discovery.md#the-nmap-engine)).
 6. **Hosts at once** and the schedule as for an inventory.
 7. **Authorisation**: who authorised scanning these addresses. A later change
-   to the scope or the ports clears it.
+   to the scope, the ports, the engine or **Runs on**, or a higher nmap
+   intensity or timing, clears it.
 8. **Create**.
 
 !!! warning "Scan only what you may scan"

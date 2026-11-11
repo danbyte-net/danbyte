@@ -103,7 +103,10 @@ unless someone with the authority said yes. A profile therefore records it:
 - The profile stops running - *Not authorised* - until someone records a
   statement again, when an edit without a new statement in the same save:
     - changes the scope (any kind, the whole-tenant choice included);
-    - for a service scan, changes the ports;
+    - for a service scan, changes the ports or the **Engine** (*Built-in*
+      ↔ *nmap*), or raises nmap's **Version intensity** or **Timing**:
+      each changes what is sent to the hosts (lowering them does not
+      clear it);
     - changes **Runs on**, or the Outpost it names: another vantage point
       reaches other networks;
     - empties the statement.

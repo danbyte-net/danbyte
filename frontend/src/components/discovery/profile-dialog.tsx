@@ -795,8 +795,8 @@ export function ProfileDialog({
             placeholder="Who approved reading these hosts, and the reference"
             info={
               scan
-                ? "Required before the profile runs. Saving a statement records you and the time as the authoriser; a change to the scope or the ports clears it."
-                : "Required before the profile runs. Saving a statement records you and the time as the authoriser; a scope change clears it."
+                ? "Required before the profile runs. Saving a statement records you and the time as the authoriser. Cleared by a change to: scope, ports, engine, a higher nmap intensity or timing, Runs on."
+                : "Required before the profile runs. Saving a statement records you and the time as the authoriser. Cleared by a change to: scope, Runs on."
             }
           />
           <FormFooter
