@@ -1257,6 +1257,14 @@ export const sections: NavSection[] = [
             perm: "users.manage",
           },
           {
+            // Part of Monitoring since #451; /discovery opens its tab there.
+            title: "Discovery",
+            url: "/discovery",
+            icon: ScanSearch,
+            objectType: "inventoryprofile",
+            integration: ["discovery"],
+          },
+          {
             title: "Alerts",
             url: "/alerts",
             icon: BellRing,
@@ -1468,13 +1476,6 @@ export const sections: NavSection[] = [
             icon: FileCode,
             objectType: "oxidizedconnection",
             integration: ["oxidized"],
-          },
-          {
-            title: "Discovery",
-            url: "/discovery",
-            icon: ScanSearch,
-            objectType: "inventoryprofile",
-            integration: ["discovery"],
           },
         ],
       },

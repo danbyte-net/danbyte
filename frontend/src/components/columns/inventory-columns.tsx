@@ -61,6 +61,12 @@ export function scopeLabel(p: InventoryProfile): string {
   n(p.scope.prefixes.length, "prefix", "prefixes")
   n(p.scope.devices.length, "device", "devices")
   n(p.scope.virtual_machines.length, "VM", "VMs")
+  n(p.scope.regions.length, "region", "regions")
+  n(p.scope.vrfs.length, "VRF", "VRFs")
+  n(p.scope.platforms.length, "platform", "platforms")
+  n(p.scope.device_types.length, "device type", "device types")
+  n(p.scope.device_roles.length, "device role", "device roles")
+  if (p.scope.global) return "Whole tenant"
   return parts.join(", ")
 }
 

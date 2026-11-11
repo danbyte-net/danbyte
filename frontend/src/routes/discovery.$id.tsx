@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Play, Trash2 } from "lucide-react"
 import { useMemo, useState } from "react"
@@ -148,8 +148,17 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
 
   return (
     <DetailShell
-      backTo="/discovery"
-      backLabel="Discovery"
+      backTo="/monitoring"
+      backLabel="Monitoring"
+      crumbs={
+        <Link
+          to="/monitoring"
+          search={{ view: "discovery", status: "all" }}
+          className="hover:text-foreground"
+        >
+          Discovery
+        </Link>
+      }
       title={p.name}
       actions={
         <>
@@ -259,7 +268,12 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
       <DeleteDialog
         profile={deleting ? p : null}
         onOpenChange={(o) => !o && setDeleting(false)}
-        onDeleted={() => nav({ to: "/discovery" })}
+        onDeleted={() =>
+          nav({
+            to: "/monitoring",
+            search: { view: "discovery", status: "all" },
+          })
+        }
       />
     </DetailShell>
   )
@@ -285,6 +299,15 @@ function Overview({ profile: p }: { profile: InventoryProfile }) {
     { label: "Prefixes", value: names(p.scope.prefixes) },
     { label: "Devices", value: names(p.scope.devices) },
     { label: "Virtual machines", value: names(p.scope.virtual_machines) },
+    { label: "Regions", value: names(p.scope.regions) },
+    { label: "VRFs", value: names(p.scope.vrfs) },
+    { label: "Platforms", value: names(p.scope.platforms) },
+    { label: "Device types", value: names(p.scope.device_types) },
+    { label: "Device roles", value: names(p.scope.device_roles) },
+    {
+      label: "Whole tenant",
+      value: p.scope.global ? <Badge variant="warning">Yes</Badge> : dash,
+    },
   ]
   const login: KvRow[] = [
     {

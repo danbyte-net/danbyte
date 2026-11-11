@@ -18335,11 +18335,25 @@ export interface InventoryProfile {
   prefix_ids: string[]
   device_ids: string[]
   virtual_machine_ids: string[]
+  /** The monitoring policy scope kinds, resolved by the monitoring resolver. */
+  region_ids: string[]
+  vrf_ids: string[]
+  platform_ids: string[]
+  device_type_ids: string[]
+  device_role_ids: string[]
+  /** Everything in the tenant; set only with `confirm_global: true`. */
+  scope_global: boolean
   scope: {
     sites: { id: string; name: string }[]
     prefixes: { id: string; name: string }[]
     devices: { id: string; name: string }[]
     virtual_machines: { id: string; name: string }[]
+    regions: { id: string; name: string }[]
+    vrfs: { id: string; name: string }[]
+    platforms: { id: string; name: string }[]
+    device_types: { id: string; name: string }[]
+    device_roles: { id: string; name: string }[]
+    global: boolean
   }
   interval_hours: number
   window_start: string | null
@@ -18365,6 +18379,22 @@ export interface InventoryProfile {
   } | null
   created_at: string
   updated_at: string
+}
+
+/** A monitoring policy's scope as profile fields, for the profile dialog's
+ * copy (`/api/discovery/policy-scope/<id>/`). A copy, not a link. */
+export interface DiscoveryPolicyScope {
+  id: string
+  scope: string
+  scope_label: string
+  target: { id: string; name: string } | null
+  global: boolean
+  /** The profile field the target lands in, e.g. "device_role_ids". */
+  field: string | null
+  /** The policy narrows its scope with filters or a target, not copied. */
+  filters: boolean
+  copyable: boolean
+  reason: string
 }
 
 export interface InventoryRun {

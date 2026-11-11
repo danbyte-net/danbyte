@@ -366,6 +366,7 @@ const ROWS: Row[] = [
   // Discovery (#451 B2): nested refs and counts, not flat list fields.
   ["inventory-profiles", "Discovery · Inventory profiles", "Integrations", null],
   ["inventory-runs", "Discovery · Runs", "Integrations", null, sub],
+  ["inventory-recent-runs", "Discovery · Recent runs", "Integrations", null, sub],
   ["inventory-run-hosts", "Discovery run · Hosts", "Integrations", null, sub],
   ["inventory-scope-hosts", "Inventory profile · Hosts", "Integrations", null, sub],
   ["inventory-host-keys", "Discovery · Host keys to review", "Integrations", null, sub],

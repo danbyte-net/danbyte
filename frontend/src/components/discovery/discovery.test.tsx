@@ -56,7 +56,24 @@ function profile(over: Partial<InventoryProfile> = {}): InventoryProfile {
     prefix_ids: [],
     device_ids: [],
     virtual_machine_ids: [],
-    scope: { sites: [], prefixes: [], devices: [], virtual_machines: [] },
+    region_ids: [],
+    vrf_ids: [],
+    platform_ids: [],
+    device_type_ids: [],
+    device_role_ids: [],
+    scope_global: false,
+    scope: {
+      sites: [],
+      prefixes: [],
+      devices: [],
+      virtual_machines: [],
+      regions: [],
+      vrfs: [],
+      platforms: [],
+      device_types: [],
+      device_roles: [],
+      global: false,
+    },
     interval_hours: 24,
     window_start: null,
     window_end: null,
@@ -109,9 +126,18 @@ describe("inventory profile labels", () => {
         ],
         devices: [],
         virtual_machines: [{ id: "v", name: "vm" }],
+        regions: [],
+        vrfs: [],
+        platforms: [],
+        device_types: [],
+        device_roles: [{ id: "r", name: "Server" }],
+        global: false,
       },
     })
-    expect(scopeLabel(p)).toBe("1 site, 2 prefixes, 1 VM")
+    expect(scopeLabel(p)).toBe("1 site, 2 prefixes, 1 VM, 1 device role")
+    expect(scopeLabel(profile({ scope: { ...p.scope, global: true } }))).toBe(
+      "Whole tenant"
+    )
   })
 
   it("says where it runs", () => {

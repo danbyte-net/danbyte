@@ -73,6 +73,10 @@ import { ExploreView } from "@/components/monitoring/explore-view"
 import { LatencyByKindChart } from "@/components/monitoring/latency-by-kind"
 import { LatencyView } from "@/components/monitoring/latency-view"
 import { SlaList } from "@/components/monitoring/sla-list"
+import {
+  DiscoveryTab,
+  useDiscoveryTab,
+} from "@/components/discovery/discovery-tab"
 import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
@@ -85,6 +89,7 @@ type MonitoringView =
   | "flapping"
   | "templates"
   | "configuration"
+  | "discovery"
   | "settings"
 
 // The filter params the history and checks views keep in the URL. Declared so
@@ -142,14 +147,16 @@ const VIEWS: MonitoringView[] = [
   "flapping",
   "templates",
   "configuration",
+  "discovery",
   "settings",
 ]
 
 export const Route = createFileRoute("/monitoring")({
   component: MonitoringPage,
   validateSearch: (s: Record<string, unknown>): MonitoringSearch => ({
-    view: VIEWS.includes(s.view as MonitoringView)
-      ? (s.view as MonitoringView)
+    // `tab` is read as an alias of `view`, so ?tab=discovery lands too.
+    view: VIEWS.includes((s.view ?? s.tab) as MonitoringView)
+      ? ((s.view ?? s.tab) as MonitoringView)
       : "overview",
     status:
       typeof s.status === "string" ? (s.status as CheckStatus | "all") : "all",
@@ -196,6 +203,9 @@ function MonitoringPage() {
   // Same gate the settings page uses - the tab is hidden without it, and the
   // panel is guarded too so a hand-typed ?view=settings shows nothing.
   const { canManage } = useMe()
+  // Discovery lives here too (#451), while it is on and you may view
+  // its profiles.
+  const discoveryTab = useDiscoveryTab()
   const nav = useNavigate()
   // Changing view starts clean - a history filter has no business on the
   // Templates tab; changing anything else keeps the rest of the URL.
@@ -337,6 +347,9 @@ function MonitoringPage() {
               : []),
             { value: "templates", label: "Templates" },
             { value: "configuration", label: "Configuration" },
+            ...(discoveryTab
+              ? [{ value: "discovery", label: "Discovery" }]
+              : []),
             ...(canManage ? [{ value: "settings", label: "Settings" }] : []),
           ]}
         />
@@ -367,6 +380,7 @@ function MonitoringPage() {
           view === "checks" ||
           view === "explore" ||
           view === "sla" ||
+          view === "discovery" ||
           view === "flapping"
             ? "flex min-h-0 flex-1 flex-col"
             : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
@@ -389,6 +403,7 @@ function MonitoringPage() {
         )}
 
         {view === "configuration" && <MonitoringConfiguration />}
+        {view === "discovery" && <DiscoveryTab />}
 
         {/* Its own tab rather than a card at the foot of Overview: a dashboard
             is for reading and settings are for changing, and burying a form
