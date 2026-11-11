@@ -120,6 +120,7 @@ def site_certificate_acme(request):
     in the background. ``letsencrypt`` makes the tenant's Let's Encrypt
     issuer on first use; otherwise ``issuer`` is one of the active tenant's."""
     from api.views import _get_active_tenant
+    from monitoring.acme_engine import AcmeError
     from monitoring.models import AcmeOrder, Issuer
 
     if not _require_superuser(request):
@@ -151,6 +152,8 @@ def site_certificate_acme(request):
                                     names or [site_tls.public_host()])
     except site_tls.SiteTlsError as exc:
         return Response({"detail": str(exc)}, status=400)
+    except AcmeError as exc:  # the issuer's DNS-01 publisher is incomplete
+        return Response(exc.payload(), status=exc.status)
     except Exception as exc:  # noqa: BLE001 - the secret store, mostly
         from core.errors import public_error
         from monitoring.secret_store import SecretStoreError

@@ -425,27 +425,26 @@ def start_acme(tenant, user, issuer, challenge_type: str, names: list[str]):
 def issue_site_order_job(order_id) -> None:
     """RQ: issue an order for the site - HTTP-01 through the self-served
     publisher, DNS-01 through the issuer's own."""
-    from monitoring.acme_engine import AcmeError, issue, publisher_for, register_account
+    from monitoring.acme_engine import issue, publisher_for, register_account, run_order_job
     from monitoring.models import AcmeOrder
 
     order = AcmeOrder.objects.select_related("issuer", "request").filter(id=order_id).first()
     if order is None:
         return
-    publisher = SelfServedHttpPublisher() if order.challenge_type == AcmeOrder.Challenge.HTTP01 \
-        else publisher_for(order.issuer)
-    try:
+
+    def work():
+        publisher = SelfServedHttpPublisher() \
+            if order.challenge_type == AcmeOrder.Challenge.HTTP01 else publisher_for(order.issuer)
         # One click means the account too: an issuer added a moment ago (or
         # Let's Encrypt made on first use) has none yet.
         if not order.issuer.account_uri:
             register_account(order.issuer)
             order.issuer.refresh_from_db()
         issue(order, publisher)
-    except AcmeError as exc:
-        order.refresh_from_db()
-        if order.status not in (AcmeOrder.Status.INVALID, AcmeOrder.Status.VALID):
-            order.status = AcmeOrder.Status.ERRORED
-            order.error = str(exc)
-            order.save(update_fields=["status", "error", "updated_at"])
+
+    # Every failure - the CA unreachable or untrusted, the secret store, a
+    # bug - lands on the order the card shows, never a stuck "pending".
+    run_order_job(order, work)
 
 
 def on_issued(order, fullchain_pem: str) -> None:

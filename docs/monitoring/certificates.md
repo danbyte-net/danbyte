@@ -435,6 +435,39 @@ drives three steps:
    returns `202`; the order moves `processing → valid` (or `invalid` with the
    error recorded on the row).
 
+### When the CA cannot be reached or trusted
+
+Every call Danbyte makes to a CA - the directory, the account, the order,
+the challenge answers, polling, finalize and the certificate download - turns
+a failure into one plain sentence, never a server error. **Register
+account** and **Order** answer it straight away; the background jobs
+(finalize, automatic issue, renewal, the site certificate) store the same
+sentence on the order, where the order's error shows it.
+
+| What went wrong | Answer | Message names |
+|---|---|---|
+| The CA's TLS certificate is not trusted | `502`, `code: acme_tls_untrusted` | the host, OpenSSL's reason, and the fix: add the CA's root certificate |
+| The certificate is for a different name | `502`, `acme_tls_hostname` | the host in the directory URL |
+| The certificate has expired or is not valid yet | `502`, `acme_tls_expired` | the host; renew it on the CA or check the clocks |
+| Another TLS handshake failure | `502`, `acme_tls_handshake` | the host and the TLS reason |
+| The name does not resolve | `502`, `acme_dns` | the host |
+| Connection refused | `502`, `acme_refused` | host and port |
+| No answer within 30 seconds | `502`, `acme_timeout` | the host and which request |
+| The CA answered with an ACME error | `502`, `acme_ca_refused` | the CA's problem type and detail |
+| The CA answered HTTP 5xx, or something that is not ACME | `502`, `acme_ca_error` / `acme_not_acme` | the host and the HTTP status |
+| The directory URL is not an ACME directory | `400`, field error on `directory_url` | the URL and what it answered |
+
+A `502` body is `{"detail": "...", "code": "..."}`: the CA's side failed,
+and the detail says what to change. A `400` names the issuer field to fix.
+Text from the CA (problem details) has control characters removed and is
+capped in length; it is shown as plain text.
+
+The directory URL is reached directly, not through the
+[outbound-request guard](../reference/settings.md#outbound-requests-ssrf-guard):
+an internal CA on a private address is the point of an issuer, and only a
+user with the `add` or `change` grant on issuers can set the URL - the
+same rule as the Vault secret store and Redfish.
+
 ### Publishing the challenge
 
 The order surfaces exactly what to publish, so an operator can satisfy DNS-01 or

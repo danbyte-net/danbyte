@@ -1244,7 +1244,7 @@ class CertificateRequestViewSet(BulkEditMixin, TenantScopedViewSet):
         issuer is looked up scoped to the active tenant - a cross-tenant issuer id
         can't be used.
         """
-        from .acme_engine import AcmeError, create_order
+        from .acme_engine import AcmeError, acme_error_response, create_order
         from .secret_store import SecretStoreDisabled
 
         req = self.get_object()
@@ -1277,9 +1277,9 @@ class CertificateRequestViewSet(BulkEditMixin, TenantScopedViewSet):
             raise ValidationError({"detail": str(exc)}) from exc
         except AcmeError as exc:
             order.status = AcmeOrder.Status.ERRORED
-            order.error = str(exc)
+            order.error = exc.message
             order.save(update_fields=["status", "error", "updated_at"])
-            raise ValidationError({"detail": str(exc)}) from exc
+            return acme_error_response(exc)
         return Response(AcmeOrderSerializer(order).data, status=201)
 
     @action(detail=True, methods=["post"], url_path="acme-finalize")
@@ -1404,8 +1404,10 @@ class IssuerViewSet(BulkEditMixin, TenantScopedViewSet):
 
         Synchronous - it is a handful of round trips and the operator wants the
         success/failure immediately. Fail-closed if no secret store is enabled.
+        A CA that is unreachable, untrusted or refuses answers 502 with
+        ``detail``; an issuer setting the caller can fix answers 400 on its field.
         """
-        from .acme_engine import AcmeError, register_account
+        from .acme_engine import AcmeError, acme_error_response, register_account
         from .secret_store import SecretStoreDisabled
 
         issuer = self.get_object()
@@ -1414,7 +1416,7 @@ class IssuerViewSet(BulkEditMixin, TenantScopedViewSet):
         except SecretStoreDisabled as exc:
             raise ValidationError({"detail": str(exc)}) from exc
         except AcmeError as exc:
-            raise ValidationError({"detail": str(exc)}) from exc
+            return acme_error_response(exc)
         return Response({"account_uri": uri, **self.get_serializer(issuer).data})
 
     def perform_destroy(self, instance):
