@@ -1,7 +1,7 @@
-import { useState } from "react"
+
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Layers, Plus } from "lucide-react"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -130,16 +130,18 @@ export function SlaTemplateLine({
   )
 }
 
-/** Templates (tiers), opened from the SLAs list. */
-export function SlaTemplatesButton() {
+/** Templates (tiers), opened from the SLAs list's Setup menu. */
+export function SlaTemplatesDialog({
+  open,
+  onOpenChange: setOpen,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const { canDo } = useMe()
-  const [open, setOpen] = useState(false)
   if (!canDo("slatemplate", "view")) return null
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        <Layers className="h-3.5 w-3.5" /> Templates
-      </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

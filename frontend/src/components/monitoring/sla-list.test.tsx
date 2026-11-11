@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { SlaList } from "./sla-list"
 
-// The Overview menu sizes to its labels: a menu as wide as its short
-// trigger wrapped "This period, PDF" onto two lines.
+// The Reports and Setup menus size to their labels: a menu as wide as its
+// short trigger wrapped "This period, PDF" onto two lines.
 
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
@@ -24,17 +24,17 @@ vi.mock("@/components/list-page-shell", () => ({
   ListPageShell: ({ actions }: { actions: ReactNode }) => <div>{actions}</div>,
 }))
 vi.mock("./holiday-calendars-dialog", () => ({
-  HolidayCalendarsButton: () => null,
+  HolidayCalendarsDialog: () => null,
 }))
-vi.mock("./sla-follow-up", () => ({ SlaCausesButton: () => null }))
+vi.mock("./sla-follow-up", () => ({ SlaCausesDialog: () => null }))
 vi.mock("./sla-report-schedules", () => ({
   SlaOverviewSchedulesDialog: () => null,
 }))
-vi.mock("./sla-templates", () => ({ SlaTemplatesButton: () => null }))
+vi.mock("./sla-templates", () => ({ SlaTemplatesDialog: () => null }))
 
 afterEach(cleanup)
 
-describe("SLA list Overview menu", () => {
+describe("SLA list menus", () => {
   it("is as wide as its labels, not its trigger", async () => {
     const qc = new QueryClient()
     render(
@@ -43,7 +43,7 @@ describe("SLA list Overview menu", () => {
       </QueryClientProvider>
     )
     fireEvent.pointerDown(
-      screen.getByRole("button", { name: /overview/i }),
+      screen.getByRole("button", { name: /reports/i }),
       new PointerEvent("pointerdown", { bubbles: true, button: 0 })
     )
     const item = await screen.findByRole("menuitem", {
@@ -52,5 +52,25 @@ describe("SLA list Overview menu", () => {
     const menu = item.closest("[role=menu]")!
     expect(menu.className).toContain("w-max")
     expect(menu.className).not.toContain("radix-dropdown-menu-trigger-width")
+  })
+
+  it("keeps the catalogs behind one Setup menu", async () => {
+    const qc = new QueryClient()
+    render(
+      <QueryClientProvider client={qc}>
+        <SlaList />
+      </QueryClientProvider>
+    )
+    expect(screen.queryByRole("button", { name: "Holidays" })).toBeNull()
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Setup" }),
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+    )
+    for (const name of [
+      "Holiday calendars…",
+      "Incident causes…",
+      "SLA templates…",
+    ])
+      expect(await screen.findByRole("menuitem", { name })).toBeTruthy()
   })
 })

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Tags, Trash2 } from "lucide-react"
+import { Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -231,16 +231,19 @@ export function SlaDownByCause({ rows }: { rows: SlaCauseRow[] }) {
   )
 }
 
-/** The tenant's incident cause catalog. Opened from the SLAs list. */
-export function SlaCausesButton() {
+/** The tenant's incident cause catalog. Opened from the SLAs list's Setup
+ * menu. */
+export function SlaCausesDialog({
+  open,
+  onOpenChange: setOpen,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const { canDo } = useMe()
-  const [open, setOpen] = useState(false)
   if (!canDo("slaincidentcause", "view")) return null
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        <Tags className="h-3.5 w-3.5" /> Causes
-      </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
