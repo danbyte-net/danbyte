@@ -104,7 +104,37 @@ def probe(mail_path: str = "") -> int:
     except Exception:  # noqa: BLE001
         _say("superuser", 0)
     _say("mail", 1 if mail_path and _capture_mail(mail_path, settings) else 0)
+    _prefix_survey(os.environ.get("DANBYTE_UPGRADE_SRC", ""), connection)
     return 0
+
+
+def _prefix_survey(src: str, connection) -> None:
+    """Prefixes whose cidr is not an address, judged by the TARGET release's
+    migration api 0265 (loaded from its tree): how many it rewrites, and the
+    ones it would stop the upgrade on (#501). Says nothing when the target
+    has no such migration or the survey fails - the migration itself still
+    refuses, and the stage rolls back."""
+    import importlib.util
+
+    path = os.path.join(src, "api", "migrations", "0265_drop_unparseable_prefixes.py")
+    if not src or not os.path.isfile(path):
+        return
+    try:
+        spec = importlib.util.spec_from_file_location("danbyte_target_0265", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        if not hasattr(mod, "survey"):
+            return
+        rows = mod.survey(connection)
+    except Exception as exc:  # noqa: BLE001
+        _say("prefix_error", f"{type(exc).__name__}: {exc}"[:300])
+        return
+    stuck = [r for r in rows if r["new"] is None]
+    _say("prefix_repair", len(rows) - len(stuck))
+    _say("prefix_unrepairable", len(stuck))
+    if stuck:
+        text = "; ".join(f"{mod.describe(r)}: {r['why']}" for r in stuck)
+        _say("prefix_unrepairable_rows", text[:1500])
 
 
 def _capture_mail(path: str, settings) -> bool:

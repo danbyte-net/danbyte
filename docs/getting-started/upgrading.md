@@ -367,14 +367,14 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 
 | Step | What happens | The site |
 |---|---|---|
-| preflight | refuses an older release than the one running, inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk ([how much](installation.md#disk-space-for-upgrades)); installs the recovery unit | up |
+| preflight | refuses an older release than the one running, inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk ([how much](installation.md#disk-space-for-upgrades)), a prefix whose CIDR the upgrade can't repair ([below](#prefixes-the-upgrade-cant-repair)); warns about the ones it rewrites; installs the recovery unit | up |
 | backup | the pre-upgrade backup, with the running code; when the launcher took it before handing over, the step shows that run and its duration | up |
 | prepare | git: `npm ci` and the frontend build in a scratch copy; dependencies resolved (bundle: checked offline); a copy of the virtualenv | up |
 | quiesce | first, while the system is still installing its own package updates (`apt-daily`, unattended-upgrades - a host that just booted), it waits for them, up to 20 minutes, with everything still up, since a package update can restart PostgreSQL; past that it stops, retryable, with nothing stopped. Then timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |
 | swap | the new code, frontend, static files and (bundle) vendor/ in place; the old ones kept aside; files the release no longer ships moved aside; new unit files linked | maintenance page |
 | deps, check | dependencies installed, `manage.py check`, the migration plan | maintenance page |
 | snapshot | `pg_dump` of the database - only when migrations are pending - into the run folder beside the app, which only the service user can read | maintenance page |
-| migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was; the deferred foreign-key checks run after each migration and after each of its data steps, as separate commits would; when the one transaction hits a database limit (too many locks, pending trigger events) it is rolled back and the migrations run one by one on a new connection; a migration that lost its database to a restart and rolled back whole runs once more, and if the database stays away only the code is rolled back | maintenance page |
+| migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was (not possible when the plan holds a non-atomic migration, such as `api.0262` on an upgrade from before 0.19: then they run one by one and a failure restores the snapshot); the deferred foreign-key checks run after each migration and after each of its data steps, as separate commits would; when the one transaction hits a database limit (too many locks, pending trigger events) it is rolled back and the migrations run one by one on a new connection; a migration that lost its database to a restart and rolled back whole runs once more, and if the database stays away only the code is rolled back | maintenance page |
 | static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static and frontend build files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
 | verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |
 | start | web, websockets, frontend, docs, workers - while the site still answers 503; `/api/health/` must say `ok` with the new version, the admin page must render, and nothing may keep restarting | 503 |
@@ -395,6 +395,112 @@ last resort.
 Downtime is the time from *quiesce* to *resume*: a dump of the database when
 migrations are pending, the migrations, and the checks - the frontend build
 and the dependency download happen before it.
+
+## Prefixes the upgrade can't repair
+
+A prefix saved before CIDR validation (#47), or by an import, can hold a
+CIDR that is not an address. Migration `api.0265` (on the way to 0.19 and
+later) rewrites the ones the prefix API would accept - spaces, a netmask
+such as `10.0.20.0/255.255.255.0` - and lists each one in the upgrade log.
+It deletes nothing. For any other value (`banana`, `10.0.0.0/33`, host bits
+set, or a rewrite that would duplicate a prefix in the same VRF) it stops
+before it changes anything. See [Prefix](../models/prefix.md#hierarchy-logical-not-stored).
+
+The upgrade checks for those rows first:
+
+- **Host upgrades** (Updates page, bundle, automatic, `install.sh`): the
+  preflight fails with each row's id, value, tenant and the reason, before
+  anything stops. Nothing changes. Give each prefix a valid CIDR in the
+  running Danbyte (open it by id, `/prefixes/<id>`) or delete it there,
+  then upgrade again.
+- **Docker**: the backend runs `manage.py prefix_cidrs --check` before
+  `migrate` and exits with the same list, so the container restarts until
+  the rows are fixed. The database is not migrated. Fix them with the new
+  image without starting the app:
+
+    ```bash
+    docker compose run --rm -e MIGRATE_ON_START=0 backend python manage.py prefix_cidrs
+    docker compose run --rm -e MIGRATE_ON_START=0 backend \
+      python manage.py prefix_cidrs --set <id> 10.0.99.0/24
+    docker compose up -d
+    ```
+
+- **By hand** (`manage.py migrate`): the migration stops with the list.
+  The migrations before it stay applied. Run `manage.py prefix_cidrs --set
+  <id> <cidr>` for each row, then `migrate` again.
+
+`prefix_cidrs --set` normalises the value as the API does. It refuses a
+network the VRF already has and one that would leave the prefix's IP
+addresses outside it, and writes the change to the prefix's change log.
+Without the command, the same fix in SQL is
+`UPDATE api_prefix SET cidr = '10.0.99.0/24' WHERE id = '<id>';`
+(`manage.py dbshell`).
+
+## Prefixes the 0.19 upgrade deleted
+
+0.19.0 and 0.19.1 shipped a version of migration `api.0265` that **deleted**
+every prefix whose CIDR was not an address, including the ones it now
+repairs. Each IP address in those prefixes went with it, along with
+anything attached to those addresses and prefixes: check assignments,
+monitoring policies, alert rules, silences, application flows (#501). The
+upgrade log said only:
+
+```
+deleting prefix <id> with unparseable cidr '10.0.20.0/255.255.255.0' (tenant <id>)
+deleted 2 prefix(es) whose cidr is not an address
+```
+
+Most installs had no such prefix. An install that upgraded to 0.19.0 or
+0.19.1 from 0.18 or an early 0.19 pre-release (before dev10) ran it. Where
+the migrations ran one by one - Docker, and `manage.py migrate` by hand -
+the rows were deleted. The host upgrade runs them in one transaction (unless
+`DANBYTE_UPGRADE_ATOMIC_MIGRATE=0`), and
+there the index build after the delete failed on the deleted rows, so the
+upgrade was rolled back with `invalid input syntax for type inet` and
+nothing was lost; such an install is still on 0.18 and upgrades normally
+now. An install that goes straight to 0.19.2 or later runs the repairing
+version and lost nothing; its **After upgrade** card does not show this step.
+
+**Keep the backup first.** The pre-upgrade backup the host upgrade took
+before the 0.19 upgrade still holds the rows, but only the newest three
+before-upgrade backups are kept ([Housekeeping](backup-restore.md#housekeeping)),
+and each upgrade and the nightly pass prune the rest. **Protect** it on
+**Settings → Backups** (kind *Before upgrade*, taken just before the 0.19
+upgrade) before anything else. A Docker install has no pre-upgrade backup;
+only a dump of your own taken before the upgrade holds the rows.
+
+**Find out what is missing.** Compare that backup with the live database.
+This changes nothing: it reads the archive's database dump with
+`pg_restore` and creates no database.
+
+```bash
+# host, as the service user, in the app directory:
+.venv/bin/python manage.py prefix_loss_report --backup <backup id>
+# a pg_dump -Fc file of your own (Docker: copy it in first):
+docker compose cp danbyte.dump backend:/tmp/danbyte.dump
+docker compose exec backend python manage.py prefix_loss_report --dump /tmp/danbyte.dump
+```
+
+It lists each prefix in the backup whose CIDR is not an address and that
+is no longer in the database, with tenant, VRF and its IP addresses, and
+counts the other missing prefixes (`--all` lists those too; a user may have
+deleted them). `--json FILE` writes every column of those prefix and IP
+address rows from the backup.
+
+**Get them back.** Either:
+
+- Restore that backup (**Restore…** on it). That replaces the database
+  with its state before the 0.19 upgrade and loses everything changed since.
+  The restore runs the migrations forward, and the repairing `api.0265`
+  rewrites those prefixes this time. If one still can't be repaired, the
+  restore stops at that migration: fix the row with `prefix_cidrs --set`
+  and run `manage.py migrate`.
+- Or re-create the prefixes and their IP addresses from the listing (or
+  the JSON) in Danbyte, by hand or with a CSV import. Check assignments
+  and other things that hung off them have to be set up again.
+
+Neither has been rehearsed on a real 0.19 install. Try the restore on a
+copy of the host first.
 
 ## Upgrading from 0.16 or 0.17.0-dev1
 

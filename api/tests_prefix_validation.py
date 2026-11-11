@@ -58,7 +58,7 @@ class PrefixCidrValidationTests(APITestCase):
 
     def test_repair_migration_fixes_maskless_rows(self):
         """Rows created before the validation become host prefixes - visible
-        and deletable again. (Garbage it left alone is deleted by 0265.)"""
+        and deletable again. (Garbage it leaves alone is 0265's to report.)"""
         import importlib
 
         mod = importlib.import_module(
@@ -70,43 +70,6 @@ class PrefixCidrValidationTests(APITestCase):
         mod._repair(apps, None)
         broken.refresh_from_db()
         self.assertEqual(broken.cidr, "10.9.9.9/32")
-
-    def test_unparseable_rows_are_deleted_before_the_inet_index(self):
-        """0265 deletes what Postgres can't read as inet, so building the
-        containment index (0262) can't fail an upgrade; good rows stay."""
-        import importlib
-
-        from django.apps import apps
-        from django.db import connection
-
-        mod = importlib.import_module("api.migrations.0265_drop_unparseable_prefixes")
-        good = Prefix.objects.create(tenant=self.tenant, cidr="10.9.0.0/16")
-        with connection.cursor() as cur:
-            # The index refuses the rows this migration exists for; take it
-            # away inside the test's transaction to plant them.
-            cur.execute("DROP INDEX prefix_cidr_inet_gist")
-            for junk in ("banana", "10.0.0.0/33", "999.1.1.1/8"):
-                cur.execute(
-                    "CREATE TEMP TABLE junk_row ON COMMIT DROP AS"
-                    " SELECT * FROM api_prefix WHERE id = %s", [good.pk],
-                )
-                cur.execute("UPDATE junk_row SET id = gen_random_uuid(), cidr = %s", [junk])
-                cur.execute("INSERT INTO api_prefix SELECT * FROM junk_row")
-                cur.execute("DROP TABLE junk_row")
-        self.assertEqual(len(mod.unparseable_prefix_ids(connection)), 3)
-
-        class _Editor:
-            pass
-
-        editor = _Editor()
-        editor.connection = connection
-        with self.assertLogs("danbyte.migrations", "WARNING") as logs:
-            mod.drop_unparseable(apps, editor)
-        self.assertEqual(
-            list(Prefix.objects.filter(tenant=self.tenant).values_list("cidr", flat=True)),
-            ["10.9.0.0/16"],
-        )
-        self.assertTrue(any("banana" in line for line in logs.output))
 
 
 class PrefixBulkImportValidationTests(PrefixCidrValidationTests):

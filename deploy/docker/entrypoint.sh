@@ -6,6 +6,10 @@
 set -e
 
 if [ "${MIGRATE_ON_START:-0}" = "1" ]; then
+  # Prefixes whose cidr is not an address stop migration api.0265 (#501).
+  # Say so before any migration runs, so the database stays as it was.
+  echo "[entrypoint] checking prefix cidrs…"
+  python manage.py prefix_cidrs --check
   echo "[entrypoint] applying migrations…"
   python manage.py migrate --noinput
   python manage.py rebuild_search_index >/dev/null 2>&1 || true
