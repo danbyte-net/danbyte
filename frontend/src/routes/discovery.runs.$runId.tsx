@@ -15,14 +15,16 @@ import { QueryError } from "@/components/query-error"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { buildInventoryHostResultColumns } from "@/components/columns/inventory-columns"
+import { HostKeysPanel } from "@/components/discovery/host-keys-panel"
 import { isRunActive, RunStatusBadge } from "@/components/discovery/status"
 
 // One discovery run (#451 B2): what it did, then a row per host it
-// considered - read, refused, or left alone and why. Hosts you may not view
-// are not listed.
+// considered - read, refused, or left alone and why - and the host keys
+// its hosts presented that wait for review. Hosts you may not view are not
+// listed.
 
-type Tab = "overview" | "hosts"
-const TABS: readonly Tab[] = ["overview", "hosts"]
+type Tab = "overview" | "hosts" | "keys"
+const TABS: readonly Tab[] = ["overview", "hosts", "keys"]
 
 export const Route = createFileRoute("/discovery/runs/$runId")({
   component: RunDetail,
@@ -106,6 +108,7 @@ function Body({ run: r }: { run: InventoryRun }) {
       }
       tabs={[
         { value: "hosts", label: "Hosts", count: hosts.data?.count },
+        { value: "keys", label: "Host keys" },
         { value: "overview", label: "Overview" },
       ]}
       tab={tab}
@@ -121,9 +124,47 @@ function Body({ run: r }: { run: InventoryRun }) {
         </div>
       </DetailTab>
       <DetailTab value="hosts">
-        <Hosts query={hosts} />
+        <div className="space-y-3">
+          <Summary run={r} onKeys={() => setTab("keys")} />
+          <Hosts query={hosts} />
+        </div>
+      </DetailTab>
+      <DetailTab value="keys">
+        <HostKeysPanel
+          endpoint={`/api/discovery/runs/${r.id}/host-keys/`}
+          queryKey={["discovery", "run", r.id, "host-keys"]}
+        />
       </DetailTab>
     </DetailShell>
+  )
+}
+
+/** The run in one line by reason, with the way out when nothing was read
+ * for want of a login or an accepted key. */
+function Summary({
+  run: r,
+  onKeys,
+}: {
+  run: InventoryRun
+  onKeys: () => void
+}) {
+  if (!r.summary || isRunActive(r.status)) return null
+  const noCred = (r.counts.no_credential ?? 0) > 0
+  const noKey = (r.counts.host_key_refused ?? 0) > 0
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+      <span>{r.summary}</span>
+      {noCred && (
+        <Link to="/settings/credentials" className="link">
+          Shared credentials
+        </Link>
+      )}
+      {noKey && (
+        <button type="button" className="link" onClick={onKeys}>
+          Review host keys
+        </button>
+      )}
+    </div>
   )
 }
 

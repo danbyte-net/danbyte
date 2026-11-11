@@ -16,7 +16,12 @@ Safety on the wire:
 
 * the server's host key must match one of the keys passed in
   ``known_hosts`` (the keys a person accepted); asyncssh checks it before any
-  credential is sent, so a host with no accepted key is never logged in to;
+  credential is sent, so a host with no accepted key is never logged in to -
+  unless the caller asks for ``first_use`` (a person ticked "Accept new host
+  keys" on Run now, only for hosts with no accepted key at all): then the
+  first key the server proves it holds is taken for that one connection,
+  any other key on the same connection is refused, and the result carries
+  the key so the core records it as accepted;
 * no ssh-agent, no ``~/.ssh`` keys or config, no GSS/host-based auth: only
   the one credential handed in;
 * each command's output is capped (:data:`MAX_OUTPUT`) and the whole host
@@ -108,6 +113,10 @@ class InventoryResult:
     packages: list[Package] = field(default_factory=list)
     skipped: int = 0
     truncated: bool = False
+    #: ``first_use`` only: the key this connection was made with,
+    #: ``{key_type, public_key, fingerprint}``; ``None`` when no handshake
+    #: completed.
+    host_key: dict | None = None
 
 
 # ─── os-release ──────────────────────────────────────────────────────────────
@@ -300,19 +309,62 @@ PARSERS = {"dpkg": parse_dpkg, "rpm": parse_rpm, "apk": parse_apk_installed}
 # ─── SSH ─────────────────────────────────────────────────────────────────────
 
 
-def connect_options(*, username: str, password: str | None = None,
-                    private_key: str | None = None, passphrase: str | None = None,
-                    known_hosts: bytes) -> dict:
-    """asyncssh.connect keyword arguments: the one credential, the pinned
-    host keys, nothing from the local account. Raises
-    :class:`InventoryError` for an unusable credential or no pinned key."""
+def _key_dict(key) -> dict | None:
+    import base64
+
+    try:
+        return {"key_type": key.get_algorithm(),
+                "public_key": base64.b64encode(key.public_data).decode("ascii"),
+                "fingerprint": key.get_fingerprint()}
+    except Exception:  # noqa: BLE001 - an asyncssh surprise is "not read"
+        return None
+
+
+def _first_use_client():
+    """An asyncssh client that takes the first host key the server proves
+    it holds, and only that key for the rest of the connection (a re-key
+    presenting another one is refused)."""
     import asyncssh
 
-    if not known_hosts:
+    class FirstUse(asyncssh.SSHClient):
+        def __init__(self):
+            self.key = None
+
+        def validate_host_public_key(self, host, addr, port, key):
+            if self.key is None:
+                self.key = key
+                return True
+            return key == self.key
+
+    return FirstUse
+
+
+def connect_options(*, username: str, password: str | None = None,
+                    private_key: str | None = None, passphrase: str | None = None,
+                    known_hosts: bytes | None, first_use: bool = False) -> dict:
+    """asyncssh.connect keyword arguments: the one credential, the pinned
+    host keys, nothing from the local account. Raises
+    :class:`InventoryError` for an unusable credential or no pinned key.
+
+    ``first_use``: only for a host with no accepted key; ``known_hosts`` must
+    then be empty, and the key is taken on first use (see the module doc)."""
+    import asyncssh
+
+    if first_use:
+        if known_hosts:
+            raise InventoryError(HOST_KEY_REFUSED,
+                                 "First use is only for hosts with no accepted key.")
+        # Trusted keys: none, so asyncssh asks the client callback - which
+        # takes the first key. A tuple, never b"" (that falls back to
+        # ~/.ssh/known_hosts).
+        pinned: object = ([], [], [])
+    elif not known_hosts:
         raise InventoryError(HOST_KEY_REFUSED, "No accepted host key for this host.")
+    else:
+        pinned = known_hosts
     opts: dict = {
         "username": username,
-        "known_hosts": known_hosts,
+        "known_hosts": pinned,
         "agent_path": None,
         "config": None,
         "gss_auth": False,
@@ -332,6 +384,8 @@ def connect_options(*, username: str, password: str | None = None,
         opts.update(client_keys=None, public_key_auth=False, password=password)
     else:
         raise InventoryError(AUTH_FAILED, "The credential holds no password or key.")
+    if first_use:
+        opts["client_factory"] = _first_use_client()
     return opts
 
 
@@ -401,25 +455,45 @@ async def collect(host: str, *, port: int = 22, timeout: float = 60.0,
         opts = connect_options(**credential)
     except InventoryError as exc:
         return InventoryResult(exc.status, exc.message)
+    first_use = "client_factory" in opts
+    client: list = []
+    if first_use:
+        factory = opts.pop("client_factory")
+
+        def make():
+            c = factory()
+            client.append(c)
+            return c
+
+        opts["client_factory"] = make
+
+    def taken() -> dict | None:
+        key = client[0].key if client else None
+        return _key_dict(key) if key is not None else None
 
     async def go():
         async with asyncssh.connect(host, port=port, connect_timeout=min(timeout, 15),
                                     login_timeout=min(timeout, 30), **opts) as conn:
             return await read_host(conn, timeout)
 
+    def done(r: InventoryResult) -> InventoryResult:
+        if first_use:
+            r.host_key = taken()
+        return r
+
     try:
-        return await asyncio.wait_for(go(), timeout)
+        return done(await asyncio.wait_for(go(), timeout))
     except InventoryError as exc:
-        return InventoryResult(exc.status, exc.message)
+        return done(InventoryResult(exc.status, exc.message))
     except asyncssh.HostKeyNotVerifiable:
-        return InventoryResult(HOST_KEY_REFUSED,
-                               "The host key does not match an accepted key.")
+        return done(InventoryResult(HOST_KEY_REFUSED,
+                                    "The host key does not match an accepted key."))
     except asyncssh.PermissionDenied:
-        return InventoryResult(AUTH_FAILED, "The host refused the credential.")
+        return done(InventoryResult(AUTH_FAILED, "The host refused the credential."))
     except TimeoutError:
-        return InventoryResult(TIMEOUT, f"No answer within {int(timeout)} s.")
+        return done(InventoryResult(TIMEOUT, f"No answer within {int(timeout)} s."))
     except (OSError, asyncssh.Error) as exc:
-        return InventoryResult(UNREACHABLE, _safe_reason(exc))
+        return done(InventoryResult(UNREACHABLE, _safe_reason(exc)))
 
 
 def _safe_reason(exc) -> str:
@@ -434,8 +508,6 @@ async def observe_host_key(host: str, *, port: int = 22, timeout: float = 10.0) 
     """The host key the server presents, read with a key exchange only (no
     authentication, nothing sent but the handshake), as ``{key_type,
     public_key, fingerprint}``; ``None`` when it cannot be read."""
-    import base64
-
     import asyncssh
 
     try:
@@ -445,9 +517,4 @@ async def observe_host_key(host: str, *, port: int = 22, timeout: float = 10.0) 
         return None
     if key is None:
         return None
-    try:
-        return {"key_type": key.get_algorithm(),
-                "public_key": base64.b64encode(key.public_data).decode("ascii"),
-                "fingerprint": key.get_fingerprint()}
-    except Exception:  # noqa: BLE001 - an asyncssh surprise is "not read"
-        return None
+    return _key_dict(key)

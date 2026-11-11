@@ -846,6 +846,12 @@ CHECK_BLOCK_INTERNAL = os.getenv("DANBYTE_CHECK_BLOCK_INTERNAL", "False") == "Tr
 # check runner's target policy above (block_internal, SSRF allow-list)
 # applies to every host discovery logs in to from the server.
 DISCOVERY_ENABLED = os.getenv("DANBYTE_DISCOVERY_ENABLED", "False") == "True"
+# Whether Run now may offer "Accept new host keys" (trust a host's key the
+# first time it is seen, for hosts with no accepted key). False hides the
+# option everywhere and the API refuses it.
+DISCOVERY_ALLOW_FIRST_USE_KEYS = (
+    os.getenv("DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS", "True").strip().lower()
+    not in ("false", "0", "no", "off"))
 SSRF_ALLOWLIST = [
     p.strip() for p in os.getenv("DANBYTE_SSRF_ALLOWLIST", "").split(",") if p.strip()
 ]

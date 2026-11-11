@@ -43,15 +43,29 @@ import {
   scheduleLabel,
 } from "@/components/columns/inventory-columns"
 import { ProfileDialog } from "@/components/discovery/profile-dialog"
-import { isRunActive, RunStatusBadge } from "@/components/discovery/status"
+import { HostKeysPanel } from "@/components/discovery/host-keys-panel"
+import { RunNowDialog } from "@/components/discovery/run-now-dialog"
+import {
+  isRunActive,
+  RunStatusBadge,
+  useDiscoveryStatus,
+} from "@/components/discovery/status"
 
 // One inventory profile (#451 B2): Overview (scope, schedule, recorded
 // authorisation), Hosts (the scope as it resolves now, nothing contacted),
-// Runs, then Journal and Change log.
+// Host keys (presented keys waiting for review), Runs, then Journal and
+// Change log.
 
 const OBJECT_TYPE = "discovery.inventoryprofile"
-type Tab = "overview" | "hosts" | "runs" | "journal" | "history"
-const TABS: readonly Tab[] = ["overview", "hosts", "runs", "journal", "history"]
+type Tab = "overview" | "hosts" | "keys" | "runs" | "journal" | "history"
+const TABS: readonly Tab[] = [
+  "overview",
+  "hosts",
+  "keys",
+  "runs",
+  "journal",
+  "history",
+]
 
 export const Route = createFileRoute("/discovery/$id")({
   component: ProfileDetail,
@@ -93,17 +107,21 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const status = useDiscoveryStatus()
   const runs = useRuns(p.id)
   const canScan = canDo("inventoryprofile", "scan")
   const busy = (runs.data?.results ?? []).some((r) => isRunActive(r.status))
 
   const run = useMutation({
-    mutationFn: () =>
+    mutationFn: (acceptNewHostKeys: boolean) =>
       api<InventoryRun>(`/api/discovery/profiles/${p.id}/run/`, {
         method: "POST",
+        body: JSON.stringify({ accept_new_host_keys: acceptNewHostKeys }),
       }),
     onSuccess: () => {
       toast.success("Run queued")
+      setConfirming(false)
       qc.invalidateQueries({ queryKey: ["discovery", "runs", p.id] })
       qc.invalidateQueries({ queryKey: ["discovery", "profile", p.id] })
       setTab("runs")
@@ -122,7 +140,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
             <Button
               size="sm"
               disabled={run.isPending || busy || !!p.blocked_reason}
-              onClick={() => run.mutate()}
+              onClick={() => setConfirming(true)}
             >
               <Play className="h-3.5 w-3.5" />
               {run.isPending || busy ? "Running…" : "Run now"}
@@ -166,6 +184,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "hosts", label: "Hosts" },
+        { value: "keys", label: "Host keys" },
         { value: "runs", label: "Runs", count: runs.data?.count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -179,6 +198,12 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
       <DetailTab value="hosts">
         <ScopeHosts id={p.id} />
       </DetailTab>
+      <DetailTab value="keys">
+        <HostKeysPanel
+          endpoint={`/api/discovery/profiles/${p.id}/host-keys/`}
+          queryKey={["discovery", "profile", p.id, "host-keys"]}
+        />
+      </DetailTab>
       <DetailTab value="runs">
         <Runs id={p.id} />
       </DetailTab>
@@ -189,6 +214,15 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
         <ChangeLogPanel objectType={OBJECT_TYPE} objectId={p.id} />
       </DetailTab>
       <ProfileDialog open={editing} onOpenChange={setEditing} profile={p} />
+      <RunNowDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        profileName={p.name}
+        firstUseAllowed={!!status.data?.first_use_keys_allowed}
+        canAcceptKeys={canDo("sshhostkey", "change")}
+        pending={run.isPending}
+        onRun={(accept) => run.mutate(accept)}
+      />
       <DeleteDialog
         profile={deleting ? p : null}
         onOpenChange={(o) => !o && setDeleting(false)}
@@ -218,6 +252,12 @@ function Overview({ profile: p }: { profile: InventoryProfile }) {
     { label: "Prefixes", value: names(p.scope.prefixes) },
     { label: "Devices", value: names(p.scope.devices) },
     { label: "Virtual machines", value: names(p.scope.virtual_machines) },
+  ]
+  const login: KvRow[] = [
+    {
+      label: "Pinned",
+      value: p.shared_credential ? p.shared_credential.name : dash,
+    },
   ]
   const schedule: KvRow[] = [
     { label: "Schedule", value: scheduleLabel(p) },
@@ -269,7 +309,10 @@ function Overview({ profile: p }: { profile: InventoryProfile }) {
         <KvCard title="Scope" rows={scope} />
         <KvCard title="Authorisation" rows={auth} />
       </div>
-      <KvCard title="Schedule" rows={schedule} />
+      <div className="grid min-w-0 content-start gap-6">
+        <KvCard title="Schedule" rows={schedule} />
+        <KvCard title="Credential" rows={login} />
+      </div>
     </div>
   )
 }

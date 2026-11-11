@@ -16,6 +16,12 @@ def deployment_enabled() -> bool:
     return bool(getattr(settings, "DISCOVERY_ENABLED", False))
 
 
+def first_use_keys_allowed() -> bool:
+    """``DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS`` (default on): whether Run
+    now may offer "Accept new host keys" at all."""
+    return bool(getattr(settings, "DISCOVERY_ALLOW_FIRST_USE_KEYS", True))
+
+
 def active(tenant) -> bool:
     """Discovery is on for ``tenant`` (and the tenant is active)."""
     from integrations.toggles import integration_enabled

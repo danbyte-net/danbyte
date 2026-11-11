@@ -31,6 +31,9 @@ RUN_STATUSES = [
     ("partial", "Partial"),
     ("failed", "Failed"),
     ("skipped", "Skipped"),
+    #: Every host was left alone before a login (no credential, no accepted
+    #: host key, exempt, …): nothing failed, nothing was read.
+    ("nothing_read", "Nothing read"),
 ]
 RUN_TRIGGERS = [("manual", "Run now"), ("schedule", "Schedule")]
 #: Per-host outcomes. The first block comes from the collector
@@ -116,6 +119,12 @@ class InventoryProfile(NumIdMixin, TimestampedModel):
     authorised_by_name = models.CharField(max_length=150, blank=True, default="",
                                           db_default="")
     authorised_at = models.DateTimeField(null=True, blank=True)
+    #: A shared credential tried for every host of this profile right
+    #: after the host's own credential, before the shared credentials whose
+    #: scope matches (``monitoring.credentials``).
+    shared_credential = models.ForeignKey(
+        "monitoring.SharedCredential", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+")
     #: Bookkeeping, by UPDATE (out of the change log).
     last_run_at = models.DateTimeField(null=True, blank=True, editable=False)
 
@@ -153,12 +162,16 @@ class InventoryRun(TimestampedModel):
                                        db_default="")
     #: Where it ran: ``server`` (the core's own workers) today.
     engine = models.CharField(max_length=64, default="server", db_default="server")
-    status = models.CharField(max_length=10, choices=RUN_STATUSES, default="queued",
+    status = models.CharField(max_length=16, choices=RUN_STATUSES, default="queued",
                               db_default="queued")
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     #: ``{hosts, ok, auth_failed, host_key_refused, unsupported, skipped,
     #: packages, changed, …}``
+    #: Run now with "Accept new host keys" ticked: a host with no accepted
+    #: key has the key it presents on this run accepted on first use. Never
+    #: set on a scheduled run.
+    accept_new_host_keys = models.BooleanField(default=False, db_default=False)
     counts = models.JSONField(default=dict, blank=True, db_default={})
     errors = models.JSONField(default=list, blank=True, db_default=[])
 
@@ -187,6 +200,12 @@ class InventoryHostResult(models.Model):
     #: Which transport read it; blank when nothing was contacted.
     transport = models.CharField(max_length=8, choices=TRANSPORTS, blank=True, default="",
                                  db_default="")
+    #: Whose login was used: ``host`` (its own device credential) or
+    #: ``shared: <name>``. Never the secret.
+    credential_source = models.CharField(max_length=140, blank=True, default="",
+                                         db_default="")
+    #: The host's key was accepted on first use by this run.
+    key_first_use = models.BooleanField(default=False, db_default=False)
     message = models.CharField(max_length=300, blank=True, default="", db_default="")
     packages = models.PositiveIntegerField(default=0, db_default=0)
     added = models.PositiveIntegerField(default=0, db_default=0)

@@ -39,6 +39,7 @@ from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import StandardPagination, TenantScopedViewSet
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin
+from monitoring.models import SharedCredential
 
 from . import gate, runner, scope
 from .models import (
@@ -85,6 +86,8 @@ def run_dict(r: InventoryRun) -> dict:
         "started_at": r.started_at,
         "finished_at": r.finished_at,
         "counts": r.counts or {},
+        "summary": runner.summary(r.counts or {}),
+        "accept_new_host_keys": r.accept_new_host_keys,
         "errors": r.errors or [],
     }
 
@@ -109,7 +112,8 @@ def discovery_status(request):
         tenant=tenant, discovery_enabled=True).exists()
     return Response({"deployment_enabled": gate.deployment_enabled(), "enabled": toggle,
                      "active": gate.active(tenant),
-                     "can_manage": can_manage_admin(request.user, tenant)})
+                     "can_manage": can_manage_admin(request.user, tenant),
+                     "first_use_keys_allowed": gate.first_use_keys_allowed()})
 
 
 def _clean_cidrs(value) -> list[str]:
@@ -168,6 +172,10 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
     virtual_machine_ids = TenantScopedPrimaryKeyRelatedField(
         source="virtual_machines", many=True, required=False,
         queryset=VirtualMachine.objects.all())
+    shared_credential_id = TenantScopedPrimaryKeyRelatedField(
+        source="shared_credential", required=False, allow_null=True,
+        queryset=SharedCredential.objects.all())
+    shared_credential = serializers.SerializerMethodField()
     scope = serializers.SerializerMethodField()
     authorised = serializers.BooleanField(read_only=True)
     blocked_reason = serializers.SerializerMethodField()
@@ -178,6 +186,7 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
         fields = [
             "id", "numid", "name", "description", "enabled",
             "site_ids", "prefix_ids", "device_ids", "virtual_machine_ids", "scope",
+            "shared_credential_id", "shared_credential",
             "interval_hours", "window_start", "window_end", "max_concurrency",
             "timeout_seconds", "authorisation", "authorised", "authorised_by_name",
             "authorised_at", "blocked_reason", "last_run_at", "last_run",
@@ -193,6 +202,10 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
             "devices": [_ref(d) for d in obj.devices.all()],
             "virtual_machines": [_ref(v) for v in obj.virtual_machines.all()],
         }
+
+    def get_shared_credential(self, obj) -> dict | None:
+        c = obj.shared_credential
+        return None if c is None else {"id": str(c.pk), "name": c.name, "kind": c.kind}
 
     def get_blocked_reason(self, obj) -> str:
         return runner.can_run(obj)
@@ -248,6 +261,14 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
                 ids = {o.pk for o in picked}
                 if visible.filter(pk__in=ids).count() != len(ids):
                     raise ValidationError({ID_FIELDS[field]: "Not found."})
+        pinned = attrs.get("shared_credential")
+        if pinned is not None:
+            if pinned.kind not in scope.SSH_KINDS:
+                raise ValidationError({"shared_credential_id": "Pick an SSH key or password."})
+            if not user.is_superuser and not rbac.restrict_queryset(
+                    SharedCredential.objects.filter(tenant=tenant, pk=pinned.pk), user,
+                    tenant, "sharedcredential", "view").exists():
+                raise ValidationError({"shared_credential_id": "Not found."})
         return attrs
 
 
@@ -263,10 +284,10 @@ class InventoryProfileViewSet(TenantScopedViewSet):
     without one clears the authorisation, and a profile without one never
     runs. Filters: ``enabled``, ``search``."""
 
-    queryset = InventoryProfile.objects.prefetch_related(
+    queryset = InventoryProfile.objects.select_related("shared_credential").prefetch_related(
         "sites", "prefixes", "devices", "virtual_machines")
     serializer_class = InventoryProfileSerializer
-    rbac_action_map = {"run": "scan", "hosts": "view"}
+    rbac_action_map = {"run": "scan", "hosts": "view", "host_keys": "view"}
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
@@ -334,8 +355,19 @@ class InventoryProfileViewSet(TenantScopedViewSet):
         if not request.user.is_superuser and not rbac.has_action(
                 request.user, tenant, "devicecredential", "view"):
             raise PermissionDenied("devicecredential.view required.")
+        data = request.data if isinstance(request.data, dict) else {}
+        first_use = data.get("accept_new_host_keys", False)
+        if not isinstance(first_use, bool):
+            raise ValidationError({"accept_new_host_keys": "true or false."})
+        if first_use:
+            if not gate.first_use_keys_allowed():
+                raise ValidationError({"accept_new_host_keys":
+                                       "This deployment does not allow it."})
+            if not request.user.is_superuser and not rbac.has_action(
+                    request.user, tenant, "sshhostkey", "change"):
+                raise PermissionDenied("sshhostkey.change required to accept host keys.")
         try:
-            r = runner.start(profile, user=request.user)
+            r = runner.start(profile, user=request.user, accept_new_host_keys=first_use)
         except runner.RunRefused as exc:
             return Response({"detail": exc.message}, status=exc.status)
         r.profile = profile
@@ -356,9 +388,22 @@ class InventoryProfileViewSet(TenantScopedViewSet):
                 "kind": t.kind, "id": str(t.host.pk), "name": str(t.host),
                 "address": t.address, "status": t.skip or "ready", "message": t.message,
                 "credential": _ref(t.credential), "scan_exempt": t.host.scan_exempt,
+                "credential_source": t.logins[0].source if t.logins else "",
             })
         return Response({"results": out, "count": len(out),
                          "truncated": scope.truncated(profile, user=user)})
+
+    @extend_schema(summary="Host keys to review for a profile's hosts", tags=["discovery"],
+                   responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+    @action(detail=True, methods=["get"], url_path="host-keys")
+    def host_keys(self, request, pk=None):
+        """Observed, not yet accepted SSH host keys of the hosts in scope."""
+        profile = self.get_object()
+        user = None if request.user.is_superuser else request.user
+        devices, vms = scope._host_querysets(profile, user)
+        rows = pending_host_keys(request, profile.tenant, devices.values("pk"),
+                                 vms.values("pk"))
+        return Response({"results": rows, "count": len(rows)})
 
 
 # ─── runs ────────────────────────────────────────────────────────────────────
@@ -448,11 +493,126 @@ class InventoryRunViewSet(viewsets.ViewSet):
                 "id": str(h.pk),
                 "device": _ref(h.device), "virtual_machine": _ref(h.virtual_machine),
                 "address": h.address, "status": h.status, "transport": h.transport,
+                "credential_source": h.credential_source, "key_first_use": h.key_first_use,
                 "message": h.message, "packages": h.packages, "added": h.added,
                 "removed": h.removed, "updated": h.updated, "finished_at": h.finished_at,
             } for h in page]
 
         return _paginate(request, qs.order_by("status", "address", "pk"), rows)
+
+    @extend_schema(summary="Host keys to review for a run's hosts", tags=["discovery"],
+                   responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+    @action(detail=True, methods=["get"], url_path="host-keys")
+    def host_keys(self, request, pk=None):
+        """Observed, not yet accepted SSH host keys of the hosts this run
+        considered."""
+        r = self._get(request, pk)
+        hosts = InventoryHostResult.objects.filter(run=r)
+        rows = pending_host_keys(
+            request, r.tenant,
+            hosts.filter(device__isnull=False).values("device_id"),
+            hosts.filter(virtual_machine__isnull=False).values("virtual_machine_id"))
+        return Response({"results": rows, "count": len(rows)})
+
+
+# ─── host keys to review ─────────────────────────────────────────────────────
+
+ACCEPT_MAX = 500
+
+
+def pending_host_keys(request, tenant, dev_ids, vm_ids) -> list[dict]:
+    """Observed host keys not yet accepted, on the given hosts, that the
+    caller may view (``sshhostkey`` view, site scope included). ``mismatch``:
+    the host already has an accepted key of the same type - this one
+    differs, so it is never bulk-accepted."""
+    from monitoring.models import SSHHostKey
+
+    user = request.user
+    if not user.is_superuser and not rbac.has_action(user, tenant, "sshhostkey", "view"):
+        raise PermissionDenied("sshhostkey.view required.")
+    host_q = Q(device_id__in=dev_ids) | Q(virtual_machine_id__in=vm_ids)
+    keys = SSHHostKey.objects.filter(tenant=tenant).filter(host_q).filter(
+        _visible_hosts_q(request, tenant)).select_related("device", "virtual_machine")
+    if not user.is_superuser:
+        keys = rbac.restrict_queryset(keys, user, tenant, "sshhostkey", "view")
+        changeable = set(rbac.restrict_queryset(
+            SSHHostKey.objects.filter(tenant=tenant).filter(host_q), user, tenant,
+            "sshhostkey", "change").values_list("pk", flat=True)) if rbac.has_action(
+            user, tenant, "sshhostkey", "change") else set()
+    else:
+        changeable = None
+    keys = list(keys)
+    accepted = {(k.device_id, k.virtual_machine_id, k.key_type) for k in keys if k.uploaded}
+    # Accepted keys the caller cannot see still make a new one a mismatch.
+    accepted |= set(SSHHostKey.objects.filter(tenant=tenant, uploaded=True).filter(
+        host_q).values_list("device_id", "virtual_machine_id", "key_type"))
+    out = []
+    for k in keys:
+        if k.uploaded or not k.observed:
+            continue
+        mismatch = (k.device_id, k.virtual_machine_id, k.key_type) in accepted
+        host = k.device or k.virtual_machine
+        ip = getattr(host, "primary_ip", None)
+        out.append({
+            "id": str(k.pk),
+            "device": _ref(k.device), "virtual_machine": _ref(k.virtual_machine),
+            "address": str(ip.ip_address).split("/")[0] if ip is not None else "",
+            "key_type": k.key_type, "fingerprint": k.fingerprint_sha256,
+            "first_seen": k.first_seen, "last_seen": k.last_seen,
+            "mismatch": mismatch,
+            "can_accept": not mismatch and (changeable is None or k.pk in changeable),
+        })
+    out.sort(key=lambda r: (r["mismatch"], (r["device"] or r["virtual_machine"])["name"],
+                            r["key_type"]))
+    return out
+
+
+@extend_schema(summary="Accept observed SSH host keys", tags=["discovery"],
+               request=OpenApiTypes.OBJECT,
+               responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def discovery_accept_host_keys(request):
+    """``{ids: [...]}``: mark observed host keys accepted, as **accept
+    observed** on the host-key list does one at a time. Needs ``change`` on
+    SSH host keys (row and site scope included). A key that differs from an
+    accepted key of the same type on its host is refused, never accepted in
+    bulk; ids of another tenant or out of the caller's scope count as not
+    found. Each acceptance is change-logged."""
+    from monitoring.models import SSHHostKey
+    from monitoring.ssh_host_keys import accept_observed
+
+    tenant = gate.require(request)
+    user = request.user
+    data = request.data if isinstance(request.data, dict) else {}
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not ids or len(ids) > ACCEPT_MAX:
+        raise ValidationError({"ids": f"A list of 1 to {ACCEPT_MAX} ids."})
+    try:
+        ids = [uuid.UUID(str(i)) for i in ids]
+    except ValueError:
+        raise ValidationError({"ids": "Not a valid id."}) from None
+    qs = SSHHostKey.objects.filter(tenant=tenant, pk__in=ids)
+    if not user.is_superuser:
+        if not rbac.has_action(user, tenant, "sshhostkey", "change"):
+            raise PermissionDenied("sshhostkey.change required.")
+        qs = rbac.restrict_queryset(qs, user, tenant, "sshhostkey", "change")
+    seen = qs.count()
+    accepted, refused = [], []
+    with transaction.atomic():
+        for k in qs.select_for_update(of=("self",)):
+            if k.uploaded:
+                continue
+            if SSHHostKey.objects.filter(
+                    tenant=tenant, device_id=k.device_id, virtual_machine_id=k.virtual_machine_id,
+                    key_type=k.key_type, uploaded=True).exclude(pk=k.pk).exists():
+                refused.append({"id": str(k.pk),
+                                "reason": "Differs from the host's accepted key."})
+                continue
+            accept_observed(k)
+            accepted.append(str(k.pk))
+    return Response({"accepted": accepted, "refused": refused,
+                     "not_found": len(set(ids)) - seen})
 
 
 # ─── exempt flag ─────────────────────────────────────────────────────────────

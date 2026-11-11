@@ -37,6 +37,16 @@ Three things must all be true before Danbyte contacts any host:
 With any of the three off, the pages and the API answer *not found*, the
 schedule queues nothing, and package matches are resolved.
 
+## Run results
+
+| Run status | Meaning |
+|---|---|
+| OK | Every host was read, or left alone on purpose (exempt, deny subnet, maintenance). |
+| Partial | Some hosts were read, some not. |
+| Nothing read | No host was logged in to, because each was left alone before a login - no credential, no accepted host key, no address. Nothing failed; the run page says why by reason ("61 without a credential") and links to what fixes it. |
+| Failed | Logins were tried and none read (refused, unreachable, timed out). |
+| Skipped | The run did not start: Discovery, the profile or its authorisation changed after it was queued. |
+
 ## Inventory profiles
 
 **Discovery** in the sidebar (or **Profiles** on the integration card) lists
@@ -87,8 +97,12 @@ list:
 | Deny subnet | The address is in one of the tenant's discovery deny subnets (any VRF) or a [monitoring deny subnet](monitoring.md) of its VRF. |
 | Blocked target | The server's target policy refuses it: link-local and cloud-metadata addresses always, internal ranges where `DANBYTE_CHECK_BLOCK_INTERNAL` is on. |
 | In maintenance | The host is in an open [maintenance event](maintenance.md). |
-| No SSH credential | The host has no device credential of kind *SSH key* or *SSH password*, or its secret cannot be read. A key login is preferred when it has both. |
+| No SSH credential | No login for the host: no device credential of kind *SSH key* or *SSH password*, no shared credential pinned on the profile or matching the host, or the secret cannot be read. |
 | Host key not accepted | No SSH host key has been accepted for the host. |
+
+A host left alone as *No SSH credential* or *Host key not accepted* (and
+past every rule above it) still has its SSH host key read - a key exchange,
+no login - so the key shows under **Host keys** for review.
 
 A run started with **Run now** also reads only the hosts the person who
 pressed it may view, with credentials they may view. A scheduled run reads
@@ -115,7 +129,7 @@ The change is in the object's change log like any edit.
 the tenant's discovery ever contacts. Tenant admins change them; the
 monitoring deny subnets apply as well.
 
-## Host keys and credentials
+## Credentials and host keys
 
 An inventory run sends a credential to the host, so a host that is not who
 it claims to be could collect it. Danbyte therefore reads a host only when
@@ -125,14 +139,53 @@ The key is checked during the SSH handshake, before any credential is sent.
 
 When a host has no accepted key, or presents a different one, the run marks
 it *Host key not accepted* and records the key it presented as *observed*
-(that takes a key exchange only, no login). Accept it on the host-key list
-once you have checked the fingerprint; the next run reads the host.
+(that takes a key exchange only, no login).
 
-Credentials are the host's own [device credentials](device-access.md), now
-on VMs as well as devices. The secret is read from the secret store when the
-run connects, held in memory for that connection, and never written to the
-run, its host results or the log. Nothing in the run's API answers carries
-it.
+### Which login a host is read with
+
+For each host, in this order (the [shared-credential
+rule](device-access.md#which-login-a-host-gets)):
+
+1. its own [device credential](device-access.md) - *SSH key* before *SSH
+   password*;
+2. the shared credential the profile pins, under **Credential** on the
+   profile (optional);
+3. the enabled [shared credentials](device-access.md#shared-credentials)
+   whose scope matches the host, lowest weight first.
+
+Only the first is tried unless it is refused and allows trying the next, at
+most three per host. A run started with **Run now** uses only credentials
+the person who pressed it may view. The run's host list says which login was
+used - *Host's own* or *Shared · name* - never the secret. The secret is
+read from the secret store when the run connects, held in memory for that
+connection, and never written to the run, its host results or the log.
+
+### Reviewing host keys
+
+The profile's and each run's **Host keys** tab lists the keys hosts
+presented that nobody accepted yet, with the fingerprint and when it was
+first seen. Tick the ones you checked and press **Accept N keys**; the next
+run reads those hosts. You need *change* on SSH host keys. A key that
+differs from an accepted one for its host is marked **Differs from accepted
+key** and cannot be accepted from this list.
+
+### Accept new host keys on first use
+
+**Run now** asks before it starts, with a box **Accept new host keys**,
+unticked every time. Ticked, a host with **no accepted key at all** has the
+key it presents on this run accepted, and the login goes ahead on that same
+connection - pinned to that key, so a second handshake cannot swap it. It
+is **not advised**: whoever answers on that first contact is trusted.
+Reviewing fingerprints under **Host keys** is the safe way.
+
+- A host that has an accepted key and presents a different one is refused,
+  ticked or not; nothing is overwritten.
+- It needs *change* on SSH host keys as well as *scan*, checked when you
+  press it and again when the run starts; scheduled runs never do it.
+- Each key accepted this way is change-logged as you, with the run named as
+  the cause, and the host's row shows **Key accepted on first use**.
+- `DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS=False` removes the option from the
+  whole deployment ([Settings](../reference/settings.md#discovery)).
 
 The SSH connection uses only that credential: no ssh-agent, no keys or
 config from the server account, no GSS or host-based login.
@@ -259,6 +312,10 @@ check runner's target policy applies to every host it logs in to.
 | See profiles, runs and a run's hosts | *view* on Inventory profiles; host rows only for hosts you may view |
 | Create, change, delete profiles | *add* / *change* / *delete* on Inventory profiles, and *view* on every site, prefix, device and VM in the scope |
 | Run now | the **scan** verb on the profile, plus *view* on device credentials |
+| Run now with *Accept new host keys* | also *change* on SSH host keys |
+| A profile's or run's host keys to review | *view* on SSH host keys |
+| Accept host keys from that list | *change* on SSH host keys |
+| Pin a shared credential on a profile | *change* on the profile and *view* on the shared credential |
 | A host's packages, package matches | *view* on the host and on installed software |
 | Exempt a host, address or prefix | *change* on it |
 | Deny subnets | tenant admin to change; tenant admins and profile viewers read |
@@ -275,7 +332,9 @@ what it can see.
 | `GET /api/discovery/status/` | The deployment switch, the tenant toggle, and whether both are on |
 | `GET`, `PATCH /api/discovery/settings/` | `deny_subnets` |
 | `/api/discovery/profiles/` | Inventory profiles, CRUD (`?enabled=`, `?search=`) |
-| `POST /api/discovery/profiles/<id>/run/` | Run now (202 with the run; 409 when one is open or the profile cannot run) |
+| `POST /api/discovery/profiles/<id>/run/` | Run now (202 with the run; 409 when one is open or the profile cannot run). Body `{"accept_new_host_keys": true}` for first use. |
+| `GET /api/discovery/profiles/<id>/host-keys/`, `/api/discovery/runs/<id>/host-keys/` | Host keys waiting for review |
+| `POST /api/discovery/host-keys/accept/` | Accept observed host keys, `{ids: [...]}` |
 | `GET /api/discovery/profiles/<id>/hosts/` | The scope as it resolves now |
 | `GET /api/discovery/runs/` | Runs (`?profile=`, `?status=`) |
 | `GET /api/discovery/runs/<id>/hosts/` | A run's per-host results (`?status=`) |

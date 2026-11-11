@@ -490,6 +490,7 @@ on.
 | Setting | Default | Purpose |
 |---|---|---|
 | `DANBYTE_DISCOVERY_ENABLED` | `False` | Deployment switch for discovery. Set `True` in the environment of the web, worker and timer units, then restart them. With it off nothing is contacted, the pages and API answer not found and package matches resolve. |
+| `DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS` | `True` | Whether **Run now** may offer *Accept new host keys* (trust a host's SSH key the first time it is seen). `False`, `0`, `no` or `off` hides the option everywhere and the API refuses it; scheduled runs never use it either way. |
 
 Runs go to the RQ queue `discovery` (`RQ_QUEUES`, timeout 6 h); the shipped
 `danbyte-workers` unit and compose file listen on it. The check-engine

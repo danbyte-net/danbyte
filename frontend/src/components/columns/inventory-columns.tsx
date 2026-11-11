@@ -7,8 +7,9 @@ import type {
   InventoryProfile,
   InventoryRun,
   InventoryScopeHost,
+  PendingHostKey,
 } from "@/lib/api"
-import { SortHeader } from "@/components/data-table"
+import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Badge } from "@/components/ui/badge"
@@ -20,8 +21,8 @@ import {
 } from "@/components/discovery/status"
 
 // Built-in discovery (#451 B2): the one column factory per discovery table -
-// inventory profiles, runs, a run's hosts, a profile's scope hosts and a
-// host's packages.
+// inventory profiles, runs, a run's hosts, a profile's scope hosts, host
+// keys waiting for review and a host's packages.
 
 function labelOf(labels: Record<string, string>, v: string): string {
   return Object.hasOwn(labels, v) ? labels[v] : v
@@ -359,8 +360,32 @@ export function buildInventoryHostResultColumns(): ColumnDef<
       id: "status",
       accessorKey: "status",
       header: ({ column }) => <SortHeader column={column} label="Result" />,
-      cell: ({ row }) => <HostStatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        <span className="flex items-center gap-1.5">
+          <HostStatusBadge status={row.original.status} />
+          {row.original.key_first_use && (
+            <Badge variant="warning" className="whitespace-nowrap">
+              Key accepted on first use
+            </Badge>
+          )}
+        </span>
+      ),
       meta: { label: "Result", facet: statusFacet<InventoryHostResult>() },
+    },
+    {
+      id: "credential",
+      accessorKey: "credential_source",
+      header: "Credential",
+      enableSorting: false,
+      cell: ({ row }) =>
+        row.original.credential_source ? (
+          <span className="text-sm whitespace-nowrap">
+            {credentialSourceLabel(row.original.credential_source)}
+          </span>
+        ) : (
+          dash
+        ),
+      meta: { label: "Credential" },
     },
     {
       id: "transport",
@@ -471,7 +496,11 @@ export function buildInventoryScopeHostColumns(
       enableSorting: false,
       cell: ({ row }) =>
         row.original.credential ? (
-          <span className="text-sm">{row.original.credential.name}</span>
+          <span className="text-sm whitespace-nowrap">
+            {row.original.credential_source.startsWith("shared")
+              ? credentialSourceLabel(row.original.credential_source)
+              : row.original.credential.name}
+          </span>
         ) : (
           dash
         ),
@@ -496,6 +525,105 @@ export function buildInventoryScopeHostColumns(
     })
   }
   return cols
+}
+
+/** "host" → "Host's own", "shared: ops" → "Shared · ops". */
+export function credentialSourceLabel(source: string): string {
+  if (source === "host") return "Host's own"
+  if (source.startsWith("shared: ")) return `Shared · ${source.slice(8)}`
+  return source
+}
+
+export function buildPendingHostKeyColumns(): ColumnDef<
+  PendingHostKey,
+  unknown
+>[] {
+  return [
+    selectionColumn<PendingHostKey>(),
+    {
+      id: "host",
+      accessorFn: (k) => k.device?.name ?? k.virtual_machine?.name ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Host" />,
+      cell: ({ row }) => (
+        <HostLink
+          device={row.original.device}
+          vm={row.original.virtual_machine}
+        />
+      ),
+      meta: { label: "Host" },
+    },
+    {
+      id: "address",
+      accessorKey: "address",
+      header: ({ column }) => <SortHeader column={column} label="Address" />,
+      cell: ({ row }) =>
+        row.original.address ? (
+          <span className="font-mono text-xs">{row.original.address}</span>
+        ) : (
+          dash
+        ),
+      meta: { label: "Address" },
+    },
+    {
+      id: "key_type",
+      accessorKey: "key_type",
+      header: ({ column }) => <SortHeader column={column} label="Type" />,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs whitespace-nowrap">
+          {row.original.key_type}
+        </span>
+      ),
+      meta: { label: "Type" },
+    },
+    {
+      id: "fingerprint",
+      accessorKey: "fingerprint",
+      header: "Fingerprint",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs break-all">
+          {row.original.fingerprint}
+        </span>
+      ),
+      meta: { label: "Fingerprint" },
+    },
+    {
+      id: "state",
+      accessorFn: (k) => (k.mismatch ? "mismatch" : "new"),
+      header: ({ column }) => <SortHeader column={column} label="State" />,
+      cell: ({ row }) =>
+        row.original.mismatch ? (
+          <Badge variant="destructive" className="whitespace-nowrap">
+            Differs from accepted key
+          </Badge>
+        ) : (
+          <Badge variant="secondary">New</Badge>
+        ),
+      meta: {
+        label: "State",
+        facet: {
+          kind: "enum",
+          label: "State",
+          get: (k: PendingHostKey) => (k.mismatch ? "mismatch" : "new"),
+          formatValue: (v) => ({
+            label: v === "mismatch" ? "Differs from accepted key" : "New",
+          }),
+        },
+      },
+    },
+    {
+      id: "first_seen",
+      accessorFn: (k) => k.first_seen ?? "",
+      header: ({ column }) => <SortHeader column={column} label="First seen" />,
+      cell: ({ row }) =>
+        row.original.first_seen ? (
+          <TimeCell iso={row.original.first_seen} />
+        ) : (
+          dash
+        ),
+      meta: { label: "First seen" },
+    },
+  ]
 }
 
 export function buildHostPackageColumns(): ColumnDef<HostPackage, unknown>[] {

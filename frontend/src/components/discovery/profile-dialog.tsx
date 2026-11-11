@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { InventoryProfile, Site } from "@/lib/api"
+import type { InventoryProfile, SharedCredential, Site } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import {
   Field,
   FormCheckbox,
   FormFooter,
   FormRow,
+  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -136,6 +139,18 @@ export function ProfileDialog({
   const [concurrency, setConcurrency] = useState("4")
   const [timeout, setTimeoutSecs] = useState("60")
   const [authorisation, setAuthorisation] = useState("")
+  const [sharedId, setSharedId] = useState<string | null>(null)
+  const { canDo } = useMe()
+  const shared = useQuery({
+    queryKey: ["shared-credentials", "ssh"],
+    queryFn: () =>
+      apiAll<SharedCredential>("/api/monitoring/shared-credentials/?enabled=1"),
+    enabled: open && canDo("sharedcredential", "view"),
+    select: (d) =>
+      d.results.filter(
+        (c) => c.kind === "ssh_key" || c.kind === "ssh_password"
+      ),
+  })
 
   useEffect(() => {
     if (!open) return
@@ -150,6 +165,7 @@ export function ProfileDialog({
     setConcurrency(String(profile?.max_concurrency ?? 4))
     setTimeoutSecs(String(profile?.timeout_seconds ?? 60))
     setAuthorisation(profile?.authorisation ?? "")
+    setSharedId(profile?.shared_credential_id ?? null)
   }, [open, profile, reset])
 
   const add = (key: ScopeKey) => (items: Ref[]) =>
@@ -175,6 +191,7 @@ export function ProfileDialog({
         window_end: windowEnd,
         max_concurrency: Number(concurrency),
         timeout_seconds: Number(timeout),
+        shared_credential_id: sharedId,
       }
       for (const k of Object.keys(ID_FIELD) as ScopeKey[])
         body[ID_FIELD[k]] = ids(k)
@@ -341,6 +358,32 @@ export function ProfileDialog({
             />
           </FormRow>
 
+          <FormSelect
+            label="Credential"
+            value={sharedId}
+            onChange={setSharedId}
+            noneLabel="Host's own, then matching shared"
+            options={[
+              ...(shared.data ?? []).map((c) => ({
+                value: c.id,
+                label: c.name,
+              })),
+              // Keep a pinned one the list does not carry (disabled since).
+              ...(profile?.shared_credential &&
+              !(shared.data ?? []).some(
+                (c) => c.id === profile.shared_credential!.id
+              )
+                ? [
+                    {
+                      value: profile.shared_credential.id,
+                      label: profile.shared_credential.name,
+                    },
+                  ]
+                : []),
+            ]}
+            error={fieldErrors.shared_credential_id}
+            info="A shared credential tried for every host right after the host's own device credential, before the shared credentials whose scope matches."
+          />
           <FormTextarea
             label="Authorisation"
             value={authorisation}

@@ -15,6 +15,8 @@ urlpatterns = [
     path("discovery/status/", api.discovery_status, name="discovery-status"),
     path("discovery/settings/", api.discovery_settings, name="discovery-settings"),
     path("discovery/exempt/", api.discovery_exempt, name="discovery-exempt"),
+    path("discovery/host-keys/accept/", api.discovery_accept_host_keys,
+         name="discovery-accept-host-keys"),
     path("devices/<uuid:pk>/packages/", api.device_packages, name="device-packages"),
     path("virtual-machines/<uuid:pk>/packages/", api.virtual_machine_packages,
          name="virtual-machine-packages"),

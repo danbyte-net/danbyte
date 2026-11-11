@@ -55,6 +55,8 @@ function profile(over: Partial<InventoryProfile> = {}): InventoryProfile {
     authorised: false,
     authorised_by_name: "",
     authorised_at: null,
+    shared_credential_id: null,
+    shared_credential: null,
     blocked_reason: "",
     last_run_at: null,
     last_run: null,

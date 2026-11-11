@@ -71,8 +71,10 @@ def can_run(profile) -> str:
     return ""
 
 
-def start(profile, *, user=None, trigger="manual"):
-    """Queue a run of ``profile``. Raises :class:`RunRefused`."""
+def start(profile, *, user=None, trigger="manual", accept_new_host_keys=False):
+    """Queue a run of ``profile``. Raises :class:`RunRefused`.
+    ``accept_new_host_keys`` is for Run now only; the caller has checked
+    the person may accept host keys (the job checks again)."""
     from .models import InventoryRun
 
     reason = can_run(profile)
@@ -86,7 +88,8 @@ def start(profile, *, user=None, trigger="manual"):
         run = InventoryRun.objects.create(
             tenant=profile.tenant, profile=profile, trigger=trigger,
             started_by=user if user is not None and user.is_authenticated else None,
-            started_by_name=user.get_username() if user is not None else "")
+            started_by_name=user.get_username() if user is not None else "",
+            accept_new_host_keys=bool(accept_new_host_keys and trigger == "manual"))
     transaction.on_commit(lambda: enqueue(run))
     return run
 
@@ -130,18 +133,17 @@ def _still_allowed(run) -> str:
     return ""
 
 
-def _credential(target) -> dict | None:
-    """The connect arguments for a target, secret included, or None when
-    the secret cannot be read (the reason goes on the host result)."""
+def _credential(login, known_hosts) -> dict | None:
+    """The connect arguments for one login, secret included, or None when
+    its secret cannot be read."""
     from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
 
-    cred = target.credential
+    cred = login.credential
     try:
         secret = cred.resolve_secret() or {}
     except (SecretStoreDisabled, SecretStoreError):
-        target.skip, target.message = "no_credential", "The credential's secret cannot be read."
         return None
-    out = {"username": cred.username or "root", "known_hosts": target.known_hosts}
+    out = {"username": cred.username or "root", "known_hosts": known_hosts}
     if cred.kind == "ssh_key":
         out.update(private_key=secret.get("private_key") or "",
                    passphrase=secret.get("passphrase") or None)
@@ -150,19 +152,154 @@ def _credential(target) -> dict | None:
     return out
 
 
+def _known_hosts_line(address: str, port: int, key: dict) -> bytes:
+    from .scope import _known_hosts
+
+    return _known_hosts(address, [(key["key_type"], key["public_key"], port)]) or b""
+
+
 async def _read_all(work: list, concurrency: int, timeout: float, collect, observe):
+    """``work``: ``(target, mode)`` - ``read`` logs in with the target's
+    logins in order (the next only after a refused login that may fall
+    through), ``observe`` only reads the host key (a key exchange, no
+    login). Returns ``(target, result, observed, login)``."""
     sem = asyncio.Semaphore(concurrency)
 
-    async def one(target, cred):
-        async with sem:
-            port = target.credential.port or 22
-            result = await collect(target.address, port=port, timeout=timeout, **cred)
-            observed = None
-            if result.status == "host_key_refused":
-                observed = await observe(target.address, port=port, timeout=min(timeout, 10))
-            return target, result, observed
+    async def read(target):
+        result, used = None, None
+        known = target.known_hosts
+        first_use = bool(target.extra.get("first_use"))
+        for login, cred in target.extra["creds"]:
+            port = login.credential.port or 22
+            taken = result.host_key if result is not None else None
+            if first_use and taken:
+                # A later try is pinned to the key the first one took.
+                known, first_use = _known_hosts_line(target.address, port, taken), False
+            extra = {"first_use": True} if first_use else {}
+            result = await collect(target.address, port=port, timeout=timeout,
+                                   **{**cred, "known_hosts": known}, **extra)
+            if taken and not result.host_key:
+                result.host_key = taken
+            used = login
+            if result.status != "auth_failed" or not login.fall_through:
+                break
+        observed = None
+        if result is not None and result.status == "host_key_refused":
+            port = used.credential.port or 22
+            observed = await observe(target.address, port=port, timeout=min(timeout, 10))
+        return target, result, observed, used
 
-    return await asyncio.gather(*(one(t, c) for t, c in work))
+    async def one(target, mode):
+        async with sem:
+            if mode == "observe":
+                port = target.extra.get("port") or 22
+                return target, None, await observe(target.address, port=port,
+                                                   timeout=min(timeout, 10)), None
+            return await read(target)
+
+    return await asyncio.gather(*(one(t, m) for t, m in work))
+
+
+def _first_use_allowed(run, user) -> tuple[bool, str]:
+    """Whether a run may accept new host keys on first use now: Run now
+    only, the deployment allows it, the starter still holds ``change`` on
+    SSH host keys. Returns ``(allowed, why_not)``."""
+    from django.conf import settings
+
+    from auth_api import rbac
+
+    if not run.accept_new_host_keys:
+        return False, ""
+    if run.trigger != "manual" or user is None:
+        return False, "Scheduled runs never accept new host keys."
+    if not getattr(settings, "DISCOVERY_ALLOW_FIRST_USE_KEYS", True):
+        return False, "This deployment does not allow accepting host keys on first use."
+    if not user.is_superuser and not rbac.has_action(
+            user, run.tenant, "sshhostkey", "change"):
+        return False, "The person who started it may no longer accept host keys."
+    return True, ""
+
+
+def _key_sites(user, tenant):
+    """Sites whose host keys ``user`` may change (``None`` = any)."""
+    from auth_api import rbac
+
+    if user is None or user.is_superuser:
+        return None
+    return rbac.site_scope(user, tenant, "sshhostkey", "change")
+
+
+def _accept_first_use(run, tenant, host, key: dict, user) -> bool:
+    """Record ``key`` for ``host`` and mark it accepted, change-logged as
+    the person who started the run, with the run named as the cause. Only
+    while the host still has no accepted key."""
+    from audit import context as audit_context
+    from monitoring.models import SSHHostKey
+    from monitoring.ssh_host_keys import _host_kwargs, accept_observed, record_host_key
+
+    if SSHHostKey.objects.filter(tenant=tenant, uploaded=True, **_host_kwargs(host)).exists():
+        return False
+    audit_context.set_context(user, str(run.pk), "")
+    try:
+        with audit_context.cause(f"Accepted on first use by discovery run {run.pk}"):
+            row = record_host_key(tenant, host, key)
+            if row is None:
+                return False
+            accept_observed(row)
+    finally:
+        audit_context.clear_context()
+    return True
+
+
+def run_outcome(rows) -> str:
+    """The run status from its host results, ``[(status, contacted)]``:
+
+    * ``ok`` - every host was read or left alone on purpose;
+    * ``nothing_read`` - no host was logged in to, because each was left
+      alone before a login (no credential, no accepted key, no address …):
+      nothing failed, there was nothing to read with;
+    * ``failed`` - logins were tried and none read;
+    * ``partial`` - some read, some not.
+    """
+    ok = sum(1 for status, _c in rows if status == "ok")
+    problems = [(st, c) for st, c in rows if st not in ("ok", *DELIBERATE)]
+    if not problems:
+        return "ok"
+    if ok:
+        return "partial"
+    if not any(c for _st, c in problems):
+        return "nothing_read"
+    return "failed"
+
+
+SUMMARY_LABELS = {
+    "no_credential": "without a credential",
+    "host_key_refused": "without an accepted host key",
+    "no_address": "without an address",
+    "exempt": "exempt",
+    "denied": "in a deny subnet",
+    "maintenance": "in maintenance",
+    "blocked": "refused by the target policy",
+    "auth_failed": "refused the login",
+    "unreachable": "unreachable",
+    "timeout": "timed out",
+    "unsupported": "unsupported",
+    "failed": "failed",
+}
+
+
+def summary(counts: dict) -> str:
+    """One line by reason: "61 without a credential, 3 unreachable"."""
+    parts = []
+    if counts.get("ok"):
+        parts.append(f"{counts['ok']} read")
+    for status, label in SUMMARY_LABELS.items():
+        n = counts.get(status)
+        if n:
+            parts.append(f"{n} {label}")
+    if counts.get("keys_accepted"):
+        parts.append(f"{counts['keys_accepted']} keys accepted on first use")
+    return ", ".join(parts)
 
 
 def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
@@ -176,7 +313,8 @@ def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
 
     collect = collect or inventory.collect
     observe = observe or inventory.observe_host_key
-    run = InventoryRun.objects.select_related("profile", "profile__tenant", "started_by").filter(
+    run = InventoryRun.objects.select_related(
+        "profile", "profile__tenant", "profile__shared_credential", "started_by").filter(
         pk=run_id, status="queued").first()
     if run is None:
         return None
@@ -195,13 +333,34 @@ def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
     errors: list[str] = []
     if scope.truncated(profile, user=user):
         errors.append(f"More than {scope.MAX_HOSTS} hosts in scope; the rest were not read.")
+    first_use, why_not = _first_use_allowed(run, user)
+    if why_not:
+        errors.append(why_not)
+    key_sites = _key_sites(user, tenant) if first_use else None
     work = []
     for t in targets:
+        if t.skip == "host_key_refused" and t.extra.get("no_key") and first_use \
+                and (key_sites is None or getattr(t.host, "site_id", None) in key_sites):
+            t.skip, t.message = "", ""
+            t.extra["first_use"] = True
+        if t.address and (t.skip == "no_credential" or t.extra.get("no_key")) and t.skip:
+            # Every rule before these passed: read the key it presents (a
+            # key exchange, no login) so a person can review and accept it.
+            t.extra["port"] = (t.credential.port if t.credential is not None else None) or 22
+            work.append((t, "observe"))
+            continue
         if t.skip:
             continue
-        cred = _credential(t)
-        if cred is not None:
-            work.append((t, cred))
+        creds = []
+        for login in t.logins:
+            cred = _credential(login, t.known_hosts)
+            if cred is not None:
+                creds.append((login, cred))
+        if not creds:
+            t.skip, t.message = "no_credential", "The credential's secret cannot be read."
+            continue
+        t.extra["creds"] = creds
+        work.append((t, "read"))
     concurrency = max(1, min(CONCURRENCY_MAX, profile.max_concurrency or 1))
     timeout = float(max(TIMEOUT_RANGE[0], min(TIMEOUT_RANGE[1], profile.timeout_seconds or 60)))
     try:
@@ -209,19 +368,29 @@ def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
             if work else []
     finally:
         # The secrets go with the work list.
+        for t, _mode in work:
+            t.extra.pop("creds", None)
         work.clear()
 
     counts = {"hosts": len(targets), "ok": 0, "packages": 0, "changed": 0}
-    by_target = {id(t): (r, o) for t, r, o in results}
-    rows, changed_hosts = [], {"device": set(), "virtual_machine": set()}
+    by_target = {id(t): (r, o, login) for t, r, o, login in results}
+    rows, outcome, changed_hosts = [], [], {"device": set(), "virtual_machine": set()}
     for t in targets:
-        r, observed = by_target.get(id(t), (None, None))
+        r, observed, login = by_target.get(id(t), (None, None, None))
         status, message = (t.skip, t.message) if r is None else (r.status, r.message)
         row = InventoryHostResult(
             tenant=tenant, run=run, address=t.address, status=status or "failed",
             message=(message or "")[:300], finished_at=timezone.now(),
             transport="ssh" if r is not None else "",
+            credential_source=(login.source if login is not None else "")[:140],
             **{t.kind: t.host})
+        if r is not None and t.extra.get("first_use") and r.host_key:
+            try:
+                row.key_first_use = _accept_first_use(run, tenant, t.host, r.host_key, user)
+            except Exception:  # noqa: BLE001 - bookkeeping never fails the run
+                log.exception("discovery: accepting a first-use key failed")
+            if row.key_first_use:
+                counts["keys_accepted"] = counts.get("keys_accepted", 0) + 1
         if r is not None and r.status == "ok":
             try:
                 stored = packages.store(tenant, t.host, run, r)
@@ -245,17 +414,12 @@ def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
             # the host's own view; the run's errors name no host.
             counts[row.status] = counts.get(row.status, 0) + 1
         rows.append(row)
+        outcome.append((row.status, r is not None))
     InventoryHostResult.objects.bulk_create(rows, batch_size=1000)
 
-    # Left alone on purpose is not a failure; anything else that was not
-    # read is.
-    problems = [r for r in rows if r.status not in ("ok", *DELIBERATE)]
-    if not problems:
-        status = "ok"
-    else:
-        status = "partial" if counts["ok"] else "failed"
     InventoryRun.objects.filter(pk=run.pk).update(
-        status=status, finished_at=timezone.now(), counts=counts, errors=errors)
+        status=run_outcome(outcome), finished_at=timezone.now(), counts=counts,
+        errors=errors)
     if any(changed_hosts.values()):
         _recompute(tenant, changed_hosts)
     return counts

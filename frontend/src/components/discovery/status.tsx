@@ -20,6 +20,7 @@ export const RUN_STATUS_LABELS: Record<InventoryRunStatus, string> = {
   partial: "Partial",
   failed: "Failed",
   skipped: "Skipped",
+  nothing_read: "Nothing read",
 }
 
 const RUN_VARIANT: Record<InventoryRunStatus, Variant> = {
@@ -29,6 +30,7 @@ const RUN_VARIANT: Record<InventoryRunStatus, Variant> = {
   partial: "warning",
   failed: "destructive",
   skipped: "secondary",
+  nothing_read: "warning",
 }
 
 export const HOST_STATUS_LABELS: Record<InventoryHostStatus | "ready", string> =

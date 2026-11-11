@@ -23,11 +23,15 @@ profile's tenant only:
                     metadata, and internal ranges where the server blocks
                     them; ``danbyte_checks.netguard``)
    ``maintenance``  the host is in an open maintenance event
-   ``no_credential`` no SSH credential (key, else password) on the host
+   ``no_credential`` no SSH login for the host: none of its own (key,
+                    else password), none pinned on the profile, no shared
+                    credential whose scope matches
    ``host_key_refused`` no accepted host key (decision 5)
 
-Hosts that pass carry their credential and accepted keys; the secret is
-resolved later, at connect time, and never stored on the target.
+Hosts that pass carry their logins (``monitoring.credentials``: the host's
+own credential, the profile's pinned shared credential, then matching
+shared credentials) and accepted keys; the secret is resolved later, at
+connect time, and never stored on the target.
 """
 from __future__ import annotations
 
@@ -49,6 +53,9 @@ class Target:
     skip: str = ""            # a HOST_STATUSES word, or "" to read it
     message: str = ""
     credential: object = None
+    #: Every login that will be tried, in order (``credentials.Login``);
+    #: ``credential`` is the first.
+    logins: list = field(default_factory=list)
     known_hosts: bytes | None = None
     extra: dict = field(default_factory=dict)
 
@@ -111,9 +118,9 @@ def _host_querysets(profile, user=None):
                           ("primary_ip", "oob_ip"))
     vm_extra = by_prefix(vms.filter(primary_ip__isnull=False), ("primary_ip",))
     devices = devices.filter(dev_q | Q(pk__in=dev_extra)).select_related(
-        "primary_ip", "oob_ip", "primary_ip__prefix", "oob_ip__prefix")
+        "primary_ip", "oob_ip", "primary_ip__prefix", "oob_ip__prefix").prefetch_related("tags")
     vms = vms.filter(vm_q | Q(pk__in=vm_extra)).select_related(
-        "primary_ip", "primary_ip__prefix")
+        "primary_ip", "primary_ip__prefix").prefetch_related("tags")
     return devices.order_by("name", "pk"), vms.order_by("name", "pk")
 
 
@@ -146,7 +153,8 @@ def resolve(profile, *, user=None, now=None) -> list[Target]:
     the run reports it)."""
     from api.models import Prefix
     from danbyte_checks import netguard
-    from monitoring.models import DeviceCredential, MonitoringDenySubnet, SSHHostKey
+    from monitoring.credentials import CredentialResolver, attempts
+    from monitoring.models import MonitoringDenySubnet, SSHHostKey
 
     from .models import DiscoverySettings
 
@@ -165,18 +173,10 @@ def resolve(profile, *, user=None, now=None) -> list[Target]:
 
     dev_ids = [h.pk for k, h in hosts if k == "device"]
     vm_ids = [h.pk for k, h in hosts if k == "virtual_machine"]
-    creds = DeviceCredential.objects.filter(tenant=tenant, kind__in=SSH_KINDS).filter(
-        Q(device_id__in=dev_ids) | Q(virtual_machine_id__in=vm_ids))
-    if user is not None and not user.is_superuser:
-        from auth_api import rbac
-
-        creds = rbac.restrict_queryset(creds, user, tenant, "devicecredential", "view")
-    best: dict = {}
-    for c in creds.order_by("name", "pk"):
-        k = ("device", c.device_id) if c.device_id else ("virtual_machine", c.virtual_machine_id)
-        # A key login is preferred to a password.
-        if k not in best or (best[k].kind != "ssh_key" and c.kind == "ssh_key"):
-            best[k] = c
+    # A key login is preferred to a password.
+    resolver = CredentialResolver(tenant, kinds=SSH_KINDS, user=user,
+                                  pinned=profile.shared_credential)
+    resolver.load_hosts(hosts[:MAX_HOSTS])
     keys: dict = {}
     for dev, vm, key_type, blob in SSHHostKey.objects.filter(
             tenant=tenant, uploaded=True).filter(
@@ -213,15 +213,18 @@ def resolve(profile, *, user=None, now=None) -> list[Target]:
         if (label, str(host.pk)) in in_maintenance:
             t.skip, t.message = "maintenance", "In an open maintenance event."
             continue
-        cred = best.get((kind, host.pk))
-        if cred is None:
-            t.skip, t.message = "no_credential", "No SSH credential on this host."
+        t.logins = attempts(resolver.logins(host))
+        if not t.logins:
+            t.skip, t.message = "no_credential", "No SSH credential for this host."
             continue
-        t.credential = cred
+        t.credential = t.logins[0].credential
         accepted = keys.get((kind, host.pk)) or []
-        t.known_hosts = _known_hosts(t.address, [(a, b, cred.port) for a, b in accepted])
+        ports = sorted({login.credential.port or 22 for login in t.logins})
+        t.known_hosts = _known_hosts(t.address, [(a, b, port) for a, b in accepted
+                                                 for port in ports])
         if t.known_hosts is None:
             t.skip, t.message = "host_key_refused", "No accepted SSH host key."
+            t.extra["no_key"] = True
     return out
 
 
