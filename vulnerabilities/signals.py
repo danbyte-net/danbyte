@@ -88,10 +88,10 @@ def _flush() -> None:
         _fetch_products(p["products"])
 
 
-def _fetch_products(keys) -> None:
+def _fetch_products(keys) -> bool:
     """Fetch newly mapped products now in server mode, debounced per product
     key so a burst of saves (or two tenants mapping the same product) queues
-    one fetch."""
+    one fetch. Returns whether a job was queued."""
     import hashlib
 
     from django.core.cache import cache
@@ -99,7 +99,7 @@ def _fetch_products(keys) -> None:
     from . import fetch
 
     if not fetch.server_mode():
-        return
+        return False
     fresh = []
     for key in sorted(keys):
         digest = hashlib.sha256("\n".join(key).encode()).hexdigest()[:32]
@@ -109,8 +109,10 @@ def _fetch_products(keys) -> None:
             claimed = True
         if claimed:
             fresh.append(key)
-    if fresh:
-        fetch.enqueue_products(fresh)
+    return bool(fresh) and fetch.enqueue_products(fresh)
+
+
+fetch_products = _fetch_products
 
 
 def _snapshot(instance, fields) -> tuple:

@@ -682,9 +682,15 @@ def msrc_stale(index, keys: set[str]) -> list[str]:
     return out
 
 
-def _sync_msrc(client: Client, tracked, state: _State, now: datetime) -> None:
+def _sync_msrc(client: Client, tracked, state: _State, now: datetime, *,
+               partial: bool = False) -> None:
     """Microsoft's monthly documents, for the tracked Windows products only.
-    The requests name months, never a host or a product."""
+    The requests name months, never a host or a product. A ``partial`` run
+    (some products only) adds its products to a month's bookkeeping and
+    keeps the month's revision date, so the daily run still sees what it
+    did not read."""
+    from .models import MsrcMonth
+
     keys = {k[3] for k in tracked.keys if k[0] == "msrc"}
     p = state.progress.setdefault("msrc", {})
     if not keys or p.get("done"):
@@ -728,9 +734,14 @@ def _sync_msrc(client: Client, tracked, state: _State, now: datetime) -> None:
             failed += 1
             state.errors.append(f"Microsoft {month}: {exc}")
         else:
+            read_for, current = keys, header.get("current_release")
+            prior = MsrcMonth.objects.filter(month=month).first() if partial else None
+            if prior is not None:
+                read_for = keys | set(prior.products or [])
+                current = prior.current_release
             store.record_msrc_month(
-                month, current_release=header.get("current_release"), via="server",
-                products=keys, records=doc_counts["records"] - doc_counts["not_tracked"])
+                month, current_release=current, via="server", products=read_for,
+                records=doc_counts["records"] - doc_counts["not_tracked"])
             done.append(month)
         for k, v in doc_counts.items():
             counts[k] = counts.get(k, 0) + v
@@ -810,7 +821,7 @@ def execute(run_id, *, session=None) -> SyncRun | None:
         _sync_nvd(client, tracked, state, now)
         _sync_osv(client, tracked, state)
         if cfg.sync_msrc:
-            _sync_msrc(client, tracked, state, now)
+            _sync_msrc(client, tracked, state, now, partial=bool(only))
         if cfg.sync_kev:
             _sync_kev(client, state)
         if cfg.sync_epss:
@@ -878,6 +889,29 @@ def enqueue_products(keys) -> bool:
         log.warning("could not queue a vulnerability product fetch")
         return False
     return True
+
+
+def fetch_new_windows(keys) -> bool:
+    """After a discovery run: fetch Microsoft's data now for Windows product
+    keys (``msrc_products`` keys) no month has been read for yet, instead
+    of waiting for the daily run. Server mode with Microsoft's data on only;
+    one queued job per call, debounced per product. Returns whether one was
+    queued."""
+    from . import signals
+    from .models import MsrcMonth
+    from .msrc_products import product_key
+
+    keys = set(keys or ())
+    if not keys:
+        return False
+    row = VulnerabilitySettings.load()
+    if not server_mode(row) or not row.sync_msrc:
+        return False
+    latest = MsrcMonth.objects.order_by("-starts_on").values_list("products", flat=True).first()
+    fresh = keys - set(latest or [])
+    if not fresh:
+        return False
+    return signals.fetch_products({product_key(k) for k in fresh})
 
 
 # ─── CPE search (picker proxy) ───────────────────────────────────────────────

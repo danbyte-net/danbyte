@@ -450,6 +450,7 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
     counts = {"hosts": len(targets), "ok": 0, "packages": 0, "changed": 0}
     by_target = {id(t): (r, o, login, tried) for t, r, o, login, tried in results}
     rows, outcome, changed_hosts = [], [], {"device": set(), "virtual_machine": set()}
+    windows_products: set[str] = set()
     for t in targets:
         r, observed, login, tried = by_target.get(id(t), (None, None, None, []))
         status, message = (t.skip, t.message) if r is None else (r.status, r.message)
@@ -478,6 +479,7 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
                 row.removed, row.updated = stored["removed"], stored["updated"]
                 counts["ok"] += 1
                 counts["packages"] += stored["packages"]
+                windows_products.update(stored.get("windows_products") or ())
                 if stored["changed"]:
                     counts["changed"] += 1
                     changed_hosts[t.kind].add(t.host.pk)
@@ -498,6 +500,8 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
         errors=errors)
     if any(changed_hosts.values()):
         _recompute(tenant, changed_hosts)
+    if windows_products:
+        _fetch_windows(windows_products)
     return counts
 
 
@@ -520,6 +524,17 @@ def _recompute(tenant, hosts: dict) -> None:
     if not VulnerabilitySettings.objects.filter(pk=1, enabled=True).exists():
         return
     jobs.enqueue_objects(tenant.pk, {k: v for k, v in hosts.items() if v})
+
+
+def _fetch_windows(keys: set[str]) -> None:
+    """A Windows release no Microsoft month was read for: ask the server
+    fetch for it now (one job per run; nothing outside server mode)."""
+    from vulnerabilities import fetch
+
+    try:
+        fetch.fetch_new_windows(keys)
+    except Exception:  # noqa: BLE001 - best effort; the daily run covers it
+        log.exception("discovery: queueing the Microsoft fetch failed")
 
 
 def abandon_stale(now=None) -> int:

@@ -685,6 +685,25 @@ class FetchTests(NetMixin, TestCase):
         self.run_once()
         self.assertEqual(len(self.docs_fetched()), 2)
 
+    def test_a_product_only_run_keeps_the_months_bookkeeping(self):
+        self.run_once()
+        before = {m.month: m.current_release for m in MsrcMonth.objects.all()}
+        s2025 = ("msrc", "", "microsoft", "windows_server_2025")
+        self.set_tracked(S2022, S2022_CORE, s2025)
+        self.net.calls.clear()
+        run = fetch.start_run(None, only=[s2025])
+        self.assertEqual(fetch.execute(run.pk).status, "ok")
+        self.assertEqual(len(self.docs_fetched()), 2)
+        for m in MsrcMonth.objects.all():
+            self.assertEqual(set(m.products), {"windows_server_2022",
+                                               "windows_server_2022_core",
+                                               "windows_server_2025"})
+            self.assertEqual(m.current_release, before[m.month])
+        # The daily run has nothing left to read.
+        self.net.calls.clear()
+        self.run_once()
+        self.assertEqual(self.docs_fetched(), [])
+
     def test_no_windows_host_no_request(self):
         self.set_tracked()
         self.run_once()

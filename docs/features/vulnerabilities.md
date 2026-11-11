@@ -254,7 +254,12 @@ same validation and CVSS recomputation apply.
   it since, or when it was read for fewer Windows releases than discovery
   now sees. Microsoft revises old months often (every month of the past two
   years had a revision in the first ten days of November 2026), so in
-  practice most of the twelve are read again each week: 4 to 30 MB each.
+  practice most of the window is read again each week: 4 to 30 MB a month.
+  A Windows release discovery reads for the first time is fetched at once
+  after the run that found it (server mode, Microsoft's data on; one job
+  per run, nothing in upload or browser mode) rather than at the next daily
+  refresh. That fetch adds the release to the months it reads and leaves
+  their revision dates for the daily run.
 
 Replaying data that is already stored writes nothing.
 

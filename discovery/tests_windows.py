@@ -282,6 +282,42 @@ class TransportTests(Base):
         _run, _fake, fw = self.go({"10.0.0.1": down})
         self.assertEqual(fw.calls, [])
 
+    @override_settings(CACHES={"default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "discovery-msrc-now"}})
+    def test_a_new_windows_release_fetches_microsofts_data_once(self):
+        from django.core.cache import cache
+
+        from vulnerabilities import fetch
+        from vulnerabilities.models import MsrcMonth, VulnerabilitySettings
+
+        cache.clear()
+        self.host("b", "10.0.0.2", site=self.site)
+        VulnerabilitySettings.objects.update_or_create(
+            pk=1, defaults={"enabled": True, "update_source": "upload", "sync_msrc": True})
+        answers = {"10.0.0.1": winrm_ok(), "10.0.0.2": winrm_ok()}
+        with mock.patch.object(fetch, "enqueue_products", return_value=True) as q:
+            self.go(answers)
+        q.assert_not_called()                                  # upload mode: nothing
+        VulnerabilitySettings.objects.filter(pk=1).update(update_source="server",
+                                                          sync_msrc=False)
+        with mock.patch.object(fetch, "enqueue_products", return_value=True) as q:
+            self.go(answers)
+        q.assert_not_called()                                  # Microsoft's data off
+        VulnerabilitySettings.objects.filter(pk=1).update(sync_msrc=True)
+        with mock.patch.object(fetch, "enqueue_products", return_value=True) as q:
+            run, _fake, _fw = self.go(answers)
+        self.assertEqual(run.status, "ok")
+        # Two Windows hosts, one release: one job for the run.
+        q.assert_called_once_with([("msrc", "", "microsoft", "windows_server_2022")])
+        cache.clear()
+        MsrcMonth.objects.create(month="2026-Nov", starts_on="2026-11-01",
+                                 read_at="2026-11-11T00:00:00Z", via="server",
+                                 products=["windows_server_2022"])
+        with mock.patch.object(fetch, "enqueue_products", return_value=True) as q:
+            self.go(answers)
+        q.assert_not_called()                                  # already tracked
+
     def test_windows_programs_never_reach_matching(self):
         packages.store(self.tenant, self.a, None, winrm_ok())
         self.assertTrue(HostPackage.objects.filter(device=self.a, purl_type="generic").exists())

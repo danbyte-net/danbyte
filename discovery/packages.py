@@ -25,7 +25,7 @@ from vulnerabilities.identifiers import (
     ecosystem_release,
     osv_ecosystems,
 )
-from vulnerabilities.msrc_products import normalise_arch
+from vulnerabilities.msrc_products import normalise_arch, resolve_fact
 
 from .models import HostOsFact, HostPackage
 
@@ -134,7 +134,8 @@ _OS_COMPARED = ("os_id", "version_id", "build", "ubr", "edition", "display_versi
 def store(tenant, host, run, result, now=None, transport="") -> dict:
     """Replace ``host``'s packages with ``result`` (a successful
     :class:`danbyte_checks.inventory.InventoryResult`) and record its OS
-    facts. Returns ``{packages, added, removed, updated, changed}``."""
+    facts. Returns ``{packages, added, removed, updated, changed,
+    windows_products}`` (the Microsoft product keys a Windows host can be)."""
     now = now or timezone.now()
     win = result.os.get("windows") or {}
     on_host = host_kwargs(host)
@@ -197,8 +198,10 @@ def store(tenant, host, run, result, now=None, transport="") -> dict:
         HostPackage.objects.filter(**on_host, removed_at__isnull=True).update(
             last_seen=now, run=run)
     updated = len(changed) - back
+    windows = resolve_fact(fact).keys if fact.os_id == "windows" else ()
     return {"packages": len(wanted), "added": len(new) + back, "removed": len(gone),
-            "updated": updated, "changed": bool(new or changed or gone or os_moved)}
+            "updated": updated, "changed": bool(new or changed or gone or os_moved),
+            "windows_products": windows}
 
 
 def purge_removed(now=None) -> int:

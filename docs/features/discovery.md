@@ -410,6 +410,9 @@ placed among Microsoft's products, what happens when it cannot be, and what
 is fetched. The same rules as for packages apply: *installed software* view,
 host or tenant exceptions, gone while Discovery is off. A host whose release
 is not in the table, or that reported no UBR, gets no OS-build match.
+When a run reads a Windows release no Microsoft month was fetched for yet,
+it asks the server fetch for that release at once (one job per run, server
+mode only) instead of leaving it to the daily refresh.
 
 Installed hotfixes (KB numbers) are shown but not used for matching: the
 build is cumulative, and `Get-HotFix` misses updates the servicing stack
