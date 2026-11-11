@@ -165,7 +165,10 @@ case "$1" in
       probe)
         echo "python=${FAKE_PYVER:-$("$REAL_PY" -c 'import sys;print("%d.%d" % sys.version_info[:2])')}"
         echo "db_size=${FAKE_DB_SIZE:-1000}"; echo "db_rollback=${FAKE_DB_ROLLBACK:-1}"; echo redis=1
-        echo "pip_plugins=${FAKE_PLUGINS:-}"; echo superuser=1; echo mail=0 ;;
+        echo "pip_plugins=${FAKE_PLUGINS:-}"; echo superuser=1; echo mail=0
+        [ -z "${FAKE_PFX_FIX:-}" ] || echo "prefix_repair=$FAKE_PFX_FIX"
+        [ -z "${FAKE_PFX_BAD:-}" ] || { echo "prefix_unrepairable=$FAKE_PFX_BAD"
+          echo "prefix_unrepairable_rows=prefix p1 cidr 'banana' (tenant 'Acme' t1, VRF Global, 2 IP address(es)): no prefix length"; } ;;
       wait-db)
         if [ -n "${FAKE_KILL_RECOVERY:-}" ]; then
           kill -9 "$(ps -o ppid= -p "$PPID" | tr -d ' ')"
@@ -848,6 +851,23 @@ class BundleStageTests(StageTestCase):
         r = h2.upgrade(env={"FAKE_DB_ROLLBACK": "0"})
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertTrue(any("cannot be rolled back" in w for w in h2.status()["warnings"]))
+
+    def test_a_prefix_the_migration_cannot_repair_is_refused_before_anything_stops(self):
+        # #501: api.0265 would stop on it; the preflight says so first.
+        h = self.host()
+        r = h.upgrade(env={"FAKE_PFX_FIX": "2", "FAKE_PFX_BAD": "1"})
+        self.assertEqual(r.returncode, 1)
+        err = h.status()["error"]
+        self.assertIn("1 prefix(es) hold a cidr that is not a network", err)
+        self.assertIn("prefix p1 cidr 'banana' (tenant 'Acme'", err)
+        self.assertIn("nothing was changed", err)
+        self.assertFalse(h.called(r"^systemctl --user stop"))
+        self.assertFalse(h.called(r"^py manage.py upgrade_migrate$"))
+        # the ones it rewrites are a warning, not a stop
+        h2 = self.host()
+        r = h2.upgrade(env={"FAKE_PFX_FIX": "2", "FAKE_PFX_BAD": "0"})
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertTrue(any("2 prefix cidr(s)" in w for w in h2.status()["warnings"]))
 
     def test_a_new_python_with_pip_plugins_is_refused(self):
         h = self.host()

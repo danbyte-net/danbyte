@@ -410,7 +410,15 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d
 Take a backup first: **Settings → Backups → Back up now** writes an encrypted
 archive to the `backups` volume (`/app/backup-archives` in `backend` and `workers`).
 A restore later runs inside `workers` without restarting any container - see
-[Backup and restore](backup-restore.md).
+[Backup and restore](backup-restore.md). The backend migrates without taking
+one of its own.
+
+Before it migrates, the backend runs `manage.py prefix_cidrs --check`. A
+prefix whose CIDR is not an address and that the upgrade can't repair stops
+it there, with each row listed in `docker compose logs backend`, before any
+migration runs. See
+[Prefixes the upgrade can't repair](upgrading.md#prefixes-the-upgrade-cant-repair)
+for the fix.
 
 `up -d` also creates services added since your last pull - check that
 `scheduler` is among them, because a stack upgraded from before it existed has
