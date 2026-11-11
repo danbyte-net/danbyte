@@ -17778,7 +17778,7 @@ export interface NetworkPlan {
 // ─── Known vulnerabilities (#451) ────────────────────────────────────────
 
 export type VulnUpdateSource = "upload" | "server" | "browser"
-export type VulnImportKind = "nvd" | "osv" | "kev" | "epss"
+export type VulnImportKind = "nvd" | "osv" | "msrc" | "kev" | "epss"
 export type VulnPriority = "fix_first" | "high" | "medium" | "low"
 export type VulnSeverity = "critical" | "high" | "medium" | "low" | "none" | ""
 export type VulnConfidence = "exact" | "range" | "partial"
@@ -17811,6 +17811,10 @@ export interface VulnSettings {
   osv_url?: string
   sync_epss?: boolean
   sync_kev?: boolean
+  /** Microsoft's monthly documents (server and upload modes only). */
+  sync_msrc?: boolean
+  msrc_url?: string
+  msrc?: { months: number; newest: string | null; last_read_at: string | null }
   nvd_api_key_set?: boolean
   last_sync_at?: string | null
   last_sync_status?: string
@@ -17818,7 +17822,7 @@ export interface VulnSettings {
   last_sync_via?: string
   last_run?: VulnSyncRun | null
   records?: number
-  records_by_kind?: { cpe: number; purl: number }
+  records_by_kind?: { cpe: number; purl: number; msrc?: number }
   import_kinds?: VulnImportKind[]
   import_max_bytes?: number
 }
@@ -17832,6 +17836,8 @@ export interface VulnSettingsPatch {
   osv_url?: string
   sync_epss?: boolean
   sync_kev?: boolean
+  sync_msrc?: boolean
+  msrc_url?: string
   nvd_api_key?: string
   nvd_api_key_clear?: boolean
 }
@@ -17863,7 +17869,9 @@ export interface VulnMatch {
   cve: VulnRecordBrief
   priority: VulnPriority
   confidence: VulnConfidence
-  via: "platform" | "application" | "package"
+  /** `os_build`: the host's Windows build against Microsoft's fixed builds
+   * (no mapping, no package; `version` is the build). */
+  via: "platform" | "application" | "package" | "os_build"
   version: string
   device: VulnRef | null
   virtual_machine: VulnRef | null
@@ -18034,6 +18042,13 @@ export interface VulnRecordDetail extends VulnRecordBrief {
     version: string
   }[]
   osv_fixed_in: { ecosystem: string; name: string; version: string }[]
+  /** Microsoft's fixed builds per Windows product. */
+  msrc_fixed_in?: {
+    product: string
+    month: string
+    fixed: string[]
+    kbs: string[]
+  }[]
   kev_action: string
   kev_ransomware: string
   epss_date: string | null
@@ -18431,4 +18446,12 @@ export interface HostOsFact {
 
 export interface HostPackagePage extends Paginated<HostPackage> {
   os: HostOsFact | null
+  /** Windows: the Microsoft product it matches as (blank with a `flag`
+   * when it cannot be placed) and its open OS-build CVEs. */
+  os_build?: {
+    product: string
+    build: string
+    flag: "" | "product_unknown" | "ubr_unknown"
+    open: number
+  } | null
 }

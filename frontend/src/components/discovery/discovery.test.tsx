@@ -17,7 +17,7 @@ import {
 import { VIA_LABELS } from "@/components/columns/vulnerability-match-columns"
 import { subjectOf } from "@/components/vulnerabilities/exception-rules"
 import { HostStatusBadge, RunStatusBadge } from "./status"
-import { usePackagesTab } from "./packages-tab"
+import { OsBuildNote, usePackagesTab } from "./packages-tab"
 
 const { apiMock, canDoMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -131,6 +131,55 @@ describe("package matches", () => {
     } as unknown as VulnMatch
     expect(subjectOf(m, "host")).toEqual({ scope: "device", id: "d1" })
     expect(subjectOf(m, "subject")).toBeNull()
+  })
+})
+
+describe("OS-build matches", () => {
+  it("say OS build and take only host or tenant exceptions", () => {
+    expect(VIA_LABELS.os_build).toBe("OS build")
+    const m = {
+      via: "os_build",
+      device: null,
+      virtual_machine: { id: "v1", name: "win1" },
+      installed_software: null,
+      mapping: null,
+      host_package: null,
+    } as unknown as VulnMatch
+    expect(subjectOf(m, "host")).toEqual({ scope: "virtual_machine", id: "v1" })
+    expect(subjectOf(m, "subject")).toBeNull()
+  })
+
+  it("shows the open count, or why the build is not matched", () => {
+    const { rerender, container } = render(
+      <OsBuildNote
+        value={{
+          product: "Windows Server 2022",
+          build: "10.0.20348.2849",
+          flag: "",
+          open: 3,
+        }}
+      />
+    )
+    expect(screen.getByText("3 open OS-build CVEs")).toBeTruthy()
+    rerender(
+      <OsBuildNote
+        value={{
+          product: "Windows Server 2022",
+          build: "10.0.20348.5870",
+          flag: "",
+          open: 0,
+        }}
+      />
+    )
+    expect(container.textContent).toBe("")
+    rerender(
+      <OsBuildNote
+        value={{ product: "", build: "", flag: "product_unknown", open: 0 }}
+      />
+    )
+    expect(screen.getByText("OS build not matched")).toBeTruthy()
+    rerender(<OsBuildNote value={null} />)
+    expect(container.textContent).toBe("")
   })
 })
 

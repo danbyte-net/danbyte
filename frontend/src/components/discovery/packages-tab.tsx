@@ -16,6 +16,7 @@ import {
   useDiscoveryStatus,
 } from "@/components/discovery/status"
 import { InfoTip } from "@/components/ui/info-tip"
+import { Badge } from "@/components/ui/badge"
 
 // The Packages tab on a device or VM (#451 B2): what discovery's last full
 // read found installed. Shown only while Discovery is on and something has
@@ -51,6 +52,35 @@ export function usePackagesTab(kind: PackageHost, id: string) {
   })
   const count = head.data?.count ?? 0
   return { show: on && count > 0, count }
+}
+
+const OS_BUILD_FLAG_TIPS: Record<string, string> = {
+  product_unknown:
+    "This build could not be placed among Microsoft's Windows products, so Microsoft's data is not matched to it.",
+  ubr_unknown:
+    "The host did not report its update build revision (UBR), so Microsoft's data is not matched to it.",
+}
+
+/** Windows: the open OS-build CVEs, or why Microsoft's data does not apply. */
+export function OsBuildNote({
+  value,
+}: {
+  value?: HostPackagePage["os_build"]
+}) {
+  if (!value) return null
+  if (value.flag)
+    return (
+      <span className="flex items-center gap-1">
+        OS build not matched
+        <InfoTip>{OS_BUILD_FLAG_TIPS[value.flag] ?? value.flag}</InfoTip>
+      </span>
+    )
+  if (value.open === 0) return null
+  return (
+    <Badge variant="warning" className="num">
+      {value.open} open OS-build {value.open === 1 ? "CVE" : "CVEs"}
+    </Badge>
+  )
 }
 
 export function PackagesTab({ kind, id }: { kind: PackageHost; id: string }) {
@@ -113,6 +143,7 @@ export function PackagesTab({ kind, id }: { kind: PackageHost; id: string }) {
             <span className="flex items-center gap-1">
               Read <TimeCell iso={os.collected_at} />
             </span>
+            <OsBuildNote value={head.data?.os_build} />
           </p>
         )}
         <DataTable

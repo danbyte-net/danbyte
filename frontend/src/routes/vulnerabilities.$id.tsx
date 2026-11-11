@@ -260,6 +260,16 @@ function Body({ record: r }: { record: VulnRecordDetail }) {
       label: `${f.ecosystem} ${f.name}`,
       value: mono(f.version),
     })),
+    // Microsoft's fixed builds (and KBs) per Windows release.
+    ...(r.msrc_fixed_in ?? [])
+      .filter((f) => f.fixed.length > 0)
+      .map((f) => ({
+        label: f.product,
+        value: mono(
+          f.fixed.join(", ") +
+            (f.kbs.length ? ` (KB${f.kbs.join(", KB")})` : "")
+        ),
+      })),
   ]
 
   return (
