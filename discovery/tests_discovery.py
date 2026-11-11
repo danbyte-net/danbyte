@@ -548,6 +548,36 @@ class ProfileApiTests(ApiBase):
         self.assertIsNone(r.json()["authorised_at"])
         self.assertIn("authorised", r.json()["blocked_reason"])
 
+    def test_bulk_enable_and_delete_follow_grants(self):
+        mine = self.profile(name="mine")
+        other = self.profile(name="other", enabled=False)
+        theirs = self.profile(tenant=self.other, name="theirs")
+        InventoryRun.objects.create(tenant=self.tenant, profile=mine, status="ok")
+        self.member("viewer", {"inventoryprofile": ["view"]})
+        row = self.client.get(f"{self.URL}{mine.pk}/").json()
+        self.assertEqual(row["permissions"], {"change": False, "delete": False})
+        ids = [str(mine.pk), str(other.pk), str(theirs.pk)]
+        r = self.client.post(f"{self.URL}bulk-update/",
+                             {"ids": ids, "fields": {"enabled": False}}, format="json")
+        self.assertEqual(r.status_code, 403, r.content)
+        self.member("editor", {"inventoryprofile": ["view", "change", "delete"]})
+        self.assertEqual(self.client.get(f"{self.URL}{mine.pk}/").json()["permissions"],
+                         {"change": True, "delete": True})
+        r = self.client.post(f"{self.URL}bulk-update/",
+                             {"ids": ids, "fields": {"enabled": True}}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        other.refresh_from_db()
+        self.assertTrue(other.enabled)
+        r = self.client.post(f"{self.URL}bulk-update/",
+                             {"ids": ids, "fields": {"name": "x"}}, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self.client.post(f"{self.URL}bulk-delete/", {"ids": ids}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["deleted"], 2)
+        self.assertFalse(InventoryProfile.objects.filter(tenant=self.tenant).exists())
+        self.assertFalse(InventoryRun.objects.filter(tenant=self.tenant).exists())
+        self.assertTrue(InventoryProfile.objects.filter(pk=theirs.pk).exists())
+
     def test_validation(self):
         self.login(self.su)
         for body in ({"name": "x", "max_concurrency": 99}, {"name": "x", "timeout_seconds": 1},
@@ -766,6 +796,70 @@ class ExemptAndSettingsApiTests(ApiBase):
                          {"kind": "device", "id": str(a.pk), "exempt": True}, format="json")
         self.assertTrue(ChangeLogEntry.objects.filter(object_id=str(a.pk),
                                                       changes__has_key="scan_exempt").exists())
+
+    def test_exempt_many_checks_each_object(self):
+        from audit.models import ChangeLogEntry
+
+        a = self.host("a", "10.0.0.1", site=self.site)
+        b = self.host("b", "10.0.0.2", site=self.branch)
+        v = self.host("v", "10.0.0.3", site=self.site, vm=True)
+        theirs = self.host("t", "10.0.0.4", tenant=self.other)
+        objs = [{"kind": "device", "id": str(h.pk)} for h in (a, b, theirs)]
+        objs.append({"kind": "virtual_machine", "id": str(v.pk)})
+        body = {"objects": objs, "exempt": True}
+        # No change grant on VMs at all: the whole call is refused.
+        self.member("dev-only", {"device": ["view", "change"]}, sites=[self.site])
+        r = self.client.post("/api/discovery/exempt/", body, format="json")
+        self.assertEqual(r.status_code, 403, r.content)
+        # Site-limited: the branch device and the other tenant's are not found.
+        self.member("site", {"device": ["view", "change"],
+                             "virtualmachine": ["view", "change"]}, sites=[self.site])
+        r = self.client.post("/api/discovery/exempt/", body, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["not_found"], 2)
+        self.assertEqual({o["id"] for o in r.json()["updated"]}, {str(a.pk), str(v.pk)})
+        for h, want in ((a, True), (b, False), (v, True), (theirs, False)):
+            h.refresh_from_db()
+            self.assertIs(h.scan_exempt, want, h.name)
+        for h in (a, v):
+            self.assertEqual(ChangeLogEntry.objects.filter(
+                object_id=str(h.pk), changes__has_key="scan_exempt").count(), 1)
+        self.assertFalse(ChangeLogEntry.objects.filter(
+            object_id=str(b.pk), changes__has_key="scan_exempt").exists())
+        # Include them again.
+        r = self.client.post("/api/discovery/exempt/",
+                             {"objects": objs, "exempt": False}, format="json")
+        a.refresh_from_db()
+        self.assertFalse(a.scan_exempt)
+
+    def test_exempt_many_is_bounded_and_validated(self):
+        from . import api as disc_api
+
+        self.login(self.su)
+        url = "/api/discovery/exempt/"
+        many = [{"kind": "device", "id": "00000000-0000-0000-0000-000000000001"}] * (
+            disc_api.EXEMPT_MAX + 1)
+        for objects in ([], many, [{"kind": "rack", "id": "x"}],
+                        [{"kind": "device", "id": "nope"}], "x"):
+            r = self.client.post(url, {"objects": objects, "exempt": True}, format="json")
+            self.assertEqual(r.status_code, 400, objects if objects != many else "many")
+
+    def test_hosts_preview_says_which_rows_may_change(self):
+        a = self.host("a", "10.0.0.1", site=self.site)
+        self.host("b", "10.0.0.2", site=self.branch)
+        p = self.profile()
+        p.sites.add(self.site, self.branch)
+        user = self.member("viewer", {"inventoryprofile": ["view"], "device": ["view"],
+                                      "devicecredential": ["view"]})
+        perm = ObjectPermission.objects.create(name="site-change", object_types=["device"],
+                                               actions=["change"])
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        perm.sites.set([self.site])
+        rows = self.client.get(f"/api/discovery/profiles/{p.pk}/hosts/").json()["results"]
+        self.assertEqual({r["name"]: r["permissions"]["change"] for r in rows},
+                         {"a": True, "b": False})
+        self.assertEqual(str(a.pk), next(r["id"] for r in rows if r["name"] == "a"))
 
     def test_the_flag_reads_on_every_object_and_a_patch_cannot_set_it(self):
         a = self.host("a", "10.0.0.1", site=self.site)

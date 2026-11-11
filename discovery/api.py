@@ -13,7 +13,8 @@ while Discovery is off for the active tenant (``gate.require``).
 ``discovery/runs/``                         runs (``?profile=``), read-only
 ``discovery/runs/<id>/hosts/``              per-host results of one run
 ``discovery/exempt/``                       POST: set ``scan_exempt`` on a host,
-                                            address or prefix (``change`` on it)
+                                            address or prefix, or up to 500 at
+                                            once (``change`` on each)
 ``devices|virtual-machines/<id>/packages/`` the host's inventoried packages
 
 Profiles are an RBAC type (``inventoryprofile``) with a ``scan`` verb that
@@ -39,6 +40,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.models import (
     VRF,
     Device,
@@ -51,7 +53,7 @@ from api.models import (
     Site,
     VirtualMachine,
 )
-from api.serializers import TenantScopedPrimaryKeyRelatedField
+from api.serializers import ObjectPermsSerializerMixin, TenantScopedPrimaryKeyRelatedField
 from api.viewsets import StandardPagination, TenantScopedViewSet
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin, can_manage_deployment
@@ -361,7 +363,7 @@ def discovery_outposts(request):
 # ─── profiles ────────────────────────────────────────────────────────────────
 
 
-class InventoryProfileSerializer(serializers.ModelSerializer):
+class InventoryProfileSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
     site_ids = TenantScopedPrimaryKeyRelatedField(
         source="sites", many=True, required=False, queryset=Site.objects.all())
     prefix_ids = TenantScopedPrimaryKeyRelatedField(
@@ -413,7 +415,7 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
             "runs_on", "outpost_id", "outpost",
             "authorisation", "authorised", "authorised_by_name",
             "authorised_at", "blocked_reason", "last_run_at", "last_run",
-            "created_at", "updated_at",
+            "created_at", "updated_at", "permissions",
         ]
         read_only_fields = ["id", "numid", "authorised_by_name", "authorised_at",
                             "last_run_at", "created_at", "updated_at"]
@@ -624,21 +626,24 @@ def _nmap_rose(profile, before: tuple | None) -> bool:
         or (profile.nmap_timing or 0) > (timing or 0)
 
 
-class InventoryProfileViewSet(TenantScopedViewSet):
+class InventoryProfileViewSet(BulkEditMixin, TenantScopedViewSet):
     """Inventory profiles of the active tenant: what discovery reads, when,
     and who authorised it. Writing ``authorisation`` (a non-empty statement)
     records the caller and the time as the authoriser; a change to what it
     covers without one - the scope, Runs on, for a service scan the ports,
     the engine, or a higher nmap intensity or timing - clears the
     authorisation, and a profile without one never runs. Filters:
-    ``enabled``, ``search``."""
+    ``enabled``, ``search``. ``bulk-update`` sets ``enabled`` only;
+    ``bulk-delete`` removes profiles with their runs, as the single delete."""
 
     queryset = InventoryProfile.objects.select_related(
         "shared_credential", "outpost").prefetch_related(
         "sites", "prefixes", "devices", "virtual_machines", "regions", "vrfs", "platforms",
         "device_types", "device_roles")
     serializer_class = InventoryProfileSerializer
-    rbac_action_map = {"run": "scan", "hosts": "view", "host_keys": "view"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map,
+                       "run": "scan", "hosts": "view", "host_keys": "view"}
+    bulk_edit = BulkEditSpec(fields=("enabled",), tags=False)
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
@@ -762,6 +767,7 @@ class InventoryProfileViewSet(TenantScopedViewSet):
                 "scan_exempt": bool(t.host.scan_exempt if t.host else t.ip.scan_exempt),
                 "engine": where.get(id(t), "server"),
             } for t in targets]
+            _mark_exempt_rights(request, profile.tenant, rows)
             return Response({"results": rows, "count": len(rows),
                              "truncated": services.truncated(profile, user=user)})
         out = []
@@ -775,6 +781,7 @@ class InventoryProfileViewSet(TenantScopedViewSet):
                 "credential_source": t.logins[0].source if t.logins else "",
                 "engine": where.get(id(t), "server"),
             })
+        _mark_exempt_rights(request, profile.tenant, out)
         return Response({"results": out, "count": len(out),
                          "truncated": scope.truncated(profile, user=user)})
 
@@ -1126,38 +1133,114 @@ _EXEMPT_KINDS = {
 }
 
 
-@extend_schema(summary="Exempt a host, address or prefix from discovery",
+#: Objects per ``discovery/exempt/`` call (``objects``).
+EXEMPT_MAX = 500
+
+
+def _exempt_querysets(request, tenant, kinds):
+    """``{kind: queryset}`` of the rows of each kind the caller may change
+    (row and site scope included), in ``tenant``. A kind the caller holds no
+    ``change`` grant for at all is refused."""
+    out = {}
+    for kind in kinds:
+        model, slug = _EXEMPT_KINDS[kind]
+        qs = model.objects.filter(tenant=tenant)
+        if not request.user.is_superuser:
+            if not rbac.has_action(request.user, tenant, slug, "change"):
+                raise PermissionDenied(f"{slug}.change required.")
+            qs = rbac.restrict_queryset(qs, request.user, tenant, slug, "change")
+        out[kind] = qs
+    return out
+
+
+def _mark_exempt_rights(request, tenant, rows) -> None:
+    """Add ``permissions: {change}`` to each scope-preview row: whether the
+    caller may set its ``scan_exempt`` (``discovery/exempt/``'s rule). One
+    query per kind."""
+    by_kind: dict[str, list[str]] = {}
+    for r in rows:
+        by_kind.setdefault(r["kind"], []).append(r["id"])
+    allowed: set = set()
+    for kind, ids in by_kind.items():
+        if kind not in _EXEMPT_KINDS:
+            continue
+        model, slug = _EXEMPT_KINDS[kind]
+        qs = model.objects.filter(tenant=tenant, pk__in=ids)
+        if not request.user.is_superuser:
+            if not rbac.has_action(request.user, tenant, slug, "change"):
+                continue
+            qs = rbac.restrict_queryset(qs, request.user, tenant, slug, "change")
+        allowed.update((kind, str(pk)) for pk in qs.values_list("pk", flat=True))
+    for r in rows:
+        r["permissions"] = {"change": (r["kind"], r["id"]) in allowed}
+
+
+def _set_exempt(obj, exempt: bool) -> None:
+    if obj.scan_exempt != exempt:
+        obj.scan_exempt = exempt
+        obj.save(update_fields=["scan_exempt", "updated_at"])
+
+
+@extend_schema(summary="Exempt hosts, addresses or prefixes from discovery",
                tags=["discovery"], request=OpenApiTypes.OBJECT,
                responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def discovery_exempt(request):
-    """``{kind: device|virtual_machine|ipaddress|prefix, id, exempt}``. Needs
-    ``change`` on the object (row and site scope included). Change-logged
-    like any edit of it."""
+    """``{kind: device|virtual_machine|ipaddress|prefix, id, exempt}``, or
+    ``{objects: [{kind, id}, ...], exempt}`` for up to ``EXEMPT_MAX`` at
+    once. Needs ``change`` on each object (row and site scope included).
+    One object not found is a 404; in a list, objects of another tenant or
+    out of the caller's scope count as ``not_found`` and the rest are set
+    (as the host-key accept does). Each change is change-logged like any
+    edit of the object."""
     tenant = gate.require(request)
     data = request.data if isinstance(request.data, dict) else {}
+    if not isinstance(data.get("exempt"), bool):
+        raise ValidationError({"exempt": "true or false."})
+    exempt = data["exempt"]
+    if "objects" in data:
+        return _exempt_many(request, tenant, data["objects"], exempt)
     kind = data.get("kind")
     if kind not in _EXEMPT_KINDS:
         raise ValidationError({"kind": f"One of: {', '.join(_EXEMPT_KINDS)}."})
-    if not isinstance(data.get("exempt"), bool):
-        raise ValidationError({"exempt": "true or false."})
-    model, slug = _EXEMPT_KINDS[kind]
-    qs = model.objects.filter(tenant=tenant)
-    if not request.user.is_superuser:
-        if not rbac.has_action(request.user, tenant, slug, "change"):
-            raise PermissionDenied(f"{slug}.change required.")
-        qs = rbac.restrict_queryset(qs, request.user, tenant, slug, "change")
+    qs = _exempt_querysets(request, tenant, [kind])[kind]
     try:
         obj = qs.filter(pk=data.get("id")).first()
     except (ValueError, DjangoValidationError):
         obj = None
     if obj is None:
         raise NotFound("Not found.")
-    if obj.scan_exempt != data["exempt"]:
-        obj.scan_exempt = data["exempt"]
-        obj.save(update_fields=["scan_exempt", "updated_at"])
+    _set_exempt(obj, exempt)
     return Response({"kind": kind, "id": str(obj.pk), "scan_exempt": obj.scan_exempt})
+
+
+def _exempt_many(request, tenant, objects, exempt: bool):
+    if not isinstance(objects, list) or not objects or len(objects) > EXEMPT_MAX:
+        raise ValidationError({"objects": f"A list of 1 to {EXEMPT_MAX} objects."})
+    wanted: dict[str, set] = {}
+    for o in objects:
+        if not isinstance(o, dict) or o.get("kind") not in _EXEMPT_KINDS:
+            raise ValidationError({"objects": f"Each {{kind, id}}, kind one of: "
+                                              f"{', '.join(_EXEMPT_KINDS)}."})
+        try:
+            pk = uuid.UUID(str(o.get("id")))
+        except ValueError:
+            raise ValidationError({"objects": "Not a valid id."}) from None
+        wanted.setdefault(o["kind"], set()).add(pk)
+    querysets = _exempt_querysets(request, tenant, wanted)
+    updated, seen = [], 0
+    with transaction.atomic():
+        for kind, ids in wanted.items():
+            pks = set(querysets[kind].filter(pk__in=ids).values_list("pk", flat=True))
+            model = _EXEMPT_KINDS[kind][0]
+            rows = list(model.objects.filter(pk__in=pks).order_by("pk").select_for_update())
+            seen += len(rows)
+            for obj in rows:
+                _set_exempt(obj, exempt)
+                updated.append({"kind": kind, "id": str(obj.pk)})
+    total = sum(len(ids) for ids in wanted.values())
+    return Response({"updated": updated, "scan_exempt": exempt, "not_found": total - seen})
 
 
 # ─── packages ────────────────────────────────────────────────────────────────
