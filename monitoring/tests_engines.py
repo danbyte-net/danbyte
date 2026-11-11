@@ -648,12 +648,51 @@ class PackageStoreTests(_Base):
         )
         self.assertEqual(r.status_code, 201, r.content)
         script = self.client.get("/api/outpost/install.sh?v=3.0.0").content.decode()
-        # A bare binary → download to .new + atomic mv (avoids text-file-busy on
-        # update) + run directly, no Python venv; and a real restart.
-        self.assertIn('mv -f "$PREFIX/danbyte-outpost.new" "$PREFIX/danbyte-outpost"', script)
+        # A bare binary → staged in a root-only directory inside $PREFIX and
+        # renamed into place (no text-file-busy on update, and nothing the
+        # service account left in its directory is followed) + run directly,
+        # no Python venv; and a real restart.
+        self.assertIn('-o "$STAGE/danbyte-outpost"', script)
+        self.assertIn('mv -f "$STAGE/danbyte-outpost" "$PREFIX/danbyte-outpost"', script)
+        self.assertIn('rm -f "$PREFIX/danbyte-outpost.new"', script)
         self.assertIn("$PREFIX/danbyte-outpost run", script)
         self.assertNotIn("python3 -m venv", script)
         self.assertIn("systemctl restart danbyte-outpost", script)
+        # Root takes the directory back before it writes there, and hands it
+        # to the service account (self-update) only after.
+        self.assertLess(script.index('chown root:root "$PREFIX"'),
+                        script.index('STAGE="$(mktemp -d "$PREFIX/.install.XXXXXX")"'))
+        self.assertLess(script.index('mv -f "$STAGE/danbyte-outpost"'),
+                        script.index('chown "$SVC_USER:$SVC_USER" "$PREFIX"'))
+        self.assertIn("ReadWritePaths=$PREFIX", script)
+
+    def test_install_script_runs_the_agent_as_a_service_account(self):
+        from monitoring.outpost_views import OUTPOST_UNIT_HARDENING
+
+        self._git_release()
+        script = self.client.get("/api/outpost/install.sh?v=1.0.0").content.decode()
+        self.assertIn('SVC_USER="danbyte-outpost"', script)
+        self.assertIn("useradd --system --user-group --no-create-home", script)
+        unit = script[script.index('cat >"$UNIT" <<UNIT'):script.index("\nUNIT\n")]
+        self.assertIn("User=$SVC_USER", unit)
+        self.assertIn("Group=$SVC_USER", unit)
+        for key, value in OUTPOST_UNIT_HARDENING:
+            self.assertIn(f"\n{key}={value}\n", unit)
+        self.assertNotIn("AmbientCapabilities=CAP", unit)
+        # A venv install stays root's: no writable path for the agent.
+        self.assertIn('SELFUPDATE=0', script)
+        self.assertNotIn("SELFUPDATE=1", script)
+        # The env file stays root-only (systemd reads it before dropping).
+        self.assertIn("install -d -m 700 -o root -g root /etc/danbyte-outpost", script)
+        # A re-run keeps the token and is the migration of a root unit, with
+        # a way back if the service does not stay up as the account.
+        self.assertIn("sed -n 's/^OUTPOST_TOKEN=//p' \"$ENVF\"", script)
+        self.assertIn('install -m 600 "$UNIT" "$BACKUP"', script)
+        self.assertIn('install -m 644 "$BACKUP" "$UNIT"', script)
+        self.assertIn("if ! healthy; then", script)
+        self.assertIn("ping_group_range", script)
+        # A fetched package no longer lands at a fixed name in /tmp.
+        self.assertNotIn("/tmp/danbyte-outpost.pkg", script)
 
     def test_download_requires_auth(self):
         self._file_release()
@@ -693,7 +732,7 @@ class PackageStoreTests(_Base):
         script = self.client.get(
             "/api/outpost/install.sh?v=v0.2.0"
         ).content.decode()
-        self.assertIn("chmod +x", script)
+        self.assertIn('chmod 0755 "$STAGE/danbyte-outpost"', script)
         self.assertNotIn("python3 -m venv", script)
 
     def test_available_lists_configured_repo_releases(self):

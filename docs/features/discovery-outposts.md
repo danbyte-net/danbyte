@@ -118,15 +118,16 @@ as you, with the run as the cause.
 ## nmap on an Outpost
 
 On an Outpost the nmap is the Outpost's own. The agent looks for it when it
-starts: `OUTPOST_NMAP_BINARY` (or `--nmap`, or `nmap_binary` in its
-configuration file) when set, else `nmap` on its PATH. It refuses to use it
-when the agent runs as root, and says in its hello which version it found or
-why it has none.
+starts: `OUTPOST_NMAP_BINARY` (or `--nmap`) when set, else `nmap` on its
+PATH. It refuses to use it when the agent runs as root, and says in its hello
+which version it found or why it has none.
 
-The Danbyte-generated installer's unit runs the agent as root, so as
-installed an Outpost offers the built-in scan only. For nmap, the agent must
-run as an unprivileged account that can read its environment file; ICMP
-checks then need `net.ipv4.ping_group_range` to cover that account's group.
+From agent 0.10.0 the Danbyte-generated installer runs the agent as the
+system account `danbyte-outpost`, so a fresh install offers nmap once one is
+installed. An Outpost installed earlier still runs as root after it
+self-updates (the Outposts list shows a **root** badge) and offers the
+built-in scan only until it is moved: see [The service
+account](../monitoring/outposts.md#service-account).
 
 On the server side, the tenant's **nmap** switch can be turned on while the
 server or any of the tenant's Outposts has an nmap; the deployment switch

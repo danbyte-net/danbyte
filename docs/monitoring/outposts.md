@@ -224,6 +224,9 @@ agent's hello carries `capabilities`:
 only the kinds its last hello named, and nmap work only when it named an nmap.
 An older agent sends nothing and gets no discovery work. A newer agent against
 an older core sees no `discovery` in the hello answer and never asks for work.
+From 0.10 the hello (and an SSH `once` answer) also carries `runtime: {"root":
+bool}`, stored beside it; it only drives the **root** badge
+([The service account](#service-account)).
 
 **Channel.** Two endpoints beside the others, with the same Bearer token:
 
@@ -238,10 +241,9 @@ an older core sees no `discovery` in the hello answer and never asks for work.
 applies its own target policy, keeps credentials in memory for the
 connection only, and runs discovery beside its check loop so a long scan
 never delays checks. nmap is optional and never installed by the agent: set
-`OUTPOST_NMAP_BINARY` (or `--nmap`, or `nmap_binary` in the configuration
-file) and run the agent as an unprivileged user, since it refuses nmap as
-root - the installer's unit runs as root, so as installed an Outpost offers
-the built-in scan only.
+`OUTPOST_NMAP_BINARY` (or `--nmap`). The agent refuses nmap as root, so an
+Outpost installed before 0.10.0 offers the built-in scan only until it is
+moved to the service account ([below](#service-account)).
 
 SSH-transport Outposts (Danbyte dials in) do not run discovery: their hosts
 say so.
@@ -312,14 +314,57 @@ token or admin auth), so you can pin a version per site, roll out upgrades
 centrally, and stay fully airgapped. Manage versions under **Monitoring →
 Engines → Outpost versions**. *(Shipped.)*
 
+## The service account {#service-account}
+
+From agent **0.10.0** the generated installer runs the agent as the system
+account `danbyte-outpost` (no login shell, no home) with no capabilities. It
+needs none: ICMP uses unprivileged datagram sockets, the agent binds no port,
+and nmap runs with `--unprivileged`.
+
+| | Fresh install (0.10+) | Installed before 0.10 |
+|---|---|---|
+| Unit | `User=danbyte-outpost`, empty capability set, `NoNewPrivileges`, `ProtectSystem=strict` and the rest of the hardening | runs as root |
+| `/opt/danbyte-outpost` | belongs to the account (self-update writes there) | root's |
+| `/etc/danbyte-outpost/env` | root, `0600` - systemd reads it before it drops to the account | the same |
+| nmap | offered when installed | refused |
+| Badge | none | **root** on the Outposts list and the engine dialog |
+
+A self-update swaps only the binary, so an older Outpost keeps its root unit
+when it updates to 0.10 and keeps working. Move it once, on the Outpost host:
+
+```bash
+sudo /opt/danbyte-outpost/danbyte-outpost migrate-service-user --dry-run
+sudo /opt/danbyte-outpost/danbyte-outpost migrate-service-user
+```
+
+or re-run the install one-liner (without `--token` it keeps the token it has).
+Both check first and change nothing when a check fails, create the account,
+save the old unit as `/etc/danbyte-outpost/danbyte-outpost.service.root-backup`,
+restart the service and watch it; if it does not stay up as the account, the
+old unit and ownership come back. A second run does nothing. The command
+refuses to run from a file anyone but root could change, and keeps the
+unit's other lines; the installer writes the whole unit.
+
+After the move the binary's directory belongs to the account, so do not run
+that binary with sudo again; re-run the installer instead. The agent itself
+never changes its unit or asks for privilege.
+
+ICMP needs `net.ipv4.ping_group_range` to cover the account's group. systemd
+sets `0 2147483647` on most distributions; when it does not, the installer
+and the agent say so and ICMP checks report unknown until it is widened.
+
+An SSH-transport Outpost runs `danbyte-outpost once` as the engine's SSH user:
+use an ordinary account, nothing in it needs root.
+
 ## Installing an Outpost - step by step
 
 1. **Upload a build** (once): Monitoring → Engines → *Outpost
    versions* → upload a wheel/sdist, or add a git repo + ref. Mark one default.
 2. **Add the Outpost** and pick its transport (HTTPS-pull or SSH).
 3. **Enroll** it → copy the one-liner (the token is shown **once**).
-4. On a host *at the site*, run the one-liner as root. It installs + starts the
-   agent, which immediately dials out and begins pulling work.
+4. On a host *at the site*, run the one-liner as root. It installs the agent,
+   starts it as the `danbyte-outpost` account and waits until it stays up; the
+   agent dials out and begins pulling work.
 5. **Assign** it to a device, site or location (on their forms) → everything in that
    scope is now monitored by the Outpost. Watch it go healthy on the engine's
    detail dialog.

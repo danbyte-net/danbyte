@@ -676,48 +676,97 @@ def _is_binary_release(release: OutpostRelease) -> bool:
     )
 
 
+#: The service account the installer runs the agent as (agent 0.10+ and the
+#: agent's ``migrate-service-user`` use the same name and the same block).
+OUTPOST_SERVICE_USER = "danbyte-outpost"
+#: [Service] hardening of the installed unit. The agent needs no privilege:
+#: ICMP uses unprivileged datagram sockets, it binds no port, nmap runs with
+#: --unprivileged. Keep in step with the agent's ``service_user.HARDENING``.
+OUTPOST_UNIT_HARDENING = (
+    ("NoNewPrivileges", "yes"),
+    ("CapabilityBoundingSet", ""),
+    ("AmbientCapabilities", ""),
+    ("ProtectSystem", "strict"),
+    ("ProtectHome", "read-only"),
+    ("PrivateTmp", "yes"),
+    ("PrivateDevices", "yes"),
+    ("ProtectKernelTunables", "yes"),
+    ("ProtectKernelModules", "yes"),
+    ("ProtectKernelLogs", "yes"),
+    ("ProtectControlGroups", "yes"),
+    ("ProtectClock", "yes"),
+    ("ProtectHostname", "yes"),
+    ("RestrictSUIDSGID", "yes"),
+    ("RestrictNamespaces", "yes"),
+    ("RestrictRealtime", "yes"),
+    ("LockPersonality", "yes"),
+    ("RestrictAddressFamilies", "AF_INET AF_INET6 AF_UNIX AF_NETLINK"),
+    ("UMask", "0077"),
+)
+
+
 def _render_install_script(base: str, release: OutpostRelease) -> str:
     """A POSIX-sh installer: install the Outpost (single binary, a Python
     package, or a git ref), drop a systemd unit wired to this instance + the
     token, and start it. Run as
-    `curl -fsSL <base>/api/outpost/install.sh?v=<ver> | sudo sh -s -- --token=X`."""
+    `curl -fsSL <base>/api/outpost/install.sh?v=<ver> | sudo sh -s -- --token=X`.
+
+    The agent runs as the system account ``danbyte-outpost`` with no
+    capabilities. For the single binary its directory belongs to that account
+    so the agent can update itself, which makes it a directory root must never
+    run anything from or write through: root takes the directory back while it
+    installs, stages the download in a private directory inside it and renames
+    it into place, so nothing the account left there is followed. Re-running
+    it on an install that ran as root is the migration; when the service does
+    not then stay up as the account, the old unit and ownership come back."""
     # $CURLK / $RUNARGS are set at runtime from --insecure (self-signed TLS).
     download = (
         f'curl -fsSL $CURLK "$OUTPOST_URL/api/outpost/download/{release.version}/" '
         f'-H "Authorization: Bearer $TOKEN"'
     )
     if _is_binary_release(release):
-        # No Python needed - drop the binary and run it directly. Download to a
-        # temp name and atomically `mv` it into place, so **updating a running
-        # Outpost doesn't hit "text file busy"** (curl -o can't truncate a binary
-        # that's currently executing; rename swaps the dir entry instead).
+        # No Python needed - drop the binary and run it directly. Renaming it
+        # into place means updating a running Outpost never hits "text file
+        # busy" (the running process keeps the old inode).
         install = (
             'echo "Fetching the Outpost binary"\n'
-            f'{download} -o "$PREFIX/danbyte-outpost.new"\n'
-            'chmod +x "$PREFIX/danbyte-outpost.new"\n'
-            'mv -f "$PREFIX/danbyte-outpost.new" "$PREFIX/danbyte-outpost"'
+            f'{download} -o "$STAGE/danbyte-outpost"\n'
+            'chmod 0755 "$STAGE/danbyte-outpost"\n'
+            'rm -f "$PREFIX/danbyte-outpost.new"\n'
+            'mv -f "$STAGE/danbyte-outpost" "$PREFIX/danbyte-outpost"\n'
+            'SELFUPDATE=1'
         )
         exec_start = "$PREFIX/danbyte-outpost run $RUNARGS"
     else:
         if release.source == OutpostRelease.GIT:
             fetch, pkg = "", f'"git+{release.git_url}@{release.git_ref or "main"}"'
         else:
-            fetch = f'{download} -o /tmp/danbyte-outpost.pkg\n'
-            pkg = "/tmp/danbyte-outpost.pkg"
+            fetch = f'{download} -o "$STAGE/danbyte-outpost.pkg"\n'
+            pkg = '"$STAGE/danbyte-outpost.pkg"'
         install = (
+            '# A venv someone other than root could have changed is rebuilt.\n'
+            'if [ -L "$PREFIX/venv" ] || { [ -e "$PREFIX/venv" ] && '
+            '[ -n "$(find "$PREFIX/venv" ! -user root -print 2>/dev/null | head -n 1)" ]; }; '
+            'then rm -rf "$PREFIX/venv"; fi\n'
             'python3 -m venv "$PREFIX/venv"\n'
             '"$PREFIX/venv/bin/pip" install --quiet --upgrade pip\n'
             f'{fetch}'
             f'"$PREFIX/venv/bin/pip" install --quiet {pkg}'
         )
         exec_start = "$PREFIX/venv/bin/danbyte-outpost run $RUNARGS"
+    hardening = "\n".join(f"{k}={v}" for k, v in OUTPOST_UNIT_HARDENING)
     return f"""#!/bin/sh
 # Danbyte Outpost installer - version {release.version}
 # Self-signed Danbyte? add --insecure (and fetch this script with `curl -k`).
 set -eu
+umask 022
 OUTPOST_URL="{base}"
 TOKEN="${{OUTPOST_TOKEN:-}}"
 INSECURE=""
+SVC_USER="{OUTPOST_SERVICE_USER}"
+ENVF=/etc/danbyte-outpost/env
+UNIT=/etc/systemd/system/danbyte-outpost.service
+BACKUP=/etc/danbyte-outpost/danbyte-outpost.service.root-backup
 for a in "$@"; do
   case "$a" in
     --token=*) TOKEN="${{a#--token=}}" ;;
@@ -725,30 +774,99 @@ for a in "$@"; do
     --insecure) INSECURE=1 ;;
   esac
 done
+# A re-run on an installed Outpost keeps its token.
+if [ -z "$TOKEN" ] && [ -f "$ENVF" ]; then
+  TOKEN="$(sed -n 's/^OUTPOST_TOKEN=//p' "$ENVF" | head -n 1)"
+fi
 [ -n "$TOKEN" ] || {{ echo "install: --token=<TOKEN> is required" >&2; exit 1; }}
+[ "$(id -u)" -eq 0 ] || {{ echo "install: run it as root (sudo)" >&2; exit 1; }}
 PREFIX="${{OUTPOST_PREFIX:-/opt/danbyte-outpost}}"
-mkdir -p "$PREFIX"
+case "$PREFIX" in
+  /*) ;;
+  *) echo "install: OUTPOST_PREFIX must be an absolute path" >&2; exit 1 ;;
+esac
+if [ -L "$PREFIX" ]; then
+  echo "install: $PREFIX is a symlink; point OUTPOST_PREFIX at a real directory" >&2
+  exit 1
+fi
 
 CURLK=""
 RUNARGS=""
 if [ -n "$INSECURE" ]; then CURLK="-k"; RUNARGS="--insecure"; fi
 
+# The service account: no login shell, no home.
+if ! id -u "$SVC_USER" >/dev/null 2>&1; then
+  NOLOGIN=/usr/sbin/nologin
+  [ -x "$NOLOGIN" ] || NOLOGIN=/sbin/nologin
+  [ -x "$NOLOGIN" ] || NOLOGIN=/bin/false
+  if command -v useradd >/dev/null 2>&1; then
+    useradd --system --user-group --no-create-home --home-dir /nonexistent \\
+      --shell "$NOLOGIN" "$SVC_USER"
+  elif command -v adduser >/dev/null 2>&1; then
+    adduser --system --group --no-create-home --home /nonexistent \\
+      --shell "$NOLOGIN" "$SVC_USER"
+  else
+    echo "install: no useradd or adduser; create the system user $SVC_USER first" >&2
+    exit 1
+  fi
+fi
+SVC_UID="$(id -u "$SVC_USER")"
+SVC_GID="$(id -g "$SVC_USER")"
+[ "$SVC_UID" -ne 0 ] || {{ echo "install: $SVC_USER has uid 0" >&2; exit 1; }}
+
+# Root owns $PREFIX while it writes there and stages in a private directory
+# inside it, so a file the service account left behind is never followed.
+mkdir -p "$PREFIX"
+chown root:root "$PREFIX"
+chmod 0755 "$PREFIX"
+STAGE="$(mktemp -d "$PREFIX/.install.XXXXXX")"
+trap 'rm -rf "$STAGE"' EXIT
+SELFUPDATE=0
+
 echo "Installing Danbyte Outpost {release.version} into $PREFIX"
 {install}
+rm -rf "$STAGE"
+trap - EXIT
 
-# Credentials go in a root-only env file, never on the command line - the
-# agent reads OUTPOST_URL / OUTPOST_TOKEN from the environment.
-install -d -m 700 /etc/danbyte-outpost
+# Self-update: the binary's own directory goes to the service account. Only a
+# directory of its own; anything else stays root's and self-update stays off.
+RWPATHS=""
+if [ "$SELFUPDATE" = 1 ]; then
+  if [ "$(basename "$PREFIX")" = "danbyte-outpost" ]; then
+    RWPATHS="ReadWritePaths=$PREFIX"
+  else
+    SELFUPDATE=0
+    echo "install: $PREFIX is not a directory of its own; self-update stays off" >&2
+  fi
+fi
+
+# Credentials go in a root-only env file, never on the command line. systemd
+# reads it before it drops to the service account, which cannot read it.
+install -d -m 700 -o root -g root /etc/danbyte-outpost
 umask 077
 cat >/etc/danbyte-outpost/env <<ENVFILE
 OUTPOST_URL=$OUTPOST_URL
 OUTPOST_TOKEN=$TOKEN
 ENVFILE
 chmod 600 /etc/danbyte-outpost/env
+umask 022
+
+# A unit that ran as root is kept, to go back to if the new one fails.
+MIGRATING=""
+if [ -f "$UNIT" ]; then
+  OLD_USER="$(sed -n 's/^[[:space:]]*User=[[:space:]]*//p' "$UNIT" | tail -n 1)"
+  case "$OLD_USER" in
+    ""|root|0)
+      if ! grep -Eqi '^[[:space:]]*DynamicUser=(yes|true|1|on)' "$UNIT"; then
+        MIGRATING=1
+        [ -f "$BACKUP" ] || install -m 600 "$UNIT" "$BACKUP"
+      fi ;;
+  esac
+fi
 
 # ExecStart still needs $PREFIX/$RUNARGS expanded at install time; the unit
-# no longer contains any secret (URL + token live in the 0600 env file).
-cat >/etc/systemd/system/danbyte-outpost.service <<UNIT
+# contains no secret (URL + token live in the 0600 env file).
+cat >"$UNIT" <<UNIT
 [Unit]
 Description=Danbyte Outpost
 After=network-online.target
@@ -758,15 +876,70 @@ EnvironmentFile=/etc/danbyte-outpost/env
 ExecStart={exec_start}
 Restart=always
 RestartSec=10
+User=$SVC_USER
+Group=$SVC_USER
+$RWPATHS
+{hardening}
 [Install]
 WantedBy=multi-user.target
 UNIT
+chmod 644 "$UNIT"
+if [ "$SELFUPDATE" = 1 ]; then
+  chown "$SVC_USER:$SVC_USER" "$PREFIX/danbyte-outpost"
+  chown "$SVC_USER:$SVC_USER" "$PREFIX"
+fi
+
+# ICMP needs no capability, only a group inside net.ipv4.ping_group_range.
+if [ -r /proc/sys/net/ipv4/ping_group_range ]; then
+  # One read: a sysctl file answers nothing past offset 0.
+  set -- $(cat /proc/sys/net/ipv4/ping_group_range)
+  LO="${{1:-}}"
+  HI="${{2:-}}"
+  if [ -n "$HI" ] && {{ [ "$SVC_GID" -lt "$LO" ] || [ "$SVC_GID" -gt "$HI" ]; }}; then
+    echo "install: net.ipv4.ping_group_range is $LO $HI and leaves out gid $SVC_GID:" >&2
+    echo "  ICMP checks will report unknown. To allow it:" >&2
+    echo "  echo 'net.ipv4.ping_group_range = 0 2147483647' >/etc/sysctl.d/60-danbyte-outpost.conf && sysctl --system" >&2
+  fi
+fi
+
+prop() {{ systemctl show -p "$1" danbyte-outpost 2>/dev/null | sed 's/^[^=]*=//'; }}
+healthy() {{
+  n0="$(prop NRestarts)"
+  i=0
+  while [ "$i" -lt 15 ]; do
+    sleep 1
+    i=$((i + 1))
+    [ "$(prop ActiveState)" != failed ] || return 1
+  done
+  [ "$(prop ActiveState)" = active ] && [ "$(prop SubState)" = running ] || return 1
+  [ -z "$n0" ] || [ "$(prop NRestarts)" = "$n0" ] || return 1
+  pid="$(prop MainPID)"
+  [ "${{pid:-0}}" -gt 0 ] 2>/dev/null || return 1
+  [ "$(awk '/^Uid:/ {{ print $2 }}' "/proc/$pid/status" 2>/dev/null)" = "$SVC_UID" ]
+}}
+
 systemctl daemon-reload
 systemctl enable danbyte-outpost >/dev/null 2>&1 || true
 # `restart` (not `enable --now`) so a re-install always picks up the new binary
 # **and the new token** - an already-running unit wouldn't otherwise reload.
 systemctl restart danbyte-outpost
-echo "Danbyte Outpost {release.version} installed and started."
+echo "Waiting for the Outpost to stay up as $SVC_USER"
+if ! healthy; then
+  if [ -n "$MIGRATING" ]; then
+    echo "install: the Outpost did not stay up as $SVC_USER; going back to the root unit" >&2
+    install -m 644 "$BACKUP" "$UNIT"
+    chown root:root "$PREFIX"
+    chown -h root:root "$PREFIX/danbyte-outpost" 2>/dev/null || true
+    systemctl daemon-reload
+    systemctl restart danbyte-outpost || true
+  fi
+  echo "install: see journalctl -u danbyte-outpost -n 50" >&2
+  exit 1
+fi
+echo "Danbyte Outpost {release.version} installed and running as $SVC_USER."
+if [ "$SELFUPDATE" = 1 ]; then
+  echo "$PREFIX belongs to $SVC_USER: never run the binary in it with sudo."
+fi
 """
 
 
