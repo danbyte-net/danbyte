@@ -552,7 +552,8 @@ def _secret_login(ref: dict, item, tenant):
             tenant=tenant, pk=pk, device_id=item.device_id,
             virtual_machine_id=item.virtual_machine_id).first()
     # SSH only: an Outpost never gets a WinRM certificate.
-    if cred is None or cred.kind not in SSH_KINDS or cred.kind != ref.get("transport"):
+    if cred is None or cred.kind not in SSH_KINDS or cred.kind != ref.get("transport") \
+            or not (cred.username or "").strip():
         return None
     out = _credential(Login(credential=cred, source=ref.get("source") or ""), None)
     if out is None:

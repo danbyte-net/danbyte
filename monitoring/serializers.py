@@ -373,6 +373,7 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
             raise serializers.ValidationError(
                 {"device": "Give a device or a virtual machine, not both."}
             )
+        require_ssh_user_name(self, attrs)
         managed = attrs.get(
             "secret_managed",
             getattr(self.instance, "secret_managed", True),
@@ -414,6 +415,20 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
         except SecretPathError as exc:
             raise serializers.ValidationError({"secret_path": str(exc)}) from exc
         return attrs
+
+
+def require_ssh_user_name(serializer, attrs) -> None:
+    """An SSH credential names its user: nothing guesses ``root``. Checked on
+    create and whenever the kind or the user name is written, so an older
+    row without one still loads and can have other fields changed."""
+    inst = serializer.instance
+    if inst is not None and "kind" not in attrs and "username" not in attrs:
+        return
+    kind = attrs.get("kind", getattr(inst, "kind", ""))
+    username = attrs.get("username", getattr(inst, "username", "")) or ""
+    if kind in (DeviceCredential.Kind.SSH_PASSWORD, DeviceCredential.Kind.SSH_KEY):
+        if not username.strip():
+            raise serializers.ValidationError({"username": "Required for an SSH login."})
 
 
 def shared_credential_site_limit(user, tenant, action: str):
@@ -513,6 +528,7 @@ class SharedCredentialSerializer(TenantScopedModelSerializer):
                 return [] if m2m else None
             return list(getattr(inst, name).all()) if m2m else getattr(inst, name)
 
+        require_ssh_user_name(self, attrs)
         request = self.context.get("request")
         user = getattr(request, "user", None)
         from api.views import _get_active_tenant

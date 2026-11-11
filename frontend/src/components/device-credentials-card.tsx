@@ -376,6 +376,7 @@ function CredentialForm({
             />
             <FormText
               label="Username"
+              required={kind === "ssh_key" || kind === "ssh_password"}
               value={username}
               onChange={setUsername}
               placeholder="netadmin"

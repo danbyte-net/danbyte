@@ -87,6 +87,21 @@ class DeviceCredentialCrudTests(_Mixin, APITestCase):
         self.assertEqual(self.client.delete(f"{BASE}{cid}/").status_code, 204)
         self.assertFalse(DeviceCredential.objects.filter(pk=cid).exists())
 
+    def test_an_ssh_login_needs_a_user_name(self):
+        for kind in ("ssh_password", "ssh_key"):
+            r = self._make(kind=kind, username="", name=f"n-{kind}")
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("username", r.json())
+        # Other kinds keep an optional user name.
+        r = self._make(kind="https_login", username="", name="web")
+        self.assertEqual(r.status_code, 201, r.content)
+        old = DeviceCredential.objects.create(
+            tenant=self.tenant, device=self.device, name="old", kind="ssh_password",
+            secret_managed=False, secret_provider="local", secret_path="creds/old")
+        self.assertEqual(self.client.get(f"{BASE}{old.pk}/").status_code, 200)
+        r = self.client.patch(f"{BASE}{old.pk}/", {"description": "x"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
     def test_secret_value_never_serialised(self):
         r = self._make(secret_path="creds/x")
         body = r.json()

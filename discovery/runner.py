@@ -156,7 +156,8 @@ def _credential(login, known_hosts) -> dict | None:
         return {"certificate": secret.get("certificate") or "",
                 "private_key": secret.get("private_key") or "",
                 "passphrase": secret.get("passphrase") or None}
-    out = {"username": cred.username or "root", "known_hosts": known_hosts}
+    # Never a guessed user: a login without one is left out by the scope.
+    out = {"username": (cred.username or "").strip(), "known_hosts": known_hosts}
     if cred.kind == "ssh_key":
         out.update(private_key=secret.get("private_key") or "",
                    passphrase=secret.get("passphrase") or None)

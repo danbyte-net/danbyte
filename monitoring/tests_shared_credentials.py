@@ -208,10 +208,11 @@ class ApiTests(APITestCase, Base):
         self.assertEqual(self.client.get(f"{self.URL}{theirs.pk}/").status_code, 404)
         self.assertEqual(self.client.get(self.URL).json()["count"], 0)
         other_site = Site.objects.create(tenant=self.other, name="X")
-        r = self.client.post(self.URL, {"name": "x", "kind": "ssh_password",
+        r = self.client.post(self.URL, {"name": "x", "kind": "ssh_password", "username": "u",
                                         "secret_managed": False, "secret_path": "ext/x",
                                         "site_ids": [str(other_site.pk)]}, format="json")
         self.assertEqual(r.status_code, 400)
+        self.assertIn("site_ids", r.json())
 
     def test_default_closed(self):
         user = User.objects.create_user("nobody", password="x")
@@ -224,7 +225,7 @@ class ApiTests(APITestCase, Base):
 
     def test_site_limited_user_only_within_their_sites(self):
         self.member("site", ["view", "add", "change"], sites=[self.hq])
-        base = {"kind": "ssh_password", "password": SECRET}
+        base = {"kind": "ssh_password", "username": "ops", "password": SECRET}
         patcher = mock.patch("monitoring.secret_store.require_secret_store",
                              return_value=mock.MagicMock())
         patcher.start()
@@ -242,6 +243,25 @@ class ApiTests(APITestCase, Base):
         self.assertEqual(names, ["mine"])
         self.assertEqual(self.client.patch(f"{self.URL}{broad.pk}/", {"weight": 1},
                                            format="json").status_code, 404)
+
+    def test_an_ssh_login_needs_a_user_name(self):
+        self.login(self.su)
+        body = {"name": "n", "kind": "ssh_password", "secret_managed": False,
+                "secret_path": "ext/n", "all_hosts": True}
+        for user in ("", "  "):
+            r = self.client.post(self.URL, {**body, "username": user}, format="json")
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("username", r.json())
+        # A WinRM certificate names no user: the certificate maps to one.
+        r = self.client.post(self.URL, {**body, "kind": "winrm_cert"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        # An older row without one still loads and takes other changes.
+        old = self.shared("old", all_hosts=True, username="")
+        self.assertEqual(self.client.get(f"{self.URL}{old.pk}/").status_code, 200)
+        r = self.client.patch(f"{self.URL}{old.pk}/", {"weight": 5}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.patch(f"{self.URL}{old.pk}/", {"username": ""}, format="json")
+        self.assertEqual(r.status_code, 400)
 
     def test_reveal_needs_its_verb(self):
         s = self.shared("s", all_hosts=True)

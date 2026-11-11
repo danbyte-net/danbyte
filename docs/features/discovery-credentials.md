@@ -33,8 +33,11 @@ and **WinRM certificate**. Each can be held two ways:
   nothing unless **All hosts** is on. The fields and their permissions are
   on [Device access: shared credentials](device-access.md#shared-credentials).
 
-Fill in **User name**: a credential without one logs in as `root`. Give it
-an ordinary account ([least privilege](discovery-packages.md#least-privilege)).
+**User name** is required for an SSH key or SSH password (a WinRM
+certificate names none: the host maps the certificate to its account).
+Nothing guesses `root`: an older SSH credential saved without one is
+skipped for every host, with *The credential has no user name.*, and the
+next login is used. Give it an ordinary account ([least privilege](discovery-packages.md#least-privilege)).
 
 ### Which login a host gets
 

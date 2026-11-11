@@ -629,6 +629,11 @@ async def read_with_logins(address: str, logins: list[dict], *, known_hosts: byt
                           "reason": "Not reachable on this transport"})
             continue
         cred = login.get("credential") or {}
+        if transport != "winrm" and not str(cred.get("username") or "").strip():
+            # Never a guessed user (root, or the local account).
+            tried.append({"transport": transport, "outcome": "skipped",
+                          "reason": "The credential has no user name."})
+            continue
         if transport == "winrm":
             if collect_winrm is None:
                 result = InventoryResult(UNSUPPORTED, "WinRM is not available here.")

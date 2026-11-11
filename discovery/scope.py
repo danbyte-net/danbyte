@@ -65,6 +65,7 @@ KIND_TRANSPORT = {k: t for t, k in TRANSPORT_KINDS}
 TRANSPORT_LABELS = {"ssh_key": "SSH key", "ssh_password": "SSH password",
                     "winrm": "WinRM HTTPS"}
 OUTPOST_NO_WINRM = "Outposts read over SSH only"
+NO_USER_NAME = "The credential has no user name."
 
 
 def transports(settings_row) -> tuple[list[str], dict[str, str]]:
@@ -274,16 +275,23 @@ def resolve(profile, *, user=None, now=None, outpost: bool = False) -> list[Targ
             continue
         # The resolver's order: the host's own, the pinned one, the matching
         # shared ones; a key before a password within each.
-        logins = resolver.logins(host)[:MAX_TRIES]
+        # An SSH login without a user name is never guessed (no root).
+        logins, nameless = [], []
+        for x in resolver.logins(host):
+            unnamed = x.kind in SSH_KINDS and not (x.credential.username or "").strip()
+            (nameless if unnamed else logins).append(x)
+        logins = logins[:MAX_TRIES]
         skipped = [{"transport": tr, "outcome": "skipped", "reason": why}
                    for tr, why in off.items()]
-        have = {KIND_TRANSPORT.get(x.kind) for x in logins}
+        skipped += [{"transport": KIND_TRANSPORT[x.kind], "outcome": "skipped",
+                     "reason": NO_USER_NAME} for x in nameless[:MAX_TRIES]]
+        have = {KIND_TRANSPORT.get(x.kind) for x in [*logins, *nameless]}
         skipped += [{"transport": tr, "outcome": "skipped", "reason": "No credential"}
                     for tr in on if tr not in have]
         t.extra["server_name"] = (getattr(ip, "dns_name", "") or "").strip()
         if not logins:
-            t.skip, t.message = "no_credential", "No login for this host on a transport " \
-                                                 "that is on."
+            t.skip, t.message = "no_credential", NO_USER_NAME if nameless else \
+                "No login for this host on a transport that is on."
             t.extra["skipped"] = skipped
             continue
         accepted = keys.get((kind, host.pk)) or []

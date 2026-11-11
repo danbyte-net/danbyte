@@ -800,7 +800,8 @@ class SharedCredentialViewSet(DeviceCredentialViewSet):
         """The hosts a scope in the request body would match. Writes nothing."""
         tenant = self._tenant_or_403()
         ser = self.get_serializer(data={**request.data, "name": request.data.get("name") or "x",
-                                        "kind": request.data.get("kind") or "ssh_key"},
+                                        "kind": request.data.get("kind") or "ssh_key",
+                                        "username": request.data.get("username") or "x"},
                                   partial=True)
         ser.is_valid(raise_exception=True)
         vd = ser.validated_data

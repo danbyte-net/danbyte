@@ -197,7 +197,8 @@ class ScopeTests(Base):
     def test_a_key_login_wins_and_known_hosts_pin_the_address(self):
         h = self.host("a", "10.0.0.1", site=self.site)
         DeviceCredential.objects.create(tenant=self.tenant, device=h, name="key",
-                                        kind="ssh_key", port=2222, secret_path="x/k",
+                                        kind="ssh_key", username="k", port=2222,
+                                        secret_path="x/k",
                                         secret_managed=False)
         p = self.profile()
         p.sites.add(self.site)
@@ -756,7 +757,8 @@ class CredentialsForVmsTests(ApiBase):
         self.login(self.su)
         r = self.client.post("/api/monitoring/device-credentials/", {
             "virtual_machine": str(v.pk), "name": "inv", "kind": "ssh_password",
-            "secret_managed": False, "secret_provider": "local", "secret_path": "x/v"},
+            "username": "inv", "secret_managed": False, "secret_provider": "local",
+            "secret_path": "x/v"},
             format="json")
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(r.json()["virtual_machine_name"], "v")
@@ -764,7 +766,7 @@ class CredentialsForVmsTests(ApiBase):
         self.assertEqual(len(r.json()["results"]), 1)
         both = self.client.post("/api/monitoring/device-credentials/", {
             "virtual_machine": str(v.pk), "device": str(self.host("d", "10.0.0.8").pk),
-            "name": "x", "kind": "ssh_password", "secret_managed": False,
+            "name": "x", "kind": "ssh_password", "username": "u", "secret_managed": False,
             "secret_provider": "local", "secret_path": "x/y"}, format="json")
         self.assertEqual(both.status_code, 400)
         r = self.client.post("/api/monitoring/ssh-host-keys/", {

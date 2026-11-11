@@ -268,6 +268,62 @@ class LoginOrderTests(Base):
                          [("host", "ssh_password"), ("shared: key", "ssh_key")])
 
 
+class NoUserNameTests(Base):
+    """A login without a user name is never guessed as root: it is skipped
+    with a reason, and the next login of the host is used."""
+
+    def setUp(self):
+        self.a = self.host("a", "10.0.0.1", site=self.site, cred=None)
+        self.p = self.profile()
+        self.p.sites.add(self.site)
+
+    def test_skipped_with_a_reason(self):
+        DeviceCredential.objects.create(tenant=self.tenant, device=self.a, name="n",
+                                        kind="ssh_password", username="  ",
+                                        secret_managed=False, secret_path="x/n")
+        (t,) = scope.resolve(self.p)
+        self.assertEqual((t.skip, t.message), ("no_credential", scope.NO_USER_NAME))
+        self.assertIn({"transport": "ssh_password", "outcome": "skipped",
+                       "reason": scope.NO_USER_NAME}, t.extra["skipped"])
+
+    @mock.patch.object(DeviceCredential, "resolve_secret", secrets)
+    @mock.patch.object(SharedCredential, "resolve_secret", secrets)
+    def test_the_next_login_is_used_and_root_never_sent(self):
+        DeviceCredential.objects.create(tenant=self.tenant, device=self.a, name="n",
+                                        kind="ssh_password", username="",
+                                        secret_managed=False, secret_path="x/n")
+        SharedCredential.objects.create(tenant=self.tenant, name="ops", kind="ssh_password",
+                                        username="ops", all_hosts=True,
+                                        secret_managed=False, secret_path="ext/ops")
+        with mock.patch.object(runner, "enqueue"):
+            run = runner.start(self.p, user=self.su)
+        fake = FakeCollector({"10.0.0.1": result})
+        runner.execute(str(run.pk), collect=fake.collect, observe=fake.observe)
+        self.assertEqual([c[2]["username"] for c in fake.calls], ["ops"])
+        row = InventoryHostResult.objects.get(run=run)
+        self.assertEqual(row.credential_source, "shared: ops")
+        self.assertIn(scope.NO_USER_NAME, [a["reason"] for a in row.attempts])
+
+    def test_the_shared_loop_refuses_a_blank_user(self):
+        import asyncio
+
+        calls = []
+
+        async def collect(address, **kw):
+            calls.append(kw)
+            return inv.InventoryResult(inv.OK)
+
+        async def observe(*a, **kw):
+            return None
+
+        result_, _o, used, tried = asyncio.run(inv.read_with_logins(
+            "10.0.0.1", [{"transport": "ssh_password", "credential": {"username": ""}}],
+            known_hosts=None, first_use=False, timeout=5, collect=collect, observe=observe))
+        self.assertEqual(calls, [])
+        self.assertIsNone(used)
+        self.assertEqual(tried[0]["reason"], "The credential has no user name.")
+
+
 class LoginLoopTests(SimpleTestCase):
     """``read_with_logins``: an SSH port that does not answer moves on to
     the next login on another transport, skipping the SSH ones between."""

@@ -32,6 +32,9 @@ sets credentials **on the device** with none picked (see
 [PRTG](prtg.md#where-credentials-go)): Windows takes `DOMAIN\user` as the
 username, Proxmox `user@realm!tokenid` with the token secret as the password.
 
+An SSH password or SSH key needs a **Username**: nothing logs in as a
+guessed `root`. Other kinds may leave it blank.
+
 Each credential sources its secret one of two ways:
 
 - **Managed** (the default): you type the secret once and Danbyte stores it in
@@ -72,8 +75,8 @@ Either way the value is never returned in the API.
 
 A **shared credential** is one login for many hosts: "the ops account on
 every Linux VM at HQ". Manage them under **Settings → Devices & polling →
-Credentials**. Each has a kind, user name and port like a device
-credential, and its secret is held exactly the same way - managed or
+Credentials**. Each has a kind, user name (required for the SSH kinds)
+and port like a device credential, and its secret is held exactly the same way - managed or
 external, write-only, in the secret store under
 `shared-credentials/<credential id>`, readable only through **reveal** with
 the *reveal* permission, change-logged without the value.

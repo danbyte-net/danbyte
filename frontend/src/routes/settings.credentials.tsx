@@ -351,6 +351,7 @@ function CredentialDialog({
           <FormRow>
             <FormText
               label="User name"
+              required={kind === "ssh_key" || kind === "ssh_password"}
               value={username}
               onChange={setUsername}
               error={fieldErrors.username}
