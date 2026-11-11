@@ -139,7 +139,13 @@ function VmDetail() {
         <QueryError error={vm.error} />
       </div>
     )
-  return <VmDetailBody vm={vm.data} />
+  // A list row stands in until the detail read lands, and a table row only
+  // carries what its columns asked for: the lists the page walks may be
+  // missing from it.
+  const data = vm.isPlaceholderData
+    ? { ...vm.data, disks: vm.data.disks ?? [], tags: vm.data.tags ?? [] }
+    : vm.data
+  return <VmDetailBody vm={data} />
 }
 
 function VmDetailBody({ vm }: { vm: VirtualMachine }) {

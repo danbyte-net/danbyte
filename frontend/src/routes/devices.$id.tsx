@@ -321,7 +321,12 @@ function DeviceDetail() {
         <QueryError error={q.error} />
       </div>
     )
-  return <Body device={q.data} />
+  // A list row stands in until the detail read lands, and a table row only
+  // carries what its columns asked for.
+  const data = q.isPlaceholderData
+    ? { ...q.data, tags: q.data.tags ?? [] }
+    : q.data
+  return <Body device={data} />
 }
 
 function Body({ device: d }: { device: Device }) {
