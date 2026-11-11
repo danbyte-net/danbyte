@@ -267,7 +267,10 @@ makes one (`name`, `description`, `everyone`, `weight`, `user_ids`,
 /api/prefs/presets/<id>/reset/` with `{"dry_run": true}` counts what a reset
 would drop. A table's layout, `GET /api/prefs/columns/<table>/`, says where it
 came from (`source`: `user`, `preset`, `default`, `tenant_forced` or `none`)
-and names the preset behind the default (`preset`).
+and names the preset behind the default (`preset`). The Preferences page reads all
+tables at once from `GET /api/prefs/columns/`, which gives the same
+`source` and `preset` per table, and shows a preset-supplied layout as
+*Preset: <name>*.
 
 !!! note "How a layout is chosen"
     Danbyte shows the most specific layout that applies, in this order:

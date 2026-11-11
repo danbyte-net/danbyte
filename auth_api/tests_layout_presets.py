@@ -167,6 +167,43 @@ class ResolutionTests(Base):
         self.assertEqual(few, many)
 
 
+class SummaryTests(Base):
+    """The Preferences page's bulk summary names the preset behind a table."""
+
+    URL = "/api/prefs/columns/"
+
+    def test_preset_source_and_name(self):
+        self._preset("Noc", {"devices": lay("noc"), "prefixes": "junk"},
+                     groups=[self.noc])
+        self._preset("All", {"prefixes": lay("p")}, everyone=True)
+        UserPreference.objects.create(
+            user=self.u1, tenant=self.t, table_id="vlans", data=lay("own"))
+        self._login(self.u1)
+        body = self.client.get(self.URL).json()
+        self.assertEqual((body["devices"]["source"], body["devices"]["preset"]["name"]),
+                         ("preset", "Noc"))
+        # A broken layout in the better preset falls through to the next.
+        self.assertEqual(body["prefixes"]["preset"]["name"], "All")
+        self.assertEqual((body["vlans"]["source"], body["vlans"]["preset"]),
+                         ("user", None))
+        # u2 is not in noc: no devices preset.
+        self._login(self.u2)
+        self.assertNotIn("devices", self.client.get(self.URL).json())
+
+    def test_forced_wins_and_tenants_stay_apart(self):
+        self._preset("Theirs", {"devices": lay("x")}, tenant=self.other, everyone=True)
+        self._login(self.u1)
+        self.assertEqual(self.client.get(self.URL).json(), {})
+        self._preset("Ours", {"devices": lay("y")}, everyone=True)
+        UserPreference.objects.create(user=None, tenant=self.t, table_id="devices",
+                                      data=lay("locked"), forced=True)
+        row = self.client.get(self.URL).json()["devices"]
+        self.assertEqual((row["source"], row["preset"]), ("tenant_forced", None))
+        self._login(self.outsider, self.other)
+        self.assertEqual(self.client.get(self.URL).json()["devices"]["preset"]["name"],
+                         "Theirs")
+
+
 class PresetApiTests(Base):
     def setUp(self):
         super().setUp()

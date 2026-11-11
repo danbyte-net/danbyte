@@ -678,6 +678,8 @@ export interface ColumnPrefSummary {
   source: ColumnPref["source"]
   is_forced: boolean
   has_user_row: boolean
+  /** The layout preset that supplies your default for the table. */
+  preset?: { id: string; name: string } | null
 }
 
 // ─── Space map ─────────────────────────────────────────────────────────

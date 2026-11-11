@@ -30,9 +30,11 @@ from .models import UserPreference
 @login_required
 @require_http_methods(["GET"])
 def column_prefs_bulk(request):
-    """Per-table pref *summary* for every table the user/tenant has a row for -
-    one response instead of N per-table requests (the Preferences page only
-    needs source/forced/has-own-row, not the full layout). Two queries total.
+    """Per-table pref *summary* for every table the user/tenant has a row or
+    a layout preset for - one response instead of N per-table requests (the
+    Preferences page only needs source/forced/has-own-row and the preset's
+    name, not the full layout). Three queries total; the same order as
+    :func:`resolve_pref`.
     """
     tenant = _get_active_tenant(request)
     if tenant is None:
@@ -45,18 +47,28 @@ def column_prefs_bulk(request):
         p.table_id: True
         for p in UserPreference.objects.filter(user=request.user, tenant=tenant)
     }
+    presets: dict = {}
+    for preset in _presets_for(request.user, tenant):
+        for tid, raw in (preset.layouts or {}).items():
+            if tid not in presets and clean_layout(raw) is not None:
+                presets[tid] = {"id": str(preset.pk), "name": preset.name}
     out = {}
-    for tid in set(defaults) | set(own):
+    for tid in set(defaults) | set(own) | set(presets):
         d = defaults.get(tid)
         has_own = tid in own
+        preset = presets.get(tid)
         if d is not None and d.forced:
             out[tid] = {"source": "tenant_forced", "is_forced": True,
-                        "has_user_row": has_own}
+                        "has_user_row": has_own, "preset": None}
         elif has_own:
-            out[tid] = {"source": "user", "is_forced": False, "has_user_row": True}
+            out[tid] = {"source": "user", "is_forced": False, "has_user_row": True,
+                        "preset": preset}
+        elif preset is not None:
+            out[tid] = {"source": "preset", "is_forced": False,
+                        "has_user_row": False, "preset": preset}
         elif d is not None:
             out[tid] = {"source": "default", "is_forced": False,
-                        "has_user_row": False}
+                        "has_user_row": False, "preset": None}
     return JsonResponse(out)
 from .permissions import can_manage_admin
 
@@ -139,13 +151,10 @@ def clean_layout(raw) -> dict | None:
     return out
 
 
-def preset_for(user, tenant, table_id):
-    """The layout preset that supplies ``user``'s default for ``table_id``.
-
-    Presets assigned to the user come first, then presets assigned to one of
-    their groups, then presets for everyone in the tenant; within a level the
-    lowest weight wins, then the name. One query.
-    """
+def _presets_for(user, tenant):
+    """The tenant's layout presets that apply to ``user``, best first:
+    assigned to the user, then to one of their groups, then to everyone;
+    within a level the lowest weight wins, then the name. One query."""
     from django.db.models import Case, Exists, IntegerField, OuterRef, Value, When
 
     from .models import LayoutPreset
@@ -161,7 +170,7 @@ def preset_for(user, tenant, table_id):
         )
     )
     return (
-        LayoutPreset.objects.filter(tenant=tenant, layouts__has_key=table_id)
+        LayoutPreset.objects.filter(tenant=tenant)
         .annotate(by_user=by_user, by_group=by_group)
         .filter(Q(by_user=True) | Q(by_group=True) | Q(everyone=True))
         .annotate(
@@ -174,8 +183,14 @@ def preset_for(user, tenant, table_id):
         )
         .order_by("level", "weight", "name")
         .only("id", "name", "layouts")
-        .first()
     )
+
+
+def preset_for(user, tenant, table_id):
+    """The layout preset that supplies ``user``'s default for ``table_id``
+    (:func:`_presets_for` order). One query.
+    """
+    return _presets_for(user, tenant).filter(layouts__has_key=table_id).first()
 
 
 def resolve_pref(user, tenant, table_id):

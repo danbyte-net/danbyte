@@ -466,6 +466,7 @@ function TableLayoutsSection() {
 
 const SOURCE_LABEL: Record<string, string> = {
   user: "Customised",
+  preset: "Preset",
   default: "Tenant default",
   tenant_forced: "Locked by admin",
   none: "Default",
@@ -490,7 +491,9 @@ function TablePrefRow({
       <span className="min-w-0 flex-1 truncate">{table.label}</span>
       <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
         {isForced && <Lock className="h-3 w-3" />}
-        {SOURCE_LABEL[source] ?? "Default"}
+        {source === "preset" && summary?.preset
+          ? `Preset: ${summary.preset.name}`
+          : (SOURCE_LABEL[source] ?? "Default")}
       </span>
       <Button
         variant="ghost"

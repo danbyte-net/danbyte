@@ -49,6 +49,11 @@ interface RawAlert {
   detail: MismatchDetail | null
 }
 
+/** What the panel calls its host. */
+function hostNoun(hostField: "device" | "virtual_machine"): string {
+  return hostField === "virtual_machine" ? "VM" : "device"
+}
+
 /**
  * SSH host keys for one device: the keys it is **expected** to present
  * (uploaded), the keys actually **observed** on the wire, drift when the two
@@ -184,7 +189,7 @@ export function SSHHostKeysPanel({
     <Section
       boxed
       title="SSH host keys"
-      description="the key the device is expected to present on port 22, and what's observed"
+      description={`the key the ${hostNoun(hostField)} is expected to present on port 22, and what's observed`}
       actions={
         canManage ? (
           <Button
@@ -203,8 +208,9 @@ export function SSHHostKeysPanel({
           <div>
             <div className="font-medium">Host key drift</div>
             <div className="text-muted-foreground">
-              This device is presenting a key that isn't the expected one.
-              Accept the observed key below if the change is legitimate.
+              This {hostNoun(hostField)} is presenting a key that isn't the
+              expected one. Accept the observed key below if the change is
+              legitimate.
             </div>
           </div>
         </div>
@@ -298,9 +304,10 @@ function UploadSSHHostKeyDialog({
         <DialogHeader>
           <DialogTitle>Add SSH host key</DialogTitle>
           <DialogDescription>
-            Paste the device's public host key (an OpenSSH line like{" "}
-            <code>ssh-ed25519 AAAA… host</code>), or load a <code>.pub</code>{" "}
-            file. Only the public key is stored - never a private key.
+            Paste the {hostNoun(hostField)}&apos;s public host key (an OpenSSH
+            line like <code>ssh-ed25519 AAAA… host</code>), or load a{" "}
+            <code>.pub</code> file. Only the public key is stored - never a
+            private key.
           </DialogDescription>
         </DialogHeader>
 

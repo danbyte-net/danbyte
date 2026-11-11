@@ -153,8 +153,11 @@ and times*, *Navigation*, *Task emails*, *Space map* - each with its own
 *Appearance* applies as you change it: theme and link styling live in the
 browser, not on your profile. Below the cards, *Sidebar* arranges your menu
 (see [below](#sidebar)), and *Table layouts* lists every
-table grouped by area, with a filter, and a **Reset** per table to drop your
-own column layout back to the tenant default.
+table grouped by area, with a filter, where each table's layout comes from
+(*Customised*, *Preset: <name>* for a [layout preset](table-preferences.md#layout-presets-administrators)
+assigned to you, *Tenant default*, *Locked by admin* or *Default*), and a
+**Reset** per table to drop your own column layout back to the preset or
+tenant default.
 
 | Setting | What it does |
 |---|---|
