@@ -16,6 +16,10 @@ import { useUrlTableFilters } from "@/components/table-filters"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { buildInventoryHostResultColumns } from "@/components/columns/inventory-columns"
 import { HostKeysPanel } from "@/components/discovery/host-keys-panel"
+import {
+  FindingsPanel,
+  ObservedServicesPanel,
+} from "@/components/discovery/findings-panel"
 import { isRunActive, RunStatusBadge } from "@/components/discovery/status"
 
 // One discovery run (#451 B2): what it did, then a row per host it
@@ -23,8 +27,14 @@ import { isRunActive, RunStatusBadge } from "@/components/discovery/status"
 // its hosts presented that wait for review. Hosts you may not view are not
 // listed.
 
-type Tab = "overview" | "hosts" | "keys"
-const TABS: readonly Tab[] = ["overview", "hosts", "keys"]
+type Tab = "overview" | "hosts" | "findings" | "services" | "keys"
+const TABS: readonly Tab[] = [
+  "overview",
+  "hosts",
+  "findings",
+  "services",
+  "keys",
+]
 
 export const Route = createFileRoute("/discovery/runs/$runId")({
   component: RunDetail,
@@ -84,12 +94,25 @@ function Body({ run: r }: { run: InventoryRun }) {
       value: r.finished_at ? <TimeCell iso={r.finished_at} /> : dash,
     },
   ]
-  const counts: KvRow[] = [
-    { label: "Hosts", value: n(r, "hosts") },
-    { label: "Read", value: n(r, "ok") },
-    { label: "Packages", value: n(r, "packages") },
-    { label: "Changed hosts", value: n(r, "changed") },
-  ]
+  const scan = r.kind === "service_scan"
+  const counts: KvRow[] = scan
+    ? [
+        { label: "Addresses", value: n(r, "hosts") },
+        { label: "Scanned", value: n(r, "ok") },
+        { label: "Open ports", value: n(r, "services") },
+        { label: "New", value: n(r, "new") },
+        { label: "Closed since", value: n(r, "gone") },
+        { label: "Connections", value: n(r, "connects") },
+        { label: "Ports per address", value: n(r, "ports") },
+        { label: "Connects per second", value: n(r, "rate") },
+        { label: "Addresses at once", value: n(r, "hosts_parallel") },
+      ]
+    : [
+        { label: "Hosts", value: n(r, "hosts") },
+        { label: "Read", value: n(r, "ok") },
+        { label: "Packages", value: n(r, "packages") },
+        { label: "Changed hosts", value: n(r, "changed") },
+      ]
   const errors: KvRow[] = r.errors.map((e, i) => ({
     label: `${i + 1}`,
     value: <span className="text-sm">{e}</span>,
@@ -107,7 +130,17 @@ function Body({ run: r }: { run: InventoryRun }) {
         />
       }
       tabs={[
-        { value: "hosts", label: "Hosts", count: hosts.data?.count },
+        {
+          value: "hosts",
+          label: scan ? "Addresses" : "Hosts",
+          count: hosts.data?.count,
+        },
+        ...(scan
+          ? [
+              { value: "findings" as const, label: "Findings" },
+              { value: "services" as const, label: "Open ports" },
+            ]
+          : []),
         { value: "keys", label: "Host keys" },
         { value: "overview", label: "Overview" },
       ]}
@@ -126,9 +159,19 @@ function Body({ run: r }: { run: InventoryRun }) {
       <DetailTab value="hosts">
         <div className="space-y-3">
           <Summary run={r} onKeys={() => setTab("keys")} />
-          <Hosts query={hosts} />
+          <Hosts query={hosts} scan={scan} />
         </div>
       </DetailTab>
+      {scan && (
+        <>
+          <DetailTab value="findings">
+            <FindingsPanel scope={{ run: r.id }} />
+          </DetailTab>
+          <DetailTab value="services">
+            <ObservedServicesPanel scope={{ run: r.id }} />
+          </DetailTab>
+        </>
+      )}
       <DetailTab value="keys">
         <HostKeysPanel
           endpoint={`/api/discovery/runs/${r.id}/host-keys/`}
@@ -170,10 +213,15 @@ function Summary({
 
 function Hosts({
   query,
+  scan,
 }: {
   query: ReturnType<typeof useQuery<Paginated<InventoryHostResult>>>
+  scan: boolean
 }) {
-  const columns = useMemo(() => buildInventoryHostResultColumns(), [])
+  const columns = useMemo(
+    () => buildInventoryHostResultColumns({ scan }),
+    [scan]
+  )
   const rows = useMemo(() => query.data?.results ?? [], [query.data])
   const {
     rail,

@@ -40,9 +40,14 @@ import { useUrlTableFilters } from "@/components/table-filters"
 import {
   buildInventoryRunColumns,
   buildInventoryScopeHostColumns,
+  PROFILE_KIND_LABELS,
   scheduleLabel,
 } from "@/components/columns/inventory-columns"
 import { ProfileDialog } from "@/components/discovery/profile-dialog"
+import {
+  FindingsPanel,
+  ObservedServicesPanel,
+} from "@/components/discovery/findings-panel"
 import { HostKeysPanel } from "@/components/discovery/host-keys-panel"
 import { RunNowDialog } from "@/components/discovery/run-now-dialog"
 import {
@@ -51,16 +56,26 @@ import {
   useDiscoveryStatus,
 } from "@/components/discovery/status"
 
-// One inventory profile (#451 B2): Overview (scope, schedule, recorded
+// One discovery profile (#451 B2, B3): Overview (scope, schedule, recorded
 // authorisation), Hosts (the scope as it resolves now, nothing contacted),
-// Host keys (presented keys waiting for review), Runs, then Journal and
-// Change log.
+// for a service scan its Findings and Open ports, Host keys (presented keys
+// waiting for review), Runs, then Journal and Change log.
 
 const OBJECT_TYPE = "discovery.inventoryprofile"
-type Tab = "overview" | "hosts" | "keys" | "runs" | "journal" | "history"
+type Tab =
+  | "overview"
+  | "hosts"
+  | "findings"
+  | "services"
+  | "keys"
+  | "runs"
+  | "journal"
+  | "history"
 const TABS: readonly Tab[] = [
   "overview",
   "hosts",
+  "findings",
+  "services",
   "keys",
   "runs",
   "journal",
@@ -112,6 +127,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
   const runs = useRuns(p.id)
   const canScan = canDo("inventoryprofile", "scan")
   const busy = (runs.data?.results ?? []).some((r) => isRunActive(r.status))
+  const scan = p.kind === "service_scan"
 
   const run = useMutation({
     mutationFn: (acceptNewHostKeys: boolean) =>
@@ -183,7 +199,13 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "hosts", label: "Hosts" },
+        { value: "hosts", label: scan ? "Addresses" : "Hosts" },
+        ...(scan
+          ? [
+              { value: "findings" as const, label: "Findings" },
+              { value: "services" as const, label: "Open ports" },
+            ]
+          : []),
         { value: "keys", label: "Host keys" },
         { value: "runs", label: "Runs", count: runs.data?.count },
         { value: "journal", label: "Journal" },
@@ -198,6 +220,16 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
       <DetailTab value="hosts">
         <ScopeHosts id={p.id} />
       </DetailTab>
+      {scan && (
+        <>
+          <DetailTab value="findings">
+            <FindingsPanel scope={{ profile: p.id }} />
+          </DetailTab>
+          <DetailTab value="services">
+            <ObservedServicesPanel scope={{ profile: p.id }} />
+          </DetailTab>
+        </>
+      )}
       <DetailTab value="keys">
         <HostKeysPanel
           endpoint={`/api/discovery/profiles/${p.id}/host-keys/`}
@@ -205,7 +237,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
         />
       </DetailTab>
       <DetailTab value="runs">
-        <Runs id={p.id} />
+        <Runs id={p.id} scan={scan} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType={OBJECT_TYPE} objectId={p.id} />
@@ -218,7 +250,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
         open={confirming}
         onOpenChange={setConfirming}
         profileName={p.name}
-        firstUseAllowed={!!status.data?.first_use_keys_allowed}
+        firstUseAllowed={!scan && !!status.data?.first_use_keys_allowed}
         canAcceptKeys={canDo("sshhostkey", "change")}
         pending={run.isPending}
         onRun={(accept) => run.mutate(accept)}
@@ -259,16 +291,42 @@ function Overview({ profile: p }: { profile: InventoryProfile }) {
       value: p.shared_credential ? p.shared_credential.name : dash,
     },
   ]
+  const scan = p.kind === "service_scan"
   const schedule: KvRow[] = [
+    { label: "Kind", value: PROFILE_KIND_LABELS[p.kind] ?? p.kind },
     { label: "Schedule", value: scheduleLabel(p) },
+    ...(scan
+      ? [
+          {
+            label: "Ports",
+            value: p.ports.length ? (
+              <span className="font-mono text-xs">{p.ports.join(", ")}</span>
+            ) : (
+              "Default list"
+            ),
+          },
+          {
+            label: "Connects per second",
+            value: (
+              <span className="num">
+                {Math.min(p.connects_per_second, p.rate_cap)}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       label: "Hosts at once",
       value: <span className="num">{p.max_concurrency}</span>,
     },
-    {
-      label: "Per-host timeout",
-      value: <span className="num">{p.timeout_seconds} s</span>,
-    },
+    ...(scan
+      ? []
+      : [
+          {
+            label: "Per-host timeout",
+            value: <span className="num">{p.timeout_seconds} s</span>,
+          },
+        ]),
     {
       label: "Last run",
       value: p.last_run ? (
@@ -311,7 +369,7 @@ function Overview({ profile: p }: { profile: InventoryProfile }) {
       </div>
       <div className="grid min-w-0 content-start gap-6">
         <KvCard title="Schedule" rows={schedule} />
-        <KvCard title="Credential" rows={login} />
+        {!scan && <KvCard title="Credential" rows={login} />}
       </div>
     </div>
   )
@@ -345,7 +403,14 @@ function ScopeHosts({ id }: { id: string }) {
     () =>
       buildInventoryScopeHostColumns({
         exemptAction: (h) =>
-          canDo(h.kind === "device" ? "device" : "virtualmachine", "change") ? (
+          canDo(
+            h.kind === "device"
+              ? "device"
+              : h.kind === "virtual_machine"
+                ? "virtualmachine"
+                : "ipaddress",
+            "change"
+          ) ? (
             <Button
               size="sm"
               variant="ghost"
@@ -396,11 +461,14 @@ function ScopeHosts({ id }: { id: string }) {
   )
 }
 
-function Runs({ id }: { id: string }) {
+function Runs({ id, scan }: { id: string; scan: boolean }) {
   const runs = useRuns(id)
   const columns = useMemo(
-    () => buildInventoryRunColumns({ omit: ["profile"] }),
-    []
+    () =>
+      buildInventoryRunColumns({
+        omit: ["profile", scan ? "packages" : "services"],
+      }),
+    [scan]
   )
   if (runs.isLoading) return <Loading />
   if (runs.isError) return <QueryError error={runs.error} />

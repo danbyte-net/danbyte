@@ -111,6 +111,7 @@ nav = [
     { "End-of-life data"  = "features/end-of-life-data.md" },
     { "Known vulnerabilities" = "features/vulnerabilities.md" },
     { "Discovery: package inventory" = "features/discovery.md" },
+    { "Discovery: service scan" = "features/service-discovery.md" },
   ] },
   { "Working with data" = [
     "working-with-data/index.md",

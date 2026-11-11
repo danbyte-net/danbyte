@@ -272,10 +272,13 @@ AUDITED_MODELS = [
     "vulnerabilities.VulnerabilityPolicy",
     # Exceptions are decisions people make: logged like the policy.
     "vulnerabilities.VulnerabilityException",
-    # Discovery (#451): who may read which hosts and who authorised it. Runs,
-    # host results and inventoried packages are machine data, not logged.
+    # Discovery (#451): who may read or scan which hosts and who authorised
+    # it, and every run (who started it, when; its counts and status are
+    # written by UPDATE, out of the log). Host results, packages and observed
+    # services are machine data, not logged.
     "discovery.DiscoverySettings",
     "discovery.InventoryProfile",
+    "discovery.InventoryRun",
     # Access: object permissions + public share links.
 ]
 

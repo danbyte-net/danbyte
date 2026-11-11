@@ -4,7 +4,7 @@ routes."""
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import api
+from . import api, findings_api
 
 router = SimpleRouter()
 router.register(r"discovery/profiles", api.InventoryProfileViewSet,
@@ -18,6 +18,12 @@ urlpatterns = [
     path("discovery/exempt/", api.discovery_exempt, name="discovery-exempt"),
     path("discovery/host-keys/accept/", api.discovery_accept_host_keys,
          name="discovery-accept-host-keys"),
+    path("discovery/services/", findings_api.discovery_services, name="discovery-services"),
+    path("discovery/findings/", findings_api.discovery_findings, name="discovery-findings"),
+    path("discovery/findings/accept/", findings_api.discovery_findings_accept,
+         name="discovery-findings-accept"),
+    path("discovery/findings/ignore/", findings_api.discovery_findings_ignore,
+         name="discovery-findings-ignore"),
     path("devices/<uuid:pk>/packages/", api.device_packages, name="device-packages"),
     path("virtual-machines/<uuid:pk>/packages/", api.virtual_machine_packages,
          name="virtual-machine-packages"),

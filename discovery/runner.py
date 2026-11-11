@@ -89,7 +89,9 @@ def start(profile, *, user=None, trigger="manual", accept_new_host_keys=False):
             tenant=profile.tenant, profile=profile, trigger=trigger,
             started_by=user if user is not None and user.is_authenticated else None,
             started_by_name=user.get_username() if user is not None else "",
-            accept_new_host_keys=bool(accept_new_host_keys and trigger == "manual"))
+            kind=profile.kind,
+            accept_new_host_keys=bool(accept_new_host_keys and trigger == "manual"
+                                      and profile.kind == "inventory"))
     transaction.on_commit(lambda: enqueue(run))
     return run
 
@@ -341,7 +343,16 @@ SUMMARY_LABELS = {
 def summary(counts: dict) -> str:
     """One line by reason: "61 without a credential, 3 unreachable"."""
     parts = []
-    if counts.get("ok"):
+    if "services" in counts:
+        # A service scan.
+        if counts.get("ok"):
+            parts.append(f"{counts['ok']} scanned")
+        parts.append(f"{counts.get('services', 0)} open ports")
+        if counts.get("new"):
+            parts.append(f"{counts['new']} new")
+        if counts.get("gone"):
+            parts.append(f"{counts['gone']} closed since")
+    elif counts.get("ok"):
         parts.append(f"{counts['ok']} read")
     for status, label in SUMMARY_LABELS.items():
         n = counts.get(status)
@@ -352,10 +363,12 @@ def summary(counts: dict) -> str:
     return ", ".join(parts)
 
 
-def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None) -> dict | None:
+def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
+            scanner=None) -> dict | None:
     """The RQ job. ``collect``/``observe``/``collect_winrm`` are injectable
     for tests (the defaults are :func:`danbyte_checks.inventory.collect`,
-    ``observe_host_key`` and :func:`discovery.winrm.collect`)."""
+    ``observe_host_key`` and :func:`discovery.winrm.collect`); ``scanner``
+    for a service scan (``services.execute``)."""
     from danbyte_checks import inventory
 
     from . import packages, scope, winrm
@@ -380,6 +393,17 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None) -> d
     InventoryProfile.objects.filter(pk=profile.pk).update(last_run_at=now)
 
     user = run.started_by if run.trigger == "manual" else None
+    if run.kind == "service_scan":
+        from . import services
+
+        counts, errors = services.execute(run, profile, user=user, now=now, scanner=scanner)
+        rows = list(InventoryHostResult.objects.filter(run=run).values_list("status", flat=True))
+        # "failed" was contacted (or meant to be); the rest are rules.
+        status = run_outcome([(st, st == "failed") for st in rows]) if rows else (
+            "failed" if errors else "ok")
+        InventoryRun.objects.filter(pk=run.pk).update(
+            status=status, finished_at=timezone.now(), counts=counts, errors=errors[:50])
+        return counts
     targets = scope.resolve(profile, user=user, now=now)
     errors: list[str] = []
     if scope.truncated(profile, user=user):

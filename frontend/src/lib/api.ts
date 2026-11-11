@@ -18243,12 +18243,22 @@ export interface InventoryRunCounts {
   [status: string]: number | undefined
 }
 
+/** `inventory` reads packages; `service_scan` scans TCP ports (#451 B3). */
+export type DiscoveryProfileKind = "inventory" | "service_scan"
+
 export interface InventoryProfile {
   id: string
   numid: number | null
   name: string
   description: string
   enabled: boolean
+  kind: DiscoveryProfileKind
+  /** Service scan: ports and "a-b" ranges; empty = the default list. */
+  ports: (number | string)[]
+  /** Service scan: new connections per second across a run. */
+  connects_per_second: number
+  /** The deployment's ceiling on connects_per_second. */
+  rate_cap: number
   site_ids: string[]
   prefix_ids: string[]
   device_ids: string[]
@@ -18289,6 +18299,7 @@ export interface InventoryRun {
   id: string
   profile: { id: string; name: string }
   trigger: "manual" | "schedule"
+  kind: DiscoveryProfileKind
   started_by_name: string
   engine: string
   status: InventoryRunStatus
@@ -18326,11 +18337,101 @@ export interface InventoryHostResult {
   removed: number
   updated: number
   finished_at: string | null
+  /** Service scan: the address scanned, open ports, connections made. */
+  ip_address?: string | null
+  services?: number
+  connects?: number
+}
+
+export type ServiceConfidence = "high" | "medium" | "low"
+
+/** An open TCP port a service scan found (`/api/discovery/services/`). */
+export interface ObservedService {
+  id: string
+  address: string
+  port: number
+  protocol: string
+  ip_address: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  service_name: string
+  banner: string
+  product: string
+  vendor: string
+  version: string
+  cpe: string
+  os_guess: string
+  source: "danbyte" | "recog" | "nmap" | "banner" | "port"
+  rule: string
+  confidence: ServiceConfidence
+  http: {
+    status?: number
+    server?: string
+    powered_by?: string
+    location?: string
+    title?: string
+  }
+  tls: {
+    subject_cn?: string
+    issuer_cn?: string
+    not_after?: string
+    fingerprint_sha256?: string
+    self_signed?: boolean
+  }
+  certificate: string | null
+  first_seen: string
+  last_seen: string
+  gone_at: string | null
+  run: string | null
+}
+
+export type FindingKind = "service" | "software" | "cpe"
+
+export interface FindingEvidence {
+  observed_id: string
+  address: string
+  port: number
+  protocol: string
+  service_name: string
+  banner: string
+  source: ObservedService["source"]
+  rule: string
+  confidence: ServiceConfidence
+  product: string
+  vendor: string
+  version: string
+  cpe: string
+  last_seen: string
+}
+
+/** A proposal in the review queue (`/api/discovery/findings/`). */
+export interface DiscoveryFinding {
+  id: string
+  kind: FindingKind
+  host: { kind: "device" | "virtual_machine"; id: string; name: string } | null
+  title: string
+  proposal: {
+    name?: string
+    protocol?: string
+    port?: number
+    application?: { id: string; name: string } | null
+    application_name?: string
+    version?: string
+    identifier?: string
+  }
+  confidence: ServiceConfidence
+  ignored: boolean
+  evidence: FindingEvidence[]
+}
+
+export interface FindingsPage extends Paginated<DiscoveryFinding> {
+  totals: Record<FindingKind, number>
 }
 
 /** A host as a profile's scope resolves now (`.../hosts/`). */
 export interface InventoryScopeHost {
-  kind: "device" | "virtual_machine"
+  kind: "device" | "virtual_machine" | "ipaddress"
+  ip_address?: { id: string; address: string }
   id: string
   name: string
   address: string

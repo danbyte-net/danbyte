@@ -10,9 +10,9 @@ Nothing is seeded. Discovery is off until a deployment admin allows it
 integration on; a profile then runs only once someone has recorded who
 authorised it (decision 11).
 
-Later phases slot in here: B3 adds observed services and its own scan
-profile beside :class:`InventoryProfile`, B2-win adds Windows transports to
-:class:`DiscoverySettings` and a ``winbuild`` package type.
+B3 adds the service scan: a profile of kind ``service_scan`` (the same
+model, gates and runs), :class:`ObservedService` rows (machine data) and
+:class:`FindingDecision` (what a person ignored in the review queue).
 """
 from __future__ import annotations
 
@@ -36,6 +36,11 @@ RUN_STATUSES = [
     ("nothing_read", "Nothing read"),
 ]
 RUN_TRIGGERS = [("manual", "Run now"), ("schedule", "Schedule")]
+#: What a profile does: read packages over SSH/WinRM, or scan TCP ports.
+PROFILE_KINDS = [("inventory", "Package inventory"), ("service_scan", "Service scan")]
+#: Service-scan connections per second, per profile; the deployment cap
+#: ``DANBYTE_DISCOVERY_SCAN_MAX_RATE`` is the ceiling.
+SCAN_RATE_DEFAULT = 20
 #: Per-host outcomes. The first block comes from the collector
 #: (``danbyte_checks.inventory``), the rest from the scope checks that run
 #: before any connection is made.
@@ -145,6 +150,16 @@ class InventoryProfile(NumIdMixin, TimestampedModel):
     shared_credential = models.ForeignKey(
         "monitoring.SharedCredential", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="+")
+    #: ``inventory`` (packages) or ``service_scan`` (TCP ports). Fixed once
+    #: created.
+    kind = models.CharField(max_length=16, choices=PROFILE_KINDS, default="inventory",
+                            db_default="inventory")
+    #: Service scan: ports and ``"a-b"`` ranges; empty = the default list
+    #: (``danbyte_checks.service_scan.DEFAULT_PORTS``). At most 1,024 ports.
+    ports = models.JSONField(default=list, blank=True, db_default=[])
+    #: Service scan: new connections per second across the run.
+    connects_per_second = models.PositiveSmallIntegerField(default=SCAN_RATE_DEFAULT,
+                                                           db_default=SCAN_RATE_DEFAULT)
     #: Bookkeeping, by UPDATE (out of the change log).
     last_run_at = models.DateTimeField(null=True, blank=True, editable=False)
 
@@ -175,6 +190,9 @@ class InventoryRun(TimestampedModel):
                                 related_name="runs")
     trigger = models.CharField(max_length=10, choices=RUN_TRIGGERS, default="manual",
                                db_default="manual")
+    #: The profile's kind when the run was queued.
+    kind = models.CharField(max_length=16, choices=PROFILE_KINDS, default="inventory",
+                            db_default="inventory")
     started_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="+")
@@ -215,6 +233,9 @@ class InventoryHostResult(models.Model):
                                blank=True, related_name="+")
     virtual_machine = models.ForeignKey("api.VirtualMachine", on_delete=models.CASCADE,
                                         null=True, blank=True, related_name="+")
+    #: Service scan: the address scanned (an address need not have a host).
+    ip_address = models.ForeignKey("api.IPAddress", on_delete=models.CASCADE, null=True,
+                                   blank=True, related_name="+")
     address = models.CharField(max_length=64, blank=True, default="", db_default="")
     status = models.CharField(max_length=20, choices=HOST_STATUSES)
     #: Which transport read it; blank when nothing was contacted.
@@ -235,6 +256,9 @@ class InventoryHostResult(models.Model):
     added = models.PositiveIntegerField(default=0, db_default=0)
     removed = models.PositiveIntegerField(default=0, db_default=0)
     updated = models.PositiveIntegerField(default=0, db_default=0)
+    #: Service scan: open ports found, and connections made.
+    services = models.PositiveIntegerField(default=0, db_default=0)
+    connects = models.PositiveIntegerField(default=0, db_default=0)
     finished_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -242,7 +266,9 @@ class InventoryHostResult(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(models.Q(device__isnull=False, virtual_machine__isnull=True)
-                           | models.Q(device__isnull=True, virtual_machine__isnull=False)),
+                           | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                           | models.Q(device__isnull=True, virtual_machine__isnull=True,
+                                      ip_address__isnull=False)),
                 name="disc_hostresult_one_host"),
         ]
 
@@ -354,3 +380,113 @@ class HostPackage(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} {self.version}"
+
+
+SERVICE_SOURCES = [
+    ("danbyte", "Danbyte rule"),
+    ("recog", "Recog"),
+    ("nmap", "nmap"),
+    ("banner", "Banner"),
+    ("port", "Port number"),
+]
+CONFIDENCES = [("high", "High"), ("medium", "Medium"), ("low", "Low")]
+
+
+class ObservedService(models.Model):
+    """One TCP port that answered on one address, and what a service scan
+    made of it. Machine data, written in bulk, never change-logged; a person
+    turns it into a Service, an install or a product mapping through the
+    review queue (``discovery.findings``). It never creates a vulnerability
+    match (decision 7).
+
+    ``gone_at`` is set when a later scan of the address found the port
+    closed; the row is current again when the port opens again."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE, related_name="+")
+    ip_address = models.ForeignKey("api.IPAddress", on_delete=models.CASCADE,
+                                   related_name="observed_services")
+    #: The address's device or VM at the last scan (through its assignment).
+    device = models.ForeignKey("api.Device", on_delete=models.SET_NULL, null=True,
+                               blank=True, related_name="+")
+    virtual_machine = models.ForeignKey("api.VirtualMachine", on_delete=models.SET_NULL,
+                                        null=True, blank=True, related_name="+")
+    address = models.CharField(max_length=64)
+    port = models.PositiveIntegerField()
+    protocol = models.CharField(max_length=4, default="tcp", db_default="tcp")
+    service_name = models.CharField(max_length=40, blank=True, default="", db_default="")
+    #: What the port sent, control characters stripped, at most 512.
+    banner = models.CharField(max_length=512, blank=True, default="", db_default="")
+    product = models.CharField(max_length=128, blank=True, default="", db_default="")
+    vendor = models.CharField(max_length=128, blank=True, default="", db_default="")
+    version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    #: A CPE 2.3 guess. Never matched against vulnerability data.
+    cpe = models.CharField(max_length=255, blank=True, default="", db_default="")
+    os_guess = models.CharField(max_length=128, blank=True, default="", db_default="")
+    source = models.CharField(max_length=10, choices=SERVICE_SOURCES, default="port",
+                              db_default="port")
+    #: The fingerprint that matched (its description), for the evidence.
+    rule = models.CharField(max_length=200, blank=True, default="", db_default="")
+    confidence = models.CharField(max_length=8, choices=CONFIDENCES, default="low",
+                                  db_default="low")
+    #: ``{status, server, powered_by, location, title}`` from one GET /.
+    http = models.JSONField(default=dict, blank=True, db_default={})
+    #: The leaf certificate's public facts; ``certificate`` links it when
+    #: the certificate inventory already holds it.
+    tls = models.JSONField(default=dict, blank=True, db_default={})
+    certificate = models.ForeignKey("monitoring.Certificate", on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name="+")
+    first_seen = models.DateTimeField()
+    last_seen = models.DateTimeField()
+    gone_at = models.DateTimeField(null=True, blank=True)
+    run = models.ForeignKey(InventoryRun, on_delete=models.SET_NULL, null=True, blank=True,
+                            related_name="+")
+
+    class Meta:
+        ordering = ["address", "port"]
+        constraints = [
+            models.UniqueConstraint(fields=["ip_address", "protocol", "port"],
+                                    name="uniq_disc_observed_service"),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "gone_at"], name="disc_obs_tenant"),
+            models.Index(fields=["tenant", "product"], name="disc_obs_product"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.address}:{self.port}/{self.protocol}"
+
+    def evidence_key(self) -> str:
+        """What an Ignore is remembered against: a change to any of these
+        brings the finding back."""
+        return "|".join([self.service_name, self.product, self.version, self.cpe])[:400]
+
+
+FINDING_KINDS = [
+    ("service", "Add service"),
+    ("software", "Add installed software"),
+    ("cpe", "Map product to CPE"),
+]
+
+
+class FindingDecision(models.Model):
+    """An Ignore in the review queue: the finding stays hidden while the
+    observation's evidence (``ObservedService.evidence_key``) is the same.
+    Queue state, not change-logged."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE, related_name="+")
+    observed = models.ForeignKey(ObservedService, on_delete=models.CASCADE,
+                                 related_name="decisions")
+    kind = models.CharField(max_length=10, choices=FINDING_KINDS)
+    evidence = models.CharField(max_length=400)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name="+")
+    decided_by_name = models.CharField(max_length=150, blank=True, default="", db_default="")
+    decided_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["observed", "kind"],
+                                    name="uniq_disc_finding_decision"),
+        ]

@@ -868,6 +868,15 @@ DISCOVERY_WINRM_CA_BUNDLE = os.getenv("DANBYTE_DISCOVERY_WINRM_CA_BUNDLE", "").s
 DISCOVERY_ALLOW_FIRST_USE_KEYS = (
     os.getenv("DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS", "True").strip().lower()
     not in ("false", "0", "no", "off"))
+# The service scan's hard cap: new TCP connections per second one run may
+# open, whatever a profile asks (profiles default to 20). At most 2000.
+try:
+    DISCOVERY_SCAN_MAX_RATE = max(1, min(2000, int(
+        os.getenv("DANBYTE_DISCOVERY_SCAN_MAX_RATE", "200"))))
+except ValueError:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("DANBYTE_DISCOVERY_SCAN_MAX_RATE must be a number.") from None
 SSRF_ALLOWLIST = [
     p.strip() for p in os.getenv("DANBYTE_SSRF_ALLOWLIST", "").split(",") if p.strip()
 ]

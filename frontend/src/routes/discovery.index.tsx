@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -77,6 +77,9 @@ function DiscoveryPage() {
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
       actions={
         <>
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/discovery/findings">Findings</Link>
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setDenyOpen(true)}>
             Deny subnets
           </Button>

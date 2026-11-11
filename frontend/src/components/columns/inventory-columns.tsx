@@ -30,6 +30,11 @@ function labelOf(labels: Record<string, string>, v: string): string {
   return Object.hasOwn(labels, v) ? labels[v] : v
 }
 
+export const PROFILE_KIND_LABELS: Record<string, string> = {
+  inventory: "Package inventory",
+  service_scan: "Service scan",
+}
+
 export function scheduleLabel(p: InventoryProfile): string {
   if (!p.interval_hours) return "Run now only"
   const every =
@@ -71,6 +76,25 @@ export function buildInventoryProfileColumns(): ColumnDef<
         </Link>
       ),
       meta: { label: "Name" },
+    },
+    {
+      id: "kind",
+      accessorFn: (p) => p.kind,
+      header: ({ column }) => <SortHeader column={column} label="Kind" />,
+      cell: ({ row }) => (
+        <span className="text-sm whitespace-nowrap">
+          {PROFILE_KIND_LABELS[row.original.kind] ?? row.original.kind}
+        </span>
+      ),
+      meta: {
+        label: "Kind",
+        facet: {
+          kind: "enum",
+          label: "Kind",
+          get: (p: InventoryProfile) => p.kind,
+          formatValue: (v) => ({ label: labelOf(PROFILE_KIND_LABELS, v) }),
+        },
+      },
     },
     {
       id: "enabled",
@@ -182,7 +206,14 @@ function count(r: InventoryRun, k: string): number {
 }
 
 export type InventoryRunColumnId =
-  "run" | "profile" | "trigger" | "hosts" | "ok" | "packages" | "finished"
+  | "run"
+  | "profile"
+  | "trigger"
+  | "hosts"
+  | "ok"
+  | "packages"
+  | "services"
+  | "finished"
 
 export function buildInventoryRunColumns(
   opts: { omit?: InventoryRunColumnId[] } = {}
@@ -272,6 +303,18 @@ export function buildInventoryRunColumns(
       meta: { label: "Packages" },
     },
     {
+      id: "services",
+      accessorFn: (r) => count(r, "services"),
+      header: ({ column }) => <SortHeader column={column} label="Open ports" />,
+      cell: ({ row }) =>
+        row.original.kind === "service_scan" ? (
+          <span className="num">{count(row.original, "services")}</span>
+        ) : (
+          dash
+        ),
+      meta: { label: "Open ports" },
+    },
+    {
       id: "finished",
       accessorFn: (r) => r.finished_at ?? "",
       header: ({ column }) => <SortHeader column={column} label="Finished" />,
@@ -328,11 +371,17 @@ const statusFacet = <T extends { status: string }>() => ({
   formatValue: (v: string) => ({ label: labelOf(HOST_STATUS_LABELS, v) }),
 })
 
-export function buildInventoryHostResultColumns(): ColumnDef<
-  InventoryHostResult,
-  unknown
->[] {
-  return [
+export function buildInventoryHostResultColumns(
+  opts: { scan?: boolean } = {}
+): ColumnDef<InventoryHostResult, unknown>[] {
+  // A service scan logs in nowhere: no credential, transport or packages;
+  // its rows count open ports instead.
+  const drop = new Set(
+    opts.scan
+      ? ["credential", "transport", "packages", "changes"]
+      : ["services"]
+  )
+  const cols: ColumnDef<InventoryHostResult, unknown>[] = [
     {
       id: "host",
       accessorFn: (h) => h.device?.name ?? h.virtual_machine?.name ?? "",
@@ -341,7 +390,9 @@ export function buildInventoryHostResultColumns(): ColumnDef<
         <HostLink
           device={row.original.device}
           vm={row.original.virtual_machine}
-          tab={row.original.status === "ok" ? "packages" : undefined}
+          tab={
+            !opts.scan && row.original.status === "ok" ? "packages" : undefined
+          }
         />
       ),
       meta: { label: "Host" },
@@ -451,6 +502,18 @@ export function buildInventoryHostResultColumns(): ColumnDef<
       meta: { label: "Changes" },
     },
     {
+      id: "services",
+      accessorFn: (h) => h.services ?? 0,
+      header: ({ column }) => <SortHeader column={column} label="Open ports" />,
+      cell: ({ row }) =>
+        row.original.status === "ok" ? (
+          <span className="num">{row.original.services ?? 0}</span>
+        ) : (
+          dash
+        ),
+      meta: { label: "Open ports" },
+    },
+    {
       id: "message",
       accessorKey: "message",
       header: "Detail",
@@ -466,6 +529,7 @@ export function buildInventoryHostResultColumns(): ColumnDef<
       meta: { label: "Detail" },
     },
   ]
+  return cols.filter((c) => !drop.has(c.id ?? ""))
 }
 
 export function buildInventoryScopeHostColumns(
@@ -495,7 +559,11 @@ export function buildInventoryScopeHostColumns(
       enableSorting: false,
       cell: ({ row }) => (
         <span className="text-sm whitespace-nowrap">
-          {row.original.kind === "device" ? "Device" : "VM"}
+          {row.original.kind === "device"
+            ? "Device"
+            : row.original.kind === "virtual_machine"
+              ? "VM"
+              : "Address"}
         </span>
       ),
       meta: { label: "Type" },

@@ -22,6 +22,7 @@ the caller may view, and packages need ``installedsoftware`` view as well.
 from __future__ import annotations
 
 import ipaddress
+import json
 import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -41,10 +42,12 @@ from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import StandardPagination, TenantScopedViewSet
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin, can_manage_deployment
+from danbyte_checks import service_scan
 from monitoring.models import SharedCredential
 
-from . import gate, runner, scope
+from . import gate, runner, scope, services
 from .models import (
+    PROFILE_KINDS,
     DiscoverySettings,
     HostOsFact,
     HostPackage,
@@ -84,6 +87,7 @@ def run_dict(r: InventoryRun) -> dict:
         "id": str(r.pk),
         "profile": {"id": str(r.profile_id), "name": r.profile.name},
         "trigger": r.trigger,
+        "kind": r.kind,
         "started_by_name": r.started_by_name,
         "engine": r.engine,
         "status": r.status,
@@ -277,17 +281,21 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
     shared_credential = serializers.SerializerMethodField()
     scope = serializers.SerializerMethodField()
     authorised = serializers.BooleanField(read_only=True)
+    kind = serializers.ChoiceField(choices=[k for k, _l in PROFILE_KINDS], required=False)
+    ports = serializers.JSONField(required=False)
+    rate_cap = serializers.SerializerMethodField()
     blocked_reason = serializers.SerializerMethodField()
     last_run = serializers.SerializerMethodField()
 
     class Meta:
         model = InventoryProfile
         fields = [
-            "id", "numid", "name", "description", "enabled",
+            "id", "numid", "name", "description", "enabled", "kind",
             "site_ids", "prefix_ids", "device_ids", "virtual_machine_ids", "scope",
             "shared_credential_id", "shared_credential",
             "interval_hours", "window_start", "window_end", "max_concurrency",
-            "timeout_seconds", "authorisation", "authorised", "authorised_by_name",
+            "timeout_seconds", "ports", "connects_per_second", "rate_cap",
+            "authorisation", "authorised", "authorised_by_name",
             "authorised_at", "blocked_reason", "last_run_at", "last_run",
             "created_at", "updated_at",
         ]
@@ -305,6 +313,27 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
     def get_shared_credential(self, obj) -> dict | None:
         c = obj.shared_credential
         return None if c is None else {"id": str(c.pk), "name": c.name, "kind": c.kind}
+
+    def get_rate_cap(self, obj) -> int:
+        return services.rate_cap()
+
+    def validate_kind(self, value):
+        if self.instance is not None and value != self.instance.kind:
+            raise ValidationError("A profile's kind does not change.")
+        return value
+
+    def validate_ports(self, value):
+        try:
+            service_scan.parse_ports(value)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from None
+        return value or []
+
+    def validate_connects_per_second(self, value):
+        cap = services.rate_cap()
+        if not 1 <= value <= cap:
+            raise ValidationError(f"From 1 to {cap} (this deployment's cap).")
+        return value
 
     def get_blocked_reason(self, obj) -> str:
         return runner.can_run(obj)
@@ -373,8 +402,13 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
 
 
 def _scope_ids(profile) -> tuple:
-    return tuple(frozenset(getattr(profile, f).values_list("pk", flat=True))
-                 for f in SCOPE_MEMBERS)
+    """What an authorisation covers: the scope, and for a service scan the
+    ports too (a wider port list is a new authorisation)."""
+    ids = tuple(frozenset(getattr(profile, f).values_list("pk", flat=True))
+                for f in SCOPE_MEMBERS)
+    if profile.kind == "service_scan":
+        return (*ids, json.dumps(profile.ports or [], sort_keys=True))
+    return ids
 
 
 class InventoryProfileViewSet(TenantScopedViewSet):
@@ -404,6 +438,9 @@ class InventoryProfileViewSet(TenantScopedViewSet):
         q = (p.get("search") or "").strip()
         if q:
             qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q))
+        kind = (p.get("kind") or "").strip()
+        if kind:
+            qs = qs.filter(kind__in=[k for k in kind.split(",") if k])
         return qs.order_by("name", "pk")
 
     def _stamp(self, profile, data, before_scope):
@@ -452,13 +489,17 @@ class InventoryProfileViewSet(TenantScopedViewSet):
         view, to hosts they may view."""
         profile = self.get_object()
         tenant = profile.tenant
-        if not request.user.is_superuser and not rbac.has_action(
+        scan = profile.kind == "service_scan"
+        # A service scan sends no credential; an inventory run logs in.
+        if not scan and not request.user.is_superuser and not rbac.has_action(
                 request.user, tenant, "devicecredential", "view"):
             raise PermissionDenied("devicecredential.view required.")
         data = request.data if isinstance(request.data, dict) else {}
         first_use = data.get("accept_new_host_keys", False)
         if not isinstance(first_use, bool):
             raise ValidationError({"accept_new_host_keys": "true or false."})
+        if first_use and scan:
+            raise ValidationError({"accept_new_host_keys": "A service scan logs in nowhere."})
         if first_use:
             if not gate.first_use_keys_allowed():
                 raise ValidationError({"accept_new_host_keys":
@@ -482,6 +523,17 @@ class InventoryProfileViewSet(TenantScopedViewSet):
         alone. Nothing is contacted."""
         profile = self.get_object()
         user = None if request.user.is_superuser else request.user
+        if profile.kind == "service_scan":
+            rows = [{
+                "kind": t.kind or "ipaddress", "id": str(t.host.pk if t.host else t.ip.pk),
+                "name": str(t.host) if t.host is not None else t.address,
+                "ip_address": {"id": str(t.ip.pk), "address": t.address},
+                "address": t.address, "status": t.skip or "ready", "message": t.message,
+                "credential": None, "credential_source": "",
+                "scan_exempt": bool(t.host.scan_exempt if t.host else t.ip.scan_exempt),
+            } for t in services.resolve(profile, user=user)]
+            return Response({"results": rows, "count": len(rows),
+                             "truncated": services.truncated(profile, user=user)})
         out = []
         for t in scope.resolve(profile, user=user):
             out.append({
@@ -516,16 +568,24 @@ def _visible_profiles(request, tenant):
     return rbac.restrict_queryset(qs, request.user, tenant, "inventoryprofile", "view")
 
 
-def _visible_hosts_q(request, tenant, prefix=""):
-    """Rows whose device or VM the caller may view."""
+def _visible_hosts_q(request, tenant, prefix="", *, addresses=False):
+    """Rows whose device or VM the caller may view; with ``addresses``
+    (service-scan rows), also rows of an address with no host that the
+    caller may view."""
     if request.user.is_superuser:
         return Q()
     devices = rbac.restrict_queryset(Device.objects.filter(tenant=tenant), request.user,
                                      tenant, "device", "view")
     vms = rbac.restrict_queryset(VirtualMachine.objects.filter(tenant=tenant), request.user,
                                  tenant, "virtualmachine", "view")
-    return (Q(**{f"{prefix}device__in": devices.values("pk")})
-            | Q(**{f"{prefix}virtual_machine__in": vms.values("pk")}))
+    q = (Q(**{f"{prefix}device__in": devices.values("pk")})
+         | Q(**{f"{prefix}virtual_machine__in": vms.values("pk")}))
+    if addresses:
+        ips = rbac.restrict_queryset(IPAddress.objects.filter(tenant=tenant), request.user,
+                                     tenant, "ipaddress", "view")
+        q |= Q(**{f"{prefix}device__isnull": True, f"{prefix}virtual_machine__isnull": True,
+                  f"{prefix}ip_address__in": ips.values("pk")})
+    return q
 
 
 class InventoryRunViewSet(viewsets.ViewSet):
@@ -557,6 +617,9 @@ class InventoryRunViewSet(viewsets.ViewSet):
                 raise ValidationError({"profile": "Not a valid id."}) from None
         if status:
             qs = qs.filter(status__in=[s for s in status.split(",") if s])
+        kind = (p.get("kind") or "").strip()
+        if kind:
+            qs = qs.filter(kind__in=[k for k in kind.split(",") if k])
         return _paginate(request, qs.order_by("-created_at", "pk"),
                          lambda page: [run_dict(r) for r in page])
 
@@ -583,7 +646,8 @@ class InventoryRunViewSet(viewsets.ViewSet):
         transport, address, package counts. Filter: ``status``."""
         r = self._get(request, pk)
         qs = InventoryHostResult.objects.filter(run=r).filter(
-            _visible_hosts_q(request, r.tenant)).select_related("device", "virtual_machine")
+            _visible_hosts_q(request, r.tenant, addresses=r.kind == "service_scan")
+        ).select_related("device", "virtual_machine")
         status = (request.query_params.get("status") or "").strip()
         if status:
             qs = qs.filter(status__in=[s for s in status.split(",") if s])
@@ -597,6 +661,8 @@ class InventoryRunViewSet(viewsets.ViewSet):
                 "attempts": h.attempts or [],
                 "message": h.message, "packages": h.packages, "added": h.added,
                 "removed": h.removed, "updated": h.updated, "finished_at": h.finished_at,
+                "ip_address": str(h.ip_address_id) if h.ip_address_id else None,
+                "services": h.services, "connects": h.connects,
             } for h in page]
 
         return _paginate(request, qs.order_by("status", "address", "pk"), rows)

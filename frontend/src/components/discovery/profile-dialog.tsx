@@ -4,7 +4,12 @@ import { X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { InventoryProfile, SharedCredential, Site } from "@/lib/api"
+import type {
+  DiscoveryProfileKind,
+  InventoryProfile,
+  SharedCredential,
+  Site,
+} from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
@@ -14,6 +19,7 @@ import {
   FormFooter,
   FormRow,
   FormCombobox,
+  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -32,7 +38,8 @@ import { PrefixPicker } from "@/components/prefix-picker"
 import { ObjectPicker } from "@/components/object-picker"
 import type { ObjectPickerSpec } from "@/components/object-picker"
 
-// Create or edit an inventory profile (#451 B2). Saving a statement in
+// Create or edit a discovery profile (#451 B2, B3): package inventory or a
+// service scan, chosen when it is created. Saving a statement in
 // "Authorisation" records you and now as who authorised the scope; changing
 // the scope without one clears the authorisation, and an unauthorised
 // profile never runs.
@@ -113,6 +120,15 @@ function initialScope(p: InventoryProfile | null): Record<ScopeKey, Ref[]> {
   }
 }
 
+/** "22, 80, 8000-8100" -> [22, 80, "8000-8100"]; the server validates. */
+function parsePorts(text: string): (number | string)[] {
+  return text
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => (/^\d+$/.test(s) ? Number(s) : s))
+}
+
 export function ProfileDialog({
   open,
   onOpenChange,
@@ -140,6 +156,10 @@ export function ProfileDialog({
   const [timeout, setTimeoutSecs] = useState("60")
   const [authorisation, setAuthorisation] = useState("")
   const [sharedId, setSharedId] = useState<string | null>(null)
+  const [kind, setKind] = useState<DiscoveryProfileKind>("inventory")
+  const [ports, setPorts] = useState("")
+  const [rate, setRate] = useState("20")
+  const scan = kind === "service_scan"
   const { canDo } = useMe()
   const shared = useQuery({
     queryKey: ["shared-credentials", "ssh"],
@@ -166,6 +186,9 @@ export function ProfileDialog({
     setTimeoutSecs(String(profile?.timeout_seconds ?? 60))
     setAuthorisation(profile?.authorisation ?? "")
     setSharedId(profile?.shared_credential_id ?? null)
+    setKind(profile?.kind ?? "inventory")
+    setPorts((profile?.ports ?? []).join(", "))
+    setRate(String(profile?.connects_per_second ?? 20))
   }, [open, profile, reset])
 
   const add = (key: ScopeKey) => (items: Ref[]) =>
@@ -190,8 +213,14 @@ export function ProfileDialog({
         window_start: windowStart,
         window_end: windowEnd,
         max_concurrency: Number(concurrency),
-        timeout_seconds: Number(timeout),
-        shared_credential_id: sharedId,
+      }
+      if (!profile) body.kind = kind
+      if (scan) {
+        body.ports = parsePorts(ports)
+        body.connects_per_second = Number(rate)
+      } else {
+        body.timeout_seconds = Number(timeout)
+        body.shared_credential_id = sharedId
       }
       for (const k of Object.keys(ID_FIELD) as ScopeKey[])
         body[ID_FIELD[k]] = ids(k)
@@ -223,7 +252,7 @@ export function ProfileDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {profile ? `Edit ${profile.name}` : "New inventory profile"}
+            {profile ? `Edit ${profile.name}` : "New discovery profile"}
           </DialogTitle>
         </DialogHeader>
         <form
@@ -241,6 +270,21 @@ export function ProfileDialog({
             error={fieldErrors.name}
             autoFocus
           />
+          {!profile && (
+            <FormSelect
+              label="Kind"
+              value={kind}
+              onChange={(v) =>
+                setKind(v === "service_scan" ? "service_scan" : "inventory")
+              }
+              options={[
+                { value: "inventory", label: "Package inventory" },
+                { value: "service_scan", label: "Service scan" },
+              ]}
+              error={fieldErrors.kind}
+              info="Package inventory logs in and reads installed packages. A service scan connects to TCP ports of IPAM addresses and reads what answers. Fixed once created."
+            />
+          )}
           <FormTextarea
             label="Description"
             value={description}
@@ -256,7 +300,11 @@ export function ProfileDialog({
           <Field
             label="Scope"
             group
-            info="A host is read when it is named here, sits at a named site, or its primary address is in a named prefix. Exempt hosts, deny subnets and open maintenance events always win."
+            info={
+              scan
+                ? "Scans IPAM addresses only: every address in a named prefix, of a named site, or of a named device or VM. Exempt objects, deny subnets and open maintenance events always win."
+                : "A host is read when it is named here, sits at a named site, or its primary address is in a named prefix. Exempt hosts, deny subnets and open maintenance events always win."
+            }
           >
             <div className="space-y-3">
               <div className="space-y-1">
@@ -336,6 +384,28 @@ export function ProfileDialog({
               <TimePicker value={windowEnd} onChange={setWindowEnd} />
             </Field>
           </FormRow>
+          {scan && (
+            <FormRow>
+              <FormText
+                label="Ports"
+                value={ports}
+                onChange={setPorts}
+                placeholder="Default list"
+                error={fieldErrors.ports}
+                info="Ports and ranges, comma separated: 22, 80, 8000-8100. Empty scans the default list of about 40 common ports. At most 1,024."
+              />
+              <FormText
+                label="Connects per second"
+                type="number"
+                min={1}
+                max={profile?.rate_cap}
+                value={rate}
+                onChange={setRate}
+                error={fieldErrors.connects_per_second}
+                info="New TCP connections per second across the whole run. The deployment caps it."
+              />
+            </FormRow>
+          )}
           <FormRow>
             <FormText
               label="Hosts at once"
@@ -346,51 +416,59 @@ export function ProfileDialog({
               onChange={setConcurrency}
               error={fieldErrors.max_concurrency}
             />
-            <FormText
-              label="Per-host timeout"
-              type="number"
-              min={10}
-              max={600}
-              value={timeout}
-              onChange={setTimeoutSecs}
-              hint="seconds"
-              error={fieldErrors.timeout_seconds}
-            />
+            {!scan && (
+              <FormText
+                label="Per-host timeout"
+                type="number"
+                min={10}
+                max={600}
+                value={timeout}
+                onChange={setTimeoutSecs}
+                hint="seconds"
+                error={fieldErrors.timeout_seconds}
+              />
+            )}
           </FormRow>
 
-          <FormCombobox
-            label="Credential"
-            value={sharedId}
-            onChange={setSharedId}
-            noneLabel="Host's own, then matching shared"
-            options={[
-              ...(shared.data ?? []).map((c) => ({
-                value: c.id,
-                label: c.name,
-              })),
-              // Keep a pinned one the list does not carry (disabled since).
-              ...(profile?.shared_credential &&
-              !(shared.data ?? []).some(
-                (c) => c.id === profile.shared_credential!.id
-              )
-                ? [
-                    {
-                      value: profile.shared_credential.id,
-                      label: profile.shared_credential.name,
-                    },
-                  ]
-                : []),
-            ]}
-            error={fieldErrors.shared_credential_id}
-            info="A shared credential tried for every host right after the host's own device credential, before the shared credentials whose scope matches."
-          />
+          {!scan && (
+            <FormCombobox
+              label="Credential"
+              value={sharedId}
+              onChange={setSharedId}
+              noneLabel="Host's own, then matching shared"
+              options={[
+                ...(shared.data ?? []).map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                })),
+                // Keep a pinned one the list does not carry (disabled since).
+                ...(profile?.shared_credential &&
+                !(shared.data ?? []).some(
+                  (c) => c.id === profile.shared_credential!.id
+                )
+                  ? [
+                      {
+                        value: profile.shared_credential.id,
+                        label: profile.shared_credential.name,
+                      },
+                    ]
+                  : []),
+              ]}
+              error={fieldErrors.shared_credential_id}
+              info="A shared credential tried for every host right after the host's own device credential, before the shared credentials whose scope matches."
+            />
+          )}
           <FormTextarea
             label="Authorisation"
             value={authorisation}
             onChange={setAuthorisation}
             error={fieldErrors.authorisation}
             placeholder="Who approved reading these hosts, and the reference"
-            info="Required before the profile runs. Saving a statement records you and the time as the authoriser; a scope change clears it."
+            info={
+              scan
+                ? "Required before the profile runs. Saving a statement records you and the time as the authoriser; a change to the scope or the ports clears it."
+                : "Required before the profile runs. Saving a statement records you and the time as the authoriser; a scope change clears it."
+            }
           />
           <FormFooter
             onCancel={() => onOpenChange(false)}

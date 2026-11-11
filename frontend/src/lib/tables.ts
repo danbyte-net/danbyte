@@ -369,6 +369,9 @@ const ROWS: Row[] = [
   ["inventory-run-hosts", "Discovery run · Hosts", "Integrations", null, sub],
   ["inventory-scope-hosts", "Inventory profile · Hosts", "Integrations", null, sub],
   ["inventory-host-keys", "Discovery · Host keys to review", "Integrations", null, sub],
+  // Service scan (#451 B3): computed proposals and nested evidence.
+  ["discovery-findings", "Discovery · Findings", "Integrations", null],
+  ["discovery-services", "Discovery · Open ports", "Integrations", null],
   ["device-packages", "Device · Packages", "Software & lifecycle", null, sub],
   ["vm-packages", "Virtual machine · Packages", "Software & lifecycle", null, sub],
 
