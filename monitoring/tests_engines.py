@@ -525,6 +525,18 @@ class SshTransportTests(_Base):
         self.engine.refresh_from_db()
         self.assertIsNotNone(self.engine.last_seen_at)
 
+    def test_drive_records_whether_the_agent_runs_as_root(self):
+        from monitoring.outpost_ssh import drive_ssh_engine
+
+        def agent_010(checks):  # 0.10 answers with runtime beside the results
+            return {"results": [{"state_id": c["state_id"], "status": "up"}
+                                for c in checks], "runtime": {"root": True, "x": 1}}
+
+        r = drive_ssh_engine(self.engine, run_ssh=agent_010)
+        self.assertEqual(r["ingested"], 1)
+        self.engine.refresh_from_db()
+        self.assertEqual(self.engine.agent_capabilities, {"runtime": {"root": True}})
+
     def test_known_hosts_pins_when_key_set(self):
         from monitoring.outpost_ssh import _connect_kwargs, _known_hosts_entry
 

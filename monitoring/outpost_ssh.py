@@ -61,15 +61,17 @@ def _connect_kwargs(engine) -> dict:
     return kwargs
 
 
-async def _ssh_run(engine, checks: list[dict]) -> list[dict]:
-    """Run the Outpost once over SSH and return its result rows."""
+async def _ssh_run(engine, checks: list[dict]) -> dict:
+    """Run the Outpost once over SSH and return its answer: ``results`` and,
+    from agent 0.10, ``runtime``."""
     import asyncssh
 
     async with asyncssh.connect(**_connect_kwargs(engine)) as conn:
         result = await conn.run(
             OUTPOST_ONCE_CMD, input=json.dumps({"checks": checks}), check=True
         )
-    return json.loads(result.stdout or "{}").get("results", [])
+    out = json.loads(result.stdout or "{}")
+    return out if isinstance(out, dict) else {}
 
 
 def drive_ssh_engine(engine, now=None, *, run_ssh=None) -> dict:
@@ -80,7 +82,9 @@ def drive_ssh_engine(engine, now=None, *, run_ssh=None) -> dict:
     if not checks:
         return {"engine": engine.name, "ran": 0, "ingested": 0}
     runner = run_ssh or (lambda c: asyncio.run(_ssh_run(engine, c)))
-    rows = runner(checks) or []
+    answer = runner(checks) or []
+    # A runner may hand back the rows alone; the agent's answer is a dict.
+    rows = (answer.get("results") or []) if isinstance(answer, dict) else answer
     outcome_by_id = {}
     for r in rows:
         sid = str(r.get("state_id", ""))
@@ -95,7 +99,16 @@ def drive_ssh_engine(engine, now=None, *, run_ssh=None) -> dict:
         outcome_by_id, engine_id=engine.id, tenant_id=engine.tenant_id
     )
     engine.last_seen_at = now
-    engine.save(update_fields=["last_seen_at"])
+    fields = ["last_seen_at"]
+    # Whether the agent runs as root (0.10+ says so); an older one says
+    # nothing and the stored fact is left as it was.
+    from discovery.outposts import clean_runtime
+
+    runtime = clean_runtime(answer.get("runtime")) if isinstance(answer, dict) else None
+    if runtime is not None:
+        engine.agent_capabilities = {**(engine.agent_capabilities or {}), "runtime": runtime}
+        fields.append("agent_capabilities")
+    engine.save(update_fields=fields)
     return {"engine": engine.name, "ran": len(checks), "ingested": n}
 
 

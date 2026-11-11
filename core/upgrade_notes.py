@@ -620,7 +620,11 @@ NOTES: tuple[UpgradeNote, ...] = (
             "older agent is handed no discovery work, and its hosts show "
             "\"Outpost cannot run it\" with the version it needs. Upload the new "
             "agent under Monitoring, Engines, Outpost versions and roll "
-            "it out to those sites. Checks keep working on older agents."
+            "it out to those sites. Checks keep working on older agents. An "
+            "Outpost installed before 0.10.0 runs as root and keeps nmap off "
+            "(the Outposts list shows a root badge): on that host run sudo "
+            "/opt/danbyte-outpost/danbyte-outpost migrate-service-user, or re-run "
+            "the installer."
         ),
         docs="monitoring/outposts/#discovery-on-an-outpost",
         check=_outposts_run_discovery,

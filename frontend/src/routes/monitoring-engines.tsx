@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { EngineDetailDialog } from "@/components/engine-detail-dialog"
+import { OutpostRootBadge } from "@/components/outpost-root-badge"
 import { OutpostVersions } from "@/components/outpost-versions"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useUrlSearch } from "@/lib/url-filters"
@@ -256,8 +257,11 @@ function MonitoringEnginesPage() {
       accessorKey: "agent_version",
       header: ({ column }) => <SortHeader column={column} label="Version" />,
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          {row.original.agent_version || "-"}
+        <span className="inline-flex items-center gap-1.5">
+          <span className="font-mono text-xs text-muted-foreground">
+            {row.original.agent_version || "-"}
+          </span>
+          <OutpostRootBadge engine={row.original} />
         </span>
       ),
     },

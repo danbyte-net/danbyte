@@ -8750,6 +8750,17 @@ export interface MonitoringEngine {
   agent_version: string
   agent_hostname: string
   agent_ip: string
+  /** What the agent said it can do in its last hello (read-only). `runtime`
+   * (agent 0.10+) says whether it runs as root; absent = unknown. */
+  agent_capabilities?: {
+    discovery?: {
+      kinds: string[]
+      nmap: { version: string } | null
+      nmap_reason: string
+      protocol: number
+    }
+    runtime?: { root: boolean }
+  }
   binding_count: number
   check_count: number
   created_at: string

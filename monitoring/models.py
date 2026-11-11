@@ -1171,8 +1171,9 @@ class MonitoringEngine(TimestampedModel):
     agent_fast = models.BooleanField(default=False)
     #: What the agent says it can do beyond checks, from its last hello:
     #: ``{"discovery": {"kinds": [...], "nmap": {"version": ...} | None,
-    #: "nmap_reason": ...}}``. ``{}`` for an agent that predates it, which
-    #: is then handed no such work.
+    #: "nmap_reason": ...}, "runtime": {"root": bool}}``. ``{}`` for an agent
+    #: that predates it, which is then handed no such work. ``runtime`` (0.10+,
+    #: also from an SSH ``once``) only drives a warning; absent = unknown.
     agent_capabilities = models.JSONField(default=dict, blank=True, db_default={})
     # When on, the agent self-updates to the default ("golden") release whenever
     # its version differs - pull-transport binary Outposts only.

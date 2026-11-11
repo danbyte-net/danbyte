@@ -87,14 +87,33 @@ def capabilities(engine) -> dict:
     return caps if isinstance(caps, dict) else {}
 
 
+def clean_runtime(value) -> dict | None:
+    """``{"root": bool}`` from an agent's ``runtime`` (0.10+), None when it
+    said nothing usable (an older agent: unknown)."""
+    if isinstance(value, dict) and isinstance(value.get("root"), bool):
+        return {"root": value["root"]}
+    return None
+
+
 def clean_capabilities(value) -> dict:
     """What an agent's hello says it can do, as stored: known keys only,
-    bounded. Anything else (an older agent sends nothing) is ``{}``."""
+    bounded. Anything else (an older agent sends nothing) is ``{}``.
+    ``runtime`` says whether the agent runs as root; it gates nothing."""
     if not isinstance(value, dict):
         return {}
-    disc = value.get("discovery")
+    runtime = clean_runtime(value.get("runtime"))
+    disc = _clean_discovery(value.get("discovery"))
+    out: dict = {}
+    if disc is not None:
+        out["discovery"] = disc
+    if runtime is not None:
+        out["runtime"] = runtime
+    return out
+
+
+def _clean_discovery(disc) -> dict | None:
     if not isinstance(disc, dict):
-        return {}
+        return None
     kinds = [k for k in (disc.get("kinds") or []) if isinstance(k, str) and k in KINDS] \
         if isinstance(disc.get("kinds"), list) else []
     out: dict = {"kinds": sorted(set(kinds)), "nmap": None, "nmap_reason": ""}
@@ -109,7 +128,7 @@ def clean_capabilities(value) -> dict:
     proto = disc.get("protocol")
     out["protocol"] = proto if isinstance(proto, int) and not isinstance(proto, bool) \
         and 0 < proto < 1000 else 1
-    return {"discovery": out}
+    return out
 
 
 def online(engine, now=None) -> bool:

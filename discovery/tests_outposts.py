@@ -98,6 +98,18 @@ class CapabilityTests(AuthMixin, APITestCase, OutpostBase):
                          ["inventory", "service_scan"])
         self.assertEqual(eng.agent_capabilities["discovery"]["nmap"], {"version": "7.95"})
         self.assertNotIn("junk", eng.agent_capabilities)
+        # runtime (0.10+): whether the agent runs as root; unknown otherwise.
+        self.assertNotIn("runtime", eng.agent_capabilities)
+        self.client.post("/api/outpost/hello/", {"version": "0.10.0", "capabilities": {
+            "runtime": {"root": True, "uid": 0}}}, format="json", **self.auth(eng))
+        eng.refresh_from_db()
+        self.assertEqual(eng.agent_capabilities, {"runtime": {"root": True}})
+        self.assertEqual(outposts.capabilities(eng), {})  # no discovery claimed
+        for bad in ({"runtime": {"root": "yes"}}, {"runtime": True}, {"runtime": None}):
+            self.assertNotIn("runtime", outposts.clean_capabilities(bad), bad)
+        self.assertEqual(outposts.clean_capabilities(
+            {"runtime": {"root": False}, "discovery": {"kinds": ["inventory"]}})["runtime"],
+            {"root": False})
         for bad in ("x", ["inventory"], {"discovery": "all"},
                     {"discovery": {"nmap": {"version": "7.95; rm"}}}):
             self.assertIn(outposts.clean_capabilities(bad).get("discovery", {}).get("nmap"),
