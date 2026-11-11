@@ -5,27 +5,12 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type {
-  InventoryProfile,
-  InventoryRun,
-  InventoryScopeHost,
-  Paginated,
-} from "@/lib/api"
+import type { InventoryProfile, InventoryRun, Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
-import { useMe } from "@/lib/use-me"
+import { objCan, useMe } from "@/lib/use-me"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DataTable } from "@/components/data-table"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -36,15 +21,15 @@ import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
-import { useUrlTableFilters } from "@/components/table-filters"
 import {
   buildInventoryRunColumns,
-  buildInventoryScopeHostColumns,
   PROFILE_KIND_LABELS,
   runsOnLabel,
   scheduleLabel,
 } from "@/components/columns/inventory-columns"
 import { ProfileDialog } from "@/components/discovery/profile-dialog"
+import { ProfileDeleteDialog } from "@/components/discovery/profile-delete-dialog"
+import { ScopeHostsPanel } from "@/components/discovery/scope-hosts-panel"
 import {
   FindingsPanel,
   ObservedServicesPanel,
@@ -168,7 +153,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
               {run.isPending || busy ? "Running…" : "Run now"}
             </Button>
           )}
-          {canDo("inventoryprofile", "change") && (
+          {objCan(p, "change", canDo("inventoryprofile", "change")) && (
             <Button
               variant="outline"
               size="sm"
@@ -177,7 +162,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
           )}
-          {canDo("inventoryprofile", "delete") && (
+          {objCan(p, "delete", canDo("inventoryprofile", "delete")) && (
             <Button
               size="sm"
               variant="ghost"
@@ -224,7 +209,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
         <Overview profile={p} />
       </DetailTab>
       <DetailTab value="hosts">
-        <ScopeHosts id={p.id} />
+        <ScopeHostsPanel id={p.id} />
       </DetailTab>
       {scan && (
         <>
@@ -261,7 +246,7 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
         pending={run.isPending}
         onRun={(accept) => run.mutate(accept)}
       />
-      <DeleteDialog
+      <ProfileDeleteDialog
         profile={deleting ? p : null}
         onOpenChange={(o) => !o && setDeleting(false)}
         onDeleted={() => nav({ to: "/discovery" })}
@@ -398,92 +383,6 @@ function Overview({ profile: p }: { profile: InventoryProfile }) {
   )
 }
 
-function ScopeHosts({ id }: { id: string }) {
-  const qc = useQueryClient()
-  const { canDo } = useMe()
-  const q = useQuery({
-    queryKey: ["discovery", "profile", id, "hosts"],
-    queryFn: () =>
-      api<{ results: InventoryScopeHost[]; count: number; truncated: boolean }>(
-        `/api/discovery/profiles/${id}/hosts/`
-      ),
-  })
-  const exempt = useMutation({
-    mutationFn: (h: InventoryScopeHost) =>
-      api(`/api/discovery/exempt/`, {
-        method: "POST",
-        body: JSON.stringify({
-          kind: h.kind,
-          id: h.id,
-          exempt: !h.scan_exempt,
-        }),
-      }),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["discovery", "profile", id, "hosts"] }),
-    onError: (err) => apiErrorToast(err),
-  })
-  const columns = useMemo(
-    () =>
-      buildInventoryScopeHostColumns({
-        exemptAction: (h) =>
-          canDo(
-            h.kind === "device"
-              ? "device"
-              : h.kind === "virtual_machine"
-                ? "virtualmachine"
-                : "ipaddress",
-            "change"
-          ) ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7"
-              disabled={exempt.isPending && exempt.variables.id === h.id}
-              onClick={() => exempt.mutate(h)}
-            >
-              {h.scan_exempt ? "Include" : "Exempt"}
-            </Button>
-          ) : null,
-      }),
-    [canDo, exempt]
-  )
-  const rows = useMemo(() => q.data?.results ?? [], [q.data])
-  const {
-    rail,
-    filteredRows,
-    columns: wired,
-  } = useUrlTableFilters(columns, rows)
-  if (q.isLoading) return <Loading />
-  if (q.isError) return <QueryError error={q.error} />
-  if (rows.length === 0)
-    return (
-      <EmptyState title="No hosts in scope">
-        Add sites, prefixes, devices or VMs.
-      </EmptyState>
-    )
-  return (
-    <div className="flex min-w-0 overflow-hidden rounded-lg border border-border">
-      {rail}
-      <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
-        {q.data?.truncated && (
-          <p className="text-xs text-muted-foreground">
-            Only the first 4,096 hosts are read.
-          </p>
-        )}
-        <DataTable
-          data={filteredRows}
-          columns={wired}
-          flexColumn="host"
-          tableId="inventory-scope-hosts"
-          searchable
-          searchPlaceholder="Search hosts…"
-          autoColumns={false}
-        />
-      </div>
-    </div>
-  )
-}
-
 function Runs({ id, scan }: { id: string; scan: boolean }) {
   const runs = useRuns(id)
   const columns = useMemo(
@@ -506,55 +405,5 @@ function Runs({ id, scan }: { id: string; scan: boolean }) {
       tableId="inventory-runs"
       autoColumns={false}
     />
-  )
-}
-
-function DeleteDialog({
-  profile,
-  onOpenChange,
-  onDeleted,
-}: {
-  profile: InventoryProfile | null
-  onOpenChange: (o: boolean) => void
-  onDeleted: () => void
-}) {
-  const qc = useQueryClient()
-  const m = useMutation({
-    mutationFn: () =>
-      api<void>(`/api/discovery/profiles/${profile!.id}/`, {
-        method: "DELETE",
-      }),
-    onSuccess: () => {
-      toast.success(`Deleted ${profile!.name}`)
-      qc.invalidateQueries({ queryKey: ["discovery", "profiles"] })
-      onOpenChange(false)
-      onDeleted()
-    },
-    onError: (err) => apiErrorToast(err),
-  })
-  return (
-    <AlertDialog open={!!profile} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete {profile?.name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Its runs go with it. Packages already read stay on their hosts.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={m.isPending}
-            onClick={(e) => {
-              e.preventDefault()
-              m.mutate()
-            }}
-          >
-            {m.isPending ? "Deleting…" : "Delete"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   )
 }

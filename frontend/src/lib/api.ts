@@ -18395,6 +18395,8 @@ export interface InventoryProfile {
   shared_credential: { id: string; name: string; kind: string } | null
   /** Why it cannot run now; "" when it can. */
   blocked_reason: string
+  /** The caller's change/delete rights on this profile. */
+  permissions?: ObjectPerms
   last_run_at: string | null
   last_run: {
     id: string
@@ -18630,6 +18632,15 @@ export interface InventoryScopeHost {
   scan_exempt: boolean
   /** "server", or the "outpost: <name>" that would read it. */
   engine?: string
+  /** Whether the caller may set its scan_exempt. */
+  permissions?: { change: boolean }
+}
+
+/** `POST /api/discovery/exempt/` with `objects`. */
+export interface ScanExemptManyResult {
+  updated: { kind: string; id: string }[]
+  scan_exempt: boolean
+  not_found: number
 }
 
 /** An observed SSH host key nobody has accepted yet (`…/host-keys/`). */

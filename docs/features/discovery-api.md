@@ -39,7 +39,15 @@ The tenant switch itself is `discovery_enabled` on the integration settings
 `policy=<monitoring policy id>` for profiles whose own scope names what that
 policy is about), `POST` creates, `GET`, `PUT`, `PATCH` and `DELETE` on
 `/api/discovery/profiles/<id>/`. They need *view*, *add*, *change* and
-*delete* on Discovery profiles.
+*delete* on Discovery profiles. Each profile carries `permissions`
+(`change`, `delete`): the caller's rights on that row.
+
+`POST /api/discovery/profiles/bulk-update/` with
+`{"ids": [...], "fields": {"enabled": true}}` turns profiles on or off
+(`enabled` is the only field; *change*); `POST /api/discovery/profiles/bulk-delete/`
+with `{"ids": [...]}` (and `"dry_run": true` for the preview) deletes them
+(*delete*). Ids out of reach are left out. A profile's runs and their host
+rows go with it; packages and open ports already read stay.
 
 | Field | |
 |---|---|
@@ -68,7 +76,7 @@ policy is about), `POST` creates, `GET`, `PUT`, `PATCH` and `DELETE` on
 | Method, path | Purpose | Needs |
 |---|---|---|
 | `POST /api/discovery/profiles/<id>/run/` | **Run now**. Body `{}` or `{"accept_new_host_keys": true}` (inventory only). 202 with the run. 409 with `detail` when it cannot run (*Discovery is off.*, *The profile is disabled.*, *Record who authorised this profile before it runs.*, *Pick the Outpost this profile runs on.*, *Outside the profile's window.*, *This profile is already running.*). 400 when the deployment forbids first use or the profile is a service scan; 403 without the permissions. | **scan** on the profile; for inventory *view* on device credentials; for first use *change* on SSH host keys |
-| `GET /api/discovery/profiles/<id>/hosts/` | The scope as it resolves now: `results` (`kind`, `id`, `name`, `address`, `status` - `ready` or a host status - `message`, `credential`, `credential_source`, `scan_exempt`, `engine`; a service scan adds `ip_address`), `count`, `truncated` | *view* on the profile |
+| `GET /api/discovery/profiles/<id>/hosts/` | The scope as it resolves now: `results` (`kind`, `id`, `name`, `address`, `status` - `ready` or a host status - `message`, `credential`, `credential_source`, `scan_exempt`, `engine`, `permissions.change` - whether you may set its `scan_exempt`; a service scan adds `ip_address`), `count`, `truncated` | *view* on the profile |
 | `GET /api/discovery/profiles/<id>/host-keys/` | Observed, not yet accepted SSH host keys of the hosts in scope | *view* on the profile and on SSH host keys |
 | `GET /api/discovery/policy-scopes/` | The monitoring policies the caller may view, each as the profile field copying its scope gives: `scope`, `scope_label`, `target`, `global`, `field`, `filters` (the policy narrows its scope), `copyable`, `reason`. `?search=`. | *add* or *change* on Discovery profiles |
 | `GET /api/discovery/policy-scopes/<id>/` | One of those | the same, and *view* on the policy |
@@ -108,7 +116,7 @@ A pending key row has `id`, `device` or `virtual_machine`, `address`,
 
 | Method, path | Purpose | Needs |
 |---|---|---|
-| `POST /api/discovery/exempt/` | `{"kind": "device" \| "virtual_machine" \| "ipaddress" \| "prefix", "id": "<uuid>", "exempt": true}`. Answers `kind`, `id`, `scan_exempt`. In the object's change log. | *change* on the object |
+| `POST /api/discovery/exempt/` | `{"kind": "device" \| "virtual_machine" \| "ipaddress" \| "prefix", "id": "<uuid>", "exempt": true}`. Answers `kind`, `id`, `scan_exempt`; 404 when not found or out of your scope. Or `{"objects": [{"kind": …, "id": …}, …], "exempt": true}`, 1 to 500: answers `updated` (`kind`, `id`), `scan_exempt` and `not_found` - objects of another tenant or out of your scope are counted there, the rest are set. Each change is in the object's change log. | *change* on each object; 403 without any *change* grant on a kind sent |
 
 The device, VM, IP address and prefix APIs return `scan_exempt` read-only; a
 `PATCH` there does not change it. An IP address's detail also has

@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
 import { api } from "@/lib/api"
-import type { ObjectPerms } from "@/lib/api"
+import type { ObjectPerms, ScanExemptManyResult } from "@/lib/api"
 import { objCan, useMe } from "@/lib/use-me"
 import { FormCheckbox } from "@/components/forms"
 import { useDiscoveryStatus } from "@/components/discovery/status"
@@ -44,6 +44,22 @@ export function setScanExempt(
   return api("/api/discovery/exempt/", {
     method: "POST",
     body: JSON.stringify({ kind, id, exempt }),
+  })
+}
+
+/** Objects per call: `EXEMPT_MAX` in discovery/api.py. */
+export const EXEMPT_PER_CALL = 500
+
+/** Set the flag on many objects in one call (at most EXEMPT_PER_CALL).
+ * Objects the caller may not change, or that are gone, count as
+ * `not_found`; the rest are set. */
+export function setScanExemptMany(
+  objects: { kind: ScanExemptKind; id: string }[],
+  exempt: boolean
+): Promise<ScanExemptManyResult> {
+  return api("/api/discovery/exempt/", {
+    method: "POST",
+    body: JSON.stringify({ objects, exempt }),
   })
 }
 

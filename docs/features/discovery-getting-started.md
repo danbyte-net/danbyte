@@ -81,7 +81,8 @@ Which login a host gets when it has several is on
 ### A3. Create the profile
 
 On the Discovery page's **Profiles** tab, press **Add profile** (needs *add*
-on Discovery profiles):
+on Discovery profiles; each row's pencil and bin edit and delete it, and the
+selection bar enables, disables or deletes the ticked profiles):
 
 1. **Name**.
 2. **Kind**: *Package inventory*. It cannot be changed later.

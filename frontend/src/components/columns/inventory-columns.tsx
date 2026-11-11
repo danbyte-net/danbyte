@@ -10,6 +10,8 @@ import type {
   PendingHostKey,
 } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import { actionsColumn } from "@/components/columns/actions-column"
+import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 import { dash } from "@/components/cells/dash"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Badge } from "@/components/ui/badge"
@@ -71,11 +73,15 @@ export function scopeLabel(p: InventoryProfile): string {
   return parts.join(", ")
 }
 
-export function buildInventoryProfileColumns(): ColumnDef<
-  InventoryProfile,
-  unknown
->[] {
-  return [
+export function buildInventoryProfileColumns(
+  opts: {
+    /** A leading checkbox column, for the list's bulk bar. */
+    selection?: boolean
+    /** The trailing Edit/Delete column. */
+    actions?: ActionsColumnOpts<InventoryProfile>
+  } = {}
+): ColumnDef<InventoryProfile, unknown>[] {
+  const cols: ColumnDef<InventoryProfile, unknown>[] = [
     {
       id: "name",
       accessorKey: "name",
@@ -225,6 +231,9 @@ export function buildInventoryProfileColumns(): ColumnDef<
       meta: { label: "Description" },
     },
   ]
+  if (opts.selection) cols.unshift(selectionColumn<InventoryProfile>())
+  if (opts.actions) cols.push(actionsColumn<InventoryProfile>(opts.actions))
+  return cols
 }
 
 function count(r: InventoryRun, k: string): number {
@@ -587,7 +596,11 @@ export function buildInventoryHostResultColumns(
 }
 
 export function buildInventoryScopeHostColumns(
-  opts: { exemptAction?: (h: InventoryScopeHost) => React.ReactNode } = {}
+  opts: {
+    exemptAction?: (h: InventoryScopeHost) => React.ReactNode
+    /** A leading checkbox column, for the Exempt/Include bulk bar. */
+    selection?: boolean
+  } = {}
 ): ColumnDef<InventoryScopeHost, unknown>[] {
   const cols: ColumnDef<InventoryScopeHost, unknown>[] = [
     {
@@ -669,6 +682,7 @@ export function buildInventoryScopeHostColumns(
       meta: { label: "Actions" },
     })
   }
+  if (opts.selection) cols.unshift(selectionColumn<InventoryScopeHost>())
   return cols
 }
 

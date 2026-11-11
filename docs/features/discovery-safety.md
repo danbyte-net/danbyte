@@ -166,7 +166,9 @@ every address inside it, in its VRF.
   read-only; change it on the prefix. A prefix you may not view is named
   *a prefix*.
 - A profile's **Hosts** / **Addresses** tab has **Exempt** and **Include**
-  per row.
+  per row, and for the ticked rows on the selection bar (**Exempt N**,
+  **Include N**; *N of M* when you may not change some of them, which are
+  left alone).
 - Each needs *change* on the object, site scope included, and is in the
   object's change log like any edit.
 - The device, VM, IP address and prefix APIs return `scan_exempt` read-only
@@ -255,6 +257,7 @@ Discovery profiles are the RBAC type **Discovery profiles** (slug
 | **Run now**, service scan | **scan** on the profile |
 | **Run now** with **Accept new host keys** | also *change* on SSH host keys |
 | The **Hosts** / **Addresses** tab | *view* on the profile; rows you may view |
+| **Exempt** / **Include** there, one or many | *change* on each host or address, site scope included |
 | A profile's or run's **Host keys** | *view* on SSH host keys |
 | **Accept N keys** | *change* on SSH host keys, site scope included |
 | List Outposts for **Runs on** | *view* on Discovery profiles |
