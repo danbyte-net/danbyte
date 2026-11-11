@@ -22,15 +22,18 @@ import {
 } from "@/components/discovery/findings-panel"
 import {
   engineLabel,
+  HOST_STATUS_LABELS,
   isRunActive,
   RunStatusBadge,
 } from "@/components/discovery/status"
+import { fmtDuration } from "@/components/columns/job-columns"
 import { AdvisoryNote } from "@/components/discovery/advisory-note"
 
-// One discovery run (#451 B2): what it did, then a row per host it
-// considered - read, refused, or left alone and why - and the host keys
-// its hosts presented that wait for review. Hosts you may not view are not
-// listed.
+// One discovery run (#451 B2): an Overview of what it did (status, counts
+// by reason, where it ran, who started it, the authorisation it ran
+// under), then a row per host it considered - read, refused, or left alone
+// and why - and the host keys its hosts presented that wait for review.
+// Hosts you may not view are not listed.
 
 type Tab = "overview" | "hosts" | "findings" | "services" | "keys"
 const TABS: readonly Tab[] = [
@@ -69,13 +72,18 @@ function n(r: InventoryRun, k: string) {
 }
 
 function Body({ run: r }: { run: InventoryRun }) {
-  const [tab, setTab] = useUrlTab<Tab>("hosts", "tab", TABS)
+  const [tab, setTab] = useUrlTab<Tab>("overview", "tab", TABS)
   const hosts = useQuery({
     queryKey: ["discovery", "run", r.id, "hosts", r.status],
     queryFn: () =>
       apiAll<InventoryHostResult>(`/api/discovery/runs/${r.id}/hosts/`),
   })
+  const seconds =
+    r.started_at && r.finished_at
+      ? (Date.parse(r.finished_at) - Date.parse(r.started_at)) / 1000
+      : null
   const rows: KvRow[] = [
+    { label: "Status", value: <RunStatusBadge status={r.status} /> },
     {
       label: "Profile",
       value: (
@@ -104,7 +112,36 @@ function Body({ run: r }: { run: InventoryRun }) {
       label: "Finished",
       value: r.finished_at ? <TimeCell iso={r.finished_at} /> : dash,
     },
+    {
+      label: "Duration",
+      value:
+        seconds != null ? (
+          <span className="num">{fmtDuration(seconds)}</span>
+        ) : (
+          dash
+        ),
+    },
+    {
+      label: "Authorisation",
+      value: r.authorisation ? (
+        <span className="text-sm whitespace-pre-wrap">
+          {r.authorisation}
+          {r.authorised_by_name && (
+            <span className="text-muted-foreground">
+              {" "}
+              · {r.authorised_by_name}
+            </span>
+          )}
+        </span>
+      ) : (
+        dash
+      ),
+    },
   ]
+  // Hosts by the reason they were not read, as the summary line counts them.
+  const reasons: KvRow[] = Object.entries(HOST_STATUS_LABELS)
+    .filter(([k]) => k !== "ok" && k !== "ready" && (r.counts[k] ?? 0) > 0)
+    .map(([k, label]) => ({ label, value: n(r, k) }))
   const scan = r.kind === "service_scan"
   const counts: KvRow[] = scan
     ? [
@@ -141,6 +178,7 @@ function Body({ run: r }: { run: InventoryRun }) {
         />
       }
       tabs={[
+        { value: "overview", label: "Overview" },
         {
           value: "hosts",
           label: scan ? "Addresses" : "Hosts",
@@ -153,17 +191,25 @@ function Body({ run: r }: { run: InventoryRun }) {
             ]
           : []),
         { value: "keys", label: "Host keys" },
-        { value: "overview", label: "Overview" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v)}
     >
       <DetailTab value="overview">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <KvCard title="Run" rows={rows} />
-          <div className="grid min-w-0 content-start gap-6">
-            <KvCard title="Counts" rows={counts} />
-            {errors.length > 0 && <KvCard title="Messages" rows={errors} />}
+        <div className="space-y-6">
+          <Summary run={r} onKeys={() => setTab("keys")} />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <KvCard title="Run" rows={rows} />
+            <div className="grid min-w-0 content-start gap-6">
+              <KvCard title="Counts" rows={counts} />
+              {reasons.length > 0 && (
+                <KvCard
+                  title={scan ? "Not scanned" : "Not read"}
+                  rows={reasons}
+                />
+              )}
+              {errors.length > 0 && <KvCard title="Messages" rows={errors} />}
+            </div>
           </div>
         </div>
       </DetailTab>

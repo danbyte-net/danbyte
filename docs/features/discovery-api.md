@@ -78,7 +78,7 @@ policy is about), `POST` creates, `GET`, `PUT`, `PATCH` and `DELETE` on
 
 | Method, path | Purpose | Needs |
 |---|---|---|
-| `GET /api/discovery/runs/` | Runs of the profiles you may view, newest first. Filters `profile`, `status`, `kind` (comma-separated). Each run: `id`, `profile`, `trigger` (`manual`, `schedule`), `kind`, `started_by_name`, `engine` (`server`, `outposts` or `outpost: <name>`), `status`, `created_at`, `started_at`, `finished_at`, `counts`, `summary`, `accept_new_host_keys`, `errors`, `outstanding` (hosts still with Outposts) | *view* on Discovery profiles |
+| `GET /api/discovery/runs/` | Runs of the profiles you may view, newest first. Filters `profile`, `status`, `kind` (comma-separated). Each run: `id`, `profile`, `trigger` (`manual`, `schedule`), `kind`, `started_by_name`, `authorisation` and `authorised_by_name` (the profile's, as recorded when the run was queued), `engine` (`server`, `outposts` or `outpost: <name>`), `status`, `created_at`, `started_at`, `finished_at`, `counts`, `summary`, `accept_new_host_keys`, `errors`, `outstanding` (hosts still with Outposts) | *view* on Discovery profiles |
 | `GET /api/discovery/runs/<id>/` | One run, plus `advisories` (below) | the same |
 | `GET /api/discovery/runs/<id>/hosts/` | The run's host rows you may view: `device`, `virtual_machine`, `ip_address`, `address`, `status`, `transport`, `credential_source`, `key_first_use`, `attempts` (`transport`, `outcome`, `reason`), `message`, `packages`, `added`, `removed`, `updated`, `services`, `connects`, `engine`, `finished_at`. Filter `status`. | the same |
 | `GET /api/discovery/runs/<id>/host-keys/` | Keys to review for the run's hosts | the same, and *view* on SSH host keys |

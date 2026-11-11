@@ -243,6 +243,11 @@ class InventoryRun(TimestampedModel):
         related_name="+")
     started_by_name = models.CharField(max_length=150, blank=True, default="",
                                        db_default="")
+    #: The profile's authorisation when the run was queued: the statement
+    #: and who recorded it (the profile's may change later).
+    authorisation = models.TextField(blank=True, default="", db_default="")
+    authorised_by_name = models.CharField(max_length=150, blank=True, default="",
+                                          db_default="")
     #: Where it ran: ``server`` (the core's own workers) today.
     engine = models.CharField(max_length=64, default="server", db_default="server")
     status = models.CharField(max_length=16, choices=RUN_STATUSES, default="queued",

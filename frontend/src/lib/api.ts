@@ -18429,6 +18429,10 @@ export interface InventoryRun {
   trigger: "manual" | "schedule"
   kind: DiscoveryProfileKind
   started_by_name: string
+  /** The profile's authorisation when the run was queued, and who
+   * recorded it; blank on runs from before it was kept. */
+  authorisation?: string
+  authorised_by_name?: string
   engine: string
   status: InventoryRunStatus
   created_at: string

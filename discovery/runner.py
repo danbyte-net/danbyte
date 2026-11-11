@@ -93,6 +93,8 @@ def start(profile, *, user=None, trigger="manual", accept_new_host_keys=False):
             tenant=profile.tenant, profile=profile, trigger=trigger,
             started_by=user if user is not None and user.is_authenticated else None,
             started_by_name=user.get_username() if user is not None else "",
+            authorisation=profile.authorisation or "",
+            authorised_by_name=profile.authorised_by_name or "",
             kind=profile.kind,
             accept_new_host_keys=bool(accept_new_host_keys and trigger == "manual"
                                       and profile.kind == "inventory"))

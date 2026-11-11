@@ -636,6 +636,16 @@ class RunApiTests(ApiBase):
         r = self.client.get(f"/api/discovery/runs/{self.run.pk}/hosts/")
         self.assertEqual([x["device"]["name"] for x in r.json()["results"]], ["a"])
 
+    def test_a_run_keeps_the_authorisation_it_ran_under(self):
+        with mock.patch.object(runner, "enqueue"):
+            run = runner.start(self.p, user=self.su)
+        self.p.authorisation = "Changed later"
+        self.p.save()
+        self.login(self.su)
+        body = self.client.get(f"/api/discovery/runs/{run.pk}/").json()
+        self.assertEqual((body["authorisation"], body["authorised_by_name"]),
+                         ("Change 42, by ops", "root"))
+
     def test_runs_need_profile_view(self):
         self.member("nobody", {"device": ["view"]})
         self.assertEqual(self.client.get("/api/discovery/runs/").status_code, 403)

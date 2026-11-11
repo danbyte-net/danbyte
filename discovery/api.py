@@ -117,6 +117,8 @@ def run_dict(r: InventoryRun) -> dict:
         "trigger": r.trigger,
         "kind": r.kind,
         "started_by_name": r.started_by_name,
+        "authorisation": r.authorisation,
+        "authorised_by_name": r.authorised_by_name,
         "engine": r.engine,
         "status": r.status,
         "created_at": r.created_at,

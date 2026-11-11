@@ -136,18 +136,22 @@ refused with *Outside the profile's window.*
 
 ### A7. Read the run page
 
-The run opens on its **Hosts** tab:
+The run opens on its **Overview** tab:
 
 - A summary line by reason: *12 read, 3 without a credential, 1 unreachable*,
   with **Shared credentials** or **Review host keys** when those are the
   reason.
-- One row per host: **Result**, **Read by** (*Server* or the Outpost),
-  **Credential** (*Host's own* or *Shared · name*), **Transport** (hover the
-  info icon for each transport tried and why), **Packages**, **Changes**,
-  **Detail**.
-- **Overview**: who started it, where it ran, and **Counts** (**Hosts**,
-  **Read**, **Packages**, **Changed hosts**), with **Messages** when the run
-  has any.
+- **Run**: status, who started it, where it ran, when it was queued and
+  finished, how long it took, and the authorisation it ran under (the
+  statement and who recorded it, as they were when the run was queued).
+- **Counts** (**Hosts**, **Read**, **Packages**, **Changed hosts**), **Not
+  read** (hosts by reason), and **Messages** when the run has any.
+
+**Hosts** has one row per host: **Result**, **Read by** (*Server* or the
+Outpost), **Credential** (*Host's own* or *Shared · name*), **Transport**
+(hover the info icon for each transport tried and why), **Packages**,
+**Changes**, **Detail**. **Host keys** follows. A link can open a tab
+directly with `?tab=hosts` (or `keys`, `findings`, `services`).
 
 Every status is explained on [Troubleshooting](discovery-troubleshooting.md).
 *Nothing read* means no host was logged in to because each was left alone
@@ -210,10 +214,11 @@ needs.
 
 ### B3. Read the results
 
-The run page opens on **Addresses** (one row per address, with its open-port
-count). **Open ports** lists each port with its banner and the product
-named; **Findings** lists the proposals; **Overview** has the ports, rate and
-parallelism the run used.
+The run page opens on **Overview**: the run, its counts (the ports, rate
+and parallelism it used among them) and the addresses not scanned, by
+reason. **Addresses** has one row per address, with its open-port count;
+**Findings** lists the proposals; **Open ports** lists each port with its
+banner and the product named.
 
 On **Findings**, **Accept** creates what a row proposes (*Add service*, *Add
 software*, *Map to CPE*), and **Ignore** hides it until the evidence changes
