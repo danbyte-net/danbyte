@@ -214,9 +214,12 @@ export function HistoryView() {
           activeCount: railActiveCount(rail) + (ip ? 1 : 0),
         },
       }}
-      actions={
+      // The window sits over the charts it drives, so the header stays one
+      // row: title, saved views, search.
+      summary={
         <div className="flex flex-wrap items-center gap-2">
           <SegmentedTabs
+            label="Window"
             value={custom ? "custom" : days}
             onValueChange={(v) => {
               if (v === "custom") {

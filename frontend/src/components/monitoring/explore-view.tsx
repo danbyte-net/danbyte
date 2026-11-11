@@ -8,6 +8,13 @@ import { useUrlPatch } from "@/lib/use-url-state"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { exploreColumns } from "@/components/columns/explore-columns"
 import { useMonitoringCrumb } from "./monitoring-tabs"
 
@@ -70,12 +77,28 @@ export function ExploreView() {
       count={query.data ? rows.length : undefined}
       actions={
         <>
+          {/* Nine dimensions are a long fixed list: one select, so the
+              header stays one row beside the window. */}
+          <Select value={groupBy} onValueChange={(v) => patch({ group_by: v })}>
+            <SelectTrigger
+              className="h-8 w-40 shrink-0 text-xs"
+              aria-label="Group by"
+            >
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="text-muted-foreground">By</span>
+                <SelectValue />
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {DIMENSIONS.map((d) => (
+                <SelectItem key={d.value} value={d.value}>
+                  {d.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <SegmentedTabs
-            value={groupBy}
-            onValueChange={(v) => patch({ group_by: v })}
-            items={DIMENSIONS}
-          />
-          <SegmentedTabs
+            label="Window"
             value={days}
             onValueChange={(v) => patch({ days: v })}
             items={FRAME_TABS}
