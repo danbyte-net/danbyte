@@ -470,6 +470,29 @@ link_snapshot() {  # <file>: the danbyte-* unit links in the user's unit dir
     | sed 's|.*/||' | LC_ALL=C sort >"$1"
 }
 
+# The units' drop-in folders (the sandboxing drop-ins of #500 and any of the
+# admin's own), kept before link-units rewrites them; the undo puts back
+# exactly what was there, a release before the drop-ins included.
+dropins_save() {
+  j_set dropins_saving 1
+  rm -f "$PREV/dropins.tar"
+  _dd=$(cd "$SYSTEMD_DIR" 2>/dev/null && find . -maxdepth 1 -name 'danbyte-*.service.d' -type d | sed 's|^\./||')
+  if [ -n "$_dd" ]; then
+    # shellcheck disable=SC2086  # folder names: one word each
+    tar -C "$SYSTEMD_DIR" -cf "$PREV/dropins.tar" $_dd || return 1
+  fi
+  j_set dropins_saved 1
+}
+
+dropins_restore() {
+  j_has dropins_saved || return 0
+  for _d in "$SYSTEMD_DIR"/danbyte-*.service.d; do
+    [ -d "$_d" ] && { rm -rf "$_d" || return 1; }
+  done
+  [ -f "$PREV/dropins.tar" ] || return 0
+  tar -C "$SYSTEMD_DIR" -xpf "$PREV/dropins.tar"
+}
+
 # ── health ───────────────────────────────────────────────────────────────────
 
 # Hosts the app answers to, from ALLOWED_HOSTS in .env.
@@ -702,6 +725,7 @@ rollback_files() {
   if j_has tree_saved; then undo_overlay || _rc=1; fi
   for _d in $(j_list moving | sed '1!G;h;$!d'); do restore_dir "$_d" || _rc=1; done
   if j_has env_saved && [ -f "$PREV/env" ]; then cp -p "$PREV/env" "$APP/.env" || _rc=1; fi
+  dropins_restore || _rc=1
   sc daemon-reload >/dev/null 2>&1 || :
   j_set files_restored "$_rc"
   return "$_rc"

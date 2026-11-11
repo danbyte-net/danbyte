@@ -22,7 +22,7 @@ SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-extmon-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn danbyte-snmp-poll danbyte-eol-refresh danbyte-vuln-refresh danbyte-oxidized-sync danbyte-update-check danbyte-inventory
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
-.PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync root-tree-only \
+.PHONY: help install-services link-units unit-hardening unit-hardening-status print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync root-tree-only \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
         docs-up docs-down docs-restart docs-logs docs-build schema \
@@ -96,6 +96,7 @@ install-services:
 		echo "  linked $$s.service + $$s.timer" ; \
 	done
 	@systemctl --user daemon-reload
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh
 	@for s in $(TIMERS); do \
 		systemctl --user enable --now $$s.timer ; \
 	done
@@ -122,6 +123,16 @@ link-units:
 		ln -sfn $(PROJECT_DIR)/services/$$s.timer $(SYSTEMD_DIR)/$$s.timer ; \
 	done
 	@systemctl --user daemon-reload
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh
+
+# The sandboxing drop-ins of the app units (#500), again: after a change to
+# DANBYTE_UNIT_HARDENING or DANBYTE_UNIT_WRITABLE_PATHS in .env. Restart the
+# units afterwards. unit-hardening-status shows what each unit has.
+unit-hardening:
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh
+
+unit-hardening-status:
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh status
 
 print-timers:
 	@echo $(TIMERS)
@@ -134,7 +145,7 @@ uninstall-services:
 		systemctl --user disable --now $$s.timer 2>/dev/null || true ; \
 		rm -f $(SYSTEMD_DIR)/$$s.service $(SYSTEMD_DIR)/$$s.timer ; \
 	done
-	@systemctl --user daemon-reload
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh remove
 	@echo "Removed."
 
 reload:
@@ -497,6 +508,7 @@ install-prod-services:
 		ln -sfn $(PROJECT_DIR)/services/$$s.timer $(SYSTEMD_DIR)/$$s.timer ; \
 	done
 	@systemctl --user daemon-reload
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh
 	@for s in $(TIMERS); do \
 		systemctl --user enable --now $$s.timer >/dev/null 2>&1 || true ; \
 	done

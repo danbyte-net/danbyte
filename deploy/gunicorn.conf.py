@@ -46,3 +46,8 @@ else:
     accesslog = "-"
     errorlog = "-"
 proc_name = "danbyte-web"
+# Gunicorn 24+ opens a control socket in $XDG_RUNTIME_DIR (else ~/.gunicorn/)
+# that Danbyte never uses. Under the unit sandbox those are read-only, and
+# two web units on one account would fight over the one path (#500). Older
+# releases ignore the name.
+control_socket_disable = True

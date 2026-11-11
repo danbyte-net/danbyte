@@ -338,6 +338,7 @@ fi
 if ! grep -qE '^DANBYTE_LOG_DIR=' "$APP/.env" && [ -d /var/log/danbyte ] && [ -w /var/log/danbyte ]; then
   printf '\nDANBYTE_LOG_DIR=/var/log/danbyte\n' >>"$APP/.env"
 fi
+dropins_save || fail "could not keep a copy of the unit drop-ins"
 run 300 make -s -C "$APP" link-units || fail "the new unit files could not be linked: $(tail_out)"
 link_snapshot "$STATE_DIR/links-after"
 LC_ALL=C comm -13 "$STATE_DIR/links-before" "$STATE_DIR/links-after" >"$STATE_DIR/new-links"
