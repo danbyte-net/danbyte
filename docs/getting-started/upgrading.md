@@ -459,8 +459,8 @@ the rows were deleted. The host upgrade runs them in one transaction (unless
 there the index build after the delete failed on the deleted rows, so the
 upgrade was rolled back with `invalid input syntax for type inet` and
 nothing was lost; such an install is still on 0.18 and upgrades normally
-now. A 0.20 install that skipped 0.19 runs the repairing version and lost
-nothing; its **After upgrade** card does not show this step.
+now. An install that goes straight to 0.19.2 or later runs the repairing
+version and lost nothing; its **After upgrade** card does not show this step.
 
 **Keep the backup first.** The pre-upgrade backup the host upgrade took
 before the 0.19 upgrade still holds the rows, but only the newest three

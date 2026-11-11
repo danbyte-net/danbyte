@@ -34,7 +34,7 @@ log = logging.getLogger("danbyte.migrations")
 
 #: core.upgrade_notes: the note for installs that ran the deleting version.
 #: This version ran here, so nothing was lost; it marks that note done.
-NOTE_ID = "0.20.0-prefix-cleanup"
+NOTE_ID = "0.19.2-prefix-cleanup"
 
 _IS_INET = """
 CREATE OR REPLACE FUNCTION pg_temp.danbyte_is_inet(t text) RETURNS boolean AS $$

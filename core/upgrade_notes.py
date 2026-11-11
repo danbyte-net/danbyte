@@ -527,7 +527,7 @@ def _outposts_run_discovery() -> bool:
 
 #: Migration api 0265 marks this note done when the fixed version ran here
 #: (#501); a test pins the two ids.
-PREFIX_CLEANUP_NOTE = "0.20.0-prefix-cleanup"
+PREFIX_CLEANUP_NOTE = "0.19.2-prefix-cleanup"
 
 _PREFIX_LOSS = """\
 # as the service user, in the app directory (Docker: docker compose exec backend python manage.py …):
@@ -540,7 +540,7 @@ _PREFIX_LOSS = """\
 NOTES: tuple[UpgradeNote, ...] = (
     UpgradeNote(
         id=PREFIX_CLEANUP_NOTE,
-        version="0.20.0",
+        version="0.19.2",
         title="Check whether the 0.19 upgrade deleted prefixes",
         body=(
             "The upgrade to 0.19.0 or 0.19.1 deleted every prefix whose CIDR was "
