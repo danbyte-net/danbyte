@@ -591,20 +591,21 @@ function RuleRow({
       className={cn("rounded-md", error && "ring-1 ring-destructive")}
       data-testid="expr-row"
     >
-      {/* Below sm (a phone) the row stacks: field, operator and remove on
-          the first line, the value on its own full-width line under them. */}
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,8.5rem)_2rem] items-center gap-1.5 sm:grid-cols-[10rem_8.5rem_minmax(0,1fr)_auto_2rem]">
+      {/* Below sm (a phone) the row stacks: the field and remove on the
+          first line, the operator under the field, then the value full
+          width - a field beside the operator was too narrow to read (#505). */}
+      <div className="grid grid-cols-[minmax(0,1fr)_2rem] items-center gap-1.5 sm:grid-cols-[10rem_8.5rem_minmax(0,1fr)_auto_2rem]">
         {ctx.fields.length === 0 ? (
           <Input
             value={rule.field}
             onChange={(e) => onChange({ ...rule, field: e.target.value })}
             placeholder="Field"
-            className="h-8 w-full font-mono text-[12px]"
+            className="h-8 w-full font-mono text-[12px] max-sm:col-start-1 max-sm:row-start-1"
           />
         ) : (
           <Select value={rule.field || undefined} onValueChange={pickField}>
             <SelectTrigger
-              className="h-8 w-full text-[12px]"
+              className="h-8 w-full text-[12px] max-sm:col-start-1 max-sm:row-start-1"
               aria-label="Field"
             >
               <SelectValue placeholder="Field" />
@@ -623,7 +624,7 @@ function RuleRow({
           onValueChange={(v) => onChange({ ...rule, cmp: v as BuilderOp })}
         >
           <SelectTrigger
-            className="h-8 w-full text-[12px]"
+            className="h-8 w-full text-[12px] max-sm:col-start-1 max-sm:row-start-2"
             aria-label="Operator"
           >
             <SelectValue />
@@ -640,7 +641,7 @@ function RuleRow({
           <div className="max-sm:hidden" />
         ) : (
           <div
-            className="min-w-0 max-sm:col-span-3 max-sm:row-start-2"
+            className="min-w-0 max-sm:col-span-2 max-sm:row-start-3"
             data-testid="expr-value"
           >
             <RuleValue
@@ -658,7 +659,7 @@ function RuleRow({
         {marker ? (
           <Badge
             variant="outline"
-            className="whitespace-nowrap max-sm:col-span-3 max-sm:row-start-3 max-sm:justify-self-start"
+            className="whitespace-nowrap max-sm:col-span-2 max-sm:row-start-4 max-sm:justify-self-start"
           >
             {marker}
           </Badge>
@@ -669,7 +670,7 @@ function RuleRow({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground max-sm:col-start-3 max-sm:row-start-1"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground max-sm:col-start-2 max-sm:row-start-1"
           aria-label="Remove condition"
           onClick={onRemove}
         >

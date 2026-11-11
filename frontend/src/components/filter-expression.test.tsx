@@ -187,7 +187,7 @@ describe("expression builder", () => {
     expect(date.value).toBe("2027-01-01")
   })
 
-  it("stacks the value on its own line below sm (#477)", () => {
+  it("stacks field, operator and value on their own lines below sm (#477, #505)", () => {
     const tree: TreeGroup = {
       kind: "group",
       id: treeId(),
@@ -204,20 +204,24 @@ describe("expression builder", () => {
       )
     )
     const grid = screen.getByTestId("expr-row").firstElementChild!
-    // Phone: field · operator · remove, then the value full width.
-    expect(grid.className).toContain(
-      "grid-cols-[minmax(0,1fr)_minmax(0,8.5rem)_2rem]"
-    )
+    // Phone: field · remove, the operator under the field, then the value
+    // full width - the field no longer shares its line with the operator.
+    expect(grid.className).toContain("grid-cols-[minmax(0,1fr)_2rem]")
+    const field = screen.getByRole("combobox", { name: "Field" })
+    expect(field.className).toContain("max-sm:col-start-1")
+    expect(field.className).toContain("max-sm:row-start-1")
+    const op = screen.getByRole("combobox", { name: "Operator" })
+    expect(op.className).toContain("max-sm:row-start-2")
     // sm and up: the desktop grid, unchanged.
     expect(grid.className).toContain(
       "sm:grid-cols-[10rem_8.5rem_minmax(0,1fr)_auto_2rem]"
     )
     const value = screen.getByTestId("expr-value")
-    expect(value.className).toContain("max-sm:col-span-3")
-    expect(value.className).toContain("max-sm:row-start-2")
-    expect(
-      screen.getByRole("button", { name: "Remove condition" }).className
-    ).toContain("max-sm:row-start-1")
+    expect(value.className).toContain("max-sm:col-span-2")
+    expect(value.className).toContain("max-sm:row-start-3")
+    const remove = screen.getByRole("button", { name: "Remove condition" })
+    expect(remove.className).toContain("max-sm:col-start-2")
+    expect(remove.className).toContain("max-sm:row-start-1")
   })
 
   it("names a hidden or deleted value from the rule's refs", () => {
