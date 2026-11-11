@@ -2,13 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 
 import { useMe } from "@/lib/use-me"
 import { usePageTitle } from "@/lib/page-title"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { MonitoringTabs } from "@/components/monitoring/monitoring-tabs"
 
@@ -22,34 +16,27 @@ export const Route = createFileRoute("/monitoring_/settings")({
 
 function SettingsPage() {
   usePageTitle("Monitoring settings")
-  const { canManage } = useMe()
+  const { canManage, canManageDeployment } = useMe()
   return (
     <MonitoringTabs label="Settings" padded banner={false}>
       {canManage && (
         <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Settings &amp; defaults</CardTitle>
-              <CardDescription>
-                Stale thresholds, the skip policy, and the global schedule
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <MonitoringSettingsForm />
-            </CardContent>
-          </Card>
-          <p className="text-[11px] text-muted-foreground">
-            Deployment-wide scheduling for drift runs and the email digest lives
-            in{" "}
-            <Link
-              to="/settings/monitoring"
-              search={{ scope: "deployment" }}
-              className="link"
-            >
-              Settings → Monitoring
-            </Link>
-            .
-          </p>
+          <div className="flex min-h-8 items-center gap-3">
+            <h1 className="text-base font-semibold">Settings</h1>
+            {/* Drift runs and the email digest are set once for the
+                install, on the deployment half of Settings → Monitoring. */}
+            {canManageDeployment && (
+              <Button size="sm" variant="outline" className="ml-auto" asChild>
+                <Link
+                  to="/settings/monitoring"
+                  search={{ scope: "deployment" }}
+                >
+                  Deployment settings
+                </Link>
+              </Button>
+            )}
+          </div>
+          <MonitoringSettingsForm />
         </div>
       )}
     </MonitoringTabs>

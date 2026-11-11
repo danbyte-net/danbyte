@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DevicePicker } from "@/components/device-picker"
+import { Loading } from "@/components/loading"
 import { InfoTip } from "@/components/ui/info-tip"
 import { cardAnchor } from "@/components/settings/settings-card"
 import { HostDiscoverySettings } from "@/components/discovery/host-discovery-settings"
@@ -102,8 +103,7 @@ export function MonitoringSettingsForm() {
     onError: (err) => apiErrorToast(err),
   })
 
-  if (!draft)
-    return <p className="text-sm text-muted-foreground">Loading settings…</p>
+  if (!draft) return <Loading />
 
   const vrfOptions = vrfsQ.data?.results ?? []
 
@@ -226,7 +226,8 @@ export function MonitoringSettingsForm() {
               onChange={(v) => set("stale_after_days", v)}
             />
             <NumberField
-              label="Outpost offline after N minutes"
+              label="Outpost offline after"
+              unit="minutes"
               hint="No contact this long → offline alert (0 = 3× its poll interval)"
               value={draft.engine_offline_after_minutes}
               onChange={(v) => set("engine_offline_after_minutes", v)}
