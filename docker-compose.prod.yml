@@ -35,6 +35,9 @@ x-app-env: &app-env
   REDIS_URL: redis://redis:6379/0
   REDIS_HOST: redis
   REDIS_PORT: "6379"
+  # Empty (the default): Redis takes no password, as before. Set in .env, the
+  # redis service asks for it and every Python service sends it (#502).
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
 
 # Where base images are pulled from: ECR Public's copy of the Docker official
 # images by default (Docker Hub throttles anonymous pulls). Set
@@ -74,10 +77,16 @@ services:
   redis:
     image: ${BASE_IMAGE_REGISTRY:-public.ecr.aws/docker/library}/redis:7
     restart: unless-stopped
+    # --requirepass "" is no password at all. Redis shows its own title in
+    # ps, not these arguments; the healthcheck reads it from the environment.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # redis-cli exits 0 on NOAUTH too, so look for the PONG.
+      test: ["CMD-SHELL", "[ -z \"$$REDIS_PASSWORD\" ] || export REDISCLI_AUTH=\"$$REDIS_PASSWORD\"; redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5

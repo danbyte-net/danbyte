@@ -487,6 +487,29 @@ def _rate_limited() -> bool:
     return bool(re.search(r"(?m)^\s*limit_req\s+zone=danbyte_auth\b", text))
 
 
+_REDIS_AUTH = """\
+# 1. pick a quiet moment: Jobs shows nothing running (queued jobs are kept)
+# 2. as root: give Redis the password, without restarting it yet
+pw=$(openssl rand -hex 32)
+( umask 027; printf 'requirepass %s\\n' "$pw" > /etc/redis/danbyte-auth.conf )
+chgrp redis /etc/redis/danbyte-auth.conf
+printf '\\ninclude /etc/redis/danbyte-auth.conf\\n' >> /etc/redis/redis.conf
+# 3. the same password in .env, as the service user
+printf '\\nREDIS_PASSWORD=%s\\n' "$pw" | sudo -u danbyte tee -a @@APP@@/.env >/dev/null
+# 4. Redis, then every Danbyte unit, back to back
+systemctl restart redis-server && danbyte services restart
+# Docker: set REDIS_PASSWORD in the stack's .env, then docker compose up -d"""
+
+
+def _redis_auth_on() -> bool:
+    """Done when Danbyte sends Redis a password or reaches it over a unix
+    socket."""
+    from django.conf import settings
+
+    conf = getattr(settings, "DANBYTE_REDIS", None)
+    return bool(conf and (conf.password or conf.unix))
+
+
 def _outposts_run_discovery() -> bool:
     """Done when every Outpost a discovery profile runs on says it can run
     discovery work (or no profile runs on an Outpost)."""
@@ -504,6 +527,23 @@ def _outposts_run_discovery() -> bool:
 
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.20.0-redis-password",
+        version="0.20.0",
+        title="Optional: give Redis a password",
+        body=(
+            "Redis takes no password on this install, so any account on the host "
+            "can reach the cache, the job queue and the WebSocket layer. Danbyte "
+            "can now send one (REDIS_PASSWORD, or a unix socket) to all of them. "
+            "The upgrade changed nothing: set it in Redis and in .env, then "
+            "restart Redis and every Danbyte unit together. A job running at "
+            "that moment fails and can be re-queued; queued jobs are kept. Skip "
+            "this on a host that runs nothing else."
+        ),
+        snippet=_REDIS_AUTH,
+        docs="getting-started/hardening/#redis-authentication",
+        check=_redis_auth_on,
+    ),
     UpgradeNote(
         id="0.20.0-nginx-rate-limits",
         version="0.20.0",

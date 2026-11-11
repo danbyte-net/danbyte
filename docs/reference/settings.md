@@ -137,6 +137,57 @@ The extension is optional: no migration creates or needs it. Its cost is
 small (a few percent of CPU on a busy server); turn it off again by removing
 it from `shared_preload_libraries`.
 
+## Redis (`REDIS_URL`, `REDIS_PASSWORD`, `REDIS_SOCKET`)
+
+Redis holds the cache, the job queues and the WebSocket layer. All three -
+and every queue, `discovery` included - are built from one connection, read
+from these variables (`danbyte/redis_conf.py`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `REDIS_URL` | - | The server: `redis://host:port/db`, `rediss://…` for TLS, or `unix:///path/to/redis.sock?db=0`. May carry `user:password@`. |
+| `REDIS_SOCKET` | - | A unix socket path, instead of `REDIS_URL`. |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | The server when neither of the above is set. |
+| `REDIS_USERNAME` | - | An ACL user (Redis 6+). Without it the password is the `default` user's (`requirepass`). |
+| `REDIS_PASSWORD` | - | The password. Unset: no `AUTH`, as before. |
+| `RQ_REDIS_DB` | `0` | The database the job queues use; a second install on the same Redis picks a spare one. |
+
+**Which wins.** The server comes from `REDIS_URL`, else `REDIS_SOCKET`, else
+`REDIS_HOST`/`REDIS_PORT`. The credentials come from the URL or from
+`REDIS_USERNAME`/`REDIS_PASSWORD`; setting both is fine when they agree. The
+cache uses the URL's database, the queues `RQ_REDIS_DB`, the WebSocket layer
+database 0.
+
+**Refused at startup**, with a message that names no password: `REDIS_URL`
+together with `REDIS_SOCKET`; `REDIS_URL` and a `REDIS_HOST`/`REDIS_PORT`
+that name another server (`localhost`, `127.0.0.1` and `::1` count as one);
+`REDIS_SOCKET` with `REDIS_HOST`/`REDIS_PORT`; a URL password or user that
+differs from `REDIS_PASSWORD`/`REDIS_USERNAME`; an unknown scheme or URL
+option. Before 0.20 the cache read `REDIS_URL` while the queues and the
+WebSocket layer read `REDIS_HOST`/`REDIS_PORT`, so a split like that sent
+them to different servers.
+
+**TLS.** A `rediss://` URL verifies the server's certificate against the
+system CAs. Options in the URL: `ssl_ca_certs=/path/ca.pem` (a private CA),
+`ssl_certfile` / `ssl_keyfile` (a client certificate), `ssl_ca_path`,
+`ssl_check_hostname`, and `ssl_cert_reqs=none` to turn verification off.
+
+**Secrets.** The password never goes into a URL Danbyte builds: each
+consumer gets it as a separate setting, which Django's error reports mask,
+and messages name the server as `redis://user:***@host`. Percent-encode a
+password inside `REDIS_URL` (`@` → `%40`); `REDIS_PASSWORD` takes it as it
+is. Turning a password on: [Hardening → Redis
+authentication](../getting-started/hardening.md#redis-authentication).
+
+```ini
+# a password (requirepass)
+REDIS_PASSWORD=…
+# an ACL user over the local socket
+REDIS_URL=unix:///run/redis/redis-server.sock?db=0
+REDIS_USERNAME=danbyte
+REDIS_PASSWORD=…
+```
+
 ## CORS
 
 ```python

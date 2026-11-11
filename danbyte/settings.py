@@ -265,68 +265,40 @@ DATABASES = {
 # Keeps per-request cached values from expiring mid-test (danbyte/test_runner.py).
 TEST_RUNNER = "danbyte.test_runner.DanbyteTestRunner"
 
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            # Explicit, so a stalled Redis costs a request two seconds rather
-            # than whatever the installed client stack defaults to (#230).
-            "SOCKET_CONNECT_TIMEOUT": 2,
-            "SOCKET_TIMEOUT": 2,
-        },
-    }
-}
+# Redis: the cache, the RQ queues and the Channels layer all come from one
+# connection read from the environment (#502, danbyte/redis_conf.py):
+# REDIS_URL (redis://, rediss:// or unix://), else REDIS_SOCKET, else
+# REDIS_HOST/REDIS_PORT; credentials in the URL or REDIS_USERNAME/
+# REDIS_PASSWORD. A contradictory setup refuses to start rather than send the
+# queue to one server and the cache to another. The password never sits in a
+# URL here, only in PASSWORD/password keys that error reports mask.
+from danbyte.redis_conf import RedisConfigError as _RedisConfigError  # noqa: E402
+from danbyte.redis_conf import from_env as _redis_from_env  # noqa: E402
 
-# Channels - the channel layer for real-time presence WebSockets. Redis-backed
-# (same Redis as RQ/cache). In-memory fallback keeps tests/single-process dev
-# working even if Redis is unreachable for the layer.
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [
-                (
-                    os.getenv("REDIS_HOST", "localhost"),
-                    int(os.getenv("REDIS_PORT", "6379")),
-                )
-            ]
-        },
-    }
-}
+try:
+    DANBYTE_REDIS = _redis_from_env(os.environ)
+except _RedisConfigError as _exc:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(f"Redis: {_exc}") from None
+
+CACHES = {"default": DANBYTE_REDIS.cache()}
+
+# Channels - the channel layer for real-time presence WebSockets, on the same
+# Redis (database 0, as before).
+CHANNEL_LAYERS = {"default": DANBYTE_REDIS.channels()}
 
 # RQ queue DB - separate from 0 lets a second instance on the same Redis run
 # its own worker pool without stealing the primary's jobs (a dev clone sets
 # RQ_REDIS_DB to a spare index).
 _RQ_DB = int(os.getenv("RQ_REDIS_DB", "0"))
 RQ_QUEUES = {
-    "default": {
-        "HOST": os.getenv("REDIS_HOST", "localhost"),
-        "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": _RQ_DB,
-        "DEFAULT_TIMEOUT": "1h",
-    },
-    "high": {
-        "HOST": os.getenv("REDIS_HOST", "localhost"),
-        "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": _RQ_DB,
-        "DEFAULT_TIMEOUT": "1h",
-    },
-    "low": {
-        "HOST": os.getenv("REDIS_HOST", "localhost"),
-        "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": _RQ_DB,
-        "DEFAULT_TIMEOUT": "24h",
-    },
+    "default": DANBYTE_REDIS.rq(_RQ_DB, "1h"),
+    "high": DANBYTE_REDIS.rq(_RQ_DB, "1h"),
+    "low": DANBYTE_REDIS.rq(_RQ_DB, "24h"),
     # Discovery runs (package inventory): long, outbound, and kept off `low`
     # so they never hold up vulnerability recomputes (#451 decision 8).
-    "discovery": {
-        "HOST": os.getenv("REDIS_HOST", "localhost"),
-        "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": _RQ_DB,
-        "DEFAULT_TIMEOUT": "6h",
-    },
+    "discovery": DANBYTE_REDIS.rq(_RQ_DB, "6h"),
 }
 
 # List pagination (#447). A list request without ?page_size= gets API_PAGE_SIZE

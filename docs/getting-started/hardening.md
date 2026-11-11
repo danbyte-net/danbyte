@@ -93,6 +93,81 @@ name proxies you run: a trusted address can claim to be anyone.
 release's root steps; a site edited by hand shows the step *Rate-limit
 sign-in at nginx* with the lines, until it has `limit_req zone=danbyte_auth`.
 
+## Redis authentication
+
+The installer takes `redis-server` from the distro and leaves its
+configuration alone: Redis listens on localhost without a password, so any
+other account on the host can reach Danbyte's cache, job queue and
+WebSocket layer. On a host that runs nothing else that is the whole risk;
+on a shared host, give Redis a password or a socket only Danbyte can open.
+
+Danbyte reads one Redis setting for all of them - `REDIS_PASSWORD`
+(and `REDIS_USERNAME` for an ACL user), a `rediss://` URL or a unix socket;
+see [Settings → Redis](../reference/settings.md#redis-redis_url-redis_password-redis_socket).
+With none of them set, nothing changes.
+
+**Fresh install.** `install.sh --redis-password` gives the distro's Redis a
+random password before anything connects: it writes
+`/etc/redis/danbyte-auth.conf` (`requirepass …`, mode 640, root and the
+`redis` group), adds one `include` line at the end of
+`/etc/redis/redis.conf`, restarts Redis and puts the same password in
+`.env` as `REDIS_PASSWORD`. A `redis.conf` that already sets a password or
+ACL users is left alone and the install stops; leave the flag off and set
+`REDIS_PASSWORD` yourself. The flag is opt-in because the installer does not
+otherwise touch the distro's Redis, which other software on the host may
+share.
+
+**An existing install** keeps its Redis as it is: no upgrade turns a
+password on. To do it yourself, pick a quiet moment - **Jobs** shows nothing
+running. Queued jobs are kept (Redis saves them across its restart) and run
+once the workers are back; a job running at that moment fails and can be
+re-queued from **Jobs**.
+
+```bash
+# 1. as root: the password, in a file of its own, included at the end
+pw=$(openssl rand -hex 32)
+( umask 027; printf 'requirepass %s\n' "$pw" > /etc/redis/danbyte-auth.conf )
+chgrp redis /etc/redis/danbyte-auth.conf
+grep -qx 'include /etc/redis/danbyte-auth.conf' /etc/redis/redis.conf \
+  || printf '\ninclude /etc/redis/danbyte-auth.conf\n' >> /etc/redis/redis.conf
+
+# 2. the same password in Danbyte's .env (as the service user)
+printf '\nREDIS_PASSWORD=%s\n' "$pw" | sudo -u danbyte tee -a /opt/danbyte/danbyte/.env >/dev/null
+
+# 3. Redis, then every Danbyte unit, back to back
+systemctl restart redis-server
+danbyte services restart
+REDISCLI_AUTH="$pw" redis-cli ping     # PONG; without the password: NOAUTH
+```
+
+Between steps 3's two restarts the running units cannot reach Redis for a
+few seconds: requests fall back to the database, workers reconnect once
+restarted. Anything else on the host that uses this Redis needs the
+password too. Undo: remove the `include` line, `systemctl restart
+redis-server`, delete `REDIS_PASSWORD` from `.env`, restart the units.
+
+**A unix socket instead.** In `/etc/redis/redis.conf` set
+`unixsocket /run/redis/redis-server.sock` and `unixsocketperm 770`, add the
+service user to the `redis` group (`usermod -aG redis danbyte`), restart its
+user manager so the group applies (`systemctl restart user@$(id -u
+danbyte).service`, or reboot), then point `.env` at the socket and restart
+the units:
+
+```ini
+REDIS_URL=unix:///run/redis/redis-server.sock?db=0
+```
+
+`port 0` in `redis.conf` then closes TCP altogether. A password and a
+socket can be combined.
+
+**Docker.** Set `REDIS_PASSWORD` in the stack's `.env` and run
+`docker compose -f docker-compose.prod.yml up -d`: the redis service starts
+with `--requirepass` and every Python service gets the same variable. Empty
+(the default) is no password, as before.
+
+Sandboxed [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do)
+reach neither Redis's port nor any unix socket, password or not.
+
 ## Planned
 
 Not done yet; tracked for a later release:

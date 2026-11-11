@@ -221,6 +221,7 @@ commented list). The essentials:
 | `DJANGO_SECRET_KEY` | Django secret; unique per deployment. |
 | `MONITORING_SECRET_KEY` | Encrypts stored credentials; **required** with `DEBUG=False`. Never just replace it once secrets are stored - [rotate it](../reference/settings.md#rotating-the-monitoring-key) (comma-separated list, newest first). |
 | `DB_PASSWORD` | Postgres password (db + app). |
+| `REDIS_PASSWORD` | Optional. Set, the `redis` service starts with `--requirepass` and every Python service sends it; empty (default), no password. See [Hardening](hardening.md#redis-authentication). |
 | `ALLOWED_HOSTS` | Hosts/IPs served (no scheme/port). |
 | `CSRF_TRUSTED_ORIGINS` | Origins allowed to POST (scheme + host [+ port]). |
 | `DANBYTE_HTTPS` | `True` when TLS terminates in front - enables secure cookies + HSTS. |

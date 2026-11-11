@@ -93,6 +93,7 @@ The other tabs cover building from source and a local dev checkout.
         | `--host-only` | On a host that runs Danbyte: only the root steps an upgrade ends with (logrotate, nginx + TLS, the certificate unit), from the bundle of the release that runs, with no upgrade stage. It changes no code, so a git checkout takes it too. | off |
         | `--adopt` | On a re-run or with `--host-only`: replace a Danbyte nginx site edited by hand with the new render, keeping a backup. Without it the new render lands beside the site as `danbyte.conf.new`. | off |
         | `--without-bubblewrap` | Don't install `bubblewrap`. By default the installer installs it and checks it works for the service user: DWG [floor-plan drawings](#dwg-converter) are converted only inside it, and sandboxed [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do) run in their own namespaces with it. Without it DWG is refused and scripts run under Landlock alone. On a re-run that adds bubblewrap, scripts stay on Landlock (`DANBYTE_SCRIPT_SANDBOX=landlock` goes into `.env`) unless `.env` already sets a script sandbox. `--with-script-sandbox` is still accepted and changes nothing. | installs |
+        | `--redis-password` | Fresh installs only: give the distro's Redis a random password (`/etc/redis/danbyte-auth.conf`, included from `redis.conf`) and put it in `.env` as `REDIS_PASSWORD`. Refused on a host that already runs Danbyte, and when `redis.conf` already sets a password or ACL users. See [Hardening](hardening.md#redis-authentication). | off |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
         **Environment variables** (set before the command; alternative to flags)
@@ -483,7 +484,7 @@ Any of these can change later without a reinstall:
 - [ ] Admin password changed after first login; `DJANGO_SUPERUSER_PASSWORD` removed from `.env`.
 - [ ] Runs as the dedicated non-login `danbyte` user, with linger enabled.
 - [ ] `.env` is `chmod 600`, owned by `danbyte`, never committed.
-- [ ] Postgres / Redis bound to localhost (or firewalled).
+- [ ] Postgres / Redis bound to localhost (or firewalled); on a shared host, Redis behind a password or socket (`--redis-password`).
 
 The nginx site's TLS settings and what else narrows the attack surface:
 [Hardening](hardening.md).
@@ -493,6 +494,8 @@ The nginx site's TLS settings and what else narrows the attack surface:
 | Variable | Default | Purpose |
 |---|---|---|
 | `DB_HOST` / `DB_PORT` | `127.0.0.1` / `5432` | PostgreSQL host / port |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis for the cache, queues and WebSockets; `rediss://` or `unix://` too ([details](../reference/settings.md#redis-redis_url-redis_password-redis_socket)) |
+| `REDIS_PASSWORD` / `REDIS_USERNAME` | - | Redis credentials, sent by every consumer |
 | `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `danbyte` | Database name / role / password |
 | `DB_CONN_MAX_AGE` | `60` | Seconds a gunicorn worker keeps its database connection ([sizing](../reference/settings.md#persistent-connections)); `0` opens one per request |
 | `DB_JIT` | `off` | `off` turns PostgreSQL JIT off for Danbyte's sessions; `on` keeps the server's setting ([why](../reference/settings.md#database-postgres-only)) |

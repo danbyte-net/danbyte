@@ -346,6 +346,27 @@ class RealNotesTests(APITestCase):
         with patch("core.upgrade_notes._site_config", return_value=None):
             self.assertFalse(un._rate_limited())
 
+    def test_the_redis_step_hides_once_danbyte_authenticates(self):
+        # #502: opt-in, so it is only a step; an install that sends a
+        # password or uses the socket no longer sees it.
+        from django.conf import settings
+        from django.test import override_settings
+
+        from danbyte.redis_conf import from_env
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-redis-password")
+        self.assertFalse(note.host)
+        self.assertEqual(set(note.platforms), set(un.PLATFORMS))
+        snippet = note.as_dict()["snippet"]
+        self.assertIn(f"{settings.BASE_DIR}/.env", snippet)
+        self.assertNotIn("@@", snippet)
+        # the step's order: Redis first, then every unit, back to back
+        self.assertIn("systemctl restart redis-server && danbyte services restart", snippet)
+        for env, done in (({}, False), ({"REDIS_PASSWORD": "x"}, True),
+                          ({"REDIS_SOCKET": "/run/redis/redis-server.sock"}, True)):
+            with self.subTest(env=env), override_settings(DANBYTE_REDIS=from_env(env)):
+                self.assertEqual(un._redis_auth_on(), done)
+
     def test_the_certificate_unit_alone_comes_from_the_bundle_too(self):
         # The root steps leave the unit out on an install without nginx;
         # make in the same bundle installs it for this install's directory.

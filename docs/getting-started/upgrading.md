@@ -558,6 +558,14 @@ The step *Rate-limit sign-in at nginx* stays up until the site has
 `limit_req zone=danbyte_auth`. Behind another proxy, add the `real_ip`
 lines that page shows, or every client shares the proxy's budget.
 
+Redis can now take a password (`REDIS_PASSWORD`) or a unix socket, sent by
+the cache, every queue and the WebSocket layer alike. An upgrade never turns
+it on: the step *Optional: give Redis a password* gives the order to do it in
+([Hardening → Redis authentication](hardening.md#redis-authentication)). A
+`.env` whose `REDIS_URL` and `REDIS_HOST`/`REDIS_PORT` name different
+servers now stops Danbyte from starting with a message saying so; the
+installer writes `REDIS_URL` alone, which is never affected.
+
 !!! warning "Root runs only files root owns"
     The app directory belongs to the service account. A script or template
     changed there would run as root, or become root's configuration, so no
