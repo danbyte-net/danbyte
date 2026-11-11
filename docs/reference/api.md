@@ -192,7 +192,12 @@ X-Danbyte-Unknown-Params: device_id
 Warning: 299 - "Unknown query parameters ignored: device_id"
 ```
 
-and the rows are the same as without the parameter. A list knows the
+and the rows are the same as without the parameter. Names are
+percent-encoded (`%0D%0A` for a CR/LF). The headers stay small whatever the
+request holds: each name is cut at 64 bytes, ending in an encoded `…`
+(`%E2%80%A6`), each header value stays within 512 bytes and lists at most 20
+names, and the rest are counted as `+N more`. Strict mode's `400` lists every
+name in full. A list knows the
 parameters its filters, sorting, facets, search and paging read on that
 request, plus `page`, `page_size`, `format`, `strict` and the `_`
 cache-buster on every list. A parameter that only counts with another one

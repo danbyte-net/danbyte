@@ -45,6 +45,14 @@ GLOBAL_QUERY_PARAMS = frozenset({"page", "page_size", "format", "strict", "_"})
 UNKNOWN_HEADER = "X-Danbyte-Unknown-Params"
 STRICT_HEADER = "HTTP_X_DANBYTE_STRICT"
 _MAX_HEADER_NAMES = 20
+# Bytes, after encoding: one name, and the whole value of either header (the
+# Warning adds its wrapper). Two large headers outgrew nginx's default
+# proxy_buffer_size and the request became a 502 (#503).
+_MAX_NAME_BYTES = 64
+_MAX_HEADER_BYTES = 512
+_SAFE = "-_.~[]:"
+_CUT = quote("…")  # a cut name ends in an encoded "…"
+_WARNING = '299 - "Unknown query parameters ignored: {}"'
 _TRUE = ("1", "true", "yes", "on")
 _FALSE = ("0", "false", "no", "off")
 
@@ -179,10 +187,41 @@ def hint_for(name: str, candidates) -> str | None:
     return match[0] if match else None
 
 
+def _quote(text: str) -> str:
+    return quote(text, safe=_SAFE, errors="replace")
+
+
+def _header_name(name: str) -> str:
+    """``name`` percent-encoded (ASCII, no CR/LF), at most _MAX_NAME_BYTES;
+    a longer one is cut on a character and ends in an encoded "…"."""
+    enc = _quote(name)
+    if len(enc) <= _MAX_NAME_BYTES:
+        return enc
+    out, room = [], _MAX_NAME_BYTES - len(_CUT)
+    for ch in name:
+        piece = _quote(ch)
+        if len(piece) > room:
+            break
+        out.append(piece)
+        room -= len(piece)
+    return "".join(out) + _CUT
+
+
 def _header_value(names) -> str:
-    shown = [quote(n, safe="-_.~[]:") for n in names[:_MAX_HEADER_NAMES]]
-    if len(names) > _MAX_HEADER_NAMES:
-        shown.append("...")
+    """The names for the headers: at most _MAX_HEADER_NAMES of them, and
+    short enough that the Warning stays within _MAX_HEADER_BYTES, then
+    "+N more" for the rest. The strict-mode 400 lists them all."""
+    budget = _MAX_HEADER_BYTES - len(_WARNING.format(""))
+    shown: list[str] = []
+    for i, name in enumerate(names[:_MAX_HEADER_NAMES]):
+        enc = _header_name(name)
+        rest = len(names) - i - 1
+        tail = len(f", +{rest} more") if rest else 0
+        if len(", ".join([*shown, enc])) + tail > budget:
+            break
+        shown.append(enc)
+    if len(shown) < len(names):
+        shown.append(f"+{len(names) - len(shown)} more")
     return ", ".join(shown)
 
 
@@ -207,5 +246,5 @@ def check_response(request, response, view_cls, tracked: TrackedQueryDict, origi
         )
     value = _header_value(unknown)
     response[UNKNOWN_HEADER] = value
-    response["Warning"] = f'299 - "Unknown query parameters ignored: {value}"'
+    response["Warning"] = _WARNING.format(value)
     return response

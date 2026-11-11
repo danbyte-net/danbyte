@@ -107,6 +107,26 @@ class UnknownParamTests(_Base):
         r = self.client.get("/api/ips/?a%22b%0d=1")
         self.assertEqual(r[HEADER], "a%22b%0D")
 
+    def test_long_names_keep_both_headers_small(self):
+        """#503: ~1.8 KB of names outgrew nginx's proxy buffer (a 502)."""
+        long_one = "x" * 1800
+        many = "&".join(f"filter_{i:02d}_{'z' * 90}=1" for i in range(20))
+        for query in (f"{long_one}=1", many, f"%C3%A6%0D%0A{'y' * 900}=1"):
+            r = self.client.get(f"/api/devices/?{query}")
+            self.assertEqual(r.status_code, 200)
+            for name in (HEADER, "Warning"):
+                self.assertLessEqual(len(r[name].encode("ascii")), 512, name)
+                self.assertNotIn("\n", r[name])
+        r = self.client.get(f"/api/devices/?{many}")
+        self.assertRegex(r[HEADER], r"\+\d+ more$")
+
+    def test_strict_mode_lists_every_long_name(self):
+        names = [f"filter_{i:02d}_{'z' * 90}" for i in range(20)]
+        r = self.client.get("/api/devices/?" + "&".join(f"{n}=1" for n in names)
+                            + "&strict=1")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["unknown"], names)
+
     def test_known_params_raise_no_header(self):
         cases = [
             f"/api/devices/?page=1&page_size=5&search=r&format=json&_=1&site={self.r1.site_id}",
