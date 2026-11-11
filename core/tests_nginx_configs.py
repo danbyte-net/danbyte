@@ -276,6 +276,13 @@ class ConfigTextTests(SimpleTestCase):
         for path in (TEMPLATES[0], DOCKER):
             self.assertNotIn("limit_req", path.read_text())
 
+    def test_upstream_headers_get_a_little_room(self):
+        # #503: 8k for an upstream's headers, set once for the server and
+        # within what the default proxy_buffers allow (nginx -t checks that).
+        level = _server_level(TEMPLATES[1].read_text())
+        self.assertEqual(re.findall(r"proxy_buffer_size\s+(\S+);", level), ["8k"])
+        self.assertNotIn("proxy_buffers ", TEMPLATES[1].read_text())
+
     def test_tls_is_mozilla_intermediate(self):
         # #497: every TLS server says which protocols and suites it takes,
         # rather than leaving it to the distro's nginx.conf: TLS 1.2 and 1.3,

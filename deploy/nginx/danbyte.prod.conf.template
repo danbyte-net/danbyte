@@ -137,6 +137,10 @@ server {
     proxy_hide_header Cross-Origin-Opener-Policy;
 
     client_max_body_size 512m;
+    # Room for an upstream's response headers: 8k, twice the default page.
+    # A larger header block from Django answered 502 (#503); Django keeps
+    # its own headers short, this is the margin.
+    proxy_buffer_size 8k;
 
     # ── The frontend's hashed build files, straight from disk (#485). The
     #    build writes a .gz beside each (scripts/precompress.mjs), sent as it
