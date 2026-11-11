@@ -22,6 +22,7 @@ import {
   engineLabel,
 } from "@/components/discovery/status"
 import { InfoTip } from "@/components/ui/info-tip"
+import { PackageCveBadge } from "@/components/vulnerabilities/badges"
 
 // Built-in discovery (#451 B2): the one column factory per discovery table -
 // inventory profiles, runs, a run's hosts, a profile's scope hosts, host
@@ -770,7 +771,18 @@ export function buildPendingHostKeyColumns(): ColumnDef<
   ]
 }
 
-export function buildHostPackageColumns(): ColumnDef<HostPackage, unknown>[] {
+const SEVERITY_SORT: Record<string, number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  none: 1,
+}
+
+export function buildHostPackageColumns(
+  opts: { host?: { kind: "device" | "virtual_machine"; id: string } } = {}
+): ColumnDef<HostPackage, unknown>[] {
+  const host = opts.host
   return [
     {
       id: "name",
@@ -791,6 +803,58 @@ export function buildHostPackageColumns(): ColumnDef<HostPackage, unknown>[] {
         </span>
       ),
       meta: { label: "Version" },
+    },
+    {
+      id: "application",
+      accessorFn: (p) => p.application?.name ?? "",
+      header: ({ column }) => (
+        <SortHeader column={column} label="Application" />
+      ),
+      cell: ({ row }) => {
+        const app = row.original.application
+        if (!app) return dash
+        return (
+          <Link
+            to="/applications/$id"
+            params={{ id: app.id }}
+            className="link text-sm whitespace-nowrap"
+          >
+            {app.name}
+          </Link>
+        )
+      },
+      meta: {
+        label: "Application",
+        facet: {
+          kind: "enum",
+          label: "Application",
+          get: (p: HostPackage) => p.application?.name ?? "none",
+          formatValue: (v) => ({ label: v === "none" ? "None" : v }),
+          hideWhenSingle: true,
+        },
+      },
+    },
+    {
+      id: "cves",
+      accessorFn: (p) =>
+        p.cves?.count
+          ? (SEVERITY_SORT[p.cves.severity] ?? 0) * 100000 + p.cves.count
+          : 0,
+      header: ({ column }) => <SortHeader column={column} label="CVEs" />,
+      cell: ({ row }) =>
+        host ? (
+          <PackageCveBadge
+            cves={row.original.cves}
+            kind={host.kind}
+            id={host.id}
+            packageId={row.original.id}
+          />
+        ) : row.original.cves?.count ? (
+          <span className="num text-sm">{row.original.cves.count}</span>
+        ) : (
+          dash
+        ),
+      meta: { label: "CVEs" },
     },
     {
       id: "publisher",

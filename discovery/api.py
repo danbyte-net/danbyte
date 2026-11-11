@@ -946,7 +946,13 @@ class InventoryRunViewSet(viewsets.ViewSet):
     @extend_schema(summary="One discovery run", tags=["discovery"],
                    responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
     def retrieve(self, request, pk=None):
-        return Response(run_dict(self._get(request, pk)))
+        """One run; ``advisories`` says whether the vulnerability store has
+        advisory data for the packages it brought (``discovery.advisories``),
+        null when that does not apply."""
+        from .advisories import run_state
+
+        r = self._get(request, pk)
+        return Response({**run_dict(r), "advisories": run_state(r, request)})
 
     @extend_schema(summary="Per-host results of a run", tags=["discovery"],
                    responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
@@ -1153,6 +1159,66 @@ def os_dict(f: HostOsFact | None) -> dict | None:
             "transport": f.transport, "collected_at": f.collected_at}
 
 
+_SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "none": 0, "": -1}
+
+
+class _PackageLinks:
+    """Per page of a host's packages: the application each one is
+    (``Application.package_names``) and its open vulnerability matches - two
+    queries per page whatever its size (the tenant's applications that name
+    packages, the page's open matches grouped by package and severity)."""
+
+    def __init__(self, request, tenant, kind, host):
+        from vulnerabilities.models import VulnerabilitySettings
+
+        self.request, self.tenant, self.kind, self.host = request, tenant, kind, host
+        self.vulns_on = VulnerabilitySettings.objects.filter(pk=1, enabled=True).exists()
+        user = request.user
+        self.apps_visible = user.is_superuser or rbac.has_action(user, tenant, "application",
+                                                                 "view")
+        self.matcher = None
+        self.apps: dict = {}
+        self.cves: dict = {}
+
+    def load(self, page) -> None:
+        from django.db.models import Count
+
+        from api.models import Application
+        from api.package_names import matcher_for
+
+        if self.apps_visible and self.matcher is None:
+            self.matcher = matcher_for(self.tenant)
+            if self.matcher:
+                self.apps = {a.pk: a for a in Application.objects.filter(
+                    tenant=self.tenant, pk__in=list(self.matcher.app_ids)).only("pk", "name")}
+        self.cves = {}
+        if not self.vulns_on or not page:
+            return
+        from vulnerabilities.models import VulnerabilityMatch
+
+        for pkg, severity, n in VulnerabilityMatch.objects.filter(
+                tenant=self.tenant, resolved_at__isnull=True, excepted__isnull=True,
+                host_package_id__in=[p.pk for p in page], **{self.kind: self.host}).values_list(
+                "host_package_id", "cve__cvss_severity").annotate(n=Count("pk")).order_by():
+            have = self.cves.setdefault(pkg, {"count": 0, "severity": ""})
+            have["count"] += n
+            if _SEVERITY_RANK.get(severity or "", -1) > _SEVERITY_RANK.get(have["severity"], -1):
+                have["severity"] = severity or ""
+
+    def row(self, p) -> dict:
+        app = None
+        if self.matcher:
+            hits = sorted(self.matcher.match(p.purl_type, p.name), key=lambda h: h[1])
+            for app_id, _rank in hits:
+                a = self.apps.get(app_id)
+                if a is not None:
+                    app = {"id": str(a.pk), "name": a.name}
+                    break
+        cves = self.cves.get(p.pk) if self.vulns_on else None
+        return {"application": app,
+                "cves": (cves or {"count": 0, "severity": ""}) if self.vulns_on else None}
+
+
 def host_packages(request, kind: str, pk):
     tenant = gate.require(request)
     model, slug = _HOSTS[kind]
@@ -1170,18 +1236,26 @@ def host_packages(request, kind: str, pk):
         rows = rows.filter(Q(name__icontains=q) | Q(source_name__icontains=q)
                            | Q(publisher__icontains=q))
     fact = HostOsFact.objects.filter(**{kind: host}).first()
+    links = _PackageLinks(request, tenant, kind, host)
 
     def page_rows(page):
+        page = list(page)
+        links.load(page)
         return [{
             "id": str(p.pk), "name": p.name, "version": p.version, "arch": p.arch,
             "source_name": p.source_name, "source_version": p.source_version,
             "type": p.purl_type, "ecosystem": p.ecosystem, "purl": p.purl,
             "publisher": p.publisher,
             "first_seen": p.first_seen, "last_seen": p.last_seen,
+            **links.row(p),
         } for p in page]
 
     response = _paginate(request, rows.order_by("name", "arch", "pk"), page_rows)
     response.data["os"] = os_dict(fact)
+    from .advisories import host_state
+
+    # Whether the store holds advisory data for these packages yet.
+    response.data["advisories"] = host_state(tenant, kind, host, request)
     from vulnerabilities.matching import os_build_summary
 
     # Windows: the Microsoft product it matches as and its open OS-build CVEs.

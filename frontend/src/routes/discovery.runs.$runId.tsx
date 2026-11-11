@@ -25,6 +25,7 @@ import {
   isRunActive,
   RunStatusBadge,
 } from "@/components/discovery/status"
+import { AdvisoryNote } from "@/components/discovery/advisory-note"
 
 // One discovery run (#451 B2): what it did, then a row per host it
 // considered - read, refused, or left alone and why - and the host keys
@@ -217,6 +218,7 @@ function Summary({
           Review host keys
         </button>
       )}
+      <AdvisoryNote value={r.advisories} />
     </div>
   )
 }

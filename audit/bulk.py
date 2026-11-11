@@ -20,16 +20,18 @@ from __future__ import annotations
 
 from .context import current_cause, current_request_id, current_user
 from .models import ChangeAction, ChangeLogEntry
-from .signals import _diff, _ser
+from .signals import _actor, _diff, _ser
 
 
 def _entry(instance, action, changes, user, rid):
     from .site_capture import entry_site_id
 
+    # An Outpost acting through its token is no Django user: named, no FK.
+    actor, actor_name = _actor(user)
     return ChangeLogEntry(
         tenant_id=getattr(instance, "tenant_id", None),
-        user=user,
-        user_name=(user.get_username() if user else ""),
+        user=actor,
+        user_name=actor_name,
         action=action,
         object_type=instance._meta.label_lower,
         object_label=instance._meta.verbose_name.title(),

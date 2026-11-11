@@ -149,6 +149,54 @@ export function HostVulnBadge({
   )
 }
 
+/**
+ * A package's open CVEs on one host (#451): the count on the worst
+ * severity's badge, linked to the host's Vulnerabilities tab narrowed to the
+ * package (`?vpackage=`). A dash with none.
+ */
+export function PackageCveBadge({
+  cves,
+  kind,
+  id,
+  packageId,
+}: {
+  cves: { count: number; severity: VulnSeverity } | null | undefined
+  kind: "device" | "virtual_machine"
+  id: string
+  packageId: string
+}) {
+  if (!cves || cves.count === 0) return dash
+  const variant = cves.severity ? SEVERITY_VARIANT[cves.severity] : "outline"
+  const search = { tab: "vulnerabilities", vpackage: packageId } as never
+  const label = `${cves.count}`
+  const name = cves.severity
+    ? `${cves.count} open, worst ${SEVERITY_LABELS[cves.severity]}`
+    : `${cves.count} open`
+  return (
+    <Badge variant={variant} className="num" asChild>
+      {kind === "device" ? (
+        <Link
+          to="/devices/$id"
+          params={{ id }}
+          search={search}
+          aria-label={name}
+        >
+          {label}
+        </Link>
+      ) : (
+        <Link
+          to="/virtual-machines/$id"
+          params={{ id }}
+          search={search}
+          aria-label={name}
+        >
+          {label}
+        </Link>
+      )}
+    </Badge>
+  )
+}
+
 /** "KEV" when CISA lists the record as exploited; the dates on hover. */
 export function KevBadge({
   added,

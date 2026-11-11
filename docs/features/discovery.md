@@ -462,7 +462,9 @@ that are an application you track do become installs - see
 
 ## What a read feeds
 
-A read does more than replace the package list.
+A read does more than replace the package list - the same on the server and
+when an Outpost reports it ([on an Outpost](#on-an-outpost)): once
+the read hosts are stored, each of the steps below runs for them.
 
 ### The running version
 

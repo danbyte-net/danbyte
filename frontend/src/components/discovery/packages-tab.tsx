@@ -17,6 +17,7 @@ import {
 } from "@/components/discovery/status"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Badge } from "@/components/ui/badge"
+import { AdvisoryNote } from "@/components/discovery/advisory-note"
 
 // The Packages tab on a device or VM (#451 B2): what discovery's last full
 // read found installed. Shown only while Discovery is on and something has
@@ -100,7 +101,10 @@ export function PackagesTab({ kind, id }: { kind: PackageHost; id: string }) {
     queryKey: ["host-packages", kind, id, "head"],
     queryFn: () => api<HostPackagePage>(packagesUrl(kind, id, 1)),
   })
-  const columns = useMemo(() => buildHostPackageColumns(), [])
+  const columns = useMemo(
+    () => buildHostPackageColumns({ host: { kind, id } }),
+    [kind, id]
+  )
   const rows = useMemo(() => q.data?.results ?? [], [q.data])
   const {
     rail,
@@ -159,6 +163,8 @@ export function PackagesTab({ kind, id }: { kind: PackageHost; id: string }) {
             <OsBuildNote value={head.data?.os_build} />
           </p>
         )}
+        <AdvisoryNote value={head.data?.advisories} />
+
         <DataTable
           tableId={TABLE_ID[kind]}
           data={filteredRows}

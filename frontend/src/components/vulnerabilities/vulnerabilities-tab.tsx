@@ -70,6 +70,8 @@ export const VULN_TAB_PARAMS = [
   "confidence",
   "via",
   "excepted",
+  // One inventoried package's matches (the Packages tab's CVEs badge).
+  "vpackage",
 ] as const
 
 /** Keep the tab's filter params through a route's `validateSearch`. */
@@ -108,13 +110,17 @@ export function VulnerabilitiesTab({
   })
   const [statusParam, setStatusParam] = useUrlSet("vstatus")
   const status = useMemo(() => effectiveStatus(statusParam), [statusParam])
+  const [pkgParam, setPkgParam] = useUrlSet("vpackage")
   const all = q.data?.results
   const rows = useMemo(
     () =>
-      (all ?? []).filter((r) =>
-        status.has(r.resolved_at ? "resolved" : "open")
+      (all ?? []).filter(
+        (r) =>
+          status.has(r.resolved_at ? "resolved" : "open") &&
+          (pkgParam.size === 0 ||
+            (!!r.host_package && pkgParam.has(r.host_package.id)))
       ),
-    [all, status]
+    [all, status, pkgParam]
   )
   const { canAdd } = useExceptionPerms()
   const [selected, setSelected] = useState<VulnMatch[]>([])
@@ -155,6 +161,36 @@ export function VulnerabilitiesTab({
     return c
   }, [all])
 
+  // The package narrowing, while one is in the URL: untick to see all.
+  const packageNames = useMemo(() => {
+    const m = new Map<string, { name: string; count: number }>()
+    for (const r of all ?? []) {
+      const p = r.host_package
+      if (!p || !pkgParam.has(p.id)) continue
+      const have = m.get(p.id) ?? { name: p.name, count: 0 }
+      have.count++
+      m.set(p.id, have)
+    }
+    return m
+  }, [all, pkgParam])
+  const packageFacet =
+    pkgParam.size > 0 ? (
+      <FacetGroup
+        label="Package"
+        facetId="vpackage"
+        options={[...pkgParam].map((v) => ({
+          value: v,
+          label: packageNames.get(v)?.name ?? "Package",
+          count: packageNames.get(v)?.count ?? 0,
+        }))}
+        selected={pkgParam}
+        onToggle={(v) => {
+          const next = new Set<string>(pkgParam)
+          next.delete(v)
+          setPkgParam(next)
+        }}
+      />
+    ) : null
   const statusFacet = (
     <FacetGroup
       label="Status"
@@ -178,7 +214,14 @@ export function VulnerabilitiesTab({
     rail,
     columns: wired,
     filteredRows,
-  } = useUrlTableFilters(columns, rows, { railExtras: statusFacet })
+  } = useUrlTableFilters(columns, rows, {
+    railExtras: (
+      <>
+        {statusFacet}
+        {packageFacet}
+      </>
+    ),
+  })
 
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />

@@ -56,7 +56,11 @@ export const FINDING_KIND_LABELS: Record<FindingKind, string> = {
 }
 
 /** From the package inventory, not a service scan (#451). */
-const INVENTORY_KINDS = new Set<FindingKind>(["platform", "application", "link"])
+const INVENTORY_KINDS = new Set<FindingKind>([
+  "platform",
+  "application",
+  "link",
+])
 
 function labelOf<T extends string>(labels: Record<T, string>, v: string) {
   return Object.hasOwn(labels, v) ? labels[v as T] : v
