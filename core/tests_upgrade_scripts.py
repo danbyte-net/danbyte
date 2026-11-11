@@ -342,6 +342,8 @@ class Host:
             shutil.copy2(REPO / "scripts" / name, dest / "scripts" / name)
         for name in STAGE_FILES:
             shutil.copy2(REPO / "scripts" / "upgrade" / name, dest / "scripts" / "upgrade" / name)
+        (dest / "backups").mkdir(exist_ok=True)
+        shutil.copy2(REPO / "backups" / "pgswap.py", dest / "backups" / "pgswap.py")
         (dest / ".gitignore").write_text(textwrap.dedent("""\
             .venv/
             vendor/
@@ -787,6 +789,11 @@ class BundleStageTests(StageTestCase):
         self.assertIn("danbyte-admin upgrade recover", st["error"])
         for unit in PROD_UNITS:
             self.assertEqual(h.state(f"{unit}.service"), ("disabled", "inactive"), unit)
+        # The retry restores with the target release's restore code.
+        recover = h.home / ".danbyte-upgrade" / "recover"
+        self.assertEqual((recover / "pgswap.py").read_text(),
+                         (REPO / "backups" / "pgswap.py").read_text())
+        self.assertTrue(h.called(rf"^py dbtool restore {re.escape(str(h.home))}/.danbyte-upgrade/"))
         # The journal and the recovery stay for the operator.
         self.assertTrue((h.home / ".danbyte-upgrade" / "active").exists())
         self.assertFalse(h.recover().returncode)          # the timer waits for a person

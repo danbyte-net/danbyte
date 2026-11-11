@@ -552,6 +552,10 @@ http_code() {  # <url> [curl args...]: "000" when nothing answers
 install_recover() {
   mkdir -p "$UPG_ROOT/recover" "$SYSTEMD_DIR" || return 1
   cp -p "$HERE/lib.sh" "$HERE/recover.sh" "$HERE/dbtool.py" "$UPG_ROOT/recover/" || return 1
+  # The database restore of this release, used whatever release is on disk.
+  if [ -f "$HERE/../../backups/pgswap.py" ]; then
+    cp -p "$HERE/../../backups/pgswap.py" "$UPG_ROOT/recover/" || return 1
+  fi
   _before=""
   for _u in $UNITS_WEB $UNITS_WORK; do _before="$_before $_u.service"; done
   cat >"$SYSTEMD_DIR/danbyte-upgrade-recover.service" <<EOF

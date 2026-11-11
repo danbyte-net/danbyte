@@ -393,6 +393,29 @@ stopped (the maintenance page shows), the digest recipients get a mail, and
 `danbyte-admin upgrade recover` retries it; the pre-upgrade backup is the
 last resort.
 
+### How the database is restored
+
+The restore runs with the code of the release being upgraded *to*, whatever
+release is on disk after the rollback, and needs no change to
+`postgresql.conf`. Dropping a schema of Danbyte's size in one statement needs
+a lock on every table, index and sequence at once (some 3000), more than a
+stock server's lock table holds (`out of shared memory`, *increase
+max_locks_per_transaction*); restores before 0.20 failed that way. So:
+
+1. Every live object moves, one statement at a time, from `public` into a
+   schema named `danbyte_pre_restore`. The extensions' objects (pg_trgm,
+   unaccent) stay where they are.
+2. `pg_restore` loads the snapshot into `public`, one object per
+   transaction. Every table, sequence and index the snapshot lists must then
+   be there.
+3. Only then is `danbyte_pre_restore` dropped, a table per statement.
+
+If step 2 fails, or a table is missing, what was restored is dropped and the
+live objects move back: the database is exactly as the failed upgrade left
+it, never half restored. A restore that was killed part-way is put back by
+the next attempt before it starts. Other sessions on the database are ended
+first (the upgrade has stopped every service already).
+
 Downtime is the time from *quiesce* to *resume*: a dump of the database when
 migrations are pending, the migrations, and the checks - the frontend build
 and the dependency download happen before it.

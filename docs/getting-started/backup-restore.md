@@ -216,8 +216,13 @@ Then, in the worker, in order:
    restore-status endpoint stay open, and the 503s are not logged as
    errors. The running restore's status is answered from Redis, so the
    dialog keeps showing progress even while the database has no tables.
-4. Terminate the other database sessions, drop and recreate the `public`
-   schema, `pg_restore` the dump and run `migrate` forward.
+4. Terminate the other database sessions, move the live objects aside,
+   `pg_restore` the dump, check every table, sequence and index of the dump
+   is there, drop the old objects, and run `migrate` forward. A failed or
+   incomplete `pg_restore` moves the live objects back, so the database is
+   as it was ([how](upgrading.md#how-the-database-is-restored); it works on
+   a stock PostgreSQL, where dropping the whole schema at once ran out of
+   locks).
 5. **Reconcile**: the restored database predates the restore, so the rows
    describing it - the target, the archive, the *Before restore* backup and
    the run itself - are written back, and every other archive on the target
@@ -232,8 +237,8 @@ Nothing restarts. Django holds no schema state between requests, so the
 site is live again the moment the flag drops; the dialog offers **Reload**.
 Logged-in sessions survive because `DJANGO_SECRET_KEY` does not change.
 
-If a step fails after the schema was dropped, the run is marked failed with
-the step and error, the maintenance flag is cleared, and the *Before
+If a step fails after the database was replaced (the migrations, the
+reconcile, the media), the run is marked failed with the step and error, the maintenance flag is cleared, and the *Before
 restore* backup is right there in the list to restore from.
 
 ### Moving to a new host
