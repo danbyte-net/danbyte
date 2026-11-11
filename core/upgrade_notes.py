@@ -379,8 +379,37 @@ def _no_kept_access_grant() -> bool:
     return True
 
 
+#: Migration api 0265 marks this note done when the fixed version ran here
+#: (#501); a test pins the two ids.
+PREFIX_CLEANUP_NOTE = "0.19.2-prefix-cleanup"
+
+_PREFIX_LOSS = """\
+# as the service user, in the app directory (Docker: docker compose exec backend python manage.py …):
+.venv/bin/python manage.py prefix_loss_report --backup <id of the backup taken before the 0.19 upgrade>
+# a pg_dump -Fc file of your own instead:
+.venv/bin/python manage.py prefix_loss_report --dump /path/to/danbyte.dump"""
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id=PREFIX_CLEANUP_NOTE,
+        version="0.19.2",
+        title="Check whether the 0.19 upgrade deleted prefixes",
+        body=(
+            "The upgrade to 0.19.0 or 0.19.1 deleted every prefix whose CIDR was "
+            "not an address (a space, a netmask such as /255.255.255.0, or other "
+            "text), and every IP address in those prefixes. Its log said only: "
+            "deleted N prefix(es) whose cidr is not an address. Most installs had "
+            "none. If yours did, or the log is gone, compare the backup taken "
+            "before that upgrade with this one; the command changes nothing. "
+            "Protect that backup first: only the newest pre-upgrade backups are "
+            "kept. To get the rows back, restore it (that loses what changed "
+            "since) or re-create them from the listing."
+        ),
+        snippet=_PREFIX_LOSS,
+        docs="getting-started/upgrading/#prefixes-the-019-upgrade-deleted",
+    ),
     UpgradeNote(
         id="0.19.0-nginx-assets",
         version="0.19.0",

@@ -111,11 +111,38 @@ bare `cidr::inet` cast - `network(cidr::inet)` or `cidr::cidr` does not
 match the index.
 
 Because the index casts every row, a `cidr` that is not an address can't
-be stored. CIDR validation has refused those since #47, but very old
-installs can still hold such rows. On upgrade to 0.19, migration
-`api.0265_drop_unparseable_prefixes` runs before the index is built. It
-deletes every prefix Postgres can't read as `inet` and logs each one
-(id, value, tenant) to the upgrade log as a `danbyte.migrations` warning.
+be stored. CIDR validation has refused those since #47, but older installs
+and imports can still hold such rows. Migration
+`api.0265_drop_unparseable_prefixes` runs before the index is built and
+never deletes a prefix:
+
+- A value the prefix API accepts today is rewritten to what the API would
+  store: `10.0.60.0/24 ` (a space) becomes `10.0.60.0/24`, and
+  `10.0.20.0/255.255.255.0` becomes `10.0.20.0/24`. Each rewrite is logged
+  (old -> new, tenant, id, what hangs off the prefix) as a
+  `danbyte.migrations` warning and written to the prefix's change log.
+- A value it can't rewrite (`banana`, `10.0.0.0/33`, host bits set such as
+  `10.0.30.5/255.255.255.0`), or one whose rewrite is a network the tenant
+  already has in that VRF, stops the migration before it changes anything.
+  The error lists each row with tenant, id, value and why. The upgrade
+  preflight finds the same rows before any migration runs; see
+  [Prefixes the upgrade can't repair](../getting-started/upgrading.md#prefixes-the-upgrade-cant-repair).
+
+Migration `api.0262` builds the index `CONCURRENTLY`, outside a
+transaction. A plain build also reads the row versions 0265 just replaced
+and fails on the old text. So an upgrade from before 0.19 runs its
+migrations one by one rather than in one transaction; the host upgrade
+still restores its snapshot when one fails.
+
+`manage.py prefix_cidrs` lists these rows and what the migration does with
+each one. `--set <id> <cidr>` gives one a valid CIDR, normalised the way the
+API does. It refuses a network the VRF already has and one that no longer
+holds the prefix's IP addresses. It only fixes rows that are not
+addresses, and runs before the upgrade's migrations.
+
+0.19.0 and 0.19.1 shipped a version of this migration that deleted those
+prefixes, and with them every IP address in them (#501). See
+[Prefixes the 0.19 upgrade deleted](../getting-started/upgrading.md#prefixes-the-019-upgrade-deleted).
 
 ## API filters
 

@@ -162,7 +162,7 @@ find "$UPG_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name recover -exec chmod 700
 
 # Facts only the running release can answer, with its own code and .env.
 cp -p "$HERE/dbtool.py" "$WORK/dbtool.py" || fail "cannot write to $WORK"
-DANBYTE_UPGRADE_MAIL="$WORK/mail.json" run 300 "$PY" "$WORK/dbtool.py" probe \
+DANBYTE_UPGRADE_MAIL="$WORK/mail.json" DANBYTE_UPGRADE_SRC="$SRC" run 300 "$PY" "$WORK/dbtool.py" probe \
   || fail "the running release could not be inspected: $(tail_out)" true
 probe() { sed -n "s/^$1=//p" "$OUT" | tail -n 1; }
 P_DB_SIZE=$(probe db_size); P_DB_ROLLBACK=$(probe db_rollback); P_DB_WHY=$(probe db_rollback_why)
@@ -170,6 +170,15 @@ P_REDIS=$(probe redis); P_HELD=$(probe held); P_PLUGINS=$(probe pip_plugins); P_
 [ "$P_REDIS" = 1 ] || fail "Redis does not answer: $(probe redis_error)" true
 [ -z "$P_HELD" ] || fail "the site is held by something else: $P_HELD" true
 j_set db_rollback "${P_DB_ROLLBACK:-0}"
+# Prefixes whose cidr is not an address (#501): migration api.0265 rewrites
+# the ones the API would accept and stops on the rest, so stop here first.
+P_PFX_FIX=$(probe prefix_repair); P_PFX_BAD=$(probe prefix_unrepairable)
+if [ "${P_PFX_BAD:-0}" != 0 ]; then
+  fail "$P_PFX_BAD prefix(es) hold a cidr that is not a network, which the upgrade will not guess or delete; nothing was changed. Give each a valid CIDR in Danbyte (or delete it there), then upgrade again: $(probe prefix_unrepairable_rows)"
+fi
+[ "${P_PFX_FIX:-0}" = 0 ] \
+  || warn "$P_PFX_FIX prefix cidr(s) with spaces or a netmask are rewritten to CIDR form by migration api.0265; the upgrade log lists each one"
+[ -z "$(probe prefix_error)" ] || warn "the prefix cidr survey failed: $(probe prefix_error)"
 if [ "$KIND" = bundle ]; then
   _newpy=$("$SRC/vendor/python/bin/python3" -c 'import sys;print("%d.%d" % sys.version_info[:2])' 2>/dev/null)
   [ -n "$_newpy" ] || fail "the bundle's Python does not run on this host"
