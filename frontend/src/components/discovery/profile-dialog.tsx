@@ -13,7 +13,7 @@ import {
   FormCheckbox,
   FormFooter,
   FormRow,
-  FormSelect,
+  FormCombobox,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -358,7 +358,7 @@ export function ProfileDialog({
             />
           </FormRow>
 
-          <FormSelect
+          <FormCombobox
             label="Credential"
             value={sharedId}
             onChange={setSharedId}
