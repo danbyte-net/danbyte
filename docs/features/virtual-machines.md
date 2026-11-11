@@ -240,6 +240,12 @@ Any VM with open drift - intended or synced - shows the **Drift** card on
 its Overview and at the top of its Components tab: one row per field, with
 what Danbyte holds and what the hypervisor reports. The **N drift** badge
 in the header names the fields on hover and opens the Components tab.
+With change rights on virtualization changes, each item has **Use
+hypervisor's** (write the hypervisor's values into Danbyte; for an interface
+the hypervisor no longer reports, **Delete interface**) and **Keep
+Danbyte's** (dismiss the item until the hypervisor's value changes again).
+Overwriting an intended VM or deleting an interface asks first. Neither
+writes to the hypervisor.
 
 ### Building it: render and provision
 
