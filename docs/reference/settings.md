@@ -497,17 +497,18 @@ CIDRs from this block. Outpost agents keep the permissive default regardless.
 and reads their installed packages. It is off unless this deployment allows
 it **and** a tenant admin turns the Discovery integration on. With
 `DANBYTE_DISCOVERY_ENABLED` unset, a deployment admin allows it on the
-Discovery card under Settings → Integrations (stored, change-logged, off by
-default).
+Host discovery section under Monitoring → Settings (stored, change-logged,
+off by default); the tenant switch is the Discovery card under Settings →
+Integrations.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `DANBYTE_DISCOVERY_ENABLED` | unset | Locks the deployment switch for discovery. Unset or empty: the switch is the stored setting on the Discovery card (off by default). `True` (`true`, `1`, `yes`, `on`): locked on. Any other value, `False` included: locked off, and nothing can enable it. Set it in the environment of the web, worker and timer units, then restart them. With the switch off nothing is contacted, the pages and API answer not found and package matches resolve. |
-| `DANBYTE_DISCOVERY_WINRM_ALLOWED` | `True` | `False` (`0`, `no`, `off`) forbids discovery's WinRM transport for every tenant; the Discovery card shows *Forbidden by the deployment*. |
+| `DANBYTE_DISCOVERY_ENABLED` | unset | Locks the deployment switch for discovery. Unset or empty: the switch is the stored setting in Monitoring → Settings → Host discovery (off by default). `True` (`true`, `1`, `yes`, `on`): locked on. Any other value, `False` included: locked off, and nothing can enable it. Set it in the environment of the web, worker and timer units, then restart them. With the switch off nothing is contacted, the pages and API answer not found and package matches resolve. |
+| `DANBYTE_DISCOVERY_WINRM_ALLOWED` | `True` | `False` (`0`, `no`, `off`) forbids discovery's WinRM transport for every tenant; Host discovery shows *Forbidden by the deployment*. |
 | `DANBYTE_DISCOVERY_WINRM_CA_BUNDLE` | system bundle | CA bundle (PEM file) WinRM server certificates are verified against. Point it at a bundle with your internal CA. |
 | `DANBYTE_DISCOVERY_SCAN_MAX_RATE` | `200` | The [service scan](../features/service-discovery.md)'s hard cap: new TCP connections per second one run may open, whatever a profile asks. 1 to 2000; anything else refuses to start. |
 | `NMAP_BINARY` | unset | Absolute path of an nmap the administrator installed, for [service scans](../features/service-discovery.md#the-nmap-engine). Unset: `nmap` on the service user's PATH. Looked up once per process. Danbyte never installs nmap. |
-| `DANBYTE_DISCOVERY_NMAP_ALLOWED` | `True` | `False` (`0`, `no`, `off`) forbids the nmap engine for every tenant; the Discovery card shows *Forbidden by the deployment*. |
+| `DANBYTE_DISCOVERY_NMAP_ALLOWED` | `True` | `False` (`0`, `no`, `off`) forbids the nmap engine for every tenant; Host discovery shows *Forbidden by the deployment*. |
 | `DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS` | `True` | Whether **Run now** may offer *Accept new host keys* (trust a host's SSH key the first time it is seen). `False`, `0`, `no` or `off` hides the option everywhere and the API refuses it; scheduled runs never use it either way. |
 
 Runs go to the RQ queue `discovery` (`RQ_QUEUES`, timeout 6 h); the shipped

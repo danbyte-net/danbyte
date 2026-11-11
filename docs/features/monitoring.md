@@ -937,6 +937,19 @@ The same figures are available from the API:
 `hours=` (up to 48) can replace `days=`. All four are site-scoped like the
 Checks list.
 
+### The Discovery tab
+
+When the [Discovery](discovery.md) integration is on for the tenant and you
+may view discovery profiles, the Monitoring page has a **Discovery** tab: the
+profiles, the latest runs, and **Findings** and **Open ports** with their
+counts. `/discovery` opens it. A profile's scope takes the same kinds as a
+monitoring policy - region, VRF, platform, device type, device role - decided
+by the same resolver, and a policy's scope can be copied into a profile; see
+[Discovery: Scope](discovery.md#scope). Each policy's menu under
+**Configuration** lists the profiles that name the same object and offers
+**New discovery profile from this scope**. Saving a policy never starts or
+schedules a scan.
+
 ### The Settings tab
 
 The **Settings** tab (also reachable from **Settings → Monitoring**) is where
@@ -956,7 +969,8 @@ defaults**.
 | **Stale thresholds** | After how many consecutive failures, or how many days, a down check becomes *stale*. |
 | **Skip statuses** | IP statuses whose IPs should never be checked. |
 | **Reverse-DNS sync** | Keep IPs' DNS names current automatically (see below). |
-| **Discovery & cleanup** | Auto-discovery and stale-IP cleanup options (see below). |
+| **Address discovery** | The ping sweep that finds live addresses in prefixes, and stale-IP cleanup (see [below](#auto-discovery-and-cleanup)). |
+| **Host discovery** | [Discovery](discovery.md)'s settings: the deployment switch (deployment admins; shown even while the tenant switch is off), the tenant switch read-only with a link to Integrations, the SSH key / SSH password / WinRM transports, nmap with what was found, and the deny subnets. These save as they change and are changed only here. |
 | **MAC tracking** | How learned MACs are shown, which ports count as uplinks, and how long they are kept (see below). |
 
 ### MAC tracking {#mac-tracking}
@@ -1358,7 +1372,13 @@ alternative, the only markup every mail client agrees on.
 Two **opt-in** background jobs manage the IP lifecycle of monitored subnets. Both
 default off and are controlled from **Monitoring → Settings**.
 
-### Discovery
+### Address discovery {#address-discovery}
+
+Not to be confused with **host discovery** - [package inventory](discovery.md)
+and [service scans](service-discovery.md), which log in to devices and VMs or
+connect to their ports under an authorised profile. Address discovery logs in
+nowhere and only finds which addresses answer a ping. The two sit side by
+side under **Monitoring → Settings** and have separate switches and backends.
 
 When enabled, Danbyte periodically ICMP-sweeps the prefixes you've enrolled and
 records the responders it finds as new IPs.

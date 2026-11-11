@@ -17,6 +17,23 @@ credentials](device-access.md#shared-credentials), and reads only. Nothing
 is installed on the host, nothing is written there, and no command runs
 that is not listed on this page.
 
+!!! note "Where Discovery lives"
+    Discovery is part of **Monitoring**: its profiles, recent runs and the
+    way to *Findings* and *Open ports* are on the **Discovery** tab of the
+    Monitoring page (`/monitoring?view=discovery`; `/discovery` opens it),
+    and its settings are the **Host discovery** section under
+    **Monitoring → Settings**, beside **Address discovery**. The two are
+    different things:
+
+    - **Address discovery** is the ping sweep that finds live addresses in
+      prefixes and records them in IPAM ([Monitoring](monitoring.md#address-discovery)).
+      It contacts addresses, logs in nowhere, and has no profiles.
+    - **Host discovery** is this page and [service scans](service-discovery.md):
+      profiles that log in to devices and VMs to read packages, or connect to
+      TCP ports of IPAM addresses, each with a recorded authorisation.
+
+    The two have separate settings and separate switches.
+
 !!! note "Service scans"
     A second kind of profile scans TCP ports of your IPAM addresses and
     proposes services and installed software for review, with the built-in
@@ -29,17 +46,25 @@ that is not listed on this page.
 Three things must all be true before Danbyte contacts any host:
 
 1. **The deployment allows it.** A deployment admin switches on **This
-   deployment** on the **Discovery** card under **Settings → Integrations**.
-   It is off by default, and every change is in the change log (who, when);
-   the card shows the last one. Tenant admins see the switch but cannot
-   change it. A deployment that sets `DANBYTE_DISCOVERY_ENABLED` in the
-   environment of the web, worker and timer units decides there instead:
-   `True` shows *Locked on by the deployment*, any other value *Locked off
-   by the deployment*, and nobody can change it on the card (see
-   [Settings](../reference/settings.md#discovery)).
-2. **The tenant turns it on.** A tenant admin switches on **Discovery**
-   itself on the same card. While the deployment switch is off the card
-   says *Off for this deployment*.
+   deployment** in the **Host discovery** section under **Monitoring →
+   Settings** (also under **Settings → Monitoring**, *This tenant*). The
+   section shows that switch even while the tenant switch is off, so a
+   deployment admin can always reach it. It is off by default, and every
+   change is in the change log (who, when); the section shows the last one.
+   Tenant admins see the switch but cannot change it. A deployment that sets
+   `DANBYTE_DISCOVERY_ENABLED` in the environment of the web, worker and
+   timer units decides there instead: `True` shows *Locked on by the
+   deployment*, any other value *Locked off by the deployment*, and nobody
+   can change it in Danbyte (see [Settings](../reference/settings.md#discovery)).
+2. **The tenant turns it on.** A tenant admin switches on the **Discovery**
+   card under **Settings → Integrations**. The card is like every other
+   integration card: the switch and one **Discovery** button, which opens
+   the Discovery tab while discovery is on and the Host discovery settings
+   while it is not. While the deployment switch is off the card says *Off
+   for this deployment* (or *Locked off by the deployment*), with the reason
+   in its info popover, and switching the tenant on then warns that the
+   deployment switch is still missing. The Host discovery section shows the
+   tenant switch read-only, with a link to Integrations.
 3. **A profile is authorised.** An inventory profile names what to read. It
    runs only after someone has written down who authorised it - see
    [Authorisation](#authorisation).
@@ -59,12 +84,16 @@ schedule queues nothing, and package matches are resolved.
 
 ## Inventory profiles
 
-**Discovery** in the sidebar (or **Profiles** on the integration card) lists
-the tenant's inventory profiles. A profile has:
+The **Discovery** tab of the Monitoring page (also **Discovery** in the
+sidebar, under Governance next to Monitoring) lists the tenant's discovery
+profiles, the ten latest runs of all of them, and buttons to **Findings**
+and **Open ports** with their counts. Profile and run pages keep their
+`/discovery/…` addresses; their breadcrumb reads *Monitoring › Discovery*.
+A profile has:
 
 | Field | Meaning |
 |---|---|
-| Scope | Sites, prefixes, devices and VMs. A host is read when it is named, sits at a named site, or its primary address (a device's out-of-band address when it has no primary) is in a named prefix of the same VRF. |
+| Scope | What it reads - see [Scope](#scope). |
 | Every | Hours between scheduled runs. `0` means Run now only. Default 24. |
 | Window | A daily start and end time, server time, that runs may start in. An end before the start spans midnight. Empty means any time. |
 | Hosts at once | How many hosts one run reads in parallel, 1 to 16. Default 4. |
@@ -81,6 +110,56 @@ runs; a run's page lists every host it considered.
 profile (see [Permissions](#permissions)); while a run is queued or running
 the button reads *Running…*.
 
+## Scope
+
+A profile's scope is the union of everything it names:
+
+| Kind | A host is in scope when |
+|---|---|
+| Sites | It sits at the site. |
+| Prefixes | Its primary address (a device's out-of-band address when it has no primary) is in the prefix, same VRF. |
+| Devices, VMs | It is named. |
+| Regions, VRFs, platforms, device types, device roles | A [monitoring policy](monitoring.md#where-checks-apply) on that object would cover its primary (or out-of-band) address. |
+| Everything in this tenant | Always - an explicit choice, below. |
+
+The last two rows are the **monitoring policy scopes**: the same kinds a
+monitoring policy is set on, decided by the same code the monitoring
+resolver uses for a policy, so a *Device role: Server* profile reads exactly
+the devices a *Device role: Server* policy puts checks on. A region reaches
+every site below it; a VRF matches the address's VRF; platform, type and
+role match the device and so never match a VM, as for a policy. A host with
+no address is reached only by name, by its site, or by the whole tenant.
+
+**Everything in this tenant** is never implied: an empty scope reads
+nothing. Ticking it asks for a confirmation, and the API refuses it without
+`"confirm_global": true`.
+
+**Use a monitoring policy's scope** in the profile dialog picks one of the
+policies you may view and **copies** its scope into the profile, where it
+shows as the profile's own (a role, a region, or the whole tenant). It is a
+copy, not a link, on purpose: a policy edited later must never silently
+widen what a profile scans without a new authorisation. A policy's filters
+(tags, name, interface, hardware) and its IP target are not part of a
+profile's scope and are not copied; a VRF policy on the Global VRF names no
+VRF and cannot be copied.
+
+From the other side, a monitoring policy's menu (Monitoring →
+Configuration, the policy button on its row) has a **Discovery** section:
+the profiles whose own scope names the same object, and **New discovery
+profile from this scope**, which opens the profile dialog with the scope
+copied (needs *add* on inventory profiles). Saving a monitoring policy
+never starts or schedules a scan.
+
+Who may add what:
+
+- Every member must be an object you may view, in the tenant.
+- Someone whose view of devices or VMs is limited to some sites (or by
+  constraints) cannot add the whole tenant, a VRF, a platform, a device type
+  or a device role - they reach beyond those sites. They may add a region
+  only when every site in it is theirs.
+- The **Hosts** tab (the scope preview) resolves every kind, without
+  contacting anything.
+
 ## Authorisation
 
 Logging in to hosts can be against policy, a contract or the law unless
@@ -89,8 +168,8 @@ someone with the authority said yes. So a profile records it:
 - Saving a statement in **Authorisation** records you as the authoriser,
   with the time. The profile page shows the statement, the name and the
   time, and the change log keeps every version.
-- Changing the scope (sites, prefixes, devices, VMs) without saving a new
-  statement in the same edit clears the authorisation. The profile stops
+- Changing the scope (any kind, including the whole-tenant choice) without
+  saving a new statement in the same edit clears the authorisation. The profile stops
   running until someone records it again.
 - A profile without an authorisation never runs, on schedule or by hand.
 
@@ -145,9 +224,10 @@ The change is in the object's change log like any edit.
 
 ### Deny subnets
 
-**Deny subnets** on the Discovery page holds CIDRs, any VRF, that nothing in
-the tenant's discovery ever contacts. Tenant admins change them; the
-monitoring deny subnets apply as well.
+**Deny subnets** in the Host discovery section under **Monitoring →
+Settings** holds CIDRs, any VRF, that nothing in the tenant's discovery
+ever contacts. Tenant admins change them; the monitoring deny subnets apply
+as well.
 
 ## Credentials and host keys
 
@@ -213,7 +293,8 @@ config from the server account, no GSS or host-based login.
 ## Transports
 
 Danbyte reaches a host the most secure way first. Each transport is a
-switch on the **Discovery** card (tenant admins), tried in this order for
+switch in the **Host discovery** section under **Monitoring → Settings**
+(tenant admins), tried in this order for
 every host, and the run's host list says which one read it - hover the
 transport for why the others were skipped or what they answered:
 
@@ -247,7 +328,7 @@ WinRM, and what is never used:
   which ships with Danbyte. NTLM, Basic, CredSSP, unverified TLS and
   unverified SSH host keys are never offered.
 - `DANBYTE_DISCOVERY_WINRM_ALLOWED=False` forbids WinRM for every tenant
-  ([Settings](../reference/settings.md#discovery)); the card then says
+  ([Settings](../reference/settings.md#discovery)); the section then says
   *Forbidden by the deployment*.
 
 A host with no accepted SSH host key can still be read over WinRM, whose
@@ -531,7 +612,8 @@ what it can see.
 | `GET /api/discovery/status/` | The deployment switch (`deployment`: `enabled`, `source` `env` or `setting`, last change), the tenant toggle, and whether both are on |
 | `PATCH /api/discovery/deployment/` | `{"enabled": true}`: the stored deployment switch. Deployment admins only; 409 while the environment locks it |
 | `GET`, `PATCH /api/discovery/settings/` | `deny_subnets`, `transports` (`{ssh_key, ssh_password, winrm}`); `winrm.available` says whether WinRM can be switched on here |
-| `/api/discovery/profiles/` | Inventory profiles, CRUD (`?enabled=`, `?search=`); `runs_on` (`server`, `outpost`, `host`) and `outpost_id` |
+| `/api/discovery/profiles/` | Inventory profiles, CRUD (`?enabled=`, `?search=`, `?kind=`, `?policy=<monitoring policy id>`: profiles whose scope names what that policy is about); `runs_on` (`server`, `outpost`, `host`) and `outpost_id`; scope `site_ids`, `prefix_ids`, `device_ids`, `virtual_machine_ids`, `region_ids`, `vrf_ids`, `platform_ids`, `device_type_ids`, `device_role_ids`, `scope_global` (with `"confirm_global": true` to set it) |
+| `GET /api/discovery/policy-scopes/`, `/api/discovery/policy-scopes/<id>/` | The monitoring policies you may view, each as the profile field its scope copies into (`field`, `target`, or `global`; `filters` when the policy narrows its scope; `copyable`, `reason`). Needs *add* or *change* on inventory profiles; `?search=` |
 | `POST /api/discovery/profiles/<id>/run/` | Run now (202 with the run; 409 when one is open or the profile cannot run). Body `{"accept_new_host_keys": true}` for first use. |
 | `GET /api/discovery/profiles/<id>/host-keys/`, `/api/discovery/runs/<id>/host-keys/` | Host keys waiting for review |
 | `POST /api/discovery/host-keys/accept/` | Accept observed host keys, `{ids: [...]}` |

@@ -28,11 +28,13 @@ credential.
 Exactly as for package inventory ([Turn it on](discovery.md#turn-it-on)):
 the deployment allows discovery, a tenant admin turns the Discovery
 integration on, and a profile records who authorised it. Then **Add
-profile** on the Discovery page, **Kind** *Service scan*.
+profile** on the **Discovery** tab of the Monitoring page, **Kind** *Service
+scan*. Its settings (nmap, deny subnets) are in **Host discovery** under
+**Monitoring → Settings**.
 
 | Field | Meaning |
 |---|---|
-| Scope | Sites, prefixes, devices and VMs. The scan's targets are the **IP addresses in IPAM**: every address in a named prefix (or a prefix inside it, same VRF), every address of a named site (its own site, or its device's or VM's), every address of a named device or VM (assigned directly or through an interface, primary and out-of-band). Nothing outside IPAM is scanned, and no range is typed at run time. |
+| Scope | The same kinds as an inventory profile ([Scope](discovery.md#scope)). The scan's targets are the **IP addresses in IPAM**: every address in a named prefix (or a prefix inside it, same VRF), every address of a named site (its own site, or its device's or VM's), every address of a named device or VM (assigned directly or through an interface, primary and out-of-band), every address a monitoring policy on a named region, VRF, platform, device type or role would cover (decided by the monitoring resolver, so the policy and the scan agree), or - only when chosen and confirmed - every address in the tenant. A monitoring policy's scope can be copied in with **Use a monitoring policy's scope**; it is a copy, never a link, so editing the policy does not widen the scan. Nothing outside IPAM is scanned, and no range is typed at run time. |
 | Ports | Ports and ranges (`22, 80, 8000-8100`), at most 1,024. Empty means the default list below. |
 | Connects per second | New TCP connections per second for the whole run. Default 20; the deployment caps it (`DANBYTE_DISCOVERY_SCAN_MAX_RATE`, default 200). |
 | Hosts at once | Addresses scanned in parallel, 1 to 16. Default 4. |
@@ -210,7 +212,8 @@ above works with nothing installed.
 Danbyte server (`apt install nmap` on Debian and Ubuntu). Danbyte never
 installs or bundles it. It looks for the binary once per process, when it
 is first asked: `NMAP_BINARY` (an absolute path) when set, else `nmap` on
-the service user's PATH. The **nmap** switch on the Discovery card shows
+the service user's PATH. The **nmap** switch in **Host discovery** under
+**Monitoring → Settings** shows
 what it found - *nmap 7.98 at /usr/bin/nmap*, or *Not found* - and a tenant
 admin can switch it on only when one was found. Restart the web and worker
 units after installing it. `DANBYTE_DISCOVERY_NMAP_ALLOWED=False` forbids it
@@ -273,12 +276,12 @@ and its authors.
 On an Outpost, the nmap is the Outpost's: the agent looks for
 `OUTPOST_NMAP_BINARY` (else `nmap` on its PATH) when it starts, refuses to
 use it when the agent runs as root, and says in its hello which version it
-found. The Discovery card's nmap switch can be turned on when the server or
+found. The nmap switch in Host discovery can be turned on when the server or
 any Outpost has one; the Runs on picker says per Outpost whether it has.
 
 ## The review queue
 
-**Findings** on the Discovery page (and on each service-scan profile and
+**Findings** on the Discovery tab of the Monitoring page (and on each service-scan profile and
 run) lists what the current observations propose. Its columns read left to
 right: host and address, port, the proposal (kind, product and version),
 confidence, source, the evidence (banner excerpt or rule, the full evidence
