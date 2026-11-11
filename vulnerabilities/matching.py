@@ -33,6 +33,11 @@ tested against the fixed builds Microsoft lists for its product
 whose product or UBR is not known gets no match. Also only while Discovery
 is on for the tenant.
 
+A package linked to an application (its ``package_names``) and that
+application's own mapping never both report one record on one host: where
+an advisory for the host's package names the record, the package decides
+and the application match is dropped (``_drop_covered``).
+
 ``objects`` narrows a run to some hosts (a version, platform or install
 changed); ``cves`` to some records. Either way only the rows inside the scope
 are diffed.
@@ -126,7 +131,7 @@ def _candidates(keys: Iterable[tuple], cve_ids: Iterable[str] | None):
 
 
 def _package_rows(tenant, objects, cves) -> list[tuple]:
-    """``(pk, device, vm, purl type, match name, version, ecosystem)`` of
+    """``(pk, device, vm, purl type, match name, version, ecosystem, name)`` of
     the tenant's current inventoried packages that some stored record names
     - none while Discovery is off for the tenant."""
     from discovery.gate import active
@@ -147,7 +152,7 @@ def _package_rows(tenant, objects, cves) -> list[tuple]:
         qs = qs.filter(Q(device_id__in=list(objects.get("device") or []))
                        | Q(virtual_machine_id__in=list(objects.get("virtual_machine") or [])))
     return list(qs.values_list("pk", "device_id", "virtual_machine_id", "purl_type",
-                               "match_name", "match_version", "ecosystem"))
+                               "match_name", "match_version", "ecosystem", "name"))
 
 
 def _package_candidates(tenant, objects, cves) -> dict:
@@ -381,7 +386,8 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                 desired[(cve.pk, *host_key, m.pk, install_id, None)] = (
                     target.version, conf, levels[cve.pk], via, excepted)
 
-        def consider_package(pk, device_id, vm_id, ptype, name, version, ecosystem):
+        def consider_package(pk, device_id, vm_id, ptype, name, version, ecosystem,
+                             _binary=""):
             key = ("purl", "", ptype, name)
             target = evaluate.Target(
                 kind="purl", part="", vendor=ptype, product=name,
@@ -411,6 +417,7 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
         pkg_candidates = _package_candidates(tenant, objects, cves) if pkg_rows else {}
         for row in pkg_rows:
             consider_package(*row)
+        counts["covered"] = _drop_covered(tenant, desired, pkg_rows, pkg_candidates)
 
         windows = [h for h in os_build_hosts(tenant, objects) if not h[2].flag]
         counts["windows_hosts"] = len(windows)
@@ -444,6 +451,47 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                     # UPDATE, not save(): bookkeeping stays out of the change log.
                     ProductMapping.objects.filter(pk=m.pk).update(coverage=cov, matched_at=now)
     return counts
+
+
+def _drop_covered(tenant, desired: dict, pkg_rows, pkg_candidates) -> int:
+    """The dedupe rule: an application match is dropped where the host's own
+    package of that application answers for the same record.
+
+    A package linked to an application (``Application.package_names``)
+    and an application mapping would both judge one CVE on one host - the
+    package by its distribution's advisory, the mapping by the upstream
+    version. The distribution knows about its backports, so wherever an
+    advisory for one of the host's linked packages names the record (match
+    or not), the package decides and the application match for that host and
+    record is not made (an open one resolves). Returns how many were
+    dropped."""
+    from api.package_names import matcher_for
+
+    if not pkg_rows or not any(v[3] == "application" for v in desired.values()):
+        return 0
+    matcher = matcher_for(tenant)
+    if not matcher:
+        return 0
+    covered = set()
+    for _pk, device_id, vm_id, ptype, name, _v, _eco, binary in pkg_rows:
+        apps = matcher.apps_of(ptype, binary)
+        if not apps:
+            continue
+        for cve in pkg_candidates.get(("purl", "", ptype, name), ()):
+            for app_id in apps:
+                covered.add((cve.pk, device_id, vm_id, app_id))
+    if not covered:
+        return 0
+    from api.models import InstalledSoftware
+
+    install_ids = {k[4] for k, v in desired.items() if v[3] == "application"}
+    app_of = dict(InstalledSoftware.objects.filter(pk__in=install_ids).values_list(
+        "pk", "application_id"))
+    drop = [k for k, v in desired.items() if v[3] == "application"
+            and (k[0], k[1], k[2], app_of.get(k[4])) in covered]
+    for k in drop:
+        del desired[k]
+    return len(drop)
 
 
 def _diff(tenant, desired: dict, *, cves, objects) -> dict:

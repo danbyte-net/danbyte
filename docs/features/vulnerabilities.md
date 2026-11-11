@@ -636,6 +636,20 @@ Records stored before this change already carry each entry's ecosystem,
 so no re-import is needed; an entry stored without one is tested as an
 entry without a release.
 
+**A package and its application report a record once.** When an
+application names the host's package ([package
+names](applications.md#package-names), say OpenSSL ← `deb:libssl3`) and is
+also mapped to a CPE, both would judge the same CVE on the same host: the
+package by its distribution's advisory, the application by the upstream
+version. The package decides. Wherever an advisory for one of the host's
+linked packages names the record - affected or fixed - the application's
+match for that host and record is not made, and an open one resolves. A
+distribution's advisory knows its backports: a Debian `3.0.11-1~deb12u2`
+that carries the fix is fixed, although the upstream range (before 3.0.15)
+would call 3.0.11 affected. A record the
+distribution says nothing about still matches through the application, and
+another host whose package is not linked keeps its application match.
+
 Each match records its `confidence`: `exact`, `range` or `partial`.
 
 ### Windows hosts (Microsoft data)
