@@ -308,6 +308,7 @@ SUMMARY_LABELS = {
     "timeout": "timed out",
     "unsupported": "unsupported",
     "failed": "failed",
+    "no_advisory_source": "without an advisory source",
 }
 
 
@@ -533,6 +534,15 @@ def inventory_row(run, t, r, observed, *, user, counts: dict, changed_hosts: dic
                 changed_hosts[t.kind].add(t.host.pk)
             if r.truncated:
                 row.message = f"Only the first {inventory.MAX_PACKAGES} packages were kept."
+            distro = packages.no_advisory_source((r.os or {}).get("id", ""),
+                                                 (r.os or {}).get("name", "")
+                                                 or (r.os or {}).get("pretty_name", ""),
+                                                 r.manager or "")
+            if distro:
+                # Read, but nothing to match its packages against: said, not silent.
+                counts["no_advisory_source"] = counts.get("no_advisory_source", 0) + 1
+                row.message = " ".join(
+                    x for x in (row.message, f"No advisory source for {distro}.") if x)[:300]
     if observed:
         _record_key(tenant, t.host, observed)
     if row.status != "ok":

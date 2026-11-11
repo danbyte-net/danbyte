@@ -1274,6 +1274,15 @@ def host_packages(request, kind: str, pk):
 
     # Whether the store holds advisory data for these packages yet.
     response.data["advisories"] = host_state(tenant, kind, host, request)
+    from .packages import no_advisory_source
+
+    distro = no_advisory_source(fact.os_id, fact.pretty_name, fact.package_manager) \
+        if fact is not None else ""
+    if distro:
+        # Its packages are never matched: say so instead of a fetch state.
+        response.data["advisories"] = {
+            **(response.data["advisories"] or {"mode": "", "last_fetch": None}),
+            "state": "no_source", "distribution": distro}
     from vulnerabilities.matching import os_build_summary
 
     # Windows: the Microsoft product it matches as and its open OS-build CVEs.

@@ -192,3 +192,65 @@ class PackageMatchApiTests(APITestCase, Base):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["affected_count"], 2)
         json.dumps(r.json(), default=str)
+
+
+def opensuse_curl() -> bytes:
+    """A SUSE advisory as OSV writes it (SUSE-SU-2024:2784-1, cut down): one
+    entry per product, openSUSE's purl with "&" for "?"."""
+    def entry(eco, purl):
+        return {"package": {"ecosystem": eco, "name": "curl", "purl": purl},
+                "ranges": [{"type": "ECOSYSTEM", "events": [
+                    {"introduced": "0"}, {"fixed": "8.6.0-150600.4.3.1"}]}]}
+
+    return json.dumps({
+        "id": "SUSE-SU-2024:2784-1", "modified": "2024-08-05T00:00:00Z",
+        "upstream": ["CVE-2024-6197"],
+        "affected": [
+            entry("SUSE:Linux Enterprise Module for Basesystem 15 SP6",
+                  "pkg:rpm/suse/curl&distro=SUSE%20Linux%20Enterprise%20Module%20for%20"
+                  "Basesystem%2015%20SP6"),
+            entry("openSUSE:Leap 15.6",
+                  "pkg:rpm/opensuse/curl&distro=openSUSE%20Leap%2015.6")]}).encode()
+
+
+class OpenSuseLeapTests(Base):
+    """openSUSE Leap has an OSV ecosystem (``openSUSE:Leap 15.6``, verified
+    against OSV's querybatch): its packages match per release."""
+
+    def test_identifiers(self):
+        from .identifiers import (
+            distro_release,
+            ecosystem_release,
+            osv_ecosystems,
+            package_key,
+        )
+
+        self.assertEqual(ecosystem_release("openSUSE:Leap 15.6"), ("opensuse", "15.6"))
+        self.assertEqual(ecosystem_release("openSUSE:Tumbleweed"), ("opensuse", "tumbleweed"))
+        self.assertEqual(ecosystem_release("openSUSE:Leap Micro 6.0"),
+                         ("opensuse", "leap micro 6.0"))
+        self.assertEqual(osv_ecosystems(("opensuse", "15.6")), ["openSUSE:Leap 15.6"])
+        self.assertEqual(distro_release("rpm", "opensuse", "15.6"), ("opensuse", "15.6"))
+        self.assertEqual(package_key("openSUSE:Leap 15.6", "curl",
+                                     "pkg:rpm/opensuse/curl&distro=openSUSE%20Leap%2015.6"),
+                         ("rpm", "opensuse/curl"))
+        # A well-formed purl still wins.
+        self.assertEqual(package_key("Debian:12", "openssl", "pkg:deb/debian/openssl?a=b"),
+                         ("deb", "debian/openssl"))
+
+    def test_a_leap_host_matches_on_its_release_only(self):
+        from discovery.packages import release_of
+
+        self.assertEqual(release_of({"id": "opensuse-leap", "version_id": "15.6"}, "rpm"),
+                         ("opensuse", "openSUSE:Leap 15.6"))
+        leap = Device.objects.create(tenant=self.tenant, name="leap", site=self.site)
+        other = Device.objects.create(tenant=self.tenant, name="leap16", site=self.site)
+        pkg(self.tenant, leap, "curl", "8.0.1-150400.5.1", ecosystem="openSUSE:Leap 15.6",
+            ns="opensuse", ptype="rpm")
+        pkg(self.tenant, other, "curl", "8.0.1-150400.5.1", ecosystem="openSUSE:Leap 16.0",
+            ns="opensuse", ptype="rpm")
+        load_osv(opensuse_curl())
+        matching.recompute(self.tenant)
+        hits = {m.device_id for m in self.open() if m.host_package_id}
+        self.assertIn(leap.pk, hits)
+        self.assertNotIn(other.pk, hits)

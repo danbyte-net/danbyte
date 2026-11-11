@@ -121,6 +121,16 @@ describe("advisory note", () => {
     screen.getByText("Never fetched")
   })
 
+  it("a distribution without an advisory source says so", () => {
+    render(
+      <AdvisoryNote
+        value={{ ...base, state: "no_source", distribution: "Fedora" }}
+      />
+    )
+    screen.getByText("No advisory source for Fedora")
+    expect(screen.queryByText("Sync now")).toBeNull()
+  })
+
   it("upload and server modes", () => {
     render(<AdvisoryNote value={{ ...base, mode: "upload" }} />)
     const link = screen.getByText("Import OSV file")

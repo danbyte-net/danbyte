@@ -112,7 +112,7 @@ Work down the list:
 | The Packages tab says *Advisory fetch queued* (server mode) | Wait for the background fetch, or the daily refresh. *Vulnerability data is updating* means one is running. |
 | *Vulnerability data for these packages has not been fetched* (browser mode) | A deployment admin presses **Sync now**. |
 | *… has not been imported* (upload mode) | Import the distribution's OSV archive (**Import OSV file**). |
-| No ecosystem above the list | The distribution has no per-release OSV data Danbyte uses (Fedora, CentOS, Oracle Linux, SUSE, Amazon Linux, derivatives) ([supported distributions](discovery-packages.md#what-runs-on-the-host)). |
+| *No advisory source for …* | The distribution has no OSV advisories Danbyte uses (Fedora, CentOS, Oracle Linux, SUSE Linux Enterprise, openSUSE Tumbleweed, Amazon Linux, derivatives): its packages are read and never matched ([supported distributions](discovery-packages.md#what-runs-on-the-host)). |
 | The host is Windows | Windows CVEs come from the OS build, not packages ([Windows hosts](discovery-windows.md#matching-against-microsofts-data)); *OS build not matched* says why not. |
 | You see packages but not the Vulnerabilities tab's package rows | Package matches need *view* on installed software. |
 | Matches exist but are hidden | An exception covers them; tick *Excepted* on the Vulnerabilities tab. |

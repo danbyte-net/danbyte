@@ -597,8 +597,8 @@ the host's os-release names. Those matches say **Via: Package**, read with
 *installed software* view, and exist only while Discovery is on for the
 tenant ([Package inventory: CVE matches](discovery-packages.md#cve-matches)).
 
-OSV writes Debian, Ubuntu, Alpine, Rocky Linux, AlmaLinux and Red Hat
-advisories **per release**: one advisory carries an entry for `Debian:11`,
+OSV writes Debian, Ubuntu, Alpine, Rocky Linux, AlmaLinux, openSUSE Leap
+and Red Hat advisories **per release**: one advisory carries an entry for `Debian:11`,
 one for `Debian:12` and one for `Debian:13`, each with its own fixed version
 (the backport). A deb, rpm or apk package is therefore tested only against
 the entry for its host's release. Other ecosystems (PyPI, npm, Go, crates,

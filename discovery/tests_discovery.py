@@ -659,6 +659,54 @@ class RunApiTests(ApiBase):
             self.client.get(f"/api/discovery/runs/{self.run.pk}/hosts/").status_code, 404)
 
 
+FEDORA = ('NAME="Fedora Linux"\nVERSION="40 (Server Edition)"\nID=fedora\n'
+          'VERSION_ID=40\nPRETTY_NAME="Fedora Linux 40 (Server Edition)"\n')
+
+
+def fedora():
+    os_facts = inv.parse_os_release(FEDORA)
+    parsed = inv.PARSERS["rpm"]((DATA / "rocky9-rpm.txt").read_text())
+    return inv.InventoryResult(inv.OK, os=os_facts, manager="rpm", packages=parsed.packages)
+
+
+class NoAdvisorySourceTests(ApiBase):
+    """A distribution OSV has no advisories for is read, and says so: on the
+    host's result, in the run's counts and on the Packages tab."""
+
+    def test_named(self):
+        self.assertEqual(packages.no_advisory_source(
+            "fedora", "Fedora Linux 40 (Server Edition)", "rpm"), "Fedora")
+        self.assertEqual(packages.no_advisory_source("linuxmint", "Linux Mint 21.3", "dpkg"),
+                         "Linux Mint")
+        for os_id, manager in (("debian", "dpkg"), ("rocky", "rpm"), ("alpine", "apk"),
+                               ("opensuse-leap", "rpm"), ("windows", "windows")):
+            self.assertEqual(packages.no_advisory_source(os_id, "", manager), "", os_id)
+
+    @mock.patch.object(DeviceCredential, "resolve_secret", lambda self: {"password": SECRET})
+    def test_run_and_packages_tab_say_so(self):
+        a = self.host("a", "10.0.0.1", site=self.site)
+        p = self.profile()
+        p.sites.add(self.site)
+        with mock.patch.object(runner, "enqueue"):
+            run = runner.start(p, user=self.su)
+        fake = FakeCollector({"10.0.0.1": fedora})
+        runner.execute(str(run.pk), collect=fake.collect, observe=fake.observe)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "ok")
+        self.assertEqual(run.counts["no_advisory_source"], 1)
+        self.assertIn("1 without an advisory source", runner.summary(run.counts))
+        row = InventoryHostResult.objects.get(run=run)
+        self.assertEqual(row.message, "No advisory source for Fedora.")
+        self.assertEqual(HostPackage.objects.filter(device=a).first().ecosystem, "")
+        from vulnerabilities.models import VulnerabilitySettings
+
+        VulnerabilitySettings.objects.update_or_create(pk=1, defaults={"enabled": True})
+        self.login(self.su)
+        body = self.client.get(f"/api/devices/{a.pk}/packages/").json()
+        self.assertEqual((body["advisories"]["state"], body["advisories"]["distribution"]),
+                         ("no_source", "Fedora"))
+
+
 class PackagesApiTests(ApiBase):
     def setUp(self):
         self.a = self.host("a", "10.0.0.1", site=self.site)

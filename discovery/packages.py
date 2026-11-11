@@ -33,7 +33,8 @@ CHUNK = 2000
 REMOVED_KEEP_DAYS = 30
 #: os-release ``ID`` -> the distro namespace OSV and package URLs use.
 NAMESPACES = {"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine",
-              "rocky": "rocky", "almalinux": "almalinux", "rhel": "redhat"}
+              "rocky": "rocky", "almalinux": "almalinux", "rhel": "redhat",
+              "opensuse-leap": "opensuse"}
 PURL_TYPES = {"dpkg": "deb", "rpm": "rpm", "apk": "apk", "windows": "generic"}
 
 
@@ -67,6 +68,21 @@ def release_of(os_facts: dict, manager: str) -> tuple[str, str]:
         return namespace, f"Red Hat:enterprise_linux:{release[1]}"
     names = osv_ecosystems(release)
     return namespace, names[0] if names else ""
+
+
+def no_advisory_source(os_id: str, pretty_name: str, manager: str) -> str:
+    """The distribution's name when OSV publishes no advisories for it
+    (Fedora, SUSE Linux Enterprise, Amazon Linux, Oracle Linux, CentOS
+    Stream, openSUSE Tumbleweed, derivatives), so its packages are read but
+    never matched; blank when they can be, or are not distro packages."""
+    if PURL_TYPES.get(manager) not in ("deb", "rpm", "apk") or os_id in NAMESPACES:
+        return ""
+    from types import SimpleNamespace
+
+    from .os_platform import _label
+
+    return _label(SimpleNamespace(os_id=os_id or "", pretty_name=pretty_name or ""))[0] \
+        or os_id or "this distribution"
 
 
 def _distro_qualifier(namespace: str, ecosystem: str, os_facts: dict) -> str:

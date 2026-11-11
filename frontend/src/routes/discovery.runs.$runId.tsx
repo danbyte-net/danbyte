@@ -160,6 +160,10 @@ function Body({ run: r }: { run: InventoryRun }) {
         { label: "Read", value: n(r, "ok") },
         { label: "Packages", value: n(r, "packages") },
         { label: "Changed hosts", value: n(r, "changed") },
+        // Read, but OSV has no advisories for their distribution.
+        ...((r.counts.no_advisory_source ?? 0) > 0
+          ? [{ label: "No advisory source", value: n(r, "no_advisory_source") }]
+          : []),
       ]
   const errors: KvRow[] = r.errors.map((e, i) => ({
     label: `${i + 1}`,

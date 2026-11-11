@@ -101,11 +101,12 @@ ECOSYSTEM_TYPES = {
     "rocky linux": "rpm",
     "almalinux": "rpm",
     "red hat": "rpm",
+    "opensuse": "rpm",
 }
 #: purl types whose package lives under a distribution namespace.
 _DISTRO_NAMESPACE = {"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine",
                      "rocky linux": "rocky", "almalinux": "almalinux",
-                     "red hat": "redhat"}
+                     "red hat": "redhat", "opensuse": "opensuse"}
 _PURL_TYPE = re.compile(r"^[a-z][a-z0-9.+-]*$")
 
 
@@ -147,7 +148,12 @@ def purl_key(purl: str) -> tuple[str, str] | None:
 def package_key(ecosystem: str, name: str, purl: str = "") -> tuple[str, str] | None:
     """The purl key of an OSV ``affected[].package``. Its own ``purl`` wins;
     otherwise the ecosystem and name are turned into one."""
-    if purl:
+    # OSV writes openSUSE's purls with "&" for "?" (pkg:rpm/opensuse/curl
+    # &distro=…), which would put the qualifier into the name: for a distro
+    # this code knows, such a purl gives way to the ecosystem and name.
+    malformed = "&" in purl and "?" not in purl and isinstance(ecosystem, str) \
+        and ecosystem.split(":", 1)[0].strip().lower() in _DISTRO_NAMESPACE
+    if purl and not malformed:
         key = purl_key(purl)
         if key is not None:
             return key
@@ -185,7 +191,7 @@ def purl_qualifiers(purl: str) -> dict[str, str]:
 DISTRO_TYPES = frozenset({"deb", "rpm", "apk"})
 #: Which distro families (purl namespaces) a purl type's releases are read for.
 _TYPE_FAMILIES = {"deb": {"debian", "ubuntu"}, "apk": {"alpine"},
-                  "rpm": {"rocky", "almalinux", "redhat"}}
+                  "rpm": {"rocky", "almalinux", "redhat", "opensuse"}}
 #: Words a ``distro=`` qualifier or a platform name uses for a family.
 _FAMILY_WORDS = {
     "debian": {"debian"},
@@ -194,6 +200,7 @@ _FAMILY_WORDS = {
     "rocky": {"rocky", "rockylinux", "rocky linux", "el"},
     "almalinux": {"almalinux", "alma", "alma linux", "el"},
     "redhat": {"redhat", "red hat", "rhel", "red hat enterprise linux", "el"},
+    "opensuse": {"opensuse", "opensuse leap", "opensuse-leap", "leap"},
 }
 DEBIAN_CODENAMES = {
     "wheezy": "7", "jessie": "8", "stretch": "9", "buster": "10", "bullseye": "11",
@@ -206,7 +213,8 @@ UBUNTU_CODENAMES = {
     "resolute": "26.04",
 }
 _RELEASE_FORM = {"debian": r"\d+", "ubuntu": r"\d{2}\.\d{2}", "alpine": r"\d+\.\d+",
-                 "rocky": r"\d+", "almalinux": r"\d+", "redhat": r"\d+"}
+                 "rocky": r"\d+", "almalinux": r"\d+", "redhat": r"\d+",
+                 "opensuse": r"\d+\.\d+"}
 
 #: ``(family, release)``: ``("debian", "12")``, ``("ubuntu", "22.04")``.
 Release = tuple[str, str]
@@ -217,7 +225,7 @@ def _release_number(family: str, text: str) -> str | None:
     if m is None:
         return None
     value = m.group(0)
-    return value if family in ("ubuntu", "alpine") else str(int(value))
+    return value if family in ("ubuntu", "alpine", "opensuse") else str(int(value))
 
 
 def _codenames(family: str) -> dict[str, str]:
@@ -242,6 +250,9 @@ def ecosystem_release(ecosystem) -> Release | None:
     family = _DISTRO_NAMESPACE.get(base)
     if family is None:
         return base, rest
+    if family == "opensuse" and not re.fullmatch(r"leap \d+\.\d+", rest):
+        # Tumbleweed, Leap Micro, …: not a Leap release; never equal to one.
+        return family, rest
     number = _release_number(family, rest)
     return family, number if number is not None else rest
 
@@ -311,4 +322,6 @@ def osv_ecosystems(release: Release) -> list[str]:
         return [f"Rocky Linux:{number}"]
     if family == "almalinux":
         return [f"AlmaLinux:{number}"]
+    if family == "opensuse":
+        return [f"openSUSE:Leap {number}"]
     return []

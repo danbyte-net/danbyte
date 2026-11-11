@@ -40,7 +40,8 @@ The package reader follows `ID`, then each word of `ID_LIKE`, in os-release:
 | `debian`, `ubuntu` | dpkg | per release (`Debian:12`, `Ubuntu:24.04:LTS`) |
 | `alpine` | apk | per release (`Alpine:v3.22`) |
 | `rhel`, `rocky`, `almalinux` | rpm | per major release (`Red Hat:enterprise_linux:9`, `Rocky Linux:9`, `AlmaLinux:9`) |
-| `fedora`, `centos`, `ol`, `suse`, `sles`, `opensuse`, `opensuse-leap`, `amzn` | rpm | none to expect: the packages are kept without a release, and Danbyte has no OSV ecosystem for these distributions |
+| `opensuse-leap` | rpm | per release (`openSUSE:Leap 15.6`) |
+| `fedora`, `centos`, `ol`, `suse`, `sles`, `opensuse` (Tumbleweed), `amzn` | rpm | none: OSV has no advisories Danbyte can use for them (no ecosystem for Fedora, CentOS, Oracle Linux, Amazon Linux; SUSE Linux Enterprise 15 is split into per-module streams). The packages are read, and the host's result, the run's counts (*without an advisory source*) and the Packages tab say *No advisory source for …* |
 | anything else | none | the host is *Unsupported* (*No package reader for …*) |
 
 A distribution that sets `ID_LIKE=debian` (or `rhel`, …) is read with that

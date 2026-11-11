@@ -18454,9 +18454,13 @@ export interface InventoryRun {
 /** Whether the vulnerability store holds advisory data for packages read
  * after its last fetch (#451, `discovery.advisories`). */
 export interface PackageAdvisoryState {
-  mode: "upload" | "server" | "browser"
-  state: "fetched" | "not_fetched" | "queued" | "running"
+  mode: "upload" | "server" | "browser" | ""
+  /** `no_source`: OSV publishes no advisories for the host's distribution,
+   * so its packages are never matched. */
+  state: "fetched" | "not_fetched" | "queued" | "running" | "no_source"
   last_fetch: string | null
+  /** With `no_source`: the distribution, "Fedora". */
+  distribution?: string
   /** The caller may sync or import (deployment admin). */
   can_sync?: boolean
 }

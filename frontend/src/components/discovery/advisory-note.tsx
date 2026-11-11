@@ -7,7 +7,8 @@ import { InfoTip } from "@/components/ui/info-tip"
 // Why a host's packages show no CVEs yet (#451): the vulnerability store
 // has no advisory data for packages read after its last fetch. Says what to
 // do in each update mode: Browser - sync now; Upload - import an OSV file;
-// Server - the fetch is queued. Nothing once a fetch covers them.
+// Server - the fetch is queued. Nothing once a fetch covers them. A
+// distribution OSV has no advisories for says so instead.
 
 export function AdvisoryNote({
   value,
@@ -15,6 +16,21 @@ export function AdvisoryNote({
   value?: PackageAdvisoryState | null
 }) {
   if (!value || value.state === "fetched") return null
+  if (value.state === "no_source")
+    return (
+      <p
+        className="flex items-center gap-1 text-xs text-muted-foreground"
+        role="status"
+      >
+        <span className="whitespace-nowrap text-foreground">
+          No advisory source for {value.distribution}
+        </span>
+        <InfoTip>
+          OSV publishes no advisories for this distribution, so its packages are
+          not matched to CVEs.
+        </InfoTip>
+      </p>
+    )
   let text: string
   let action: React.ReactNode = null
   if (value.state === "running") {
