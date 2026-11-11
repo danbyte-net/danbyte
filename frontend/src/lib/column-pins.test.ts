@@ -2,88 +2,120 @@ import { describe, expect, it } from "vitest"
 
 import {
   PIN_MIN_FRAME,
-  leftPinOrder,
+  lastStuck,
   pinLayout,
+  pinnedColumns,
   samePinLayout,
   togglePin,
 } from "./column-pins"
 
-const opts = (over: Partial<Parameters<typeof leftPinOrder>[1]> = {}) => ({
+const opts = (over: Partial<Parameters<typeof pinnedColumns>[1]> = {}) => ({
   hasSelect: true,
   isShown: () => true,
   canPin: () => true,
   frameWidth: 1200,
   ...over,
 })
+const set = (s: Set<string>) => [...s].sort()
 
-describe("leftPinOrder", () => {
-  it("puts the selection column first, then the pins in pin order", () => {
-    expect(leftPinOrder(["site", "name"], opts())).toEqual([
+describe("pinnedColumns", () => {
+  it("is the shown pins plus the selection column", () => {
+    expect(set(pinnedColumns(["site", "name"], opts()))).toEqual([
+      "name",
       "select",
       "site",
-      "name",
     ])
   })
 
   it("pins nothing - not even the tick - when no column is pinned", () => {
-    expect(leftPinOrder([], opts())).toEqual([])
+    expect(pinnedColumns([], opts()).size).toBe(0)
   })
 
-  it("leaves out hidden, unpinnable and repeated ids", () => {
+  it("leaves out hidden and unpinnable ids", () => {
     expect(
-      leftPinOrder(["actions", "name", "gone", "name", "select", "site"], {
-        ...opts(),
-        isShown: (id) => id !== "gone",
-        canPin: (id) => id !== "site",
-      })
-    ).toEqual(["select", "name"])
+      set(
+        pinnedColumns(["actions", "name", "gone", "select", "site"], {
+          ...opts(),
+          isShown: (id) => id !== "gone",
+          canPin: (id) => id !== "site",
+        })
+      )
+    ).toEqual(["name", "select"])
   })
 
-  it("ignores pins in a narrow frame", () => {
+  it("ignores pins in a narrow frame, but not while unmeasured", () => {
     expect(
-      leftPinOrder(["name"], opts({ frameWidth: PIN_MIN_FRAME - 1 }))
-    ).toEqual([])
-    // Unmeasured (0) is not narrow.
-    expect(leftPinOrder(["name"], opts({ frameWidth: 0 }))).toEqual([
-      "select",
-      "name",
-    ])
+      pinnedColumns(["name"], opts({ frameWidth: PIN_MIN_FRAME - 1 })).size
+    ).toBe(0)
+    expect(pinnedColumns(["name"], opts({ frameWidth: 0 })).size).toBe(2)
   })
 
   it("has no tick column to add on a table without selection", () => {
-    expect(leftPinOrder(["name"], opts({ hasSelect: false }))).toEqual(["name"])
+    expect(set(pinnedColumns(["name"], opts({ hasSelect: false })))).toEqual([
+      "name",
+    ])
   })
 })
 
+const cols = (...w: [string, number][]) =>
+  w.map(([id, width]) => ({ id, width }))
+
 describe("pinLayout", () => {
-  it("sticks each pinned column where the ones before it end", () => {
-    const l = pinLayout(["select", "name", "site"], [36, 180, 120], 1200)
-    expect(l.left).toEqual({ select: 0, name: 36, site: 216 })
-    expect(l.last).toBe("site")
+  it("keeps each pin in place and stacks it after the pins before it", () => {
+    const l = pinLayout(
+      cols(["select", 36], ["name", 180], ["type", 200], ["coverage", 120]),
+      new Set(["select", "name", "coverage"]),
+      1200
+    )
+    expect(l.left).toEqual({ select: 0, name: 36, coverage: 216 })
+    expect(l.natural).toEqual({ select: 0, name: 36, coverage: 416 })
   })
 
-  it("stops sticking once the band would pass 60% of the frame", () => {
+  it("lets the pins past 60% of the frame scroll", () => {
     // cap = 600: select + name = 516 fits, + site (120) = 636 does not.
-    const l = pinLayout(["select", "name", "site"], [36, 480, 120], 1000)
-    expect(l.left).toEqual({ select: 0, name: 36 })
-    expect(l.last).toBe("name")
-  })
-
-  it("sticks nothing when the first pin alone is too wide", () => {
-    const l = pinLayout(["name"], [700], 1000)
-    expect(l).toEqual({ left: {}, last: null })
+    const l = pinLayout(
+      cols(["select", 36], ["name", 480], ["site", 120], ["role", 50]),
+      new Set(["select", "name", "site", "role"]),
+      1000
+    )
+    expect(Object.keys(l.left)).toEqual(["select", "name"])
   })
 
   it("compares layouts by value", () => {
-    const a = pinLayout(["a", "b"], [10, 20], 1000)
-    expect(samePinLayout(a, pinLayout(["a", "b"], [10, 20], 1000))).toBe(true)
-    expect(samePinLayout(a, pinLayout(["a", "b"], [10, 25], 1000))).toBe(true)
-    expect(samePinLayout(a, pinLayout(["a", "b"], [12, 20], 1000))).toBe(false)
+    const c = cols(["a", 10], ["b", 20])
+    const a = pinLayout(c, new Set(["a", "b"]), 1000)
+    expect(samePinLayout(a, pinLayout(c, new Set(["a", "b"]), 1000))).toBe(true)
+    expect(
+      samePinLayout(
+        a,
+        pinLayout(cols(["a", 12], ["b", 20]), new Set(["a", "b"]), 1000)
+      )
+    ).toBe(false)
+  })
+})
+
+describe("lastStuck", () => {
+  const l = pinLayout(
+    cols(["select", 40], ["name", 160], ["type", 300], ["coverage", 100]),
+    new Set(["select", "name", "coverage"]),
+    1200
+  )
+  it("is nothing before any scrolling", () => {
+    expect(lastStuck(l, 0)).toBeNull()
+  })
+  it("is the tick and its in-place neighbour once scrolled", () => {
+    // name is right after the tick: it sticks with the first pixel.
+    expect(lastStuck(l, 10)).toBe("name")
+  })
+  it("moves to a mid-table pin once it is scrolled past", () => {
+    // coverage starts at 500 and sticks at 200: stuck past 300.
+    expect(lastStuck(l, 299)).toBe("name")
+    expect(lastStuck(l, 320)).toBe("coverage")
   })
 })
 
 describe("togglePin", () => {
-  it("adds after the existing pins and removes in place", () => {
+  it("adds and removes", () => {
     expect(togglePin(["a"], "b")).toEqual(["a", "b"])
     expect(togglePin(["a", "b", "c"], "b")).toEqual(["a", "c"])
   })

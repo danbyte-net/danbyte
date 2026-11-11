@@ -255,9 +255,10 @@
   /* Pinned columns (DataTable, lib/column-pins.ts). A stuck body cell is
      opaque - the page background with the row's own tint laid over it, the
      same stripe / hover / selected tint the row has - so cells scrolling
-     under it never show through. While the table is scrolled, the last
-     stuck column carries a hairline in the border colour, and the frame's
-     left-edge hint gives way to it. */
+     under it never show through. The right-most column that is actually
+     stuck (data-pin-last, set from the scroll position) carries a hairline in
+     the border colour, and while one is stuck the frame's left-edge hint
+     gives way to it. */
   td[data-pinned] {
     --pin-tint: transparent;
     background-color: var(--background);
@@ -272,7 +273,7 @@
   tbody tr[data-state="selected"] > td[data-pinned] {
     --pin-tint: var(--muted);
   }
-  [data-scroll-left] [data-pin-last]::after {
+  [data-pin-last]::after {
     content: "";
     position: absolute;
     inset-block: 0;

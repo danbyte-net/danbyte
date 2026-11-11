@@ -5,7 +5,6 @@ import { useDateFormat } from "@/lib/datetime"
 import {
   type ColumnDef,
   type ColumnFiltersState,
-  type ColumnPinningState,
   type ExpandedState,
   type SortingState,
   type Updater,
@@ -52,8 +51,9 @@ import { useTablePreference } from "@/lib/use-table-preference"
 import {
   NO_PIN_LAYOUT,
   UNPINNABLE,
-  leftPinOrder,
+  lastStuck,
   pinLayout,
+  pinnedColumns,
   samePinLayout,
   togglePin,
   type PinLayout,
@@ -661,10 +661,11 @@ export function DataTable<T>({
 
   // ─── Pinned columns ────────────────────────────────────────────────────
   // Pins live in the saved layout next to order + hidden (session state on a
-  // table without one). TanStack's column pinning moves them to the left in
-  // pin order - the row tick first - and the cells stick at measured offsets
-  // (pinLayout, below). Exports read getVisibleLeafColumns, which pinning
-  // does not reorder, so a download keeps the table's own column order.
+  // table without one). A pinned column keeps its place in the table and
+  // sticks to the left edge only once scrolling would carry it past it,
+  // after the pinned columns before it (pinLayout, below). The row tick sticks
+  // too whenever anything is pinned. Nothing is reordered, so exports and
+  // prints keep the table's own column order.
   const [sessionPins, setSessionPins] = useState<string[]>([])
   const pinned = !pinnable ? NO_PINS : tableId ? pref.pinned : sessionPins
   const [frameWidth, setFrameWidth] = useState(0)
@@ -673,17 +674,14 @@ export function DataTable<T>({
   const hasSelect = allIds.includes("select")
   const pinKey = pinned.join(" ")
   const manageableKey = manageableIds.join(" ")
-  const columnPinning = useMemo<ColumnPinningState>(() => {
+  const pinnedSet = useMemo(() => {
     const manageable = new Set(manageableKey.split(" "))
-    return {
-      left: leftPinOrder(pinKey ? pinKey.split(" ") : [], {
-        hasSelect,
-        isShown: (id) => columnVisibility[id] !== false,
-        canPin: (id) => manageable.has(id),
-        frameWidth,
-      }),
-      right: [],
-    }
+    return pinnedColumns(pinKey ? pinKey.split(" ") : [], {
+      hasSelect,
+      isShown: (id) => columnVisibility[id] !== false,
+      canPin: (id) => manageable.has(id),
+      frameWidth,
+    })
   }, [pinKey, manageableKey, hasSelect, columnVisibility, frameWidth])
   const setPins = (next: string[]) => {
     if (!tableId) setSessionPins(next)
@@ -700,7 +698,6 @@ export function DataTable<T>({
       globalFilter,
       columnVisibility,
       columnOrder,
-      columnPinning,
       rowSelection,
       grouping,
       expanded,
@@ -903,30 +900,45 @@ export function DataTable<T>({
     if (t) ro.observe(t)
     return () => ro.disconnect()
   }, [hscroll.frameRef])
-  const leftPins = columnPinning.left ?? NO_PINS
   useLayoutEffect(() => {
     const frame = hscroll.frameRef.current
     let next = NO_PIN_LAYOUT
-    if (frame && leftPins.length) {
-      const width = new Map<string, number>()
-      for (const th of frame.querySelectorAll<HTMLElement>(
-        "thead th[data-col]"
-      ))
-        width.set(th.dataset.col ?? "", th.getBoundingClientRect().width)
-      next = pinLayout(
-        leftPins,
-        leftPins.map((id) => width.get(id) ?? 0),
-        frame.clientWidth
-      )
+    if (frame && pinnedSet.size) {
+      // The leaf header row, in display order.
+      const rows = frame.querySelectorAll("thead tr")
+      const last = rows[rows.length - 1]
+      const cols = last
+        ? [...last.querySelectorAll<HTMLElement>("th[data-col]")].map((th) => ({
+            id: th.dataset.col ?? "",
+            width: th.getBoundingClientRect().width,
+          }))
+        : []
+      next = pinLayout(cols, pinnedSet, frame.clientWidth)
     }
     setPinLayoutState((prev) => (samePinLayout(prev, next) ? prev : next))
   })
+  // Which pinned column is stuck furthest right right now - only it carries
+  // the divider, and only while it is actually stuck.
+  const [stuck, setStuck] = useState<string | null>(null)
+  useEffect(() => {
+    const scroller = hscroll.frameRef.current?.querySelector<HTMLElement>(
+      "[data-slot=table-container]"
+    )
+    if (!scroller || !Object.keys(pins.left).length) {
+      setStuck(null)
+      return
+    }
+    const update = () => setStuck(lastStuck(pins, scroller.scrollLeft))
+    update()
+    scroller.addEventListener("scroll", update, { passive: true })
+    return () => scroller.removeEventListener("scroll", update)
+  }, [pins, hscroll.frameRef])
   /** Sticky props for a pinned column's cell; none for the rest. */
   const pinProps = (id: string) =>
     id in pins.left
       ? {
           "data-pinned": "",
-          "data-pin-last": pins.last === id ? "" : undefined,
+          "data-pin-last": stuck === id ? "" : undefined,
           style: { left: pins.left[id] },
         }
       : {}
@@ -1203,7 +1215,7 @@ export function DataTable<T>({
           sides with more columns - see table-scroll.tsx. */}
       <div
         ref={hscroll.frameRef}
-        data-pins={pins.last ? "" : undefined}
+        data-pins={stuck ? "" : undefined}
         className={cn(
           "relative overflow-x-auto rounded-lg border border-border",
           stickyHeader &&

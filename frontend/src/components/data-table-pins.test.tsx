@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { DataTable } from "./data-table"
 import type { ColumnPref, ColumnPrefData } from "@/lib/api"
 
-// Pinned columns: the saved layout's pins move to the left edge (the row
-// tick first) and stick at offsets measured from their header cells; an
+// Pinned columns: the saved layout's pins keep their place and stick (the
+// row tick too) at offsets measured from their header cells; an
 // older layout without pins changes nothing; a narrow frame ignores them.
 
 vi.mock("@/lib/api", async (orig) => {
@@ -92,25 +92,52 @@ const head = (label: string) =>
   screen.getAllByRole("columnheader").find((h) => h.textContent === label)!
 
 describe("DataTable pinned columns", () => {
-  it("moves the pins left, tick first, and sticks them at measured offsets", () => {
+  it("keeps a pin in its place and sticks it at the measured offset", () => {
     size(1200)
-    mount(client({ order: ["a", "b", "c"], hidden: [], pinned: ["c"] }))
-    expect(headers()).toEqual(["SEL", "C", "A", "B"])
+    const { container } = mount(
+      client({ order: ["a", "b", "c"], hidden: [], pinned: ["c"] })
+    )
+    // No reordering: C stays last, sticking after the tick when passed.
+    expect(headers()).toEqual(["SEL", "A", "B", "C"])
     expect(head("SEL").style.left).toBe("0px")
     expect(head("C").style.left).toBe("100px")
-    expect(head("C").hasAttribute("data-pin-last")).toBe(true)
     expect(head("A").hasAttribute("data-pinned")).toBe(false)
-    // The body cells stick with their header.
     const cell = screen.getByText("C1").closest("td")!
     expect(cell.hasAttribute("data-pinned")).toBe(true)
     expect(cell.style.left).toBe("100px")
+    // Nothing is stuck before scrolling, so no divider.
+    expect(container.querySelector("[data-pin-last]")).toBeNull()
   })
 
-  it("keeps pin order", () => {
+  it("draws the divider on the column that is actually stuck", () => {
     size(1200)
-    mount(client({ order: ["a", "b", "c"], hidden: [], pinned: ["b", "a"] }))
-    expect(headers()).toEqual(["SEL", "B", "A", "C"])
-    expect(head("A").style.left).toBe("200px")
+    const { container } = mount(
+      client({ order: ["a", "b", "c"], hidden: [], pinned: ["c"] })
+    )
+    const scroller = container.querySelector<HTMLElement>(
+      "[data-slot=table-container]"
+    )!
+    // C starts at 300 and sticks at 100: only the tick is stuck before 200.
+    act(() => {
+      scroller.scrollLeft = 150
+      fireEvent.scroll(scroller)
+    })
+    expect(head("SEL").hasAttribute("data-pin-last")).toBe(true)
+    act(() => {
+      scroller.scrollLeft = 250
+      fireEvent.scroll(scroller)
+    })
+    expect(head("C").hasAttribute("data-pin-last")).toBe(true)
+    expect(head("SEL").hasAttribute("data-pin-last")).toBe(false)
+    expect(container.querySelector("[data-pins]")).not.toBeNull()
+  })
+
+  it("stacks several pins in display order, whatever the pin order", () => {
+    size(1200)
+    mount(client({ order: ["a", "b", "c"], hidden: [], pinned: ["c", "a"] }))
+    expect(headers()).toEqual(["SEL", "A", "B", "C"])
+    expect(head("A").style.left).toBe("100px")
+    expect(head("C").style.left).toBe("200px")
   })
 
   it("loads a layout saved before pins exactly as before", () => {
@@ -130,7 +157,7 @@ describe("DataTable pinned columns", () => {
       client({ order: ["a", "b", "c"], hidden: [], pinned: ["a", "b", "c"] })
     )
     expect(headers()).toEqual(["SEL", "A", "B", "C"])
-    expect(head("B").hasAttribute("data-pin-last")).toBe(true)
+    expect(head("B").hasAttribute("data-pinned")).toBe(true)
     expect(head("C").hasAttribute("data-pinned")).toBe(false)
   })
 
