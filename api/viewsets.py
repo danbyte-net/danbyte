@@ -519,7 +519,7 @@ SOFTWARE_VERSION_PARAMETERS = [
         name="software_version_source",
         type=OpenApiTypes.STR,
         location=OpenApiParameter.QUERY,
-        enum=["manual", "snmp", "virtualization", "oxidized", "import", "none"],
+        enum=["manual", "snmp", "virtualization", "oxidized", "discovery", "import", "none"],
         description="Where the software version came from; `none` for no source.",
     ),
 ]

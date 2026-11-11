@@ -456,7 +456,125 @@ subnets are.
 Packages are not [installed software](applications.md) rows: a Linux host
 has well over a thousand, and the Software tab and SBOM stay for what you
 model. They show on the host's **Packages** tab, which appears once
-something has been read and you may view installed software.
+something has been read and you may view installed software. The packages
+that are an application you track do become installs - see
+[Applications from packages](#applications-from-packages).
+
+## What a read feeds
+
+A read does more than replace the package list.
+
+### The running version
+
+The host's **software version** is set from its facts, with source
+**Discovery**, and *seen at* is stamped as for the other automatic sources:
+
+| OS | Version written | End-of-life cycle it picks |
+|---|---|---|
+| Debian | `13` (os-release `VERSION_ID`) | `13` |
+| Ubuntu | `22.04` | `22.04` |
+| RHEL, Rocky, AlmaLinux | `9.4` | `9` |
+| Alpine | `3.22.1` | `3.22` |
+| Windows | `10.0.20348.2700` (build and UBR) | none (see below) |
+
+A version you typed or imported is never overwritten. Discovery ranks
+**above SNMP, virtualization and Oxidized**: it reads the OS's own release
+file over an authenticated login, where SNMP parses `sysDescr` (a Linux
+kernel line gives nothing), Oxidized parses a configuration and a
+hypervisor reports what its guest agent claims. So a Discovery value
+replaces theirs, and none of them replaces a Discovery value. The full
+rule is on [Hardware & OS lifecycle](lifecycle.md#where-the-running-version-comes-from).
+
+### The platform
+
+A host's platform is **never changed by a read**. When the facts do not fit
+it - no platform, a generic one such as *Linux 6.x/2.6 Kernel*, or *Debian
+12* on a host that now reports 13 - the [review queue](service-discovery.md)
+gets a **Set platform** finding for that host:
+
+- It names the tenant platform for that release: one already mapped to the
+  same end-of-life product and cycle (debian / 13), else one named *Debian
+  13* (or with that slug), else a per-OS *Debian*. With none, it proposes
+  **creating** *Debian 13* (marked *New platform*).
+- With [end-of-life data](end-of-life-data.md) on, a created platform is
+  mapped to the product and cycle the facts give (debian / 13), through the
+  same mapping the platform page's **Map** writes. A matched platform named
+  per release without a mapping is mapped too. A per-OS platform is not:
+  a platform has one cycle, so *Debian* cannot carry 12 and 13 at once -
+  name platforms per release to get end of life per host.
+- **Accept** (one or many at once) sets the platform; everything is
+  change-logged. **Ignore** hides it until the OS, release or the host's
+  platform changes.
+- A platform that fits (*Debian*, *Debian 13*, or one mapped to debian / 13)
+  gets no finding.
+
+The host's OS support bar and the *End of life* columns then read the
+cycle's dates; nobody types a date. Windows hosts get no platform finding:
+Microsoft's products are not one name and release.
+
+### Applications from packages
+
+An [application](applications.md#package-names) can name the packages that
+are it - *nginx* ← `deb:nginx`, `deb:nginx-*`, `rpm:nginx`. After every read
+(and right away when an application's package names change):
+
+- A host with one of those packages gets an install of the application,
+  source **Discovery**, at the package's upstream version (`1.26.3` from
+  `1.26.3-3+deb13u1`), with *last seen*. Its end-of-life cycle comes from
+  that version like any install's.
+- The version follows the package on later reads (change-logged).
+- An install a person made (manual, import, a group) is never written
+  over. Its **observed version** is kept current instead, and the Software
+  tab shows *Discovery reads 1.26.3* when the two differ.
+- When the package is gone from a host that was read, the Discovery
+  install it made is **deleted** - through the change log, which keeps the
+  row as it was - and comes back if the package does. (The package itself
+  keeps its removed date for 30 days.) A person's install only loses its
+  observed version; an install accepted from a service-scan finding is
+  left alone.
+
+Creates, version changes and deletes are change-logged with the cause
+*Package inventory*; the observed version and last seen are bookkeeping.
+The work is bulk: a run of 40 hosts with 300 packages each takes the same
+handful of statements as a run of 4.
+
+The review queue proposes the links:
+
+- **Add application** - well-known server software (nginx, Apache,
+  PostgreSQL, MySQL, MariaDB, Redis, Docker, containerd, HAProxy, OpenSSH,
+  BIND, Samba, PHP, Node.js, Python, OpenJDK, Tomcat, RabbitMQ,
+  Elasticsearch, Grafana, Prometheus, Zabbix, Keepalived, FRR, OpenVPN,
+  WireGuard, Squid, Postfix, Dovecot and a few more) found on hosts and not
+  yet an application: *Application nginx found on 12 hosts*. One finding
+  per software, not per host. Accept creates the application with its
+  package names - and its end-of-life product when the catalog has one - and
+  the installs follow.
+- **Link packages** - the tenant already has an application of that name
+  that names no packages: Accept sets them.
+
+The table of well-known software is data in `discovery/known_software.py`;
+it lists only package names the distributions really ship.
+
+### On the Packages tab
+
+| Column | Shows |
+|---|---|
+| Application | The application whose package names take the package, linked. Blank without *view* on applications. |
+| CVEs | The open matches through the package no exception covers, on the worst severity's badge; it opens the host's Vulnerabilities tab narrowed to the package. |
+
+Above the list, when the host has packages read after the vulnerability
+store's last advisory fetch, a line says why no CVEs show yet:
+
+| Update mode | Line |
+|---|---|
+| Browser | *Vulnerability data for these packages has not been fetched* - **Sync now** for deployment admins |
+| Upload | *… has not been imported* - **Import OSV file** |
+| Server | *Advisory fetch queued* |
+
+with the last fetch time. A run's page shows the same line when the run
+brought packages the store has not fetched. In server mode a read queues a
+fetch of the packages no host had before at once (one background job, as
+mapping a new product does); the daily run covers the rest.
 
 ## Vulnerabilities
 
@@ -595,6 +713,9 @@ fingerprint the server computes itself; anything else fails that host.
 | Pin a shared credential on a profile | *change* on the profile and *view* on the shared credential |
 | Pick where a profile runs, list the Outposts it could run on | *change* / *view* on Inventory profiles (the Outposts of your tenant only) |
 | A host's packages, package matches | *view* on the host and on installed software |
+| The inventory's findings (Set platform, Add application, Link packages) | *view* on installed software; host findings only for hosts you may view |
+| Accept or ignore Set platform | *change* on the host; *add* on platforms to create one |
+| Accept or ignore Add application / Link packages | *add* on applications (tenant-wide) / *change* on the application |
 | Exempt a host, address or prefix | *change* on it |
 | Deny subnets | tenant admin to change; tenant admins and profile viewers read |
 | The Discovery switch | tenant admin |
@@ -622,4 +743,6 @@ what it can see.
 | `GET /api/discovery/runs/<id>/hosts/` | A run's per-host results (`?status=`); `engine` is `server` or `outpost: <name>` |
 | `GET /api/discovery/outposts/` | The tenant's Outposts for **Runs on**: online, agent version, and per kind (`inventory`, `service_scan`, `nmap`) whether it can run it now and why not |
 | `POST /api/discovery/exempt/` | Set *exempt from discovery* |
-| `GET /api/devices/<id>/packages/`, `/api/virtual-machines/<id>/packages/` | A host's current packages (`?search=`) and its distro (`os`) |
+| `GET /api/devices/<id>/packages/`, `/api/virtual-machines/<id>/packages/` | A host's current packages (`?search=`) and its distro (`os`). Each row has `application` (`{id, name}` or null) and `cves` (`{count, severity}`, null while vulnerability data is off); `advisories` is `{mode, state, last_fetch, can_sync}` (`state`: `fetched`, `not_fetched`, `queued`, `running`) or null |
+| `GET /api/discovery/runs/<id>/` | Also `advisories`, the same state for the packages the run brought |
+| `GET /api/discovery/findings/` | Also the inventory's kinds `platform`, `application`, `link` (`?kind=`); accept and ignore them through `.../accept/` and `.../ignore/` like the service-scan ones |

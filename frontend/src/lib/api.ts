@@ -2341,6 +2341,9 @@ export interface Application extends ApplicationMini {
   purl_template?: string
   /** CPE 2.3 template for the SBOM ({version}, {os_version}). */
   cpe_template?: string
+  /** Package names discovery links to it (#451): `deb:nginx`,
+   * `rpm:httpd`, `deb:postgresql-*`; a bare name = every Linux type. */
+  package_names?: string[]
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -2374,6 +2377,9 @@ export interface InstalledSoftware extends EffectiveOsDates {
   eol: EolInfo | null
   source: InstalledSoftwareSource
   last_seen: string | null
+  /** The version discovery's package inventory reads (#451); "" when no
+   * linked package is there. Differs from `version` on a person's row. */
+  observed_version?: string
   /** The application group that made the install, while it is its. */
   group: { id: string; name: string; slug: string } | null
   /** This install's own SPDX licence expression; "" = the application's. */
@@ -11635,7 +11641,13 @@ export interface LifecycleOverview {
 
 /** Where a device's or VM's software version came from (#451). */
 export type SoftwareVersionSource =
-  "" | "manual" | "snmp" | "virtualization" | "oxidized" | "import"
+  | ""
+  | "manual"
+  | "snmp"
+  | "virtualization"
+  | "oxidized"
+  | "import"
+  | "discovery"
 
 /** One row of GET /api/lifecycle/versions/ (#451): a platform and version
  * with its device and VM counts. */
@@ -18416,6 +18428,19 @@ export interface InventoryRun {
   errors: string[]
   /** A run on Outposts: hosts still waiting for or with their Outpost. */
   outstanding?: number
+  /** Detail only: whether the store has advisory data for the packages
+   * this run brought; null when that does not apply. */
+  advisories?: PackageAdvisoryState | null
+}
+
+/** Whether the vulnerability store holds advisory data for packages read
+ * after its last fetch (#451, `discovery.advisories`). */
+export interface PackageAdvisoryState {
+  mode: "upload" | "server" | "browser"
+  state: "fetched" | "not_fetched" | "queued" | "running"
+  last_fetch: string | null
+  /** The caller may sync or import (deployment admin). */
+  can_sync?: boolean
 }
 
 /** How discovery read a host, most secure first; `ssh` is an older run. */
@@ -18491,7 +18516,23 @@ export interface ObservedService {
   run: string | null
 }
 
-export type FindingKind = "service" | "software" | "cpe"
+export type FindingKind =
+  | "service"
+  | "software"
+  | "cpe"
+  // From the package inventory (#451).
+  | "platform"
+  | "application"
+  | "link"
+
+/** A host and the package that put it in an `application`/`link` finding. */
+export interface FindingPackageEvidence {
+  kind: "device" | "virtual_machine"
+  id: string
+  name: string
+  package: string
+  version: string
+}
 
 export interface FindingEvidence {
   observed_id: string
@@ -18524,7 +18565,26 @@ export interface DiscoveryFinding {
     application_name?: string
     version?: string
     identifier?: string
+    /** `platform`: the tenant's platform (null: create one), its name, the
+     * host's platform now and the end-of-life cycle it gets. */
+    platform?: { id: string; name: string } | null
+    platform_name?: string
+    current?: { id: string; name: string } | null
+    eol?: { product: string; cycle: string } | null
+    /** `application` / `link`. */
+    software?: string
+    package_names?: string[]
+    hosts?: number
   }
+  /** `platform`: what the read found. */
+  os?: {
+    os_id: string
+    version_id: string
+    pretty_name: string
+    collected_at: string
+  }
+  /** `application` / `link`: up to 20 hosts with the package. */
+  packages?: FindingPackageEvidence[]
   confidence: ServiceConfidence
   ignored: boolean
   evidence: FindingEvidence[]
@@ -18633,6 +18693,12 @@ export interface HostPackage {
   publisher: string
   first_seen: string
   last_seen: string
+  /** The application whose package names take it (#451); null when none,
+   * or without application view. */
+  application?: { id: string; name: string } | null
+  /** Open matches through this package no exception covers, with the
+   * worst CVSS severity; null while vulnerability data is off. */
+  cves?: { count: number; severity: VulnSeverity | "" } | null
 }
 
 export interface HostOsFact {
@@ -18667,4 +18733,7 @@ export interface HostPackagePage extends Paginated<HostPackage> {
     flag: "" | "product_unknown" | "ubr_unknown"
     open: number
   } | null
+  /** Whether the store holds advisory data for these packages yet; null
+   * while vulnerability data is off or nothing is matched. */
+  advisories?: PackageAdvisoryState | null
 }

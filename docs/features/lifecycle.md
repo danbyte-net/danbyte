@@ -148,14 +148,20 @@ Every software version records its **source**:
 | SNMP | The SNMP facts poll, read from `sysDescr` |
 | Virtualization | A hypervisor sync - the [vCenter sync](virt-vcenter.md) fills an ESXi host's version |
 | Oxidized | A configuration read from [Oxidized](oxidized.md#software-version) |
+| Discovery | A [package inventory](discovery.md#the-running-version) read of the host's own release data (`/etc/os-release`, the Windows build) |
 
 The rule: **a manual or imported version is never overwritten** by an
-automatic source. SNMP, Oxidized and the virtualization sync fill a blank
-version, or replace one an automatic source wrote, and stamp
+automatic source. SNMP, Oxidized, the virtualization sync and Discovery fill
+a blank version, or replace one an automatic source wrote, and stamp
 `software_version_seen_at` with when they set it. Clearing the field hands it
 back to them.
 
-Between automatic sources the **version read last wins**, with two
+**Discovery ranks above the other automatic sources.** It logs in and reads
+the release the OS itself states; SNMP and Oxidized parse a banner or a
+configuration, and a hypervisor reports what its guest agent claims. So a
+Discovery value replaces theirs - even a longer one (Debian's `13` over a
+guessed `13.1`) - and none of them replaces a Discovery value. Among SNMP,
+Oxidized and virtualization the **version read last wins**, with two
 exceptions:
 
 - The same version read by another source changes nothing: the source and

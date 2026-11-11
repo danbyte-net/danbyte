@@ -586,3 +586,34 @@ class DiscoveryWorkItem(models.Model):
             models.Index(fields=["engine", "status", "created_at"], name="disc_work_engine"),
             models.Index(fields=["status", "deadline"], name="disc_work_deadline"),
         ]
+
+
+INVENTORY_FINDING_KINDS = [
+    ("platform", "Set platform"),
+    ("application", "Add application"),
+    ("link", "Link package names"),
+]
+
+
+class InventoryFindingDecision(models.Model):
+    """An Ignore of a finding the package inventory raised (``platform``,
+    ``application``, ``link``; ``discovery.inventory_findings``). ``key`` is
+    the finding id; the finding stays hidden while its ``evidence`` (the OS
+    and release read, the host's platform) is the same. Queue state, not
+    change-logged."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE, related_name="+")
+    key = models.CharField(max_length=200)
+    kind = models.CharField(max_length=12, choices=INVENTORY_FINDING_KINDS)
+    evidence = models.CharField(max_length=400, blank=True, default="", db_default="")
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name="+")
+    decided_by_name = models.CharField(max_length=150, blank=True, default="", db_default="")
+    decided_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "key"],
+                                    name="uniq_disc_inventory_decision"),
+        ]

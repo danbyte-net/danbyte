@@ -327,6 +327,9 @@ class ApplicationSerializer(
         write_only=True, required=False, many=True,
     )
     eol = serializers.SerializerMethodField()
+    #: ``deb:nginx``, ``rpm:httpd``, ``deb:postgresql-*`` (``api.package_names``).
+    package_names = serializers.ListField(
+        child=serializers.CharField(max_length=140, allow_blank=True), required=False)
     install_count = serializers.SerializerMethodField()
     child_count = serializers.SerializerMethodField()
     flow_count = serializers.SerializerMethodField()
@@ -338,8 +341,8 @@ class ApplicationSerializer(
         model = Application
         fields = ["id", "name", "slug", "parent", "parent_id", "path", "depth",
                   "manufacturer", "manufacturer_id", "eol_source", "eol_product", "eol",
-                  "license", "purl_template", "cpe_template", "description", "tags", "tag_ids",
-                  "custom_fields",
+                  "license", "purl_template", "cpe_template", "package_names", "description",
+                  "tags", "tag_ids", "custom_fields",
                   "install_count", "child_count", "flow_count", "requirement_count",
                   "ancestors", "children",
                   "created_at", "updated_at"]
@@ -393,6 +396,16 @@ class ApplicationSerializer(
         if not value:
             raise serializers.ValidationError("A name is required.")
         return value
+
+    def validate_package_names(self, value):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from .package_names import clean
+
+        try:
+            return clean(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages[0]) from None
 
     def validate_parent_id(self, value):
         if value is not None and self.instance is not None:
@@ -460,7 +473,7 @@ class InstalledSoftwareSerializer(
                   "end_of_support", "eol", "effective_release", "effective_end",
                   "effective_source", "license", "effective_license", "purl", "cpe",
                   "effective_purl", "effective_cpe",
-                  "source", "last_seen",
+                  "source", "last_seen", "observed_version",
                   "group", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "cycle_manual", "group", "created_at", "updated_at"]

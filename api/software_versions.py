@@ -8,7 +8,9 @@ Sources (``software_version_source``):
 ``import``          set by a file import;
 ``snmp``            read from ``sysDescr`` when SNMP facts are collected;
 ``virtualization``  reported by a hypervisor sync;
-``oxidized``        read from a configuration backup held by Oxidized.
+``oxidized``        read from a configuration backup held by Oxidized;
+``discovery``       read by built-in discovery from the host itself
+                    (``/etc/os-release``, the Windows CurrentVersion key).
 
 A manual or imported value is the operator's and is never overwritten. An
 automatic source may replace a blank value or one an automatic source wrote
@@ -18,6 +20,12 @@ two exceptions: a value another automatic source already holds is left as it
 is (no source ping-pong), and a less specific value never replaces a more
 specific one it is a prefix of (a config's ``version 17.9`` keeps SNMP's
 ``17.9.4a``).
+
+Discovery ranks above the other automatic sources (``RANK``): it is an
+authenticated read of the OS's own release data, where SNMP and Oxidized
+parse a banner or a config and a hypervisor reports what its guest agent
+claims. Its value replaces theirs (even a longer one: Debian's ``13`` over
+a guess of ``13.1``), and none of them replaces a value Discovery holds.
 
 ``extract(text, pattern)`` reads a version: the platform's own pattern
 first, then the built-in extractors for Cisco IOS, IOS-XE, NX-OS, Juniper
@@ -38,7 +46,10 @@ MAX_VERSION = 64
 
 #: Sources a person owns: no automatic writer replaces them.
 OWNED_SOURCES = frozenset({"manual", "import"})
-AUTOMATIC_SOURCES = frozenset({"snmp", "virtualization", "oxidized"})
+AUTOMATIC_SOURCES = frozenset({"snmp", "virtualization", "oxidized", "discovery"})
+#: Between automatic sources: a higher rank replaces a lower one, never the
+#: other way round; equal ranks follow the read-last rule.
+RANK = {"snmp": 0, "virtualization": 0, "oxidized": 0, "discovery": 1}
 
 _V = r"([0-9][0-9A-Za-z.()\-]*)"
 
@@ -240,7 +251,10 @@ def record(obj, version: str | None, source: str, now=None) -> list[str]:
             # new, so no write and no source ping-pong between SNMP and
             # Oxidized.
             return []
-        if held_by != source and less_specific(version, current):
+        if RANK.get(held_by, 0) > RANK.get(source, 0):
+            return []
+        if (held_by != source and RANK.get(held_by, 0) == RANK.get(source, 0)
+                and less_specific(version, current)):
             return []
     obj.software_version = version
     obj.software_version_seen_at = now or timezone.now()
@@ -280,7 +294,8 @@ def version_sort_key(version: str):
 
 # ─── List filters ──────────────────────────────────────────────────────────
 
-SOURCE_FILTER_VALUES = ("manual", "snmp", "virtualization", "oxidized", "import", "none")
+SOURCE_FILTER_VALUES = ("manual", "snmp", "virtualization", "oxidized", "discovery", "import",
+                        "none")
 
 
 def apply_list_filters(qs, request):

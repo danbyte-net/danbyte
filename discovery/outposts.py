@@ -644,14 +644,18 @@ def ingest(engine, data) -> dict:
     accepted = refused = 0
     runs, changed = set(), {}
     plans: dict = {}
+    reads: dict = {}
+    since = timezone.now()
     for item in items:
         r = ids.pop(str(item.pk))
-        ok = _ingest_one(engine, item, r, plans, changed)
+        ok = _ingest_one(engine, item, r, plans, changed, reads)
         accepted += ok
         refused += not ok
         runs.add(item.run_id)
     # Unknown ids, other engines' or tenants' items, ones already reported.
     refused = len(rows) - accepted
+    for run_id, read in reads.items():
+        _after_read(run_id, read, changed, since)
     for run_id in runs:
         finish_if_done(run_id)
     for tenant_id, hosts in changed.items():
@@ -664,7 +668,33 @@ def ingest(engine, data) -> dict:
     return {"accepted": accepted, "refused": refused}
 
 
-def _ingest_one(engine, item, r, plans, changed) -> bool:
+def _after_read(run_id, read, changed, since) -> None:
+    """The same follow-ups a server run makes once its hosts are stored
+    (``runner.after_read``: running versions, installs from packages, the
+    advisory fetch), for the hosts this post read; their counts are added to
+    the run's."""
+    from . import runner
+    from .models import InventoryRun
+
+    run = InventoryRun.objects.select_related("tenant").filter(pk=run_id).first()
+    if run is None:
+        return
+    hosts = changed.setdefault(run.tenant_id, {"device": set(), "virtual_machine": set()})
+    extra: dict = {}
+    runner.after_read(run.tenant, read, hosts, extra, since)
+    if not extra:
+        return
+    with transaction.atomic():
+        locked = InventoryRun.objects.select_for_update().filter(pk=run_id).first()
+        if locked is None:
+            return
+        counts = dict(locked.counts or {})
+        for k, v in extra.items():
+            counts[k] = v if isinstance(v, bool) else counts.get(k, 0) + v
+        InventoryRun.objects.filter(pk=run_id).update(counts=counts)
+
+
+def _ingest_one(engine, item, r, plans, changed, reads=None) -> bool:
     from danbyte_checks import inventory, service_scan
 
     from . import runner, services
@@ -720,11 +750,12 @@ def _ingest_one(engine, item, r, plans, changed) -> bool:
                 t.skip, t.message, result, observed = "failed", bad, None, None
             ref = (p.get("logins") or [])[used] if used is not None else {}
             windows_products: set[str] = set()
+            read = reads.setdefault(run.pk, runner.new_read()) if reads is not None else None
             row = runner.inventory_row(
                 run, t, result, observed, user=user, counts=counts, changed_hosts=hosts,
                 transport=ref.get("transport", "") if result is not None else "",
                 credential_source=ref.get("source", ""), tried=tried, engine=where,
-                windows_products=windows_products)
+                windows_products=windows_products, read=read)
             if windows_products:
                 # A Windows release new to the store: one debounced fetch.
                 runner._fetch_windows(windows_products)

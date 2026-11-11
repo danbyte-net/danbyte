@@ -7,7 +7,8 @@ import { FindingsPanel } from "@/components/discovery/findings-panel"
 import { useDiscoveryStatus } from "@/components/discovery/status"
 
 // The tenant-wide review queue (#451 B3): every proposal from the service
-// scans' current observations on addresses you may view.
+// scans' current observations on addresses you may view, and from the
+// package inventory on hosts you may view.
 
 export const Route = createFileRoute("/discovery/findings")({
   component: FindingsPage,

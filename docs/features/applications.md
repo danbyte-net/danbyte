@@ -30,6 +30,26 @@ CPEs](sbom.md#package-urls-and-cpes)), a description, tags and
 platforms; a site role reads them, so its editors can pick them on their
 devices.
 
+### Package names
+
+**Package names** (one per line on the form) say which inventoried packages
+are the application, so [Discovery](discovery.md#applications-from-packages)
+records its installs from what it reads on each host:
+
+| Entry | Takes |
+|---|---|
+| `deb:nginx` | the Debian/Ubuntu package `nginx` |
+| `rpm:httpd` | the RPM package `httpd` |
+| `deb:postgresql-1*` | `postgresql-16`, `postgresql-17`, … |
+| `nginx` | `nginx` as a deb, rpm or apk package |
+| `generic:Mozilla Firefox*` | a Windows program of that name |
+
+Names are exact, or a glob whose only wildcard is `*`; there are no regular
+expressions. Linux names compare in lower case, Windows program names
+without case. At most 50 entries. When a host has several matching
+packages, the earliest entry wins (`nginx` over `nginx-common`), then the
+shortest name. Changing the list brings the installs in line at once.
+
 ### The tree
 
 **Parent** nests applications into a tree - a business domain, its
@@ -104,9 +124,10 @@ virtual machine. The same version is recorded once per device or VM.
 | License | Optional SPDX licence expression for this install only; blank uses the application's. The [SBOM](sbom.md) reports this one, else the application's. |
 | Package URL, CPE | Optional finished `purl` / `cpe` for this install only; blank fills in the application's template. See [Package URLs and CPEs](sbom.md#package-urls-and-cpes). |
 | Description, tags, custom fields | |
-| Source | `manual`, `import`, `discovery` or `group`. Rows you add are manual, an import's are import, an [application group](#application-groups)'s are group. Discovery is kept for later. |
+| Source | `manual`, `import`, `discovery` or `group`. Rows you add are manual, an import's are import, an [application group](#application-groups)'s are group. Discovery made the install - from an inventoried package (its [package names](#package-names)) or an accepted service-scan finding. |
 | Group | The application group whose assignment made the install, while it is its. Read-only. |
-| Last seen | Kept for discovery; empty for now. |
+| Last seen | When discovery last saw it. |
+| Observed version | Read-only: the version discovery's package inventory reads on the host. On an install you made, the Software tab shows *Discovery reads 1.26.3* when it differs from your version; your version is never overwritten. |
 
 The **Software** tab on device and VM pages lists the installs with their
 version, service, *Group*, *License* (the install's own, marked
@@ -292,7 +313,9 @@ the installs are written as you.
 | `/api/application-group-assignments/` | List, `POST` (assign), `DELETE` (unassign). `?group=`, `?device=`, `?virtual_machine=`. `POST set/` makes a host's groups exactly a list. |
 
 An application carries `parent`, `path`, `depth`, `manufacturer`,
-`license`, `purl_template`, `cpe_template`, `eol_source`, `eol_product`, `eol` (`{source, product, cycles}`, `null` while
+`license`, `purl_template`, `cpe_template`, `package_names` (a list, see
+[Package names](#package-names); `400` with the reason for an entry that is
+not one), `eol_source`, `eol_product`, `eol` (`{source, product, cycles}`, `null` while
 the feature is off), `install_count`, `child_count` and `flow_count`. The
 detail adds `ancestors` (root first) and `children` (three levels deep), each
 `{id, name, install_count}`, children with `child_count` and their own
@@ -303,7 +326,7 @@ An install carries `application` (`{id, name, slug, path}`), `device` or
 `virtual_machine`, `version`, `cycle`, `cycle_manual`, `service`,
 `release_date`, `end_of_support`, `eol` (the cycle's status and facts),
 `effective_release`, `effective_end`, `effective_source`, `source`,
-`last_seen`, `group` (`{id, name, slug}` or `null`), `license` (its own)
+`last_seen`, `observed_version` (read-only), `group` (`{id, name, slug}` or `null`), `license` (its own)
 and `effective_license` (its own, else the application's), `purl` and
 `cpe` (its own) and `effective_purl` / `effective_cpe` (what the SBOM
 writes). Write `application_id`, `device_id` or `virtual_machine_id`,

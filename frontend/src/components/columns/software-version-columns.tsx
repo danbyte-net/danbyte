@@ -41,6 +41,7 @@ export function versionRowSearch(
 }
 
 const SOURCE_ORDER: (KnownVersionSource | "none")[] = [
+  "discovery",
   "snmp",
   "virtualization",
   "oxidized",

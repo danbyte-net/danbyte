@@ -3,6 +3,10 @@
 Package matches exist only while Discovery is on for the tenant
 (``vulnerabilities.matching``); flipping the integration toggle queues one
 recompute when the transaction commits, so they appear or resolve at once.
+
+Changing an application's package names queues a tenant-wide install sync
+(``discovery.software``), so its installs follow without waiting for the
+next read.
 """
 from __future__ import annotations
 
@@ -36,8 +40,35 @@ def _saved(sender, instance, created, raw=False, **kwargs):
     transaction.on_commit(go)
 
 
+_PKG_SNAP = "_discovery_package_names"
+
+
+def _app_init(sender, instance, **kwargs):
+    setattr(instance, _PKG_SNAP, instance.__dict__.get("package_names"))
+
+
+def _app_saved(sender, instance, created, raw=False, **kwargs):
+    if raw:
+        return
+    before = getattr(instance, _PKG_SNAP, None)
+    after = instance.package_names or []
+    setattr(instance, _PKG_SNAP, after)
+    if (before or []) == after:
+        return
+    from .gate import active
+
+    if not active(instance.tenant):
+        return
+    from .software import enqueue_sync
+
+    enqueue_sync(instance.tenant_id)
+
+
 def connect() -> None:
+    from api.models import Application
     from integrations.models import IntegrationSettings
 
     post_init.connect(_init, sender=IntegrationSettings, dispatch_uid="discovery-init-int")
     post_save.connect(_saved, sender=IntegrationSettings, dispatch_uid="discovery-save-int")
+    post_init.connect(_app_init, sender=Application, dispatch_uid="discovery-init-app")
+    post_save.connect(_app_saved, sender=Application, dispatch_uid="discovery-save-app")

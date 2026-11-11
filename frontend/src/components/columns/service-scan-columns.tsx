@@ -50,7 +50,13 @@ export const FINDING_KIND_LABELS: Record<FindingKind, string> = {
   service: "Add service",
   software: "Add software",
   cpe: "Map to CPE",
+  platform: "Set platform",
+  application: "Add application",
+  link: "Link packages",
 }
+
+/** From the package inventory, not a service scan (#451). */
+const INVENTORY_KINDS = new Set<FindingKind>(["platform", "application", "link"])
 
 function labelOf<T extends string>(labels: Record<T, string>, v: string) {
   return Object.hasOwn(labels, v) ? labels[v as T] : v
@@ -246,6 +252,15 @@ export function buildObservedServiceColumns(): ColumnDef<
 function proposalText(f: DiscoveryFinding): string {
   const p = f.proposal
   if (f.kind === "service") return p.name ?? ""
+  if (f.kind === "platform")
+    return [
+      p.platform?.name ?? p.platform_name,
+      p.eol ? `(${p.eol.product} ${p.eol.cycle})` : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+  if (f.kind === "application" || f.kind === "link")
+    return p.application?.name ?? p.application_name ?? ""
   if (f.kind === "software")
     return [p.application?.name ?? p.application_name, p.version]
       .filter(Boolean)
@@ -255,6 +270,35 @@ function proposalText(f: DiscoveryFinding): string {
 
 function evidenceText(e: FindingEvidence): string {
   return e.banner || e.rule || e.service_name || ""
+}
+
+/** An inventory finding's evidence: the OS the read found, or the
+ * packages; the hosts with them in the hover text. */
+function inventoryEvidence(f: DiscoveryFinding): [string, string] {
+  if (f.kind === "platform") {
+    const os = f.os
+    const text = os ? os.pretty_name || `${os.os_id} ${os.version_id}` : ""
+    const from = `Platform now: ${f.proposal.current?.name ?? "none"}`
+    return [text, text ? `${text} · ${from}` : from]
+  }
+  const pkgs = f.packages ?? []
+  const names = [...new Set(pkgs.map((e) => e.package))].join(", ")
+  const more = (f.proposal.hosts ?? 0) - 10
+  const full = [
+    (f.proposal.package_names ?? []).join(", "),
+    ...pkgs.slice(0, 10).map((e) => `${e.name} · ${e.package} ${e.version}`),
+    more > 0 ? `+${more} more` : "",
+  ]
+    .filter(Boolean)
+    .join("; ")
+  return [names, full]
+}
+
+/** The second line of an inventory proposal: what accepting creates. */
+function inventoryNote(f: DiscoveryFinding): string {
+  if (f.kind === "platform") return f.proposal.platform ? "" : " · new platform"
+  if (f.kind === "application") return " · new application"
+  return ""
 }
 
 /** The review queue, read left to right: where, which port, what is
@@ -281,6 +325,11 @@ export function buildFindingColumns(
                   vm={f.host.kind === "virtual_machine" ? f.host : null}
                 />
               </TruncatedText>
+            ) : INVENTORY_KINDS.has(f.kind) ? (
+              <span className="num">
+                {f.proposal.hosts ?? 0}{" "}
+                {f.proposal.hosts === 1 ? "host" : "hosts"}
+              </span>
             ) : f.evidence.length > 1 ? (
               <span className="num">{f.evidence.length} hosts</span>
             ) : null}
@@ -338,7 +387,9 @@ export function buildFindingColumns(
                 {labelOf(FINDING_KIND_LABELS, f.kind) +
                   (f.kind === "software" && !p.application
                     ? " · new application"
-                    : "")}
+                    : INVENTORY_KINDS.has(f.kind)
+                      ? inventoryNote(f)
+                      : "")}
               </TruncatedText>
               {f.ignored && <Badge variant="secondary">Ignored</Badge>}
             </span>
@@ -367,10 +418,17 @@ export function buildFindingColumns(
     },
     {
       id: "source",
-      accessorFn: (f) => f.evidence.at(0)?.source ?? "",
+      accessorFn: (f) =>
+        INVENTORY_KINDS.has(f.kind)
+          ? "inventory"
+          : (f.evidence.at(0)?.source ?? ""),
       header: "Source",
       enableSorting: false,
       cell: ({ row }) => {
+        if (INVENTORY_KINDS.has(row.original.kind))
+          return (
+            <span className="text-xs whitespace-nowrap">Package inventory</span>
+          )
         const src = row.original.evidence.at(0)?.source
         return src ? (
           <span className="text-xs whitespace-nowrap">
@@ -385,14 +443,23 @@ export function buildFindingColumns(
         facet: {
           kind: "enum",
           label: "Source",
-          get: (f: DiscoveryFinding) => f.evidence.at(0)?.source ?? "",
-          formatValue: (v) => ({ label: labelOf(SOURCE_LABELS, v) }),
+          get: (f: DiscoveryFinding) =>
+            INVENTORY_KINDS.has(f.kind)
+              ? "inventory"
+              : (f.evidence.at(0)?.source ?? ""),
+          formatValue: (v) => ({
+            label:
+              v === "inventory"
+                ? "Package inventory"
+                : labelOf(SOURCE_LABELS, v),
+          }),
         },
       },
     },
     {
       id: "evidence",
       accessorFn: (f) => {
+        if (INVENTORY_KINDS.has(f.kind)) return inventoryEvidence(f)[0]
         const first = f.evidence.at(0)
         return first ? evidenceText(first) : ""
       },
@@ -400,6 +467,20 @@ export function buildFindingColumns(
       enableSorting: false,
       cell: ({ row }) => {
         const ev = row.original.evidence
+        if (INVENTORY_KINDS.has(row.original.kind)) {
+          const [text, full] = inventoryEvidence(row.original)
+          if (!text) return dash
+          return (
+            <span className="block w-0 min-w-full">
+              <TruncatedText
+                className="block font-mono text-xs text-muted-foreground"
+                title={full}
+              >
+                {text}
+              </TruncatedText>
+            </span>
+          )
+        }
         if (ev.length === 0) return dash
         const full = ev
           .slice(0, 10)
@@ -429,13 +510,16 @@ export function buildFindingColumns(
     {
       id: "last_seen",
       accessorFn: (f) =>
+        f.os?.collected_at ??
         f.evidence.reduce((m, e) => (e.last_seen > m ? e.last_seen : m), ""),
       header: ({ column }) => <SortHeader column={column} label="Last seen" />,
       cell: ({ row }) => {
-        const last = row.original.evidence.reduce(
-          (m, e) => (e.last_seen > m ? e.last_seen : m),
-          ""
-        )
+        const last =
+          row.original.os?.collected_at ??
+          row.original.evidence.reduce(
+            (m, e) => (e.last_seen > m ? e.last_seen : m),
+            ""
+          )
         return last ? <TimeCell iso={last} /> : dash
       },
       meta: { label: "Last seen" },

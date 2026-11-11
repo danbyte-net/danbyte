@@ -199,9 +199,43 @@ def store(tenant, host, run, result, now=None, transport="") -> dict:
             last_seen=now, run=run)
     updated = len(changed) - back
     windows = resolve_fact(fact).keys if fact.os_id == "windows" else ()
+    from .models import MATCHED_TYPES
+
     return {"packages": len(wanted), "added": len(new) + back, "removed": len(gone),
             "updated": updated, "changed": bool(new or changed or gone or os_moved),
-            "windows_products": windows}
+            "windows_products": windows,
+            # What a fetch may not know yet: the OSV keys of packages new here.
+            "new_keys": {(h.purl_type, h.match_name) for h in new
+                         if h.purl_type in MATCHED_TYPES}}
+
+
+def untracked_keys(keys: set, since) -> set:
+    """Of ``keys`` (``(purl type, match name)``), the ones no host had before
+    ``since``: new to the store's tracked products. One query."""
+    if not keys:
+        return set()
+    from .models import MATCHED_TYPES
+
+    seen = set(HostPackage.objects.filter(
+        removed_at__isnull=True, first_seen__lt=since, purl_type__in=MATCHED_TYPES,
+        match_name__in=sorted({n for _t, n in keys})).values_list(
+        "purl_type", "match_name").distinct())
+    return {k for k in keys if k not in seen}
+
+
+def queue_fetch(keys: set, since) -> bool:
+    """Server mode: fetch the advisories of packages no host had before
+    ``since`` at once, in one background job (``fetch.enqueue_products``,
+    as a new product mapping does); the daily run covers the rest. Nothing
+    in the other modes. Returns whether a fetch was queued."""
+    from vulnerabilities import fetch
+
+    if not keys or not fetch.server_mode():
+        return False
+    fresh = untracked_keys(keys, since)
+    if not fresh:
+        return False
+    return fetch.enqueue_products({("purl", "", t, n) for t, n in fresh})
 
 
 def purge_removed(now=None) -> int:

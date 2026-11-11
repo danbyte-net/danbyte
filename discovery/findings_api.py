@@ -1,11 +1,15 @@
 """Observed services and the review queue (#451 B3). Every endpoint answers
-404 while Discovery is off for the active tenant and needs ``ipaddress``
-view; rows are limited to addresses the caller may view.
+404 while Discovery is off for the active tenant. Service-scan rows need
+``ipaddress`` view and are limited to addresses the caller may view; the
+package inventory's proposals (``platform``, ``application``, ``link``;
+``discovery.inventory_findings``) need ``installedsoftware`` view and are
+limited to hosts the caller may view. The queue needs one of the two;
+observed services need ``ipaddress`` view.
 
 ``discovery/services/``          GET: observed services
 ``discovery/findings/``          GET: proposals to review
-``discovery/findings/accept/``   POST: create what ``service:``/``software:``
-                                 findings propose (*add* on it)
+``discovery/findings/accept/``   POST: create what the findings propose
+                                 (*add* or *change* on it)
 ``discovery/findings/ignore/``   POST: hide findings until the evidence
                                  changes, or show them again
 """
@@ -25,17 +29,68 @@ from rest_framework.response import Response
 
 from auth_api import rbac
 
-from . import findings, gate
-from .api import _paginate, _ref, _visible_profiles
-from .models import FindingDecision, InventoryHostResult, InventoryRun
+from . import findings, gate, inventory_findings
+from .api import _paginate, _ref, _visible_hosts_q, _visible_profiles
+from .models import (
+    FindingDecision,
+    HostOsFact,
+    InventoryFindingDecision,
+    InventoryHostResult,
+    InventoryRun,
+)
 
 MAX_IDS = 500
+ALL_KINDS = (*findings.KINDS, *inventory_findings.KINDS)
 
 
 def _need_ip_view(request, tenant):
     if not request.user.is_superuser and not rbac.has_action(
             request.user, tenant, "ipaddress", "view"):
         raise PermissionDenied("ipaddress.view required.")
+
+
+def _may(request, tenant) -> tuple[bool, bool]:
+    """``(service-scan rows, inventory rows)`` the caller may read; neither
+    is a 403."""
+    user = request.user
+    if user.is_superuser:
+        return True, True
+    services = rbac.has_action(user, tenant, "ipaddress", "view")
+    inventory = rbac.has_action(user, tenant, "installedsoftware", "view")
+    if not (services or inventory):
+        raise PermissionDenied("ipaddress.view or installedsoftware.view required.")
+    return services, inventory
+
+
+def _inventory_hosts_q(request, tenant):
+    """Hosts the caller may view, narrowed like the observations: ``run``
+    (the hosts it read), ``profile`` (hosts it read last), ``device``,
+    ``virtual_machine``."""
+    q = _visible_hosts_q(request, tenant)
+    run_id = _uuid_param(request, "run")
+    if run_id is not None:
+        run = InventoryRun.objects.filter(
+            tenant=tenant, pk=run_id,
+            profile__in=_visible_profiles(request, tenant).values("pk")).first()
+        if run is None:
+            raise NotFound("Not found.")
+        hosts = InventoryHostResult.objects.filter(run=run)
+        q &= (Q(device__in=hosts.filter(device__isnull=False).values("device_id"))
+              | Q(virtual_machine__in=hosts.filter(virtual_machine__isnull=False)
+                  .values("virtual_machine_id")))
+    profile_id = _uuid_param(request, "profile")
+    if profile_id is not None:
+        if not _visible_profiles(request, tenant).filter(pk=profile_id).exists():
+            raise NotFound("Not found.")
+        facts = HostOsFact.objects.filter(tenant=tenant, run__profile_id=profile_id)
+        q &= (Q(device__in=facts.filter(device__isnull=False).values("device_id"))
+              | Q(virtual_machine__in=facts.filter(virtual_machine__isnull=False)
+                  .values("virtual_machine_id")))
+    for field in ("device", "virtual_machine"):
+        value = _uuid_param(request, field)
+        if value is not None:
+            q &= Q(**{f"{field}_id": value})
+    return q
 
 
 def _uuid_param(request, name):
@@ -121,6 +176,7 @@ def discovery_services(request):
 
 
 def _rows(request, tenant, *, include_ignored=False):
+    """The service-scan proposals (``discovery.findings``)."""
     from vulnerabilities.models import VulnerabilitySettings
 
     return findings.build(
@@ -129,28 +185,47 @@ def _rows(request, tenant, *, include_ignored=False):
         include_ignored=include_ignored)
 
 
-@extend_schema(summary="Service-scan findings to review", tags=["discovery"],
+def _inventory_rows(request, tenant, *, include_ignored=False):
+    """The package inventory's proposals (``discovery.inventory_findings``)."""
+    return inventory_findings.build(request, tenant, _inventory_hosts_q(request, tenant),
+                                    include_ignored=include_ignored)
+
+
+def _all_rows(request, tenant, *, include_ignored=False):
+    services, inventory = _may(request, tenant)
+    rows = _rows(request, tenant, include_ignored=include_ignored) if services else []
+    if inventory:
+        rows += _inventory_rows(request, tenant, include_ignored=include_ignored)
+    return rows
+
+
+def _public(row: dict) -> dict:
+    return {k: v for k, v in row.items() if k != "evidence_key"}
+
+
+@extend_schema(summary="Discovery findings to review", tags=["discovery"],
                responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def discovery_findings(request):
     """Proposals from current observations: ``service``, ``software`` and
-    ``cpe`` (``discovery.findings``). Filters as observed services, plus
-    ``kind`` and ``ignored`` (``true``: ignored ones too). ``totals`` counts
-    the open ones by kind."""
+    ``cpe`` (``discovery.findings``, with ``ipaddress`` view), and from the
+    package inventory: ``platform``, ``application`` and ``link``
+    (``discovery.inventory_findings``, with ``installedsoftware`` view).
+    Filters as observed services, plus ``kind`` and ``ignored`` (``true``:
+    ignored ones too). ``totals`` counts the open ones by kind."""
     tenant = gate.require(request)
-    _need_ip_view(request, tenant)
     p = request.query_params
     kinds = [k for k in (p.get("kind") or "").split(",") if k]
-    if any(k not in findings.KINDS for k in kinds):
-        raise ValidationError({"kind": f"One of: {', '.join(findings.KINDS)}."})
+    if any(k not in ALL_KINDS for k in kinds):
+        raise ValidationError({"kind": f"One of: {', '.join(ALL_KINDS)}."})
     show_ignored = (p.get("ignored") or "").strip().lower() in ("true", "1")
-    rows = _rows(request, tenant, include_ignored=show_ignored)
+    rows = _all_rows(request, tenant, include_ignored=show_ignored)
     totals = {k: sum(1 for r in rows if r["kind"] == k and not r["ignored"])
-              for k in findings.KINDS}
+              for k in ALL_KINDS}
     if kinds:
         rows = [r for r in rows if r["kind"] in kinds]
-    resp = _paginate(request, rows, list)
+    resp = _paginate(request, [_public(r) for r in rows], list)
     resp.data["totals"] = totals
     return resp
 
@@ -164,33 +239,74 @@ def _ids(request) -> list[str]:
     return ids
 
 
-@extend_schema(summary="Accept service-scan findings", tags=["discovery"],
+def _inventory_host(tenant, row):
+    from api.models import Device, VirtualMachine
+
+    model = Device if row["host"]["kind"] == "device" else VirtualMachine
+    return model.objects.filter(tenant=tenant, pk=row["host"]["id"]).first()
+
+
+def _accept_inventory(request, tenant, fid, row) -> dict:
+    kind = row["kind"]
+    if kind == "platform":
+        host = _inventory_host(tenant, row)
+        if host is None:
+            raise inventory_findings.Refused("Not found.")
+        return inventory_findings.accept_platform(request, tenant, row, host)
+    if kind == "application":
+        return inventory_findings.accept_application(request, tenant, row)
+    return inventory_findings.accept_link(request, tenant, row)
+
+
+@extend_schema(summary="Accept discovery findings", tags=["discovery"],
                request=OpenApiTypes.OBJECT,
                responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def discovery_findings_accept(request):
-    """``{ids: [...]}`` of ``service:`` and ``software:`` findings: create the
+    """``{ids: [...]}`` of findings: ``service:`` and ``software:`` create the
     Service, or the install (and its application when the tenant has none of
-    that name), each a normal change-logged object. Needs *add* on what is
-    created, site scope included; a row the caller may not create is
-    refused and nothing of it stays. ``cpe:`` findings are accepted through
-    ``POST /api/vulnerabilities/mappings/bulk-create/``. Answers ``created``
-    (``[{finding, kind, id, name}]``) and ``refused`` (``[{id, reason}]``)."""
+    that name); ``platform:`` puts the host on the platform (creating and
+    mapping it as proposed); ``application:`` creates the application with
+    its package names; ``link:`` sets an application's package names. Each a
+    normal change-logged object. Needs *add* on what is created and *change*
+    on what is changed, site scope included; a row the caller may not
+    create is refused and nothing of it stays. ``cpe:`` findings are
+    accepted through ``POST /api/vulnerabilities/mappings/bulk-create/``.
+    Answers ``created`` (``[{finding, kind, id, name}]``) and ``refused``
+    (``[{id, reason}]``)."""
     tenant = gate.require(request)
-    _need_ip_view(request, tenant)
+    services, inventory = _may(request, tenant)
     ids = _ids(request)
     user = request.user
-    oids = [i.split(":", 1)[1] for i in ids if ":" in i and _is_uuid(i.split(":", 1)[1])]
-    visible = {str(o.pk): o for o in findings.visible_observations(request, tenant).filter(
-        pk__in=oids)}
-    current = {r["id"] for r in _rows(request, tenant, include_ignored=True)}
+    visible, current = {}, set()
+    if services:
+        oids = [i.split(":", 1)[1] for i in ids if ":" in i and _is_uuid(i.split(":", 1)[1])]
+        visible = {str(o.pk): o for o in findings.visible_observations(
+            request, tenant).filter(pk__in=oids)}
+        current = {r["id"] for r in _rows(request, tenant, include_ignored=True)}
+    inv = {}
+    if inventory and any(i.partition(":")[0] in inventory_findings.KINDS for i in ids):
+        inv = {r["id"]: r for r in _inventory_rows(request, tenant, include_ignored=True)}
     created, refused = [], []
     for fid in ids:
         kind, _sep, oid = fid.partition(":")
         if kind == "cpe":
             refused.append({"id": fid, "reason": "Map products through the vulnerability "
                                                  "mappings bulk create."})
+            continue
+        if kind in inventory_findings.KINDS:
+            row = inv.get(fid)
+            if row is None:
+                refused.append({"id": fid, "reason": "Not found."})
+                continue
+            try:
+                with transaction.atomic():
+                    made = _accept_inventory(request, tenant, fid, row)
+            except inventory_findings.Refused as exc:
+                refused.append({"id": fid, "reason": str(exc)})
+                continue
+            created.append({"finding": fid, **made})
             continue
         o = visible.get(oid)
         if kind not in ("service", "software") or o is None or fid not in current:
@@ -211,29 +327,37 @@ def discovery_findings_accept(request):
     return Response({"created": created, "refused": refused})
 
 
-@extend_schema(summary="Ignore service-scan findings", tags=["discovery"],
+#: What ignoring an inventory finding needs: what accepting it needs.
+INVENTORY_NEEDS = {"application": ("application", "add"), "link": ("application", "change")}
+
+
+@extend_schema(summary="Ignore discovery findings", tags=["discovery"],
                request=OpenApiTypes.OBJECT,
                responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def discovery_findings_ignore(request):
     """``{ids: [...], ignore: true|false}``: hide findings until their
-    observation's evidence changes, or show them again. Needs what accepting
-    would need: *add* on services or installed software, *change* on
-    applications for ``cpe:``."""
+    evidence changes, or show them again. Needs what accepting would need:
+    *add* on services or installed software, *change* on applications for
+    ``cpe:`` and ``link:``, *add* on applications for ``application:``,
+    *change* on the host for ``platform:``."""
     tenant = gate.require(request)
-    _need_ip_view(request, tenant)
+    services, inventory = _may(request, tenant)
     ids = _ids(request)
     ignore = request.data.get("ignore", True)
     if not isinstance(ignore, bool):
         raise ValidationError({"ignore": "true or false."})
     user = request.user
-    rows = {r["id"]: r for r in _rows(request, tenant, include_ignored=True)}
+    rows = {r["id"]: r for r in _rows(request, tenant, include_ignored=True)} if services else {}
+    if inventory and any(i.partition(":")[0] in inventory_findings.KINDS for i in ids):
+        rows.update({r["id"]: r for r in _inventory_rows(request, tenant,
+                                                         include_ignored=True)})
     wanted = {e["observed_id"] for fid in ids if fid in rows for e in rows[fid]["evidence"]}
     obs = {str(o.pk): o for o in findings.visible_observations(request, tenant).filter(
-        pk__in=list(wanted))}
+        pk__in=list(wanted))} if wanted else {}
     needs = {"service": ("service", "add"), "software": ("installedsoftware", "add"),
-             "cpe": ("application", "change")}
+             "cpe": ("application", "change"), **INVENTORY_NEEDS}
     done, refused = [], []
     now = timezone.now()
     for fid in ids:
@@ -241,9 +365,29 @@ def discovery_findings_ignore(request):
         if row is None:
             refused.append({"id": fid, "reason": "Not found."})
             continue
-        slug, verb = needs[row["kind"]]
-        if not user.is_superuser and not rbac.has_action(user, tenant, slug, verb):
-            refused.append({"id": fid, "reason": f"{slug}.{verb} required."})
+        if row["kind"] == "platform":
+            slug = "device" if row["host"]["kind"] == "device" else "virtualmachine"
+            host = _inventory_host(tenant, row)
+            if host is None or not (user.is_superuser or rbac.can_act_on(
+                    user, tenant, slug, "change", host)):
+                refused.append({"id": fid, "reason": f"{slug}.change required."})
+                continue
+        else:
+            slug, verb = needs[row["kind"]]
+            if not user.is_superuser and not rbac.has_action(user, tenant, slug, verb):
+                refused.append({"id": fid, "reason": f"{slug}.{verb} required."})
+                continue
+        if row["kind"] in inventory_findings.KINDS:
+            if ignore:
+                InventoryFindingDecision.objects.update_or_create(
+                    tenant=tenant, key=fid,
+                    defaults={"kind": row["kind"], "evidence": row["evidence_key"],
+                              "decided_by": user,
+                              "decided_by_name": user.get_username()[:150],
+                              "decided_at": now})
+            else:
+                InventoryFindingDecision.objects.filter(tenant=tenant, key=fid).delete()
+            done.append(fid)
             continue
         for ev in row["evidence"]:
             o = obs.get(ev["observed_id"])

@@ -59,6 +59,9 @@ describe("service scan columns", () => {
       "Add service",
       "Add software",
       "Map to CPE",
+      "Set platform",
+      "Add application",
+      "Link packages",
     ])
   })
 })

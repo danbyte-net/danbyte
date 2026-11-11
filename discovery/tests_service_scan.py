@@ -644,7 +644,8 @@ class ApiTests(ApiBase):
         r = self.client.get("/api/discovery/findings/")
         kinds = sorted(f["kind"] for f in r.data["results"])
         self.assertEqual(kinds, ["service", "service", "software", "software"])
-        self.assertEqual(r.data["totals"], {"service": 2, "software": 2, "cpe": 0})
+        self.assertEqual(r.data["totals"], {"service": 2, "software": 2, "cpe": 0,
+                                            "platform": 0, "application": 0, "link": 0})
         ev = r.data["results"][0]["evidence"][0]
         self.assertEqual((ev["port"], ev["source"], ev["confidence"]), (22, "danbyte", "high"))
         # A recorded service on the port closes the service finding.

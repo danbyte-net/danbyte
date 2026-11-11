@@ -33,8 +33,10 @@ import {
 } from "@/components/columns/service-scan-columns"
 
 // The review queue (#451 B3): proposals from service-scan observations -
-// add a service, add installed software, map a product to a CPE - each with
-// its evidence. Nothing is created until someone accepts it; Ignore hides a
+// add a service, add installed software, map a product to a CPE - and from
+// the package inventory - set a host's platform, add an application for
+// well-known packages, link packages to an application - each with its
+// evidence. Nothing is created until someone accepts it; Ignore hides a
 // finding until the observation changes.
 
 type Scope = { run?: string; profile?: string }
@@ -83,6 +85,9 @@ const NEEDS: Record<FindingKind, [string, RBACAction]> = {
   service: ["service", "add"],
   software: ["installedsoftware", "add"],
   cpe: ["application", "change"],
+  platform: ["device", "change"],
+  application: ["application", "add"],
+  link: ["application", "change"],
 }
 
 export function FindingsPanel({
@@ -106,7 +111,10 @@ export function FindingsPanel({
   const [selected, setSelected] = useState<DiscoveryFinding[]>([])
   const kinds = new Set(selected.map((f) => f.kind))
   const sameKind = kinds.size === 1 ? [...kinds][0] : null
-  const may = (k: FindingKind) => canDo(...NEEDS[k])
+  const may = (k: FindingKind) =>
+    k === "platform"
+      ? canDo("device", "change") || canDo("virtualmachine", "change")
+      : canDo(...NEEDS[k])
 
   const done = () => {
     setSelected([])
@@ -248,7 +256,7 @@ export function FindingsPanel({
         </div>
         {rows.length === 0 ? (
           <EmptyState title="Nothing to review">
-            Proposals show here after a service scan.
+            Proposals show here after a service scan or a package inventory.
           </EmptyState>
         ) : (
           <DataTable

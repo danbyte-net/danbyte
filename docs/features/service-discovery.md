@@ -304,6 +304,12 @@ of every port on hover), when it was last seen, and the actions:
 - An open port on an address with no device or VM, or a port nothing
   recognised, proposes nothing; it is listed under **Open ports** only.
 
+The same queue holds the package inventory's proposals - **Set platform**,
+**Add application** and **Link packages** - with the OS release or the
+packages as evidence; see [What a read
+feeds](discovery.md#what-a-read-feeds). They need *view* on installed
+software rather than on IP addresses.
+
 ## What is stored
 
 Each open port is one **observed service** row: address (and its device or

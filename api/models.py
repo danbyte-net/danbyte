@@ -2263,6 +2263,7 @@ SOFTWARE_VERSION_SOURCES = (
     ("virtualization", "Virtualization"),
     ("oxidized", "Oxidized"),
     ("import", "Import"),
+    ("discovery", "Discovery"),
 )
 
 
@@ -6527,6 +6528,11 @@ class Application(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
     cpe_template = models.CharField(
         max_length=255, blank=True, default="", db_default="", validators=[validate_cpe],
     )
+    #: Package names discovery links to this application (#451):
+    #: ``"deb:nginx"``, ``"rpm:nginx"``, ``"deb:postgresql-*"``; a bare name
+    #: means every Linux package type. Exact names or a ``*`` glob, never a
+    #: regex (``api.package_names``).
+    package_names = models.JSONField(default=list, blank=True, db_default=[])
     description = models.TextField(blank=True, default="", db_default="")
 
     class Meta:
@@ -6594,6 +6600,11 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default="manual",
                               db_default="manual")
     last_seen = models.DateTimeField(null=True, blank=True)
+    #: The version discovery's package inventory reads for this install
+    #: (#451): kept current on every read, never written over ``version``
+    #: of an install a person made. Blank when no linked package is there.
+    observed_version = models.CharField(max_length=64, blank=True, default="",
+                                        db_default="", editable=False)
     eol_mapping = models.ForeignKey(
         "compliance.EolMapping", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="installs", editable=False,

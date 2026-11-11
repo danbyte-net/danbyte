@@ -54,6 +54,7 @@ export const SOFTWARE_VERSION_SOURCE_LABELS: Record<
   virtualization: "Virtualization",
   oxidized: "Oxidized",
   import: "Import",
+  discovery: "Discovery",
 }
 
 const SOURCE_HINTS: Record<KnownVersionSource, string> = {
@@ -62,6 +63,7 @@ const SOURCE_HINTS: Record<KnownVersionSource, string> = {
   virtualization: "Reported by the virtualization sync",
   oxidized: "Read from the stored configuration",
   import: "Set by a file import",
+  discovery: "Read from the host by discovery",
 }
 
 /** The source next to a version: muted, with where it came from (and when

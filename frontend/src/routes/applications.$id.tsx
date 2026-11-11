@@ -129,6 +129,16 @@ function Body({ app }: { app: Application }) {
       ),
     },
     {
+      label: "Package names",
+      value: app.package_names?.length ? (
+        <span className="font-mono break-all">
+          {app.package_names.join(", ")}
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    {
       label: "Installs",
       value:
         app.install_count > 0 ? (

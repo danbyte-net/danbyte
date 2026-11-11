@@ -20,6 +20,7 @@ import logging
 from datetime import datetime, time, timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 log = logging.getLogger(__name__)
@@ -327,6 +328,10 @@ def summary(counts: dict) -> str:
             parts.append(f"{n} {label}")
     if counts.get("keys_accepted"):
         parts.append(f"{counts['keys_accepted']} keys accepted on first use")
+    if counts.get("versions"):
+        parts.append(f"{counts['versions']} OS versions set")
+    if counts.get("installs"):
+        parts.append(f"{counts['installs']} installs updated")
     return ", ".join(parts)
 
 
@@ -410,16 +415,18 @@ def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None,
     by_target = {id(t): (r, o, login, tried) for t, r, o, login, tried in results}
     rows, outcome, changed_hosts = [], [], {"device": set(), "virtual_machine": set()}
     windows_products: set[str] = set()
+    read = new_read()
     for t in targets:
         r, observed, login, tried = by_target.get(id(t), (None, None, None, []))
         row = inventory_row(
             run, t, r, observed, user=user, counts=counts, changed_hosts=changed_hosts,
             transport=transport_of(login) if (r is not None and login is not None) else "",
             credential_source=login.source if login is not None else "", tried=tried,
-            windows_products=windows_products)
+            windows_products=windows_products, read=read)
         rows.append(row)
         outcome.append((row.status, r is not None))
     InventoryHostResult.objects.bulk_create(rows, batch_size=1000)
+    after_read(tenant, read, changed_hosts, counts, now)
 
     InventoryRun.objects.filter(pk=run.pk).update(
         status=run_outcome(outcome), finished_at=timezone.now(), counts=counts,
@@ -472,12 +479,15 @@ def inventory_work(run, profile, *, user=None, now=None, outpost: bool = False):
 
 def inventory_row(run, t, r, observed, *, user, counts: dict, changed_hosts: dict,
                   transport: str = "", credential_source: str = "", tried=(),
-                  engine: str = "server", windows_products: set | None = None):
+                  engine: str = "server", windows_products: set | None = None,
+                  read: dict | None = None):
     """The (unsaved) host result for target ``t`` and its read ``r`` (an
     ``InventoryResult``, ``None`` when it was never contacted): accepts a
     first-use key, stores the packages of a read host, records an observed
     key, and adds to ``counts`` / ``changed_hosts``. Shared by server runs
-    and the Outpost ingest, so both store a host the same way."""
+    and the Outpost ingest, so both store a host the same way. ``read``
+    (``new_read()``) collects the hosts read and their new package keys for
+    :func:`after_read`."""
     from danbyte_checks import inventory
 
     from . import packages
@@ -512,6 +522,9 @@ def inventory_row(run, t, r, observed, *, user, counts: dict, changed_hosts: dic
             counts["packages"] = counts.get("packages", 0) + stored["packages"]
             if windows_products is not None:
                 windows_products.update(stored.get("windows_products") or ())
+            if read is not None:
+                read[t.kind].add(t.host.pk)
+                read["keys"] |= stored.get("new_keys") or set()
             if stored["changed"]:
                 counts["changed"] = counts.get("changed", 0) + 1
                 changed_hosts[t.kind].add(t.host.pk)
@@ -524,6 +537,57 @@ def inventory_row(run, t, r, observed, *, user, counts: dict, changed_hosts: dic
         # the host's own view; the run's errors name no host.
         counts[row.status] = counts.get(row.status, 0) + 1
     return row
+
+
+def new_read() -> dict:
+    """What :func:`inventory_row` collects for :func:`after_read`: the hosts
+    read, by kind, and the OSV keys of packages new on them."""
+    return {"device": set(), "virtual_machine": set(), "keys": set()}
+
+
+def after_read(tenant, read: dict, changed_hosts: dict, counts: dict, since) -> None:
+    """What a read feeds beyond the packages, for server runs and Outpost
+    ingests alike: each host's running version (``os_platform``), the
+    installs of applications that name packages (``software``) and, in
+    server mode, a fetch of the advisories of packages no host had before
+    ``since``. Adds ``versions``, ``installs``, ``new_packages`` and
+    ``fetch_queued`` to ``counts``; hosts whose version or installs moved go
+    into ``changed_hosts`` for the re-match. Each step is bookkeeping: one
+    that fails is logged and never fails the run."""
+    from . import os_platform, packages, software
+    from .models import HostOsFact
+
+    hosts = {"device": read["device"], "virtual_machine": read["virtual_machine"]}
+    if not any(hosts.values()):
+        return
+    if read["keys"]:
+        counts["new_packages"] = counts.get("new_packages", 0) + len(read["keys"])
+    try:
+        facts = HostOsFact.objects.filter(tenant=tenant).filter(
+            Q(device_id__in=list(hosts["device"]))
+            | Q(virtual_machine_id__in=list(hosts["virtual_machine"])))
+        moved = os_platform.record_versions(tenant, list(facts))
+        n = sum(len(v) for v in moved.values())
+        if n:
+            counts["versions"] = counts.get("versions", 0) + n
+            for kind, ids in moved.items():
+                changed_hosts[kind] |= ids
+    except Exception:  # noqa: BLE001
+        log.exception("discovery: recording running versions failed")
+    try:
+        done = software.sync_installs(tenant, hosts)
+        n = done["created"] + done["updated"] + done["removed"]
+        if n:
+            counts["installs"] = counts.get("installs", 0) + n
+            for kind, ids in hosts.items():
+                changed_hosts[kind] |= ids
+    except Exception:  # noqa: BLE001
+        log.exception("discovery: linking packages to installed software failed")
+    try:
+        if packages.queue_fetch(read["keys"], since):
+            counts["fetch_queued"] = True
+    except Exception:  # noqa: BLE001
+        log.exception("discovery: queueing an advisory fetch failed")
 
 
 def _record_key(tenant, host, observed: dict) -> None:
