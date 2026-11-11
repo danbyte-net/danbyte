@@ -24,7 +24,9 @@ tenant and site scope ([#451](https://github.com/danbyte-net/danbyte/issues/451)
     [match history retention](#match-history), the
     [VEX in the SBOM](sbom.md#vulnerabilities-vex) and the API for them.
     [Discovery](discovery.md) adds the packages it reads from Linux hosts
-    as a third match source (**Via: Package**).
+    as a third match source (**Via: Package**), and the Windows builds it
+    reads as a fourth, against [Microsoft's own data](#windows-hosts-microsoft-data)
+    (**Via: OS build**).
     Until a mapping exists, an NVD or OSV upload keeps nothing and a server fetch
     asks for nothing.
 
@@ -43,6 +45,7 @@ matches its inventory and its exceptions will be per tenant.
 |---|---|---|
 | CVE record | NVD CVE API 2.0 or the NVD JSON 2.0 feeds | description, published/modified, status, CVSS, CWEs, the first 50 references, the configurations (which product versions are affected), fixed-in versions, CISA KEV dates |
 | Package advisory | OSV (`GHSA-…`, `PYSEC-…`, `GO-…`, …) | affected packages with their version ranges and fixed versions, aliases, CVSS |
+| Windows CVE | Microsoft's monthly security update documents ([MSRC CVRF](#windows-hosts-microsoft-data)) | per Windows release the fixed builds and KB numbers, the title, CWEs, Microsoft's CVSS |
 | KEV entry | CISA KEV catalog | date added, due date, required action, known ransomware use |
 | EPSS score | FIRST EPSS | probability of exploitation in the next 30 days and its percentile, with the score date |
 
@@ -51,10 +54,17 @@ KEV and EPSS data apply to it; the CVE then lists the advisory ids as
 aliases. An advisory without a CVE keeps its own id. When both exist, NVD's
 description and score win and OSV adds the affected packages.
 
+A CVE Microsoft's data names is the same row as the NVD one: one record per
+CVE id, never two. Description and CVSS come first from NVD, then from
+Microsoft (the CNA for its own CVEs), then from OSV; Microsoft's fixed
+builds are kept beside NVD's configurations whichever arrived first, and an
+NVD record arriving later replaces Microsoft's description and score but not
+its builds.
+
 Only records that name a **mapped product** are kept: an NVD year feed names
 tens of thousands of products, and Danbyte stores the CVEs for the products
 you have mapped - or, with [discovery](discovery.md) on, the packages it
-found on your hosts. A CVE NVD has not analysed yet (*Awaiting Analysis*, no
+found on your hosts and the Windows releases they run. A CVE NVD has not analysed yet (*Awaiting Analysis*, no
 configurations) names no product and is not kept until NVD adds them.
 
 ### CVSS
@@ -90,15 +100,16 @@ A deployment admin (`users.manage` without tenant narrowing) opens
   fetches NVD, EPSS and OSV on **Sync now** and the server stays offline.
 - In server mode: the **NVD API key** (a password field; it shows *Set*
   when one is stored, never the key, and **Clear key** removes it),
-  **Fetch EPSS scores**, **Fetch the CISA KEV catalog** and the four mirror
-  URLs.
+  **Fetch EPSS scores**, **Fetch the CISA KEV catalog**, **Fetch Microsoft's
+  Windows data** and the five mirror URLs.
 - In browser mode: **Fetch EPSS scores**, the NVD, EPSS and OSV mirror URLs
   and **Sync now from this browser**, which opens the
   [sync page](#browser-mode).
-- How many records are stored, the last run (status, who started it, what
-  it stored, its error) and **Refresh now** in server mode.
-- **Import file** with the **File kind** (NVD records, OSV advisories, CISA
-  KEV, EPSS scores). The run is followed until it ends. In upload mode the
+- How many records are stored, how many of Microsoft's months (the newest,
+  when one was last read), the last run (status, who started it, what it
+  stored, its error) and **Refresh now** in server mode.
+- **Import file** with the **File kind** (NVD records, OSV advisories,
+  Microsoft month, CISA KEV, EPSS scores). The run is followed until it ends. In upload mode the
   card lists the `curl` commands from [Upload](#upload-airgapped-installs).
 
 The card saves only the fields you changed; a blank key field keeps the
@@ -108,8 +119,9 @@ stored key.
 |---|---|
 | `enabled` | Off by default. While off, uploads are refused, nothing runs and every vulnerability tab and card is hidden. |
 | `update_source` | `upload` (default), `server` or [`browser`](#browser-mode). |
-| `nvd_url`, `epss_url`, `kev_url`, `osv_url` | Blank uses the public service. A mirror goes here; it must be `https://`. For NVD, EPSS and OSV it is the base URL the API paths are added to (`https://services.nvd.nist.gov`, `https://api.first.org`, `https://api.osv.dev`); for KEV it is the catalog file itself. |
+| `nvd_url`, `epss_url`, `kev_url`, `osv_url`, `msrc_url` | Blank uses the public service. A mirror goes here; it must be `https://`. For NVD, EPSS, OSV and Microsoft it is the base URL the API paths are added to (`https://services.nvd.nist.gov`, `https://api.first.org`, `https://api.osv.dev`, `https://api.msrc.microsoft.com/cvrf/v3.0`); for KEV it is the catalog file itself. |
 | `sync_epss`, `sync_kev` | Whether a server sync also fetches EPSS and KEV (on by default). A browser sync reads `sync_epss`; it never fetches the KEV file (see [browser mode](#browser-mode)). |
+| `sync_msrc` | Whether a server sync also fetches [Microsoft's monthly documents](#windows-hosts-microsoft-data) (on by default). Nothing is fetched until discovery has read a Windows host, so on costs nothing without one. Server mode only. |
 | `nvd_api_key` | Write-only. Stored encrypted; reads show `nvd_api_key_set`. A blank value keeps the stored key, `nvd_api_key_clear: true` removes it. |
 
 Everyone signed in can read `enabled`; everything else, and every change, is
@@ -126,6 +138,7 @@ On a machine with internet, download the files and upload them with
 |---|---|
 | `nvd` | A saved NVD CVE API 2.0 response, or an NVD JSON 2.0 feed (`nvdcve-2.0-2024.json.gz`, `nvdcve-2.0-modified.json.gz`); `.json`, `.json.gz` or a `.zip` of them |
 | `osv` | An OSV ecosystem archive (`all.zip`), one OSV record, a JSON list of records, or an OSV API response with `vulns`; `.zip`, `.json` or `.json.gz` |
+| `msrc` | One of Microsoft's monthly security update documents as CVRF JSON (`2026-Nov.json`); `.json` or `.json.gz`. Refused until discovery has read a Windows host. |
 | `kev` | The CISA KEV catalog, `.json` or `.csv` |
 | `epss` | The EPSS scores, `.csv` or `.csv.gz` (with its `#model_version…,score_date…` first line) |
 
@@ -135,9 +148,14 @@ For example:
 curl -o ios_xe.json 'https://services.nvd.nist.gov/rest/json/cves/2.0?virtualMatchString=cpe:2.3:o:cisco:ios_xe&resultsPerPage=2000'
 curl -O https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-modified.json.gz
 curl -O https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip
+curl -H 'Accept: application/json' -o 2026-Nov.json https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/2026-Nov
 curl -O https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
 curl -LO https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
 ```
+
+The Microsoft URL needs `Accept: application/json` (without it the answer is
+XML, which is not read). Upload one file per month; builds are cumulative,
+so the last twelve months are plenty.
 
 The request saves the file and answers `202` with the run; a background job
 on the `low` queue parses it. Poll `GET /api/vulnerabilities/sync/<run id>/`
@@ -171,6 +189,7 @@ upload answers `409`). A run that has said nothing for two hours is marked
 | Records per file | 500,000 |
 | Files in a zip | 500,000; an OSV record file at most 8 MB |
 | KEV file / EPSS file, unpacked | 64 MB / 512 MB |
+| Microsoft month, unpacked | 256 MB (the largest seen is 30 MB) |
 
 Everything is read as a stream, one record at a time, so a large feed does
 not have to fit in memory; a file past a limit, a zip or gzip bomb, or
@@ -191,13 +210,14 @@ on the default *upload* source never makes a request.
 |---|---|---|---|
 | NVD (`services.nvd.nist.gov`) | `GET /rest/json/cves/2.0?virtualMatchString=cpe:2.3:<part>:<vendor>:<product>&resultsPerPage=2000&startIndex=…` | once per mapped CPE product, one request per 2000 CVEs | the CPE product, the date window; the API key as the `apiKey` header when one is set |
 | OSV (`api.osv.dev`) | `POST /v1/querybatch`, then `GET /v1/vulns/<id>` | one batch per 1000 mapped packages, then one request per advisory that is new or changed | the package URLs, without versions; for a Debian, Ubuntu or Alpine package whose hosts' releases are all known, the ecosystem and package name instead (`Debian:12` + `openssl`, see [Distro packages](#distro-packages)) |
+| Microsoft (`api.msrc.microsoft.com`) | `GET /cvrf/v3.0/updates`, then `GET /cvrf/v3.0/cvrf/<month>` | when `sync_msrc` is on and discovery has read a Windows host: the index once per run, then each changed month of the last twelve | month ids (`2026-Nov`) only - never a host, a build or a product name |
 | CISA (`www.cisa.gov`) | `GET` the KEV catalog JSON | once per run, when `sync_kev` is on | nothing |
 | FIRST (`api.first.org`) | `GET /data/v1/epss?cve=…` | 100 CVEs per request, when `sync_epss` is on | CVE ids of stored records |
 
 Danbyte asks for whole products, not versions: every CVE that names
 `cisco:ios_xe` is fetched and matched to your versions locally, and the
 inventory itself (device names, versions, addresses) never leaves the server.
-A proxy or firewall needs to allow those four hosts (or the mirrors you set).
+A proxy or firewall needs to allow those five hosts (or the mirrors you set).
 `HTTPS_PROXY` / `NO_PROXY` in the service environment are honoured.
 
 Every request goes through the [outbound-request guard](../reference/settings.md#outbound-requests-ssrf-guard):
@@ -205,7 +225,8 @@ the host must resolve to a public address (or one a deployment admin
 allow-listed), the connection is pinned to that address, and redirects are
 never followed. Each answer is read as a stream with a size cap (an NVD page
 256 MB, an OSV batch answer 32 MB, an OSV record 8 MB, the KEV catalog
-64 MB, an EPSS answer 4 MB) and parsed by the same code as an upload, so the
+64 MB, an EPSS answer 4 MB, Microsoft's index 8 MB and a Microsoft month
+192 MB) and parsed by the same code as an upload, so the
 same validation and CVSS recomputation apply.
 
 ### Incremental updates
@@ -228,6 +249,12 @@ same validation and CVSS recomputation apply.
 - **EPSS** - only CVEs without a score from yesterday or today are asked
   for. An empty answer to a batch fails that batch.
 - **KEV** - the catalog is one file and is read whole each run.
+- **Microsoft** - the index lists each month's `CurrentReleaseDate`. A month
+  of the last twelve is read when it was never read, when Microsoft revised
+  it since, or when it was read for fewer Windows releases than discovery
+  now sees. Microsoft revises old months often (every month of the past two
+  years had a revision in the first ten days of November 2026), so in
+  practice most of the twelve are read again each week: 4 to 30 MB each.
 
 Replaying data that is already stored writes nothing.
 
@@ -236,7 +263,7 @@ Replaying data that is already stored writes nothing.
 NVD allows 5 requests per rolling 30 seconds without an API key and 50 with
 one, so Danbyte spaces its NVD requests 6.5 seconds apart without a key and
 0.7 seconds with one. EPSS requests are 1 second apart, OSV requests 0.2
-seconds. A `403`, `429` or `5xx` answer, a timeout or a dropped connection is
+seconds, Microsoft requests 2 seconds. A `403`, `429` or `5xx` answer, a timeout or a dropped connection is
 retried after 30, 60 and 120 seconds (or the server's `Retry-After`, at most
 5 minutes); after the fourth try the product or batch is marked failed and
 the run goes on with the next one.
@@ -249,7 +276,7 @@ it is never logged, never written to a run and never returned by the API.
 
 A server fetch is a run like an upload: one at a time (a second answers
 `409`), with `progress` saved after every page and `counts` per source
-(`nvd`, `osv`, `kev`, `epss`, plus `requests` and `retries`). A run that has
+(`nvd`, `osv`, `msrc`, `kev`, `epss`, plus `requests` and `retries`). A run that has
 said nothing for two hours is marked *abandoned*. When a run fails or is
 abandoned, the next start within 20 hours **resumes** it: finished products
 are skipped and a product stopped mid-way continues from the page it
@@ -312,6 +339,7 @@ or so.
 | FIRST (`api.first.org`) | `GET /data/v1/epss?cve=…`, 100 CVEs per request, when **Fetch EPSS scores** is on | `Access-Control-Allow-Origin: *` |
 | OSV (`api.osv.dev`) | `POST /v1/querybatch` for the mapped packages, then `GET /v1/vulns/<id>` per new or changed advisory | answers with the page's origin, allows `POST` with JSON |
 | CISA KEV | - | the catalog sends no CORS header, so a browser cannot read it |
+| Microsoft | - | `api.msrc.microsoft.com` sends no CORS header (checked 2026-11-11 with a preflight and a plain `GET` from two origins: no `Access-Control-Allow-Origin` either time), so a browser cannot read it. Microsoft's data is not part of browser mode: [upload](#upload-airgapped-installs) the months as `msrc`. |
 
 The browser sends no cookies to these hosts and no referrer. What leaves the
 browser is what [server mode](#what-is-contacted) sends: product names
@@ -522,6 +550,7 @@ searches run per press, and what is left is counted on the button.
 | `dpkg` | `1:2.3-4+deb12u1` | dpkg's own (epoch, `~` before anything) | `deb` |
 | `apk` | `1.2.3_rc1-r0` | Alpine's | `apk` |
 | `rpm` | `1:3.0.7-25.el9_3` | rpmvercmp per part (epoch, version, release; `~` before the end, `^` after it, letters before digits) | `rpm` (only through `auto`) |
+| `winbuild` | `10.0.20348.2849` (major, minor, build, UBR; all four required) | by UBR within one build line only | Microsoft's data (not offered for mappings) |
 | `generic` | anything with a digit | exact matches only | every other product |
 
 A version the scheme cannot read matches no range; a record that lists that
@@ -603,6 +632,89 @@ entry without a release.
 
 Each match records its `confidence`: `exact`, `range` or `partial`.
 
+### Windows hosts (Microsoft data)
+
+For Windows hosts [discovery](discovery.md#what-is-stored) reads, Danbyte uses
+Microsoft's own advisory data - the monthly security update documents of
+the Microsoft Security Response Center (MSRC), in CVRF form - rather than
+NVD's version ranges. Microsoft lists, per CVE and per Windows release, the
+build that fixes it (`FixedBuild`, for example `10.0.20348.5870`) and the KB
+that ships it. Discovery reads the host's build and update build revision
+(UBR) from the registry, so the test is exact: a Windows Server 2022 host at
+`10.0.20348.2849` is affected by a CVE Microsoft fixed in `10.0.20348.5870`.
+Those matches say **Via: OS build**, have no mapping and no package, and
+carry the host's build as their version.
+
+**Which product a host is.** Microsoft names products, not builds: *Windows
+Server 2022*, *Windows Server 2022 (Server Core installation)*, *Windows 11
+Version 24H2 for x64-based Systems*. Windows Server 2025 and Windows 11 24H2
+share build 26100 but have their own fixes, so the build alone is not
+enough. A table in the code (`vulnerabilities/msrc_products.py`) maps each
+release to its build line, and the host's caption, edition and release
+(`21H2`) decide between server and client and confirm the release:
+
+| Microsoft product | Build line |
+|---|---|
+| Windows Server 2012 / 2012 R2 (and Server Core) | `6.2.9200` / `6.3.9600` |
+| Windows Server 2016 (and Server Core) | `10.0.14393` |
+| Windows Server 2019 (and Server Core) | `10.0.17763` |
+| Windows Server 2022 (and Server Core) | `10.0.20348` |
+| Windows Server 2022, 23H2 Edition (Server Core) | `10.0.25398` |
+| Windows Server 2025 (and Server Core) | `10.0.26100` |
+| Windows 10 1607, 1809, 21H2, 22H2 (x64, ARM64, 32-bit) | `10.0.14393`, `10.0.17763`, `10.0.19044`, `10.0.19045` |
+| Windows 11 22H2, 23H2, 24H2, 25H2, 26H1, 26H2 (x64, ARM64) | `10.0.22621`, `10.0.22631`, `10.0.26100`, `10.0.26200`, `10.0.28000`, `10.0.26300` |
+
+Desktop Experience and Server Core are separate products, as are the CPU
+architectures of a client release. Discovery does not store the
+installation type or the architecture yet, so a host keeps every variant of
+its release, and a CVE matches only when **every** variant agrees it is
+affected. Microsoft lists Desktop and Core with the same fixed build for
+nearly every CVE; when they disagree the CVE does not match.
+
+**Never a guess.** A host gets no OS-build match, and its Packages tab says
+*OS build not matched*, when:
+
+- its build is not in the table (Windows 11 21H2, Windows Server semi-annual
+  releases, Azure Stack HCI, a release newer than the table), or its caption
+  names another release than its build;
+- it reported no UBR.
+
+**The comparison.** Builds are compared only within one build line
+(`10.0.20348.x` never against `10.0.17763.x`; the `winbuild` scheme). Windows
+updates are cumulative, so the host is fixed from the **lowest** build
+Microsoft lists for its product: a hotpatch build counts (its number sits
+between the previous and the next regular update), and superseded KBs need
+no handling. A product Microsoft lists as affected without a fixed build on
+its line does not match. A CVE that does not list the host's product does
+not match, even on the same build line (a Windows 11 only CVE never matches
+Windows Server 2025).
+
+**What is kept.** Only the CVEs that name a Windows release one of your
+hosts runs (in a tenant with Discovery on) are stored. Microsoft's
+advisories without a CVE id (`ADV…`) are skipped. The months are listed on
+the Vulnerability data card. A record's page lists Microsoft's fixed builds
+and KB numbers per product (`msrc_fixed_in`).
+
+**What leaves the server.** In server mode the requests name months
+(`2026-Nov`) and nothing else: no host, build, product or address. In
+upload mode nothing leaves the server. Browser mode cannot read Microsoft's
+API (it sends no CORS header).
+
+**Terms.** Microsoft publishes the API for programmatic use, without a key
+since 2021, and its documents carry Microsoft's "as is" disclaimer. No
+separate licence for the data is published; the general Microsoft terms of
+use apply. Danbyte fetches the documents for the deployment's own use,
+stores only the facts it needs (CVE ids, product names, fixed builds, KB
+numbers, CVSS, titles, dates) and never redistributes them. The test
+fixtures in the repository are trimmed to those facts.
+
+**Rights.** OS-build matches read with *installed software* view, like the
+package list they come from; without it they are left out of every list,
+count and badge. Exceptions for a host or the whole tenant cover them;
+platform and application exceptions do not (there is no mapping). They are
+left out of the [VEX](sbom.md#vulnerabilities-vex): the operating system
+component there is the documented platform, not what discovery read.
+
 ### Match history
 
 A match is one row per record, host, mapping and install. When the version
@@ -619,7 +731,8 @@ The purge runs even while vulnerability data is off.
 
 | Event | Recomputes |
 |---|---|
-| Records, KEV or EPSS stored (upload, sync) | every tenant whose mappings name a changed record, once per burst (60 s) |
+| Records, KEV or EPSS stored (upload, sync) | every tenant whose mappings name a changed record, once per burst (60 s); for Microsoft's records, every tenant with Discovery on and a Windows host read |
+| A discovery run whose read changed a host's packages or OS facts (build, UBR, edition, release, caption) | that host |
 | A mapping created, changed or deleted | the tenant |
 | An exception created, changed or deleted | the `excepted` mark on that record's matches, at once |
 | A device's or VM's running version, platform or device type changes | that host |
@@ -668,7 +781,7 @@ object's matches, worst priority first:
 | EPSS | The probability of exploitation, as a percentage. |
 | Host | The device or VM (platform and application tabs). |
 | Application, Version | The install that matched, and the version tested. |
-| Via | Platform, application or package ([discovery](discovery.md)) - device and VM tabs. |
+| Via | Platform, application, package or OS build ([discovery](discovery.md)) - device and VM tabs. |
 | Confidence | *Exact*, *Range*, or *Partial* - the record also names hardware or an OS that is not mapped. |
 | Product, Summary, First seen | The mapping, the record's description, when the match appeared. |
 
@@ -936,8 +1049,9 @@ matches count - *Fix first*, *Critical CVSS*, *CISA KEV* (`notify_on`).
 
 Every endpoint below answers 404 while vulnerability data is off and works
 on the active tenant. A match is visible when its device or VM is to the
-caller; an application match also needs `view` on installed software. So a
-site role sees only its own sites' matches, everywhere.
+caller; an application match also needs `view` on installed software, and so
+do the matches discovery's reads produce (`package`, `os_build`). So a site
+role sees only its own sites' matches, everywhere.
 
 | Endpoint | Answers |
 |---|---|
@@ -946,7 +1060,7 @@ site role sees only its own sites' matches, everywhere.
 | `POST /api/vulnerabilities/mappings/bulk-create/` | `[{platform\|device_type\|application, identifier, version_scheme?}]`, up to 500. Each row is checked as a single create; any error answers `{errors: {<index>: {...}}}` (`403` when one is a refusal, else `400`) and nothing is created. Answers `201 {created, update_source}`. Change-log entries as usual; one recompute and one fetch are queued for the lot. |
 | `GET /api/vulnerabilities/` | One row per matched record: score, severity, KEV, EPSS, worst priority, devices, VMs and installs affected, first seen. |
 | `GET /api/vulnerabilities/facets/`, `GET /api/vulnerabilities/matches/facets/` | The page's rail: `{facets: {id: [{value, label, count}]}, sortable: [...]}`. Each facet counts records (or matches) over what the other filters leave. |
-| `GET /api/vulnerabilities/<id>/` | The record (CVE id, OSV id or an alias) with its open matches (`affected`, first 1,000; `affected_count`). 404 unless the tenant matched it or maps one of its products. |
+| `GET /api/vulnerabilities/<id>/` | The record (CVE id, OSV id or an alias) with its open matches (`affected`, first 1,000; `affected_count`), and `msrc_fixed_in` (`[{product, month, fixed, kbs}]`, Microsoft's fixed builds). 404 unless the tenant matched it or maps one of its products. |
 | `GET /api/vulnerabilities/matches/` | Match rows, worst priority first. |
 | `GET /api/devices/<id>/vulnerabilities/` | One device's matches; likewise `virtual-machines`, `platforms` (through its mappings) and `applications`. |
 | `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, records new this week (`new_this_week`: a match first seen in the last 7 days), devices and VMs affected. |
@@ -957,7 +1071,7 @@ site role sees only its own sites' matches, everywhere.
 
 The record and match lists take `status` (`open` by default, `resolved`,
 `all`), `device`, `virtual_machine`, `platform`, `application`, `mapping`,
-`site`, `cve`, `priority`, `confidence`, `via` (`platform`/`application`/`package`),
+`site`, `cve`, `priority`, `confidence`, `via` (`platform`/`application`/`package`/`os_build`),
 `severity`, `kev`, `epss_min`, `q` (id or description) and `excepted`:
 `false` (the default) leaves out matches an exception covers, `true` lists
 only them, `all` both. Values of one filter are comma-separated or repeated.

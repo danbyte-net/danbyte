@@ -18,9 +18,10 @@ is installed on the host, nothing is written there, and no command runs
 that is not listed on this page.
 
 !!! note "What comes later"
-    Windows CVEs from Microsoft's advisories (by OS build), a service scan of
-    your own address space and an optional nmap adapter are planned as
-    separate switches on the same card. They are not here yet.
+    A service scan of your own address space and an optional nmap adapter
+    are planned as separate switches on the same card. They are not here
+    yet. Windows CVEs from Microsoft's advisories (by OS build) are
+    [here](#windows-builds).
 
 ## Turn it on
 
@@ -345,7 +346,8 @@ For every host read, Danbyte keeps:
   release (`21H2`), build and UBR (kept as `10.0.20348.2849`), the
   installed hotfixes (KB numbers) and server features, and how the host
   was read. The **Packages** tab shows the build, release and hotfix count
-  above the list.
+  above the list, and *N open OS-build CVEs* (or *OS build not matched*)
+  for [Windows builds](#windows-builds).
 - **Windows programs** from the Uninstall keys, as packages of type
   `generic` (`pkg:generic/windows/<name>@<version>?arch=x64`) with their
   publisher; `arch` is `x64` for the native key and `x86` for WOW6432Node.
@@ -381,6 +383,8 @@ applications, shown as **Via: Package** on the Vulnerabilities tab and page:
 - Package matches read with *installed software* view as well as the host's
   view, like the Packages tab.
 - Turning Discovery off resolves the tenant's package matches.
+- A read that changed a host's packages or its OS facts (a new UBR after
+  patching, say) re-matches that host.
 
 The vulnerability store fetches advisories for the packages it finds:
 
@@ -392,13 +396,31 @@ The vulnerability store fetches advisories for the packages it finds:
   …, from the OSV bucket); the store keeps only the records naming a package
   someone has.
 
+### Windows builds
+
+A Windows host's build and UBR are a fourth source, **Via: OS build**: they
+are compared with the fixed builds in Microsoft's own monthly security
+update data, per Windows release (Server 2016 to 2025, Desktop and Server
+Core, Windows 10 and 11). See [Windows hosts (Microsoft
+data)](vulnerabilities.md#windows-hosts-microsoft-data) for how a host is
+placed among Microsoft's products, what happens when it cannot be, and what
+is fetched. The same rules as for packages apply: *installed software* view,
+host or tenant exceptions, gone while Discovery is off. A host whose release
+is not in the table, or that reported no UBR, gets no OS-build match.
+
+Installed hotfixes (KB numbers) are shown but not used for matching: the
+build is cumulative, and `Get-HotFix` misses updates the servicing stack
+installs.
+
 ### What is sent where
 
 Package names and the distro releases they are installed on go to OSV (in
-server or browser mode) - the same as for mapped products. Versions, host
+server or browser mode) - the same as for mapped products. For Windows
+hosts only month ids (`2026-Nov`) go to Microsoft (server mode); the build,
+the release and the host stay on the deployment. Versions, host
 names, addresses and credentials never leave the deployment. The VEX in the
-[SBOM](sbom.md) leaves package matches out: the SBOM does not list those
-packages.
+[SBOM](sbom.md) leaves package and OS-build matches out: the SBOM does not
+list those packages, and its operating system is the documented platform.
 
 ## Where it runs
 

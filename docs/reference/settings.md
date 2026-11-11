@@ -336,7 +336,7 @@ refused with the limit in the message. Keep it under the web server's
 
 `DANBYTE_VULN_IMPORT_MAX_BYTES` is the largest file a deployment admin may
 upload as [vulnerability data](../features/vulnerabilities.md#upload-airgapped-installs)
-(NVD feeds, OSV archives, KEV, EPSS), in bytes. The default is `536870912`
+(NVD feeds, OSV archives, Microsoft's monthly CVRF documents, KEV, EPSS), in bytes. The default is `536870912`
 (512 MB), which is also the shipped nginx `client_max_body_size`; raise both
 together. The unpacked-content, record and archive limits are fixed and listed
 on the feature page. Uploads wait in `MEDIA_ROOT/vuln-imports/` until their
@@ -428,7 +428,7 @@ targets, device-type import URLs, virtualization sources (Proxmox, vCenter,
 Cloud Director), Windows server connections, a public assistant provider, the
 [end-of-life data](../features/end-of-life-data.md) source, the
 [vulnerability data](../features/vulnerabilities.md#server-mode) services and
-mirrors (NVD, OSV, CISA KEV, FIRST EPSS), and
+mirrors (NVD, OSV, Microsoft's MSRC CVRF API, CISA KEV, FIRST EPSS), and
 **per-tenant** SMTP/LDAP hosts - are
 validated before each request: the host is resolved and rejected if it points at
 a loopback / RFC1918 / link-local / `169.254.0.0/16` (cloud metadata) / ULA /
