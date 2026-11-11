@@ -27,7 +27,7 @@ Every check runs on a **monitoring engine**:
   transport or agent version; it shows the system it answers through and a
   **Configure** link to that system's page.
 
-Manage them in **Governance → Monitoring engines** (admin only).
+Manage them in **Monitoring → Engines** (admin only).
 
 !!! note "A driver engine is only chosen when it can answer"
     An engine whose driver is unusable - the tenant switched the integration
@@ -195,7 +195,7 @@ filters out the switch's own and group addresses, and the read counts as
 complete only when it returned rows, so an empty table from an old agent never
 closes anything. The same goes for ARP without `arp_meta`. Additive - no protocol bump.
 **Outpost 0.9.0** is the first agent that sends all of this, VLANs and
-per-VLAN tables included; upload it under Governance → Monitoring engines →
+per-VLAN tables included; upload it under Monitoring → Engines →
 Outpost versions and roll it out to the sites whose switches it polls.
 
 The core accepts SNMP results only for the devices that Outpost polls - the
@@ -213,7 +213,7 @@ the agent and why nothing falls back to the server is on [Discovery on an
 Outpost](../features/discovery-outposts.md). This section is the agent side.
 
 **Version.** **Outpost 0.10.0** is the first agent that runs discovery; upload
-it under Governance → Monitoring engines → Outpost versions and roll it out to
+it under Monitoring → Engines → Outpost versions and roll it out to
 the sites that need it. Checks, SNMP and sweeps keep working on older agents.
 
 **Capabilities.** This is the first work the core and the agent negotiate. The
@@ -309,12 +309,12 @@ starts it. It adapts to the release kind:
 
 File/binary artifacts are served from Danbyte (`/api/outpost/download/<version>/`,
 token or admin auth), so you can pin a version per site, roll out upgrades
-centrally, and stay fully airgapped. Manage versions under **Governance →
-Monitoring engines → Outpost versions**. *(Shipped.)*
+centrally, and stay fully airgapped. Manage versions under **Monitoring →
+Engines → Outpost versions**. *(Shipped.)*
 
 ## Installing an Outpost - step by step
 
-1. **Upload a build** (once): Governance → Monitoring engines → *Outpost
+1. **Upload a build** (once): Monitoring → Engines → *Outpost
    versions* → upload a wheel/sdist, or add a git repo + ref. Mark one default.
 2. **Add the Outpost** and pick its transport (HTTPS-pull or SSH).
 3. **Enroll** it → copy the one-liner (the token is shown **once**).
@@ -350,7 +350,7 @@ never need GitHub or PyPI. Three ways to get it on a host:
 
 ## Installing an Outpost
 
-1. **Governance → Monitoring engines → Add Outpost**, give it a name.
+1. **Monitoring → Engines → Add Outpost**, give it a name.
 2. It's **enrolled** automatically - copy the one-time `OUTPOST_URL` +
    `OUTPOST_TOKEN` (shown once; **Rotate** issues a new token and revokes the
    old one).

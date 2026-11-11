@@ -219,8 +219,8 @@ re-rolls the stored states at once.
 
 To put PRTG's verdict into Danbyte's status, alerts and SLA, use the check kind
 **PRTG** like any other: a check template, a policy over a site or role, or an
-assignment. Create a monitoring engine of kind **PRTG** (Governance →
-Monitoring engines), add it under **Engines** on the connection, and bind the
+assignment. Create a monitoring engine of kind **PRTG** (Monitoring →
+Engines), add it under **Engines** on the connection, and bind the
 scope to it. The engine's driver answers every due `prtg` check from the last
 read, without calling PRTG per check. Hysteresis, alert rules, silences,
 flapping, escalation, notifications and SLA behave as for Danbyte's own

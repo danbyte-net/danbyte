@@ -9,7 +9,7 @@ covers, and how each check status counts. Danbyte measures it from the same
 status changes the monitoring history shows. Each period's figure is stored and
 then frozen, so it stays the same after the raw data behind it is pruned.
 
-**Governance → Monitoring → SLAs** lists every agreement. Each row shows this
+**Monitoring → SLAs** (`/monitoring/sla`) lists every agreement. Each row shows this
 period's figure against the target, the error budget left, how much of the
 time was actually measured, and **Last 12**: how many of the last twelve
 finished periods met the target.
@@ -18,7 +18,7 @@ finished periods met the target.
 
 1. Make sure the equipment is monitored. An agreement only reads the results
    of checks that already run; see [Monitoring](monitoring.md).
-2. On the SLAs list, click **New agreement**. Three steps follow:
+2. On the SLAs list, click **Add agreement**. Three steps follow:
     - **Agreement** - a name, who it is **provided for**, a **target** such
       as 99.9 and a **period** such as Month. With a
       [template](#templates) picked, the agreement takes the template's
@@ -106,7 +106,7 @@ By default an agreement covers all hours. With service hours set, for example
 Monday to Friday 08:00-17:00, time outside those hours is not measured at all.
 
 Holidays come from a **holiday calendar**. Calendars are shared across the
-tenant and managed under **Holidays** on the SLAs list, which shows each
+tenant and managed under **Setup → Holiday calendars…** on the SLAs list, which shows each
 calendar's days this year and the agreements that use it. Every agreement
 that uses a calendar skips its days.
 
@@ -478,7 +478,7 @@ the **Incidents** tab and as a card on the **Overview**. A unit's down time
 is counted once per incident, so with *Average* the total is more than the
 agreement's down time.
 
-**Causes** on the SLAs list holds the catalog: a name, a colour and a
+**Setup → Incident causes…** on the SLAs list holds the catalog: a name, a colour and a
 description each. It starts empty. Entries that work for many teams:
 
 | Cause | For |
@@ -604,7 +604,7 @@ a view of every member that is not limited to sites or by constraints. **Email r
 either to those recipients or once to addresses you type in; a one-off
 address is not saved on the agreement.
 
-**Overview** on the SLAs list gives every agreement's figure for this or the
+**Reports** on the SLAs list gives every agreement's figure for this or the
 last period, as one PDF or CSV.
 
 ### Scheduled reports {#scheduled-reports}
@@ -612,7 +612,7 @@ last period, as one PDF or CSV.
 A schedule emails a report every week or every month:
 
 - **Schedules** on an agreement's page - that agreement's report;
-- **Overview → Schedules…** on the SLAs list - the overview report.
+- **Reports → Schedules…** on the SLAs list - the overview report.
 
 A schedule says when (a weekday, or a day of the month from 1 to 28, and an
 hour), which period (this period so far, or the last one), the recipients
@@ -638,7 +638,7 @@ report recipients above: setting one up needs **change** on the agreement,
 **Metrics** on an agreement's report bar downloads the stored figures of
 every period, one row each, as CSV or JSON: availability, target, state,
 coverage, down time, budget, budget left and spent, burn rate, incidents
-and the credit. JSON adds the latency objectives. **Overview → Metrics** has
+and the credit. JSON adds the latency objectives. **Reports → Metrics** has
 the same for every agreement but drafts.
 
 The rows follow the viewer like the figures do: a viewer limited to some
@@ -652,7 +652,7 @@ user's report leaves out the members they cannot see, and says so.
 
 A template is a tier, such as Gold, Silver or Bronze: a target, service
 hours, holidays, the counting rules, latency objectives and credit tiers.
-**Templates** on the SLAs list lists them; a template's page shows its rules
+**Setup → SLA templates…** on the SLAs list lists them; a template's page shows its rules
 and the agreements made from it.
 
 Pick a template when creating an agreement, in the wizard or on the full

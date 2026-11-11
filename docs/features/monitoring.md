@@ -52,8 +52,8 @@ works for both IPs and prefixes.
 
 A check definition (for example *HTTP health on :8080* or *SSH reachability*) can
 be attached to **many** IPs and prefixes. Edit the definition once and the change
-takes effect everywhere it's used. Manage your library from the **Templates** tab
-of the Monitoring dashboard - it lists each definition with its kind, interval,
+takes effect everywhere it's used. Manage your library on **Monitoring → Checks →
+Templates** - it lists each definition with its kind, interval,
 and how many places use it, and warns you before deleting one that's still in use.
 
 ## Check types
@@ -206,7 +206,7 @@ How often a policy-driven check runs resolves in two levels:
 1. **Global default** - the *Default check interval* in Monitoring settings.
    Every policy-based check uses this unless something more specific overrides
    it.
-2. **Per-scope override** - on **Monitoring → Configuration**, each row
+2. **Per-scope override** - on **Monitoring → Policies**, each row
    (prefix, device, device type, device role) has a **Frequency** picker in its
    policy menu. Pick *Follow global default* to inherit, or a concrete cadence
    (1 min … daily) to override. The **most-specific** scope that sets one wins -
@@ -270,7 +270,7 @@ ordinary interval until it is upgraded.
 ### Monitoring devices, types, and roles
 
 Checks always run against **IP addresses**, so a device (or every device of a
-type/role) is monitored through *its IPs*. On **Monitoring → Configuration**,
+type/role) is monitored through *its IPs*. On **Monitoring → Policies**,
 the Devices / Device types / Device roles tabs each carry the same policy
 controls plus an **Apply to** target that picks which of the device's IPs the
 checks cover:
@@ -300,7 +300,7 @@ everything at this site" is one setting - but unlike the device-shaped scopes
 they also reach addresses with no device at all, because those are still at the
 site.
 
-The tab is part of the address - `?view=configuration&scope=platforms` - so a
+The tab is part of the address - `/monitoring/policies?scope=platforms` - so a
 link to one scope's policies is something you can hand somebody, and a reload
 lands where it was.
 
@@ -828,20 +828,62 @@ the address is excluded writes nothing and raises no alert.
 
 ## The Monitoring dashboard
 
-**Governance → Monitoring** is the global view. Its tabs:
+**Monitoring** has its own section in the sidebar, one entry per page, so
+each page has at most one row of tabs:
 
-- **Overview** - stat cards (total checks, monitored IPs, **availability**
-  over the chosen window - up over up-plus-down, degraded counting as
-  reachable - definitions, alert channels), charts (status distribution,
-  checks by type, results over the last 24 hours, 7 days or 30 days - hourly
-  up to three days, daily beyond; 30 days is the ceiling because results are
-  pruned after that), **Latency** (median and 95th percentile per bucket,
-  one check kind at a time, since a ping and an HTTPS fetch do not share a
-  scale - the median says how it feels, the 95th says who is suffering;
-  `latency_by_kind` in the stats payload), **Alerts** (opened against resolved per day - whether you are
-  keeping up), **Recent changes** (the latest status changes grouped by the
-  hour they landed in, with who answered), a **Flapping now** count (see
-  below), and the monitoring settings.
+| Entry | Page | Tabs |
+|---|---|---|
+| **Status** | `/monitoring` | Overview, Flapping (while anything is flagged), History |
+| **Checks** | `/monitoring/checks` | Checks, Templates |
+| **Alerts** | `/alerts` | Alerts, Rules, Channels, Silences - see [Alerts](#alerts) |
+| **SLAs** | `/monitoring/sla` | - see [Service level agreements](sla.md) |
+| **Performance** | `/monitoring/performance` | Explore, Latency |
+| **Discovery** | `/discovery` | Profiles, Findings, Open ports - see [The Discovery tab](#the-discovery-tab) |
+| *Setup:* **Policies** | `/monitoring/policies` | one per scope - see [Where checks apply](#where-checks-apply) |
+| *Setup:* **Settings** | `/monitoring/settings` | - see [The Settings tab](#the-settings-tab) |
+| *Setup:* **Engines** | `/monitoring-engines` | - see [Outposts](../monitoring/outposts.md) |
+
+Each entry shows only to those who could use the page: Status, Checks, SLAs,
+Performance and Policies with the monitoring permissions (check templates,
+check assignments or silences), Alerts with alert rules, channels or
+silences, Discovery while the integration is on and you may view profiles,
+Settings and Engines with `users.manage`. A list on any page but Status
+leads its title with **Monitoring ›**, back to the Overview.
+
+The page used to be one page with eleven tabs (`/monitoring?view=…`). Those
+links still work: `?view=` (or `?tab=`) lands on the page and tab it moved
+to, with its filters, the policy scope and a settings `#anchor`:
+
+| Old link | Lands on |
+|---|---|
+| `?view=overview`, `history`, `flapping` | `/monitoring`, the same tab |
+| `?view=checks`, `templates` | `/monitoring/checks`, the same tab |
+| `?view=explore`, `latency` | `/monitoring/performance`, the same tab |
+| `?view=sla` | `/monitoring/sla` |
+| `?view=configuration&scope=…` | `/monitoring/policies?scope=…` |
+| `?view=settings#…` | `/monitoring/settings#…` |
+| `?view=discovery` | `/discovery` |
+
+### Status
+
+- **Overview** - what is wrong now, then how it has been. Across the top, a
+  tile per state - Down, Degraded, Stale, **Flapping** (while anything is
+  flagged), Up, Skipped - each opening the Checks list filtered to it; a
+  zero stays muted. Under them, **Recent changes** (the newest eight status
+  changes grouped by the hour they landed in, with who answered; *All
+  history* has the rest) beside **Coverage** (checks, monitored IPs, the
+  share reachable now, **availability** over the window - up over
+  up-plus-down, degraded counting as reachable - and the fast lane) and
+  **Certificates & keys** (below). Then the trends over the window picked
+  beside the title - 24 hours, 7 days or 30 days, hourly up to three days,
+  daily beyond; 30 days is the ceiling because results are pruned after
+  that: **Check results** per bucket, **Latency** (median and 95th
+  percentile per bucket, one check kind at a time, since a ping and an
+  HTTPS fetch do not share a scale - the median says how it feels, the 95th
+  says who is suffering; `latency_by_kind` in the stats payload) and
+  **Alerts** (opened against resolved per day - whether you are keeping
+  up). **Breakdown**, folded, holds the status distribution and the checks
+  by type.
 - **History** - every status change in the tenant. The rail on the left
   filters by the state a change went to or came from, who answered, check
   type, site, device type, role, platform, check and engine - each with a
@@ -856,12 +898,22 @@ the address is excluded writes nothing and raises no alert.
   changes** lists the addresses that changed most, ten a page, with how many
   of those changes went bad. Both follow the rail. Everything lives in the URL, so a view is
   a link, and saved views keep a rail, a window and a search under a name.
-  Export walks every page the filters match, up to 5,000 rows.
+  Export walks every page the filters match, up to 5,000 rows. The window
+  sits over the charts it drives, so the header is one row.
+- **Flapping** - shown while anything is flagged: the Checks list pinned to
+  flapping checks, with row selection and a bulk **Confirm not flapping**.
+  Every row carries its **last 24 hours** to scale - the alternation itself
+  is the picture, so you can see whether the bouncing is settling before you
+  confirm; a block opens to its exact times and the alerts it raised.
+
+### Checks
+
 - **Checks** - every check in the tenant, on the same rail as History: status,
   source, type, site, device type, role, platform, check and engine facets
   with counts, plus region, device, prefix, VRF, VLAN, tag and port. The
-  quick tabs (All / Up / Degraded / Down / …, each with a count) set the
-  status in one click; the rail's Status facet combines several. Columns -
+  quick tabs over the table (All / Up / Degraded / Down / …, each with a
+  count) set the status in one click; the rail's Status facet combines
+  several. Columns -
   status, address with DNS name, device, site, check, type, source, latency,
   since, last checked - sort on the server, so a click reorders the whole
   list, not the page in hand. Three more columns come from the
@@ -872,11 +924,17 @@ the address is excluded writes nothing and raises no alert.
     - the check's baseline.
 
   **7 days** adds a status strip per row. Saved views and export work as on
-  History; the dashboard donut's slices land here with the status set. A
-  check's name opens [its own page](#check-page).
-- **Explore** - the checks grouped by one dimension: site, role, device type,
-  platform, device, prefix, VRF, check or type. The window runs from 24 hours
-  to a year. Each row shows:
+  History; the Overview's tiles and the dashboard donut's slices land here
+  with the status set. A check's name opens [its own page](#check-page).
+- **Templates** - your reusable check library: a check defined once,
+  attached to many IPs or prefixes, edited in one place. **Add template**
+  creates one; the search narrows by name or type.
+
+### Performance
+
+- **Explore** - the checks grouped by one dimension, picked in **By**: site,
+  role, device type, platform, device, prefix, VRF, check or type. The window
+  runs from 24 hours to a year. Each row shows:
     - the number of checks;
     - availability, with coverage;
     - incidents;
@@ -891,14 +949,10 @@ the address is excluded writes nothing and raises no alert.
     - the checks **furthest from their baseline** (window p95 ÷ baseline,
       so 2.0x is twice as slow as usual);
     - the checks with the **most spikes**.
-- **SLAs** - service level agreements, with each one's figure for this
-  period against its target. See [Service level agreements](sla.md).
-- **Flapping** - shown while anything is flagged: the Checks list pinned to
-  flapping checks, with row selection and a bulk **Confirm not flapping**.
-  Every row carries its **last 24 hours** to scale - the alternation itself
-  is the picture, so you can see whether the bouncing is settling before you
-  confirm; a block opens to its exact times and the alerts it raised.
-- **Templates** - your reusable check library.
+
+**SLAs** - service level agreements, with each one's figure for this period
+against its target - has its own page. See
+[Service level agreements](sla.md).
 
 ### The check page {#check-page}
 
@@ -940,25 +994,27 @@ Checks list.
 ### The Discovery tab
 
 When the [Discovery](discovery.md) integration is on for the tenant and you
-may view discovery profiles, the Monitoring page has a **Discovery** tab: the
-profiles, the latest runs, and **Findings** and **Open ports** with their
-counts. `/discovery` opens it. A profile's scope can take the same kinds as
-a monitoring policy, decided by the same resolver, and each policy's menu
-under **Configuration** has a **Discovery** section
+may view discovery profiles, Monitoring has a **Discovery** entry
+(`/discovery`): **Profiles** (the profiles and the latest runs), **Findings**
+(`/discovery/findings`) and **Open ports** (`/discovery/services`), the last
+two with their counts on the tabs. A profile's scope can take the same kinds
+as a monitoring policy, decided by the same resolver, and each policy's menu
+under **Policies** has a **Discovery** section
 ([Discovery: scope](discovery-safety.md#scope)). Saving a policy never starts
 or schedules a scan.
 
 ### The Settings tab
 
-The **Settings** tab (also reachable from **Settings → Monitoring**) is where
-you set the per-tenant monitoring options. It sits on its own tab rather than
-at the foot of Overview: a dashboard is for reading and settings are for
-changing, and a form below the charts was easy to miss. The tab appears for
-users with `users.manage`.
+**Monitoring → Settings** (`/monitoring/settings`, also reachable from
+**Settings → Monitoring**) is where you set the per-tenant monitoring
+options. It is a page of its own rather than a card at the foot of
+Overview: a dashboard is for reading and settings are for changing, and a
+form below the charts was easy to miss. It appears for users with
+`users.manage`.
 
 Deployment-wide scheduling for config-drift runs and the email digest is a
-separate, deployment-admin concern and stays under **Settings → Monitoring
-defaults**.
+separate, deployment-admin concern: **Deployment settings** at the top of the
+page opens it, on the deployment half of **Settings → Monitoring**.
 
 | Setting | What it controls |
 |---|---|
@@ -1083,7 +1139,7 @@ sits in a branch office: see *Reverse DNS from an Outpost* in
 ## Alerts
 
 Status changes are turned into stateful **alerts** - incidents you can see and act
-on, not just a stream of changes. Manage them under **Governance → Alerts**.
+on, not just a stream of changes. Manage them under **Monitoring → Alerts**.
 
 - A change into a bad state opens **one** firing alert per condition (down/stale →
   critical, degraded → warning); a recovery or skip resolves it. *Unknown* never

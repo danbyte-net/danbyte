@@ -278,11 +278,12 @@ Two paths, both needed:
 
 ### The monitoring overview at a glance
 
-The **Monitoring → Overview** page carries a **Certificate & key health** card:
-one row of tiles - expired, expiring within the critical window, expiring within
-the warning window, healthy, self-signed, SSH host-key drift, and the tenant's
-firing-alert total. The labels track the tenant's own thresholds. Each tile opens
-the matching list, and the whole card hides on a deployment with no certificates
+The **Monitoring → Status** Overview carries a **Certificates & keys** card:
+one row per bucket - expired, expiring within the critical window, expiring
+within the warning window, healthy, self-signed, SSH host-key drift, and the
+tenant's firing-alert total - with its count, coloured only when there is
+something in it. The labels track the tenant's own thresholds (the (i) beside
+the title gives them). Each row opens the matching list, and the whole card hides on a deployment with no certificates
 and no key drift. The counts come from a single tenant-scoped read,
 `GET /api/monitoring/certificates/health/`, so the client never re-buckets the
 inventory itself.
