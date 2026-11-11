@@ -1,3 +1,4 @@
+import { useRef } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -12,8 +13,8 @@ import { ToggleCard, ToggleCardGrid } from "@/components/settings/toggle-card"
 import { VendorLogo } from "@/components/settings/vendor-logo"
 import { PluginsSection } from "@/components/settings/plugins-section"
 import { Badge } from "@/components/ui/badge"
+import { InfoTip } from "@/components/ui/info-tip"
 import { useDiscoveryStatus } from "@/components/discovery/status"
-import { DiscoveryCardBody } from "@/components/discovery/integration-card"
 
 export const Route = createFileRoute("/settings/integrations")({
   component: IntegrationsSettingsPage,
@@ -129,10 +130,9 @@ const CARDS: IntegrationCard[] = [
   {
     key: "discovery_enabled",
     label: "Discovery",
-    info: "Logs in with each host's own credential or a shared one and reads the OS and the package list - fixed commands, no sudo, nothing written. Only hosts with an accepted SSH host key, inside a profile's scope and with a recorded authorisation, are read. The deployment must allow it too.",
+    info: "Logs in with each host's own credential or a shared one and reads the OS and the package list - fixed commands, no sudo, nothing written - and scans TCP ports for services. Only hosts inside a profile's scope and with a recorded authorisation are read. The deployment must allow it too; its switch, the transports, nmap and the deny subnets are under Monitoring → Settings.",
     description:
-      "Read installed packages from Linux and Windows devices and VMs, so vulnerability matching sees exact versions.",
-    configure: { to: "/discovery", label: "Profiles" },
+      "Read installed packages and open ports from devices and VMs, so vulnerability matching sees exact versions.",
   },
   {
     key: "ai_access_enabled",
@@ -159,6 +159,28 @@ const CARDS: IntegrationCard[] = [
   },
 ]
 
+/** The Discovery card's one button: the feature under Monitoring while it
+ * is on, else the monitoring settings where its other switch lives. */
+function DiscoveryLink({ home }: { home: boolean }) {
+  return (
+    <Button size="sm" variant="outline" asChild>
+      {home ? (
+        <Link to="/monitoring" search={{ view: "discovery", status: "all" }}>
+          Discovery
+        </Link>
+      ) : (
+        <Link
+          to="/monitoring"
+          search={{ view: "settings", status: "all" }}
+          hash="host-discovery"
+        >
+          Discovery
+        </Link>
+      )}
+    </Button>
+  )
+}
+
 /** What Danbyte talks to, one card each (#51).
  *
  * The switch was a row in a list, and the connection it governs was
@@ -184,11 +206,21 @@ function IntegrationsSettingsPage() {
       qc.setQueryData(["integration-settings"], data)
       qc.invalidateQueries({ queryKey: ["integrations-enabled"] })
       qc.invalidateQueries({ queryKey: ["discovery", "status"] })
-      toast.success("Integration settings saved")
+      // The tenant switch alone does not start discovery: say what else is
+      // missing rather than leave it looking on.
+      if (data.discovery_enabled && deploymentOffRef.current)
+        toast.warning("Discovery is on for this tenant", {
+          description:
+            "The deployment does not allow it yet. A deployment admin turns it on under Monitoring → Settings → Host discovery.",
+        })
+      else toast.success("Integration settings saved")
     },
     onError: (e) => apiErrorToast(e),
   })
   const discovery = useDiscoveryStatus(canManage)
+  const deploymentOffRef = useRef(false)
+  deploymentOffRef.current =
+    !!discovery.data && !discovery.data.deployment_enabled
 
   if (isLoading)
     return <p className="text-sm text-muted-foreground">Loading…</p>
@@ -201,8 +233,10 @@ function IntegrationsSettingsPage() {
 
   const settings = query.data
   // Discovery also needs the deployment switch, stored or set by
-  // DANBYTE_DISCOVERY_ENABLED; the card carries it.
+  // DANBYTE_DISCOVERY_ENABLED. It is changed under Monitoring → Settings
+  // with the rest of discovery's settings; the card only says when it is off.
   const deploymentOff = discovery.data && !discovery.data.deployment_enabled
+  const deploymentLocked = discovery.data?.deployment.source === "env"
   const notice = trademarkNotice(CARDS.flatMap((c) => c.names ?? []))
 
   return (
@@ -237,21 +271,36 @@ function IntegrationsSettingsPage() {
                 onCheckedChange={(on) => save.mutate({ [card.key]: on })}
                 badges={
                   card.key === "discovery_enabled" && deploymentOff ? (
-                    <Badge variant="warning">Off for this deployment</Badge>
+                    <span className="inline-flex items-center gap-1">
+                      <Badge variant="warning" className="whitespace-nowrap">
+                        {deploymentLocked
+                          ? "Locked off by the deployment"
+                          : "Off for this deployment"}
+                      </Badge>
+                      <InfoTip>
+                        {deploymentLocked
+                          ? "DANBYTE_DISCOVERY_ENABLED in the server environment turns discovery off for every tenant."
+                          : "A deployment admin allows discovery under Monitoring → Settings → Host discovery."}
+                      </InfoTip>
+                    </span>
                   ) : undefined
                 }
                 action={
-                  card.configure && (
-                    <Button size="sm" variant="outline" asChild>
-                      <Link to={card.configure.to}>{card.configure.label}</Link>
-                    </Button>
+                  card.key === "discovery_enabled" ? (
+                    <DiscoveryLink
+                      home={!!settings.discovery_enabled && !deploymentOff}
+                    />
+                  ) : (
+                    card.configure && (
+                      <Button size="sm" variant="outline" asChild>
+                        <Link to={card.configure.to}>
+                          {card.configure.label}
+                        </Link>
+                      </Button>
+                    )
                   )
                 }
-              >
-                {card.key === "discovery_enabled" && discovery.data && (
-                  <DiscoveryCardBody status={discovery.data} />
-                )}
-              </ToggleCard>
+              />
             ))}
           </ToggleCardGrid>
 

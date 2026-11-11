@@ -432,7 +432,15 @@
       "label": "Report cover",
       "description": "Cover page background, colours and image for PDF reports",
       "page": "tenant-policy",
-      "keywords": ["cover", "report", "pdf", "branding", "image", "waves", "background"]
+      "keywords": [
+        "cover",
+        "report",
+        "pdf",
+        "branding",
+        "image",
+        "waves",
+        "background"
+      ]
     },
     {
       "key": "tenant.vuln-priority",
@@ -475,6 +483,40 @@
       "description": "The recurring monitoring summary and who gets it",
       "page": "monitoring",
       "keywords": ["digest", "summary", "weekly", "recipients"]
+    },
+    {
+      "key": "monitoring.address-discovery",
+      "label": "Address discovery",
+      "description": "The ping sweep that finds live addresses in prefixes, and cleanup",
+      "page": "monitoring",
+      "keywords": [
+        "discovery",
+        "subnet discovery",
+        "ping sweep",
+        "auto-discover",
+        "icmp",
+        "cleanup",
+        "stale"
+      ]
+    },
+    {
+      "key": "monitoring.host-discovery",
+      "label": "Host discovery",
+      "description": "Package inventory and service scans: transports, nmap, deny subnets",
+      "page": "monitoring",
+      "keywords": [
+        "discovery",
+        "nmap",
+        "winrm",
+        "ssh key",
+        "ssh password",
+        "transports",
+        "deny subnets",
+        "service scan",
+        "package inventory",
+        "open ports",
+        "deployment switch"
+      ]
     },
     {
       "key": "monitoring.mac-tracking",

@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { MonitoringSettingsForm } from "./settings-form"
 import type { MonitoringSettings } from "@/lib/api"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -12,6 +19,12 @@ const { apiMock } = vi.hoisted(() => ({
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
   api: apiMock,
+}))
+vi.mock("@tanstack/react-router", async (orig) => ({
+  ...(await orig<object>()),
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
 }))
 // The ARP-source picker stands in for its multi-pick hand-over: one button
 // that ticks an already-listed device and two new ones.
@@ -280,5 +293,74 @@ describe("MonitoringSettingsForm - accessible names (#461)", () => {
         screen.queryAllByRole(role, { name: "" }).map((el) => el.outerHTML)
       ).toEqual([])
     }
+  })
+})
+
+describe("MonitoringSettingsForm - discovery", () => {
+  // #451: host discovery's settings live here, beside the address sweep,
+  // and nowhere else.
+  it("holds host discovery's controls next to address discovery", async () => {
+    apiMock.mockImplementation((path) => {
+      if (path === "/api/monitoring/settings/") return Promise.resolve(SETTINGS)
+      if (path === "/api/discovery/status/")
+        return Promise.resolve({
+          deployment_enabled: true,
+          deployment: {
+            enabled: true,
+            source: "setting",
+            changed_by: "",
+            changed_at: null,
+            can_change: true,
+          },
+          enabled: true,
+          active: true,
+          can_manage: true,
+          first_use_keys_allowed: true,
+        })
+      if (path === "/api/discovery/settings/")
+        return Promise.resolve({
+          deny_subnets: [],
+          transports: { ssh_key: true, ssh_password: true, winrm: false },
+          winrm: { available: true, label: "", reason: "" },
+          nmap: {
+            available: true,
+            enabled: false,
+            path: "/usr/bin/nmap",
+            version: "7.98",
+            label: "nmap 7.98 at /usr/bin/nmap",
+            reason: "",
+          },
+          can_change: true,
+          updated_at: "2026-11-11T00:00:00Z",
+        })
+      return Promise.resolve({ count: 0, results: [] })
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <TooltipProvider>
+          <MonitoringSettingsForm />
+        </TooltipProvider>
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText("Address discovery")).toBeTruthy()
+    expect(screen.getByText("Host discovery")).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "SSH key login" })).toBeTruthy()
+    )
+    const names = screen
+      .getAllByRole("switch")
+      .map((s) => s.getAttribute("aria-label"))
+    for (const n of [
+      "This deployment",
+      "SSH key login",
+      "SSH password login",
+      "WinRM over HTTPS",
+      "nmap",
+    ])
+      expect(names).toContain(n)
+    expect(screen.getByRole("textbox", { name: "Deny subnets" })).toBeTruthy()
   })
 })

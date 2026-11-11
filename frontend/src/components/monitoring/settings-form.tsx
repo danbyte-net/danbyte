@@ -27,6 +27,7 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { InfoTip } from "@/components/ui/info-tip"
 import { cardAnchor } from "@/components/settings/settings-card"
+import { HostDiscoverySettings } from "@/components/discovery/host-discovery-settings"
 import { INTERVALS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
@@ -658,8 +659,8 @@ export function MonitoringSettingsForm() {
         </Section>
 
         <Section
-          title="Discovery & cleanup"
-          hint="Opt-in subnet lifecycle. Turn on discovery per prefix from its Monitoring tab; these are the deployment-wide switches."
+          title="Address discovery"
+          hint="The ping sweep that finds live addresses in prefixes and records them, and the cleanup of discovered ones. Turn it on per prefix from its Monitoring tab."
         >
           <label className="flex items-start gap-2">
             <Checkbox
@@ -738,6 +739,17 @@ export function MonitoringSettingsForm() {
               />
             </div>
           )}
+        </Section>
+
+        {/* Beside the sweep on purpose: both are "discovery", and an
+            operator looking for one should find the other. Host discovery
+            saves as it changes and holds no <form>, so it can sit in this
+            one. */}
+        <Section
+          title="Host discovery"
+          hint="Package inventory and service scans of devices and VMs, run by discovery profiles. Saved as you change it."
+        >
+          <HostDiscoverySettings />
         </Section>
 
         <Section

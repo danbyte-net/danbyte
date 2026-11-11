@@ -1,3 +1,5 @@
+import { useState } from "react"
+import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -12,11 +14,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { Button } from "@/components/ui/button"
+import { FormTextarea, useFieldErrors } from "@/components/forms"
 import { TimeCell } from "@/components/cells/time-ago"
+import { Loading } from "@/components/loading"
+import { useDiscoveryStatus } from "./status"
 
-// The body of the Discovery card under Settings → Integrations (#451): the
-// deployment switch (stored, or locked by DANBYTE_DISCOVERY_ENABLED) and
-// the transports discovery may log in with, most secure first.
+// Host discovery settings (#451), under Monitoring → Settings beside the
+// address discovery sweep: the deployment switch (stored, or locked by
+// DANBYTE_DISCOVERY_ENABLED), the tenant switch's state (changed on
+// Settings → Integrations), the transports discovery may log in with,
+// most secure first, nmap, and the deny subnets. The only place these are
+// changed. Every control saves as it changes and nothing here is a <form>,
+// so it can sit inside the monitoring settings form.
 
 function SwitchRow({
   label,
@@ -106,7 +116,7 @@ export function DeploymentRow({ status }: { status: DiscoveryStatus }) {
               Set by{" "}
               <code className="font-mono">DANBYTE_DISCOVERY_ENABLED</code> in
               the server environment, so nobody can change it here. Remove the
-              variable to switch it from this card.
+              variable to switch it here.
             </>
           ) : (
             <>
@@ -258,12 +268,130 @@ export function NmapRow({ active }: { active: boolean }) {
   )
 }
 
-export function DiscoveryCardBody({ status }: { status: DiscoveryStatus }) {
+/** Deny subnets: CIDRs, any VRF, nothing in discovery ever contacts. */
+export function DenySubnetsField({ active }: { active: boolean }) {
+  const qc = useQueryClient()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const q = useQuery({
+    queryKey: ["discovery", "settings"],
+    queryFn: () => api<DiscoverySettings>("/api/discovery/settings/"),
+    enabled: active,
+  })
+  const [text, setText] = useState<string | null>(null)
+  const value = text ?? (q.data?.deny_subnets ?? []).join("\n")
+  const save = useMutation({
+    mutationFn: () =>
+      api<DiscoverySettings>("/api/discovery/settings/", {
+        method: "PATCH",
+        body: JSON.stringify({
+          deny_subnets: value
+            .split(/[\s,]+/)
+            .map((s) => s.trim())
+            .filter(Boolean),
+        }),
+      }),
+    onSuccess: (d) => {
+      qc.setQueryData(["discovery", "settings"], d)
+      toast.success("Deny subnets saved")
+      setText(null)
+      reset()
+    },
+    onError: (err) => {
+      if (handleApiError(err) !== null) apiErrorToast(err)
+    },
+  })
+  if (!active || !q.data) return null
+  const canChange = q.data.can_change
+  return (
+    <div className="space-y-1.5 border-t border-border pt-2">
+      <FormTextarea
+        label="Deny subnets"
+        rows={4}
+        value={value}
+        onChange={setText}
+        placeholder="10.20.0.0/16"
+        hint={canChange ? undefined : "read only"}
+        error={fieldErrors.deny_subnets}
+        info="Never contacted by package inventory or service scans. One CIDR per line, any VRF. The monitoring deny subnets apply as well."
+      />
+      {canChange && text !== null && (
+        <div className="flex justify-end gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setText(null)
+              reset()
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? "Saving…" : "Save subnets"}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The tenant switch, read-only here: it is turned on and off with the
+ *  other integrations. */
+function TenantRow({ status }: { status: DiscoveryStatus }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs whitespace-nowrap">This tenant</span>
+      <InfoTip>
+        The Discovery integration switch for this tenant. Tenant admins turn it
+        on and off under Settings → Integrations.
+      </InfoTip>
+      <span className="ml-auto flex items-center gap-2">
+        <Badge variant={status.enabled ? "success" : "secondary"}>
+          {status.enabled ? "On" : "Off"}
+        </Badge>
+        <Link to="/settings/integrations" className="link text-xs">
+          Integrations
+        </Link>
+      </span>
+    </div>
+  )
+}
+
+/** Everything host discovery has to set, for one status answer. The
+ *  deployment row always renders, so a deployment admin can switch it while
+ *  the tenant switch is still off. */
+export function HostDiscoveryBody({ status }: { status: DiscoveryStatus }) {
   return (
     <div className="space-y-2">
       <DeploymentRow status={status} />
-      <TransportRows active={status.active} />
-      <NmapRow active={status.active} />
+      <TenantRow status={status} />
+      {status.active ? (
+        <>
+          <TransportRows active />
+          <NmapRow active />
+          <DenySubnetsField active />
+        </>
+      ) : (
+        <p className="border-t border-border pt-2 text-xs text-muted-foreground">
+          {status.deployment_enabled
+            ? "Off for this tenant."
+            : "Off for this deployment."}
+        </p>
+      )}
     </div>
   )
+}
+
+/** Host discovery, as the monitoring settings show it. */
+export function HostDiscoverySettings() {
+  const status = useDiscoveryStatus()
+  if (status.isLoading) return <Loading />
+  if (!status.data?.deployment) return null
+  return <HostDiscoveryBody status={status.data} />
 }

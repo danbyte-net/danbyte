@@ -8,6 +8,7 @@ import {
   SETTINGS_CARDS,
   SETTINGS_GROUPS,
   SETTINGS_PAGES,
+  matchCards,
 } from "./settings-catalog"
 
 // Where a page's cards are actually rendered. Most live in the route file;
@@ -105,5 +106,20 @@ describe("settings catalog", () => {
       }
     }
     expect(missing).toEqual([])
+  })
+})
+
+describe("discovery settings search", () => {
+  // They moved off the Discovery integration card into the monitoring
+  // settings (#451); a search for any of them lands there.
+  it("finds the host discovery section for its words", () => {
+    for (const q of ["nmap", "WinRM", "deny subnets", "discovery"]) {
+      const keys = matchCards(SETTINGS_PAGES, q).map((m) => m.card.key)
+      expect(keys, q).toContain("monitoring.host-discovery")
+    }
+    const sweep = matchCards(SETTINGS_PAGES, "ping sweep").map(
+      (m) => m.card.key
+    )
+    expect(sweep).toContain("monitoring.address-discovery")
   })
 })
