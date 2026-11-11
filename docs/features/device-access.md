@@ -22,7 +22,9 @@ A **device credential** links a device - or a virtual machine - to a login
 secret. A VM's credentials are on its **Monitoring** tab; [discovery](discovery.md)
 uses them to read its packages. Add and manage them in
 the **Credentials** card on the device's **Monitoring** tab (SSH password, SSH
-key, HTTPS login, Windows login, Proxmox API token or VMware login). The last
+key, HTTPS login, Windows login, Proxmox API token, VMware login or WinRM
+certificate). A *WinRM certificate* holds a client certificate and its
+private key (PEM) for [discovery](discovery.md#transports) over WinRM HTTPS. The last
 three are what PRTG's sensors get when a sensor profile sets credentials **on
 the device** with none picked (see [PRTG](prtg.md#where-credentials-go)):
 Windows takes `DOMAIN\user` as the username, Proxmox `user@realm!tokenid` with

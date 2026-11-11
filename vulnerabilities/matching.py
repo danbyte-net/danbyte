@@ -132,7 +132,10 @@ def _package_rows(tenant, objects, cves) -> list[tuple]:
         cve__rejected=False)
     if cves is not None:
         named = named.filter(cve__vuln_id__in=list(cves))
-    qs = HostPackage.objects.filter(tenant=tenant, removed_at__isnull=True).filter(Exists(named))
+    from discovery.models import MATCHED_TYPES
+
+    qs = HostPackage.objects.filter(tenant=tenant, removed_at__isnull=True,
+                                    purl_type__in=MATCHED_TYPES).filter(Exists(named))
     if objects is not None:
         qs = qs.filter(Q(device_id__in=list(objects.get("device") or []))
                        | Q(virtual_machine_id__in=list(objects.get("virtual_machine") or [])))

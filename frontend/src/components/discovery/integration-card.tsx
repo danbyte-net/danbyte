@@ -45,24 +45,26 @@ function SwitchRow({
     />
   )
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs whitespace-nowrap">{label}</span>
-      <InfoTip>{info}</InfoTip>
-      {badge}
-      <span className="ml-auto">
-        {disabled && reason ? (
-          <Tooltip>
-            {/* A Tooltip trigger overwrites data-state; the span keeps the
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="text-xs whitespace-nowrap">{label}</span>
+        <InfoTip>{info}</InfoTip>
+        <span className="ml-auto">
+          {disabled && reason ? (
+            <Tooltip>
+              {/* A Tooltip trigger overwrites data-state; the span keeps the
                 switch's own. */}
-            <TooltipTrigger asChild>
-              <span className="inline-flex">{control}</span>
-            </TooltipTrigger>
-            <TooltipContent variant="panel">{reason}</TooltipContent>
-          </Tooltip>
-        ) : (
-          control
-        )}
-      </span>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">{control}</span>
+              </TooltipTrigger>
+              <TooltipContent variant="panel">{reason}</TooltipContent>
+            </Tooltip>
+          ) : (
+            control
+          )}
+        </span>
+      </div>
+      {badge && <div className="flex">{badge}</div>}
     </div>
   )
 }

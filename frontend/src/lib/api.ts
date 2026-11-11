@@ -18204,6 +18204,7 @@ export type InventoryHostStatus =
   | "ok"
   | "auth_failed"
   | "host_key_refused"
+  | "tls_refused"
   | "unreachable"
   | "timeout"
   | "unsupported"
@@ -18283,13 +18284,19 @@ export interface InventoryRun {
   errors: string[]
 }
 
+/** How discovery read a host, most secure first; `ssh` is an older run. */
+export type InventoryTransport = "ssh_key" | "ssh_password" | "winrm" | "ssh"
+
 export interface InventoryHostResult {
   id: string
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null
   address: string
   status: InventoryHostStatus
-  transport: "ssh" | ""
+  transport: InventoryTransport | ""
+  /** Each transport considered, in order: skipped (and why) or what it
+   * answered. */
+  attempts: { transport: InventoryTransport; outcome: string; reason: string }[]
   /** "host", "shared: <name>", or "" when nothing was tried. */
   credential_source: string
   /** The host's key was accepted on first use by this run. */
@@ -18343,6 +18350,7 @@ export type SharedCredentialKind =
   | "windows_login"
   | "proxmox"
   | "vmware"
+  | "winrm_cert"
 
 /** A login shared by every host its scope matches (Settings → Credentials). */
 export interface SharedCredential {
@@ -18390,9 +18398,11 @@ export interface HostPackage {
   arch: string
   source_name: string
   source_version: string
-  type: "deb" | "rpm" | "apk"
+  /** `generic`: a Windows program - inventory only, never matched. */
+  type: "deb" | "rpm" | "apk" | "generic"
   ecosystem: string
   purl: string
+  publisher: string
   first_seen: string
   last_seen: string
 }
@@ -18404,6 +18414,14 @@ export interface HostOsFact {
   pretty_name: string
   ecosystem: string
   package_manager: string
+  /** Windows: build and UBR (`version_id` holds 10.0.<build>.<ubr>). */
+  build: string
+  ubr: number | null
+  edition: string
+  display_version: string
+  hotfixes: { id: string; description: string; installed_on: string }[]
+  features: string[]
+  transport: InventoryTransport | ""
   collected_at: string
 }
 

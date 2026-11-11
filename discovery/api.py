@@ -54,6 +54,9 @@ from .models import (
 )
 
 DENY_MAX = 500
+#: Transport switch → DiscoverySettings field, most secure first.
+TRANSPORT_FIELDS = {"ssh_key": "ssh_key_enabled", "ssh_password": "ssh_password_enabled",
+                    "winrm": "winrm_enabled"}
 ID_FIELDS = {"sites": "site_ids", "prefixes": "prefix_ids", "devices": "device_ids",
              "virtual_machines": "virtual_machine_ids"}
 SCOPE_MEMBERS = {
@@ -216,23 +219,43 @@ def _clean_cidrs(value) -> list[str]:
 @permission_classes([IsAuthenticated])
 def discovery_settings(request):
     """Deny subnets (CIDRs, any VRF) nothing in the tenant's discovery
-    contacts. Read by tenant admins and whoever may view profiles; changed
-    by tenant admins."""
+    contacts, and the transport switches (``transports``: ``ssh_key``,
+    ``ssh_password``, ``winrm``; WinRM only while ``winrm.available``). Read
+    by tenant admins and whoever may view profiles; changed by tenant
+    admins."""
     tenant = gate.require(request)
     admin = can_manage_admin(request.user, tenant)
     if not admin and not rbac.has_action(request.user, tenant, "inventoryprofile", "view"):
         raise PermissionDenied("inventoryprofile.view required.")
     row = DiscoverySettings.for_tenant(tenant)
+    winrm_ok, winrm_label, winrm_reason = gate.winrm_state()
     if request.method == "PATCH":
         if not admin:
             raise PermissionDenied("Tenant admin required.")
         if not isinstance(request.data, dict):
             raise ValidationError({"detail": "A JSON object."})
+        fields = []
         if "deny_subnets" in request.data:
             row.deny_subnets = _clean_cidrs(request.data["deny_subnets"])
-            row.save()
-    return Response({"deny_subnets": row.deny_subnets, "can_change": admin,
-                     "updated_at": row.updated_at})
+            fields.append("deny_subnets")
+        if "transports" in request.data:
+            t = request.data["transports"]
+            if not isinstance(t, dict) or set(t) - set(TRANSPORT_FIELDS) or not all(
+                    isinstance(v, bool) for v in t.values()):
+                raise ValidationError({"transports": "An object of ssh_key, ssh_password "
+                                                     "and winrm, each true or false."})
+            if t.get("winrm") and not winrm_ok:
+                raise ValidationError({"transports": f"WinRM: {winrm_reason}"})
+            for key, value in t.items():
+                setattr(row, TRANSPORT_FIELDS[key], value)
+                fields.append(TRANSPORT_FIELDS[key])
+        if fields:
+            row.save(update_fields=[*fields, "updated_at"])
+    return Response({
+        "deny_subnets": row.deny_subnets,
+        "transports": {key: getattr(row, f) for key, f in TRANSPORT_FIELDS.items()},
+        "winrm": {"available": winrm_ok, "label": winrm_label, "reason": winrm_reason},
+        "can_change": admin, "updated_at": row.updated_at})
 
 
 # ─── profiles ────────────────────────────────────────────────────────────────
@@ -339,8 +362,9 @@ class InventoryProfileSerializer(serializers.ModelSerializer):
                     raise ValidationError({ID_FIELDS[field]: "Not found."})
         pinned = attrs.get("shared_credential")
         if pinned is not None:
-            if pinned.kind not in scope.SSH_KINDS:
-                raise ValidationError({"shared_credential_id": "Pick an SSH key or password."})
+            if pinned.kind not in (*scope.SSH_KINDS, scope.WINRM_KIND):
+                raise ValidationError({"shared_credential_id":
+                                       "Pick an SSH key, SSH password or WinRM certificate."})
             if not user.is_superuser and not rbac.restrict_queryset(
                     SharedCredential.objects.filter(tenant=tenant, pk=pinned.pk), user,
                     tenant, "sharedcredential", "view").exists():
@@ -570,6 +594,7 @@ class InventoryRunViewSet(viewsets.ViewSet):
                 "device": _ref(h.device), "virtual_machine": _ref(h.virtual_machine),
                 "address": h.address, "status": h.status, "transport": h.transport,
                 "credential_source": h.credential_source, "key_first_use": h.key_first_use,
+                "attempts": h.attempts or [],
                 "message": h.message, "packages": h.packages, "added": h.added,
                 "removed": h.removed, "updated": h.updated, "finished_at": h.finished_at,
             } for h in page]
@@ -745,7 +770,10 @@ def os_dict(f: HostOsFact | None) -> dict | None:
         return None
     return {"os_id": f.os_id, "version_id": f.version_id, "codename": f.codename,
             "pretty_name": f.pretty_name, "ecosystem": f.ecosystem,
-            "package_manager": f.package_manager, "collected_at": f.collected_at}
+            "package_manager": f.package_manager, "build": f.build, "ubr": f.ubr,
+            "edition": f.edition, "display_version": f.display_version,
+            "hotfixes": f.hotfixes or [], "features": f.features or [],
+            "transport": f.transport, "collected_at": f.collected_at}
 
 
 def host_packages(request, kind: str, pk):
@@ -762,7 +790,8 @@ def host_packages(request, kind: str, pk):
     rows = HostPackage.objects.filter(tenant=tenant, removed_at__isnull=True, **{kind: host})
     q = (request.query_params.get("search") or "").strip()
     if q:
-        rows = rows.filter(Q(name__icontains=q) | Q(source_name__icontains=q))
+        rows = rows.filter(Q(name__icontains=q) | Q(source_name__icontains=q)
+                           | Q(publisher__icontains=q))
     fact = HostOsFact.objects.filter(**{kind: host}).first()
 
     def page_rows(page):
@@ -770,6 +799,7 @@ def host_packages(request, kind: str, pk):
             "id": str(p.pk), "name": p.name, "version": p.version, "arch": p.arch,
             "source_name": p.source_name, "source_version": p.source_version,
             "type": p.purl_type, "ecosystem": p.ecosystem, "purl": p.purl,
+            "publisher": p.publisher,
             "first_seen": p.first_seen, "last_seen": p.last_seen,
         } for p in page]
 

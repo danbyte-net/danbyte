@@ -342,6 +342,10 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
     passphrase = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
+    #: A WinRM certificate credential's client certificate (PEM).
+    certificate = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
     secret_set = serializers.SerializerMethodField()
 
     def get_secret_set(self, obj) -> bool:
@@ -355,7 +359,7 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
             "id", "device", "device_name", "virtual_machine",
             "virtual_machine_name", "name", "kind", "username", "port",
             "scheme", "secret_managed", "secret_provider", "secret_path",
-            "secret_set", "password", "private_key", "passphrase",
+            "secret_set", "password", "private_key", "passphrase", "certificate",
             "description", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "secret_set", "created_at", "updated_at"]
@@ -445,6 +449,8 @@ class SharedCredentialSerializer(TenantScopedModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False)
     passphrase = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    certificate = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False)
     secret_set = serializers.SerializerMethodField()
     role_ids = TenantScopedPrimaryKeyRelatedField(
         source="roles", many=True, required=False, queryset=DeviceRole.objects.all())
@@ -463,7 +469,7 @@ class SharedCredentialSerializer(TenantScopedModelSerializer):
         fields = [
             "id", "name", "kind", "username", "port", "secret_managed",
             "secret_provider", "secret_path", "secret_set", "password", "private_key",
-            "passphrase", "description", "enabled", "weight", "fall_through",
+            "passphrase", "certificate", "description", "enabled", "weight", "fall_through",
             "applies_to_devices", "applies_to_vms", "all_hosts", "role_ids",
             "device_type_ids", "platform_ids", "site_ids", "tag_ids", "scope",
             "created_at", "updated_at",

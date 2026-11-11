@@ -4,8 +4,9 @@ One place answers "what credentials may be tried for this host, in which
 order", so every consumer (Discovery today; Connect, the SSH terminal and
 others can adopt it) applies the same rule:
 
-1. the host's own :class:`~monitoring.models.DeviceCredential` of a fitting
-   kind (the first fitting kind in ``kinds`` wins, then the name);
+1. the host's own :class:`~monitoring.models.DeviceCredential` of each
+   fitting kind, in the order of ``kinds`` (one per kind: the first by
+   name);
 2. a shared credential the caller pinned (an inventory profile's
    ``shared_credential``), when it is enabled and of a fitting kind;
 3. every enabled :class:`~monitoring.models.SharedCredential` whose scope
@@ -125,9 +126,7 @@ class CredentialResolver:
         for c in qs.order_by("name", "pk"):
             key = ("device", c.device_id) if c.device_id else ("virtual_machine",
                                                                c.virtual_machine_id)
-            best = self._own.get(key)
-            if best is None or self.kinds.index(c.kind) < self.kinds.index(best.kind):
-                self._own[key] = c
+            self._own.setdefault(key, {}).setdefault(c.kind, c)
 
     # ── shared credentials ──────────────────────────────────────────────────
 
@@ -171,9 +170,10 @@ class CredentialResolver:
         """Every credential that may be tried for ``host``, in order."""
         kind = _host_kind(host)
         out: list[Login] = []
-        own = self._own.get((kind, host.pk))
-        if own is not None:
-            out.append(Login(own, "host"))
+        own = self._own.get((kind, host.pk)) or {}
+        for k in self.kinds:
+            if k in own:
+                out.append(Login(own[k], "host"))
         seen = set()
         if self.pinned is not None:
             out.append(Login(self.pinned, f"shared: {self.pinned.name}"))

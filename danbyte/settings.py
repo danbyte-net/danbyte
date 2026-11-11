@@ -854,6 +854,14 @@ _discovery_env = os.getenv("DANBYTE_DISCOVERY_ENABLED", "").strip()
 DISCOVERY_ENABLED = (
     None if not _discovery_env
     else _discovery_env.lower() in ("true", "1", "yes", "on"))
+# WinRM over HTTPS (client certificate, verified server certificate) is the
+# third discovery transport, off per tenant by default. False forbids it for
+# every tenant. The CA bundle server certificates are checked against
+# defaults to the system bundle; point it at your internal CA's bundle.
+DISCOVERY_WINRM_ALLOWED = (
+    os.getenv("DANBYTE_DISCOVERY_WINRM_ALLOWED", "True").strip().lower()
+    not in ("false", "0", "no", "off"))
+DISCOVERY_WINRM_CA_BUNDLE = os.getenv("DANBYTE_DISCOVERY_WINRM_CA_BUNDLE", "").strip()
 # Whether Run now may offer "Accept new host keys" (trust a host's key the
 # first time it is seen, for hosts with no accepted key). False hides the
 # option everywhere and the API refuses it.

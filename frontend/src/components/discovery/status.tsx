@@ -39,11 +39,12 @@ export const HOST_STATUS_LABELS: Record<InventoryHostStatus | "ready", string> =
     ok: "OK",
     auth_failed: "Login refused",
     host_key_refused: "Host key not accepted",
+    tls_refused: "Certificate not trusted",
     unreachable: "Unreachable",
     timeout: "Timed out",
     unsupported: "Unsupported",
     failed: "Failed",
-    no_credential: "No SSH credential",
+    no_credential: "No credential",
     no_address: "No address",
     exempt: "Exempt",
     denied: "Deny subnet",
@@ -56,6 +57,7 @@ const HOST_VARIANT: Record<InventoryHostStatus | "ready", Variant> = {
   ok: "success",
   auth_failed: "destructive",
   host_key_refused: "warning",
+  tls_refused: "warning",
   unreachable: "destructive",
   timeout: "destructive",
   unsupported: "secondary",
@@ -66,6 +68,13 @@ const HOST_VARIANT: Record<InventoryHostStatus | "ready", Variant> = {
   denied: "secondary",
   maintenance: "secondary",
   blocked: "warning",
+}
+
+export const TRANSPORT_LABELS: Record<string, string> = {
+  ssh_key: "SSH key",
+  ssh_password: "SSH password",
+  winrm: "WinRM HTTPS",
+  ssh: "SSH",
 }
 
 export function isRunActive(s: InventoryRunStatus): boolean {

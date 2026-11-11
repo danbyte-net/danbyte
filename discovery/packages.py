@@ -33,7 +33,7 @@ REMOVED_KEEP_DAYS = 30
 #: os-release ``ID`` -> the distro namespace OSV and package URLs use.
 NAMESPACES = {"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine",
               "rocky": "rocky", "almalinux": "almalinux", "rhel": "redhat"}
-PURL_TYPES = {"dpkg": "deb", "rpm": "rpm", "apk": "apk"}
+PURL_TYPES = {"dpkg": "deb", "rpm": "rpm", "apk": "apk", "windows": "generic"}
 
 
 def host_kwargs(host) -> dict:
@@ -99,6 +99,12 @@ def rows_for(packages, os_facts: dict, manager: str) -> dict[tuple, dict]:
         elif ptype == "apk":
             match = f"{namespace}/{src.lower()}"
             match_version = p.version
+        elif ptype == "generic":
+            # A Windows program: inventory only, never matched (OSV has no
+            # ecosystem for it). Its name keeps its case.
+            name, src = p.name, ""
+            match = f"{namespace}/{p.name.lower()}"
+            match_version = p.version
         else:
             match = f"{namespace}/{p.name.lower()}"
             match_version = p.version
@@ -106,7 +112,8 @@ def rows_for(packages, os_facts: dict, manager: str) -> dict[tuple, dict]:
             "namespace": namespace[:64],
             "version": p.version[:128],
             "source_name": src[:128],
-            "source_version": (p.source_version or p.version)[:128],
+            "source_version": (p.source_version or p.version)[:128] if src else "",
+            "publisher": (getattr(p, "publisher", "") or "")[:128],
             "ecosystem": ecosystem[:64],
             "match_name": match[:200],
             "match_version": match_version[:128],
@@ -116,14 +123,15 @@ def rows_for(packages, os_facts: dict, manager: str) -> dict[tuple, dict]:
 
 
 _COMPARED = ("version", "source_name", "source_version", "ecosystem", "match_name",
-             "match_version", "namespace", "purl")
+             "match_version", "namespace", "purl", "publisher")
 
 
-def store(tenant, host, run, result, now=None) -> dict:
+def store(tenant, host, run, result, now=None, transport="") -> dict:
     """Replace ``host``'s packages with ``result`` (a successful
     :class:`danbyte_checks.inventory.InventoryResult`) and record its OS
     facts. Returns ``{packages, added, removed, updated, changed}``."""
     now = now or timezone.now()
+    win = result.os.get("windows") or {}
     on_host = host_kwargs(host)
     wanted = rows_for(result.packages, result.os, result.manager)
     namespace, ecosystem = release_of(result.os, result.manager)
@@ -136,7 +144,12 @@ def store(tenant, host, run, result, now=None) -> dict:
                 "codename": result.os.get("version_codename", "")[:32],
                 "pretty_name": result.os.get("pretty_name", "")[:128],
                 "ecosystem": ecosystem, "package_manager": result.manager,
-                "collected_at": now, "run": run})
+                "build": str(win.get("build") or "")[:16], "ubr": win.get("ubr"),
+                "edition": str(win.get("edition") or "")[:64],
+                "display_version": str(win.get("display_version") or "")[:16],
+                "hotfixes": list(win.get("hotfixes") or []),
+                "features": list(win.get("features") or []),
+                "transport": transport[:16], "collected_at": now, "run": run})
         have = {}
         for row in HostPackage.objects.filter(**on_host).values(
                 "pk", "purl_type", "name", "arch", "removed_at", *_COMPARED):
@@ -184,9 +197,12 @@ def purge_removed(now=None) -> int:
 
 def _current(tenant_ids=None):
     from .gate import active_tenant_ids
+    from .models import MATCHED_TYPES
 
     active = active_tenant_ids() if tenant_ids is None else set(tenant_ids)
-    return HostPackage.objects.filter(removed_at__isnull=True, tenant_id__in=active)
+    # Windows programs (``generic``) are inventory, never matched.
+    return HostPackage.objects.filter(removed_at__isnull=True, tenant_id__in=active,
+                                      purl_type__in=MATCHED_TYPES)
 
 
 def tracked_keys():

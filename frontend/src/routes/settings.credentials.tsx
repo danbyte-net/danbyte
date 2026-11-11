@@ -218,6 +218,7 @@ function CredentialDialog({
   const [password, setPassword] = useState("")
   const [privateKey, setPrivateKey] = useState("")
   const [passphrase, setPassphrase] = useState("")
+  const [certificate, setCertificate] = useState("")
   const [weight, setWeight] = useState("100")
   const [enabled, setEnabled] = useState(true)
   const [fallThrough, setFallThrough] = useState(false)
@@ -239,6 +240,7 @@ function CredentialDialog({
     setPassword("")
     setPrivateKey("")
     setPassphrase("")
+    setCertificate("")
     setWeight(String(c?.weight ?? 100))
     setEnabled(c?.enabled ?? true)
     setFallThrough(c?.fall_through ?? false)
@@ -289,9 +291,10 @@ function CredentialDialog({
         description: description.trim(),
         ...scopeBody,
       }
-      if (kind === "ssh_key") {
+      if (kind === "ssh_key" || kind === "winrm_cert") {
         if (privateKey) body.private_key = privateKey
         if (passphrase) body.passphrase = passphrase
+        if (kind === "winrm_cert" && certificate) body.certificate = certificate
       } else if (password) body.password = password
       return api<SharedCredential>(isEdit ? `${URL}${credential.id}/` : URL, {
         method: isEdit ? "PATCH" : "POST",
@@ -361,8 +364,19 @@ function CredentialDialog({
               error={fieldErrors.port}
             />
           </FormRow>
-          {kind === "ssh_key" ? (
+          {kind === "ssh_key" || kind === "winrm_cert" ? (
             <>
+              {kind === "winrm_cert" && (
+                <FormTextarea
+                  label="Client certificate"
+                  rows={4}
+                  value={certificate}
+                  onChange={setCertificate}
+                  placeholder={keep || "-----BEGIN CERTIFICATE-----"}
+                  error={fieldErrors.certificate}
+                  info="For WinRM over HTTPS. Write-only, like the key."
+                />
+              )}
               <FormTextarea
                 label="Private key"
                 rows={4}

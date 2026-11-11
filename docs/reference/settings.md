@@ -492,6 +492,8 @@ default).
 | Setting | Default | Purpose |
 |---|---|---|
 | `DANBYTE_DISCOVERY_ENABLED` | unset | Locks the deployment switch for discovery. Unset or empty: the switch is the stored setting on the Discovery card (off by default). `True` (`true`, `1`, `yes`, `on`): locked on. Any other value, `False` included: locked off, and nothing can enable it. Set it in the environment of the web, worker and timer units, then restart them. With the switch off nothing is contacted, the pages and API answer not found and package matches resolve. |
+| `DANBYTE_DISCOVERY_WINRM_ALLOWED` | `True` | `False` (`0`, `no`, `off`) forbids discovery's WinRM transport for every tenant; the Discovery card shows *Forbidden by the deployment*. |
+| `DANBYTE_DISCOVERY_WINRM_CA_BUNDLE` | system bundle | CA bundle (PEM file) WinRM server certificates are verified against. Point it at a bundle with your internal CA. |
 | `DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS` | `True` | Whether **Run now** may offer *Accept new host keys* (trust a host's SSH key the first time it is seen). `False`, `0`, `no` or `off` hides the option everywhere and the API refuses it; scheduled runs never use it either way. |
 
 Runs go to the RQ queue `discovery` (`RQ_QUEUES`, timeout 6 h); the shipped

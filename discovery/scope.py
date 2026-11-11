@@ -23,10 +23,18 @@ profile's tenant only:
                     metadata, and internal ranges where the server blocks
                     them; ``danbyte_checks.netguard``)
    ``maintenance``  the host is in an open maintenance event
-   ``no_credential`` no SSH login for the host: none of its own (key,
-                    else password), none pinned on the profile, no shared
-                    credential whose scope matches
-   ``host_key_refused`` no accepted host key (decision 5)
+   ``no_credential`` no login for the host on a transport the tenant has
+                    on: none of its own, none pinned on the profile, no
+                    shared credential whose scope matches
+   ``host_key_refused`` only SSH logins, and no accepted host key
+                    (decision 5)
+
+Transports are tried most secure first - SSH key, SSH password, WinRM over
+HTTPS - each only while the tenant has it on (``DiscoverySettings``); the
+password switch governs every password login, Linux and Windows alike. A
+host with no accepted SSH key can still be read over WinRM, whose server
+certificate is verified instead. ``Target.extra["skipped"]`` says why each
+transport not tried was left out.
 
 Hosts that pass carry their logins (``monitoring.credentials``: the host's
 own credential, the profile's pinned shared credential, then matching
@@ -43,6 +51,37 @@ from django.utils import timezone
 
 MAX_HOSTS = 4096
 SSH_KINDS = ("ssh_key", "ssh_password")
+WINRM_KIND = "winrm_cert"
+#: Transports, most secure first, and the credential kind each logs in with.
+TRANSPORT_KINDS = (("ssh_key", "ssh_key"), ("ssh_password", "ssh_password"),
+                   ("winrm", WINRM_KIND))
+KIND_TRANSPORT = {k: t for t, k in TRANSPORT_KINDS}
+TRANSPORT_LABELS = {"ssh_key": "SSH key", "ssh_password": "SSH password",
+                    "winrm": "WinRM HTTPS"}
+
+
+def transports(settings_row) -> tuple[list[str], dict[str, str]]:
+    """The tenant's transports that may be tried, in order, and why each
+    other one may not: ``(["ssh_key", …], {"winrm": "Switched off"})``."""
+    from .gate import winrm_state
+
+    on, off = [], {}
+    if settings_row.ssh_key_enabled:
+        on.append("ssh_key")
+    else:
+        off["ssh_key"] = "Switched off"
+    if settings_row.ssh_password_enabled:
+        on.append("ssh_password")
+    else:
+        off["ssh_password"] = "Switched off"
+    ok, label, _reason = winrm_state()
+    if not ok:
+        off["winrm"] = label
+    elif settings_row.winrm_enabled:
+        on.append("winrm")
+    else:
+        off["winrm"] = "Switched off"
+    return on, off
 
 
 @dataclass
@@ -53,8 +92,8 @@ class Target:
     skip: str = ""            # a HOST_STATUSES word, or "" to read it
     message: str = ""
     credential: object = None
-    #: Every login that will be tried, in order (``credentials.Login``);
-    #: ``credential`` is the first.
+    #: The logins that may be tried, most secure transport first
+    #: (``credentials.Login``); ``credential`` is the first.
     logins: list = field(default_factory=list)
     known_hosts: bytes | None = None
     extra: dict = field(default_factory=dict)
@@ -153,7 +192,7 @@ def resolve(profile, *, user=None, now=None) -> list[Target]:
     the run reports it)."""
     from api.models import Prefix
     from danbyte_checks import netguard
-    from monitoring.credentials import CredentialResolver, attempts
+    from monitoring.credentials import MAX_TRIES, CredentialResolver
     from monitoring.models import MonitoringDenySubnet, SSHHostKey
 
     from .models import DiscoverySettings
@@ -166,15 +205,17 @@ def resolve(profile, *, user=None, now=None) -> list[Target]:
 
     exempt_nets = _nets(Prefix.objects.filter(tenant=tenant, scan_exempt=True)
                         .values_list("cidr", "vrf_id"))
-    deny_any = _nets((c, None) for c in DiscoverySettings.for_tenant(tenant).deny_subnets or [])
+    settings_row = DiscoverySettings.for_tenant(tenant)
+    deny_any = _nets((c, None) for c in settings_row.deny_subnets or [])
+    on, off = transports(settings_row)
+    kinds = tuple(k for t, k in TRANSPORT_KINDS if t in on)
     deny_vrf = _nets(MonitoringDenySubnet.objects.filter(tenant=tenant)
                      .values_list("cidr", "vrf_id"))
     in_maintenance = _open_maintenance(tenant, now)
 
     dev_ids = [h.pk for k, h in hosts if k == "device"]
     vm_ids = [h.pk for k, h in hosts if k == "virtual_machine"]
-    # A key login is preferred to a password.
-    resolver = CredentialResolver(tenant, kinds=SSH_KINDS, user=user,
+    resolver = CredentialResolver(tenant, kinds=kinds, user=user,
                                   pinned=profile.shared_credential)
     resolver.load_hosts(hosts[:MAX_HOSTS])
     keys: dict = {}
@@ -213,18 +254,37 @@ def resolve(profile, *, user=None, now=None) -> list[Target]:
         if (label, str(host.pk)) in in_maintenance:
             t.skip, t.message = "maintenance", "In an open maintenance event."
             continue
-        t.logins = attempts(resolver.logins(host))
-        if not t.logins:
-            t.skip, t.message = "no_credential", "No SSH credential for this host."
+        rank = {k: i for i, k in enumerate(kinds)}
+        logins = sorted(resolver.logins(host), key=lambda x: rank.get(x.kind, 99))[:MAX_TRIES]
+        skipped = [{"transport": tr, "outcome": "skipped", "reason": why}
+                   for tr, why in off.items()]
+        have = {KIND_TRANSPORT.get(x.kind) for x in logins}
+        skipped += [{"transport": tr, "outcome": "skipped", "reason": "No credential"}
+                    for tr in on if tr not in have]
+        t.extra["server_name"] = (getattr(ip, "dns_name", "") or "").strip()
+        if not logins:
+            t.skip, t.message = "no_credential", "No login for this host on a transport " \
+                                                 "that is on."
+            t.extra["skipped"] = skipped
             continue
-        t.credential = t.logins[0].credential
         accepted = keys.get((kind, host.pk)) or []
-        ports = sorted({login.credential.port or 22 for login in t.logins})
+        ssh_ports = sorted({x.credential.port or 22 for x in logins if x.kind in SSH_KINDS})
         t.known_hosts = _known_hosts(t.address, [(a, b, port) for a, b in accepted
-                                                 for port in ports])
-        if t.known_hosts is None:
-            t.skip, t.message = "host_key_refused", "No accepted SSH host key."
+                                                 for port in ssh_ports])
+        if ssh_ports and t.known_hosts is None:
             t.extra["no_key"] = True
+            rest = [x for x in logins if x.kind not in SSH_KINDS]
+            skipped += [{"transport": KIND_TRANSPORT[x.kind], "outcome": "skipped",
+                         "reason": "No accepted SSH host key"}
+                        for x in logins if x.kind in SSH_KINDS]
+            if not rest:
+                t.logins, t.credential = logins, logins[0].credential
+                t.skip, t.message = "host_key_refused", "No accepted SSH host key."
+                t.extra["skipped"] = skipped
+                continue
+            logins = rest
+        t.logins, t.credential = logins, logins[0].credential
+        t.extra["skipped"] = skipped
     return out
 
 

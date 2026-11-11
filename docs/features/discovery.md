@@ -4,21 +4,23 @@ icon: lucide/scan-search
 
 # Discovery: package inventory
 
-Danbyte can log in to your Linux devices and VMs over SSH, read what is
-installed, and match those exact package versions against the
+Danbyte can log in to your Linux and Windows devices and VMs, read what is
+installed, and match exact Linux package versions against the
 [vulnerability data](vulnerabilities.md). A Debian, Ubuntu, RHEL-family or
 Alpine host then gets CVE results from its own distro's advisories, with
 backported fixes counted - something a version banner can never tell
-([#451](https://github.com/danbyte-net/danbyte/issues/451)).
+([#451](https://github.com/danbyte-net/danbyte/issues/451)). A Windows host
+gets its OS build, hotfixes and installed programs on record.
 
-It uses the SSH credentials you already keep on each host and reads only.
-Nothing is installed on the host, nothing is written there, and no command
-runs that is not listed on this page.
+It uses the credentials you already keep on each host, or [shared
+credentials](device-access.md#shared-credentials), and reads only. Nothing
+is installed on the host, nothing is written there, and no command runs
+that is not listed on this page.
 
 !!! note "What comes later"
-    This is the Linux part of built-in discovery. Reading Windows hosts, a
-    service scan of your own address space and an optional nmap adapter are
-    planned as separate switches on the same card. They are not here yet.
+    Windows CVEs from Microsoft's advisories (by OS build), a service scan of
+    your own address space and an optional nmap adapter are planned as
+    separate switches on the same card. They are not here yet.
 
 ## Turn it on
 
@@ -103,10 +105,11 @@ list:
 | Deny subnet | The address is in one of the tenant's discovery deny subnets (any VRF) or a [monitoring deny subnet](monitoring.md) of its VRF. |
 | Blocked target | The server's target policy refuses it: link-local and cloud-metadata addresses always, internal ranges where `DANBYTE_CHECK_BLOCK_INTERNAL` is on. |
 | In maintenance | The host is in an open [maintenance event](maintenance.md). |
-| No SSH credential | No login for the host: no device credential of kind *SSH key* or *SSH password*, no shared credential pinned on the profile or matching the host, or the secret cannot be read. |
-| Host key not accepted | No SSH host key has been accepted for the host. |
+| No credential | No login for the host on a transport that is on: no device credential of a fitting kind (*SSH key*, *SSH password*, *WinRM certificate*), no shared credential pinned on the profile or matching the host, or the secret cannot be read. |
+| Host key not accepted | Only SSH logins, and no SSH host key has been accepted for the host. |
+| Certificate not trusted | WinRM: the host's TLS certificate did not verify for its name. |
 
-A host left alone as *No SSH credential* or *Host key not accepted* (and
+A host left alone as *No credential* or *Host key not accepted* (and
 past every rule above it) still has its SSH host key read - a key exchange,
 no login - so the key shows under **Host keys** for review.
 
@@ -196,11 +199,54 @@ Reviewing fingerprints under **Host keys** is the safe way.
 The SSH connection uses only that credential: no ssh-agent, no keys or
 config from the server account, no GSS or host-based login.
 
+## Transports
+
+Danbyte reaches a host the most secure way first. Each transport is a
+switch on the **Discovery** card (tenant admins), tried in this order for
+every host, and the run's host list says which one read it - hover the
+transport for why the others were skipped or what they answered:
+
+| Transport | Default | How |
+|---|---|---|
+| **SSH key login** | on | SSH with a key, only to a host whose SSH host key was accepted. Linux and Windows (OpenSSH server). |
+| **SSH password login** | on | The same with a password. Turning it off stops **every** password login - Linux and Windows, a host's own credentials and shared ones. |
+| **WinRM over HTTPS** | off | WS-Management over HTTPS with a **client certificate** (credential kind *WinRM certificate*), for Windows hosts without SSH. |
+
+When a host has more than one, the next is tried only when the transport
+did not answer (SSH unreachable → WinRM), or after a refused SSH key (no
+password was sent yet); a refused password stops there unless its shared
+credential allows trying the next - so no account gets locked out.
+
+WinRM, and what is never used:
+
+- Only HTTPS (port 5986 unless the credential names one). There is no path
+  for plain HTTP.
+- The server certificate is always verified, against the Danbyte server's
+  trust store (`DANBYTE_DISCOVERY_WINRM_CA_BUNDLE`, else the system bundle;
+  install your internal CA there). The name checked is the address's
+  **DNS name** in IPAM, else the address itself, so the WinRM listener's
+  certificate must name one of them. A host whose certificate does not
+  verify is *Certificate not trusted*.
+- The client certificate is mapped to a **local** account on the host
+  (WinRM certificate authentication maps to local accounts only). The
+  certificate and key reach the TLS library through in-memory files, never
+  disk.
+- **Kerberos is not available in this build**: pywinrm needs `pykerberos`
+  (or `pyspnego` with `gssapi`) and the system Kerberos libraries, none of
+  which ships with Danbyte. NTLM, Basic, CredSSP, unverified TLS and
+  unverified SSH host keys are never offered.
+- `DANBYTE_DISCOVERY_WINRM_ALLOWED=False` forbids WinRM for every tenant
+  ([Settings](../reference/settings.md#discovery)); the card then says
+  *Forbidden by the deployment*.
+
+A host with no accepted SSH host key can still be read over WinRM, whose
+server certificate is verified instead.
+
 ## What is run on the host
 
 These are the only commands. They are constants in the code
-(`danbyte_checks/inventory.py`); no part of a name, address or any other
-value you enter is ever placed in one.
+(`danbyte_checks/inventory.py`, `danbyte_checks/inventory_windows.py`); no
+part of a name, address or any other value you enter is ever placed in one.
 
 | Step | Command |
 |---|---|
@@ -208,9 +254,50 @@ value you enter is ever placed in one.
 | Debian, Ubuntu | `dpkg-query -W -f='${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\t${Architecture}\t${db:Status-Abbrev}\n'` |
 | RHEL, Rocky, AlmaLinux, Fedora, SUSE, Amazon | `rpm -qa --qf '%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\n'` |
 | Alpine | `cat /lib/apk/db/installed` |
+| Windows? (only when both os-release reads fail) | `cmd /c ver` - a Windows host answers `Microsoft Windows [Version 10.0.20348.2849]` |
+| Windows (over SSH, and the same script over WinRM) | `powershell -NoProfile -NonInteractive -EncodedCommand <base64>` |
 
 Which package reader runs follows `ID` and `ID_LIKE` in os-release. A host
-of another distro is marked *Unsupported*.
+of another distro is marked *Unsupported*, and so is a host whose `ver`
+answer is not exactly the Windows shape - PowerShell is never started
+then.
+
+The Windows command carries one fixed script, base64-encoded (UTF-16LE, as
+PowerShell takes it), so the command line holds only letters, digits, `+`,
+`/` and `=`, and neither cmd.exe nor PowerShell has anything to expand. The
+script, as it is encoded:
+
+```powershell
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.Encoding]::UTF8
+$cv=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+$os=$null; try { $os=Get-CimInstance Win32_OperatingSystem } catch {}
+$hf=@(); try { $hf=@(Get-CimInstance Win32_QuickFixEngineering | ForEach-Object {
+  [pscustomobject]@{ id=[string]$_.HotFixID; description=[string]$_.Description;
+                     installed_on=[string]$_.InstalledOn } }) } catch {}
+$pr=@()
+foreach ($v in @(@('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','x64'),
+                 @('HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*','x86'))) {
+  $a=$v[1]
+  $pr+=@(Get-ItemProperty $v[0] -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName -and -not $_.SystemComponent -and -not $_.ParentKeyName } |
+    ForEach-Object { [pscustomobject]@{ name=[string]$_.DisplayName;
+      version=[string]$_.DisplayVersion; publisher=[string]$_.Publisher; arch=$a } }) }
+$fe=@(); try { $fe=@(Get-CimInstance Win32_ServerFeature | ForEach-Object { [string]$_.Name }) } catch {}
+[pscustomobject]@{ schema=1; product_name=[string]$cv.ProductName; edition_id=[string]$cv.EditionID;
+  display_version=[string]$cv.DisplayVersion; release_id=[string]$cv.ReleaseId;
+  current_build=[string]$cv.CurrentBuildNumber; ubr=$cv.UBR;
+  installation_type=[string]$cv.InstallationType; caption=…; version=…; architecture=…;
+  hotfixes=$hf; programs=$pr; features=$fe } | ConvertTo-Json -Depth 4 -Compress
+```
+
+(laid out here for reading; the code holds it on one line, and
+`caption`, `version` and `architecture` come from `Win32_OperatingSystem`
+when it could be read). It reads the CurrentVersion registry key, the CIM
+classes `Win32_OperatingSystem`, `Win32_QuickFixEngineering` (what
+`Get-HotFix` reads) and `Win32_ServerFeature` (Windows Server roles and
+features; empty elsewhere), and the 64- and 32-bit Uninstall keys - no
+writes, no other cmdlets.
 
 An SSH command runs through the remote account's login shell - that is how
 SSH works. The commands are written so that shell has nothing to expand
@@ -224,12 +311,21 @@ An ordinary account is enough: os-release, `dpkg-query`, `rpm -q` and the
 apk database are readable without root. Danbyte never runs `sudo`. Give the
 account a key login, and nothing else it does not need.
 
+On Windows a standard user reads the registry keys and CIM classes above.
+Over SSH, any account the OpenSSH server lets in; over WinRM the account the
+client certificate maps to must be in **Remote Management Users** (not an
+administrator).
+
 ### Limits
 
 - Each command's output is capped at 16 MB; a host that answers more is
   marked *Failed*.
 - A host gets the profile's per-host timeout from connect to last line.
-- At most 20,000 packages are kept from one host.
+- At most 20,000 packages (Windows: programs) are kept from one host, 2,000
+  hotfixes and 1,000 features.
+- The Windows answer must be the script's JSON document; anything else is
+  *Failed*. Names and versions are stripped of control characters and
+  capped.
 - Standard input is closed and standard error discarded; nothing the host
   sends is executed or evaluated, only parsed. A line that does not fit the
   expected shape is skipped, and so are packages that are not installed
@@ -245,6 +341,16 @@ For every host read, Danbyte keeps:
   distro keeps an empty ecosystem.
 - **Every installed package**: name, version, architecture, source package
   and its version, a package URL, and when it was first and last seen.
+- **Windows**: the product (`Windows Server 2022 Standard`), edition,
+  release (`21H2`), build and UBR (kept as `10.0.20348.2849`), the
+  installed hotfixes (KB numbers) and server features, and how the host
+  was read. The **Packages** tab shows the build, release and hotfix count
+  above the list.
+- **Windows programs** from the Uninstall keys, as packages of type
+  `generic` (`pkg:generic/windows/<name>@<version>?arch=x64`) with their
+  publisher; `arch` is `x64` for the native key and `x86` for WOW6432Node.
+  They are inventory only: **never matched** against OSV, which has no
+  ecosystem for them, and the vulnerability store asks nothing about them.
 
 Each read replaces the host's list. A package missing from a read is marked
 removed and deleted 30 days later; one that comes back is current again. A
@@ -326,6 +432,7 @@ check runner's target policy applies to every host it logs in to.
 | Exempt a host, address or prefix | *change* on it |
 | Deny subnets | tenant admin to change; tenant admins and profile viewers read |
 | The Discovery switch | tenant admin |
+| The transport switches | tenant admin |
 | This deployment (the deployment switch) | deployment admin (superuser, or an unscoped admin grant); never while `DANBYTE_DISCOVERY_ENABLED` is set |
 
 No built-in group holds *scan*: grant it to the people who may start runs.
@@ -338,7 +445,7 @@ what it can see.
 |---|---|
 | `GET /api/discovery/status/` | The deployment switch (`deployment`: `enabled`, `source` `env` or `setting`, last change), the tenant toggle, and whether both are on |
 | `PATCH /api/discovery/deployment/` | `{"enabled": true}`: the stored deployment switch. Deployment admins only; 409 while the environment locks it |
-| `GET`, `PATCH /api/discovery/settings/` | `deny_subnets` |
+| `GET`, `PATCH /api/discovery/settings/` | `deny_subnets`, `transports` (`{ssh_key, ssh_password, winrm}`); `winrm.available` says whether WinRM can be switched on here |
 | `/api/discovery/profiles/` | Inventory profiles, CRUD (`?enabled=`, `?search=`) |
 | `POST /api/discovery/profiles/<id>/run/` | Run now (202 with the run; 409 when one is open or the profile cannot run). Body `{"accept_new_host_keys": true}` for first use. |
 | `GET /api/discovery/profiles/<id>/host-keys/`, `/api/discovery/runs/<id>/host-keys/` | Host keys waiting for review |

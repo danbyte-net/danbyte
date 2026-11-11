@@ -43,19 +43,31 @@ HOST_STATUSES = [
     ("ok", "OK"),
     ("auth_failed", "Login refused"),
     ("host_key_refused", "Host key not accepted"),
+    ("tls_refused", "Certificate not trusted"),
     ("unreachable", "Unreachable"),
     ("timeout", "Timed out"),
     ("unsupported", "Unsupported"),
     ("failed", "Failed"),
-    ("no_credential", "No SSH credential"),
+    ("no_credential", "No credential"),
     ("no_address", "No address"),
     ("exempt", "Exempt"),
     ("denied", "Deny subnet"),
     ("maintenance", "In maintenance"),
     ("blocked", "Blocked target"),
 ]
-TRANSPORTS = [("ssh", "SSH")]
-PACKAGE_TYPES = [("deb", "deb"), ("rpm", "rpm"), ("apk", "apk")]
+#: How a host was read, most secure first. ``ssh`` is a run from before the
+#: transports were told apart.
+TRANSPORTS = [
+    ("ssh_key", "SSH key"),
+    ("ssh_password", "SSH password"),
+    ("winrm", "WinRM HTTPS"),
+    ("ssh", "SSH"),
+]
+#: ``generic``: a Windows program from the Uninstall keys - inventory only,
+#: never matched against OSV (no reliable product identity).
+PACKAGE_TYPES = [("deb", "deb"), ("rpm", "rpm"), ("apk", "apk"), ("generic", "generic")]
+#: The package types vulnerability matching reads.
+MATCHED_TYPES = ("deb", "rpm", "apk")
 
 
 class DiscoverySettings(TimestampedModel):
@@ -69,6 +81,14 @@ class DiscoverySettings(TimestampedModel):
     #: CIDRs nothing in this tenant's discovery ever contacts, in any VRF.
     #: The monitoring deny subnets apply as well.
     deny_subnets = models.JSONField(default=list, blank=True, db_default=[])
+    #: The transports discovery may log in with, tried in this order per
+    #: host (most secure first). The password switch governs every password
+    #: login - Linux and Windows, host and shared credentials. WinRM is off
+    #: by default and can be forbidden for the whole deployment
+    #: (``DANBYTE_DISCOVERY_WINRM_ALLOWED``).
+    ssh_key_enabled = models.BooleanField(default=True, db_default=True)
+    ssh_password_enabled = models.BooleanField(default=True, db_default=True)
+    winrm_enabled = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         verbose_name = "discovery settings"
@@ -198,8 +218,12 @@ class InventoryHostResult(models.Model):
     address = models.CharField(max_length=64, blank=True, default="", db_default="")
     status = models.CharField(max_length=20, choices=HOST_STATUSES)
     #: Which transport read it; blank when nothing was contacted.
-    transport = models.CharField(max_length=8, choices=TRANSPORTS, blank=True, default="",
+    transport = models.CharField(max_length=16, choices=TRANSPORTS, blank=True, default="",
                                  db_default="")
+    #: Each transport considered for the host, in order:
+    #: ``[{transport, outcome, reason}]`` - why one was skipped or what it
+    #: answered. Never a secret.
+    attempts = models.JSONField(default=list, blank=True, db_default=[])
     #: Whose login was used: ``host`` (its own device credential) or
     #: ``shared: <name>``. Never the secret.
     credential_source = models.CharField(max_length=140, blank=True, default="",
@@ -242,6 +266,18 @@ class HostOsFact(models.Model):
     #: ``Ubuntu:24.04:LTS``, ``Alpine:v3.22``); blank when unknown.
     ecosystem = models.CharField(max_length=64, blank=True, default="", db_default="")
     package_manager = models.CharField(max_length=8, blank=True, default="", db_default="")
+    #: Windows (B2-win): the build and UBR from the CurrentVersion key
+    #: (``version_id`` holds the full ``10.0.<build>.<ubr>``), edition,
+    #: release (``21H2``), the installed hotfixes ``[{id, description,
+    #: installed_on}]`` and the server roles and features.
+    build = models.CharField(max_length=16, blank=True, default="", db_default="")
+    ubr = models.PositiveIntegerField(null=True, blank=True)
+    edition = models.CharField(max_length=64, blank=True, default="", db_default="")
+    display_version = models.CharField(max_length=16, blank=True, default="", db_default="")
+    hotfixes = models.JSONField(default=list, blank=True, db_default=[])
+    features = models.JSONField(default=list, blank=True, db_default=[])
+    #: How it was read (an InventoryHostResult transport).
+    transport = models.CharField(max_length=16, blank=True, default="", db_default="")
     collected_at = models.DateTimeField()
     run = models.ForeignKey(InventoryRun, on_delete=models.SET_NULL, null=True, blank=True,
                             related_name="+")
@@ -273,6 +309,7 @@ class HostPackage(models.Model):
     virtual_machine = models.ForeignKey("api.VirtualMachine", on_delete=models.CASCADE,
                                         null=True, blank=True, related_name="host_packages")
     purl_type = models.CharField(max_length=8, choices=PACKAGE_TYPES)
+    # (``generic`` rows are Windows programs: shown, never matched.)
     #: The distro namespace of its package URL (debian, ubuntu, alpine,
     #: rocky, almalinux, redhat, or the os-release ID).
     namespace = models.CharField(max_length=64)
@@ -282,6 +319,8 @@ class HostPackage(models.Model):
     source_name = models.CharField(max_length=128, blank=True, default="", db_default="")
     source_version = models.CharField(max_length=128, blank=True, default="",
                                       db_default="")
+    #: A Windows program's publisher.
+    publisher = models.CharField(max_length=128, blank=True, default="", db_default="")
     ecosystem = models.CharField(max_length=64, blank=True, default="", db_default="")
     #: ``namespace/name`` of the package OSV advises (see the class doc).
     match_name = models.CharField(max_length=200)

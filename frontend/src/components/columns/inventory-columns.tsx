@@ -18,7 +18,9 @@ import {
   HostStatusBadge,
   RUN_STATUS_LABELS,
   RunStatusBadge,
+  TRANSPORT_LABELS,
 } from "@/components/discovery/status"
+import { InfoTip } from "@/components/ui/info-tip"
 
 // Built-in discovery (#451 B2): the one column factory per discovery table -
 // inventory profiles, runs, a run's hosts, a profile's scope hosts, host
@@ -392,12 +394,33 @@ export function buildInventoryHostResultColumns(): ColumnDef<
       accessorKey: "transport",
       header: "Transport",
       enableSorting: false,
-      cell: ({ row }) =>
-        row.original.transport ? (
-          <span className="text-sm uppercase">{row.original.transport}</span>
-        ) : (
-          dash
-        ),
+      cell: ({ row }) => {
+        const h = row.original
+        const label = h.transport ? labelOf(TRANSPORT_LABELS, h.transport) : ""
+        if (!label && !h.attempts.length) return dash
+        return (
+          <span className="inline-flex items-center gap-1 text-sm whitespace-nowrap">
+            {label || dash}
+            {h.attempts.length > 0 && (
+              <InfoTip>
+                <ul className="space-y-0.5">
+                  {h.attempts.map((a, i) => (
+                    <li key={i}>
+                      <span className="text-foreground">
+                        {labelOf(TRANSPORT_LABELS, a.transport)}
+                      </span>
+                      {": "}
+                      {a.outcome === "skipped"
+                        ? a.reason
+                        : labelOf(HOST_STATUS_LABELS, a.outcome)}
+                    </li>
+                  ))}
+                </ul>
+              </InfoTip>
+            )}
+          </span>
+        )
+      },
       meta: { label: "Transport" },
     },
     {
@@ -647,6 +670,20 @@ export function buildHostPackageColumns(): ColumnDef<HostPackage, unknown>[] {
         </span>
       ),
       meta: { label: "Version" },
+    },
+    {
+      id: "publisher",
+      accessorKey: "publisher",
+      header: ({ column }) => <SortHeader column={column} label="Publisher" />,
+      cell: ({ row }) =>
+        row.original.publisher ? (
+          <span className="text-xs whitespace-nowrap">
+            {row.original.publisher}
+          </span>
+        ) : (
+          dash
+        ),
+      meta: { label: "Publisher" },
     },
     {
       id: "source",

@@ -3132,6 +3132,10 @@ class DeviceCredential(TimestampedModel):
         #: ``user@realm!tokenid`` and the token secret as the password.
         PROXMOX = "proxmox", "Proxmox API token"
         VMWARE = "vmware", "VMware login"
+        #: A client certificate and its private key (PEM) for WinRM over
+        #: HTTPS; discovery's third transport (#451). The secret holds
+        #: ``certificate``, ``private_key`` and an optional ``passphrase``.
+        WINRM_CERT = "winrm_cert", "WinRM certificate"
 
     class Provider(models.TextChoices):
         LOCAL = "local", "Local"

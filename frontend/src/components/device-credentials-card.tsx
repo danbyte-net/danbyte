@@ -46,6 +46,7 @@ interface DeviceCredential {
     | "windows_login"
     | "proxmox"
     | "vmware"
+    | "winrm_cert"
   username: string
   port: number | null
   secret_managed: boolean
@@ -61,6 +62,7 @@ const KINDS = [
   { value: "windows_login", label: "Windows login" },
   { value: "proxmox", label: "Proxmox API token" },
   { value: "vmware", label: "VMware login" },
+  { value: "winrm_cert", label: "WinRM certificate" },
 ]
 const KIND_LABEL: Record<string, string> = Object.fromEntries(
   KINDS.map((k) => [k.value, k.label])
@@ -268,6 +270,7 @@ function CredentialForm({
   const [password, setPassword] = useState("")
   const [privateKey, setPrivateKey] = useState("")
   const [passphrase, setPassphrase] = useState("")
+  const [certificate, setCertificate] = useState("")
   const [provider, setProvider] = useState<"local" | "vault">("local")
   const [path, setPath] = useState("")
 
@@ -280,6 +283,7 @@ function CredentialForm({
     setPassword("")
     setPrivateKey("")
     setPassphrase("")
+    setCertificate("")
     setProvider((credential?.secret_provider as "local" | "vault") || "local")
     setPath(credential?.secret_path ?? "")
     reset()
@@ -298,9 +302,11 @@ function CredentialForm({
       if (managed) {
         // Only send the fields relevant to the kind; blanks on edit keep the
         // stored secret untouched.
-        if (kind === "ssh_key") {
+        if (kind === "ssh_key" || kind === "winrm_cert") {
           if (privateKey) payload.private_key = privateKey
           if (passphrase) payload.passphrase = passphrase
+          if (kind === "winrm_cert" && certificate)
+            payload.certificate = certificate
         } else if (password) {
           payload.password = password
         }
@@ -398,14 +404,30 @@ function CredentialForm({
           )}
 
           {managed ? (
-            kind === "ssh_key" ? (
+            kind === "ssh_key" || kind === "winrm_cert" ? (
               <>
+                {kind === "winrm_cert" && (
+                  <FormTextarea
+                    label="Client certificate"
+                    value={certificate}
+                    onChange={setCertificate}
+                    rows={4}
+                    placeholder="-----BEGIN CERTIFICATE-----"
+                    hint={secretHint}
+                    error={fieldErrors.certificate}
+                    info="For WinRM over HTTPS. The certificate must be mapped to a local account on the host; discovery reads only."
+                  />
+                )}
                 <FormTextarea
                   label="Private key"
                   value={privateKey}
                   onChange={setPrivateKey}
                   rows={5}
-                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  placeholder={
+                    kind === "winrm_cert"
+                      ? "-----BEGIN PRIVATE KEY-----"
+                      : "-----BEGIN OPENSSH PRIVATE KEY-----"
+                  }
                   hint={secretHint}
                   error={fieldErrors.private_key}
                 />

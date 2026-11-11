@@ -31,6 +31,21 @@ def deployment_enabled() -> bool:
     return DeploymentSettings.objects.filter(pk=1, discovery_enabled=True).exists()
 
 
+def winrm_state() -> tuple[bool, str, str]:
+    """Whether WinRM may be switched on by a tenant: ``(ok, label, reason)``.
+    Refused when the deployment forbids it (``DANBYTE_DISCOVERY_WINRM_ALLOWED``)
+    or this server cannot run it."""
+    if not getattr(settings, "DISCOVERY_WINRM_ALLOWED", True):
+        return (False, "Forbidden by the deployment",
+                "DANBYTE_DISCOVERY_WINRM_ALLOWED is off for this deployment.")
+    from .winrm import available
+
+    ok, why = available()
+    if not ok:
+        return False, "Not available in this build", why
+    return True, "", ""
+
+
 def first_use_keys_allowed() -> bool:
     """``DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS`` (default on): whether Run
     now may offer "Accept new host keys" at all."""

@@ -143,6 +143,10 @@ def _credential(login, known_hosts) -> dict | None:
         secret = cred.resolve_secret() or {}
     except (SecretStoreDisabled, SecretStoreError):
         return None
+    if cred.kind == "winrm_cert":
+        return {"certificate": secret.get("certificate") or "",
+                "private_key": secret.get("private_key") or "",
+                "passphrase": secret.get("passphrase") or None}
     out = {"username": cred.username or "root", "known_hosts": known_hosts}
     if cred.kind == "ssh_key":
         out.update(private_key=secret.get("private_key") or "",
@@ -158,43 +162,88 @@ def _known_hosts_line(address: str, port: int, key: dict) -> bytes:
     return _known_hosts(address, [(key["key_type"], key["public_key"], port)]) or b""
 
 
-async def _read_all(work: list, concurrency: int, timeout: float, collect, observe):
-    """``work``: ``(target, mode)`` - ``read`` logs in with the target's
-    logins in order (the next only after a refused login that may fall
-    through), ``observe`` only reads the host key (a key exchange, no
-    login). Returns ``(target, result, observed, login)``."""
+def transport_of(login) -> str:
+    from .scope import KIND_TRANSPORT
+
+    return KIND_TRANSPORT.get(login.kind, "")
+
+
+def try_next(login, status: str, nxt) -> bool:
+    """After ``login`` answered ``status``, may ``nxt`` be tried?
+
+    * the transport did not answer (unreachable, timed out): only a login
+      on another transport (SSH down → WinRM);
+    * the login was refused: after a refused SSH key (no password was
+      sent), or when the credential says it may fall through - never one
+      password after another by default, so no account gets locked out;
+    * anything else (read, host key refused, unsupported, failed): stop.
+    """
+    if nxt is None:
+        return False
+    family = {"ssh_key": "ssh", "ssh_password": "ssh", "winrm": "winrm"}
+    if status in ("unreachable", "timeout"):
+        return family.get(transport_of(nxt)) != family.get(transport_of(login))
+    if status == "auth_failed":
+        return login.kind == "ssh_key" or login.fall_through
+    return False
+
+
+async def _read_all(work: list, concurrency: int, timeout: float, collect, observe,
+                    collect_winrm=None):
+    """``work``: ``(target, mode)`` - ``read`` tries the target's logins
+    most secure transport first (:func:`try_next` says when the next may
+    follow), ``observe`` only reads the host key (a key exchange, no
+    login). Returns ``(target, result, observed, login, attempts)``."""
     sem = asyncio.Semaphore(concurrency)
 
     async def read(target):
-        result, used = None, None
+        result, used, tried = None, None, []
         known = target.known_hosts
         first_use = bool(target.extra.get("first_use"))
-        for login, cred in target.extra["creds"]:
-            port = login.credential.port or 22
-            taken = result.host_key if result is not None else None
-            if first_use and taken:
-                # A later try is pinned to the key the first one took.
-                known, first_use = _known_hosts_line(target.address, port, taken), False
-            extra = {"first_use": True} if first_use else {}
-            result = await collect(target.address, port=port, timeout=timeout,
-                                   **{**cred, "known_hosts": known}, **extra)
-            if taken and not result.host_key:
-                result.host_key = taken
+        creds = target.extra["creds"]
+        dead = set()
+        for i, (login, cred) in enumerate(creds):
+            transport = transport_of(login)
+            fam = "winrm" if transport == "winrm" else "ssh"
+            if fam in dead:
+                tried.append({"transport": transport, "outcome": "skipped",
+                              "reason": "Not reachable on this transport"})
+                continue
+            if transport == "winrm":
+                result = await collect_winrm(
+                    target.address, port=login.credential.port, timeout=timeout,
+                    server_name=target.extra.get("server_name") or "", **cred)
+            else:
+                port = login.credential.port or 22
+                taken = result.host_key if result is not None else None
+                if first_use and taken:
+                    # A later try is pinned to the key the first one took.
+                    known, first_use = _known_hosts_line(target.address, port, taken), False
+                extra = {"first_use": True} if first_use else {}
+                result = await collect(target.address, port=port, timeout=timeout,
+                                       **{**cred, "known_hosts": known}, **extra)
+                if taken and not result.host_key:
+                    result.host_key = taken
             used = login
-            if result.status != "auth_failed" or not login.fall_through:
+            tried.append({"transport": transport, "outcome": result.status,
+                          "reason": (result.message or "")[:200]})
+            if result.status in ("unreachable", "timeout"):
+                dead.add(fam)
+            nxt = creds[i + 1][0] if i + 1 < len(creds) else None
+            if not try_next(login, result.status, nxt):
                 break
         observed = None
         if result is not None and result.status == "host_key_refused":
             port = used.credential.port or 22
             observed = await observe(target.address, port=port, timeout=min(timeout, 10))
-        return target, result, observed, used
+        return target, result, observed, used, tried
 
     async def one(target, mode):
         async with sem:
             if mode == "observe":
                 port = target.extra.get("port") or 22
                 return target, None, await observe(target.address, port=port,
-                                                   timeout=min(timeout, 10)), None
+                                                   timeout=min(timeout, 10)), None, []
             return await read(target)
 
     return await asyncio.gather(*(one(t, m) for t, m in work))
@@ -281,6 +330,7 @@ SUMMARY_LABELS = {
     "maintenance": "in maintenance",
     "blocked": "refused by the target policy",
     "auth_failed": "refused the login",
+    "tls_refused": "with an untrusted TLS certificate",
     "unreachable": "unreachable",
     "timeout": "timed out",
     "unsupported": "unsupported",
@@ -302,17 +352,18 @@ def summary(counts: dict) -> str:
     return ", ".join(parts)
 
 
-def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
-    """The RQ job. ``collect``/``observe`` are injectable for tests (the
-    defaults are :func:`danbyte_checks.inventory.collect` and
-    ``observe_host_key``)."""
+def execute(run_id: str, *, collect=None, observe=None, collect_winrm=None) -> dict | None:
+    """The RQ job. ``collect``/``observe``/``collect_winrm`` are injectable
+    for tests (the defaults are :func:`danbyte_checks.inventory.collect`,
+    ``observe_host_key`` and :func:`discovery.winrm.collect`)."""
     from danbyte_checks import inventory
 
-    from . import packages, scope
+    from . import packages, scope, winrm
     from .models import InventoryHostResult, InventoryProfile, InventoryRun
 
     collect = collect or inventory.collect
     observe = observe or inventory.observe_host_key
+    collect_winrm = collect_winrm or winrm.collect
     run = InventoryRun.objects.select_related(
         "profile", "profile__tenant", "profile__shared_credential", "started_by").filter(
         pk=run_id, status="queued").first()
@@ -364,8 +415,8 @@ def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
     concurrency = max(1, min(CONCURRENCY_MAX, profile.max_concurrency or 1))
     timeout = float(max(TIMEOUT_RANGE[0], min(TIMEOUT_RANGE[1], profile.timeout_seconds or 60)))
     try:
-        results = asyncio.run(_read_all(work, concurrency, timeout, collect, observe)) \
-            if work else []
+        results = asyncio.run(_read_all(work, concurrency, timeout, collect, observe,
+                                        collect_winrm)) if work else []
     finally:
         # The secrets go with the work list.
         for t, _mode in work:
@@ -373,16 +424,17 @@ def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
         work.clear()
 
     counts = {"hosts": len(targets), "ok": 0, "packages": 0, "changed": 0}
-    by_target = {id(t): (r, o, login) for t, r, o, login in results}
+    by_target = {id(t): (r, o, login, tried) for t, r, o, login, tried in results}
     rows, outcome, changed_hosts = [], [], {"device": set(), "virtual_machine": set()}
     for t in targets:
-        r, observed, login = by_target.get(id(t), (None, None, None))
+        r, observed, login, tried = by_target.get(id(t), (None, None, None, []))
         status, message = (t.skip, t.message) if r is None else (r.status, r.message)
         row = InventoryHostResult(
             tenant=tenant, run=run, address=t.address, status=status or "failed",
             message=(message or "")[:300], finished_at=timezone.now(),
-            transport="ssh" if r is not None else "",
+            transport=transport_of(login) if (r is not None and login is not None) else "",
             credential_source=(login.source if login is not None else "")[:140],
+            attempts=[*t.extra.get("skipped", []), *tried][:10],
             **{t.kind: t.host})
         if r is not None and t.extra.get("first_use") and r.host_key:
             try:
@@ -393,7 +445,7 @@ def execute(run_id: str, *, collect=None, observe=None) -> dict | None:
                 counts["keys_accepted"] = counts.get("keys_accepted", 0) + 1
         if r is not None and r.status == "ok":
             try:
-                stored = packages.store(tenant, t.host, run, r)
+                stored = packages.store(tenant, t.host, run, r, transport=row.transport)
             except Exception:  # noqa: BLE001 - one bad host never fails the run
                 log.exception("discovery: storing packages for %s failed", t.host.pk)
                 row.status, row.message = "failed", "Its packages could not be stored."

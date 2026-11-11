@@ -19,6 +19,7 @@ export const SHARED_CREDENTIAL_KINDS: {
   { value: "windows_login", label: "Windows login" },
   { value: "proxmox", label: "Proxmox API token" },
   { value: "vmware", label: "VMware login" },
+  { value: "winrm_cert", label: "WinRM certificate" },
 ]
 
 export const kindLabel = (k: string) =>

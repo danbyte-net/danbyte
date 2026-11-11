@@ -87,13 +87,15 @@ class InventoryError(Exception):
 
 @dataclass
 class Package:
-    #: ``deb`` / ``rpm`` / ``apk``
+    #: ``deb`` / ``rpm`` / ``apk``; ``generic`` for a Windows program
     type: str
     name: str
     version: str
     arch: str = ""
     source_name: str = ""
     source_version: str = ""
+    #: A Windows program's publisher.
+    publisher: str = ""
 
 
 @dataclass
@@ -394,7 +396,9 @@ async def _run(conn, command: str, timeout: float) -> tuple[int | None, bytes]:
     capped at :data:`MAX_OUTPUT`."""
     import asyncssh
 
-    if command not in COMMANDS.values():
+    from .inventory_windows import COMMANDS as WINDOWS_COMMANDS
+
+    if command not in COMMANDS.values() and command not in WINDOWS_COMMANDS.values():
         raise InventoryError(FAILED, "Not an inventory command.")
     proc = await conn.create_process(command, encoding=None, stdin=asyncssh.DEVNULL,
                                      stderr=asyncssh.DEVNULL)
@@ -422,12 +426,45 @@ def _text(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+async def read_windows(conn, timeout: float) -> InventoryResult:
+    """The fixed PowerShell inventory (``inventory_windows``) over ``conn``."""
+    from . import inventory_windows as win
+
+    status, out = await _run(conn, win.COMMANDS["powershell"], timeout)
+    if status != 0 or not out.strip():
+        return InventoryResult(FAILED, "PowerShell could not read the inventory.",
+                               os={"id": "windows"}, manager="windows")
+    return windows_result(_text(out))
+
+
+def windows_result(text: str) -> InventoryResult:
+    """A result from the Windows script's output: the programs as
+    ``generic`` packages (inventory, not matched against OSV)."""
+    from . import inventory_windows as win
+
+    try:
+        facts = win.parse_inventory(text)
+    except win.WindowsParseError as exc:
+        return InventoryResult(FAILED, str(exc), os={"id": "windows"}, manager="windows")
+    packages = [Package("generic", p.name, p.version, p.arch, publisher=p.publisher)
+                for p in facts.programs]
+    return InventoryResult(OK, "", os=win.os_facts(facts), manager="windows",
+                           packages=packages, truncated=facts.truncated)
+
+
 async def read_host(conn, timeout: float) -> InventoryResult:
-    """os-release, then the package list of the host's package manager."""
+    """os-release, then the package list of the host's package manager. A
+    host with no os-release that answers ``cmd /c ver`` as Windows is read
+    with the Windows script instead."""
+    from . import inventory_windows as win
+
     status, out = await _run(conn, COMMANDS["os_release"], timeout)
     if status != 0 or not out.strip():
         status, out = await _run(conn, COMMANDS["os_release_fallback"], timeout)
-    if status != 0:
+    if status != 0 or not out.strip():
+        status, out = await _run(conn, win.COMMANDS["ver"], timeout)
+        if status == 0 and win.parse_ver(_text(out)):
+            return await read_windows(conn, timeout)
         raise InventoryError(UNSUPPORTED, "The host has no readable os-release.")
     os_facts = parse_os_release(_text(out))
     manager = package_manager(os_facts)

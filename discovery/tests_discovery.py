@@ -203,7 +203,7 @@ class ScopeTests(Base):
         p.sites.add(self.site)
         (t,) = scope.resolve(p)
         self.assertEqual(t.credential.kind, "ssh_key")
-        self.assertEqual(t.known_hosts, f"[10.0.0.1]:2222 ssh-ed25519 {KEY}\n".encode())
+        self.assertIn(f"[10.0.0.1]:2222 ssh-ed25519 {KEY}\n".encode(), t.known_hosts)
 
     def test_a_person_reads_only_what_they_may_view(self):
         self.host("a", "10.0.0.1", site=self.site)
@@ -343,7 +343,8 @@ class RunnerTests(Base):
         self.assertNotIn(SECRET, logs)
         res = {h.status for h in InventoryHostResult.objects.filter(run=run)}
         self.assertEqual(res, {"ok", "auth_failed"})
-        self.assertEqual(InventoryHostResult.objects.get(run=run, device=self.a).transport, "ssh")
+        self.assertEqual(InventoryHostResult.objects.get(run=run, device=self.a).transport,
+                         "ssh_password")
 
     def test_refused_host_key_is_recorded_as_observed_only(self):
         r = inv.InventoryResult(inv.HOST_KEY_REFUSED, "The host key does not match.")

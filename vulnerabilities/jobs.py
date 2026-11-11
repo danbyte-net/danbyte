@@ -166,7 +166,10 @@ def _package_tenants(vuln_ids=None) -> set:
                                       product=OuterRef("match_name"))
     if vuln_ids is not None:
         named = named.filter(cve__vuln_id__in=list(vuln_ids))
-    return set(HostPackage.objects.filter(tenant_id__in=active, removed_at__isnull=True)
+    from discovery.models import MATCHED_TYPES
+
+    return set(HostPackage.objects.filter(tenant_id__in=active, removed_at__isnull=True,
+                                          purl_type__in=MATCHED_TYPES)
                .filter(Exists(named)).values_list("tenant_id", flat=True).distinct())
 
 

@@ -629,6 +629,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         password = vd.pop("password", None)
         private_key = vd.pop("private_key", None)
         passphrase = vd.pop("passphrase", None)
+        certificate = vd.pop("certificate", None)
         value = {}
         if password:
             value["password"] = password
@@ -636,6 +637,8 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
             value["private_key"] = private_key
         if passphrase:
             value["passphrase"] = passphrase
+        if certificate:
+            value["certificate"] = certificate
         return value or None
 
     def _store_secret(self, cred, value):

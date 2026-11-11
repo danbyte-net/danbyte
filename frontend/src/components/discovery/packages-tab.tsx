@@ -11,7 +11,11 @@ import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { buildHostPackageColumns } from "@/components/columns/inventory-columns"
-import { useDiscoveryStatus } from "@/components/discovery/status"
+import {
+  TRANSPORT_LABELS,
+  useDiscoveryStatus,
+} from "@/components/discovery/status"
+import { InfoTip } from "@/components/ui/info-tip"
 
 // The Packages tab on a device or VM (#451 B2): what discovery's last full
 // read found installed. Shown only while Discovery is on and something has
@@ -80,6 +84,32 @@ export function PackagesTab({ kind, id }: { kind: PackageHost; id: string }) {
               {os.pretty_name || os.os_id}
             </span>
             {os.ecosystem && <span className="font-mono">{os.ecosystem}</span>}
+            {os.build && (
+              <span>
+                Build{" "}
+                <span className="font-mono text-foreground">
+                  {os.build}
+                  {os.ubr != null ? `.${os.ubr}` : ""}
+                </span>
+              </span>
+            )}
+            {os.display_version && <span>{os.display_version}</span>}
+            {os.os_id === "windows" && (
+              <span className="flex items-center gap-1">
+                {os.hotfixes.length}{" "}
+                {os.hotfixes.length === 1 ? "hotfix" : "hotfixes"}
+                {os.hotfixes.length > 0 && (
+                  <InfoTip>
+                    <span className="font-mono">
+                      {os.hotfixes.map((h) => h.id).join(", ")}
+                    </span>
+                  </InfoTip>
+                )}
+              </span>
+            )}
+            {os.transport && (
+              <span>{TRANSPORT_LABELS[os.transport] ?? os.transport}</span>
+            )}
             <span className="flex items-center gap-1">
               Read <TimeCell iso={os.collected_at} />
             </span>
