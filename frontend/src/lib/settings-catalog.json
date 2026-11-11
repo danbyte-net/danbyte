@@ -530,6 +530,13 @@
       "keywords": ["columns", "layout", "publish", "lock", "table"]
     },
     {
+      "key": "data.layout-presets",
+      "label": "Layout presets",
+      "description": "Share your table layouts with people, groups or everyone",
+      "page": "table-layouts",
+      "keywords": ["columns", "layout", "preset", "share", "default", "group"]
+    },
+    {
       "key": "data.sidebar-default",
       "label": "Sidebar default",
       "description": "Publish your sidebar layout as the tenant's starting point",

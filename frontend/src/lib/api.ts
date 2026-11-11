@@ -660,10 +660,14 @@ export interface ColumnPrefData {
 }
 
 export interface ColumnPref {
-  /** Where the effective layout came from. `tenant_forced` = admin lock. */
-  source: "user" | "default" | "tenant_forced" | "none"
+  /** Where the effective layout came from. `tenant_forced` = admin lock,
+   * `preset` = a layout preset assigned to you, a group or everyone. */
+  source: "user" | "preset" | "default" | "tenant_forced" | "none"
   data: ColumnPrefData | null
   is_forced: boolean
+  /** The layout preset that supplies your default for this table - what
+   * Reset returns to - even while your own layout wins. */
+  preset?: { id: string; name: string } | null
 }
 
 /** One row of the bulk summary (GET /api/prefs/columns/) - table_id → this. */

@@ -377,6 +377,7 @@ const ROWS: Row[] = [
   ["task-statuses", "Task statuses", "Planning", "/api/planning/statuses/", sub],
   ["jobs", "Jobs", "System", null],
   ["backups", "Backups", "System", "/api/backups/"],
+  ["layout-presets", "Layout presets", "System", null, sub],
 ]
 
 export const REGISTERED_TABLES: TableMeta[] = ROWS.map(

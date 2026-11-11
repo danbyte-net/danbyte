@@ -80,6 +80,9 @@ export interface ColumnsMenuProps {
   onReset: () => void
   /** Saved pins, in pin order. */
   pinned?: string[]
+  /** The layout preset that supplies this table's default (what Reset
+   * returns to), shown in the footer. */
+  defaultName?: string | null
   /** Which columns may be pinned; omit for a table without pins. */
   canPin?: (id: string) => boolean
 }
@@ -106,6 +109,7 @@ export function ColumnsMenu({
   onReset,
   pinned: savedPins = NO_PINS,
   canPin,
+  defaultName,
 }: ColumnsMenuProps) {
   const [open, setOpen] = useState(false)
   const [pins, setPins] = useState<string[]>(savedPins)
@@ -331,6 +335,11 @@ export function ColumnsMenu({
                 </Button>
               )}
             </div>
+            {defaultName && (
+              <div className="truncate px-1 pt-1.5 text-[11px] whitespace-nowrap text-muted-foreground">
+                Default: {defaultName}
+              </div>
+            )}
           </>
         )}
       </PopoverContent>

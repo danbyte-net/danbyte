@@ -171,3 +171,23 @@ describe("ColumnsMenu pins", () => {
     )
   })
 })
+
+describe("ColumnsMenu default", () => {
+  it("names the preset that supplies the default", () => {
+    render(
+      <ColumnsMenu
+        label="Columns"
+        isForced={false}
+        hasUserRow
+        seq={["name"]}
+        labelFor={(id) => LABELS[id] ?? id}
+        isHidden={() => false}
+        onApply={() => {}}
+        onReset={() => {}}
+        defaultName="NOC view"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /columns/i }))
+    expect(screen.getByText("Default: NOC view")).toBeTruthy()
+  })
+})

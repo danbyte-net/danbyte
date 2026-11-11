@@ -1126,6 +1126,7 @@ export function DataTable<T>({
                   onReset={resetLayout}
                   pinned={pinned}
                   canPin={pinnable ? canPin : undefined}
+                  defaultName={pref.presetName}
                 />
               ) : (
                 <DropdownMenu

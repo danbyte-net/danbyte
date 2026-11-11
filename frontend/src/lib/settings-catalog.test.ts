@@ -23,6 +23,7 @@ const EXTRA_SOURCES: Record<string, string[]> = {
   integrations: ["src/components/settings/plugins-section.tsx"],
   updates: ["src/components/settings/services-section.tsx"],
   preferences: ["src/components/settings/sidebar-card.tsx"],
+  "table-layouts": ["src/components/settings/layout-presets-card.tsx"],
   "tenant-policy": [
     "src/components/settings/report-cover-card.tsx",
     "src/components/vulnerabilities/policy-card.tsx",

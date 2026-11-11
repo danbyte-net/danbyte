@@ -250,3 +250,39 @@ describe("pins persist with the layout", () => {
     }
   })
 })
+
+describe("the preset behind a table's default", () => {
+  it("is read from the prefs payload, and kept across a save", async () => {
+    vi.useFakeTimers()
+    try {
+      const { useTablePreference } = await import("@/lib/use-table-preference")
+      const qc = new QueryClient()
+      qc.setQueryData<ColumnPref>(["col-pref", "t"], {
+        source: "preset",
+        is_forced: false,
+        data: { order: ["a"], hidden: [] },
+        preset: { id: "p1", name: "NOC view" },
+      })
+      let pref: ReturnType<typeof useTablePreference> | null = null
+      function Probe() {
+        pref = useTablePreference("t")
+        return null
+      }
+      render(
+        <QueryClientProvider client={qc}>
+          <Probe />
+        </QueryClientProvider>
+      )
+      expect(pref!.presetName).toBe("NOC view")
+      expect(pref!.hasUserRow).toBe(false)
+      act(() => pref!.setLayout({ hidden: ["a"] }))
+      act(() => {
+        vi.advanceTimersByTime(400)
+      })
+      expect(pref!.hasUserRow).toBe(true)
+      expect(pref!.presetName).toBe("NOC view")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

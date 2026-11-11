@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.views.decorators.http import require_http_methods
 
@@ -117,6 +118,108 @@ def _effective_pref(user, tenant, table_id):
     return None, "none", False
 
 
+def clean_layout(raw) -> dict | None:
+    """A stored layout reduced to its known keys, or ``None`` when it is not a
+    column layout at all. Tolerant: what a preset or an old row holds is read,
+    never trusted to be well formed."""
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for key in ("order", "hidden", "pinned"):
+        val = raw.get(key)
+        if val is None:
+            continue
+        if not isinstance(val, list):
+            return None
+        out[key] = [x for x in val if isinstance(x, str)]
+    if "order" not in out and "hidden" not in out:
+        return None
+    out.setdefault("order", [])
+    out.setdefault("hidden", [])
+    return out
+
+
+def preset_for(user, tenant, table_id):
+    """The layout preset that supplies ``user``'s default for ``table_id``.
+
+    Presets assigned to the user come first, then presets assigned to one of
+    their groups, then presets for everyone in the tenant; within a level the
+    lowest weight wins, then the name. One query.
+    """
+    from django.db.models import Case, Exists, IntegerField, OuterRef, Value, When
+
+    from .models import LayoutPreset
+
+    through_u = LayoutPreset.users.through
+    through_g = LayoutPreset.groups.through
+    by_user = Exists(
+        through_u.objects.filter(layoutpreset_id=OuterRef("pk"), user_id=user.pk)
+    )
+    by_group = Exists(
+        through_g.objects.filter(
+            layoutpreset_id=OuterRef("pk"), group__user=user
+        )
+    )
+    return (
+        LayoutPreset.objects.filter(tenant=tenant, layouts__has_key=table_id)
+        .annotate(by_user=by_user, by_group=by_group)
+        .filter(Q(by_user=True) | Q(by_group=True) | Q(everyone=True))
+        .annotate(
+            level=Case(
+                When(by_user=True, then=Value(0)),
+                When(by_group=True, then=Value(1)),
+                default=Value(2),
+                output_field=IntegerField(),
+            )
+        )
+        .order_by("level", "weight", "name")
+        .only("id", "name", "layouts")
+        .first()
+    )
+
+
+def resolve_pref(user, tenant, table_id):
+    """The column layout for this user/tenant/table, and where it came from.
+
+    Resolution order (highest wins):
+
+      1. A *forced* tenant default - locks everyone.
+      2. The user's own saved layout.
+      3. A layout preset assigned to the user, then to their groups, then to
+         everyone (:func:`preset_for`).
+      4. The ordinary tenant default published before presets existed.
+      5. ``None`` - the table's built-in layout.
+
+    Returns ``(data, source, is_forced, preset)``; ``preset`` is
+    ``{"id", "name"}`` of the preset that supplies the user's *default* (what
+    Reset returns to) even when their own layout wins, else ``None``. Two
+    queries.
+    """
+    if tenant is None:
+        return None, "none", False, None
+    rows = list(
+        UserPreference.objects.filter(tenant=tenant, table_id=table_id).filter(
+            Q(user=user) | Q(user__isnull=True)
+        )
+    )
+    default = next((r for r in rows if r.user_id is None), None)
+    own = next((r for r in rows if r.user_id is not None), None)
+    if default is not None and default.forced:
+        return default.data, "tenant_forced", True, None
+    preset = preset_for(user, tenant, table_id)
+    preset_layout = clean_layout(preset.layouts.get(table_id)) if preset else None
+    if preset_layout is None:
+        preset = None
+    info = {"id": str(preset.pk), "name": preset.name} if preset else None
+    if own is not None:
+        return own.data, "user", False, info
+    if preset is not None:
+        return preset_layout, "preset", False, info
+    if default is not None:
+        return default.data, "default", False, None
+    return None, "none", False, None
+
+
 @login_required
 @require_http_methods(["GET", "PUT", "DELETE"])
 def column_pref(request, table_id):
@@ -128,9 +231,16 @@ def column_pref(request, table_id):
         # 200 rather than 400 so first-load is clean - there are simply no
         # stored prefs yet.
         if tenant is None:
-            return JsonResponse({"source": "none", "data": None, "is_forced": False})
-        data, source, is_forced = _effective_pref(request.user, tenant, table_id)
-        return JsonResponse({"source": source, "data": data, "is_forced": is_forced})
+            return JsonResponse(
+                {"source": "none", "data": None, "is_forced": False, "preset": None}
+            )
+        data, source, is_forced, preset = resolve_pref(
+            request.user, tenant, table_id
+        )
+        return JsonResponse({
+            "source": source, "data": data, "is_forced": is_forced,
+            "preset": preset,
+        })
 
     # Mutations still require an active tenant - there's nowhere to store them.
     if tenant is None:

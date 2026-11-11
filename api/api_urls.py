@@ -16,7 +16,7 @@ from rest_framework.routers import DefaultRouter
 
 from agents.views import mcp as agent_mcp
 from audit.api import ChangeLogViewSet, JournalEntryViewSet
-from auth_api import column_prefs, dashboard_prefs, sidebar_prefs
+from auth_api import column_prefs, dashboard_prefs, layout_presets, sidebar_prefs
 from auth_api import views as auth_views
 from auth_api.api import (
     GroupViewSet,
@@ -910,6 +910,11 @@ urlpatterns = [
          name="column-pref"),
     path("prefs/columns/<slug:table_id>/default/",
          column_prefs.column_pref_default, name="column-pref-default"),
+    path("prefs/presets/", layout_presets.presets, name="layout-presets"),
+    path("prefs/presets/<uuid:pk>/", layout_presets.preset_detail,
+         name="layout-preset"),
+    path("prefs/presets/<uuid:pk>/reset/", layout_presets.preset_reset,
+         name="layout-preset-reset"),
     # Signed by the target's secret, not a session: see integrations.script_targets.
     path("deploy-runs/<uuid:run_id>/result/", DeployResultView.as_view(),
          name="deploy-run-result"),

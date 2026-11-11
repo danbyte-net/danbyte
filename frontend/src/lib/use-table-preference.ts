@@ -17,6 +17,8 @@ export interface TablePreference {
   isForced: boolean
   /** Whether the user has their own saved row (enables Reset). */
   hasUserRow: boolean
+  /** The layout preset that supplies this table's default, if any. */
+  presetName: string | null
   source: ColumnPref["source"]
   /** True once the initial fetch has resolved (or there's no tableId). */
   loaded: boolean
@@ -42,6 +44,7 @@ const INERT: TablePreference = {
   pinned: [],
   isForced: false,
   hasUserRow: false,
+  presetName: null,
   source: "none",
   loaded: true,
   setLayout: () => {},
@@ -88,6 +91,7 @@ export function useTablePreference(tableId?: string): TablePreference {
         source: "user",
         is_forced: false,
         data: merged,
+        preset: current?.preset ?? null,
       })
       if (timer.current) clearTimeout(timer.current)
       timer.current = setTimeout(() => {
@@ -121,6 +125,7 @@ export function useTablePreference(tableId?: string): TablePreference {
     pinned,
     isForced,
     hasUserRow: q.data?.source === "user",
+    presetName: q.data?.preset?.name ?? null,
     source: q.data?.source ?? "none",
     loaded: q.isSuccess,
     setLayout,

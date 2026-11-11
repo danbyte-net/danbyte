@@ -250,6 +250,7 @@ AUDITED_MODELS = [
     "core.TenantSettings",
     "core.SiteSettings",
     "core.Dashboard",
+    "auth_api.LayoutPreset",
     "integrations.NetBoxImportRun",
     "integrations.WindowsServerConnection",
     "integrations.VirtualizationSource",

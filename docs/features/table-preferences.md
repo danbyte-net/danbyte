@@ -215,8 +215,10 @@ detail pages remember their layout too, but are left out of that list.
 
 ## Shared defaults (administrators)
 
-If you can manage users, you can publish a starting layout for your whole tenant
-under **Settings → Table layouts**:
+If you can manage users, you can also publish a single table's starting
+layout for your whole tenant under **Settings → Table layouts → Tenant
+defaults**. These defaults from before presets keep working: they apply
+after every preset (and a locked one still wins over everything).
 
 | Action | Effect |
 |---|---|
@@ -225,14 +227,65 @@ under **Settings → Table layouts**:
 | **Unlock** | Lets people customize again, starting from the default. |
 | **Clear** | Removes the tenant default entirely. |
 
+## Layout presets (administrators)
+
+A **layout preset** is a named set of table layouts - columns, order,
+hidden and pinned - that you share as the default for other people. Make
+one under **Settings → Table layouts → Layout presets** with **New preset
+from my layouts**: it copies your own saved layout of every table (or only
+the tables you tick), so set your tables up the way you want first.
+
+In the preset you choose who gets it: **Everyone** in the tenant, any
+**groups**, and any **users**. **Weight** settles a tie between two presets
+that reach someone at the same level - the lower weight wins, then the name.
+The preset lists its tables with what each shows (*8 shown · 3 hidden · 1
+pinned*); remove a table there, or **Re-capture from my layouts** to copy in
+your current layouts again. Saving a preset, editing it and deleting it are
+recorded in the change log.
+
+A preset is a default. Someone who has saved their own layout of a table
+keeps it. To bring people onto the preset anyway, use **Reset personal
+layouts** in the preset: it first says how many saved layouts of how many
+users across how many tables it would drop, and only then drops them - for
+the preset's tables and the people it reaches, nothing else. The reset is
+recorded in the change log on the preset.
+
+Everyone keeps **Reset** in the **Columns** menu, which goes back to the
+default that applies to them; the menu names the preset that supplies it
+(*Default: NOC view*).
+
+Only deployment administrators (the same people who can open **Settings →
+Table layouts**) can create, change, assign or reset presets; everyone else
+only receives them. A preset belongs to its tenant: it can only be given to
+that tenant's users, and it never applies in another tenant.
+
+For scripts: `GET /api/prefs/presets/` lists the tenant's presets and `POST`
+makes one (`name`, `description`, `everyone`, `weight`, `user_ids`,
+`group_ids`, and `capture` - `"all"` or a list of table ids); `PATCH
+/api/prefs/presets/<id>/` changes one (the same fields, plus
+`remove_tables`), `DELETE` removes it, and `POST
+/api/prefs/presets/<id>/reset/` with `{"dry_run": true}` counts what a reset
+would drop. A table's layout, `GET /api/prefs/columns/<table>/`, says where it
+came from (`source`: `user`, `preset`, `default`, `tenant_forced` or `none`)
+and names the preset behind the default (`preset`).
+
 !!! note "How a layout is chosen"
-    Danbyte shows the most specific layout that applies: a **locked** tenant
-    default wins over everything; otherwise **your own** saved layout; otherwise
-    the tenant default; otherwise the table's natural order. When a table is
-    locked, its column controls are disabled and a lock icon appears. A
-    column added to Danbyte since the lock takes its default, as in any saved
-    layout: a new built-in column is shown, fields and custom fields stay
-    hidden until the administrator publishes a layout that shows them.
+    Danbyte shows the most specific layout that applies, in this order:
+
+    1. a **locked** tenant default - it wins over everything;
+    2. **your own** saved layout;
+    3. a layout preset given to **you**;
+    4. a layout preset given to one of **your groups** (lowest weight first,
+       then name);
+    5. a layout preset given to **everyone**;
+    6. a tenant default published with **Publish** (above);
+    7. the table's natural order.
+
+    When a table is locked, its column controls are disabled and a lock icon
+    appears. A column added to Danbyte since a layout was saved takes its
+    default, as in any saved layout: a new built-in column is shown, fields
+    and custom fields stay hidden until a layout shows them. A preset's
+    columns that a table no longer has are ignored.
 
 !!! note "What a saved layout records"
     A layout remembers the columns it knew about and which of them were
