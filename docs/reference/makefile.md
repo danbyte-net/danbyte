@@ -49,6 +49,8 @@ These use the project venv automatically.
 | `make superuser` | `python manage.py createsuperuser` |
 | `make shell` | `python manage.py shell` |
 | `make test` | `python manage.py test` |
+| `make test-fast` | The suite across every core: `python manage.py test --parallel auto` (`PARALLEL=<n>`, `ARGS=<labels or flags>`) |
+| `make test-timings` | A parallel run that rewrites `danbyte/test_timings.json`, the per-module seconds that balance the CI shards |
 | `make check` | `python manage.py check` |
 | `make sbom` | Write Danbyte's own CycloneDX SBOM to `sbom.cdx.json` (see [Danbyte's SBOM](../getting-started/sbom.md)) |
 | `make lock` | Regenerate `requirements.lock` from `requirements.txt`: exact versions and the sha256 of every file, keeping the versions already pinned. Every install from the lock is hash-checked (`--require-hashes`); see [Dependencies](../getting-started/dependencies.md) |

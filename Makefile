@@ -30,7 +30,7 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         backend-up backend-down backend-restart backend-logs \
         workers-up workers-down workers-restart workers-logs \
         fastlane-up fastlane-down fastlane-restart fastlane-logs \
-        migrate makemigrations superuser bootstrap seed-demo seed-fabric seed-floorplan-demo seed-building-demo shell test check \
+        migrate makemigrations superuser bootstrap seed-demo seed-fabric seed-floorplan-demo seed-building-demo shell test test-fast test-timings check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
         linger service-user cad-tools sbom lock lock-upgrade lock-check
@@ -57,7 +57,7 @@ help:
 	@echo "    make logs      Tail journalctl for all"
 	@echo ""
 	@echo "  Django"
-	@echo "    make migrate / makemigrations / superuser / shell / test / check"
+	@echo "    make migrate / makemigrations / superuser / shell / test / test-fast / check"
 	@echo "    make cad-tools  Build LibreDWG's dwg2dxf into vendor/cad (DWG floor plans)"
 	@echo "    make sbom       Write Danbyte's own CycloneDX SBOM to sbom.cdx.json"
 	@echo "    make lock       Regenerate requirements.lock (hashes) from requirements.txt"
@@ -443,6 +443,16 @@ shell:
 
 test:
 	@$(PY) manage.py test
+
+# The whole suite across every core (Django's --parallel; one test database
+# per worker). PARALLEL=<n> to cap it, ARGS= for labels or --keepdb.
+test-fast:
+	@$(PY) manage.py test --noinput --parallel $(or $(PARALLEL),auto) $(ARGS)
+
+# Re-measure seconds per test module (the whole suite, in parallel) into
+# danbyte/test_timings.json, which balances the CI shards.
+test-timings:
+	@DANBYTE_TEST_TIMINGS=$(CURDIR)/danbyte/test_timings.json $(PY) manage.py test --noinput --parallel auto
 
 coverage:
 	@$(PY) -m coverage run --source='.' manage.py test
