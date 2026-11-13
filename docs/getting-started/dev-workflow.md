@@ -83,14 +83,14 @@ itself before it builds. `ci.yml` runs the same `tests.yml` on every pull
 request and every push to `main` or a `dev/**` branch, so a failing test shows
 up when the change lands, not on release day.
 
-The backend suite runs as sixteen parallel shard jobs, each
+The backend suite runs as twelve parallel shard jobs, each
 `manage.py test --keepdb --parallel auto --shard K/16` on a copy of one test
 database that the *test-db* job migrated once (applying the migration graph
 takes about ten minutes). The test runner (`danbyte/test_runner.py`) cuts the
 slices from the whole discovered suite at run time, one test module per
 slice, balanced by the measured seconds in `danbyte/test_timings.json`. A new
 test module needs no CI change: it lands in a slice with an estimated weight,
-and the *checks* job's `manage.py test --shard-check 16` fails unless every
+and the *checks* job's `manage.py test --shard-check 12` fails unless every
 test is in exactly one slice. When the shards drift apart, refresh the
 weights with `make test-timings`, or from a CI run's `test-timings-*`
 artifacts (one JSON of seconds per module per shard; merge them into one
