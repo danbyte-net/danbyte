@@ -55,6 +55,16 @@ class MonitoringApiTests(APITestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("params", r.json())
 
+    def test_template_accepts_a_registered_kind_outside_the_enum(self):
+        r = self._make_template(name="zbx", kind="zabbix")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["kind"], "zabbix")
+
+    def test_template_refuses_an_unregistered_kind(self):
+        r = self._make_template(name="nope", kind="nope")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("kind", r.json())
+
     def test_template_crud_and_secret_write_only(self):
         r = self._make_template(
             name="ssh", kind="tcp", params={"port": 22},

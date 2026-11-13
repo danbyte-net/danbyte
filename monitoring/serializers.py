@@ -859,6 +859,10 @@ class CheckTemplateSerializer(SecretParamsMergeMixin, serializers.ModelSerialize
     has_secrets = serializers.SerializerMethodField()
     usage_count = serializers.SerializerMethodField()
     secret_params = serializers.JSONField(write_only=True, required=False)
+    # Not the model's CheckKind choices: those are only the built-ins, and a
+    # registered kind (zabbix, a plugin) would be refused before validate_kind
+    # checks the registry.
+    kind = serializers.CharField(max_length=32)
 
     class Meta:
         model = CheckTemplate
