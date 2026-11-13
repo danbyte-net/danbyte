@@ -660,6 +660,21 @@ their own. Anonymous API responses, `/media/`, `/static/` and the hashed
     level, repeated in any location that has its own `proxy_hide_header`).
     Otherwise every Django response carries two copies.
 
+### Page script policy (`DANBYTE_CSP_MODE`)
+
+The frontend server sends each HTML page a Content-Security-Policy of its
+own, with a script nonce drawn for that page:
+`script-src 'nonce-…' 'strict-dynamic' 'self' 'unsafe-inline'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; report-uri /api/csp-report/`.
+It comes on top of the nginx policy above, which stays as it is.
+
+| Variable | Default | Values |
+|---|---|---|
+| `DANBYTE_CSP_MODE` | `report` | `report` (sent as `Content-Security-Policy-Report-Only`: violations are logged to `danbyte.csp`, nothing is blocked), `enforce`, `off` |
+
+Read from the environment, else from `.env`, when the frontend starts;
+restart `danbyte-frontend-prod` after changing it. Anything else enforces.
+The Vite dev server defaults to `off`.
+
 ## Logging
 
 Console logging is on by default (`django` at INFO, `rq.worker` at INFO).
