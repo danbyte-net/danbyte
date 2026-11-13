@@ -120,6 +120,34 @@ class _Visibility:
         r = self.client.get("/api/ips/", {"within": str(self.hidden.id)})
         self.assertEqual(r.json()["count"], 0)
 
+    def test_vrf_page_tree_and_lists(self):
+        # A VRF page's tree: the VRF's roots, the site-B /16 skipped, its /24
+        # hanging from the /8; the lists scoped by vrf= and within= together.
+        lab = VRF.objects.create(tenant=self.t, name="LAB")
+        top = self.mk("172.16.0.0/12", self.a, vrf=lab)
+        hid = self.mk("172.16.0.0/16", self.b, vrf=lab)
+        low = self.mk("172.16.1.0/24", self.a, vrf=lab)
+        self.mk("172.16.1.0/24", self.a)  # the same CIDR, global
+        mine = IPAddress.objects.create(tenant=self.t, ip_address="172.16.1.5", prefix=low)
+        IPAddress.objects.create(tenant=self.t, ip_address="172.16.9.5", prefix=hid)
+        self.login(self.u)
+        vrf = str(lab.id)
+        self.assertEqual(self.cidrs(self.get(vrf=vrf)), [("172.16.0.0/12", 1)])
+        r = self.get(parent=str(top.id))
+        self.assertEqual(self.cidrs(r), [("172.16.1.0/24", 0)])
+        self.assertNotIn(str(hid.id).encode(), r.content)
+        r = self.get(vrf=vrf, q="172.16.1")
+        self.assertEqual([(n["cidr"], n["match"]) for n in r.json()["results"]],
+                         [("172.16.0.0/12", False), ("172.16.1.0/24", True)])
+        self.assertNotIn(str(hid.id).encode(), r.content)
+        r = self.client.get("/api/prefixes/", {"vrf": vrf, "within": str(top.id)})
+        self.assertEqual([p["id"] for p in r.json()["results"]], [str(top.id), str(low.id)])
+        r = self.client.get("/api/ips/", {"vrf": vrf, "within": str(low.id)})
+        self.assertEqual([x["id"] for x in r.json()["results"]], [str(mine.id)])
+        # A node from another VRF scopes the VRF's lists to nothing.
+        r = self.client.get("/api/prefixes/", {"vrf": vrf, "within": str(self.p8.id)})
+        self.assertEqual(r.json()["count"], 0)
+
     def test_superuser_sees_the_hidden_level(self):
         r = self.get(parent=str(self.p8.id))
         self.assertEqual(self.cidrs(r), [("10.1.0.0/16", 1), ("10.9.0.0/16", 1)])

@@ -65,8 +65,12 @@ import { TruncatedText } from "@/components/ui/truncated-text"
 // the filter box searching inside it. Both tabs share one mode (one pref,
 // `rail-prefix-detail`) and one selection, so a node picked on one tab
 // still scopes the other.
+//
+// A VRF page's Prefixes and IPs tabs use it with the tree fixed to that VRF
+// (`vrf`): its top-level prefixes on top, no VRF picker, one mode for both
+// tabs (`rail-vrf-detail`) and one selection.
 
-export type RailPage = "prefixes" | "ips" | "prefix-detail"
+export type RailPage = "prefixes" | "ips" | "prefix-detail" | "vrf-detail"
 
 /** The prefix a rooted tree hangs from, and its VRF (`global` for none). */
 export interface TreeRoot {
@@ -117,20 +121,24 @@ function revealUrl(id: string) {
 /** Everything a list page needs from the rail: the mode, the selection and
  * its VRF, the params that scope the table, and the view state the tree
  * keeps while it is open (shared by the rail and the narrow-screen sheet).
- * With `root` the tree hangs from that prefix (a prefix page's tabs); while
- * `active` is false a stored Tree is not written into the URL. */
+ * With `root` the tree hangs from that prefix (a prefix page's tabs); with
+ * `vrf` it is that VRF's whole tree, without a picker (a VRF page's tabs,
+ * which scope their tables to the VRF themselves); while `active` is false
+ * a stored Tree is not written into the URL. */
 export function usePrefixTreeRail(
   page: RailPage,
   {
     root = null,
+    vrf: fixedVrf = null,
     active = true,
-  }: { root?: TreeRoot | null; active?: boolean } = {}
+  }: { root?: TreeRoot | null; vrf?: string | null; active?: boolean } = {}
 ) {
   const search = useListSearch()
   const write = useSearchWriter()
   const { mode, setMode } = useRailMode(page, active)
   const params = readRailParams(search)
-  const treeVrf = root ? null : params.treeVrf
+  const pinned = root ? null : fixedVrf
+  const treeVrf = root || pinned ? null : params.treeVrf
   // The root itself is no selection: the tab shows the whole prefix.
   const within = root && params.within === root.id ? null : params.within
 
@@ -148,20 +156,27 @@ export function usePrefixTreeRail(
       reveal.data && root ? rootedReveal(reveal.data, root.id) : reveal.data,
     [reveal.data, root]
   )
-  const outside = !!root && !!reveal.data && !shown
+  // A VRF's tree: a selection in another VRF reads the same way.
+  const outside =
+    !!reveal.data &&
+    (root ? !shown : !!pinned && (reveal.data.vrf ?? GLOBAL_VRF) !== pinned)
   const vrf = root
     ? root.vrf
-    : within && reveal.data
-      ? (reveal.data.vrf ?? GLOBAL_VRF)
-      : (treeVrf ?? GLOBAL_VRF)
+    : pinned
+      ? pinned
+      : within && reveal.data
+        ? (reveal.data.vrf ?? GLOBAL_VRF)
+        : (treeVrf ?? GLOBAL_VRF)
   const selectedCidr =
-    within && shown ? (shown.path[shown.path.length - 1]?.cidr ?? null) : null
+    within && shown && !outside
+      ? (shown.path[shown.path.length - 1]?.cidr ?? null)
+      : null
 
   const select = (id: string | null) =>
     write((prev) => ({
       ...prev,
       [WITHIN_PARAM]: id && id !== root?.id ? id : undefined,
-      [TREE_VRF_PARAM]: root || vrf === GLOBAL_VRF ? undefined : vrf,
+      [TREE_VRF_PARAM]: root || pinned || vrf === GLOBAL_VRF ? undefined : vrf,
     }))
   const setVrf = (v: string) =>
     write((prev) => ({
@@ -172,11 +187,11 @@ export function usePrefixTreeRail(
 
   // The table's scope: the selection; with the tree open and nothing
   // selected, the tree's VRF.
-  // A rooted tree's tab is the root's already: no VRF scope of its own.
+  // A rooted or pinned tree's tab is scoped already: no VRF of its own.
   const scopeParams = useMemo((): Record<string, string> => {
     if (within && !outside) return { within }
-    return mode === "tree" && !root ? { vrf } : {}
-  }, [within, outside, mode, vrf, root])
+    return mode === "tree" && !root && !pinned ? { vrf } : {}
+  }, [within, outside, mode, vrf, root, pinned])
 
   const view = useTreeView(vrf, root?.id ?? null, within, shown)
 
@@ -192,6 +207,8 @@ export function usePrefixTreeRail(
     // The selection that scopes the table (none while it is outside a root).
     scoped: within && !outside ? within : null,
     rooted: !!root,
+    /** The tree is one VRF's, with no picker. */
+    vrfPinned: !!pinned,
     scopeParams,
     view,
   }
@@ -438,7 +455,7 @@ export function PrefixTreePane({
     queryKey: ["vrfs-picker"],
     queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
-    enabled: !rail.rooted,
+    enabled: !rail.rooted && !rail.vrfPinned,
   })
   const vrfOptions = useMemo(
     () => [
@@ -457,7 +474,7 @@ export function PrefixTreePane({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-col gap-3 p-4 pb-3">
         {header}
-        {!rail.rooted && (
+        {!rail.rooted && !rail.vrfPinned && (
           <div>
             <FacetHeading label="VRF" />
             <Combobox

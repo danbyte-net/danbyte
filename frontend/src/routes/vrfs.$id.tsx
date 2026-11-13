@@ -1,10 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { CustomFieldValues } from "@/components/custom-field-display"
+import {
+  CustomFieldValues,
+  useCustomFieldDefs,
+} from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { CopyPlus, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
+import type { ReactNode } from "react"
 
 import {
   api,
@@ -13,6 +17,9 @@ import {
   type VLAN,
   type VRF,
 } from "@/lib/api"
+import type { IPAddress } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import { listCap, listCapCount } from "@/lib/list-cap"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -20,6 +27,18 @@ import { Button } from "@/components/ui/button"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { DataTable } from "@/components/data-table"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
+import { buildIpColumns } from "@/components/columns/ip-columns"
+import { Loading } from "@/components/loading"
+import { NarrowRailSheet } from "@/components/narrow-rail-sheet"
+import {
+  RailModeSwitch,
+  TreeOrFilterRail,
+  WithinChip,
+  narrowTreeRail,
+  usePrefixTreeRail,
+} from "@/components/prefix-tree-rail"
+import type { PrefixTreeRail } from "@/components/prefix-tree-rail"
+import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
 import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
@@ -27,7 +46,6 @@ import { VrfDeleteDialog } from "@/components/vrf-delete-dialog"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import {
   EmbeddedBGPSessionTable,
-  EmbeddedIpTable,
   EmbeddedStaticRouteTable,
 } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -75,6 +93,12 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
     if (!o) setDeleting(null)
   }, [])
   const goBack = useCallback(() => nav({ to: "/vrfs" }), [nav])
+  // The Prefixes and IPs tabs' Filters / Tree rail: this VRF's prefix
+  // tree. A selected node (`?within=`) scopes both tabs to it.
+  const tree = usePrefixTreeRail("vrf-detail", {
+    vrf: v.id,
+    active: tab === "prefixes" || tab === "ips",
+  })
 
   return (
     <DetailShell
@@ -157,11 +181,11 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
       <DetailTab value="overview">
         <VrfOverview vrf={v} humanIds={humanIds} />
       </DetailTab>
-      <DetailTab value="prefixes">
-        <VrfPrefixesTable vrfId={v.id} />
+      <DetailTab value="prefixes" bare>
+        <VrfPrefixesPane vrfId={v.id} tree={tree} />
       </DetailTab>
-      <DetailTab value="ips">
-        <EmbeddedIpTable filter={{ vrf: v.id }} />
+      <DetailTab value="ips" bare>
+        <VrfIpsPane vrfId={v.id} tree={tree} />
       </DetailTab>
       <DetailTab value="vlans">
         <VrfVlansTable vrfId={v.id} />
@@ -286,37 +310,186 @@ function VrfVlansTable({ vrfId }: { vrfId: string }) {
   )
 }
 
-function VrfPrefixesTable({ vrfId }: { vrfId: string }) {
+/** A VRF tab with the tree rail: the rail (or its narrow sheet), the row
+ * count and the selection's chip over the table. */
+function TreeTab({
+  tree,
+  filterRail,
+  activeFilters,
+  count,
+  children,
+}: {
+  tree: PrefixTreeRail
+  filterRail: ReactNode
+  activeFilters: number
+  count: ReactNode
+  children: ReactNode
+}) {
+  const narrow = narrowTreeRail({ rail: tree, filterRail, activeFilters })
+  return (
+    <>
+      <TreeOrFilterRail
+        rail={tree}
+        filterRail={filterRail}
+        activeFilters={activeFilters}
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+          <NarrowRailSheet rail={narrow} className="h-7" />
+          <span className="num text-[11px] whitespace-nowrap text-muted-foreground">
+            {count}
+          </span>
+          {tree.within && <WithinChip rail={tree} />}
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
+          {children}
+        </div>
+      </div>
+    </>
+  )
+}
+
+/** "12 rows", or "12 of 40,000" when the list ran past what was loaded. */
+function rowCount(
+  shown: number,
+  page: { count?: number; results?: unknown[] } | undefined
+) {
+  const cap = listCap(page)
+  if (cap) return listCapCount(shown, cap)
+  return `${shown} row${shown === 1 ? "" : "s"}`
+}
+
+/** A list's rows in this VRF, scoped on the server: `vrf=`, and the tree's
+ * selection as `within=`. */
+function vrfListUrl(endpoint: string, vrfId: string, within: string | null) {
+  const p = new URLSearchParams({ vrf: vrfId })
+  if (within) p.set("within", within)
+  return `${endpoint}?${p}`
+}
+
+function VrfPrefixesPane({
+  vrfId,
+  tree,
+}: {
+  vrfId: string
+  tree: PrefixTreeRail
+}) {
+  const within = tree.scoped
   const q = useQuery({
-    queryKey: ["vrf-prefixes", vrfId],
-    queryFn: () =>
-      api<Paginated<Prefix>>(`/api/prefixes/?vrf=${vrfId}&page_size=500`),
+    queryKey: ["vrf-prefixes", vrfId, within],
+    queryFn: () => apiAll<Prefix>(vrfListUrl("/api/prefixes/", vrfId, within)),
   })
+  const rows = useMemo(() => q.data?.results ?? [], [q.data])
+  const cfQuery = useCustomFieldDefs("prefix")
+  const cfDefs = useMemo(() => cfQuery.data?.results ?? [], [cfQuery.data])
+  // The /prefixes list's facets, less VRF: it is this one.
+  const facetColumns = useMemo<ColumnDef<Prefix>[]>(
+    () => buildPrefixColumns<Prefix>({ omit: ["vrf"], cfDefs }),
+    [cfDefs]
+  )
+  const { rail, filteredRows, toggleValue, selectedValues, activeCount } =
+    useTableFilters(facetColumns, rows, undefined, {
+      railExtras: <RailModeSwitch mode={tree.mode} onChange={tree.setMode} />,
+    })
+  const tagSelection = selectedValues("tags")
   const columns = useMemo<ColumnDef<Prefix>[]>(
-    () => buildPrefixColumns({ omit: ["vrf"] }),
-    []
+    () =>
+      wireFacetColumns(
+        buildPrefixColumns<Prefix>({
+          omit: ["vrf"],
+          cfDefs,
+          tagFilter: {
+            activeSlugs: tagSelection,
+            onToggle: (slug) => toggleValue("tags", slug),
+          },
+        }),
+        selectedValues,
+        toggleValue
+      ),
+    [cfDefs, tagSelection, selectedValues, toggleValue]
   )
 
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading prefixes…</p>
-  if (q.isError) return <QueryError error={q.error} />
-  const rows = q.data?.results ?? []
-  if (rows.length === 0) {
-    return (
-      <EmptyState title="No prefixes yet.">
-        No prefixes are tied to this VRF.
-      </EmptyState>
-    )
-  }
   return (
-    <DataTable
-      data={rows}
-      total={q.data?.count}
-      columns={columns}
-      flexColumn="description"
-      tableId="prefix-embedded"
-      searchable
-      searchPlaceholder="Search prefixes…"
-    />
+    <TreeTab
+      tree={tree}
+      filterRail={rail}
+      activeFilters={activeCount}
+      count={rowCount(filteredRows.length, q.data)}
+    >
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <QueryError error={q.error} />
+      ) : rows.length === 0 && !within ? (
+        <EmptyState title="No prefixes yet.">
+          No prefixes are tied to this VRF.
+        </EmptyState>
+      ) : (
+        <DataTable
+          data={filteredRows}
+          columns={columns}
+          flexColumn="description"
+          tableId="prefix-embedded"
+          searchable
+          searchPlaceholder="Search prefixes…"
+        />
+      )}
+    </TreeTab>
+  )
+}
+
+function VrfIpsPane({ vrfId, tree }: { vrfId: string; tree: PrefixTreeRail }) {
+  const within = tree.scoped
+  const q = useQuery({
+    queryKey: ["vrf-ips", vrfId, within],
+    queryFn: () => apiAll<IPAddress>(vrfListUrl("/api/ips/", vrfId, within)),
+  })
+  const rows = useMemo(() => q.data?.results ?? [], [q.data])
+  // The /ips list's facets.
+  const facetColumns = useMemo<ColumnDef<IPAddress>[]>(
+    () => buildIpColumns<IPAddress>(),
+    []
+  )
+  const { rail, filteredRows, toggleValue, selectedValues, activeCount } =
+    useTableFilters(facetColumns, rows, undefined, {
+      railExtras: <RailModeSwitch mode={tree.mode} onChange={tree.setMode} />,
+    })
+  const columns = useMemo<ColumnDef<IPAddress>[]>(
+    () =>
+      wireFacetColumns(
+        buildIpColumns<IPAddress>({
+          include: ["ip", "status", "dhcp", "dns", "assigned"],
+          copyButton: true,
+        }),
+        selectedValues,
+        toggleValue
+      ),
+    [selectedValues, toggleValue]
+  )
+
+  return (
+    <TreeTab
+      tree={tree}
+      filterRail={rail}
+      activeFilters={activeCount}
+      count={rowCount(filteredRows.length, q.data)}
+    >
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <QueryError error={q.error} />
+      ) : rows.length === 0 && !within ? (
+        <EmptyState title="No IP addresses." />
+      ) : (
+        <DataTable
+          data={filteredRows}
+          columns={columns}
+          flexColumn="dns"
+          tableId="ip-embedded"
+          searchable
+          searchPlaceholder="Search IP addresses…"
+        />
+      )}
+    </TreeTab>
   )
 }

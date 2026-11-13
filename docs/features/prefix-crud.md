@@ -188,6 +188,23 @@ the two lists - a tree you browse the lists by doesn't change how a prefix
 page opens. On a narrow window the rail opens from the **Filters** /
 **Tree** button beside the row count.
 
+### On a VRF's page
+
+A VRF's **Prefixes** and **IPs** tabs have the same switch. **Filters**
+shows the list pages' facets for the VRF's rows (the prefix list's, less
+VRF, and the IP list's). **Tree** is the VRF's own tree: its top-level
+prefixes on top, opening and paging as above, with no VRF picker, and
+**Filter prefixes** searches the VRF.
+
+Click a prefix to scope the tab to it, on the server: **Prefixes** lists it
+and everything inside it, **IPs** the addresses on it or on any prefix
+below it. A pick from another VRF scopes nothing (the chip reads **unknown
+prefix**). The pick (`?within=`) and the mode (`?rail=tree`) sit beside
+`?tab=` and are shared by both tabs, with the **Within …** chip and
+**clear** as above. Tree or Filters is remembered per user for VRF pages,
+apart from the lists and prefix pages. On a narrow window the rail opens
+from the button beside the row count.
+
 ### Hidden prefixes
 
 The tree holds only prefixes you may view. A prefix whose parent you can't
