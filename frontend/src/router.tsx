@@ -16,6 +16,19 @@ if (typeof window !== "undefined") {
   window.addEventListener("vite:preloadError", (event) => {
     if (reloadForNewBuild()) event.preventDefault()
   })
+  exposeNonceToPreloads()
+}
+
+// Vite's preload helper takes the nonce for the <link rel="modulepreload">
+// it adds from the csp-nonce meta's nonce attribute; the router writes the
+// value in its content. Chromium lets those preloads through on
+// 'strict-dynamic' alone; with the nonce they pass in any browser that
+// checks a preload against the policy (#498).
+function exposeNonceToPreloads() {
+  const meta = document.querySelector<HTMLMetaElement>(
+    'meta[property="csp-nonce"]'
+  )
+  if (meta?.content && !meta.nonce) meta.setAttribute("nonce", meta.content)
 }
 
 // The per-response script nonce src/server.ts hands to Start (#498). The

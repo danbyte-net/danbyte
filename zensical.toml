@@ -211,6 +211,9 @@ nav = [
 
 [project.theme]
 language = "en"
+# No Google Fonts: the site's CSP refuses the stylesheet anyway (#498), and an
+# air-gapped install cannot reach it. The system font stack stands in.
+font = false
 features = [
   "navigation.instant",
   "navigation.tracking",
