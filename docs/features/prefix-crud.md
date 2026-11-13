@@ -161,6 +161,33 @@ The tree is a keyboard tree: ++arrow-up++ / ++arrow-down++ move, ++home++ /
 ++arrow-left++ closes it or steps out to its parent, ++enter++ or ++space++
 selects.
 
+### On a prefix's page
+
+A prefix's **IPs** and **Child prefixes** tabs have the same **Filters** /
+**Tree** switch. There the tree starts at the prefix itself: its direct
+children on top, each opening as above (a prefix with none shows **No child
+prefixes.**). It has no VRF picker (the prefix's own VRF applies), and
+**Filter prefixes** searches only inside the prefix.
+
+Click a prefix in the tree to scope the tab to it:
+
+- **IPs** lists the addresses inside the picked prefix - on it or on any
+  prefix below it. **Show available** and **Show DHCP pool** stay under the
+  switch in Tree mode and count against the picked prefix: its free hosts
+  (when it holds no prefixes of its own and is small enough to list) and its
+  own DHCP pool. **+ Add** on a free row opens the IP form in the picked
+  prefix.
+- **Child prefixes** lists the picked prefix and everything inside it.
+
+The pick is `?within=<id>` and the mode `?rail=tree`, beside the tab's
+`?tab=`, so a link opens the same view. Both tabs share them: a prefix
+picked on **IPs** still scopes **Child prefixes**. The **Within …** chip
+beside the row count, or **clear** in the tree, goes back to the whole
+prefix. Tree or Filters is remembered per user for prefix pages, apart from
+the two lists - a tree you browse the lists by doesn't change how a prefix
+page opens. On a narrow window the rail opens from the **Filters** /
+**Tree** button beside the row count.
+
 ### Hidden prefixes
 
 The tree holds only prefixes you may view. A prefix whose parent you can't

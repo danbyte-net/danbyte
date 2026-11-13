@@ -164,6 +164,7 @@ hangs from the nearest visible prefix above it):
 | `vrf=<id>` or `global` (default), `offset`, `limit` (default 200, at most 1,000) | The VRF's top-level prefixes: `{count, offset, limit, results}` |
 | `parent=<id>`, `offset`, `limit` | That prefix's direct children (404 when it is not visible) |
 | `vrf`, `q=<text>` | The outermost matches (`match: true`) and the prefixes above them; `truncated` past 200 |
+| `parent=<id>`, `q=<text>` | The same search over the prefixes inside that one only (a [prefix page's tree](../features/prefix-crud.md#on-a-prefixs-page)); a path's top hangs from `parent` |
 | `reveal=<id>` | `{vrf, path}`: root to that prefix, each with its `index` among its siblings |
 
 Each node is `{id, cidr, parent, child_count}`; `child_count` counts direct
