@@ -315,7 +315,10 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     requires `"status": "ok"` and the new version from it before anyone else
     is let in. It keeps answering while an upgrade or a restore holds the
     site, with `"maintenance": true`; every other request gets 503 until
-    the flag is cleared.
+    the flag is cleared. Its migration checks (`code_behind_db`,
+    `db_behind_code`) are cached per process only while the applied
+    migrations and the migration folders stay the same, so a migrate or a
+    restore shows on the next probe, whichever process ran it.
 
 !!! note "Admin and API pages without styling (403 on `/static/`)"
 

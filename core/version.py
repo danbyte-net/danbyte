@@ -101,7 +101,72 @@ def _redis_version() -> str:
 
 
 _drift_logged = False
-_drift_cache: tuple[float, list] | None = None
+#: (when, migration_state(), answer)
+_drift_cache: tuple[float, tuple | None, list] | None = None
+
+#: How long a probe answer may be reused while the migration state reads the
+#: same - a backstop for what the state key does not see (a file edited in
+#: place).
+_PROBE_TTL = 60
+
+
+def migration_state() -> tuple | None:
+    """A cheap key for what the migration probes read: the applied rows
+    (count and highest id of ``django_migrations``) and the migration folders
+    on disk (their mtime, which an added or removed file changes). A migrate,
+    a restore or a swapped tree changes it, in this process or any other, so
+    a cached probe answer is reused only while it is still true. ``None``
+    when the table cannot be read."""
+    import importlib.util
+    import os
+    import sys
+
+    from django.apps import apps
+    from django.db import connection, transaction
+    from django.db.migrations.loader import MigrationLoader
+    from django.db.migrations.recorder import MigrationRecorder
+
+    table = connection.ops.quote_name(MigrationRecorder.Migration._meta.db_table)
+    try:
+        if connection.in_atomic_block:
+            with transaction.atomic(), connection.cursor() as cur:
+                cur.execute(f"SELECT count(*), max(id) FROM {table}")
+                rows = cur.fetchone()
+        else:
+            with connection.cursor() as cur:
+                cur.execute(f"SELECT count(*), max(id) FROM {table}")
+                rows = cur.fetchone()
+    except Exception:  # noqa: BLE001 - no table yet, or no database
+        return None
+    dirs = []
+    for cfg in apps.get_app_configs():
+        name, _ = MigrationLoader.migrations_module(cfg.label)
+        if not name:
+            continue
+        mod = sys.modules.get(name)
+        paths = list(getattr(mod, "__path__", None) or [])
+        if not paths:
+            try:
+                spec = importlib.util.find_spec(name)
+            except (ImportError, ValueError):
+                spec = None
+            paths = list(spec.submodule_search_locations or []) if spec else []
+        for path in paths:
+            try:
+                dirs.append((path, os.stat(path).st_mtime_ns))
+            except OSError:
+                dirs.append((path, None))
+    return (tuple(rows), tuple(dirs))
+
+
+def _cached(cache, state):
+    import time
+
+    if cache is None or state is None or cache[1] != state:
+        return None
+    if time.monotonic() - cache[0] >= _PROBE_TTL:
+        return None
+    return cache[2]
 
 
 def migration_drift() -> list[str]:
@@ -118,9 +183,12 @@ def migration_drift() -> list[str]:
     import time
 
     # Health probes hit this every few seconds; the answer only changes on a
-    # deploy or a migrate, so one loader build per minute is plenty.
-    if _drift_cache is not None and time.monotonic() - _drift_cache[0] < 60:
-        return _drift_cache[1]
+    # deploy or a migrate, which change the migration state - the loader is
+    # built again then, and at most once a minute otherwise.
+    state = migration_state()
+    hit = _cached(_drift_cache, state)
+    if hit is not None:
+        return hit
     try:
         from django.db import connection
         from django.db.migrations.loader import MigrationLoader
@@ -140,7 +208,7 @@ def migration_drift() -> list[str]:
         )
     except Exception:  # noqa: BLE001 - a probe must never take the app down
         return []
-    _drift_cache = (time.monotonic(), drift)
+    _drift_cache = (time.monotonic(), state, drift)
     if drift and not _drift_logged:
         _drift_logged = True
         import logging
@@ -154,7 +222,8 @@ def migration_drift() -> list[str]:
     return drift
 
 
-_pending_cache: tuple[float, list[str]] | None = None
+#: (when, migration_state(), answer)
+_pending_cache: tuple[float, tuple | None, list[str]] | None = None
 _pending_logged = False
 _unreadable_logged = False
 
@@ -187,13 +256,17 @@ def pending_migrations() -> list[str]:
     the mirror of :func:`migration_drift`: new code started against an old
     schema (a restart without the migrate step, a hand-pulled checkout, a
     container image without ``MIGRATE_ON_START``). Reads then fail on a
-    column that does not exist. Cached a minute like the drift check.
+    column that does not exist. Cached like the drift check: reused only
+    while :func:`migration_state` reads the same, so the answer turns the
+    moment a migrate or a restore lands, in whichever process ran it.
     Migration files that do not load are one entry saying so, never ``[]``."""
     global _pending_cache, _pending_logged
     import time
 
-    if _pending_cache is not None and time.monotonic() - _pending_cache[0] < 60:
-        return _pending_cache[1]
+    state = migration_state()
+    hit = _cached(_pending_cache, state)
+    if hit is not None:
+        return hit
     try:
         from django.db import connection
         from django.db.migrations.loader import MigrationLoader
@@ -210,7 +283,7 @@ def pending_migrations() -> list[str]:
         # Migration files that do not load (a stray one from another release)
         # must not read as "nothing pending": migrate would fail the same way.
         return _unreadable_migrations()
-    _pending_cache = (time.monotonic(), pending)
+    _pending_cache = (time.monotonic(), state, pending)
     if pending and not _pending_logged:
         _pending_logged = True
         import logging
