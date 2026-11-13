@@ -10,10 +10,13 @@ setting clear it, as they already did.
 
 Parallel runs (--parallel N): each worker process gets its own cache key
 prefix. The prefix carries the runner's pid, and forked workers share it, so
-without this one worker's cached values leaked into another's tests. Workers
-may also start processes of their own, as the PDF renders do, and a failure
-whose traceback cannot be pickled (no tblib) reaches the runner as text
-instead of ending the run.
+without this one worker's cached values leaked into another's tests; and
+cache.clear() there removes only that worker's keys, not the Redis database.
+A module's tests run in one worker, longest modules first. Workers may start
+processes of their own, as the PDF renders do, and a failure whose traceback
+cannot be pickled (no tblib) reaches the runner as text instead of ending the
+run. With --keepdb each worker's copy is still made fresh from the kept test
+database.
 
 Shards (CI): --shard K/N runs the K-th of N slices of the whole discovered
 suite. Every test module lands in exactly one slice, balanced by the measured
@@ -27,7 +30,7 @@ every shard restores it and runs with --keepdb.
 
 DANBYTE_TEST_TIMINGS=<file> writes the wall time spent per test module, class
 setup and teardown included, as JSON - the source of danbyte/test_timings.json.
-Under --parallel each test class is timed in its worker.
+Under --parallel each module is timed in its worker.
 """
 from __future__ import annotations
 
@@ -72,6 +75,26 @@ def _init_worker(counter, *args, **kwargs):
         conf["KEY_PREFIX"] = f"{conf.get('KEY_PREFIX', '')}:w{worker}"
         # A cache the runner already opened keeps its prefix on the instance.
         caches[alias].key_prefix = conf["KEY_PREFIX"]
+    _scope_cache_clear()
+
+
+def _scope_cache_clear():
+    """cache.clear() on django-redis is FLUSHDB: one worker's setUp emptied
+    every other worker's cache mid-test (an alert flag gone, so it fired
+    twice). In a worker it removes only the keys under its own prefix."""
+    try:
+        from django_redis.client.default import DefaultClient, glob_escape
+    except ImportError:
+        return
+
+    def clear(self, client=None):
+        client = client or self.get_client(write=True)
+        keys = list(client.scan_iter(match=glob_escape(self._backend.key_prefix) + ":*",
+                                     count=1000))
+        for start in range(0, len(keys), 1000):
+            client.delete(*keys[start:start + 1000])
+
+    DefaultClient.clear = clear
 
 
 def _run_subsuite(args):
