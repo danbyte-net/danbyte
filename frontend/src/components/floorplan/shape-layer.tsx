@@ -23,6 +23,7 @@ import {
   boxCenter,
   handlePoint,
   labelBox,
+  labelPlateBox,
   labelFontCells,
   labelPlate,
   patternRuns,
@@ -516,6 +517,7 @@ export function LabelShapeView({
   onPointerDown?: (e: React.PointerEvent) => void
 }) {
   const box = labelBox(label, cellMm)
+  const plateBox = label.plate ? labelPlateBox(label, cellMm) : box
   const [cx, cy] = boxCenter(box)
   const size = px(labelFontCells(label.font_mm, cellMm))
   const lines = label.text.split("\n")
@@ -554,12 +556,13 @@ export function LabelShapeView({
         pointerEvents: interactive ? "auto" : "none",
       }}
     >
-      {/* The hit area, and the plate when it has one. */}
+      {/* The hit area, and the plate when it has one - never narrower
+          than the text it backs. */}
       <rect
-        x={px(box.x)}
-        y={px(box.y)}
-        width={px(box.width)}
-        height={px(box.height)}
+        x={px(plateBox.x)}
+        y={px(plateBox.y)}
+        width={px(plateBox.width)}
+        height={px(plateBox.height)}
         rx={Math.min(6, size * 0.2)}
         className={
           label.plate

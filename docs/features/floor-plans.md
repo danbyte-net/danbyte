@@ -2072,7 +2072,12 @@ paper), an optional **plate** behind the text so it reads over lines, and a
 rotation. The plate has a **Plate colour** of its own from the same palette
 (**Default** is the theme's background); over a coloured plate the text
 turns black or white, whichever reads, unless the label has a colour of its
-own. The PDF draws the same. Labels draw over the tiles. A label can
+own. The plate is sized from the text as the browser measures it in the
+plan's font (glyph widths where it cannot), so capitals and wide letters
+keep the same pad either side; spaces at the ends of the text are not
+drawn and do not widen it. A label whose width was set narrower than its
+text gets a plate wide enough for the text, grown from its aligned side.
+The PDF draws the same. Labels draw over the tiles. A label can
 [open another plan](#opens-links).
 
 ### Right-click on the plan

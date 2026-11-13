@@ -39,6 +39,7 @@ import {
   boxCenter,
   byZ,
   labelBox,
+  labelPlateBox,
   labelFontCells,
   labelPlate,
   opensName,
@@ -754,7 +755,7 @@ function labelMarkup(
       : l.align === "right"
         ? (box.x + box.width) * CELL - size * 0.3
         : box.x * CELL + size * 0.3
-  const plate = labelPlate(l)
+  const plate = { ...labelPlate(l), box: labelPlateBox(l, cellMm) }
   const ink = plate.ink ?? labelColor(l.color).paper
   const lines = l.text
     .split("\n")
@@ -773,10 +774,10 @@ function labelMarkup(
     `<g${turns ? ` transform="${turns}"` : ""}>` +
     (l.plate
       ? el("rect", {
-          x: box.x * CELL,
-          y: box.y * CELL,
-          width: box.width * CELL,
-          height: box.height * CELL,
+          x: plate.box.x * CELL,
+          y: plate.box.y * CELL,
+          width: plate.box.width * CELL,
+          height: plate.box.height * CELL,
           rx: Math.min(6, size * 0.2),
           fill: plate.fill ?? "#ffffff",
           stroke: "#e4e4e7",

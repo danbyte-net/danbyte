@@ -13,8 +13,11 @@ import {
   areaSquareMetres,
   areaPattern,
   areaTypeOf,
+  labelBox,
+  labelPlateBox,
   labelPresetMm,
   labelPresetOf,
+  textWidthEm,
   patternRuns,
   pointInBox,
   polygonCrossesItself,
@@ -359,5 +362,61 @@ describe("pattern strokes", () => {
       maxLines: 400,
     })
     expect(run.lines.length).toBeLessThanOrEqual(401)
+  })
+})
+
+describe("label plates", () => {
+  const label = {
+    text: "WELCOME TO THE FLOORPLAN DEMO",
+    x: 0,
+    y: 0,
+    width: null,
+    height: null,
+    rotation: 0,
+    font_mm: 600,
+    weight: "bold" as const,
+    align: "left" as const,
+  }
+  // Inter's advance widths (em) for the capitals in the line.
+  const INTER: Record<string, number> = {
+    W: 0.96,
+    E: 0.58,
+    L: 0.53,
+    C: 0.71,
+    O: 0.76,
+    M: 0.88,
+    T: 0.62,
+    H: 0.74,
+    F: 0.56,
+    R: 0.64,
+    P: 0.63,
+    A: 0.68,
+    N: 0.75,
+    D: 0.71,
+    " ": 0.28,
+  }
+
+  it("covers a long all-caps line with even padding", () => {
+    const real = [...label.text].reduce((w, c) => w + INTER[c], 0)
+    const box = labelBox(label, 600)
+    // The text starts one pad in; the plate ends at least one pad past it.
+    expect(box.width - 0.3 * 2).toBeGreaterThanOrEqual(real)
+    // Not by a count of characters: that estimate fell short.
+    expect(label.text.length * 0.58).toBeLessThan(real)
+  })
+
+  it("is not widened by spaces the plan does not draw", () => {
+    const plain = labelBox(label, 600).width
+    const spaced = labelBox({ ...label, text: label.text + "   " }, 600)
+    expect(spaced.width).toBe(plain)
+    expect(textWidthEm("  A  B  ")).toBe(textWidthEm("A B"))
+  })
+
+  it("widens past a set width narrower than its text", () => {
+    const set = { ...label, width: 4, align: "center" as const }
+    const plate = labelPlateBox(set, 600)
+    expect(plate.width).toBeCloseTo(labelBox(label, 600).width)
+    expect(plate.x + plate.width / 2).toBeCloseTo(2)
+    expect(labelPlateBox({ ...label, width: 40 }, 600).width).toBe(40)
   })
 })
