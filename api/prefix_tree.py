@@ -8,7 +8,9 @@ loads the whole tree:
   child's own direct-child count, paged by ``offset`` / ``limit``;
 * ``?q=<text>``: the search. Prefixes whose CIDR starts with the text, or,
   when it is an address or network, the ones inside it (else the smallest one
-  holding it); only the outermost matches, each with the prefixes above it;
+  holding it); only the outermost matches, each with the prefixes above it.
+  With ``?parent=<id>`` only the prefixes inside that one take part, and the
+  paths stop below it (a prefix detail page's tree);
 * ``?reveal=<id>``: the path from the root to that prefix, with each step's
   position among its siblings, so a pane opened on a selection can show it.
 
@@ -131,16 +133,7 @@ def children(qs, params) -> dict:
     offset, limit = _page_params(params)
     parent_id = params.get("parent") or None
     if parent_id:
-        pid, cidr, vrf_id = _visible_one(qs, parent_id)
-        try:
-            inside = str(ipaddress.ip_network(cidr, strict=False))
-        except (ValueError, TypeError):
-            inside = None
-        if inside is None:
-            nodes = []
-        else:
-            vq = Q(vrf__isnull=True) if vrf_id is None else Q(vrf_id=vrf_id)
-            nodes = build(visible_rows(qs, vq, inside))
+        nodes = _nodes_inside(qs, parent_id)
     else:
         try:
             nodes = build(visible_rows(qs, vrf_filter(params.get("vrf"))))
@@ -175,9 +168,22 @@ def _all_nodes(qs, params):
         return []
 
 
+def _nodes_inside(qs, parent_id):
+    """The visible prefixes strictly inside one visible prefix, as a tree of
+    their own: a prefix hanging from nothing inside it is a top node."""
+    _pid, cidr, vrf_id = _visible_one(qs, parent_id)
+    try:
+        inside = str(ipaddress.ip_network(cidr, strict=False))
+    except (ValueError, TypeError):
+        return []
+    vq = Q(vrf__isnull=True) if vrf_id is None else Q(vrf_id=vrf_id)
+    return build(visible_rows(qs, vq, inside))
+
+
 def search(qs, params) -> dict:
     text = (params.get("q") or "").strip().lower()
-    nodes = _all_nodes(qs, params)
+    parent_id = params.get("parent") or None
+    nodes = _nodes_inside(qs, parent_id) if parent_id else _all_nodes(qs, params)
     by_id = {n.id: n for n in nodes}
     net = _query_net(text)
     if net is not None:
@@ -209,11 +215,17 @@ def search(qs, params) -> dict:
         while p is not None and p not in keep:
             keep[p] = False
             p = by_id[p].parent
+    # Inside a parent, the top of each path hangs from it, as in children().
+    def up(n):
+        if n.parent is None and parent_id:
+            return {"parent": str(parent_id)}
+        return {}
+
     return {
         "q": text,
         "count": len(outer),
         "truncated": truncated,
-        "results": [n.as_dict(match=keep[n.id]) for n in nodes if n.id in keep],
+        "results": [n.as_dict(match=keep[n.id], **up(n)) for n in nodes if n.id in keep],
     }
 
 

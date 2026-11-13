@@ -95,6 +95,24 @@ class _Visibility:
                          ["10.0.0.0/8", "10.9.4.0/24"])
         self.assertEqual([n["index"] for n in r.json()["path"]], [0, 1])
 
+    def test_rooted_tree_skips_a_hidden_intermediate(self):
+        # A prefix page's tree: the root is visible, the /16 below it is
+        # not; its /24 is a top node of the rooted tree, the /16 never named.
+        self.login(self.u)
+        root = str(self.p8.id)
+        r = self.get(parent=root)
+        self.assertEqual(self.cidrs(r), [("10.1.0.0/16", 1), ("10.9.4.0/24", 0)])
+        self.assertEqual({n["parent"] for n in r.json()["results"]}, {root})
+        r = self.get(parent=root, q="10.9")
+        self.assertEqual(
+            [(n["cidr"], n["match"], n["parent"]) for n in r.json()["results"]],
+            [("10.9.4.0/24", True, root)],
+        )
+        self.assertNotIn(b"10.9.0.0", r.content)
+        self.assertNotIn(str(self.hidden.id).encode(), r.content)
+        r = self.client.get(URL, {"parent": str(self.hidden.id), "q": "10"})
+        self.assertEqual(r.status_code, 404)
+
     def test_within_a_hidden_prefix_lists_nothing(self):
         self.login(self.u)
         r = self.client.get("/api/prefixes/", {"within": str(self.hidden.id)})
@@ -177,6 +195,20 @@ class TreeTests(_Base):
         self.assertEqual([n["cidr"] for n in r.json()["results"] if n["match"]],
                          ["10.1.2.0/24"])
         self.assertEqual(self.get(q="172.").json()["results"], [])
+
+    def test_rooted_search_stays_inside_the_parent(self):
+        root = str(self.p16.id)
+        r = self.get(parent=root, q="10.1")
+        # The /16 itself and the /8 above it are not part of its tree.
+        self.assertEqual(
+            [(n["cidr"], n["match"], n["parent"]) for n in r.json()["results"]],
+            [("10.1.2.0/24", True, root)],
+        )
+        r = self.get(parent=root, q="10.1.2.0/28")
+        self.assertEqual([n["cidr"] for n in r.json()["results"]], ["10.1.2.0/24"])
+        self.assertEqual(self.get(parent=root, q="192.").json()["results"], [])
+        # The VRF's own 10.0.0.0/8 has nothing inside it.
+        self.assertEqual(self.get(parent=str(self.in_vrf.id), q="10").json()["results"], [])
 
     def test_within_scopes_the_lists(self):
         ip = IPAddress.objects.create(tenant=self.t, ip_address="10.1.2.5", prefix=self.p24)
