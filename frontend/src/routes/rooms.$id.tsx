@@ -18,6 +18,7 @@ import { ObjectImages } from "@/components/object-images"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { RoomDeleteDialog } from "@/components/room-delete-dialog"
+import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import {
@@ -76,6 +77,7 @@ function Body({ room: r }: { room: Room }) {
       presence={{ type: "room", id: r.id }}
       actions={
         <>
+          <ShowOnFloorPlan roomAreas={plan.data?.areas} />
           {canDo("room", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/rooms/$id/edit" params={{ id: r.id }}>
