@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -368,5 +374,78 @@ describe("formatCells", () => {
     ])
     expect(rows.Position.textContent).toBe("586.13, 12.35")
     expect(rows.Size.textContent).toBe("1×1")
+  })
+})
+
+describe("TilePopover on a device tile", () => {
+  const deviceTile = tile({
+    link_kind: "device",
+    linked: { kind: "device", id: "d1", name: "SW1", route: "/devices/d1" },
+  })
+
+  function openDevice(onOpenChange: (open: boolean) => void = () => undefined) {
+    apiMock.mockImplementation((path: string) => {
+      if (path === "/api/devices/d1/")
+        return Promise.resolve({ id: "d1", device_type: { id: "dt1" } })
+      if (path.startsWith("/api/devices/d1/interfaces/"))
+        return Promise.resolve({ count: 0, next: null, results: [] })
+      if (path === "/api/device-types/dt1/")
+        return Promise.resolve({
+          front_image: "/media/front.png",
+          rear_image: "/media/rear.png",
+          image_ports: null,
+        })
+      if (path.startsWith("/api/custom-fields/"))
+        return Promise.resolve({ count: 0, next: null, results: [] })
+      return new Promise(() => undefined)
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <TilePopover
+          target={{ tile: deviceTile, x: 10, y: 10, pinned: true }}
+          fields={["position", "faceplate"]}
+          onOpenChange={onOpenChange}
+          renderActions={() => <button type="button">Details</button>}
+        />
+      </QueryClientProvider>
+    )
+  }
+
+  it("scrolls its rows within the viewport, the actions outside them", async () => {
+    openDevice()
+    const img = await screen.findByAltText("front of the device")
+    const pop = screen.getByRole("dialog")
+    expect(pop.className).toContain(
+      "max-h-(--radix-popover-content-available-height)"
+    )
+    const body = pop.querySelector('[data-part="popover-body"]')!
+    expect(body.className).toContain("overflow-y-auto")
+    expect(body.contains(img)).toBe(true)
+    expect(body.contains(screen.getByText("Details"))).toBe(false)
+  })
+
+  it("opens the faceplate large on a click, with Front and Rear", async () => {
+    openDevice()
+    fireEvent.click(await screen.findByAltText("front of the device"))
+    const viewer = await screen.findByRole("dialog", { name: "SW1" })
+    expect(
+      within(viewer).getByAltText("front of the device").className
+    ).toContain("max-h-[75dvh]")
+    fireEvent.click(within(viewer).getByText("rear"))
+    expect(within(viewer).getByAltText("rear of the device")).toBeTruthy()
+  })
+
+  it("opens the large view from its button, keeping the popover", async () => {
+    const onOpenChange = vi.fn()
+    openDevice(onOpenChange)
+    await screen.findByAltText("front of the device")
+    fireEvent.click(screen.getByRole("button", { name: "View larger" }))
+    const viewer = await screen.findByRole("dialog", { name: "SW1" })
+    fireEvent.pointerDown(viewer)
+    fireEvent.click(within(viewer).getByText("rear"))
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
   })
 })

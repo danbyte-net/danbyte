@@ -4370,6 +4370,12 @@ uploaded photo when the type has a picture but no ports mapped on that side,
 and the drawn panel otherwise, and offers a **rear** toggle when the type has a rear
 image.
 
+The panel is fitted to the popover's width and kept to a modest height. Click
+the photo, or the expand button under it, to see it large - fitted to the
+screen, with the same **front** / **rear** toggle. A popover never runs off
+screen: it is no taller than the room it has, its rows scroll, and its name
+and **Details** stay in reach.
+
 It applies to tiles linked to a **device**; a rack tile has an elevation rather
 than a faceplate, so the row is skipped there. Unlike the other rows, this one
 fetches the device's ports when the popover opens - which is why it is **off by

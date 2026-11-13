@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
+import { Maximize2 } from "lucide-react"
 
 import {
   api,
@@ -22,6 +23,14 @@ import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { Loading } from "@/components/loading"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { IconTip } from "@/components/icon-tip"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
 import {
@@ -138,13 +147,17 @@ function TileFaceplate({
   deviceId,
   deviceTypeId,
   deviceImagePorts,
+  deviceName,
 }: {
   deviceId: string
   deviceTypeId: string
+  /** The large view's title. */
+  deviceName?: string
   /** The device's own photo-port override, when it has one. */
   deviceImagePorts?: ImagePorts | null
 }) {
   const [side, setSide] = useState<FaceplateSide>("front")
+  const [large, setLarge] = useState(false)
   const ifaces = useQuery({
     queryKey: ["device-interfaces", deviceId],
     queryFn: () => apiAll<Interface>(`/api/devices/${deviceId}/interfaces/`),
@@ -168,45 +181,75 @@ function TileFaceplate({
   const doc = deviceImagePorts ?? dt.data?.image_ports
   const mapped = (doc?.[side].length ?? 0) > 0
   const photo = side === "front" ? dt.data?.front_image : dt.data?.rear_image
+  // The same face at two sizes: fitted to the popover, and to the screen.
+  const face = (big: boolean) =>
+    !mapped && photo ? (
+      <img
+        src={photo}
+        alt={`${side} of the device`}
+        className={cn(
+          "mx-auto block h-auto w-auto max-w-full select-none",
+          big ? "max-h-[75dvh]" : "max-h-56 cursor-zoom-in"
+        )}
+        draggable={false}
+        onClick={big ? undefined : () => setLarge(true)}
+      />
+    ) : (
+      <FaceplateView
+        deviceId={deviceId}
+        deviceTypeId={deviceTypeId}
+        interfaces={ifaces.data?.results ?? []}
+        side={side}
+        fit="container"
+        photoMaxHeight={big ? "75dvh" : "14rem"}
+      />
+    )
+  const sides = hasRear && (
+    <span className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+      {(["front", "rear"] as const).map((sd) => (
+        <button
+          key={sd}
+          type="button"
+          className={
+            "rounded px-1.5 py-0.5 text-[10px] capitalize " +
+            (side === sd
+              ? "bg-muted font-medium text-foreground"
+              : "text-muted-foreground hover:text-foreground")
+          }
+          onClick={() => setSide(sd)}
+        >
+          {sd}
+        </button>
+      ))}
+    </span>
+  )
   return (
     <div className="grid gap-1">
       <div className="overflow-hidden rounded-md border border-border">
-        {!mapped && photo ? (
-          <img
-            src={photo}
-            alt={`${side} of the device`}
-            className="mx-auto block h-auto max-h-56 w-auto max-w-full select-none"
-            draggable={false}
-          />
-        ) : (
-          <FaceplateView
-            deviceId={deviceId}
-            deviceTypeId={deviceTypeId}
-            interfaces={ifaces.data?.results ?? []}
-            side={side}
-            fit="container"
-          />
-        )}
+        {face(false)}
       </div>
-      {hasRear && (
-        <span className="flex items-center gap-0.5 justify-self-end rounded-md border border-border p-0.5">
-          {(["front", "rear"] as const).map((sd) => (
-            <button
-              key={sd}
-              type="button"
-              className={
-                "rounded px-1.5 py-0.5 text-[10px] capitalize " +
-                (side === sd
-                  ? "bg-muted font-medium text-foreground"
-                  : "text-muted-foreground hover:text-foreground")
-              }
-              onClick={() => setSide(sd)}
-            >
-              {sd}
-            </button>
-          ))}
-        </span>
-      )}
+      <div className="flex items-center justify-end gap-1">
+        {sides}
+        <IconTip label="View larger">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => setLarge(true)}
+          >
+            <Maximize2 />
+          </Button>
+        </IconTip>
+      </div>
+      <Dialog open={large} onOpenChange={setLarge}>
+        <DialogContent size="6xl" className="gap-3">
+          <DialogHeader>
+            <DialogTitle>{deviceName || "Faceplate"}</DialogTitle>
+          </DialogHeader>
+          <div className="min-w-0">{face(true)}</div>
+          {sides && <div className="flex justify-end">{sides}</div>}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -510,6 +553,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
           deviceId={tile.linked.id}
           deviceTypeId={linked.device_type.id}
           deviceImagePorts={linked.image_ports ?? null}
+          deviceName={tile.linked.name}
         />
       ) : null,
   },
@@ -733,10 +777,12 @@ export function TilePopover({
         collisionPadding={8}
         sticky="always"
         // A faceplate at w-80 was an unreadable postage stamp - the wide
-        // variant gets real room, capped to the viewport.
-        className={
-          wideRows.length ? "w-[min(38rem,calc(100vw-2rem))] p-3" : "w-64 p-3"
-        }
+        // variant gets real room, capped to the viewport. Never taller than
+        // the room it has: the rows scroll, the name and actions stay.
+        className={cn(
+          "max-h-(--radix-popover-content-available-height) gap-0 p-3",
+          wideRows.length ? "w-[min(38rem,calc(100vw-2rem))]" : "w-64"
+        )}
         // Unpinned it's a preview: never steal focus, and let the pointer through
         // so moving to the next tile doesn't fight the popover.
         onOpenAutoFocus={(e) => {
@@ -755,42 +801,47 @@ export function TilePopover({
       >
         {ctx && (
           <>
-            <p className="truncate text-sm font-medium">
+            <p className="shrink-0 truncate text-sm font-medium">
               {tileName(ctx.tile) ||
                 ctx.tile.tile_type?.name ||
                 ctx.tile.role_type?.name ||
                 "Tile"}
             </p>
-            {/* Striped two-column rows, like the site map's inspector. */}
-            <dl className="-mx-1.5 mt-2 grid overflow-hidden rounded-md text-[13px]">
-              {pairRows.map((r, i) => (
-                <div
-                  key={r.key}
-                  className={cn(
-                    "grid grid-cols-[5.5rem_1fr] items-center gap-2 px-1.5 py-1",
-                    i % 2 === 1 && "bg-muted/30"
-                  )}
-                >
-                  <dt className="text-[11px] text-muted-foreground">
+            <div
+              data-part="popover-body"
+              className="-mx-1.5 mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5"
+            >
+              {/* Striped two-column rows, like the site map's inspector. */}
+              <dl className="-mx-1.5 grid overflow-hidden rounded-md text-[13px]">
+                {pairRows.map((r, i) => (
+                  <div
+                    key={r.key}
+                    className={cn(
+                      "grid grid-cols-[5.5rem_1fr] items-center gap-2 px-1.5 py-1",
+                      i % 2 === 1 && "bg-muted/30"
+                    )}
+                  >
+                    <dt className="text-[11px] text-muted-foreground">
+                      {r.label}
+                    </dt>
+                    <dd className="min-w-0 truncate">{r.node}</dd>
+                  </div>
+                ))}
+              </dl>
+              {wideRows.map((r) => (
+                <div key={r.key} className="mt-2 grid gap-1">
+                  <span className="text-[11px] text-muted-foreground">
                     {r.label}
-                  </dt>
-                  <dd className="min-w-0 truncate">{r.node}</dd>
+                  </span>
+                  {r.node}
                 </div>
               ))}
-            </dl>
-            {wideRows.map((r) => (
-              <div key={r.key} className="mt-2 grid gap-1">
-                <span className="text-[11px] text-muted-foreground">
-                  {r.label}
-                </span>
-                {r.node}
-              </div>
-            ))}
-            {loading && <Loading className="mt-1 min-h-16" />}
+              {loading && <Loading className="mt-1 min-h-16" />}
+            </div>
             {target?.pinned ? (
-              renderActions?.(ctx.tile)
+              <div className="shrink-0">{renderActions?.(ctx.tile)}</div>
             ) : (
-              <p className="mt-2 text-[10px] text-muted-foreground">
+              <p className="mt-2 shrink-0 text-[10px] text-muted-foreground">
                 Click to pin
               </p>
             )}
