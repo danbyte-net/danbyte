@@ -543,6 +543,65 @@ export function insideSpots(
   return out
 }
 
+/** A wall as the labels see it: its line (cells) and half its drawn
+ * stroke (cells). */
+export interface WallRun {
+  points: readonly Pt[]
+  half: number
+}
+
+/** How far each side of `rect` (cells) a wall drawn along it reaches in
+ * (cells): a wall on the edge, a little in or out, eats into the room by
+ * its half stroke (plus its offset). Upright stretches only; a wall in the
+ * room's middle is not an edge's. */
+export function wallInsets(
+  rect: Box,
+  walls: readonly WallRun[]
+): { l: number; t: number; r: number; b: number } {
+  const out = { l: 0, t: 0, r: 0, b: 0 }
+  const x1 = rect.x + rect.w
+  const y1 = rect.y + rect.h
+  // Overlap along the edge, beyond a corner's touch.
+  const spans = (a0: number, a1: number, e0: number, e1: number) =>
+    Math.min(Math.max(a0, a1), e1) - Math.max(Math.min(a0, a1), e0) > EPS
+  for (const w of walls) {
+    const h = w.half
+    // Near an edge: its centre from h outside to h (at least half a cell)
+    // inside.
+    const reach = Math.max(h, 0.5)
+    for (let i = 0; i < w.points.length - 1; i++) {
+      const [ax, ay] = w.points[i]
+      const [bx, by] = w.points[i + 1]
+      if (Math.abs(ay - by) < 1e-3 && spans(ax, bx, rect.x, x1)) {
+        const y = (ay + by) / 2
+        if (y >= rect.y - h && y <= rect.y + reach)
+          out.t = Math.max(out.t, y + h - rect.y)
+        if (y <= y1 + h && y >= y1 - reach)
+          out.b = Math.max(out.b, y1 - (y - h))
+      } else if (Math.abs(ax - bx) < 1e-3 && spans(ay, by, rect.y, y1)) {
+        const x = (ax + bx) / 2
+        if (x >= rect.x - h && x <= rect.x + reach)
+          out.l = Math.max(out.l, x + h - rect.x)
+        if (x <= x1 + h && x >= x1 - reach)
+          out.r = Math.max(out.r, x1 - (x - h))
+      }
+    }
+  }
+  return out
+}
+
+/** `rect` (cells) less the walls along its edges. */
+export function insideWalls(rect: Box, walls: readonly WallRun[]): Box {
+  if (!walls.length) return rect
+  const i = wallInsets(rect, walls)
+  return {
+    x: rect.x + i.l,
+    y: rect.y + i.t,
+    w: Math.max(0, rect.w - i.l - i.r),
+    h: Math.max(0, rect.h - i.t - i.b),
+  }
+}
+
 /** Label ranks, highest first. Plan labels the user placed never hide;
  * cables are the focus - the traced, hovered and selected first, then the
  * documented, then the rest - then what the plan holds. */

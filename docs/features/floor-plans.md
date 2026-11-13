@@ -1397,7 +1397,11 @@ you zoom or pan. In order:
    placed before the cable and tray names, which keep off them.
 6. **Room and area names**. A rectangle's name starts in its top-left
    corner and moves to another free spot inside it - a corner, the middle -
-   off the racks, rather than sit on a tray's name or a rack.
+   off the racks, rather than sit on a tray's name or a rack. It keeps
+   inside the walls drawn along the room's edges: the inset is each wall's
+   drawn half thickness (its offset from the edge included) plus a small
+   pad, so a thick outer or inner wall never runs through the name at any
+   zoom. The paper export places names the same way.
 7. **Raised-floor captions**.
 
 Tray names, room and area names, raised-floor captions and a zone's name
@@ -3640,10 +3644,11 @@ floors.
   the old rack row" is part of how a plan is shaped for its readers; hiding
   never changes the plan's contents. Keyboard: ++h++ hides the selected
   tile(s); ++shift+h++ shows all.
-- **Show on floor plan** - the Rack, Cabinet and Device detail pages carry a button
-  that opens the plan zoomed onto the tile; placed on several plans (its own
-  tile and its rack's, or a cloned what-if plan), the button becomes a menu
-  listing them. The Rack and Device detail pages carry a button
+- **Show on floor plan** - the Rack, Cabinet, Device and Room detail pages carry a
+  button that opens the plan zoomed onto the tile (a room: onto its area, at
+  `?area=<area id>`); placed on several plans (its own tile and its rack's, a
+  cloned what-if plan, a room drawn on several floors), the button becomes a
+  menu listing them. Nothing placed: no button. The Rack and Device detail pages carry a button
   that jumps to where they're placed (a device falls back to *its rack's* or
   *its cabinet's* plan, marked "via rack" or "via cabinet").
 

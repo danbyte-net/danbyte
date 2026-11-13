@@ -23,6 +23,7 @@ import {
   alongSlots,
   boxesHit,
   endChipSpots,
+  insideWalls,
   placeLabels,
   polylineLegs,
   tileExit,
@@ -390,6 +391,110 @@ describe("layoutPlanLabels", () => {
     // Not on the rack in the top-left corner.
     expect(at![0] >= 1 || at![1] >= 1).toBe(true)
     expect(got.hiddenRaised.size).toBe(0)
+  })
+
+  it("starts an area's name inside the walls along its edges, at every zoom", () => {
+    const area = {
+      kind: "area",
+      id: "a1",
+      shape: "rect",
+      x: 2,
+      y: 2,
+      width: 10,
+      height: 6,
+      rotation: 0,
+      label: "Server room",
+      show_name: true,
+      points: [],
+      fill_opacity: 10,
+      border: "solid",
+    } as unknown as AreaShape
+    // A 300 mm wall round it, on its outline (cell 600 mm: 20 plan px, a
+    // half of 0.25 cell), and an inner one a little inside its left edge.
+    const ring: Pt[] = [
+      [2, 2],
+      [12, 2],
+      [12, 8],
+      [2, 8],
+      [2, 2],
+    ]
+    const inner: Pt[] = [
+      [2.25, 2],
+      [2.25, 8],
+    ]
+    const walls = [
+      { points: ring, thickness_mm: 300 },
+      { points: inner, thickness_mm: 200 },
+    ]
+    for (const k of [0.5, 1, 3]) {
+      const got = layoutPlanLabels({
+        ...input([], {}, { names: false }, k),
+        tiles: [],
+        trays: [],
+        areas: [area],
+        walls,
+        cellMm: 600,
+      })
+      const at = got.areas.get("a1")!
+      expect(at).toBeTruthy()
+      // Past the walls' inner faces (the top's 2.25, the inner wall's
+      // 2.25 + 1/6), with the pad (6 plan px) on top.
+      expect(at[1]).toBeGreaterThanOrEqual(2.25 + 6 / 40 - 1e-6)
+      expect(at[0]).toBeGreaterThanOrEqual(2.25 + 1 / 6 + 6 / 40 - 1e-6)
+    }
+    // No walls: its corner, as before.
+    const bare = layoutPlanLabels({
+      ...input([], {}, { names: false }),
+      tiles: [],
+      trays: [],
+      areas: [area],
+      cellMm: 600,
+    }).areas.get("a1")!
+    expect(bare[0]).toBeCloseTo(2 + 6 / 40)
+    expect(bare[1]).toBeCloseTo(2 + 6 / 40)
+  })
+})
+
+describe("insideWalls", () => {
+  it("takes off what the walls along each edge reach in, not a wall mid-room", () => {
+    const r = insideWalls({ x: 0, y: 0, w: 10, h: 10 }, [
+      // Top, centred on the edge.
+      {
+        points: [
+          [0, 0],
+          [10, 0],
+        ],
+        half: 0.25,
+      },
+      // Right, just outside it: only its inner half's overlap.
+      {
+        points: [
+          [10.1, 0],
+          [10.1, 10],
+        ],
+        half: 0.25,
+      },
+      // Across the middle: not an edge's.
+      {
+        points: [
+          [0, 5],
+          [10, 5],
+        ],
+        half: 0.5,
+      },
+      // Beyond the bottom edge's reach.
+      {
+        points: [
+          [0, 11],
+          [10, 11],
+        ],
+        half: 0.25,
+      },
+    ])
+    expect(r.x).toBeCloseTo(0)
+    expect(r.y).toBeCloseTo(0.25)
+    expect(r.w).toBeCloseTo(10 - 0.15)
+    expect(r.h).toBeCloseTo(10 - 0.25)
   })
 })
 

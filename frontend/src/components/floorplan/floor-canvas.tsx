@@ -1539,6 +1539,7 @@ export function FloorCanvas({
       trayWidth: Math.max(10 * k, readable ? 6 : 4),
       areas: labelAreas,
       areaFontPx: 12 * (readable ? fontGrow(12, k) : 1),
+      walls,
       // One caption per drawn region, its box's bottom-left where the
       // canvas starts it.
       raised: (shows.raised ? raisedSaved : []).map((rg) => {
@@ -1584,6 +1585,7 @@ export function FloorCanvas({
     plan.grid_height,
     labelTiles,
     labelAreas,
+    walls,
     shows,
     readable,
     shapeAt,

@@ -3,6 +3,7 @@ import type {
   FloorPlanCablePath,
   FloorPlanTile,
   FloorPlanTray,
+  FloorPlanWall,
 } from "@/lib/api"
 
 import { endText, formatMetres, routeLengthM } from "./cable-draw"
@@ -20,6 +21,7 @@ import {
   cableLegs,
   endChipSpots,
   insideSpots,
+  insideWalls,
   placeLabels,
   polylineLegs,
   textSize,
@@ -54,6 +56,7 @@ import { READABLE_SYMBOL_PX, clipName, namePriority } from "./readable"
 import type { ShapeOf } from "./readable"
 import { areaIcon, areaName, polygonCentroid, shapeBounds } from "./shapes"
 import type { AreaShape, LabelShape } from "./shapes"
+import { wallStrokePx } from "./wall-layer"
 
 // The plan's one label pass (plan-labels.ts), shared by the canvas and the
 // paper export: what each kind of text is, where it may go and how it
@@ -165,6 +168,8 @@ export interface PlanLabelInput {
   areas?: readonly AreaShape[]
   /** Area names' font (plan px, grown under Readable). */
   areaFontPx?: number
+  /** The walls drawn: an area's name keeps inside those along its edges. */
+  walls?: readonly Pick<FloorPlanWall, "points" | "thickness_mm">[]
   raised?: readonly { id: string; box: Box; text: string; fontPx: number }[]
   planLabels?: readonly LabelShape[]
   cellMm: number
@@ -665,6 +670,16 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   // where it is (shape-layer.tsx), an upright one's first spot is its top
   // left corner - rows and callouts keep off both.
   const areaFont = input.areaFontPx ?? 12
+  const wallRuns = (input.walls ?? [])
+    .filter((w) => w.points.length >= 2)
+    .map((w) => ({
+      points: w.points,
+      half: wallStrokePx(w, input.cellMm) / 2 / CELL,
+    }))
+  // An upright area's box less its walls (cells): its name starts inside
+  // their drawn thickness, at every zoom.
+  const nameRect = (a: AreaShape): Box =>
+    insideWalls({ x: a.x, y: a.y, w: a.width, h: a.height }, wallRuns)
   const roomNames: Box[] = []
   if (wantCallouts)
     for (const a of input.areas ?? []) {
@@ -678,9 +693,10 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       } else {
         const shift = areaIcon(a) ? areaFont * 1.4 : 0
         const pad = 6 * u * (areaFont / 12)
+        const rect = nameRect(a)
         roomNames.push({
-          x: a.x * scale + pad,
-          y: a.y * scale + pad,
+          x: rect.x * scale + pad,
+          y: rect.y * scale + pad,
           w: (name.length * areaFont * 0.6 + shift) * u,
           h: areaFont * 1.2 * u,
         })
@@ -1264,7 +1280,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       continue
     }
     if (a.rotation) continue
-    const rect = { x: a.x, y: a.y, w: a.width, h: a.height }
+    const rect = nameRect(a)
     const pad = 6 * u * (fpx / 12)
     let spots = insideSpots(rect, size, pad, scale)
     // A room narrower than its name: its top left corner, the name running

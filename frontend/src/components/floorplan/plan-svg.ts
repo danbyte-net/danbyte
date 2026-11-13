@@ -1870,6 +1870,7 @@ function planSvgBody({
         : 10 * paperMmPerPx) * toPx,
     areas: areaShapes,
     areaFontPx: 12 * areaGrow,
+    walls,
     planLabels: shapes.filter((x): x is LabelShape => x.kind === "label"),
     cellMm: plan.cell_mm,
     cables:
