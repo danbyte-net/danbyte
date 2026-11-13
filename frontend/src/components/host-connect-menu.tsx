@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react"
-import { Link } from "@tanstack/react-router"
+import { Suspense, useMemo, useState } from "react"
+import { ClientOnly, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import {
   ChevronDown,
@@ -17,7 +17,7 @@ import { hostFilterParam } from "@/lib/connect-host"
 import type { ConnectHost } from "@/lib/connect-host"
 import { useMe } from "@/lib/use-me"
 import { getLucideIcon } from "@/components/dynamic-icon"
-import { HostTerminalDialog } from "@/components/host-terminal-dialog"
+import { lazyChunk } from "@/lib/lazy-chunk"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -40,6 +40,14 @@ interface CredentialRow {
   id: string
   username: string
 }
+
+// xterm.js is browser-only (its CommonJS build cannot be imported by the
+// server render): the terminal dialog loads in the browser only.
+const HostTerminalDialog = lazyChunk(() =>
+  import("@/components/host-terminal-dialog").then((m) => ({
+    default: m.HostTerminalDialog,
+  }))
+)
 
 // String.replaceAll isn't guaranteed by every tsconfig lib target, so replace
 // via split/join to stay portable.
@@ -304,11 +312,15 @@ export function HostConnectMenu({ host: target }: { host: ConnectHost }) {
         </DropdownMenuContent>
       </DropdownMenu>
       {terminalEnabled && (
-        <HostTerminalDialog
-          host={target}
-          open={termOpen}
-          onOpenChange={setTermOpen}
-        />
+        <ClientOnly>
+          <Suspense fallback={null}>
+            <HostTerminalDialog
+              host={target}
+              open={termOpen}
+              onOpenChange={setTermOpen}
+            />
+          </Suspense>
+        </ClientOnly>
       )}
     </>
   )

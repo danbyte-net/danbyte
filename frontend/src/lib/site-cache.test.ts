@@ -97,7 +97,7 @@ describe("site writes", () => {
       "components/site-delete-dialog.tsx",
       "components/site-bulk-bar.tsx",
       "routes/sites.bulk-edit.tsx",
-      "routes/site-map.tsx",
+      "components/site-map/site-map-page.tsx",
     ])
       expect(paths).toContain(known)
   })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -30,9 +30,16 @@ import {
 } from "@/components/site-map/plan-from-map"
 import type { Bbox } from "@/components/site-map/plan-from-map"
 
-import { ExpandMap } from "./expand-map"
+import { Loading } from "@/components/loading"
+import { lazyChunk } from "@/lib/lazy-chunk"
+
 import { bboxOf, cellsFromMetres, expandFrame, NO_GROWTH } from "./plan-geo"
 import type { AnchoredPlan, Sides } from "./plan-geo"
+
+// Leaflet reads `window` as it loads: the map loads in the browser only.
+const ExpandMap = lazyChunk(() =>
+  import("./expand-map").then((m) => ({ default: m.ExpandMap }))
+)
 
 type Basemap = "map" | "sat"
 
@@ -471,16 +478,18 @@ function ExpandForm({
         <DialogTitle>Expand</DialogTitle>
       </DialogHeader>
       <div className="grid gap-3">
-        <ExpandMap
-          plan={plan}
-          sides={sides}
-          onChange={(next) => {
-            setSides(next)
-            setTyped({})
-          }}
-          tiles={tiles}
-          basemap={basemap}
-        />
+        <Suspense fallback={<Loading className="h-64" />}>
+          <ExpandMap
+            plan={plan}
+            sides={sides}
+            onChange={(next) => {
+              setSides(next)
+              setTyped({})
+            }}
+            tiles={tiles}
+            basemap={basemap}
+          />
+        </Suspense>
         <div className="grid grid-cols-4 gap-3">
           {SIDE_FIELDS.map(({ side, label }) => (
             <Field key={side} label={label} hint="m">
