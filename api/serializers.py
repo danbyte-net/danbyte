@@ -1969,9 +1969,13 @@ class IPAddressSerializer(HiddenRelatedFieldsMixin, ObjectPermsSerializerMixin, 
     def get_scan_exempt_via(self, obj):
         """The exempt prefix that keeps discovery off this address, when one
         does (``{id, cidr}``, or ``{id: null, cidr: null}`` for a prefix the
-        caller may not view); None otherwise."""
+        caller may not view); None otherwise. Only the record itself carries
+        it: the nested IP tabs (a device's, an interface's, a prefix's) render
+        many rows and must not pay this lookup per row."""
         from discovery.exempt import exempt_through
 
+        if isinstance(self.parent, serializers.ListSerializer):
+            return None
         request = self.context.get("request")
         return exempt_through(obj, getattr(request, "user", None))
 

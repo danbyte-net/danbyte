@@ -121,7 +121,8 @@ A pending key row has `id`, `device` or `virtual_machine`, `address`,
 The device, VM, IP address and prefix APIs return `scan_exempt` read-only; a
 `PATCH` there does not change it. An IP address's detail also has
 `scan_exempt_via`: `{id, cidr}` of the exempt prefix covering it (`id` and
-`cidr` null when you may not view that prefix), or null.
+`cidr` null when you may not view that prefix), or null. Lists of addresses,
+the IP tabs of a device, interface or prefix included, read it as null.
 
 ## Packages
 
