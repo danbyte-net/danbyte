@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='floorplanarea',
             name='name_style',
-            field=models.JSONField(blank=True, default=dict),
+            field=models.JSONField(blank=True, db_default={}, default=dict),
         ),
     ]

@@ -10703,7 +10703,7 @@ class FloorPlanArea(TimestampedModel):
     # How the name is drawn, over the plan's default (state.area_names):
     # {"position", "size", "color", "plate"}, each optional - a key left
     # out inherits. Validated by the serializer (api.serializers.area_name_style).
-    name_style = models.JSONField(default=dict, blank=True)
+    name_style = models.JSONField(default=dict, blank=True, db_default={})
     z = models.SmallIntegerField(default=0, help_text="Draw order among areas.")
     locked = models.BooleanField(default=False)
     # The floor plan a click on the area opens in View (any floor, snapshot
