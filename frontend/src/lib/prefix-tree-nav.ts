@@ -1,7 +1,8 @@
 // ─── The prefix tree beside the prefix and IP lists ─────────────────────
 //
 // The left rail of /prefixes and /ips shows either the filters or a tree of
-// one VRF's prefixes (components/prefix-tree-rail.tsx). The tree never
+// one VRF's prefixes - and a prefix page's IPs and Child prefixes tabs the
+// same tree rooted at that prefix (components/prefix-tree-rail.tsx). The tree never
 // loads whole: GET /api/prefixes/tree/ answers one level at a time, paged,
 // with each node's direct-child count, and a search answers the matches
 // with the path above them. This module is the pure part - URL params, the
@@ -116,11 +117,15 @@ export function levelFromPages(
 }
 
 /** A search answer → its levels: each prefix on a path holds only the path
- * below it. Matches are not in the map - they open like any other node. */
-export function searchLevels(search: TreeSearch): Map<string, Level> {
+ * below it. Matches are not in the map - they open like any other node.
+ * In a tree rooted at a prefix (`root`), what hangs from it is the top. */
+export function searchLevels(
+  search: TreeSearch,
+  root: string | null = null
+): Map<string, Level> {
   const out = new Map<string, Level>()
   for (const n of search.results) {
-    const key = n.parent ?? ROOT
+    const key = n.parent === null || n.parent === root ? ROOT : n.parent
     let level = out.get(key)
     if (!level) {
       level = { nodes: [], total: 0, loading: false, partial: true }
@@ -243,6 +248,21 @@ export function revealLimits(reveal: TreeReveal): Record<string, number> {
     if (need > TREE_PAGE) out[step.parent ?? ROOT] = need
   }
   return out
+}
+
+/** A reveal path for a tree rooted at the prefix `root`: only the steps
+ * below it, the first one at the top. Null when the selection is the root
+ * itself or not inside it. */
+export function rootedReveal(
+  reveal: TreeReveal,
+  root: string
+): TreeReveal | null {
+  const at = reveal.path.findIndex((s) => s.id === root)
+  if (at < 0 || at === reveal.path.length - 1) return null
+  const path = reveal.path
+    .slice(at + 1)
+    .map((s, i) => (i === 0 ? { ...s, parent: null } : s))
+  return { vrf: reveal.vrf, path }
 }
 
 /** The rail's state in the URL. */

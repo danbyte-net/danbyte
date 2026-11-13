@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { SiteCell } from "@/components/cells/site-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
@@ -93,6 +93,18 @@ import {
 import { ScrollFrame } from "@/components/table-scroll"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
+import { Loading } from "@/components/loading"
+import { EmptyState } from "@/components/empty-state"
+import { NarrowRailSheet } from "@/components/narrow-rail-sheet"
+import {
+  RailModeSwitch,
+  TreeOrFilterRail,
+  WithinChip,
+  narrowTreeRail,
+  usePrefixTreeRail,
+  type PrefixTreeRail,
+} from "@/components/prefix-tree-rail"
+import { GLOBAL_VRF } from "@/lib/prefix-tree-nav"
 
 export const Route = createFileRoute("/prefixes/$id")({
   component: PrefixDetail,
@@ -169,18 +181,34 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   })
   const ipRows = ipsQuery.data?.results ?? []
 
-  // Enumerable = small enough to list every host (any family; the backend caps
-  // it). A /64 isn't, so it shows the subnet map instead.
-  // A prefix allocating only from its ranges enumerates those instead, so
-  // the size of the prefix itself stops mattering.
-  const allocationSpans = p.allocation?.ranges.map((r) => ({
-    start: r.start_address,
-    end: r.end_address,
-  }))
-  const canShowAvailable =
-    (p.is_enumerable || (allocationSpans?.length ?? 0) > 0) &&
-    p.status?.name !== "container" &&
-    !p.has_descendants
+  const canShowAvailable = showsAvailable(p)
+
+  // The IPs and Child prefixes tabs' Filters / Tree rail: a tree of the
+  // prefixes inside this one. A selected node (`?within=`) scopes both tabs
+  // to it. Every prefix offers it, so the rail keeps one shape from prefix
+  // to prefix; a prefix with none inside it shows an empty tree.
+  const treeRoot = useMemo(
+    () => ({ id: p.id, vrf: p.vrf?.id ?? GLOBAL_VRF }),
+    [p.id, p.vrf?.id]
+  )
+  const tree = usePrefixTreeRail("prefix-detail", {
+    root: treeRoot,
+    active: tab === "ips" || tab === "children",
+  })
+  const nodeId = tree.scoped
+  const nodeQuery = useQuery({
+    queryKey: ["prefix", nodeId],
+    queryFn: () => api<Prefix>(`/api/prefixes/${nodeId}/`),
+    enabled: !!nodeId,
+  })
+  // The prefix the IPs tab shows: the selected node, or this one.
+  const scope: Prefix | null = nodeId ? (nodeQuery.data ?? null) : p
+  const scopeId = scope?.id ?? p.id
+  const scopeIps = useQuery({
+    queryKey: ["prefix-ips", scopeId],
+    queryFn: () => api<IPListResponse>(`/api/prefixes/${scopeId}/ips/`),
+    enabled: !!scope,
+  })
 
   // Open the IP create page pre-seeded with `address` from the
   // "next available" picker. We pass `prefix=` so the create page can
@@ -193,6 +221,16 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       })
     },
     [nav, p.id]
+  )
+  // From the IPs tab: into the selected node when there is one.
+  const openAddIpInScope = useCallback(
+    (address = "") => {
+      nav({
+        to: "/ips/new",
+        search: { address: address || undefined, prefix: scopeId },
+      })
+    },
+    [nav, scopeId]
   )
 
   // Edit from a prefix's IPs tab should return here (this exact tab), not the
@@ -235,6 +273,21 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   )
 
   const ipsReturnPath = `/prefixes/${p.id}`
+
+  // The IPs tab's own toggles, for the prefix it shows - in the filter rail,
+  // and under the switch in Tree mode, so they work with a selection.
+  const ipToggles = (sp: Prefix) => (
+    <IpRailToggles
+      showAvailable={showAvailable}
+      onToggleShowAvailable={setShowAvailable}
+      canShowAvailable={showsAvailable(sp)}
+      compact={compact}
+      onToggleCompact={setCompact}
+      hasDhcpPool={(scopeIps.data?.dhcp_ranges?.length ?? 0) > 0}
+      showDhcpPool={showDhcpPool}
+      onToggleShowDhcpPool={setShowDhcpPool}
+    />
+  )
 
   return (
     <DetailShell
@@ -402,39 +455,44 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="ips" bare>
-        <PrefixIpsTable
-          prefixId={p.id}
-          railExtras={
-            <IpRailToggles
-              showAvailable={showAvailable}
-              onToggleShowAvailable={setShowAvailable}
-              canShowAvailable={canShowAvailable}
-              compact={compact}
-              onToggleCompact={setCompact}
-              hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
-              showDhcpPool={showDhcpPool}
-              onToggleShowDhcpPool={setShowDhcpPool}
-            />
-          }
-          showAvailable={showAvailable}
-          compact={compact}
-          showDhcpPool={showDhcpPool}
-          cidr={p.cidr}
-          spans={allocationSpans}
-          hasDescendants={p.has_descendants}
-          onEdit={handleEditIp}
-          onDelete={handleDeleteIp}
-          onCreateAt={openAddIpAt}
-          onSelectedRowsChange={setSelectedIps}
-          canEdit={canDo("ipaddress", "change")}
-          canDelete={canDo("ipaddress", "delete")}
-          canAdd={canAddIp}
-        />
+        {scope ? (
+          <PrefixIpsTable
+            prefixId={scope.id}
+            within={!!nodeId}
+            {...ipTreeRail(tree, ipToggles(scope))}
+            showAvailable={showAvailable && showsAvailable(scope)}
+            compact={compact}
+            showDhcpPool={showDhcpPool}
+            cidr={scope.cidr}
+            spans={allocationSpansOf(scope)}
+            hasDescendants={scope.has_descendants}
+            onEdit={handleEditIp}
+            onDelete={handleDeleteIp}
+            onCreateAt={openAddIpInScope}
+            onSelectedRowsChange={setSelectedIps}
+            canEdit={canDo("ipaddress", "change")}
+            canDelete={canDo("ipaddress", "delete")}
+            canAdd={canAddIp}
+          />
+        ) : (
+          // The selected node is on its way: the tree stays, the table waits.
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <TreeOrFilterRail rail={tree} filterRail={null} />
+            <div className="flex min-w-0 flex-1 flex-col p-3">
+              {nodeQuery.isError ? (
+                <QueryError error={nodeQuery.error} />
+              ) : (
+                <Loading />
+              )}
+            </div>
+          </div>
+        )}
       </DetailTab>
 
       <DetailTab value="children" bare>
         <ChildPrefixesPane
           parent={p}
+          tree={tree}
           onEdit={handleEditChild}
           onDelete={handleDeleteChild}
           onSelectedRowsChange={setSelectedChildren}
@@ -537,6 +595,56 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       )}
     </DetailShell>
   )
+}
+
+// Enumerable = small enough to list every host (any family; the backend caps
+// it). A /64 isn't, so it shows the subnet map instead. A prefix allocating
+// only from its ranges enumerates those instead, so the size of the prefix
+// itself stops mattering.
+function allocationSpansOf(p: Prefix) {
+  return p.allocation?.ranges.map((r) => ({
+    start: r.start_address,
+    end: r.end_address,
+  }))
+}
+
+/** Whether a prefix's IPs table can show its free addresses. */
+function showsAvailable(p: Prefix): boolean {
+  return (
+    (p.is_enumerable || (allocationSpansOf(p)?.length ?? 0) > 0) &&
+    p.status?.name !== "container" &&
+    !p.has_descendants
+  )
+}
+
+/** The IPs tab's rail props: the Filters / Tree switch over its filter
+ * rail, the tree in its place in Tree mode, the narrow window's sheet, and
+ * the selection's chip. */
+function ipTreeRail(tree: PrefixTreeRail, toggles: ReactNode) {
+  return {
+    railExtras: (
+      <>
+        <RailModeSwitch mode={tree.mode} onChange={tree.setMode} />
+        {toggles}
+      </>
+    ),
+    renderRail: (rail: ReactNode, active: number) => (
+      <TreeOrFilterRail
+        rail={tree}
+        filterRail={rail}
+        activeFilters={active}
+        treeExtras={toggles}
+      />
+    ),
+    narrowRail: (rail: ReactNode, active: number) =>
+      narrowTreeRail({
+        rail: tree,
+        filterRail: rail,
+        activeFilters: active,
+        treeExtras: toggles,
+      }),
+    toolbar: tree.within ? <WithinChip rail={tree} /> : null,
+  }
 }
 
 /** The prefix's attributes, grouped into labelled tables - the detail that used
@@ -932,6 +1040,7 @@ function MapPane({
 
 function ChildPrefixesPane({
   parent,
+  tree,
   onEdit,
   onDelete,
   onSelectedRowsChange,
@@ -939,36 +1048,39 @@ function ChildPrefixesPane({
   canDelete,
 }: {
   parent: Prefix
+  /** The prefix tree rail; a selected node shows itself and what is below. */
+  tree: PrefixTreeRail
   onEdit: (p: Prefix) => void
   onDelete: (p: Prefix) => void
   onSelectedRowsChange: (rows: Prefix[]) => void
   canEdit: boolean
   canDelete: boolean
 }) {
+  // The prefix and everything inside it, in its VRF, scoped on the server
+  // (`?within=`) - or the tree's selected node and everything inside that.
+  const nodeId = tree.scoped
+  const scopeId = nodeId ?? parent.id
   const query = useQuery({
-    queryKey: ["prefixes", "all"],
-    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
+    queryKey: ["prefixes", "within", scopeId],
+    queryFn: () =>
+      apiAll<Prefix>(
+        `/api/prefixes/?${new URLSearchParams({ within: scopeId })}`
+      ),
   })
   const cfQuery = useCustomFieldDefs("prefix")
 
   const rows = useMemo<NestedPrefix[]>(() => {
-    const all = query.data?.results ?? []
-    const parentVrfKey = parent.vrf?.id ?? "global"
-    const parentCidr = parseCidr(parent.cidr)
-    if (!parentCidr) return []
-    const descendants = all.filter((p) => {
-      if (p.id === parent.id) return false
-      if ((p.vrf?.id ?? "global") !== parentVrfKey) return false
-      const c = parseCidr(p.cidr)
-      return c ? contains(parentCidr, c) : false
-    })
-    const nested = annotateNesting([parent, ...descendants])
-    // The parent anchors the tree at depth 0 but isn't shown - shift its
-    // children back to depth 0 so the indent chevrons start at the edge.
+    const nested = annotateNesting(query.data?.results ?? [])
+    const top = nested.find((p) => p.id === scopeId)?._depth ?? 0
+    // A selected node is a row of its own at depth 0. The page's prefix
+    // anchors the tree but isn't shown - its children start at the edge.
     return nested
-      .filter((p) => p.id !== parent.id)
-      .map((p) => ({ ...p, _depth: Math.max(0, p._depth - 1) }))
-  }, [query.data, parent])
+      .filter((p) => nodeId || p.id !== parent.id)
+      .map((p) => ({
+        ...p,
+        _depth: Math.max(0, p._depth - top - (nodeId ? 0 : 1)),
+      }))
+  }, [query.data, parent.id, scopeId, nodeId])
 
   // Filter rail derives from the factory's facet metadata (status, site,
   // utilisation, tags + one facet per tenant custom field) - same machinery as
@@ -995,10 +1107,10 @@ function ChildPrefixesPane({
       }),
     [includeCols, cfDefs]
   )
-  const { rail, filteredRows, toggleValue, selectedValues } = useTableFilters(
-    facetColumns,
-    rows
-  )
+  const { rail, filteredRows, toggleValue, selectedValues, activeCount } =
+    useTableFilters(facetColumns, rows, undefined, {
+      railExtras: <RailModeSwitch mode={tree.mode} onChange={tree.setMode} />,
+    })
   const tagSelection = selectedValues("tags")
 
   // Shared factory - a child-prefix row reads exactly like /prefixes,
@@ -1038,36 +1150,44 @@ function ChildPrefixesPane({
     ]
   )
 
-  if (query.isLoading)
-    return (
-      <p className="p-4 text-sm text-muted-foreground lg:p-6">
-        Loading children…
-      </p>
-    )
-  if (rows.length === 0) {
-    return (
-      <p className="p-4 text-sm text-muted-foreground lg:p-6">
-        No child prefixes - this prefix sits flat.
-      </p>
-    )
-  }
+  const narrow = narrowTreeRail({
+    rail: tree,
+    filterRail: rail,
+    activeFilters: activeCount,
+  })
   return (
     <>
-      {rail}
+      <TreeOrFilterRail
+        rail={tree}
+        filterRail={rail}
+        activeFilters={activeCount}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+          <NarrowRailSheet rail={narrow} className="h-7" />
           <span className="num text-[11px] text-muted-foreground">
             {filteredRows.length} row{filteredRows.length === 1 ? "" : "s"}
           </span>
+          {tree.within && <WithinChip rail={tree} />}
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-3">
-          <DataTable
-            data={filteredRows}
-            columns={columns}
-            flexColumn="description"
-            onSelectedRowsChange={onSelectedRowsChange}
-            embedded
-          />
+          {query.isLoading ? (
+            <Loading />
+          ) : query.isError ? (
+            <QueryError error={query.error} />
+          ) : rows.length === 0 ? (
+            <EmptyState title="No child prefixes.">
+              This prefix sits flat.
+            </EmptyState>
+          ) : (
+            <DataTable
+              data={filteredRows}
+              columns={columns}
+              flexColumn="description"
+              onSelectedRowsChange={onSelectedRowsChange}
+              embedded
+            />
+          )}
         </div>
       </div>
     </>

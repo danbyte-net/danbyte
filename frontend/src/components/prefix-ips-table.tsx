@@ -35,9 +35,12 @@ import { dash } from "@/components/cells/dash"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { useCustomFieldDefs } from "@/components/custom-field-display"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
 import { RoleChip } from "@/components/role-chip"
 import { Button } from "@/components/ui/button"
 import { RowActions } from "@/components/row-actions"
+import type { NarrowRail } from "@/components/narrow-rail-sheet"
+import { NarrowRailSheet } from "@/components/narrow-rail-sheet"
 
 // Synthetic row union - real registered IPs interleaved with placeholders
 // for free addresses when "Show available" is on.
@@ -51,9 +54,20 @@ const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
 interface PrefixIpsTableProps {
   prefixId: string
+  /** The addresses inside the prefix and every prefix below it (`?within=`
+   * on the address list - a prefix tree selection), instead of those on the
+   * prefix itself. The DHCP pool is still the prefix's own. */
+  within?: boolean
   /** Non-facet controls for the rail (Show available, Compact, DHCP pool);
    * the facets themselves derive from the columns. */
   railExtras?: ReactNode
+  /** Wraps the filter rail - a prefix page swaps in its tree here. Gets the
+   * rail and the number of facets on. */
+  renderRail?: (rail: ReactNode, activeCount: number) => ReactNode
+  /** The rail in a sheet for a narrow window (built from the same rail). */
+  narrowRail?: (rail: ReactNode, activeCount: number) => NarrowRail | null
+  /** Beside the row count - e.g. the tree selection's chip. */
+  toolbar?: ReactNode
   showAvailable: boolean
   /** Show the DHCP scope pool's addresses as ghost rows even when they have no
    * IP row yet - the pool laid out without creating anything. */
@@ -81,7 +95,11 @@ interface PrefixIpsTableProps {
 
 function PrefixIpsTableImpl({
   prefixId,
+  within = false,
   railExtras,
+  renderRail,
+  narrowRail,
+  toolbar,
   showAvailable,
   showDhcpPool,
   cidr,
@@ -101,6 +119,16 @@ function PrefixIpsTableImpl({
     queryKey: ["prefix-ips", prefixId],
     queryFn: () => api<IPListResponse>(`/api/prefixes/${prefixId}/ips/`),
   })
+  // A tree selection: the prefix's addresses with its child prefixes'.
+  const deep = useQuery({
+    queryKey: ["prefix-ips", prefixId, "within"],
+    queryFn: () =>
+      apiAll<IPAddress>(
+        `/api/ips/?${new URLSearchParams({ within: prefixId })}`
+      ),
+    enabled: within,
+  })
+  const source = within ? deep.data?.results : query.data?.results
 
   // DHCP scope pool ranges (from the ips endpoint) → shade free addresses that
   // fall inside a pool, and back the "Show DHCP pool" ghost rows. Exclusion
@@ -149,14 +177,14 @@ function PrefixIpsTableImpl({
   )
   const registered = useMemo<IpRow[]>(
     () =>
-      (query.data?.results ?? [])
+      (source ?? [])
         .filter((ip) => {
           if (!spanInts) return true
           const n = ipToBigInt(ip.ip_address)
           return n !== null && n >= spanInts.start && n <= spanInts.end
         })
         .map((ip) => ({ kind: "registered" as const, ip })),
-    [query.data, spanInts]
+    [source, spanInts]
   )
 
   // Monitoring status for the registered IPs (bulk, decoupled query) - for
@@ -404,16 +432,18 @@ function PrefixIpsTableImpl({
     []
   )
 
-  if (query.isLoading) {
-    return <p className="p-4 text-sm text-muted-foreground">Loading IPs…</p>
-  }
-  if (query.isError) {
+  const pending = query.isLoading || (within && deep.isLoading)
+  const failed = query.isError || (within && deep.isError)
+  // Without a rail around it, a pending table is just the spinner.
+  if (!renderRail && pending) return <Loading />
+  if (!renderRail && failed) {
     return (
       <div className="p-4">
-        <QueryError error={query.error} />
+        <QueryError error={query.error ?? deep.error} />
       </div>
     )
   }
+  const narrow = narrowRail?.(rail, activeCount) ?? null
 
   return (
     // min-w-0: this row sits in a flex row (the bare IPs tab); without it the
@@ -421,12 +451,14 @@ function PrefixIpsTableImpl({
     // - Updated, the row actions and the Columns menu - instead of the table
     // scrolling sideways in its own frame.
     <div className="flex min-h-0 min-w-0 flex-1">
-      {rail}
+      {renderRail ? renderRail(rail, activeCount) : rail}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+          {narrow && <NarrowRailSheet rail={narrow} className="h-7" />}
           <span className="num shrink-0 text-[11px] text-muted-foreground">
             {rows.length} row{rows.length === 1 ? "" : "s"}
           </span>
+          {toolbar}
           <div className="relative ml-auto min-w-0">
             <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -441,21 +473,29 @@ function PrefixIpsTableImpl({
             the table's own frame scrolls both ways, so the header stays in
             view and the sideways scrollbar sits at the pane's bottom edge. */}
         <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
-          <DataTable
-            data={rows}
-            columns={wiredColumns}
-            flexColumn="description"
-            stickyHeader
-            onSelectedRowsChange={handleSelected}
-            initialColumnVisibility={initialVisibility}
-            tableId="prefix-ips"
-            // Registered rows carry the address list's row; the free
-            // addresses and range rows between them carry none.
-            autoColumns={{
-              api: "/api/ips/",
-              get: (r) => (r.kind === "registered" ? r.ip : undefined),
-            }}
-          />
+          {/* A rail that stays put (the prefix tree) keeps its place while
+              the next selection's addresses load. */}
+          {pending ? (
+            <Loading />
+          ) : failed ? (
+            <QueryError error={query.error ?? deep.error} />
+          ) : (
+            <DataTable
+              data={rows}
+              columns={wiredColumns}
+              flexColumn="description"
+              stickyHeader
+              onSelectedRowsChange={handleSelected}
+              initialColumnVisibility={initialVisibility}
+              tableId="prefix-ips"
+              // Registered rows carry the address list's row; the free
+              // addresses and range rows between them carry none.
+              autoColumns={{
+                api: "/api/ips/",
+                get: (r) => (r.kind === "registered" ? r.ip : undefined),
+              }}
+            />
+          )}
         </div>
       </div>
     </div>

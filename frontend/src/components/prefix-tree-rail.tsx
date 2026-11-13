@@ -27,6 +27,7 @@ import {
   levelFromPages,
   readRailParams,
   revealLimits,
+  rootedReveal,
   searchExpanded,
   searchLevels,
   treeKey,
@@ -40,6 +41,7 @@ import type {
   TreeSearch,
 } from "@/lib/prefix-tree-nav"
 import { cn } from "@/lib/utils"
+import type { NarrowRail } from "@/components/narrow-rail-sheet"
 import { FacetHeading } from "@/components/filter-rail"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Loading } from "@/components/loading"
@@ -57,8 +59,20 @@ import { TruncatedText } from "@/components/ui/truncated-text"
 // pref row beside the table's columns); a selected node is `?within=<id>`
 // and scopes the table on the server, whichever mode the rail is in - with
 // the filters showing, it is the removable chip over the table.
+//
+// A prefix page's IPs and Child prefixes tabs use the same rail with the
+// tree rooted at that prefix (`root`): its children on top, no VRF picker,
+// the filter box searching inside it. Both tabs share one mode (one pref,
+// `rail-prefix-detail`) and one selection, so a node picked on one tab
+// still scopes the other.
 
-export type RailPage = "prefixes" | "ips"
+export type RailPage = "prefixes" | "ips" | "prefix-detail"
+
+/** The prefix a rooted tree hangs from, and its VRF (`global` for none). */
+export interface TreeRoot {
+  id: string
+  vrf: string
+}
 
 const RAIL_ITEMS = [
   { value: "filters", label: "Filters" },
@@ -66,7 +80,10 @@ const RAIL_ITEMS = [
 ] as const
 
 /** The rail's mode: the URL's, else the user's stored one, else Filters. */
-export function useRailMode(page: RailPage): {
+export function useRailMode(
+  page: RailPage,
+  active = true
+): {
   mode: RailMode
   setMode: (m: RailMode) => void
 } {
@@ -76,11 +93,12 @@ export function useRailMode(page: RailPage): {
   const pref = useTablePreference(`rail-${page}`)
   const stored: RailMode = pref.order[0] === "tree" ? "tree" : "filters"
   const mode: RailMode = urlMode ?? (pref.loaded ? stored : "filters")
-  // A stored Tree shows in the URL, so a copied link opens the same rail.
+  // A stored Tree shows in the URL, so a copied link opens the same rail -
+  // only while the rail is on screen (a prefix page's other tabs stay clean).
   useEffect(() => {
-    if (!urlMode && pref.loaded && stored === "tree")
+    if (active && !urlMode && pref.loaded && stored === "tree")
       write((prev) => ({ ...prev, [RAIL_PARAM]: "tree" }))
-  }, [urlMode, pref.loaded, stored, write])
+  }, [active, urlMode, pref.loaded, stored, write])
   const { setLayout } = pref
   const setMode = (m: RailMode) => {
     write((prev) => ({
@@ -98,12 +116,23 @@ function revealUrl(id: string) {
 
 /** Everything a list page needs from the rail: the mode, the selection and
  * its VRF, the params that scope the table, and the view state the tree
- * keeps while it is open (shared by the rail and the narrow-screen sheet). */
-export function usePrefixTreeRail(page: RailPage) {
+ * keeps while it is open (shared by the rail and the narrow-screen sheet).
+ * With `root` the tree hangs from that prefix (a prefix page's tabs); while
+ * `active` is false a stored Tree is not written into the URL. */
+export function usePrefixTreeRail(
+  page: RailPage,
+  {
+    root = null,
+    active = true,
+  }: { root?: TreeRoot | null; active?: boolean } = {}
+) {
   const search = useListSearch()
   const write = useSearchWriter()
-  const { mode, setMode } = useRailMode(page)
-  const { within, treeVrf } = readRailParams(search)
+  const { mode, setMode } = useRailMode(page, active)
+  const params = readRailParams(search)
+  const treeVrf = root ? null : params.treeVrf
+  // The root itself is no selection: the tab shows the whole prefix.
+  const within = root && params.within === root.id ? null : params.within
 
   const reveal = useQuery({
     queryKey: ["prefix-tree-reveal", within],
@@ -112,19 +141,27 @@ export function usePrefixTreeRail(page: RailPage) {
     retry: false,
     staleTime: 60_000,
   })
-  const vrf =
-    within && reveal.data
+  // A rooted tree reveals only the path below its root; a selection
+  // outside it reads as unknown and scopes nothing.
+  const shown = useMemo(
+    () =>
+      reveal.data && root ? rootedReveal(reveal.data, root.id) : reveal.data,
+    [reveal.data, root]
+  )
+  const outside = !!root && !!reveal.data && !shown
+  const vrf = root
+    ? root.vrf
+    : within && reveal.data
       ? (reveal.data.vrf ?? GLOBAL_VRF)
       : (treeVrf ?? GLOBAL_VRF)
-  const selectedCidr = within
-    ? (reveal.data?.path[reveal.data.path.length - 1]?.cidr ?? null)
-    : null
+  const selectedCidr =
+    within && shown ? (shown.path[shown.path.length - 1]?.cidr ?? null) : null
 
   const select = (id: string | null) =>
     write((prev) => ({
       ...prev,
-      [WITHIN_PARAM]: id ?? undefined,
-      [TREE_VRF_PARAM]: vrf === GLOBAL_VRF ? undefined : vrf,
+      [WITHIN_PARAM]: id && id !== root?.id ? id : undefined,
+      [TREE_VRF_PARAM]: root || vrf === GLOBAL_VRF ? undefined : vrf,
     }))
   const setVrf = (v: string) =>
     write((prev) => ({
@@ -135,12 +172,13 @@ export function usePrefixTreeRail(page: RailPage) {
 
   // The table's scope: the selection; with the tree open and nothing
   // selected, the tree's VRF.
+  // A rooted tree's tab is the root's already: no VRF scope of its own.
   const scopeParams = useMemo((): Record<string, string> => {
-    if (within) return { within }
-    return mode === "tree" ? { vrf } : {}
-  }, [within, mode, vrf])
+    if (within && !outside) return { within }
+    return mode === "tree" && !root ? { vrf } : {}
+  }, [within, outside, mode, vrf, root])
 
-  const view = useTreeView(vrf, within, reveal.data)
+  const view = useTreeView(vrf, root?.id ?? null, within, shown)
 
   return {
     mode,
@@ -150,7 +188,10 @@ export function usePrefixTreeRail(page: RailPage) {
     setVrf,
     select,
     selectedCidr,
-    revealError: reveal.isError,
+    revealError: reveal.isError || outside,
+    // The selection that scopes the table (none while it is outside a root).
+    scoped: within && !outside ? within : null,
+    rooted: !!root,
     scopeParams,
     view,
   }
@@ -161,8 +202,9 @@ export type PrefixTreeRail = ReturnType<typeof usePrefixTreeRail>
 /** Open nodes, how far each level has paged, and the filter box. */
 function useTreeView(
   vrf: string,
+  root: string | null,
   within: string | null,
-  reveal: TreeReveal | undefined
+  reveal: TreeReveal | null | undefined
 ) {
   const [expanded, setExpanded] = useState<string[]>([])
   const [limits, setLimits] = useState<Record<string, number>>({})
@@ -188,15 +230,17 @@ function useTreeView(
     setLimits((prev) => {
       const next = { ...prev }
       for (const [k, v] of Object.entries(need)) {
-        const key = k === ROOT ? `${ROOT}:${reveal.vrf ?? GLOBAL_VRF}` : k
+        const key =
+          k === ROOT ? `${ROOT}:${root ?? reveal.vrf ?? GLOBAL_VRF}` : k
         next[key] = Math.max(next[key] ?? TREE_PAGE, v)
       }
       return next
     })
-  }, [within, reveal])
+  }, [within, reveal, root])
 
+  // The top level pages per VRF, or per root prefix.
   const limitKey = (parentKey: string) =>
-    parentKey === ROOT ? `${ROOT}:${vrf}` : parentKey
+    parentKey === ROOT ? `${ROOT}:${root ?? vrf}` : parentKey
   const limitOf = (parentKey: string) =>
     limits[limitKey(parentKey)] ?? TREE_PAGE
   const more = (parentKey: string) =>
@@ -208,6 +252,7 @@ function useTreeView(
 
   return {
     vrf,
+    root,
     expanded,
     setExpanded,
     limitOf,
@@ -222,25 +267,35 @@ function useTreeView(
 
 type TreeView = ReturnType<typeof useTreeView>
 
-function pageUrl(vrf: string, parent: string, offset: number) {
+function pageUrl(
+  vrf: string,
+  root: string | null,
+  parent: string,
+  offset: number
+) {
   const p = new URLSearchParams({
     offset: String(offset),
     limit: String(TREE_PAGE),
   })
-  if (parent === ROOT) p.set("vrf", vrf)
-  else p.set("parent", parent)
+  if (parent !== ROOT) p.set("parent", parent)
+  else if (root) p.set("parent", root)
+  else p.set("vrf", vrf)
+  return `/api/prefixes/tree/?${p}`
+}
+
+function searchUrl(vrf: string, root: string | null, q: string) {
+  const p = new URLSearchParams(root ? { parent: root, q } : { vrf, q })
   return `/api/prefixes/tree/?${p}`
 }
 
 /** The tree's rows: the levels loaded for the open nodes, or, while the
  * filter box holds text, the search's paths with lazily opened matches. */
 export function usePrefixTreeRows(view: TreeView) {
-  const { vrf, q } = view
+  const { vrf, root, q } = view
   const searching = q !== ""
   const searchQ = useQuery({
-    queryKey: ["prefix-tree-search", vrf, q],
-    queryFn: () =>
-      api<TreeSearch>(`/api/prefixes/tree/?${new URLSearchParams({ vrf, q })}`),
+    queryKey: ["prefix-tree-search", root ?? vrf, q],
+    queryFn: () => api<TreeSearch>(searchUrl(vrf, root, q)),
     enabled: searching,
     staleTime: 30_000,
   })
@@ -250,8 +305,10 @@ export function usePrefixTreeRows(view: TreeView) {
   }, [searchQ.data, setSearchOpen])
   const fromSearch = useMemo(
     () =>
-      searchQ.data ? searchLevels(searchQ.data) : new Map<string, Level>(),
-    [searchQ.data]
+      searchQ.data
+        ? searchLevels(searchQ.data, root)
+        : new Map<string, Level>(),
+    [searchQ.data, root]
   )
 
   const open = searching ? view.searchOpen : view.expanded
@@ -269,8 +326,15 @@ export function usePrefixTreeRows(view: TreeView) {
   })
   const results = useQueries({
     queries: plan.map(({ parent, offset }) => ({
-      queryKey: ["prefix-tree", vrf, parent, offset],
-      queryFn: () => api<TreePage>(pageUrl(vrf, parent, offset)),
+      // The top level is keyed by its VRF or root prefix; a node's children
+      // are the same whichever tree shows them.
+      queryKey: [
+        "prefix-tree",
+        parent === ROOT ? (root ?? vrf) : vrf,
+        parent,
+        offset,
+      ],
+      queryFn: () => api<TreePage>(pageUrl(vrf, root, parent, offset)),
       staleTime: 30_000,
     })),
   })
@@ -300,18 +364,18 @@ export function usePrefixTreeRows(view: TreeView) {
     () => flattenTree((k) => levels.get(k), openSet),
     [levels, openSet]
   )
-  const root = searching ? undefined : levels.get(ROOT)
+  const top = searching ? undefined : levels.get(ROOT)
   return {
     rows,
     searching,
     search: searchQ,
     rootLoading: searching
       ? searchQ.isLoading
-      : !root || (root.loading && root.nodes.length === 0),
-    rootError: searching ? searchQ.error : root?.error,
+      : !top || (top.loading && top.nodes.length === 0),
+    rootError: searching ? searchQ.error : top?.error,
     empty: searching
       ? !!searchQ.data && searchQ.data.results.length === 0
-      : !!root && !root.loading && root.nodes.length === 0 && !root.error,
+      : !!top && !top.loading && top.nodes.length === 0 && !top.error,
   }
 }
 
@@ -374,6 +438,7 @@ export function PrefixTreePane({
     queryKey: ["vrfs-picker"],
     queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
+    enabled: !rail.rooted,
   })
   const vrfOptions = useMemo(
     () => [
@@ -392,21 +457,23 @@ export function PrefixTreePane({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-col gap-3 p-4 pb-3">
         {header}
-        <div>
-          <FacetHeading label="VRF" />
-          <Combobox
-            aria-label="VRF"
-            value={rail.vrf}
-            onChange={(v) => {
-              rail.setVrf(v ?? GLOBAL_VRF)
-              view.setText("")
-            }}
-            options={vrfOptions}
-            searchPlaceholder="Search VRFs…"
-            emptyText="No VRFs."
-            className="h-8 text-xs"
-          />
-        </div>
+        {!rail.rooted && (
+          <div>
+            <FacetHeading label="VRF" />
+            <Combobox
+              aria-label="VRF"
+              value={rail.vrf}
+              onChange={(v) => {
+                rail.setVrf(v ?? GLOBAL_VRF)
+                view.setText("")
+              }}
+              options={vrfOptions}
+              searchPlaceholder="Search VRFs…"
+              emptyText="No VRFs."
+              className="h-8 text-xs"
+            />
+          </div>
+        )}
         <div className="relative">
           <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -436,7 +503,13 @@ export function PrefixTreePane({
           <QueryError error={tree.rootError} />
         ) : tree.empty ? (
           <EmptyState
-            title={tree.searching ? "No matches." : "No prefixes."}
+            title={
+              tree.searching
+                ? "No matches."
+                : rail.rooted
+                  ? "No child prefixes."
+                  : "No prefixes."
+            }
             className="mx-2"
           />
         ) : (
@@ -664,16 +737,30 @@ export function PrefixTree({
 const RAIL_ASIDE =
   "hidden h-full w-64 shrink-0 flex-col border-r border-border bg-background lg:flex"
 
+/** The tree pane's head: the switch, then any controls the table keeps in
+ * both modes (a prefix page's Show available / Show DHCP pool). */
+function treeHeader(rail: PrefixTreeRail, treeExtras?: ReactNode) {
+  return (
+    <>
+      <RailModeSwitch mode={rail.mode} onChange={rail.setMode} />
+      {treeExtras}
+    </>
+  )
+}
+
 /** The left rail: the page's filter rail (the switch rides on top of it as a
  * rail extra) or the tree pane. */
 export function TreeOrFilterRail({
   rail,
   filterRail,
   activeFilters,
+  treeExtras,
 }: {
   rail: PrefixTreeRail
   filterRail: ReactNode
   activeFilters?: number
+  /** Shown under the switch in Tree mode too. */
+  treeExtras?: ReactNode
 }) {
   if (rail.mode === "filters") return <>{filterRail}</>
   return (
@@ -681,10 +768,19 @@ export function TreeOrFilterRail({
       <PrefixTreePane
         rail={rail}
         activeFilters={activeFilters}
-        header={<RailModeSwitch mode={rail.mode} onChange={rail.setMode} />}
+        header={treeHeader(rail, treeExtras)}
       />
     </aside>
   )
+}
+
+/** A filter rail in the narrow window's sheet, full width. */
+function sheetFilterRail(filterRail: ReactNode) {
+  return isValidElement(filterRail)
+    ? cloneElement(filterRail as ReactElement<{ className?: string }>, {
+        className: "flex h-full w-full border-r-0",
+      })
+    : null
 }
 
 /** The same rail for a narrow window, in the shell's sheet. */
@@ -692,11 +788,13 @@ export function narrowTreeRail({
   rail,
   filterRail,
   activeFilters,
+  treeExtras,
 }: {
   rail: PrefixTreeRail
   filterRail: ReactNode
   activeFilters?: number
-}) {
+  treeExtras?: ReactNode
+}): NarrowRail {
   return {
     label: rail.mode === "tree" ? "Tree" : "Filters",
     icon:
@@ -711,16 +809,14 @@ export function narrowTreeRail({
           rail={rail}
           activeFilters={activeFilters}
           onPicked={close}
-          header={<RailModeSwitch mode={rail.mode} onChange={rail.setMode} />}
+          header={treeHeader(rail, treeExtras)}
         />
-      ) : isValidElement(filterRail) ? (
-        cloneElement(filterRail as ReactElement<{ className?: string }>, {
-          className: "flex h-full w-full border-r-0",
-        })
       ) : (
-        <div className="p-4">
-          <RailModeSwitch mode={rail.mode} onChange={rail.setMode} />
-        </div>
+        (sheetFilterRail(filterRail) ?? (
+          <div className="p-4">
+            <RailModeSwitch mode={rail.mode} onChange={rail.setMode} />
+          </div>
+        ))
       ),
   }
 }
