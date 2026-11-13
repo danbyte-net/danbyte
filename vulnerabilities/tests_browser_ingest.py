@@ -7,6 +7,7 @@ import copy
 import json
 from datetime import timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -347,8 +348,14 @@ class NvdIngestTests(Base):
 
     def test_rate_limited(self):
         run = self.start()
-        codes = [self.post_nvd(run["id"], page([_XE_REC])).status_code
-                 for _ in range(browser_sync.POST_LIMIT + 1)]
+        # One window for the whole burst: the posts are bucketed by the clock
+        # and the count lives two windows in the cache, so a slow run that
+        # crossed a boundary or outlived the key started a fresh count.
+        with mock.patch.object(browser_api, "time") as clock, \
+                mock.patch.object(browser_sync, "POST_WINDOW", 3600):
+            clock.time.return_value = 1_000_000_005.0
+            codes = [self.post_nvd(run["id"], page([_XE_REC])).status_code
+                     for _ in range(browser_sync.POST_LIMIT + 1)]
         self.assertEqual(codes[-1], 429)
         self.assertEqual(codes[:-1].count(429), 0)
 

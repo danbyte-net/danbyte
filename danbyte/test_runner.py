@@ -42,6 +42,7 @@ import traceback
 import unittest
 from pathlib import Path
 
+from django.test import TestCase, TransactionTestCase
 from django.test import runner as django_runner
 from django.test.runner import (
     DiscoverRunner,
@@ -255,6 +256,72 @@ class DanbyteTestRunner(DiscoverRunner):
         from api import io_views
 
         io_views.IO_TYPES_TTL = 0
+
+    def build_suite(self, test_labels=None, **kwargs):
+        """Django's suite, partitioned for --parallel by module instead of by
+        class: a module's classes share module-level state (a temporary
+        MEDIA_ROOT one class's teardown removes, setUpModule), so they run in
+        one worker. The longest modules go first so none starts last.
+        TransactionTestCase classes still run after everything else, one
+        subsuite each, because they leave their worker's database empty."""
+        parallel, self.parallel = self.parallel, 1
+        try:
+            suite = super().build_suite(test_labels, **kwargs)
+        finally:
+            self.parallel = parallel
+        if self.parallel > 1:
+            subsuites = self._partition(list(django_runner.iter_test_cases(suite)))
+            self.parallel = min(self.parallel, len(subsuites))
+            if self.parallel > 1:
+                suite = self.parallel_test_suite(
+                    subsuites, self.parallel, self.failfast, self.debug_mode, self.buffer
+                )
+        return suite
+
+    def _partition(self, tests) -> list[unittest.TestSuite]:
+        by_module: dict[str, list] = {}
+        transactional: list[list] = []
+        for test in tests:
+            if isinstance(test, TransactionTestCase) and not isinstance(test, TestCase):
+                if transactional and type(transactional[-1][0]) is type(test):
+                    transactional[-1].append(test)
+                else:
+                    transactional.append([test])
+            else:
+                by_module.setdefault(_module_of(test), []).append(test)
+        modules = list(by_module)
+        if not (self.shuffle is not False or self.reverse):
+            weights = _load_weights()
+            known = [weights[m] for m in modules if m in weights]
+            default = statistics.median(known) if known else 1.0
+            modules.sort(key=lambda m: -weights.get(m, default))
+        return [unittest.TestSuite(by_module[m]) for m in modules] + [
+            unittest.TestSuite(group) for group in transactional
+        ]
+
+    def setup_databases(self, **kwargs):
+        if not (self.keepdb and self.parallel > 1):
+            return super().setup_databases(**kwargs)
+        # --keepdb keeps the test database, but each worker's copy is made
+        # again from it: a kept copy carries what the last run left, and a
+        # TransactionTestCase leaves it empty (no built-in groups).
+        from django.db import connections
+
+        patched = []
+        for conn in connections.all(initialized_only=False):
+            creation = conn.creation
+            clone = creation._clone_test_db
+
+            def fresh(suffix, verbosity, keepdb=False, _clone=clone):
+                return _clone(suffix, verbosity, keepdb=False)
+
+            creation._clone_test_db = fresh
+            patched.append(creation)
+        try:
+            return super().setup_databases(**kwargs)
+        finally:
+            for creation in patched:
+                del creation._clone_test_db
 
     def run_suite(self, suite, **kwargs):
         result = super().run_suite(suite, **kwargs)
