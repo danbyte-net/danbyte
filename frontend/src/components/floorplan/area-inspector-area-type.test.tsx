@@ -67,6 +67,7 @@ if (!("ResizeObserver" in globalThis)) {
 
 const plan = {
   id: "p1",
+  state: {},
   cell_mm: 600,
   site: { id: "s1", name: "AMS" },
   location: { id: "loc1", name: "Hall", slug: "hall" },

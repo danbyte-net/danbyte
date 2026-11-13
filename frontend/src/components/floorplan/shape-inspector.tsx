@@ -23,6 +23,7 @@ import {
 } from "@/lib/floor-plan-scope"
 import { QuickAddDialog } from "@/components/forms/quick-add"
 import type {
+  AreaNameStyle,
   AreaTypeRef,
   FloorPlan,
   FloorPlanAreaBorder,
@@ -47,6 +48,8 @@ import {
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { cn } from "@/lib/utils"
 
+import { resolveAreaNameLook } from "./area-name-style"
+import { AreaNameStyleFields } from "./area-name-style-fields"
 import { OpensEditor } from "./opens-field"
 import {
   LABEL_COLORS,
@@ -433,7 +436,11 @@ export function AreaInspector({
   onBackLabel,
   walls,
   coverage = null,
+  nameDefault,
 }: {
+  /** The plan's default look for area names (Display); left out, the
+   * plan's saved one. */
+  nameDefault?: AreaNameStyle
   /** Its linked walls: how many, Select and Unlink. */
   walls?: React.ReactNode
   /** Share of it the plan's cameras see (0-1); null with no cameras. */
@@ -649,6 +656,17 @@ export function AreaInspector({
         checked={area.show_name}
         onChange={(v) => onChange({ show_name: v })}
       />
+      {area.show_name && (
+        <AreaNameStyleFields
+          value={area.name_style ?? {}}
+          look={resolveAreaNameLook(
+            nameDefault ?? plan.state.area_names,
+            area.name_style
+          )}
+          onChange={(name_style) => onChange({ name_style })}
+          onReset={() => onChange({ name_style: {} })}
+        />
+      )}
       <OpensEditor
         plan={plan}
         shape={area}

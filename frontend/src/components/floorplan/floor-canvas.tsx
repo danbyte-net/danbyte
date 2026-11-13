@@ -9,6 +9,7 @@ import {
 } from "react"
 
 import type {
+  AreaNameStyle,
   FloorPlan,
   FloorPlanCablePath,
   FloorPlanLiveState,
@@ -82,6 +83,7 @@ import { MuteFilter, muteFilterId, mutesBasemap } from "./background-look"
 import { OnionLayer } from "./onion-layer"
 import type { OnionSkin } from "./onion-layer"
 import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
+import { resolveAreaNameLook } from "./area-name-style"
 import { layoutPlanLabels } from "./plan-label-pass"
 import type { CalloutLabel } from "./plan-label-pass"
 import { PlanCalloutsLayer } from "./plan-callouts-layer"
@@ -347,6 +349,9 @@ export interface FloorCanvasProps {
   /** Display > Tile icons: tiles drawn solid in their colour with a
    * glyph of what they are (tile-face.ts); off, the plain tint. */
   tileIcons?: boolean
+  /** The plan's default look for its areas' names (Display > Area
+   * names); left out, `plan.state.area_names`. */
+  areaNameDefault?: AreaNameStyle
   /** Display > Callouts: Auto names a tile whose name will not sit
    * cleanly by it in a box off to the side, a leader back to it
    * (plan-callouts.ts); Off leaves such a name hidden. */
@@ -696,6 +701,7 @@ export function FloorCanvas({
   objectSize = "real",
   iconTiles = true,
   tileIcons: tileIconsProp,
+  areaNameDefault: areaNameDefaultProp,
   callouts = "off",
   calloutLines,
   detail = "full",
@@ -821,6 +827,7 @@ export function FloorCanvas({
   const { theme } = useTheme()
   // Unless the caller says, as the plan saved it (on by default).
   const tileIcons = tileIconsProp ?? readTileIcons(plan.state.tile_icons)
+  const areaNameDefault = areaNameDefaultProp ?? plan.state.area_names
   // The icons the tiles draw, each once in the canvas's sprite.
   const glyphPrefix = spritePrefix(useId())
   const glyphNames = useMemo(
@@ -1539,6 +1546,7 @@ export function FloorCanvas({
       trayWidth: Math.max(10 * k, readable ? 6 : 4),
       areas: labelAreas,
       areaFontPx: 12 * (readable ? fontGrow(12, k) : 1),
+      areaNameDefault,
       walls,
       // One caption per drawn region, its box's bottom-left where the
       // canvas starts it.
@@ -1586,6 +1594,7 @@ export function FloorCanvas({
     labelTiles,
     labelAreas,
     walls,
+    areaNameDefault,
     shows,
     readable,
     shapeAt,
@@ -3007,6 +3016,7 @@ export function FloorCanvas({
                     ? null
                     : planLabels.areas.get(a.id)
                 }
+                nameLook={resolveAreaNameLook(areaNameDefault, a.name_style)}
                 pattern={shows.pattern}
                 interactive={shapesLive && !isLocked(a.id)}
                 multiSelected={!!areaSel?.has(a.id)}

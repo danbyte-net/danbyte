@@ -72,6 +72,14 @@ import {
 } from "./cable-draw"
 import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import type { Pt } from "./cable-route"
+import {
+  DEFAULT_AREA_NAME_LOOK,
+  areaNameFallback,
+  areaNameFontPx,
+  areaNameSize,
+  resolveAreaNameLook,
+} from "./area-name-style"
+import type { AreaNameLook } from "./area-name-style"
 import { layoutPlanLabels } from "./plan-label-pass"
 import {
   CALLOUT_FONT_PX,
@@ -158,7 +166,7 @@ export interface PlanSvgInput {
   /** The plan's filter: the tiles it leaves out, printed faded. */
   dimTileIds?: ReadonlySet<string>
   plan: Pick<FloorPlan, "grid_width" | "grid_height" | "cell_mm"> &
-    Partial<Pick<FloorPlan, "layout_mode">>
+    Partial<Pick<FloorPlan, "layout_mode" | "state">>
   /** The tiles as shown - hidden ones already left out. */
   tiles: FloorPlanTile[]
   walls?: FloorPlanWall[]
@@ -568,35 +576,64 @@ function patternMarkup(
   )
 }
 
+/** A plate behind text on paper, as the canvas draws one: white (or
+ * `fill`) with a hairline, its corners rounding with the text's size. */
+function textPlateMarkup(
+  b: { x: number; y: number; w: number; h: number },
+  font: number,
+  fill?: string | null
+): string {
+  return el("rect", {
+    x: b.x,
+    y: b.y,
+    width: b.w,
+    height: b.h,
+    rx: Math.min(6, font * 0.2),
+    fill: fill ?? "#ffffff",
+    stroke: "#e4e4e7",
+    "stroke-width": 1,
+  })
+}
+
 /** An area's name with its type's icon before it, as the canvas draws it:
- * from its top left (`start`, y the baseline) or centred on x. A patterned
- * area's name sits on a white halo (a stroked copy under it). */
+ * in its box (`x`, `y` the top left) at its look's size and colour, on a
+ * plate when its look has one. A patterned area's name sits on a white
+ * halo (a stroked copy under it). */
 function areaNameMarkup(
   a: AreaShape,
   name: string,
   x: number,
   y: number,
-  anchor: "start" | "middle",
   ink: string,
+  look: AreaNameLook,
   grow = 1
 ): string {
   const icon = getLucideIcon(areaIcon(a)) ? areaIcon(a) : ""
-  const shift = icon ? 16 * grow : 0
+  const size = areaNameFontPx(look, grow)
+  const box = areaNameSize(name, size, !!icon, look.plate)
+  // A chosen colour as it is; on a plate, the area's own (as over a light
+  // fill, mixed toward the ink).
+  const fill = look.color
+    ? look.color
+    : look.plate
+      ? mix(areaColor(a), PAPER_INK, AREA_INK_SHARE)
+      : ink
   // A black or white name (a strong fill) is haloed in the other one.
-  const halo = areaNameHalo(a) ? "#ffffff" : areaNameHaloColor(ink)
-  const textW = name.length * 12 * grow * 0.6
-  const tx = anchor === "middle" ? x + shift / 2 : x + shift
-  const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
+  const halo =
+    look.color || areaNameHalo(a) ? "#ffffff" : areaNameHaloColor(ink)
+  const baseline = y + box.baseline
   const font = {
-    x: tx,
-    y,
-    "text-anchor": anchor === "middle" ? "middle" : undefined,
-    "font-size": 12 * grow,
+    x: x + box.pad + box.shift,
+    y: baseline,
+    "font-size": size,
     "font-weight": 600,
   }
   return (
-    (icon ? iconMarkup(icon, ix, y - 10.5 * grow, 12 * grow, ink) : "") +
-    (areaNameHalo(a) || grow > 1
+    (look.plate ? textPlateMarkup({ x, y, w: box.w, h: box.h }, size) : "") +
+    (icon
+      ? iconMarkup(icon, x + box.pad, baseline - size * 0.875, size, fill)
+      : "") +
+    (!look.plate && (look.color || areaNameHalo(a) || grow > 1)
       ? text(name, {
           ...font,
           fill: halo,
@@ -605,7 +642,7 @@ function areaNameMarkup(
           "stroke-linejoin": "round",
         })
       : "") +
-    text(name, { ...font, fill: ink })
+    text(name, { ...font, fill })
   )
 }
 
@@ -624,9 +661,17 @@ function areaMarkup(
   a: AreaShape,
   pat: PatternScale = DEFAULT_PATTERN,
   grow = 1,
-  nameAt?: Pt | null
+  nameAt?: Pt | null,
+  look: AreaNameLook = DEFAULT_AREA_NAME_LOOK
 ): string {
   const color = areaColor(a)
+  const nameBox = () =>
+    areaNameSize(
+      areaName(a),
+      areaNameFontPx(look, grow),
+      !!getLucideIcon(areaIcon(a)),
+      look.plate
+    )
   // In the area's own colour, a name keeps some of the page's ink (as
   // shape-layer.tsx draws it on screen).
   const own = areaLabelColor(a)
@@ -666,10 +711,10 @@ function areaMarkup(
         ? areaNameMarkup(
             a,
             name,
-            cx * CELL,
-            cy * CELL + 4 * grow,
-            "middle",
+            cx * CELL - nameBox().w / 2,
+            cy * CELL - nameBox().h / 2,
             ink,
+            look,
             grow
           )
         : "")
@@ -700,15 +745,12 @@ function areaMarkup(
       pat
     ) +
     (name
-      ? areaNameMarkup(
-          a,
-          name,
-          nameAt ? nameAt[0] * CELL : box.x + 6 * grow,
-          nameAt ? nameAt[1] * CELL + 12 * grow * 0.8 : box.y + 15 * grow,
-          "start",
-          ink,
-          grow
-        )
+      ? (() => {
+          const at = nameAt
+            ? { x: nameAt[0] * CELL, y: nameAt[1] * CELL }
+            : areaNameFallback(a, look, nameBox(), grow)
+          return areaNameMarkup(a, name, at.x, at.y, ink, look, grow)
+        })()
       : "") +
     "</g>"
   )
@@ -773,16 +815,16 @@ function labelMarkup(
   return (
     `<g${turns ? ` transform="${turns}"` : ""}>` +
     (l.plate
-      ? el("rect", {
-          x: plate.box.x * CELL,
-          y: plate.box.y * CELL,
-          width: plate.box.width * CELL,
-          height: plate.box.height * CELL,
-          rx: Math.min(6, size * 0.2),
-          fill: plate.fill ?? "#ffffff",
-          stroke: "#e4e4e7",
-          "stroke-width": 1,
-        })
+      ? textPlateMarkup(
+          {
+            x: plate.box.x * CELL,
+            y: plate.box.y * CELL,
+            w: plate.box.width * CELL,
+            h: plate.box.height * CELL,
+          },
+          size,
+          plate.fill
+        )
       : "") +
     lines +
     "</g>"
@@ -1871,6 +1913,7 @@ function planSvgBody({
         : 10 * paperMmPerPx) * toPx,
     areas: areaShapes,
     areaFontPx: 12 * areaGrow,
+    areaNameDefault: plan.state?.area_names,
     walls,
     planLabels: shapes.filter((x): x is LabelShape => x.kind === "label"),
     cellMm: plan.cell_mm,
@@ -1921,7 +1964,15 @@ function planSvgBody({
     }
   // Rooms and areas: over the zones, under the tiles.
   for (const s of shapes.filter((x) => x.kind === "area").sort(byZ))
-    body.push(areaMarkup(s, pat, areaGrow, labels.areas.get(s.id)))
+    body.push(
+      areaMarkup(
+        s,
+        pat,
+        areaGrow,
+        labels.areas.get(s.id),
+        resolveAreaNameLook(plan.state?.area_names, s.name_style)
+      )
+    )
   // Readable: the grown symbols over the rest.
   const solid = tiles.filter((t) => !isZone(t))
   const ordered = anyShape

@@ -1337,6 +1337,9 @@ the plan reads over them - a satellite map keeps its colours
 default) shows rooms from afar, rows closer and every rack up close,
 **Always full** draws everything at every zoom (see
 [Detail by zoom](#detail-by-zoom));
+**Area names** sets the plan's default look for room and area names -
+position, size, colour, backplate - which an area can override in its
+inspector (see [Rooms and areas](#rooms-and-areas));
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;
 **Camera FOV cones** shows/hides the camera views and **Camera coverage**
@@ -1395,9 +1398,11 @@ you zoom or pan. In order:
    keep clear of it). With [Callouts](#callouts) on, a name that does not
    fit in its tile is named by its [row](#row-names) or in a callout,
    placed before the cable and tray names, which keep off them.
-6. **Room and area names**. A rectangle's name starts in its top-left
-   corner and moves to another free spot inside it - a corner, the middle -
-   off the racks, rather than sit on a tray's name or a rack. It keeps
+6. **Room and area names**. A rectangle's name starts at its
+   [name look's](#rooms-and-areas) position (top left unless set) at its
+   size, plate included, and moves to another free spot inside it - a
+   corner, the middle - off the racks, rather than sit on a tray's name or
+   a rack; with nowhere free it hides. It keeps
    inside the walls drawn along the room's edges: the inset is each wall's
    drawn half thickness (its offset from the edge included) plus a small
    pad, so a thick outer or inner wall never runs through the name at any
@@ -1869,6 +1874,23 @@ to **Select** and the inspector shows the new area:
   there and white in the dark theme. Where a black or white name sits on a
   halo (a Readable name grown far out), the halo is the other one, so the
   letters keep a sharp edge over the map or the plan.
+- **Name look** (shown while **Show the name** is on): **Position** - a
+  3 × 3 grid: top left, top, top right, left, centre, right, bottom left,
+  bottom, bottom right - **Size** (**S**, **M**, **L**: 10, 12 and 16 plan
+  px; M is the size names always had), **Colour** (blank is Auto, the
+  theme-aware ink above; a chosen colour is drawn as it is, in both themes
+  and on paper) and **Backplate**, the same plate as a
+  [label's](#labels): the theme's background with a hairline, sized to the
+  name with an even pad. Each of the four starts from the plan's default
+  (Display → **Area names**, saved on the plan for editors as
+  `state.area_names`) and only what the area sets here overrides it
+  (stored on the area as `name_style`); **Use plan default** clears the
+  area's own. A plan never styled draws names as before: top left, M,
+  Auto, no plate. The position is inside the walls along the room's edges
+  (see [the label pass](#one-label-pass)); **Centre** is the middle of
+  that inner box. A polygon's name stays at its centre (size, colour and
+  plate apply); a turned rectangle's sits at its position in its own,
+  turned box.
 
 Areas draw over the background, the drawing and the zone tiles, and under
 every other tile. They may overlap - a cage inside a hall is real. Each has a

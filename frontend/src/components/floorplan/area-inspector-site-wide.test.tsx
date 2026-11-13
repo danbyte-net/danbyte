@@ -68,6 +68,7 @@ if (!("ResizeObserver" in globalThis))
 
 const plan = {
   id: "p1",
+  state: {},
   name: "Site",
   cell_mm: 600,
   grid_width: 40,

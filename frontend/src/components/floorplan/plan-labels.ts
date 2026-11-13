@@ -505,15 +505,17 @@ export function aroundSpots(
   }))
 }
 
-/** The places an area's name may go inside its box (cells): its top left
- * corner first, then the other corners, its middle, and a few points
- * between - the caller keeps it off the racks with `avoid`. Data: the
- * name box's top left (cells). */
+/** The places an area's name may go inside its box (cells): its chosen
+ * place first (`first`: where along each side, 0 to 1 - its top left
+ * unless said), then the corners, its middle, and a few points between -
+ * the caller keeps it off the racks with `avoid`. Data: the name box's top
+ * left (cells). */
 export function insideSpots(
   rect: Box,
   size: { w: number; h: number },
   pad: number,
-  scale: number
+  scale: number,
+  first: [number, number] = [0, 0]
 ): LabelSpot<{ at: Pt }>[] {
   const x0 = rect.x * scale + pad
   const y0 = rect.y * scale + pad
@@ -534,6 +536,7 @@ export function insideSpots(
       data: { at: [x / scale, y / scale] },
     })
   }
+  add(first[0], first[1])
   add(0, 0)
   add(1, 0)
   add(0, 1)

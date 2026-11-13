@@ -14287,10 +14287,34 @@ export interface FloorPlanArea extends FloorPlanOpensFields {
   fill_opacity: number
   border: FloorPlanAreaBorder
   show_name: boolean
+  /** How the name is drawn, over the plan's default (`state.area_names`);
+   * a key left out inherits. Absent from older payloads. */
+  name_style?: AreaNameStyle
   z: number
   locked: boolean
   created_at: string
   updated_at: string
+}
+
+/** Where an area's name sits in its box (inside its walls). */
+export type AreaNamePosition =
+  | "top-left"
+  | "top"
+  | "top-right"
+  | "left"
+  | "center"
+  | "right"
+  | "bottom-left"
+  | "bottom"
+  | "bottom-right"
+
+/** An area name's look: each key optional, one left out inherits. `color`
+ * "" is Auto (the theme-aware ink). */
+export interface AreaNameStyle {
+  position?: AreaNamePosition
+  size?: "s" | "m" | "l"
+  color?: string
+  plate?: boolean
 }
 
 export interface FloorPlanAreaWritePayload {
@@ -14314,6 +14338,7 @@ export interface FloorPlanAreaWritePayload {
   fill_opacity?: number
   border?: FloorPlanAreaBorder
   show_name?: boolean
+  name_style?: AreaNameStyle
   z?: number
   locked?: boolean
 }

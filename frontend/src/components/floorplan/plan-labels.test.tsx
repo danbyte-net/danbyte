@@ -14,6 +14,13 @@ import {
   laneOrder,
   layoutCables,
 } from "./cable-draw"
+import {
+  AREA_NAME_POSITIONS,
+  areaNameFontPx,
+  areaNameSize,
+  positionFractions,
+  resolveAreaNameLook,
+} from "./area-name-style"
 import { CableLayer } from "./cable-layer"
 import type { Pt } from "./cable-route"
 import { layoutPlanLabels, preferInside } from "./plan-label-pass"
@@ -452,6 +459,145 @@ describe("layoutPlanLabels", () => {
     }).areas.get("a1")!
     expect(bare[0]).toBeCloseTo(2 + 6 / 40)
     expect(bare[1]).toBeCloseTo(2 + 6 / 40)
+  })
+
+  it("puts an area's name at its chosen position inside the walls, at every size", () => {
+    const area = {
+      kind: "area",
+      id: "a1",
+      shape: "rect",
+      x: 2,
+      y: 2,
+      width: 10,
+      height: 6,
+      rotation: 0,
+      label: "Server room",
+      show_name: true,
+      points: [],
+      fill_opacity: 10,
+      border: "solid",
+    } as unknown as AreaShape
+    // A 300 mm wall on its outline: the inner box is 2.25 → 11.75 by
+    // 2.25 → 7.75; the name keeps 6 plan px (6/40 cell) off it.
+    const walls = [
+      {
+        points: [
+          [2, 2],
+          [12, 2],
+          [12, 8],
+          [2, 8],
+          [2, 2],
+        ] as Pt[],
+        thickness_mm: 300,
+      },
+    ]
+    const inner = { x0: 2.25, y0: 2.25, x1: 11.75, y1: 7.75 }
+    const pad = 6 / 40
+    for (const size of ["s", "m", "l"] as const)
+      for (const plate of [false, true])
+        for (const position of AREA_NAME_POSITIONS) {
+          const style = { position, size, plate }
+          const got = layoutPlanLabels({
+            ...input([], {}, { names: false }),
+            tiles: [],
+            trays: [],
+            areas: [{ ...area, name_style: style }],
+            walls,
+            cellMm: 600,
+          })
+          const at = got.areas.get("a1")!
+          const look = resolveAreaNameLook(undefined, style)
+          const box = areaNameSize(
+            "Server room",
+            areaNameFontPx(look),
+            false,
+            plate
+          )
+          const w = box.w / 40
+          const h = box.h / 40
+          const [fx, fy] = positionFractions(position)
+          const want = (f: number, a0: number, a1: number, s: number) =>
+            f === 0 ? a0 + pad : f === 1 ? a1 - pad - s : (a0 + a1 - s) / 2
+          expect(at[0]).toBeCloseTo(want(fx, inner.x0, inner.x1, w), 4)
+          expect(at[1]).toBeCloseTo(want(fy, inner.y0, inner.y1, h), 4)
+        }
+  })
+
+  it("takes the plan's default, an area's own keys over it", () => {
+    const area = {
+      kind: "area",
+      id: "a1",
+      shape: "rect",
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      rotation: 0,
+      label: "Hall",
+      show_name: true,
+      points: [],
+      fill_opacity: 10,
+      border: "solid",
+    } as unknown as AreaShape
+    const run = (own?: object) =>
+      layoutPlanLabels({
+        ...input([], {}, { names: false }),
+        tiles: [],
+        trays: [],
+        areas: [{ ...area, name_style: own }],
+        areaNameDefault: { position: "bottom-right" },
+        cellMm: 600,
+      }).areas.get("a1")!
+    // The plan's bottom right.
+    expect(run()[0]).toBeGreaterThan(5)
+    expect(run()[1]).toBeGreaterThan(5)
+    // The area's own top left.
+    expect(run({ position: "top-left" })[0]).toBeCloseTo(6 / 40)
+  })
+
+  it("moves a styled name off a rack in its place, else hides it", () => {
+    const area = {
+      kind: "area",
+      id: "a1",
+      shape: "rect",
+      x: 0,
+      y: 0,
+      width: 4,
+      height: 4,
+      rotation: 0,
+      label: "Cage",
+      show_name: true,
+      points: [],
+      fill_opacity: 10,
+      border: "solid",
+      name_style: { position: "center", size: "l" },
+    } as unknown as AreaShape
+    // A plan label over its middle: the name goes elsewhere in the area.
+    const label = {
+      kind: "label",
+      id: "l1",
+      text: "X",
+      x: 1.4,
+      y: 1.6,
+      width: 1.2,
+      height: 0.8,
+      rotation: 0,
+      font_mm: 300,
+    } as unknown as LabelShape
+    const got = layoutPlanLabels({
+      ...input([], {}, { names: false }),
+      tiles: [],
+      trays: [],
+      areas: [area],
+      planLabels: [label],
+      cellMm: 600,
+    })
+    const at = got.areas.get("a1")
+    expect(at).toBeTruthy()
+    expect(at![1]).not.toBeCloseTo(
+      2 - areaNameSize("Cage", 16, false, false).h / 80,
+      2
+    )
   })
 })
 

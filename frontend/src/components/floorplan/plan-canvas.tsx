@@ -256,6 +256,7 @@ export function PlanCanvas({
     objectSize,
     iconTiles,
     tileIcons,
+    areaNames,
     callouts,
     detail,
     muteBackground,
@@ -435,6 +436,7 @@ export function PlanCanvas({
         objectSize={objectSize}
         iconTiles={iconTiles}
         tileIcons={tileIcons}
+        areaNameDefault={areaNames}
         callouts={callouts}
         calloutLines={calloutLines}
         detail={detail}

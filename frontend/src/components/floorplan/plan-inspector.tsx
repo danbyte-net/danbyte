@@ -117,6 +117,7 @@ export function PlanInspector({
         area={shape}
         {...common}
         coverage={coverage}
+        nameDefault={prefs.areaNames}
         walls={
           linked.length > 0 && (
             <AreaWallsRow

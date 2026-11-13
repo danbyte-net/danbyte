@@ -1018,7 +1018,11 @@ export function FloorPlanEditor({
   ) =>
     plan
       ? planSvg({
-          plan,
+          // Its area names' default as on screen.
+          plan: {
+            ...plan,
+            state: { ...plan.state, area_names: prefs.areaNames },
+          },
           // The filter as on screen: Hide others leaves the rest off the
           // paper, else it prints faded.
           tiles:

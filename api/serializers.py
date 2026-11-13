@@ -10304,6 +10304,55 @@ def hex_color_or_blank(value: str) -> str:
     return (value or "").lower()
 
 
+AREA_NAME_POSITIONS = (
+    "top-left", "top", "top-right", "left", "center", "right",
+    "bottom-left", "bottom", "bottom-right",
+)
+AREA_NAME_SIZES = ("s", "m", "l")
+
+
+def area_name_style(value) -> dict:
+    """How an area's name is drawn: ``position`` (one of nine), ``size``
+    (s/m/l), ``color`` (``#rrggbb``, or blank for the theme-aware ink) and
+    ``plate`` (a backplate). Every key optional - one left out inherits
+    (an area from its plan's default, a plan from the built-in look)."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("Must be an object.")
+    unknown = set(value) - {"position", "size", "color", "plate"}
+    if unknown:
+        raise serializers.ValidationError(
+            f"Unknown key: {', '.join(sorted(unknown))}."
+        )
+    out: dict = {}
+    if "position" in value:
+        if value["position"] not in AREA_NAME_POSITIONS:
+            raise serializers.ValidationError(
+                f"position must be one of {', '.join(AREA_NAME_POSITIONS)}."
+            )
+        out["position"] = value["position"]
+    if "size" in value:
+        if value["size"] not in AREA_NAME_SIZES:
+            raise serializers.ValidationError("size must be s, m or l.")
+        out["size"] = value["size"]
+    if "color" in value:
+        c = value["color"]
+        if not isinstance(c, str):
+            raise serializers.ValidationError("color must be a string.")
+        try:
+            out["color"] = hex_color_or_blank(c)
+        except serializers.ValidationError:
+            raise serializers.ValidationError(
+                "color must be a #rrggbb colour, or blank for Auto."
+            ) from None
+    if "plate" in value:
+        if not isinstance(value["plate"], bool):
+            raise serializers.ValidationError("plate must be true or false.")
+        out["plate"] = value["plate"]
+    return out
+
+
 def location_type_ref(t) -> dict | None:
     """How a location names its type: id, name, colour and icon."""
     if t is None:
@@ -11578,6 +11627,14 @@ class FloorPlanSerializer(
     def validate_state(self, v):
         if not isinstance(v, dict):
             raise serializers.ValidationError("state must be an object")
+        if "area_names" in v:
+            # The plan's default look for its areas' names.
+            try:
+                v = {**v, "area_names": area_name_style(v["area_names"])}
+            except serializers.ValidationError as e:
+                raise serializers.ValidationError(
+                    f"area_names: {' '.join(str(m) for m in e.detail)}"
+                ) from None
         return v
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -12988,6 +13045,9 @@ class FloorPlanAreaSerializer(_OpensMixin, NumIdModelSerializer):
             model.objects.filter(pk=obj.pk), request.user, tenant, model_slug, "view",
         ).exists()
 
+    def validate_name_style(self, value):
+        return area_name_style(value)
+
     def validate(self, attrs):
         from .floor_stacks import in_scope
 
@@ -13077,8 +13137,8 @@ class FloorPlanAreaSerializer(_OpensMixin, NumIdModelSerializer):
         fields = ["id", "floor_plan_id", "shape", "x", "y", "width", "height",
                   "rotation", "points", "room", "room_id", "location", "location_id",
                   "area_type", "area_type_id",
-                  "label", "color", "fill_opacity", "border", "show_name", "z",
-                  "locked", "opens", "opens_id", "opens_hidden", "back_label",
+                  "label", "color", "fill_opacity", "border", "show_name", "name_style",
+                  "z", "locked", "opens", "opens_id", "opens_hidden", "back_label",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "room", "location", "area_type", "opens",
                             "opens_hidden", "back_label", "created_at", "updated_at"]

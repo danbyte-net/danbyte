@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { UseMutationResult } from "@tanstack/react-query"
 
-import type { FloorPlan } from "@/lib/api"
+import type { AreaNameStyle, FloorPlan } from "@/lib/api"
 import {
   storeCableLook,
   storeCableScale,
@@ -12,6 +12,7 @@ import {
 } from "@/lib/render-quality"
 import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 
+import { readAreaNameStyle } from "./area-name-style"
 import { readCableColorBy } from "./cable-draw"
 import type { CableColorBy } from "./cable-draw"
 import { readFloorHidden } from "./hidden"
@@ -343,6 +344,24 @@ export function usePlanViewPrefs({
     (plan?.state.mute_background as boolean | undefined) ??
     true
 
+  // The plan's default look for its areas' names (each area may override
+  // it in its inspector) - top left, M, Auto, no plate unless set.
+  const [areaNamesLocal, setAreaNamesLocal] = useState<AreaNameStyle | null>(
+    null
+  )
+  useEffect(() => setAreaNamesLocal(null), [id])
+  const storedAreaNames = plan?.state.area_names
+  const areaNamesStored = useMemo(
+    () => readAreaNameStyle(storedAreaNames),
+    [storedAreaNames]
+  )
+  const areaNames = areaNamesLocal ?? areaNamesStored
+  const setAreaNames = (next: AreaNameStyle) => {
+    setAreaNamesLocal(next)
+    if (canEdit && plan)
+      patchPlan.mutate({ state: { ...plan.state, area_names: next } })
+  }
+
   const setViewPref = (
     key: ViewPrefKey,
     value:
@@ -441,6 +460,8 @@ export function usePlanViewPrefs({
     setCableScale,
     cableLook,
     setCableLook,
+    areaNames,
+    setAreaNames,
     setViewPref,
   }
 }

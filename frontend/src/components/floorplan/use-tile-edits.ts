@@ -66,6 +66,7 @@ function areaBody(
     fill_opacity: a.fill_opacity,
     border: a.border,
     show_name: a.show_name,
+    name_style: a.name_style ?? {},
     z: a.z,
     locked: a.locked,
     ...opensBody(a),

@@ -2,7 +2,16 @@ import { Link2 } from "lucide-react"
 
 import { getLucideIcon } from "@/components/dynamic-icon"
 
+import {
+  AREA_NAME_BASE_PX,
+  DEFAULT_AREA_NAME_LOOK,
+  areaNameFallback,
+  areaNameFontPx,
+  areaNameSize,
+} from "./area-name-style"
+import type { AreaNameLook } from "./area-name-style"
 import { CELL } from "./canvas-geometry"
+
 import { fontGrow } from "./readable"
 import {
   AREA_INK_SHARE,
@@ -39,12 +48,8 @@ import type { GestureTarget, ShapeGestures } from "./use-shape-gestures"
 
 const px = (v: number) => v * CELL
 
-/** The name's size, and the icon's before it (world px). */
-const NAME_PX = 12
-const ICON_PX = 12
-const ICON_GAP = 4
-/** ~Average glyph width of the name's semibold sans, per em. */
-const NAME_EM = 0.6
+/** The name's size at M, which Readable grows from (world px). */
+const NAME_PX = AREA_NAME_BASE_PX
 /** A fine pattern's share of the usual stroke opacity (Detail by zoom). */
 const FINE_PATTERN = 0.45
 
@@ -112,57 +117,111 @@ function areaNameInks(area: AreaShape): React.CSSProperties {
 const AREA_INK_CLASS =
   "text-(--area-ink) stroke-(--area-halo) dark:text-(--area-ink-dark) dark:stroke-(--area-halo-dark)"
 
-/** An area's name with its type's icon before it: from (x, y) in its top
- * left (`start`, y the baseline), or centred on (x, y) (`middle`, y the
- * middle). A patterned area's name reads over its lines through a halo of
- * the background. */
+/** A plate behind text, so it reads over lines - a label's, and an area
+ * name's when its look asks for one: the theme's background (or `fill`)
+ * with a hairline of the border. */
+function Plate({
+  x,
+  y,
+  width,
+  height,
+  font,
+  fill,
+  part,
+}: {
+  x: number
+  y: number
+  width: number
+  height: number
+  /** The text's size: the corners round with it. */
+  font: number
+  fill?: string | null
+  part?: string
+}) {
+  return (
+    <rect
+      data-part={part}
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      rx={Math.min(6, font * 0.2)}
+      className={fill ? "stroke-border" : "fill-background stroke-border"}
+      fill={fill ?? undefined}
+      data-plate={fill ?? undefined}
+      strokeWidth={1}
+    />
+  )
+}
+
+/** An area's name with its type's icon before it, in its box (`x`, `y`:
+ * the top left, world px) at its look's size and colour, on a plate when
+ * its look has one. A patterned area's name reads over its lines through
+ * a halo of the background. */
 function AreaName({
   area,
   name,
   x,
   y,
-  anchor,
   ink,
+  look,
   grow = 1,
 }: {
   area: AreaShape
   name: string
   x: number
   y: number
-  anchor: "start" | "middle"
   ink: string
+  look: AreaNameLook
   /** Readable from afar: the name and its icon grown by this much. */
   grow?: number
 }) {
   const icon = areaIcon(area)
   const Icon = icon ? getLucideIcon(icon) : null
-  const namePx = NAME_PX * grow
-  const iconPx = ICON_PX * grow
-  const shift = Icon ? iconPx + ICON_GAP * grow : 0
-  const textW = name.length * namePx * NAME_EM
-  // The text's anchor point, and the icon's top left before the text.
-  const tx = anchor === "middle" ? x + shift / 2 : x + shift
-  const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
-  const mid = anchor === "middle" ? y : y - namePx * 0.35
-  // Grown, it spills over tiles and lines: always on its halo.
-  const own = ink === areaColor(area)
-  const halo = areaNameHalo(area) || grow > 1
-  // In the area's own colour, a name keeps some of the page's ink, so a
-  // pale colour still reads, on a halo of the page. Over a strong fill it
-  // is black or white - judged against the fill as it reads over each
+  const namePx = areaNameFontPx(look, grow)
+  const iconPx = namePx
+  const box = areaNameSize(name, namePx, !!Icon, look.plate)
+  const tx = x + box.pad + box.shift
+  const ix = x + box.pad
+  const baseline = y + box.baseline
+  const mid = baseline - namePx * 0.35
+  // A chosen colour is the name's ink as it is. On a plate the page is
+  // under it: the area's own colour, as over a light fill. Otherwise, in
+  // the area's own colour a name keeps some of the page's ink, so a pale
+  // colour still reads, on a halo of the page; over a strong fill it is
+  // black or white - judged against the fill as it reads over each
   // theme's page - on a halo of the other one, so the glyphs keep their
   // edges (a white name on a white halo smears).
-  const fill = own
-    ? `color-mix(in oklab, ${ink} ${AREA_INK_SHARE * 100}%, var(--foreground))`
-    : "currentColor"
+  const chosen = look.color
+  const own = !!chosen || look.plate || ink === areaColor(area)
+  const base = look.plate && !chosen ? areaColor(area) : ink
+  // Grown, it spills over tiles and lines: always on its halo - none on a
+  // plate, which is its own backdrop.
+  const halo = !look.plate && (!!chosen || areaNameHalo(area) || grow > 1)
+  const fill = chosen
+    ? chosen
+    : own
+      ? `color-mix(in oklab, ${base} ${AREA_INK_SHARE * 100}%, var(--foreground))`
+      : "currentColor"
   const inks = own ? undefined : areaNameInks(area)
   return (
     <g
       pointerEvents="none"
       data-part="area-name"
+      data-position={look.position}
       style={inks}
       className={inks ? AREA_INK_CLASS : undefined}
     >
+      {look.plate && (
+        <Plate
+          part="area-name-plate"
+          x={x}
+          y={y}
+          width={box.w}
+          height={box.h}
+          font={namePx}
+        />
+      )}
       {Icon && (
         <Icon
           data-part="area-icon"
@@ -176,9 +235,7 @@ function AreaName({
       )}
       <text
         x={tx}
-        y={y}
-        textAnchor={anchor === "middle" ? "middle" : undefined}
-        dominantBaseline={anchor === "middle" ? "middle" : undefined}
+        y={baseline}
         fontSize={namePx}
         fontWeight={600}
         fill={fill}
@@ -274,6 +331,7 @@ export function AreaShapeView({
   multiSelected = false,
   minNamePx,
   nameAt,
+  nameLook = DEFAULT_AREA_NAME_LOOK,
   pattern = "full",
   recedes = false,
   hot = false,
@@ -301,6 +359,8 @@ export function AreaShapeView({
    * (cells) - or null where it would cover another text; left out, the
    * name sits where it always does. */
   nameAt?: Pt | null
+  /** How its name is drawn: the plan's default under its own style. */
+  nameLook?: AreaNameLook
   selected: boolean
   /** Picked with others (Ctrl/⌘-click) - walls go round them together. */
   multiSelected?: boolean
@@ -320,6 +380,12 @@ export function AreaShapeView({
     area.border === "none" && !on ? 0 : on ? 1 : AREA_STROKE_OPACITY
   const clipId = `area-pattern-${area.id}`
   const grow = minNamePx ? fontGrow(NAME_PX, zoom, minNamePx) : 1
+  const nameBox = areaNameSize(
+    name,
+    areaNameFontPx(nameLook, grow),
+    !!getLucideIcon(areaIcon(area)),
+    nameLook.plate
+  )
   // A mark that opens: big enough on screen to press.
   const linkPx = onOpens ? Math.max(LINK_PX, 16 / zoom) : LINK_PX
   const linkGap = onOpens ? 4 / zoom : 4
@@ -407,10 +473,10 @@ export function AreaShapeView({
           <AreaName
             area={area}
             name={name}
-            x={px(cx)}
-            y={px(cy)}
-            anchor="middle"
+            x={px(cx) - nameBox.w / 2}
+            y={px(cy) - nameBox.h / 2}
             ink={ink}
+            look={nameLook}
             grow={grow}
           />
         )}
@@ -469,14 +535,11 @@ export function AreaShapeView({
         <AreaName
           area={area}
           name={name}
-          x={nameAt ? px(nameAt[0]) : px(area.x) + 6 * grow}
-          y={
-            nameAt
-              ? px(nameAt[1]) + NAME_PX * grow * 0.8
-              : px(area.y) + 15 * grow
-          }
-          anchor="start"
+          {...(nameAt
+            ? { x: px(nameAt[0]), y: px(nameAt[1]) }
+            : areaNameFallback(area, nameLook, nameBox, grow))}
           ink={ink}
+          look={nameLook}
           grow={grow}
         />
       )}
@@ -558,23 +621,25 @@ export function LabelShapeView({
     >
       {/* The hit area, and the plate when it has one - never narrower
           than the text it backs. */}
-      <rect
-        x={px(plateBox.x)}
-        y={px(plateBox.y)}
-        width={px(plateBox.width)}
-        height={px(plateBox.height)}
-        rx={Math.min(6, size * 0.2)}
-        className={
-          label.plate
-            ? plate.fill
-              ? "stroke-border"
-              : "fill-background stroke-border"
-            : undefined
-        }
-        fill={label.plate ? (plate.fill ?? undefined) : "transparent"}
-        data-plate={plate.fill ?? undefined}
-        strokeWidth={label.plate ? 1 : 0}
-      />
+      {label.plate ? (
+        <Plate
+          x={px(plateBox.x)}
+          y={px(plateBox.y)}
+          width={px(plateBox.width)}
+          height={px(plateBox.height)}
+          font={size}
+          fill={plate.fill}
+        />
+      ) : (
+        <rect
+          x={px(box.x)}
+          y={px(box.y)}
+          width={px(box.width)}
+          height={px(box.height)}
+          fill="transparent"
+          strokeWidth={0}
+        />
+      )}
       <text
         className={plate.ink ? undefined : color.className}
         fill={plate.ink ?? undefined}

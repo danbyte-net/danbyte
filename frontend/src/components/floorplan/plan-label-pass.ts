@@ -54,6 +54,16 @@ import { wallOf } from "./plan-lod"
 import type { PlanRoom } from "./plan-lod"
 import { READABLE_SYMBOL_PX, clipName, namePriority } from "./readable"
 import type { ShapeOf } from "./readable"
+import {
+  AREA_NAME_BASE_PX,
+  areaNameFallback,
+  areaNameFontPx,
+  areaNameSize,
+  nameBoxAt,
+  positionFractions,
+  resolveAreaNameLook,
+} from "./area-name-style"
+import type { AreaNameLook } from "./area-name-style"
 import { areaIcon, areaName, polygonCentroid, shapeBounds } from "./shapes"
 import type { AreaShape, LabelShape } from "./shapes"
 import { wallStrokePx } from "./wall-layer"
@@ -166,8 +176,12 @@ export interface PlanLabelInput {
   /** A tray's channel width (units): its name sits beside it. */
   trayWidth?: number
   areas?: readonly AreaShape[]
-  /** Area names' font (plan px, grown under Readable). */
+  /** Area names' font at size M (plan px, grown under Readable); the
+   * other sizes scale with it. */
   areaFontPx?: number
+  /** The plan's default look for its areas' names (`state.area_names`);
+   * each area's `name_style` over it. */
+  areaNameDefault?: unknown
   /** The walls drawn: an area's name keeps inside those along its edges. */
   walls?: readonly Pick<FloorPlanWall, "points" | "thickness_mm">[]
   raised?: readonly { id: string; box: Box; text: string; fontPx: number }[]
@@ -375,21 +389,26 @@ export function alongBoxes(
   return out
 }
 
-/** Where a turned area draws its name (shape-layer.tsx: its top left,
+/** Where a turned area draws its name (shape-layer.tsx: at its position,
  * turned with the area), as boxes along it (units). */
 function turnedAreaName(
   a: AreaShape,
   name: string,
-  fontPx: number,
+  look: AreaNameLook,
+  grow: number,
   scale: number,
   u: number
 ): Box[] {
-  const g = fontPx / 12
-  const w = name.length * fontPx * 0.6 + (areaIcon(a) ? fontPx * 1.4 : 0)
-  const h = fontPx * 1.2
+  const { w, h } = areaNameSize(
+    name,
+    areaNameFontPx(look, grow),
+    !!areaIcon(a),
+    look.plate
+  )
   // Its middle before the turn (plan px), then turned about the area's.
-  const mx = a.x * CELL + 6 * g + w / 2
-  const my = a.y * CELL + 15 * g - h * 0.35
+  const at = areaNameFallback(a, look, { w, h }, grow)
+  const mx = at.x + w / 2
+  const my = at.y + h / 2
   const cx = (a.x + a.width / 2) * CELL
   const cy = (a.y + a.height / 2) * CELL
   const r = (a.rotation * Math.PI) / 180
@@ -667,9 +686,24 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     tileReqs.push({ id: `tile:${c.id}`, priority, spots, block: icons })
   }
   // The rooms' names keep their place: a turned area's name is drawn
-  // where it is (shape-layer.tsx), an upright one's first spot is its top
-  // left corner - rows and callouts keep off both.
-  const areaFont = input.areaFontPx ?? 12
+  // where it is (shape-layer.tsx), an upright one's first spot is its
+  // chosen position - rows and callouts keep off both.
+  // Readable's growth of the names (their M font over its 12 px).
+  const areaGrow = (input.areaFontPx ?? AREA_NAME_BASE_PX) / AREA_NAME_BASE_PX
+  const lookOf = (a: AreaShape) =>
+    resolveAreaNameLook(input.areaNameDefault, a.name_style)
+  // A name's box at its look (units), and the inset from the walls'
+  // inner faces.
+  const nameSizeOf = (a: AreaShape, name: string, look: AreaNameLook) => {
+    const s = areaNameSize(
+      name,
+      areaNameFontPx(look, areaGrow),
+      !!areaIcon(a),
+      look.plate
+    )
+    return { w: s.w * u, h: s.h * u }
+  }
+  const nameInset = 6 * u * areaGrow
   const wallRuns = (input.walls ?? [])
     .filter((w) => w.points.length >= 2)
     .map((w) => ({
@@ -686,19 +720,27 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       if (!a.show_name || a.shape === "polygon" || hallAreas.has(a.id)) continue
       const name = areaName(a)
       if (!name) continue
+      const look = lookOf(a)
       if (a.rotation) {
-        const boxes = turnedAreaName(a, name, areaFont, scale, u)
+        const boxes = turnedAreaName(a, name, look, areaGrow, scale, u)
         roomNames.push(...boxes)
         for (const bx of boxes) occ.add(bx)
       } else {
-        const shift = areaIcon(a) ? areaFont * 1.4 : 0
-        const pad = 6 * u * (areaFont / 12)
+        const size = nameSizeOf(a, name, look)
         const rect = nameRect(a)
         roomNames.push({
-          x: rect.x * scale + pad,
-          y: rect.y * scale + pad,
-          w: (name.length * areaFont * 0.6 + shift) * u,
-          h: areaFont * 1.2 * u,
+          ...nameBoxAt(
+            {
+              x: rect.x * scale,
+              y: rect.y * scale,
+              w: rect.w * scale,
+              h: rect.h * scale,
+            },
+            size,
+            nameInset,
+            look.position
+          ),
+          ...size,
         })
       }
     }
@@ -1255,12 +1297,8 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       hiddenAreas.push(a.id)
       continue
     }
-    const fpx = input.areaFontPx ?? 12
-    const shift = areaIcon(a) ? fpx * 1.4 : 0
-    const size = {
-      w: (name.length * fpx * 0.6 + shift) * u,
-      h: fpx * 1.2 * u,
-    }
+    const look = lookOf(a)
+    const size = nameSizeOf(a, name, look)
     if (a.shape === "polygon") {
       if (a.points.length < 3) continue
       const [cx, cy] = polygonCentroid(a.points)
@@ -1281,13 +1319,27 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     }
     if (a.rotation) continue
     const rect = nameRect(a)
-    const pad = 6 * u * (fpx / 12)
-    let spots = insideSpots(rect, size, pad, scale)
-    // A room narrower than its name: its top left corner, the name running
+    let spots = insideSpots(
+      rect,
+      size,
+      nameInset,
+      scale,
+      positionFractions(look.position)
+    )
+    // A room narrower than its name: at its position, the name running
     // past the edge - shown only where it covers no icon or callout.
     if (!spots.length) {
-      const x = rect.x * scale + pad
-      const y = rect.y * scale + pad
+      const { x, y } = nameBoxAt(
+        {
+          x: rect.x * scale,
+          y: rect.y * scale,
+          w: rect.w * scale,
+          h: rect.h * scale,
+        },
+        size,
+        nameInset,
+        look.position
+      )
       spots = [
         {
           box: { x, y, ...size },
