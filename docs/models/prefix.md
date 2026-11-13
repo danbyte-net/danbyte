@@ -146,10 +146,28 @@ prefixes, and with them every IP address in them (#501). See
 
 ## API filters
 
-`GET /api/prefixes/` narrows by `search`, `vlan`, `vrf`, `site`,
-`location` and `contained_in`, and by tag: `?tag=<slug>` and
+`GET /api/prefixes/` narrows by `search`, `vlan`, `vrf` (`global` for the
+global table), `site`, `location`, `contained_in` and `within` (a prefix id:
+that prefix and every prefix inside it in its VRF; empty when you may not
+view it), and by tag: `?tag=<slug>` and
 `?tag_id=<id>`, each repeatable, every tag named required. See
 [Filtering by tag](../reference/api.md#filtering-by-tag).
+
+## Tree endpoint
+
+`GET /api/prefixes/tree/` answers the [list's Tree rail](../features/prefix-crud.md#browse-by-tree),
+over the prefixes the caller may view only (a prefix under a hidden one
+hangs from the nearest visible prefix above it):
+
+| Params | Answer |
+|---|---|
+| `vrf=<id>` or `global` (default), `offset`, `limit` (default 200, at most 1,000) | The VRF's top-level prefixes: `{count, offset, limit, results}` |
+| `parent=<id>`, `offset`, `limit` | That prefix's direct children (404 when it is not visible) |
+| `vrf`, `q=<text>` | The outermost matches (`match: true`) and the prefixes above them; `truncated` past 200 |
+| `reveal=<id>` | `{vrf, path}`: root to that prefix, each with its `index` among its siblings |
+
+Each node is `{id, cidr, parent, child_count}`; `child_count` counts direct
+visible children.
 
 ## Related
 

@@ -129,6 +129,45 @@ Y*, and the prefix's journal records *Renumbered from X to Y.* The API is
 `POST /api/prefixes/<id>/renumber/` - see
 [REST API](../reference/api.md#renumbering-a-prefix).
 
+## Browse by tree
+
+The left rail of the prefix list shows either **Filters** (the facets) or a
+**Tree** - switch at the top of the rail. The choice is remembered per user
+for this list and kept in the URL (`?rail=tree`), so a link opens the same
+rail. On a narrow window the rail opens from the **Filters** / **Tree**
+button in the header.
+
+The tree shows one VRF at a time: pick **Global** or a VRF at the top. Below
+it, the VRF's top-level prefixes; a chevron opens a prefix to its direct
+children, and the number beside a prefix is how many direct children it has.
+Each level loads when you open it, 200 prefixes at a time - a `/16` with
+2,000 `/29`s shows the first 200 and **Show 200 more**.
+
+Type in **Filter prefixes** to search the VRF on the server: the start of a
+CIDR (`10.1` finds `10.1.0.0/16`, `10.10.0.0/16`, …) or a whole address or
+network (`10.1.0.0/16`, `10.1.2.7`), which finds what is inside it, or else
+the smallest prefix holding it. The tree then shows only the matches and the
+prefixes above them; open a match to see its children.
+
+Click a prefix (or press ++enter++) to select it. The table then lists that
+prefix and everything inside it, in its VRF; with nothing selected and the
+tree open, the table lists the whole VRF. The selection is `?within=<id>`
+and works with the other filters. Switch back to **Filters** and it stays,
+as a **Within 10.1.0.0/16** chip over the table; its ✕ (or **clear** in the
+tree) goes back to the whole list.
+
+The tree is a keyboard tree: ++arrow-up++ / ++arrow-down++ move, ++home++ /
+++end++ jump, ++arrow-right++ opens a prefix or steps into it,
+++arrow-left++ closes it or steps out to its parent, ++enter++ or ++space++
+selects.
+
+### Hidden prefixes
+
+The tree holds only prefixes you may view. A prefix whose parent you can't
+view hangs from the nearest prefix above it that you can - or sits at the
+top of the VRF - so a hidden prefix is never named, shown or counted. A
+selection naming a prefix you can't view lists nothing.
+
 ## Free space in the list
 
 Tick **Show free space** at the top of the prefix list's filter sidebar. Each

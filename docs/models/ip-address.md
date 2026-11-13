@@ -146,9 +146,21 @@ With the PRTG integration on, an address PRTG reaches a device on gets a
 sensors and channels can be pinned to the address's Overview
 ([Pinned sensors](../features/prtg.md#pinned-sensors)).
 
+## The IP address list's Tree
+
+The IP address list has the same **Filters** / **Tree** rail as the prefix
+list ([Browse by tree](../features/prefix-crud.md#browse-by-tree)). Pick a
+VRF and a prefix in the tree and the list shows the addresses inside that
+prefix - on it or on any prefix below it. With the tree open and nothing
+picked, it shows the VRF's addresses. The pick is `?within=<id>`, kept as a
+**Within …** chip when you switch back to Filters. Prefixes you may not view
+are left out of the tree as on the prefix list.
+
 ## API filters
 
-`GET /api/ips/` narrows by `search`, `dns_name`, `prefix`, `vrf`, `site`,
+`GET /api/ips/` narrows by `search`, `dns_name`, `prefix`, `vrf` (`global`
+for the global table), `within` (a prefix id: the addresses on that prefix
+or on any prefix inside it; empty when you may not view it), `site`,
 `status`, `role`, `assigned_interface`, `assigned_vm`, `device`,
 `virtual_machine`, `monitoring_excluded` and `scope`, and by tag:
 `?tag=<slug>` and `?tag_id=<id>`, each repeatable, every tag named

@@ -10,7 +10,7 @@ live on it.
 | Page | What it's for |
 |---|---|
 | [Prefixes](../features/prefix-crud.md) | Create and manage subnets (CIDR blocks). |
-| **IP addresses** | Every address across the tenant in one list, filtered by status, role, or scope (public / private / CGNAT / special). |
+| **IP addresses** | Every address across the tenant in one list, filtered by status, role, or scope (public / private / CGNAT / special), or by a prefix picked in the rail's [Tree](../features/prefix-crud.md#browse-by-tree). |
 | [The prefix tree](../features/tree-and-sections.md) | See your subnets nested by containment, grouped per VRF. |
 | [Space map](../features/space-map.md) | A visual grid of what's used, reserved, and free in a subnet. |
 | [Gateway autospawn](../features/gateway-autospawn.md) | Automatically reserve the gateway IP when a subnet is created. |
