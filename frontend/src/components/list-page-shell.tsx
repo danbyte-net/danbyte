@@ -1,10 +1,16 @@
 import { usePageTitle } from "@/lib/page-title"
-import { type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { LinkProps } from "@tanstack/react-router"
 import { AlertTriangle, ChevronLeft, ChevronRight, Search } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Loading } from "@/components/loading"
@@ -56,6 +62,7 @@ export function ListPageShell({
   query,
   page,
   summary,
+  narrowRail,
   children,
 }: {
   title: string
@@ -94,6 +101,13 @@ export function ListPageShell({
   /** A row above the table once data is ready - e.g. count chips that apply
    * a facet (the Lifecycle page's windows). */
   summary?: ReactNode
+  /** The rail for a window too narrow to show it: a header button (below
+   * `lg`) opening it in a sheet from the left. `content` gets a `close`. */
+  narrowRail?: {
+    label: string
+    icon?: ReactNode
+    content: (close: () => void) => ReactNode
+  }
   /** The table (and any dialogs/bulk bars) - rendered once data is ready. */
   children: ReactNode
 }) {
@@ -101,6 +115,7 @@ export function ListPageShell({
   // Facets the user hid on this list (#285), for the rail to honour.
   const facetPrefs = useListFacetPrefs()
   const cap = listCap(page)
+  const [sheetOpen, setSheetOpen] = useState(false)
   // The rail and the table read the cap too (FilterRail, DataTable's
   // Download), so the whole page sits inside its provider.
   const shell = (
@@ -136,6 +151,27 @@ export function ListPageShell({
               </Badge>
             )}
             <div className="ml-auto flex grow flex-wrap items-center justify-end gap-2">
+              {narrowRail && (
+                <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+                  <SheetTrigger asChild>
+                    <Button size="sm" variant="outline" className="lg:hidden">
+                      {narrowRail.icon} {narrowRail.label}
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent
+                    side="left"
+                    aria-describedby={undefined}
+                    className="w-80 gap-0 overflow-hidden p-0"
+                  >
+                    <SheetTitle className="sr-only">
+                      {narrowRail.label}
+                    </SheetTitle>
+                    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                      {narrowRail.content(() => setSheetOpen(false))}
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              )}
               {savedViews && search && (
                 <SavedViews
                   objectType={savedViews.objectType}

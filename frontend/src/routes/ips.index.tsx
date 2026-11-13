@@ -20,6 +20,13 @@ import {
 import { IpBulkBar } from "@/components/ip-bulk-bar"
 import { reportExport, useObjectReport } from "@/components/object-report"
 import { useUrlTableFilters } from "@/components/table-filters"
+import {
+  RailModeSwitch,
+  TreeOrFilterRail,
+  WithinChip,
+  narrowTreeRail,
+  usePrefixTreeRail,
+} from "@/components/prefix-tree-rail"
 
 export const Route = createFileRoute("/ips/")({
   component: IpsPage,
@@ -53,18 +60,30 @@ function IpsPage() {
   const role = single("role")
   const scope = single("scope")
   const [selectedRows, setSelectedRows] = useState<IPAddress[]>([])
+  // The Filters / Tree rail: a tree selection (`?within=`) or, with the
+  // tree open, its VRF narrows the addresses on the server.
+  const treeRail = usePrefixTreeRail("ips")
+  const scopeParams = treeRail.scopeParams
 
   // Filter server-side (the address space can be very large): the
   // status/role/scope deep-links and the search box narrow before rows are
   // shipped. The facet rail then refines the returned set client-side.
   const query = useQuery({
-    queryKey: ["ips-list", q, status ?? "", role ?? "", scope ?? ""],
+    queryKey: [
+      "ips-list",
+      q,
+      status ?? "",
+      role ?? "",
+      scope ?? "",
+      scopeParams,
+    ],
     queryFn: () => {
       const p = new URLSearchParams({ page_size: "1000" })
       if (q) p.set("search", q)
       if (status) p.set("status", status)
       if (role) p.set("role", role)
       if (scope) p.set("scope", scope)
+      for (const [k, v] of Object.entries(scopeParams)) p.set(k, v)
       return api<Paginated<IPAddress>>(`/api/ips/?${p.toString()}`)
     },
   })
@@ -88,7 +107,11 @@ function IpsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useUrlTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows, {
+    railExtras: (
+      <RailModeSwitch mode={treeRail.mode} onChange={treeRail.setMode} />
+    ),
+  })
   // The PDF report of the rows the list shows now.
   const report = useObjectReport("ipaddress")
   const reportItem = reportExport(
@@ -113,7 +136,19 @@ function IpsPage() {
       <ListPageShell
         title="IP addresses"
         count={query.data ? filteredRows.length : undefined}
-        rail={rail}
+        rail={
+          <TreeOrFilterRail
+            rail={treeRail}
+            filterRail={rail}
+            activeFilters={activeCount}
+          />
+        }
+        narrowRail={narrowTreeRail({
+          rail: treeRail,
+          filterRail: rail,
+          activeFilters: activeCount,
+        })}
+        summary={treeRail.within ? <WithinChip rail={treeRail} /> : undefined}
         savedViews={{
           objectType: "ipaddress",
           filters: { snapshot, restore, activeCount },
@@ -140,7 +175,9 @@ function IpsPage() {
         query={query}
         page={query.data}
       >
-        {allRows.length === 0 ? (
+        {allRows.length === 0 &&
+        !treeRail.within &&
+        treeRail.mode !== "tree" ? (
           <EmptyState title="No IP addresses.">
             IPs appear here as they're created under a prefix, discovered, or
             imported. Open a prefix to see and manage the addresses inside it.

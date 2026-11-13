@@ -50,6 +50,13 @@ import {
 } from "@/components/monitoring/sla-status"
 import { fetchPrefixStatuses } from "@/components/monitoring/bulk-status"
 import { naturalCompare } from "@/lib/natural-sort"
+import {
+  RailModeSwitch,
+  TreeOrFilterRail,
+  WithinChip,
+  narrowTreeRail,
+  usePrefixTreeRail,
+} from "@/components/prefix-tree-rail"
 
 export const Route = createFileRoute("/prefixes/")({
   component: PrefixesPage,
@@ -117,11 +124,15 @@ function PrefixesPage() {
     [writeSearch]
   )
 
+  // The Filters / Tree rail; a tree selection (`?within=`) or, with the
+  // tree open, its VRF narrows the list on the server.
+  const treeRail = usePrefixTreeRail("prefixes")
+  const scopeParams = treeRail.scopeParams
   const query = useQuery({
-    queryKey: ["prefixes", q, freeParams],
+    queryKey: ["prefixes", q, freeParams, scopeParams],
     queryFn: () =>
       apiAll<Prefix>(
-        `/api/prefixes/?${new URLSearchParams({ search: q, ...freeParams }).toString()}`,
+        `/api/prefixes/?${new URLSearchParams({ search: q, ...freeParams, ...scopeParams }).toString()}`,
         { join: ["free", "free_totals"] }
       ) as Promise<FreePage>,
     placeholderData: keepPreviousData,
@@ -222,26 +233,31 @@ function PrefixesPage() {
       ? "A length, e.g. /29."
       : null
   const railExtras = (
-    <PrefixFreeRail
-      show={showFree}
-      onShow={(v) =>
-        writeSearch((prev) => ({
-          ...prev,
-          free: v ? "1" : undefined,
-          ...(v ? {} : { size: undefined, next: undefined, scope: undefined }),
-        }))
-      }
-      size={sizeText}
-      onSize={setSizeText}
-      sizeError={sizeError}
-      sizes={sizeSuggestions}
-      next={nextOnly}
-      onNext={(v) => setFlag("next", v)}
-      scope={scopeText}
-      onScope={setScopeText}
-      scopeError={scopeError(scopeText)}
-      scopes={scopeSuggestions}
-    />
+    <>
+      <RailModeSwitch mode={treeRail.mode} onChange={treeRail.setMode} />
+      <PrefixFreeRail
+        show={showFree}
+        onShow={(v) =>
+          writeSearch((prev) => ({
+            ...prev,
+            free: v ? "1" : undefined,
+            ...(v
+              ? {}
+              : { size: undefined, next: undefined, scope: undefined }),
+          }))
+        }
+        size={sizeText}
+        onSize={setSizeText}
+        sizeError={sizeError}
+        sizes={sizeSuggestions}
+        next={nextOnly}
+        onNext={(v) => setFlag("next", v)}
+        scope={scopeText}
+        onScope={setScopeText}
+        scopeError={scopeError(scopeText)}
+        scopes={scopeSuggestions}
+      />
+    </>
   )
   const {
     rail,
@@ -419,8 +435,21 @@ function PrefixesPage() {
       <ListPageShell
         title="Prefixes"
         count={query.data ? shownCount : undefined}
-        /* Filter rail - derived from the columns' facet metadata. */
-        rail={rail}
+        /* Filter rail - derived from the columns' facet metadata - or the
+           prefix tree. */
+        rail={
+          <TreeOrFilterRail
+            rail={treeRail}
+            filterRail={rail}
+            activeFilters={activeCount}
+          />
+        }
+        narrowRail={narrowTreeRail({
+          rail: treeRail,
+          filterRail: rail,
+          activeFilters: activeCount,
+        })}
+        summary={treeRail.within ? <WithinChip rail={treeRail} /> : undefined}
         savedViews={{
           objectType: "prefix",
           filters: {
