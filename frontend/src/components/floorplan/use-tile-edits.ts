@@ -29,7 +29,7 @@ import {
   placementRects,
 } from "./placement"
 import { moveSelection, rotateSelection } from "./selection"
-import { shapesOf } from "./shapes"
+import { shapesOf, tileAnglePatch } from "./shapes"
 import type { PlanShape, Pt } from "./shapes"
 import { structureLists, structureOf } from "./structure"
 import type { RaisedRow, StructShape, TrayRow, WallRow } from "./structure"
@@ -207,10 +207,8 @@ export function useTileEdits({
   const changeTileGuarded = useCallback(
     (tileId: string, patch: Partial<FloorPlanTile>) => {
       const touchesGeometry =
-        (!free && "x" in patch) ||
-        "y" in patch ||
-        "width" in patch ||
-        "height" in patch
+        !free &&
+        ("x" in patch || "y" in patch || "width" in patch || "height" in patch)
       if (touchesGeometry) {
         const tile = tiles.find((t) => t.id === tileId)
         if (tile && !tileIsZone(tile)) {
@@ -438,6 +436,17 @@ export function useTileEdits({
   const setTileFacing = useCallback(
     (tile: EditTile, orientation: EditTile["orientation"]) => {
       if (!plan || orientation === tile.orientation) return
+      if (free) {
+        // Any whole degree, turned about the centre as the handle turns it;
+        // a footprint that swaps stays on the plan.
+        const p = tileAnglePatch(tile, orientation)
+        changeTile(tile.id, {
+          ...p,
+          x: Math.max(0, Math.min(p.x, plan.grid_width - p.width)),
+          y: Math.max(0, Math.min(p.y, plan.grid_height - p.height)),
+        })
+        return
+      }
       const quarter = (orientation - tile.orientation + 360) % 180 !== 0
       const width = quarter ? tile.height : tile.width
       const height = quarter ? tile.width : tile.height
@@ -449,7 +458,6 @@ export function useTileEdits({
       }
       if (
         quarter &&
-        !free &&
         !tileIsZone(tile) &&
         findCollision(tiles, rect, tile.id)
       ) {

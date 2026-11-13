@@ -658,6 +658,8 @@ export interface HoverTarget {
   y: number
   /** Pinned by a click - survives pointer-leave, dismissed by Esc/outside. */
   pinned: boolean
+  /** Hangs under the anchor (a tile wearing handles) rather than over it. */
+  below?: boolean
 }
 
 /**
@@ -770,7 +772,7 @@ export function TilePopover({
         />
       </PopoverAnchor>
       <PopoverContent
-        side="top"
+        side={target?.below ? "bottom" : "top"}
         align="start"
         sideOffset={12}
         // Pinned near the canvas edge it stays wholly on screen.
@@ -880,7 +882,7 @@ export function useTilePopover(delayMs = 250) {
   /** Canvas hover in/out. A pinned popover ignores hover entirely. */
   const onHover = (
     tile: FloorPlanTile | null,
-    at: { x: number; y: number } | null
+    at: { x: number; y: number; below?: boolean } | null
   ) => {
     lastHover.current = tile && at ? { tile, ...at, pinned: false } : null
     if (pinned.current) return
@@ -891,7 +893,7 @@ export function useTilePopover(delayMs = 250) {
     }
     timer.current = window.setTimeout(() => {
       if (pinned.current) return // pinned while we waited
-      setTarget({ tile, x: at.x, y: at.y, pinned: false })
+      setTarget({ tile, ...at, pinned: false })
     }, delayMs)
   }
 
@@ -916,7 +918,7 @@ export function useTilePopover(delayMs = 250) {
     if (!point) return false
     clearTimer()
     pinned.current = true
-    setTarget({ tile, x: point.x, y: point.y, pinned: true })
+    setTarget({ ...point, tile, pinned: true })
     return true
   }
 

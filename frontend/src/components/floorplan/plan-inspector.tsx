@@ -157,6 +157,7 @@ export function PlanInspector({
           onChange={(patch) => changeTile(selected.id, patch)}
           onRotate={() => rotateTile(selected)}
           onSetFacing={(o) => setTileFacing(selected, o)}
+          free={plan.layout_mode === "free"}
           onFit={(size) => fitTile(selected, size)}
           onDelete={() => deleteTile(selected.id)}
           onOpenContents={

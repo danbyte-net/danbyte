@@ -298,7 +298,7 @@ export interface FloorCanvasProps {
    * (never per pointermove), so it can't regress canvas panning. */
   onHoverTile?: (
     tile: FloorPlanTile | null,
-    at: { x: number; y: number } | null
+    at: { x: number; y: number; below?: boolean } | null
   ) => void
   /** The element html-to-image snapshots for PNG export. */
   exportRef?: React.RefObject<HTMLDivElement | null>
@@ -2418,6 +2418,17 @@ export function FloorCanvas({
     // mid-drag is noise.
     if (drag.current || drawing) return
     hoverStore.set(tile.id)
+    // A free tile being edited wears handles (its turn handle above it):
+    // the popover hangs under the tile, clear of them.
+    if (free && editable && mode === "layout") {
+      const b = boxBounds(tileBox(tile))
+      onHoverTile?.(tile, {
+        x: t.x + ((b.minX + b.maxX) / 2) * CELL * t.k,
+        y: t.y + b.maxY * CELL * t.k + HANDLE_PX,
+        below: true,
+      })
+      return
+    }
     onHoverTile?.(tile, { x: e.clientX - rect.left, y: e.clientY - rect.top })
   }
   const leaveHover = () => {

@@ -1278,7 +1278,7 @@ At its foot, **Free placement** switches the plan between the grid and
 | Place a tile | Click a palette entry to arm it, then click a cell (default size) or drag a rectangle (walls, aisles) |
 | Move | Drag a tile - snaps to cells |
 | Resize | Drag the corner handle of the selected tile |
-| Rotate | The rotate button - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest. A thin bar just inside the tile marks the edge its front faces |
+| Rotate | The rotate button or ++r++ on the selected tile (or tiles) - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest. A thin bar just inside the tile marks the edge its front faces. A [free plan](#free-placement) also turns by the handle or by degrees |
 | Label / color / status | The inspector panel (label overrides the linked object's name; status renders planned/reserved dashed, decommissioning faded) |
 | Link to an object | Inspector → Link: rack, cabinet and device use the advanced pickers (cabinets of the plan's site only), power panel/feed, cooling source and nested plans a searchable dropdown. When a cabinet's outer width × depth does not match the tile, **Fit to cabinet** resizes the tile to it, turned with the tile's facing |
 | Delete | Select + `Delete`, or the inspector button |
@@ -1294,7 +1294,7 @@ dashboard's floor-plan widget. A second finger landing stops what the first
 one started: a tile drag ends where the tile is, and a half-drawn paint or
 selection sweep is dropped.
 
-**Tiles never stack.** Placing, dragging, resizing, or rotating a tile onto
+**Tiles never stack** on a grid plan. Placing, dragging, resizing, or rotating a tile onto
 occupied cells is blocked - the tile stays where it was. Background **zones**
 are the exception: they may cover anything, and anything may sit on them.
 
@@ -2128,6 +2128,7 @@ floor**, and with the trays tool a tray the same as a wall, less the door.
 | ++e++ | View / Edit |
 | ++p++ | Place… - in View too, for those who may edit: it switches to Edit and opens the picker |
 | ++v++ ++r++ ++shift+r++ ++o++ ++t++ ++g++ ++w++ ++c++ ++s++ | The tools |
+| ++r++ (a tile selected) | Turn the selected tile, or tiles, 90° - with none selected it is the Room tool |
 | Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
 | ++delete++ | Delete the selected area or label - or wall, door, tray or raised floor |
 | ++d++ | The Door tool |
@@ -2181,8 +2182,13 @@ the foot of the tool rail switches the plan to free at once. On a free plan:
   stops wherever you let go - positions and sizes are kept to a thousandth of
   a cell;
 - a selected tile shows the same eight resize handles and turn handle as an
-  area, and turns to any whole degree;
-- tiles may overlap;
+  area, and turns to any whole degree: the round handle above it turns it
+  freely, settling on a quarter turn when near one (++shift++ for 15° steps,
+  ++alt++ for no settling, as on an area); **Rotation** in the inspector
+  takes degrees, and ++r++ or the rotate button turns it 90°. Each turn is
+  one undo step and saves like a move;
+- its popover opens under it, so the handles above stay free to grab;
+- tiles may overlap - moved, resized or turned onto another;
 - arrows nudge a cell, ++alt++ + arrow a tenth of one.
 
 A turned tile is stored at its nearest quarter turn (a quarter turn swaps
