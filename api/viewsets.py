@@ -458,6 +458,24 @@ def _apply_lifecycle_filter(qs, value: str):
     return qs
 
 
+def _within_prefix(request, pk):
+    """The prefix ``?within=`` names, when the reader may view it in the
+    active tenant and its CIDR parses; else None."""
+    from auth_api import rbac
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return None
+    try:
+        qs = Prefix.objects.filter(tenant=tenant, pk=pk)
+        holder = rbac.restrict_queryset(qs, request.user, tenant, "prefix", "view").first()
+    except (ValueError, DjangoValidationError):
+        return None
+    if holder is None or holder.network is None:
+        return None
+    return holder
+
+
 def _apply_custom_field_scope(request, qs, model_slug: str):
     field_id = request.query_params.get("custom_field") or request.query_params.get("cf")
     if not field_id:
@@ -1159,7 +1177,7 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
     serializer_class = PrefixSerializer
     rbac_action_map = {
         "bulk_delete": "delete", **object_report.RBAC_ACTIONS,
-        **PrefixSpaceMixin.space_rbac_actions,
+        **PrefixSpaceMixin.space_rbac_actions, "tree": "view",
     }
     # Clone carries the routing/classification context; the CIDR is the unique
     # identifier and is left blank for the user to fill.
@@ -1175,6 +1193,22 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
 
         reparent_ips_out_of(instance)
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="tree")
+    def tree(self, request):
+        """One level of the prefix tree, a search in it, or the path to one
+        prefix (api.prefix_tree). Built over the prefixes the reader may
+        view: the tenant/site/RBAC-scoped queryset without the list's
+        per-row annotations."""
+        from . import prefix_tree
+
+        qs = TenantScopedViewSet.get_queryset(self)
+        p = request.query_params
+        if p.get("reveal"):
+            return Response(prefix_tree.reveal(qs, p))
+        if p.get("q") is not None and p.get("q").strip():
+            return Response(prefix_tree.search(qs, p))
+        return Response(prefix_tree.children(qs, p))
 
     @action(detail=True, methods=["get"], url_path="delete-impact")
     def delete_impact(self, request, pk=None):
@@ -1401,6 +1435,9 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
             # live there (#152).
             if key == "site" and self.request.query_params.get("include_shared"):
                 qs = qs.filter(Q(site_id=v) | Q(site__isnull=True))
+            elif key == "vrf" and v == "global":
+                # The global table (no VRF) - the prefix tree's root.
+                qs = qs.filter(vrf__isnull=True)
             else:
                 qs = qs.filter(**{field: v})
         qs = _tag_params_filter(qs, self.request.query_params)
@@ -1424,6 +1461,23 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
                     output_field=BooleanField(),
                 )
             ).filter(_inside=True)
+        # `within=<prefix id>`: that prefix and every prefix inside it, in its
+        # VRF - the prefix tree's selection. The prefix must be one the
+        # reader may view; any other id answers an empty list.
+        within = self.request.query_params.get("within")
+        if within:
+            holder = _within_prefix(self.request, within)
+            if holder is None:
+                return qs.none()
+            from django.db.models import BooleanField
+            from django.db.models.expressions import RawSQL
+
+            qs = qs.filter(
+                Q(vrf__isnull=True) if holder.vrf_id is None else Q(vrf_id=holder.vrf_id)
+            ).annotate(
+                _within=RawSQL("cidr::inet <<= %s::inet", (str(holder.network),),
+                               output_field=BooleanField())
+            ).filter(_within=True)
         qs = _apply_custom_field_scope(self.request, qs, "prefix")
         # Numeric address order, not the lexicographic CharField sort (which
         # puts 10.0.0.10 before 10.0.0.2). Postgres `inet` sorts by address
@@ -1921,7 +1975,29 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         if prefix := p.get("prefix"):
             qs = qs.filter(prefix_id=prefix)
         if vrf := p.get("vrf"):
-            qs = qs.filter(prefix__vrf_id=vrf)
+            if vrf == "global":
+                qs = qs.filter(prefix__vrf__isnull=True)
+            else:
+                qs = qs.filter(prefix__vrf_id=vrf)
+        if within := p.get("within"):
+            # The prefix tree's selection: addresses on that prefix or on any
+            # prefix inside it (hidden ones too - the addresses are still
+            # filtered by their own visibility above).
+            holder = _within_prefix(self.request, within)
+            if holder is None:
+                return qs.none()
+            from django.db.models import BooleanField
+            from django.db.models.expressions import RawSQL
+
+            inside = Prefix.objects.filter(
+                tenant_id=holder.tenant_id,
+            ).filter(
+                Q(vrf__isnull=True) if holder.vrf_id is None else Q(vrf_id=holder.vrf_id)
+            ).annotate(
+                _within=RawSQL("cidr::inet <<= %s::inet", (str(holder.network),),
+                               output_field=BooleanField())
+            ).filter(_within=True).values("pk")
+            qs = qs.filter(prefix_id__in=inside)
         if site := p.get("site"):
             # With include_shared the site-less shared space rides along -
             # the transit networks an IP picker must still offer (#152).
