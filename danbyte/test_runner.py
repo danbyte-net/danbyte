@@ -12,7 +12,7 @@ Parallel runs (--parallel N): each worker process gets its own cache key
 prefix. The prefix carries the runner's pid, and forked workers share it, so
 without this one worker's cached values leaked into another's tests; and
 cache.clear() there removes only that worker's keys, not the Redis database.
-A module's tests run in one worker, longest modules first. Workers may start
+Each worker has its own MEDIA_ROOT and temporary directory. A module's tests run in one worker, longest modules first. Workers may start
 processes of their own, as the PDF renders do, and a failure whose traceback
 cannot be pickled (no tblib) reaches the runner as text instead of ending the
 run. With --keepdb each worker's copy is still made fresh from the kept test
@@ -38,6 +38,7 @@ import json
 import multiprocessing
 import os
 import pickle
+import shutil
 import statistics
 import sys
 import time
@@ -76,6 +77,20 @@ def _init_worker(counter, *args, **kwargs):
         # A cache the runner already opened keeps its prefix on the instance.
         caches[alias].key_prefix = conf["KEY_PREFIX"]
     _scope_cache_clear()
+    # Uploads and temporary files of their own: workers share a filesystem,
+    # and a test that writes a fixed name under MEDIA_ROOT, or empties it,
+    # would meet another worker's files.
+    import tempfile
+
+    from django.test.utils import override_settings
+
+    base = tempfile.mkdtemp(prefix=f"danbyte-test-w{worker}-")
+    os.makedirs(os.path.join(base, "tmp"))
+    tempfile.tempdir = os.path.join(base, "tmp")
+    override_settings(MEDIA_ROOT=os.path.join(base, "media")).enable()
+    from multiprocessing.util import Finalize
+
+    Finalize(None, shutil.rmtree, args=(base, True), exitpriority=1)
 
 
 def _scope_cache_clear():
