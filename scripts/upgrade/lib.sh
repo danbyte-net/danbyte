@@ -26,6 +26,9 @@ UNITS_DEV="danbyte-backend danbyte-frontend"
 UNITS_NEW_OK="danbyte-workers danbyte-fastlane danbyte-docs danbyte-web danbyte-ws danbyte-frontend-prod"
 
 SYSTEMD_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+# Units an admin switched off in danbyte-admin, one per line: never enabled
+# as new, even when their link went missing and the release links them again.
+UNITS_OFF="${XDG_CONFIG_HOME:-$HOME/.config}/danbyte/units-off"
 CHILD=""
 STEP=""
 STEP_OPEN=0
@@ -352,6 +355,7 @@ wanted() {  # <service|timer> [group units...]
 new_units() {  # <service|timer>
   [ -f "$STATE_DIR/new-links" ] || return 0
   while read -r _l; do
+    grep -qxF "$_l" "$UNITS_OFF" 2>/dev/null && continue
     case "$_l" in
       *.timer) [ "$1" = timer ] && printf '%s\n' "$_l" ;;
       *.service)

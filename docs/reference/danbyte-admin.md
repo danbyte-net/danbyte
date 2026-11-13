@@ -63,11 +63,20 @@ to be opened. Django is asked once at start and on `R`.
 
 Move with the arrows or `j`/`k`, `tab` between services and timers.
 `enter` opens the logs filtered to the selected unit; `r` restarts, `x`
-stops, `s` starts, `e` enables or disables. On a timer, `s` runs its job
+stops, `s` starts, `e` switches the unit on or off. On a timer, `s` runs its job
 now. `a` restarts every unit that is running (never starting a stopped
 one) and `B` starts a [rebuild](#rebuild) on the maintenance tab, where its
 steps stream. A key that needs shift is drawn with the shift arrow on its
 cap (`⇧B`).
+
+**On** means enabled and started; **off** means stopped and not started at
+boot. Danbyte's unit files are links into the app's `services/` folder, and
+`systemctl --user disable` deletes such a link, so the console puts the link
+back after the disable and notes the unit in
+`~/.config/danbyte/units-off`. An upgrade starts only what ran before it and
+never turns on a unit listed there, even one it has to link again. Switching
+a unit on removes it from the list and links it first if an older console
+deleted its link.
 
 **2 logs** is the journal with filters: `u` cycles the unit, `p` the
 priority floor, `/` takes a substring, `space` pauses, `g`/`G` jump to the
@@ -109,8 +118,9 @@ so a screen with no colour on it is a screen with nothing wrong.
 Confirmations follow one rule: the actions that take the site down or
 replace data ask you to **type the name** of the thing (stopping the web
 process, an upgrade, a restore, installing a certificate, a self-signed
-regeneration, clearing someone's MFA); the rest ask `y/n` (a restart, a
-disable, running a timer now, prune, unlock, nginx reload); the idempotent
+regeneration, clearing someone's MFA, switching the web process off); the
+rest ask `y/n` (a restart, switching a unit off, running a timer now, prune,
+unlock, nginx reload); the idempotent
 ones just run. While a prompt is up every other key is ignored, so a stray
 keypress cannot restart anything.
 

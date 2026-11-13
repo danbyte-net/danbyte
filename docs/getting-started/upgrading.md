@@ -379,7 +379,7 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 | static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static and frontend build files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
 | verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |
 | start | web, websockets, frontend, docs, workers - while the site still answers 503; `/api/health/` must say `ok` with the new version, the admin page must render, and nothing may keep restarting | 503 |
-| resume | the site opens; the timers that ran before start again (a timer you turned off stays off); a release's new timers are turned on | up |
+| resume | the site opens; the timers that ran before start again (a unit or timer you turned off stays off, including one switched off in `danbyte-admin`); a release's new timers are turned on | up |
 | done | the search index rebuilt in the background, housekeeping, the after-upgrade steps listed; the work folder, the folder an earlier failed run kept for its log, the recovery units and their lock removed, so nothing is left beside the app | up |
 
 **If a step before *resume* fails**, everything goes back as it was and

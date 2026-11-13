@@ -272,6 +272,78 @@ def systemctl(ctx: Ctx, args: list[str], capture: bool = True, *,
     return sh(argv, capture=capture, timeout=timeout)
 
 
+def _as_owner(ctx: Ctx, argv: list[str]) -> list[str]:
+    """argv run as the account that owns the units."""
+    if ctx.as_service:
+        return _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+    return argv
+
+
+def _owner_config(ctx: Ctx) -> Path:
+    if ctx.as_service:
+        return Path(ctx.svc_home) / ".config"
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+
+def units_off_file(ctx: Ctx) -> Path:
+    """The units an admin switched off; an upgrade never enables them
+    (scripts/upgrade/lib.sh reads the same file)."""
+    return _owner_config(ctx) / "danbyte" / "units-off"
+
+
+def _record_off(ctx: Ctx, unit: str, off: bool) -> Run:
+    path = units_off_file(ctx)
+    cur = sh(_as_owner(ctx, ["cat", str(path)]))
+    names = [n for n in (cur.out.splitlines() if cur.ok else []) if n.strip() and n != unit]
+    if off:
+        names.append(unit)
+    elif not cur.ok:
+        return Run(0, "", "")
+    mk = sh(_as_owner(ctx, ["mkdir", "-p", str(path.parent)]))
+    if not mk.ok:
+        return mk
+    return sh(_as_owner(ctx, ["tee", str(path)]), input="".join(f"{n}\n" for n in names))
+
+
+def unit_switch(ctx: Ctx, unit: str, on: bool) -> Run:
+    """Switch a unit on (enabled and started) or off (disabled and stopped).
+
+    Danbyte's units are linked into the unit directory, and `systemctl
+    disable` deletes a linked unit's link along with its wants link - the
+    unit is then gone, and the next upgrade links it as new and enables it.
+    So "off" puts the link back, pointing where it pointed, and records the
+    choice; "on" links the app's copy first when an older console took it.
+    """
+    link = _owner_config(ctx) / "systemd" / "user" / unit
+    if on:
+        if not sh(_as_owner(ctx, ["test", "-L", str(link)])).ok \
+                and not sh(_as_owner(ctx, ["test", "-e", str(link)])).ok:
+            src = ctx.app / "services" / unit
+            if sh(_as_owner(ctx, ["test", "-f", str(src)])).ok:
+                ln = sh(_as_owner(ctx, ["ln", "-s", str(src), str(link)]))
+                if not ln.ok:
+                    return ln
+                systemctl(ctx, ["daemon-reload"], timeout=60)
+        r = systemctl(ctx, ["enable", "--now", unit], timeout=120)
+        if r.ok:
+            _record_off(ctx, unit, False)
+        return r
+    rl = sh(_as_owner(ctx, ["readlink", str(link)]))
+    target = rl.out.strip() if rl.ok else ""
+    r = systemctl(ctx, ["disable", "--now", unit], timeout=120)
+    if target and not sh(_as_owner(ctx, ["test", "-L", str(link)])).ok:
+        ln = sh(_as_owner(ctx, ["ln", "-s", target, str(link)]))
+        if not ln.ok:
+            return Run(ln.code, ln.out, f"{unit} lost its link: {(ln.err or ln.out).strip()}")
+        systemctl(ctx, ["daemon-reload"], timeout=60)
+    if r.ok:
+        rec = _record_off(ctx, unit, True)
+        if not rec.ok:
+            why = (rec.err or rec.out).strip()
+            return Run(rec.code, rec.out, f"could not record the choice: {why}")
+    return r
+
+
 def journalctl(ctx: Ctx, args: list[str], capture: bool = False) -> Run:
     argv = ["journalctl", "--user", *args]
     if ctx.as_service:
@@ -2958,10 +3030,10 @@ class Console:
         ] + [(f"  {cap(k)}", v) for k, v in self.screen.keys] + [
             ("", ""),
             ("confirmations", ""),
-            ("  y/n", "restart, disable, run a timer now, prune, unlock, unstick, nginx reload"),
-            ("  type the name", "stop web/backend, upgrade, restore, install a certificate, "
-                                "self-signed, clear MFA"),
-            ("  none", "start, backup now, reindex, collectstatic, fetch"),
+            ("  y/n", "restart, switch off, run a timer now, prune, unlock, unstick, nginx reload"),
+            ("  type the name", "stop or switch off web/backend, upgrade, restore, "
+                                "install a certificate, self-signed, clear MFA"),
+            ("  none", "start, switch on, backup now, reindex, collectstatic, fetch"),
         ]
         for k, v in rows:
             if y >= self.lines - 2:
@@ -3239,7 +3311,7 @@ class Home(Screen):
 
     name = "home"
     keys = [("enter", "logs"), ("r", "restart"), ("a", "restart all"), ("B", "rebuild"),
-            ("x", "stop"), ("s", "start"), ("e", "enable"), ("tab", "timers")]
+            ("x", "stop"), ("s", "start"), ("e", "on/off"), ("tab", "timers")]
     RIGHT_W = 40
 
     def __init__(self, con):
@@ -3250,7 +3322,7 @@ class Home(Screen):
 
     def footer(self):
         if self.pane_idx == 1:
-            return [("enter", "logs"), ("s", "run now"), ("x", "stop"), ("e", "enable"),
+            return [("enter", "logs"), ("s", "run now"), ("x", "stop"), ("e", "on/off"),
                     ("tab", "services")]
         return self.keys
 
@@ -3554,15 +3626,19 @@ class Home(Screen):
                 con.say(f"restarted {len(units)} units", con.A[GOOD])
         con.confirm(f"restart all {len(units)} running units?", lambda: con.run("restart all", go))
 
-    def _systemctl_multi(self, args: list[str]) -> None:
+    def _switch(self, unit: str, on: bool) -> None:
+        """On: enabled and started. Off: disabled and stopped, still linked."""
         con = self.con
+        word = "on" if on else "off"
 
         def go():
-            r = systemctl(con.ctx, args, timeout=60)
-            con.say(f"{' '.join(args)}: {'ok' if r.ok else (r.err or r.out).strip()[:60]}",
-                    con.A[GOOD] if r.ok else con.A[BAD])
+            r = unit_switch(con.ctx, unit, on)
+            if r.ok:
+                con.say(f"{_short(unit)} {word}", con.A[GOOD])
+            else:
+                con.say(f"{_short(unit)} {word}: {(r.err or r.out).strip()[:60]}", con.A[BAD])
             con.facts.kick("units")
-        con.run(args[0], go)
+        con.run(f"{_short(unit)} {word}", go)
 
     def key(self, ch) -> bool:
         con, c = self.con, self.con.curses
@@ -3609,10 +3685,10 @@ class Home(Screen):
             elif ch == "e":
                 tm = (con.facts.get("units") or {}).get("timers", {}).get(unit, {})
                 if tm.get("file") == "enabled":
-                    con.confirm(f"disable {_short(unit)}.timer?",
-                                lambda: self._systemctl_multi(["disable", "--now", f"{unit}.timer"]))
+                    con.confirm(f"switch {_short(unit)}.timer off?",
+                                lambda: self._switch(f"{unit}.timer", False))
                 else:
-                    self._systemctl_multi(["enable", "--now", f"{unit}.timer"])
+                    self._switch(f"{unit}.timer", True)
             else:
                 return False
             return True
@@ -3633,10 +3709,18 @@ class Home(Screen):
                 con.say("compose services have no enable/disable", con.A[WARN])
                 return True
             st = (con.facts.get("units") or {}).get("services", {}).get(unit, {})
+            svc = unit if unit.endswith(".service") else f"{unit}.service"
             if st.get("file") == "enabled":
-                con.confirm(f"disable {unit}?", lambda: self._systemctl("disable", unit))
+                if unit in {"danbyte-web", "danbyte-backend"}:
+                    con.typed(f"switch {unit} off (stop + no start at boot)", _short(unit),
+                              lambda: self._switch(svc, False))
+                else:
+                    con.confirm(f"switch {unit} off?", lambda: self._switch(svc, False))
+            elif unit in DEV_ONLY_UNITS and ctx.as_service:
+                con.say(f"{unit} is a development unit - not on a service-account host",
+                        con.A[WARN])
             else:
-                self._systemctl("enable", unit)
+                self._switch(svc, True)
         else:
             return False
         return True

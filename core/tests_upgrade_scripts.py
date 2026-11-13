@@ -1113,6 +1113,66 @@ class BundleStageTests(StageTestCase):
         self.assertRolledBack(h, restored_db=False)
 
 
+class AdminUnitSwitchTests(StageTestCase):
+    """danbyte-admin's "e" (on/off) on linked units, and what an upgrade
+    makes of the choice."""
+
+    def switch(self, h: Host, unit: str, on: bool):
+        from core.tests_admin_upgrade import ADMIN
+
+        env = {k: v for k, v in os.environ.items() if k != "XDG_CONFIG_HOME"}
+        with mock.patch.dict(os.environ, {**env, **h.env}, clear=True):
+            return ADMIN.unit_switch(ADMIN.Ctx(app=h.app, shape="systemd"), unit, on)
+
+    def units_off(self, h: Host) -> list[str]:
+        p = h.home / ".config" / "danbyte" / "units-off"
+        return p.read_text().split() if p.exists() else []
+
+    def test_off_keeps_the_link_and_on_brings_it_back(self):
+        h = self.host()
+        r = self.switch(h, "danbyte-dispatch.timer", False)
+        self.assertTrue(r.ok, r.err)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("disabled", "inactive"))
+        self.assertLinked(h)
+        self.assertEqual(self.units_off(h), ["danbyte-dispatch.timer"])
+        r = self.switch(h, "danbyte-dispatch.timer", True)
+        self.assertTrue(r.ok, r.err)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("enabled", "active"))
+        self.assertEqual(self.units_off(h), [])
+
+    def test_on_links_a_unit_an_older_console_unlinked(self):
+        h = self.host()
+        (h.units / "danbyte-docs.service").unlink()
+        h.set_state("danbyte-docs.service", enabled=False, active=False)
+        r = self.switch(h, "danbyte-docs.service", True)
+        self.assertTrue(r.ok, r.err)
+        self.assertEqual(h.state("danbyte-docs.service"), ("enabled", "active"))
+        self.assertLinked(h)
+
+    def test_a_unit_switched_off_stays_off_through_an_upgrade(self):
+        h = self.host()
+        for unit in ("danbyte-dispatch.timer", "danbyte-docs.service"):
+            self.assertTrue(self.switch(h, unit, False).ok)
+        r = h.upgrade()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for unit in ("danbyte-dispatch.timer", "danbyte-docs.service"):
+            self.assertEqual(h.state(unit), ("disabled", "inactive"), unit)
+            self.assertFalse(h.called(rf"^systemctl --user (enable|start) .*{re.escape(unit)}"),
+                             unit)
+        self.assertLinked(h)
+
+    def test_an_upgrade_does_not_enable_a_switched_off_unit_it_links_again(self):
+        h = self.host()
+        self.assertTrue(self.switch(h, "danbyte-dispatch.timer", False).ok)
+        (h.units / "danbyte-dispatch.timer").unlink()  # lost by hand, or by an older console
+        r = h.upgrade()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("disabled", "inactive"))
+        self.assertLinked(h)
+        # A release's new timer is still switched on.
+        self.assertEqual(h.state("danbyte-newtimer.timer"), ("enabled", "active"))
+
+
 class GitStageTests(StageTestCase):
     kind = "git"
 
