@@ -308,3 +308,88 @@ class HardwareRbacTests(_Hardware):
             body=f"<img src='{MEDIA_IMAGES_URL}gone.png'><img src='https://example.com/x.png'>",
         )
         self.assertTrue(rep.render_report_pdf(b"", html=html).startswith(b"%PDF"))
+
+
+class SpecSheetInterfaceRbacTests(_Report):
+    """The datasheets read interfaces through the interface list as the
+    reader, as the device report's Interfaces section does: its permission,
+    row constraints and site rules. They used to list every interface to
+    anyone with view on the device."""
+
+    def sheet(self, url):
+        from . import spec_sheets
+
+        seen = {}
+        real = spec_sheets.render_spec_html
+
+        def keep(kind, obj, request=None):
+            seen["html"] = real(kind, obj, request)
+            return seen["html"]
+
+        with mock.patch.object(spec_sheets, "render_spec_html", side_effect=keep):
+            r = self.client.get(url)
+        self.assertEqual(r.status_code, 200, r.content[:300])
+        return seen["html"]
+
+    def device_sheet(self, variant=""):
+        query = f"?variant={variant}" if variant else ""
+        return self.sheet(f"/api/devices/{self.dev_a.pk}/spec-sheet/{query}")
+
+    def grant(self, user, types, *, constraints=None, sites=()):
+        from auth_api.models import ObjectPermission
+
+        p = ObjectPermission.objects.create(
+            name=f"{user.username}-{'-'.join(types)}",
+            object_types=list(types),
+            actions=["view"],
+            constraints=constraints,
+        )
+        p.users.add(user)
+        p.tenants.add(self.tenant)
+        if sites:
+            p.sites.set(sites)
+
+    def test_without_interface_view_the_table_is_left_out(self):
+        self.login(self.member("d", (["device"], ["view"])))
+        for variant in ("", "full"):
+            with self.subTest(variant=variant):
+                html = self.device_sheet(variant)
+                self.assertIn("You may not view interfaces.", html)
+                self.assertNotIn("eth-uplink", html)
+                self.assertNotIn("eth-spare", html)
+                # The stat box does not count what the reader may not see.
+                self.assertRegex(html, r'Interfaces</div>\s*<div class="value">—<')
+
+    def test_with_interface_view_every_interface(self):
+        self.login(self.member("i", (["device", "interface"], ["view"])))
+        html = self.device_sheet()
+        self.assertIn("eth-uplink", html)
+        self.assertIn("eth-spare", html)
+        self.assertNotIn("You may not view interfaces.", html)
+
+    def test_row_constraints_apply(self):
+        user = self.member("c", (["device"], ["view"]))
+        self.grant(user, ["interface"], constraints={"name": "eth-uplink"})
+        self.login(user)
+        html = self.device_sheet()
+        self.assertIn("eth-uplink", html)
+        self.assertNotIn("eth-spare", html)
+
+    def test_site_scoped_interfaces(self):
+        """Interface view scoped to LON: sw-a (AMS) lists none of its own."""
+        user = self.member("s", (["device"], ["view"]))
+        self.grant(user, ["interface"], sites=[self.lon])
+        self.login(user)
+        html = self.device_sheet()
+        self.assertNotIn("eth-uplink", html)
+        self.assertIn("No interfaces.", html)
+
+    def test_the_stack_sheet_follows_the_same_rule(self):
+        from .models import Device, VirtualChassis
+
+        vc = VirtualChassis.objects.create(tenant=self.tenant, name="stack-1", master=self.dev_a)
+        Device.objects.filter(pk=self.dev_a.pk).update(virtual_chassis=vc, vc_position=1)
+        self.login(self.member("v", (["virtualchassis", "device"], ["view"])))
+        html = self.sheet(f"/api/virtual-chassis/{vc.pk}/spec-sheet/")
+        self.assertIn("You may not view interfaces.", html)
+        self.assertNotIn("eth-uplink", html)

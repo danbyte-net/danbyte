@@ -29,6 +29,7 @@
     {% endfor %}
     </tbody>
   </table>
+  {% elif mi.hidden %}<p class="empty">You may not view interfaces.</p>
   {% else %}<p class="empty">No interfaces.</p>{% endif %}
 </section>
 {% endfor %}

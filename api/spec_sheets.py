@@ -180,15 +180,32 @@ def _fmt_speed(value) -> str:
     return str(value or "")
 
 
-def interface_rows(device) -> tuple[list[dict], list]:
+def _through_list(request, path: str, device, qs):
+    """``qs`` (``device``'s rows of the list at ``path``) as ``request``'s
+    reader would read that list - its permission, row constraints and site
+    rules - or None when they may not view it. Without a request, ``qs``
+    as it is (an internal caller)."""
+    if request is None:
+        return qs
+    from .object_report import list_view
+
+    view = list_view(request, path, {"device": str(device.pk)})
+    if view is None:
+        return None
+    return view.filter_queryset(view.get_queryset()).filter(device=device)
+
+
+def interface_rows(device, request=None) -> tuple[list[dict] | None, list]:
     """The interface table rows for ``device`` (natural order) and the
-    interfaces themselves."""
+    interfaces themselves, read through the interface list as ``request``'s
+    reader (``_through_list``); ``(None, [])`` when they may not view it."""
     from .models import Interface
 
+    qs = _through_list(request, "/api/interfaces/", device, Interface.objects.filter(device=device))
+    if qs is None:
+        return None, []
     ifaces = list(
-        Interface.objects.filter(device=device)
-        .select_related("vlan", "parent")
-        .prefetch_related("tagged_vlans", "ip_addresses")
+        qs.select_related("vlan", "parent").prefetch_related("tagged_vlans", "ip_addresses")
     )
     ifaces.sort(key=lambda i: natural_key(i.name))
     vendors = _vendor_map({i.mac_address for i in ifaces if i.mac_address}, device.tenant)
@@ -292,19 +309,8 @@ def device_parts(device, request=None):
     through their lists as ``request``'s reader (their RBAC and site rules),
     each None when the reader may not view that list. Without a request,
     every part (an internal caller)."""
-    items = device.inventory_items.all()
-    modules = device.modules.all()
-    if request is not None:
-        from .object_report import list_view
-
-        def scoped(path, qs):
-            view = list_view(request, path, {"device": str(device.pk)})
-            if view is None:
-                return None
-            return view.filter_queryset(view.get_queryset()).filter(device=device)
-
-        items = scoped("/api/inventory-items/", items)
-        modules = scoped("/api/modules/", modules)
+    items = _through_list(request, "/api/inventory-items/", device, device.inventory_items.all())
+    modules = _through_list(request, "/api/modules/", device, device.modules.all())
     return items, modules
 
 
@@ -337,7 +343,7 @@ def device_context(device, request=None, parts=None) -> dict:
             else ""
         ),
     ]
-    rows, ifaces = interface_rows(device)
+    rows, ifaces = interface_rows(device, request)
     items, modules = parts if parts is not None else device_parts(device, request)
 
     power = list(device.power_ports.all())
@@ -355,7 +361,7 @@ def device_context(device, request=None, parts=None) -> dict:
         "subtitle": " · ".join(s for s in subtitle if s),
         "status": _status(device),
         "stats": [
-            {"label": "Interfaces", "value": str(len(ifaces))},
+            {"label": "Interfaces", "value": str(len(ifaces)) if rows is not None else "—"},
             {"label": "Power draw", "value": f"{draw} W" if draw else "—",
              "hint": f"{len(power)} port{'s' if len(power) != 1 else ''}" if power else ""},
             {"label": "Rack position",
@@ -376,7 +382,8 @@ def device_context(device, request=None, parts=None) -> dict:
                 if items is not None else ()
             )
         ],
-        "interfaces": rows,
+        "interfaces": rows or [],
+        "interfaces_hidden": rows is None,
         "comments": device.comments or "",
         "images": images,
         "elevation": elevation,
@@ -486,9 +493,9 @@ def vc_context(vc, request=None) -> dict:
             src = _data_uri(dt.front_image)
             if src:
                 elevation.append({"src": src, "caption": f"{label} · {dt.model or dt.name}"})
-        rows, ifaces = interface_rows(m)
+        rows, ifaces = interface_rows(m, request)
         total_ifaces += len(ifaces)
-        member_ifaces.append({"label": label, "rows": rows})
+        member_ifaces.append({"label": label, "rows": rows or [], "hidden": rows is None})
         member_rows.append({
             "position": m.vc_position if m.vc_position is not None else "-",
             "name": m.name,
@@ -522,7 +529,9 @@ def vc_context(vc, request=None) -> dict:
         "status": _status(master) if master else None,
         "stats": [
             {"label": "Members", "value": str(len(members))},
-            {"label": "Interfaces", "value": str(total_ifaces)},
+            {"label": "Interfaces", "value": (
+                "—" if any(mi["hidden"] for mi in member_ifaces) else str(total_ifaces)
+            )},
             {"label": "Ports used",
              "value": f"{ports['used']} / {ports['total']}" if ports else "—",
              "hint": f"{ports['pct']} %" if ports else ""},
@@ -777,7 +786,7 @@ def device_hardware_context(device, request=None) -> dict:
     parts = _hardware_parts(device, scoped[0])
     dt = device.device_type if device.device_type_id else None
     return {
-        **{k: v for k, v in base.items() if k not in ("ports", "images", "interfaces")},
+        **{k: v for k, v in base.items() if k not in ("ports", "images", "interfaces", "interfaces_hidden")},
         "subtitle": " · ".join(x for x in (
             f"{dt.manufacturer.name} {dt.model or dt.name}" if dt and dt.manufacturer_id
             else (dt.model or dt.name) if dt else "",

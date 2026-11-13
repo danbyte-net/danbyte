@@ -102,7 +102,11 @@ as the object page, so site scoping applies unchanged. The parts and modules
 are read through their own lists: without view on inventory items the
 hardware tables say so instead of listing them (and the datasheet's
 inventory list is empty), without view on modules the modules table is left
-out.
+out. Interfaces are read through the interface list the same way, as the
+device report's Interfaces section reads them: its row constraints and site
+rules apply, and without view on interfaces the datasheet, the all-in-one
+sheet and each stack member say so instead of listing them (the Interfaces
+box shows "—").
 
 The PDF is rendered server-side with the same engine as
 [label templates](label-templates.md), so it looks identical on every machine
