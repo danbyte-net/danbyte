@@ -487,6 +487,37 @@ def _rate_limited() -> bool:
     return bool(re.search(r"(?m)^\s*limit_req\s+zone=danbyte_auth\b", text))
 
 
+#: The maintenance page's policy line (#498); a test pins it to the template.
+NGINX_MAINTENANCE_CSP_LINE = (
+    "        add_header Content-Security-Policy \"default-src 'none'; "
+    "style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; "
+    "frame-ancestors 'self'\" always;"
+)
+
+_NGINX_MAINTENANCE_CSP = f"""\
+# in /etc/nginx/sites-available/danbyte.conf, in location @danbyte_maintenance,
+# after add_header Retry-After:
+{NGINX_MAINTENANCE_CSP_LINE}
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _maintenance_csp() -> bool:
+    """Done when the site's maintenance page names a policy of its own."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    text = re.sub(r"(?m)#.*$", "", text)
+    start = text.find("location @danbyte_maintenance")
+    if start < 0:
+        return False
+    block = text[start + 1:]
+    end = block.find("location ")
+    block = block if end < 0 else block[:end]
+    return bool(re.search(r"add_header\s+Content-Security-Policy\s", block))
+
+
 _REDIS_AUTH = """\
 # 1. pick a quiet moment: Jobs shows nothing running (queued jobs are kept)
 # 2. as root: give Redis the password, without restarting it yet
@@ -618,6 +649,24 @@ NOTES: tuple[UpgradeNote, ...] = (
         snippet=_REDIS_AUTH,
         docs="getting-started/hardening/#redis-authentication",
         check=_redis_auth_on,
+    ),
+    UpgradeNote(
+        id="0.20.0-nginx-maintenance-csp",
+        version="0.20.0",
+        title="Give the maintenance page its own CSP",
+        body=(
+            "Every page now carries a script policy with a fresh nonce from the "
+            "frontend server; that needs no step (DANBYTE_CSP_MODE in .env "
+            "steps it back). The maintenance page nginx shows while Danbyte "
+            "restarts sends its own headers and so had no policy at all; it now "
+            "allows no script, only its inline style. Root runs this from the "
+            "bundle of this release, never from the app directory."
+        ),
+        snippet=_NGINX_MAINTENANCE_CSP,
+        docs="getting-started/hardening/#content-security-policy",
+        platforms=("systemd",),
+        check=_maintenance_csp,
+        host=True,
     ),
     UpgradeNote(
         id="0.20.0-nginx-rate-limits",

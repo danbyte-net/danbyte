@@ -346,6 +346,33 @@ class RealNotesTests(APITestCase):
         with patch("core.upgrade_notes._site_config", return_value=None):
             self.assertFalse(un._rate_limited())
 
+    def test_the_maintenance_csp_step_spells_out_the_templates_line(self):
+        # #498: the line by hand is the template's, in its maintenance
+        # location, and the note hides once the site's page has a policy.
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-maintenance-csp")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        block = template[template.index("location @danbyte_maintenance"):]
+        self.assertIn(un.NGINX_MAINTENANCE_CSP_LINE + "\n", block[:block.index("rewrite ^")])
+        self.assertIn(un.NGINX_MAINTENANCE_CSP_LINE, note.snippet)
+        with patch("core.upgrade_notes._site_config", return_value=template):
+            self.assertTrue(un._maintenance_csp())
+        old = template.replace(un.NGINX_MAINTENANCE_CSP_LINE + "\n", "")
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            # The server-level policy is not the maintenance page's.
+            self.assertIn("add_header Content-Security-Policy", old)
+            self.assertFalse(un._maintenance_csp())
+        commented = old.replace("add_header Retry-After 30 always;",
+                                "add_header Retry-After 30 always;\n"
+                                "        # add_header Content-Security-Policy \"x\" always;")
+        with patch("core.upgrade_notes._site_config", return_value=commented):
+            self.assertFalse(un._maintenance_csp())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._maintenance_csp())
+
     def test_the_redis_step_hides_once_danbyte_authenticates(self):
         # #502: opt-in, so it is only a step; an install that sends a
         # password or uses the socket no longer sees it.

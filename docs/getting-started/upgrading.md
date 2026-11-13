@@ -720,6 +720,17 @@ The step *Rate-limit sign-in at nginx* stays up until the site has
 `limit_req zone=danbyte_auth`. Behind another proxy, add the `real_ip`
 lines that page shows, or every client shares the proxy's budget.
 
+Also from 0.20 every page carries a script policy with a fresh nonce from
+the frontend server, enforced alongside nginx's ([Hardening →
+Content-Security-Policy](hardening.md#content-security-policy)). It comes
+with the frontend; nginx needs no change for it. If a page stops working
+after the upgrade and the browser console names the Content Security
+Policy, set `DANBYTE_CSP_MODE=report` in `.env`, restart
+`danbyte-frontend-prod`, and report what the console says. The maintenance
+page now has a policy of its own too: the step *Give the maintenance page
+its own CSP* stays up until the site's `@danbyte_maintenance` location
+sends one.
+
 Redis can now take a password (`REDIS_PASSWORD`) or a unix socket, sent by
 the cache, every queue and the WebSocket layer alike. An upgrade never turns
 it on: the step *Optional: give Redis a password* gives the order to do it in
