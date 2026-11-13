@@ -109,10 +109,15 @@ class InstallersUseTheLockTests(SimpleTestCase):
         self.assertIn('lockcheck.py" --installed', text)
 
     def test_ci_installs_the_lock(self):
-        for name in ("ci.yml", "tests.yml"):
-            text = (ROOT / ".github" / "workflows" / name).read_text()
+        # tests.yml installs through the shared setup-backend action.
+        for name in ("workflows/ci.yml", "workflows/tests.yml", "actions/setup-backend/action.yml"):
+            text = (ROOT / ".github" / name).read_text()
             self.assertNotRegex(text, r"pip install -r requirements\.txt", name)
+        for name in ("workflows/ci.yml", "actions/setup-backend/action.yml"):
+            text = (ROOT / ".github" / name).read_text()
             self.assertIn("pip install --require-hashes -r requirements.lock", text, name)
+        self.assertIn("./.github/actions/setup-backend",
+                      (ROOT / ".github" / "workflows" / "tests.yml").read_text())
 
 
 class GateWorkflowTests(SimpleTestCase):

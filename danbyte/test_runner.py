@@ -10,7 +10,8 @@ setting clear it, as they already did.
 
 Parallel runs (--parallel N): each worker process gets its own cache key
 prefix. The prefix carries the runner's pid, and forked workers share it, so
-without this one worker's cached values leaked into another's tests.
+without this one worker's cached values leaked into another's tests. Workers
+may also start processes of their own, as the PDF renders do.
 
 Shards (CI): --shard K/N runs the K-th of N slices of the whole discovered
 suite. Every test module lands in exactly one slice, balanced by the measured
@@ -29,6 +30,7 @@ Under --parallel each test class is timed in its worker.
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 import statistics
 import sys
@@ -50,6 +52,9 @@ def _module_of(test) -> str:
 def _init_worker(counter, *args, **kwargs):
     django_runner._init_worker(counter, *args, **kwargs)
     worker = django_runner._worker_id
+    # Pool workers are daemonic, and a daemonic process may not start one:
+    # the PDF renders fork a child to enforce their deadline (drawing_pdf).
+    multiprocessing.current_process()._config["daemon"] = False
     from django.conf import settings
     from django.core.cache import caches
 
