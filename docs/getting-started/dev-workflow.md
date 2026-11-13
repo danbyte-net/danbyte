@@ -79,7 +79,26 @@ test (tests.yml) ─┬─ bundle ─ smoke ─ publish   GitHub Release + offli
 `makemigrations --check`, the OpenAPI schema, and the frontend build,
 typecheck and unit tests. Nothing publishes unless it passes, and it runs once
 per tag. A manual run of the *Container images* workflow runs `tests.yml`
-itself before it builds.
+itself before it builds. `ci.yml` runs the same `tests.yml` on every pull
+request and every push to `main` or a `dev/**` branch, so a failing test shows
+up when the change lands, not on release day.
+
+The backend suite runs as ten parallel shard jobs, each
+`manage.py test --keepdb --parallel auto --shard K/10` on a copy of one test
+database the *test-db* job migrated once (the migration graph takes about ten
+minutes to apply). The test runner
+(`danbyte/test_runner.py`) cuts the slices from the whole discovered suite at
+run time, one test module per slice, balanced by the measured seconds in
+`danbyte/test_timings.json`. A new test module needs no CI change: it lands in
+a slice with an estimated weight, and the *checks* job's
+`manage.py test --shard-check 10` fails unless every test is in exactly one
+slice. Refresh the weights now and then with `make test-timings` when the
+shards drift apart.
+
+Locally, `make test-fast` runs the suite across every core
+(`--parallel auto`; `PARALLEL=<n>` caps it, `ARGS=` passes labels or
+`--keepdb`). Each worker gets its own test database and its own cache key
+prefix.
 
 After the tag, on the branch for the next release, record the release's
 migration state and commit it:

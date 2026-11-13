@@ -2,17 +2,44 @@ name: Tests
 
 # The release test gate: the full backend suite, the migration and schema
 # checks, and the frontend build, typecheck and unit tests. Called by
-# release.yml on a version tag and by container.yml on a manual dispatch, so
-# the job is defined once and nothing publishes from an untested commit.
+# release.yml on a version tag, by container.yml on a manual dispatch and by
+# ci.yml on pushes and pull requests, so the job is defined once and nothing
+# publishes from an untested commit.
+#
+# The backend suite runs as SHARDS parallel jobs, each `manage.py test
+# --parallel` on one slice (danbyte/test_runner.py). The slices are cut from
+# the whole discovered suite at run time, balanced by danbyte/test_timings.json,
+# so a new test module always lands in a slice; the checks job proves the
+# slices cover the suite exactly once. Applying the migration graph takes about
+# ten minutes, so the test-db job does it once and every shard restores that
+# database and runs with --keepdb.
 on:
   workflow_call:
+  workflow_dispatch:
+  push:
+    branches: ['ci/**']
 
 permissions:
   contents: read
 
+env:
+  # Keep in step with the backend matrix below.
+  SHARDS: '10'
+  DB_HOST: 127.0.0.1
+  DB_PORT: '5432'
+  DB_NAME: danbyte
+  DB_USER: danbyte
+  DB_PASSWORD: danbyte
+  REDIS_URL: redis://127.0.0.1:6379/0
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: '6379'
+  # Satisfy the prod SECRET_KEY guard regardless of DEBUG.
+  DJANGO_SECRET_KEY: ci-not-a-real-secret
+  DEBUG: 'True'
+
 jobs:
-  test:
-    name: Tests (backend suite + frontend build)
+  checks:
+    name: Migrations, schema, shard coverage
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -24,41 +51,16 @@ jobs:
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U danbyte"
-          --health-interval 10s --health-timeout 5s --health-retries 5
+          --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: mirror.gcr.io/library/redis:7
         ports: ['6379:6379']
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s --health-timeout 5s --health-retries 5
-    env:
-      DB_HOST: 127.0.0.1
-      DB_PORT: '5432'
-      DB_NAME: danbyte
-      DB_USER: danbyte
-      DB_PASSWORD: danbyte
-      REDIS_URL: redis://127.0.0.1:6379/0
-      REDIS_HOST: 127.0.0.1
-      REDIS_PORT: '6379'
-      DJANGO_SECRET_KEY: ci-not-a-real-secret
-      DEBUG: 'True'
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          cache: pip
-          cache-dependency-path: requirements.lock
-      - name: System deps
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* || true
-          sudo apt-get update || sudo apt-get update
-          sudo apt-get install -y build-essential libldap2-dev libsasl2-dev
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install --require-hashes -r requirements.lock
-          pip install ruff
+      - uses: ./.github/actions/setup-backend
       - name: Migrations + undefined-name gate
         run: |
           python manage.py migrate --noinput
@@ -68,12 +70,114 @@ jobs:
         # The committed openapi.yaml (repo root) is the source of truth the API
         # reference site tracks; prove the schema still builds with no errors.
         run: python manage.py spectacular --file /tmp/openapi.yaml --validate
-      - name: Backend test suite
-        run: python manage.py test --noinput
-      - name: Frontend build + typecheck + unit tests
-        working-directory: frontend
+      - name: Every test is in exactly one shard
+        run: python manage.py test --shard-check "$SHARDS"
+
+  test-db:
+    name: Test database (migrated once for the shards)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:17
+        env:
+          POSTGRES_DB: danbyte
+          POSTGRES_USER: danbyte
+          POSTGRES_PASSWORD: danbyte
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U danbyte"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: mirror.gcr.io/library/redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-backend
+      - name: Create and migrate the test database
+        run: python manage.py test --noinput --create-db-only
+      - name: Dump it
+        # pg_dump from the server's own container, so the versions match.
+        run: docker exec ${{ job.services.postgres.id }} pg_dump -U danbyte -Fc test_danbyte > test-db.dump
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-db
+          path: test-db.dump
+          retention-days: 1
+
+  backend:
+    name: Backend shard ${{ matrix.shard }}
+    needs: test-db
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:17
+        env:
+          POSTGRES_DB: danbyte
+          POSTGRES_USER: danbyte
+          POSTGRES_PASSWORD: danbyte
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U danbyte"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: mirror.gcr.io/library/redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Matrix matches SHARDS
+        run: test "${{ strategy.job-total }}" = "$SHARDS"
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-backend
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-db
+      - name: Restore the test database
         run: |
-          npm ci
-          npm run build
-          npm run typecheck
-          npm run test
+          docker exec ${{ job.services.postgres.id }} createdb -U danbyte test_danbyte
+          docker exec -i ${{ job.services.postgres.id }} pg_restore -U danbyte -d test_danbyte --exit-on-error < test-db.dump
+      - name: Backend tests (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+        run: python manage.py test --noinput --keepdb --parallel auto --shard "${{ matrix.shard }}/$SHARDS"
+
+  frontend:
+    name: Frontend build + typecheck + unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The version the container image builds with (Dockerfile).
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      # Build first - it regenerates the TanStack routeTree that typecheck reads.
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run test
+
+  # One result for the whole gate under the name it always had.
+  test:
+    name: Tests (backend suite + frontend build)
+    needs: [checks, test-db, backend, frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every part passed
+        run: |
+          echo 'checks=${{ needs.checks.result }} test-db=${{ needs.test-db.result }} backend=${{ needs.backend.result }} frontend=${{ needs.frontend.result }}'
+          test '${{ needs.checks.result }}' = success
+          test '${{ needs.test-db.result }}' = success
+          test '${{ needs.backend.result }}' = success
+          test '${{ needs.frontend.result }}' = success
