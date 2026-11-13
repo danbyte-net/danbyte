@@ -98,10 +98,14 @@ server {
     add_header Cross-Origin-Opener-Policy "same-origin" always;
     add_header Cross-Origin-Resource-Policy "same-origin" always;
     # CSP is ENFORCED. The SPA loads only same-origin bundled assets (verified:
-    # no external scripts/styles/fonts, no eval, one bundled web worker; the WebSocket is
-    # same-origin so connect-src 'self' covers it). 'unsafe-inline' covers the
-    # SSR hydration + chart <style> injection - the remaining hardening step is a
-    # nonce-based script-src to drop 'unsafe-inline' (needs SSR nonce plumbing).
+    # no external scripts/styles/fonts, no eval, bundled web workers; the WebSocket is
+    # same-origin so connect-src 'self' covers it). This policy is the floor for
+    # every response. Each HTML page also carries a second policy from the
+    # frontend server, with a fresh script nonce and 'strict-dynamic' (#498);
+    # the browser enforces both, so on the pages 'unsafe-inline' below no longer
+    # lets an injected script run. It stays here for the chart <style>
+    # injection, and so DANBYTE_CSP_MODE=report|off in .env steps the page
+    # policy back without touching this file.
     # connect-src additionally allows GitHub's raw + API hosts: the device-type
     # import's "Fetch with my browser" option downloads devicetype-library YAML
     # in the operator's browser (an air-gapped server never sees GitHub).
@@ -297,6 +301,9 @@ server {
         root @@MAINTENANCE_ROOT@@;
         internal;
         add_header Retry-After 30 always;
+        # Its own add_header drops the server's; a page with no script needs
+        # nothing but its inline <style>.
+        add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" always;
         # nginx serves a static file for GET and HEAD only; a POST that lands
         # here (an API call whose backend just died) would come back as its
         # bare "405 Not Allowed" page. Say what happened instead.

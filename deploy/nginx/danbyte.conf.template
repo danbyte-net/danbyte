@@ -155,6 +155,9 @@ server {
         root @@MAINTENANCE_ROOT@@;
         internal;
         add_header Retry-After 30 always;
+        # Its own add_header drops the server's; a page with no script needs
+        # nothing but its inline <style>.
+        add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" always;
         # nginx serves a static file for GET and HEAD only; a POST that lands
         # here (an API call whose backend just died) would come back as its
         # bare "405 Not Allowed" page. Say what happened instead.

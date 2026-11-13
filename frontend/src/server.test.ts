@@ -91,18 +91,16 @@ describe("server entry", () => {
     expect(seen).toEqual([undefined])
   })
 
-  it("reports when unset and enforces when misspelt", async () => {
+  it("enforces when the mode is unset or misspelt", async () => {
     vi.stubEnv("DEV", false)
     try {
-      let res = await (await serverWith(undefined)).fetch(page())
-      expect(res.headers.get("content-security-policy")).toBeNull()
-      expect(res.headers.get("content-security-policy-report-only")).toContain(
-        "'strict-dynamic'"
-      )
-      res = await (await serverWith("reprot")).fetch(page())
-      expect(res.headers.get("content-security-policy")).toContain(
-        "'strict-dynamic'"
-      )
+      for (const mode of [undefined, "reprot"]) {
+        const server = await serverWith(mode)
+        const res = await server.fetch(page())
+        expect(res.headers.get("content-security-policy")).toContain(
+          "'strict-dynamic'"
+        )
+      }
     } finally {
       vi.unstubAllEnvs()
     }

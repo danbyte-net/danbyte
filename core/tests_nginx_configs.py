@@ -62,7 +62,17 @@ DJANGO_SECURITY_HEADERS = (
 
 def _server_level(text: str) -> str:
     text = re.sub(r"(?m)#.*$", "", text)
+    # An `if` inside a location first, so the location around it goes too.
+    text = re.sub(r"""\bif\s*\(.*\)\s*\{(?:[^{}'"]|'[^']*'|"[^"]*")*\}""", "", text)
     return re.sub(rf"location\s+{_MODIFIER}\S+\s*\{{[^{{}}]*\}}", "", text)
+
+
+def _maintenance_block(text: str) -> str:
+    """The @danbyte_maintenance location, its `if` included."""
+    start = text.index("location @danbyte_maintenance")
+    rest = text[start + 1:]
+    end = rest.find("location ")
+    return rest if end < 0 else rest[:end]
 
 
 def _edge_headers(text: str) -> dict[str, str]:
@@ -82,6 +92,11 @@ def _django_hsts() -> str:
     if re.search(r"SECURE_HSTS_PRELOAD\s*=\s*True", block):
         value += "; preload"
     return value
+
+
+#: The maintenance page's policy: no script, its own inline <style>.
+MAINTENANCE_CSP = ("default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; "
+                   "form-action 'none'; frame-ancestors 'self'")
 
 
 #: Mozilla's "intermediate" TLS 1.2 suites (#497), in its order.
@@ -206,7 +221,36 @@ class ConfigTextTests(SimpleTestCase):
         for base in (fetch.NVD_BASE, fetch.EPSS_BASE, fetch.OSV_BASE):
             self.assertIn(base, csp["connect-src"])
         self.assertNotIn("https://www.cisa.gov", csp["connect-src"])
-        self.assertNotIn("Content-Security-Policy", DOCKER.read_text())
+        self.assertNotIn("Content-Security-Policy", _server_level(DOCKER.read_text()))
+
+    def test_the_page_policy_is_left_to_the_frontend(self):
+        # #498: the frontend server sends each page its nonce policy. nginx
+        # must pass it through (never hide it) and keep its own on top, the
+        # floor DANBYTE_CSP_MODE steps back to.
+        for path in [*TEMPLATES, DOCKER]:
+            text = re.sub(r"(?m)#.*$", "", path.read_text())
+            with self.subTest(path=path.name):
+                self.assertNotRegex(text, r"proxy_hide_header\s+Content-Security-Policy")
+                self.assertNotIn("Content-Security-Policy-Report-Only", text)
+                self.assertNotIn("'nonce-", text)
+                self.assertNotIn("strict-dynamic", text)
+                self.assertNotIn("proxy_cache ", text)
+
+    def test_the_maintenance_page_runs_no_script(self):
+        # Its own add_header drops the server's headers, CSP included, so it
+        # names one: nothing but its inline <style>.
+        snippet = (ROOT / "deploy/nginx-maintenance.conf").read_text()
+        for name, text in [*((p.name, p.read_text()) for p in TEMPLATES),
+                           (DOCKER.name, DOCKER.read_text()),
+                           ("nginx-maintenance.conf", snippet)]:
+            with self.subTest(config=name):
+                block = _maintenance_block(text)
+                found = re.findall(r'add_header\s+Content-Security-Policy\s+"([^"]*)"\s+always;',
+                                   block)
+                self.assertEqual(found, [MAINTENANCE_CSP])
+        page = (ROOT / "deploy/maintenance.html").read_text()
+        self.assertNotIn("<script", page.lower())
+        self.assertNotRegex(page, r"(?i)\son[a-z]+\s*=")
 
     def test_edge_values_match_django(self):
         # Same value at both layers, so the answer does not depend on which
@@ -528,6 +572,100 @@ class NginxSendsEachHeaderOnceTests(SimpleTestCase):
                                capture_output=True)
 
 
+
+
+class _PageUpstream:
+    """A stand-in frontend: every page carries a fresh nonce in its own
+    policy and on its script, as the frontend server sends them (#498)."""
+
+    def __enter__(self):
+        import secrets
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                nonce = secrets.token_urlsafe(16)
+                body = f'<script nonce="{nonce}">1</script>'.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Security-Policy",
+                                 f"script-src 'nonce-{nonce}' 'strict-dynamic'")
+                self.send_header("Cache-Control", "private, no-cache")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def _https_get(port: int, path: str):
+    import http.client
+    import ssl
+
+    ctx = ssl._create_unverified_context()  # this run's own certificate
+    c = http.client.HTTPSConnection("127.0.0.1", port, context=ctx, timeout=10)
+    c.request("GET", path, headers={"Accept": "text/html"})
+    r = c.getresponse()
+    body = r.read()
+    c.close()
+    return r.status, r.msg, body
+
+
+@skipUnless(shutil.which("nginx") and shutil.which("openssl"), "nginx and openssl needed")
+class NginxPagePolicyTests(SimpleTestCase):
+    """The rendered production site in front of a frontend that sends each
+    page its nonce policy (#498)."""
+
+    def _edge_csp(self) -> str:
+        return re.findall(r'add_header\s+Content-Security-Policy\s+"([^"]*)"',
+                          _server_level(TEMPLATES[1].read_text()))[0]
+
+    def test_a_page_gets_its_own_nonce_policy_and_nginx_keeps_its_own(self):
+        with _PageUpstream() as up:
+            site = re.sub(r"127\.0\.0\.1:3000", f"127.0.0.1:{up.port}",
+                          TEMPLATES[1].read_text())
+            with _RunningSite(site) as s:
+                (s.dir / "client/assets/app-abc123.js").write_text("export {}\n")
+                nonces = set()
+                for _ in range(3):
+                    status, h, body = _https_get(s.https, "/devices")
+                    self.assertEqual(status, 200)
+                    policies = h.get_all("Content-Security-Policy")
+                    self.assertEqual(len(policies), 2, policies)
+                    self.assertIn(self._edge_csp(), policies)
+                    page = next(p for p in policies if "'nonce-" in p)
+                    nonce = re.search(r"'nonce-([^']+)'", page).group(1)
+                    self.assertIn(f'nonce="{nonce}"'.encode(), body)
+                    self.assertEqual(h.get_all("Cache-Control"), ["private, no-cache"])
+                    nonces.add(nonce)
+                self.assertEqual(len(nonces), 3)
+
+                # A build file from disk: nginx's policy alone, no nonce.
+                status, h, _ = _https_get(s.https, "/assets/app-abc123.js")
+                self.assertEqual(status, 200)
+                self.assertEqual(h.get_all("Content-Security-Policy"), [self._edge_csp()])
+
+    def test_the_maintenance_page_has_its_own_policy(self):
+        # Nothing listens on the frontend's port: the maintenance page.
+        site = re.sub(r"127\.0\.0\.1:3000", f"127.0.0.1:{_free_port()}",
+                      TEMPLATES[1].read_text())
+        with _RunningSite(site) as s:
+            (s.dir / "maintenance.html").write_text("<p>updating</p>")
+            status, h, body = _https_get(s.https, "/devices")
+            self.assertEqual(status, 502)
+            self.assertEqual(body, b"<p>updating</p>")
+            self.assertEqual(h.get_all("Content-Security-Policy"), [MAINTENANCE_CSP])
 
 
 class _RunningSite:

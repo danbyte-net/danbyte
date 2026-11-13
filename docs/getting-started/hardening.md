@@ -93,6 +93,78 @@ name proxies you run: a trusted address can claim to be anyone.
 release's root steps; a site edited by hand shows the step *Rate-limit
 sign-in at nginx* with the lines, until it has `limit_req zone=danbyte_auth`.
 
+## Content-Security-Policy
+
+Every page gets two policies, and the browser enforces both, so a script
+must pass each:
+
+| From | On | Governs |
+|---|---|---|
+| The frontend server (`danbyte-frontend-prod`) | each HTML page | scripts and workers: `script-src 'nonce-…' 'strict-dynamic' 'self' 'unsafe-inline'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; report-uri /api/csp-report/` |
+| nginx | every response | everything else: the same-origin default, the map tile, GitHub and vulnerability-data hosts, `style-src`, `frame-ancestors` (see [Security headers](../reference/settings.md#security-headers)) |
+
+- **A nonce per page.** The frontend server draws 128 random bits for each
+  page it renders and writes them on every script it puts in the page (the
+  theme script, the hydration data, the entry module and its preloads).
+  `'strict-dynamic'` then trusts what those scripts load, so the route
+  chunks loaded later need no list. A script injected into the page - an
+  inline `<script>` or an `onclick=` attribute - has no nonce and does not
+  run.
+- **Fallbacks.** `'self' 'unsafe-inline'` are only for browsers that know
+  neither nonces nor `'strict-dynamic'`; a browser that does ignores them.
+  nginx's own policy keeps `script-src 'self' 'unsafe-inline'` as the floor
+  for the modes below.
+- **Styles** keep `'unsafe-inline'`: charts write `<style>` blocks of their
+  own. It cannot run code.
+- **Not from the frontend:** the API, `/admin/`, `/static/`, `/media/`,
+  `/docs/` and the hashed `/assets/` get nginx's policy alone. The
+  maintenance page nginx shows while Danbyte restarts has its own: no
+  script, only its inline style.
+- **Caching.** A page carries `Cache-Control: private, no-cache`, so no
+  shared cache hands one visitor's nonce to another. Nothing in the
+  shipped path caches pages: nginx has no `proxy_cache`, and there is no
+  service worker.
+- **Docker.** The frontend container sends the same page policy. The
+  image's nginx sends no policy of its own (a proxy in front can).
+
+### Modes
+
+`DANBYTE_CSP_MODE` in `.env` picks what the frontend server does:
+
+| Value | Pages get |
+|---|---|
+| `enforce` (default) | the policy above, enforced |
+| `report` | the same policy as `Content-Security-Policy-Report-Only`: a violation is reported, nothing is blocked |
+| `off` | no page policy (nginx's stays) |
+
+A value it does not know enforces, and the frontend logs a warning. The
+frontend reads it at start, so restart it after a change:
+
+```bash
+# as the service user
+echo 'DANBYTE_CSP_MODE=report' >> ~/danbyte/.env
+systemctl --user restart danbyte-frontend-prod
+```
+
+In Docker, set it in the stack's `.env` and recreate the `frontend`
+service. The Vite dev server (`make frontend-dev`) defaults to `off`: it
+injects scripts of its own without a nonce.
+
+### Reporting a violation
+
+A browser posts each violation to `/api/csp-report/`, which logs it to the
+`danbyte.csp` logger (in `journalctl --user -u danbyte-web`):
+
+```
+CSP violation: directive=script-src-elem blocked=inline document=https://danbyte.example.com/devices
+```
+
+If a page or feature stops working and the browser console says
+*Refused to execute … because it violates the following Content Security
+Policy directive*, set `DANBYTE_CSP_MODE=report` to get it working again,
+and report the console line and the log line above as an issue, with the
+page it happened on.
+
 ## Redis authentication
 
 The installer takes `redis-server` from the distro and leaves its
@@ -349,6 +421,3 @@ Not done yet; tracked for a later release:
 - **System units with `User=danbyte`** instead of `systemctl --user` units,
   so the filesystem part of the [sandbox](#systemd-sandboxing) applies on
   every host and the capability lines become possible.
-- **A nonce-based Content-Security-Policy**, so `script-src` can drop
-  `'unsafe-inline'`. The CSP report sink (`/api/csp-report/`) is already in
-  place to watch for violations first.

@@ -620,10 +620,13 @@ uniformly and survives an app restart:
   host added here by hand). `worker-src 'self' blob:` lets MapLibre run its
   bundled tile worker. Everything else stays same-origin.
   The SPA loads only same-origin bundled assets (no external scripts/styles/
-  fonts, no `eval`, one bundled web worker; the presence WebSocket is same-origin), so
-  the policy doesn't block anything it serves. `'unsafe-inline'` is still
-  permitted for the SSR hydration + chart `<style>` injection - the next
-  hardening step is a nonce-based `script-src` (needs SSR nonce plumbing). Any
+  fonts, no `eval`, bundled web workers; the presence WebSocket is same-origin), so
+  the policy doesn't block anything it serves. Its `script-src 'self'
+  'unsafe-inline'` is the floor: every page also carries the frontend
+  server's own policy with a fresh nonce and `'strict-dynamic'`, which the
+  browser enforces as well, so an injected script does not run
+  ([`DANBYTE_CSP_MODE`](#page-script-policy-danbyte_csp_mode)).
+  `style-src 'unsafe-inline'` stays for the charts' `<style>` blocks. Any
   real-browser violation is POSTed to `/api/csp-report/` and logged to the
   `danbyte.csp` logger, so tightening the policy later is observable rather than
   a silent breakage. The report endpoint is unauthenticated + CSRF-exempt (the
@@ -665,15 +668,15 @@ their own. Anonymous API responses, `/media/`, `/static/` and the hashed
 The frontend server sends each HTML page a Content-Security-Policy of its
 own, with a script nonce drawn for that page:
 `script-src 'nonce-…' 'strict-dynamic' 'self' 'unsafe-inline'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; report-uri /api/csp-report/`.
-It comes on top of the nginx policy above, which stays as it is.
 
 | Variable | Default | Values |
 |---|---|---|
-| `DANBYTE_CSP_MODE` | `report` | `report` (sent as `Content-Security-Policy-Report-Only`: violations are logged to `danbyte.csp`, nothing is blocked), `enforce`, `off` |
+| `DANBYTE_CSP_MODE` | `enforce` | `enforce`, `report` (sent as `Content-Security-Policy-Report-Only`), `off` |
 
 Read from the environment, else from `.env`, when the frontend starts;
 restart `danbyte-frontend-prod` after changing it. Anything else enforces.
-The Vite dev server defaults to `off`.
+The Vite dev server defaults to `off`. Details and how to report a
+violation: [Hardening → Content-Security-Policy](../getting-started/hardening.md#content-security-policy).
 
 ## Logging
 

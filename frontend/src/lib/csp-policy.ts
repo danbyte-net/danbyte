@@ -20,7 +20,7 @@ export type CspMode = "enforce" | "report" | "off"
 export const CSP_MODES: readonly CspMode[] = ["enforce", "report", "off"]
 
 /** Production default when DANBYTE_CSP_MODE is unset. */
-export const DEFAULT_CSP_MODE: CspMode = "report"
+export const DEFAULT_CSP_MODE: CspMode = "enforce"
 
 export const CSP_REPORT_URI = "/api/csp-report/"
 

@@ -211,6 +211,9 @@ services:
     image: danbyte-frontend:latest
     restart: unless-stopped
     working_dir: /app/frontend
+    # The pages' script policy (#498): enforce, report or off.
+    environment:
+      DANBYTE_CSP_MODE: ${DANBYTE_CSP_MODE:-}
     command: ["node", "node_modules/vite/bin/vite.js", "preview", "--host", "0.0.0.0", "--port", "3000"]
 
   # nginx: proxies the SPA + /api + /ws, serves /static + /media. Speaks HTTP

@@ -36,9 +36,9 @@ describe("newNonce", () => {
 })
 
 describe("parseCspMode", () => {
-  it("only reports by default", () => {
-    expect(parseCspMode(undefined)).toEqual({ mode: "report", valid: true })
-    expect(parseCspMode("")).toEqual({ mode: "report", valid: true })
+  it("defaults to enforce in production", () => {
+    expect(parseCspMode(undefined)).toEqual({ mode: "enforce", valid: true })
+    expect(parseCspMode("")).toEqual({ mode: "enforce", valid: true })
   })
 
   it("takes the three modes, in any case", () => {
