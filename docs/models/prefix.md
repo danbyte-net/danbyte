@@ -149,7 +149,8 @@ prefixes, and with them every IP address in them (#501). See
 `GET /api/prefixes/` narrows by `search`, `vlan`, `vrf` (`global` for the
 global table), `site`, `location`, `contained_in` and `within` (a prefix id:
 that prefix and every prefix inside it in its VRF; empty when you may not
-view it), and by tag: `?tag=<slug>` and
+view it; the list only - a prefix's own reads ignore it, and its space map's
+`within` is the zoom window), and by tag: `?tag=<slug>` and
 `?tag_id=<id>`, each repeatable, every tag named required. See
 [Filtering by tag](../reference/api.md#filtering-by-tag).
 

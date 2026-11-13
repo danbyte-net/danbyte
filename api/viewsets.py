@@ -1463,8 +1463,10 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
             ).filter(_inside=True)
         # `within=<prefix id>`: that prefix and every prefix inside it, in its
         # VRF - the prefix tree's selection. The prefix must be one the
-        # reader may view; any other id answers an empty list.
-        within = self.request.query_params.get("within")
+        # reader may view; any other id answers an empty list. List-level
+        # only: the space map's own ``within`` is its zoom window, and a detail
+        # lookup must not be narrowed by it.
+        within = None if getattr(self, "detail", None) else self.request.query_params.get("within")
         if within:
             holder = _within_prefix(self.request, within)
             if holder is None:
@@ -1979,10 +1981,10 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 qs = qs.filter(prefix__vrf__isnull=True)
             else:
                 qs = qs.filter(prefix__vrf_id=vrf)
-        if within := p.get("within"):
+        if not getattr(self, "detail", None) and (within := p.get("within")):
             # The prefix tree's selection: addresses on that prefix or on any
             # prefix inside it (hidden ones too - the addresses are still
-            # filtered by their own visibility above).
+            # filtered by their own visibility above). List-level only.
             holder = _within_prefix(self.request, within)
             if holder is None:
                 return qs.none()

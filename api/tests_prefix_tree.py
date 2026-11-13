@@ -252,6 +252,18 @@ class TreeTests(_Base):
         r = self.client.get("/api/prefixes/", {"within": "nope"})
         self.assertEqual(r.json()["count"], 0)
 
+    def test_within_leaves_detail_reads_alone(self):
+        # A detail action's own `within` (the space map's zoom window) is not
+        # the list filter: the prefix is still found.
+        ip = IPAddress.objects.create(tenant=self.t, ip_address="10.1.2.5", prefix=self.p24)
+        r = self.client.get(f"/api/prefixes/{self.p8.id}/", {"within": str(self.p24.id)})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.get(f"/api/prefixes/{self.p8.id}/space-map/",
+                            {"within": "10.1.0.0/16"})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.get(f"/api/ips/{ip.id}/", {"within": str(self.other_root.id)})
+        self.assertEqual(r.status_code, 200, r.content)
+
     def test_needs_prefix_view(self):
         nobody = User.objects.create_user("n", password="x")
         UserProfile.objects.create(user=nobody).tenants.add(self.t)
