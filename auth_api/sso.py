@@ -2,7 +2,8 @@
 
 OIDC providers are DB-driven (:class:`auth_api.models.IdentityProvider`). We
 discover endpoints from the issuer's ``/.well-known/openid-configuration``, run
-the standard authorization-code flow with ``state`` + ``nonce``, validate the ID
+the standard authorization-code flow with ``state``, ``nonce`` and PKCE (S256),
+validate the ID
 token against the IdP's JWKS, then match - or, when ``jit_provisioning`` is on,
 create - the Danbyte user and re-sync their group membership from the asserted
 groups via :class:`SsoGroupMapping`. Only *mapped* IdP groups grant anything.
@@ -14,7 +15,10 @@ internal IdP is normal) but logged as a warning on discovery.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
+import secrets
 import time
 from urllib.parse import urlencode
 
@@ -61,7 +65,15 @@ def discover(issuer: str) -> dict:
     return doc
 
 
-def build_authorize_url(provider, redirect_uri, state, nonce) -> str:
+def new_pkce_pair() -> tuple[str, str]:
+    """A PKCE code verifier and its S256 challenge (RFC 7636)."""
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
+def build_authorize_url(provider, redirect_uri, state, nonce, code_challenge) -> str:
     """The IdP authorization URL to redirect the browser to."""
     doc = discover(provider.oidc_issuer)
     params = {
@@ -71,11 +83,13 @@ def build_authorize_url(provider, redirect_uri, state, nonce) -> str:
         "scope": provider.oidc_scopes or "openid email profile",
         "state": state,
         "nonce": nonce,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     return f"{doc['authorization_endpoint']}?{urlencode(params)}"
 
 
-def exchange_code(provider, code, redirect_uri, nonce) -> dict:
+def exchange_code(provider, code, redirect_uri, nonce, code_verifier) -> dict:
     """Exchange the authorization code for tokens and return the validated ID-
     token claims (merged with userinfo when groups aren't in the ID token)."""
     doc = discover(provider.oidc_issuer)
@@ -88,6 +102,7 @@ def exchange_code(provider, code, redirect_uri, nonce) -> dict:
                 "redirect_uri": redirect_uri,
                 "client_id": provider.oidc_client_id,
                 "client_secret": provider.client_secret,
+                "code_verifier": code_verifier,
             },
             headers={"Accept": "application/json"},
             timeout=HTTP_TIMEOUT,

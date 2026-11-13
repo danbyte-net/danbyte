@@ -371,16 +371,86 @@ class SsoViewLinkingGuardTests(TestCase):
 
     def test_oidc_callback_refuses_takeover(self):
         s = self.client.session
-        s.update({"sso_state": "st", "sso_nonce": "n", "sso_slug": "cust-oidc"})
+        s.update({"sso_state": "st", "sso_nonce": "n", "sso_verifier": "v",
+                  "sso_slug": "cust-oidc"})
         s.save()
-        with mock.patch("auth_api.sso_api.exchange_code", return_value=self.claims):
+        with mock.patch("auth_api.sso_api.exchange_code", return_value=self.claims) as ex:
             r = self.client.get("/api/auth/sso/cust-oidc/callback/?code=c&state=st")
         self._assert_refused(r)
+        ex.assert_called_once()
 
     def test_saml_acs_refuses_takeover(self):
         with mock.patch("auth_api.saml.parse_and_validate", return_value=self.claims):
             r = self.client.post("/api/auth/sso/cust-saml/acs/", {"SAMLResponse": "x"})
         self._assert_refused(r)
+
+
+class OidcPkceTests(TestCase):
+    """The authorization-code flow sends an S256 PKCE challenge and its verifier."""
+
+    DISCOVERY = {
+        "authorization_endpoint": "https://idp.example/auth",
+        "token_endpoint": "https://idp.example/token",
+        "jwks_uri": "https://idp.example/jwks",
+    }
+
+    def setUp(self):
+        self.provider = IdentityProvider.objects.create(
+            name="Corp", slug="corp", protocol="oidc", enabled=True,
+            oidc_issuer="https://idp.example", oidc_client_id="danbyte",
+        )
+
+    def _start(self):
+        with mock.patch("auth_api.sso.discover", return_value=self.DISCOVERY):
+            r = self.client.get("/api/auth/sso/corp/login/")
+        self.assertEqual(r.status_code, 302)
+        from urllib.parse import parse_qs, urlparse
+
+        return {k: v[0] for k, v in parse_qs(urlparse(r["Location"]).query).items()}
+
+    def test_authorize_url_carries_an_s256_challenge_of_the_session_verifier(self):
+        import base64
+        import hashlib
+
+        params = self._start()
+        verifier = self.client.session["sso_verifier"]
+        self.assertGreaterEqual(len(verifier), 43)
+        self.assertLessEqual(len(verifier), 128)
+        expected = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        self.assertEqual(params["code_challenge_method"], "S256")
+        self.assertEqual(params["code_challenge"], expected)
+
+    def test_each_sign_in_gets_a_new_verifier(self):
+        first = self._start()["code_challenge"]
+        self.assertNotEqual(first, self._start()["code_challenge"])
+
+    def test_callback_sends_the_session_verifier_and_clears_it(self):
+        state = self._start()["state"]
+        verifier = self.client.session["sso_verifier"]
+        with mock.patch("auth_api.sso_api.exchange_code", side_effect=SsoError("x")) as ex:
+            self.client.get(f"/api/auth/sso/corp/callback/?code=c&state={state}")
+        self.assertEqual(ex.call_args.args[4], verifier)
+
+    def test_callback_without_a_verifier_is_refused_before_the_exchange(self):
+        state = self._start()["state"]
+        s = self.client.session
+        del s["sso_verifier"]
+        s.save()
+        with mock.patch("auth_api.sso_api.exchange_code") as ex:
+            r = self.client.get(f"/api/auth/sso/corp/callback/?code=c&state={state}")
+        self.assertIn("sso_error=", r["Location"])
+        ex.assert_not_called()
+
+    def test_token_exchange_posts_the_verifier(self):
+        from auth_api.sso import exchange_code
+
+        resp = mock.Mock(status_code=400)
+        with mock.patch("auth_api.sso.discover", return_value=self.DISCOVERY), \
+                mock.patch("auth_api.sso.requests.post", return_value=resp) as post:
+            with self.assertRaises(SsoError):
+                exchange_code(self.provider, "c", "https://x/cb", "n", "the-verifier")
+        self.assertEqual(post.call_args.kwargs["data"]["code_verifier"], "the-verifier")
 
 
 class SsoUserEditTests(TestCase):
