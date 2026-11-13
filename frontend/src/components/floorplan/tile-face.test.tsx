@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react"
+import { cleanup, render } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import type { FloorPlan, FloorPlanTile } from "@/lib/api"
 import { tileIcon } from "@/components/object-icon"
@@ -31,6 +31,10 @@ import { TileShape } from "./tile-layer"
 import { facingBarRect, figureBarRect, marksOverlap } from "./tile-marks"
 import type { MarkRect } from "./tile-marks"
 import { tilePaint } from "./tile-paint"
+
+// Unmount what render() mounted: a root left behind schedules work after
+// the test environment is gone ("window is not defined").
+afterEach(cleanup)
 
 // Display > Tile icons: a tile solid in its colour with a glyph of what
 // it is, laid out clear of its marks, the same on screen and on paper.

@@ -11,7 +11,9 @@ setting clear it, as they already did.
 Parallel runs (--parallel N): each worker process gets its own cache key
 prefix. The prefix carries the runner's pid, and forked workers share it, so
 without this one worker's cached values leaked into another's tests. Workers
-may also start processes of their own, as the PDF renders do.
+may also start processes of their own, as the PDF renders do, and a failure
+whose traceback cannot be pickled (no tblib) reaches the runner as text
+instead of ending the run.
 
 Shards (CI): --shard K/N runs the K-th of N slices of the whole discovered
 suite. Every test module lands in exactly one slice, balanced by the measured
@@ -32,14 +34,21 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
+import pickle
 import statistics
 import sys
 import time
+import traceback
 import unittest
 from pathlib import Path
 
 from django.test import runner as django_runner
-from django.test.runner import DiscoverRunner, ParallelTestSuite
+from django.test.runner import (
+    DiscoverRunner,
+    ParallelTestSuite,
+    RemoteTestResult,
+    RemoteTestRunner,
+)
 
 TIMINGS_FILE = Path(__file__).with_name("test_timings.json")
 
@@ -86,9 +95,47 @@ def _run_subsuite(args):
     return out
 
 
+class RemoteTestError(Exception):
+    """An error from a worker whose traceback could not be pickled; its
+    message is the formatted traceback."""
+
+
+class RemoteTestFailure(AssertionError):
+    """The same for a failed assertion, so it still counts as a failure."""
+
+
+def _portable(err):
+    """A worker sends each failure to the runner pickled, and a traceback only
+    pickles with tblib, which is not a dependency: without it the first
+    failing test stopped the whole run. Send such a failure as its text."""
+    try:
+        pickle.loads(pickle.dumps(err))
+        return err
+    except Exception:  # noqa: BLE001 - anything unpicklable is sent as text
+        text = "".join(traceback.format_exception(*err))
+        kind = RemoteTestFailure if issubclass(err[0], AssertionError) else RemoteTestError
+        return (kind, kind(text), None)
+
+
+class DanbyteRemoteTestResult(RemoteTestResult):
+    def addError(self, test, err):
+        super().addError(test, _portable(err))
+
+    def addFailure(self, test, err):
+        super().addFailure(test, _portable(err))
+
+    def addSubTest(self, test, subtest, err):
+        super().addSubTest(test, subtest, None if err is None else _portable(err))
+
+
+class DanbyteRemoteTestRunner(RemoteTestRunner):
+    resultclass = DanbyteRemoteTestResult
+
+
 class DanbyteParallelTestSuite(ParallelTestSuite):
     init_worker = _init_worker
     run_subsuite = _run_subsuite
+    runner_class = DanbyteRemoteTestRunner
 
 
 class TimingResult(unittest.TextTestResult):
