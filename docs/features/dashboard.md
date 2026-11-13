@@ -21,7 +21,15 @@ The page is a mosaic of tiles:
 - **Map widgets** - a live **OSM map** of your sites/devices/cables, and a
   **Floor plan** widget that renders one of your floor plans read-only with live
   tile status (monitoring rings + rack utilisation), each linking to its full
-  page.
+  page. The floor plan widget draws the plan as its page shows it to a viewer:
+  the plan's saved *Display* settings (hidden objects, area names, photos,
+  Color by, cables, background muting) and its walls, rooms and areas, text
+  labels, trays and cable routes. It frames the plan's content - the whole
+  grid when the plan has a background - and refits when the widget is
+  resized. Hovering a tile shows its popover; clicking a rack, device or
+  cabinet opens it on the full floor plan. Nothing can be edited from the
+  widget, and a session's Display changes on the floor plan page do not carry
+  over to it.
 - **Certificate widgets** - **Certificate health** (expiry buckets across the
   whole inventory), **Expiring certificates** (expired or within 30 days), and
   **Expired certificates** (already past expiry). Add them from *Add widget*.

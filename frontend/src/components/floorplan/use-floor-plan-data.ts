@@ -30,7 +30,16 @@ export const floorPlanStackKey = (id: string) =>
 /** Everything the floor-plan editor reads from the server: the plan, what is
  * drawn on it, the palette catalogs, the live overlay and its floor plan's
  * floors. */
-export function useFloorPlanData(id: string) {
+export function useFloorPlanData(
+  id: string,
+  {
+    catalogs = true,
+  }: {
+    /** The palette catalogs (tile types, device roles) - only an editor
+     * places tiles; a read-only view skips them. */
+    catalogs?: boolean
+  } = {}
+) {
   const planQuery = useQuery({
     queryKey: ["floor-plan", id],
     queryFn: () => api<FloorPlan>(`/api/floor-plans/${id}/`),
@@ -60,10 +69,12 @@ export function useFloorPlanData(id: string) {
     queryKey: ["floor-tile-types-picker"],
     queryFn: () =>
       apiAll<FloorTileTypeOption>("/api/floor-tile-types/?picker=1"),
+    enabled: catalogs,
   })
   const roles = useQuery({
     queryKey: ["device-roles"],
     queryFn: () => apiAll<DeviceRole>("/api/device-roles/"),
+    enabled: catalogs,
   })
   // Live per-tile metrics (rack utilization, monitoring rollup) - cheap to
   // poll; monitoring pushes state server-side so 30s keeps tiles honest.

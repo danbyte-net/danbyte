@@ -225,6 +225,8 @@ const NO_STRUCT: StructShape[] = []
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
 export interface FloorCanvasApi {
   fit: () => void
+  /** Fit a box in cell units (a plan's content) instead of the grid. */
+  fitBox?: (box: { x: number; y: number; w: number; h: number }) => void
   /** Centre and zoom onto the tile; returns where it now stands on screen
    * (as `tilePoint`), null before the canvas has a size. */
   focusTile: (
@@ -1668,6 +1670,15 @@ export function FloorCanvas({
     if (!apiRef) return
     apiRef.current = {
       fit: () => fitTo(svgRef.current, gw, gh),
+      fitBox: (b) =>
+        fitTo(
+          svgRef.current,
+          b.w * CELL,
+          b.h * CELL,
+          false,
+          b.x * CELL,
+          b.y * CELL
+        ),
       focusTile: (tile, zoom) => {
         setFocusedTile(tile.id)
         const svg = svgRef.current

@@ -165,10 +165,18 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
     [t]
   )
 
-  /** Fit a w×h world box into the container with a margin - eased with
-   * `animate` (a double-click on empty plan, 0 or Home). */
+  /** Fit a w×h world box (its corner at x0, y0) into the container with a
+   * margin - eased with `animate` (a double-click on empty plan, 0 or
+   * Home). */
   const fitTo = useCallback(
-    (svg: SVGSVGElement | null, w: number, h: number, animate = false) => {
+    (
+      svg: SVGSVGElement | null,
+      w: number,
+      h: number,
+      animate = false,
+      x0 = 0,
+      y0 = 0
+    ) => {
       if (!svg) return
       const rect = svg.getBoundingClientRect()
       if (!rect.width || !rect.height) return
@@ -177,8 +185,8 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
       const k = Math.min(MAX_ZOOM, Math.max(minZoom.current, fit))
       const to = {
         k,
-        x: (rect.width - w * k) / 2,
-        y: (rect.height - h * k) / 2,
+        x: (rect.width - w * k) / 2 - x0 * k,
+        y: (rect.height - h * k) / 2 - y0 * k,
       }
       if (animate) animateTo(to, rect.width, rect.height)
       else {

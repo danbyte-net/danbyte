@@ -1,19 +1,20 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
-import {
-  api,
-  type FloorPlan,
-  type FloorPlanLiveState,
-  type FloorPlanContents,
-  type Paginated,
-} from "@/lib/api"
-import { FloorCanvas } from "@/components/floorplan/floor-canvas"
+import { api } from "@/lib/api"
+import type { FloorPlan, Paginated } from "@/lib/api"
+import { PlanView } from "@/components/floorplan/plan-view"
 import { FormCombobox } from "@/components/forms"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
-// Dashboard widget: a read-only, auto-fit view of a floor plan with live
-// tile status (monitoring rings + rack utilisation), and a link into the
-// full editor. Polls /state/ so the status stays honest. Which plan is a
+// Dashboard widget: a read-only view of a floor plan as its page draws it
+// for a viewer - the plan's saved Display settings, walls, areas, labels,
+// trays and cables, live tile status polled every 30s (PlanView) - fitted
+// to its content, with a link into the full plan. Which plan is a
 // per-instance setting - the widget can be placed several times, one per
 // floor - falling back to the first plan when unset.
 export function FloorplanWidget({
@@ -46,21 +47,6 @@ export function FloorplanWidget({
   const plan =
     picked.data ?? ((planId && all.find((x) => x.id === planId)) || all[0])
 
-  // Every tile of the plan - the editor's own read, so the two share a cache.
-  const contents = useQuery({
-    queryKey: ["floor-plan-contents", plan?.id],
-    queryFn: () =>
-      api<FloorPlanContents>(`/api/floor-plans/${plan!.id}/contents/`),
-    enabled: !!plan,
-  })
-  const state = useQuery({
-    queryKey: ["floor-plan-state", plan?.id],
-    queryFn: () =>
-      api<FloorPlanLiveState>(`/api/floor-plans/${plan!.id}/state/`),
-    enabled: !!plan,
-    refetchInterval: 30_000,
-  })
-
   if (planId ? picked.isLoading || (list && plans.isLoading) : plans.isLoading)
     return (
       <div className="h-full min-h-40 animate-pulse rounded-md bg-muted/30" />
@@ -92,28 +78,22 @@ export function FloorplanWidget({
         />
       )}
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-muted/20">
-        <FloorCanvas
-          plan={plan}
-          tiles={contents.data?.tiles ?? []}
-          selectedId={null}
-          editable={false}
-          showGrid={false}
-          armed={null}
-          showFov={false}
-          liveState={state.data ?? null}
-          className="h-full w-full"
-        />
-        <div className="pointer-events-none absolute top-2 left-2 rounded-md border border-border bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur">
+        <PlanView id={plan.id} />
+        <div className="pointer-events-none absolute top-2 left-2 z-[15] rounded-md border border-border bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur">
           {plan.name}
         </div>
-        <Link
-          to="/floorplans/$id"
-          params={{ id: plan.id }}
-          className="absolute right-2 bottom-2 z-[5] rounded-md border border-border bg-background/85 px-2 py-1 text-[11px] backdrop-blur hover:bg-background"
-          title="Open the full floor plan"
-        >
-          Open →
-        </Link>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to="/floorplans/$id"
+              params={{ id: plan.id }}
+              className="absolute right-2 bottom-2 z-[15] rounded-md border border-border bg-background/85 px-2 py-1 text-[11px] backdrop-blur hover:bg-background"
+            >
+              Open →
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent>Open the full floor plan</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   )
