@@ -24,7 +24,7 @@ permissions:
 
 env:
   # Keep in step with the backend matrix below.
-  SHARDS: '10'
+  SHARDS: '16'
   DB_HOST: 127.0.0.1
   DB_PORT: '5432'
   DB_NAME: danbyte
@@ -114,7 +114,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     services:
       postgres:
         image: mirror.gcr.io/library/postgres:17
@@ -145,7 +145,17 @@ jobs:
           docker exec ${{ job.services.postgres.id }} createdb -U danbyte test_danbyte
           docker exec -i ${{ job.services.postgres.id }} pg_restore -U danbyte -d test_danbyte --exit-on-error < test-db.dump
       - name: Backend tests (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+        env:
+          # Seconds per module, for refreshing danbyte/test_timings.json.
+          DANBYTE_TEST_TIMINGS: ${{ runner.temp }}/timings-${{ matrix.shard }}.json
         run: python manage.py test --noinput --keepdb --parallel auto --shard "${{ matrix.shard }}/$SHARDS"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: test-timings-${{ matrix.shard }}
+          path: ${{ runner.temp }}/timings-${{ matrix.shard }}.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   frontend:
     name: Frontend build + typecheck + unit tests
