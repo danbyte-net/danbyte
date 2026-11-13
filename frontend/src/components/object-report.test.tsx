@@ -361,6 +361,54 @@ describe("ObjectReportDialog", () => {
     expect(screen.queryByText("List columns")).toBeNull()
   })
 
+  it("offers Hardware unticked, with no column picker, and sends it once ticked", async () => {
+    const hardware = {
+      key: "hardware",
+      label: "Hardware",
+      kind: "hardware",
+      default: false,
+      available: true,
+      last: false,
+      columns: [],
+      default_columns: [],
+    }
+    const schema: ObjectReportSchema = {
+      ...SCHEMA,
+      sections: [SCHEMA.sections[0], hardware, ...SCHEMA.sections.slice(1)],
+    }
+    apiMock.mockImplementation((path, init) => {
+      if (path.includes("estimate=1")) return answerEstimate(init)
+      if (init?.method === "POST") {
+        posted.push({
+          path,
+          body: JSON.parse(String(init.body)) as ObjectReportRequest,
+        })
+        return Promise.resolve({ url: "/api/devices/report/file/tok/" })
+      }
+      return get(path, schema)
+    })
+    expect(initialPrefs(schema, null).sections).not.toContain("hardware")
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={{ ids: ["d1"], scope: "one", name: "sw-a" }}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    const box = await screen.findByRole("checkbox", { name: "Hardware" })
+    expect(box.getAttribute("aria-checked")).toBe("false")
+    fireEvent.click(box)
+    expect(box.getAttribute("aria-checked")).toBe("true")
+    expect(
+      screen.queryByRole("button", { name: "Hardware columns" })
+    ).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: /Download/ }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    // In the schema's order: after Overview.
+    expect(posted[0].body.sections).toEqual(["overview", "hardware"])
+  })
+
   it("refuses more objects than a report lists", async () => {
     wrap(
       <ObjectReportDialog

@@ -215,25 +215,11 @@ def interface_rows(device) -> tuple[list[dict], list]:
     return rows, ifaces
 
 
-def device_context(device, request=None) -> dict:
-    from .ip_usage import addresses_of
-
+def _device_details(device) -> list[tuple[str, str]]:
+    """The details block's ``(label, value)`` rows that have a value, before
+    the custom fields."""
     dt = device.device_type
     rack = device.rack
-    subtitle = [
-        device.role.name if device.role_id else "",
-        device.site.name if device.site_id else "",
-        (
-            f"{rack.name} · U{device.position}" if rack and device.position
-            else rack.name if rack
-            else device.location.name if device.location_id
-            else ""
-        ),
-    ]
-    rows, ifaces = interface_rows(device)
-
-    power = list(device.power_ports.all())
-    draw = sum((p.allocated_draw or p.maximum_draw or 0) for p in power)
 
     def _ip(rel):
         return rel.ip_address if rel else ""
@@ -277,16 +263,91 @@ def device_context(device, request=None) -> dict:
         ("Description", device.description),
         ("Tags", _tags(device)),
     ]
-    details = [(k, v) for k, v in details if v]
+    return [(k, v) for k, v in details if v]
+
+
+#: The details the hardware sheet (and the report's Hardware section) keeps.
+HARDWARE_DETAILS = frozenset({
+    "Serial number", "Asset tag", "Type", "Part number", "Platform",
+    "Primary IP", "OOB IP", "Site", "Rack", "Description",
+})
+
+
+def faceplates(dt, src=None) -> list[dict]:
+    """The device type's front and rear images, ``{src, caption}`` each;
+    ``src(field)`` makes an image's source (by default a ``data:`` URI) and
+    None leaves it out."""
+    src = src or _data_uri
+    out = []
+    if dt:
+        for label, field in (("Front", dt.front_image), ("Rear", dt.rear_image)):
+            got = src(field)
+            if got:
+                out.append({"src": got, "caption": f"{label} · {dt.model or dt.name}"})
+    return out
+
+
+def device_parts(device, request=None):
+    """``(inventory items, modules)`` of ``device`` as querysets, read
+    through their lists as ``request``'s reader (their RBAC and site rules),
+    each None when the reader may not view that list. Without a request,
+    every part (an internal caller)."""
+    items = device.inventory_items.all()
+    modules = device.modules.all()
+    if request is not None:
+        from .object_report import list_view
+
+        def scoped(path, qs):
+            view = list_view(request, path, {"device": str(device.pk)})
+            if view is None:
+                return None
+            return view.filter_queryset(view.get_queryset()).filter(device=device)
+
+        items = scoped("/api/inventory-items/", items)
+        modules = scoped("/api/modules/", modules)
+    return items, modules
+
+
+def module_rows(modules) -> list[dict]:
+    if modules is None:
+        return []
+    return [
+        {
+            "bay": m.module_bay.name if m.module_bay_id else "",
+            "type": m.module_type.name,
+            "serial": m.serial_number,
+        }
+        for m in modules.select_related("module_bay", "module_type")
+        .order_by(natural("module_bay__name"))
+    ]
+
+
+def device_context(device, request=None, parts=None) -> dict:
+    from .ip_usage import addresses_of
+
+    dt = device.device_type
+    rack = device.rack
+    subtitle = [
+        device.role.name if device.role_id else "",
+        device.site.name if device.site_id else "",
+        (
+            f"{rack.name} · U{device.position}" if rack and device.position
+            else rack.name if rack
+            else device.location.name if device.location_id
+            else ""
+        ),
+    ]
+    rows, ifaces = interface_rows(device)
+    items, modules = parts if parts is not None else device_parts(device, request)
+
+    power = list(device.power_ports.all())
+    draw = sum((p.allocated_draw or p.maximum_draw or 0) for p in power)
+
+    details = _device_details(device)
     details += custom_field_rows(device, "device")
 
     images = _images_for(device)
-    elevation = []
-    if dt:
-        for label, field in (("Front", dt.front_image), ("Rear", dt.rear_image)):
-            src = _data_uri(field)
-            if src:
-                elevation.append({"src": src, "caption": f"{label} · {dt.model or dt.name}"})
+    elevation = faceplates(dt)
 
     return {
         "meta": _meta(device, request, "device"),
@@ -302,15 +363,7 @@ def device_context(device, request=None) -> dict:
              "hint": rack.name if rack else ""},
         ],
         "details": details,
-        "modules": [
-            {
-                "bay": m.module_bay.name if m.module_bay_id else "",
-                "type": m.module_type.name,
-                "serial": m.serial_number,
-            }
-            for m in device.modules.select_related("module_bay", "module_type")
-            .order_by(natural("module_bay__name"))
-        ],
+        "modules": module_rows(modules),
         "inventory": [
             {
                 "name": it.name,
@@ -318,8 +371,10 @@ def device_context(device, request=None) -> dict:
                 "part": it.part_id,
                 "serial": it.serial_number,
             }
-            for it in device.inventory_items.select_related("manufacturer")
-            .order_by(natural("name"))
+            for it in (
+                items.select_related("manufacturer").order_by(natural("name"))
+                if items is not None else ()
+            )
         ],
         "interfaces": rows,
         "comments": device.comments or "",
@@ -654,15 +709,20 @@ def _hardware_stats(totals: dict) -> list[dict]:
     ]
 
 
-def _hardware_parts(device) -> dict:
+def _hardware_parts(device, items=None) -> dict:
     """The parts grouped per kind, plus their totals - shared by the hardware
-    sheet and the all-in-one sheet."""
+    sheet, the all-in-one sheet and the device report's Hardware section.
+    ``items`` is the queryset of parts the reader may view (``device_parts``),
+    by default all of them; None when they may view none (``parts_hidden``)."""
     from .models import INVENTORY_ITEM_KINDS, INVENTORY_MEDIA_TYPES
 
+    hidden = items is None
+    if items is None:
+        items = device.inventory_items.none()
     # Slot then name, in natural order: "DIMM 2" before "DIMM 10". A part a
     # BMC synced has no slot, so its name orders it.
     items = list(
-        device.inventory_items.select_related("manufacturer", "status")
+        items.select_related("manufacturer", "status")
         .order_by("kind", natural("slot"), natural("name"))
     )
     totals = hardware_totals(items)
@@ -690,6 +750,7 @@ def _hardware_parts(device) -> dict:
         }
 
     return {
+        "parts_hidden": hidden,
         "totals": totals,
         "hardware_stats": _hardware_stats(totals),
         "cpus": [_row(i) for i in items if i.kind == "cpu"],
@@ -702,18 +763,18 @@ def _hardware_parts(device) -> dict:
 def device_full_context(device, request=None) -> dict:
     """Everything on one sheet: the datasheet as it is, with the hardware
     totals and the parts per kind between the details and the interfaces."""
-    base = device_context(device, request)
-    return {**base, **_hardware_parts(device)}
+    parts = device_parts(device, request)
+    base = device_context(device, request, parts)
+    return {**base, **_hardware_parts(device, parts[0])}
 
 
 def device_hardware_context(device, request=None) -> dict:
     """The hardware-first sheet: the same header, the parts' totals as the
     stat boxes, then one table per kind with the slot each part sits in. No
     rack figures, no interfaces - what a server's inventory sheet is for."""
-    base = device_context(device, request)
-    parts = _hardware_parts(device)
-    keep = {"Serial number", "Asset tag", "Type", "Part number", "Platform",
-            "Primary IP", "OOB IP", "Site", "Rack", "Description"}
+    scoped = device_parts(device, request)
+    base = device_context(device, request, scoped)
+    parts = _hardware_parts(device, scoped[0])
     dt = device.device_type if device.device_type_id else None
     return {
         **{k: v for k, v in base.items() if k not in ("ports", "images", "interfaces")},
@@ -722,10 +783,51 @@ def device_hardware_context(device, request=None) -> dict:
             else (dt.model or dt.name) if dt else "",
             device.site.name if device.site_id else "",
         ) if x),
-        "details": [(k, v) for k, v in base["details"] if k in keep],
+        "details": [(k, v) for k, v in base["details"] if k in HARDWARE_DETAILS],
         **parts,
         "stats": parts["hardware_stats"],
     }
+
+
+def hardware_section(
+    device, request, *, src=None, with_faceplates=True, with_details=True, rows=None
+) -> tuple[str, int, int]:
+    """The device report's Hardware section (``api.object_report``):
+    ``(html, rows shown, rows recorded)``. The hardware sheet's parts -
+    faceplates, the CPU, memory and storage boxes, the details it keeps, the
+    parts per kind and the modules - rendered from the sheet's own partials
+    (``spec/_hardware.html``), with what ``request``'s reader may view
+    (``device_parts``). A table with no rows is left out; a device with no
+    parts gets one line. ``rows`` caps the table rows (the report's
+    budget); the boxes still count every part."""
+    items, modules = device_parts(device, request)
+    parts = _hardware_parts(device, items)
+    mods = module_rows(modules)
+    tables = ("cpus", "rams", "disks", "others")
+    total = sum(len(parts[k]) for k in tables) + len(mods)
+    if not total:
+        return "<p class='muted'>No hardware recorded.</p>", 0, 0
+    left = total if rows is None else max(0, min(rows, total))
+    shown = left
+    for k in tables:
+        parts[k] = parts[k][:left]
+        left -= len(parts[k])
+    mods = mods[:left]
+    ctx = {
+        **parts,
+        "stats": parts["hardware_stats"],
+        "modules": mods,
+        "elevation": faceplates(device.device_type, src) if with_faceplates else [],
+        "details": (
+            [(k, v) for k, v in _device_details(device) if k in HARDWARE_DETAILS]
+            if with_details else []
+        ),
+        # The report's headings and tables; tables with no rows left out.
+        "hx": "h4",
+        "tcls": "hw",
+        "skip_empty": True,
+    }
+    return render_to_string("spec/_hardware.html", ctx), shown, total
 
 
 _CONTEXTS = {

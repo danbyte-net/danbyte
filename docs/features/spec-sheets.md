@@ -80,6 +80,10 @@ before DIMM 10, Bay 9 before Bay 10. Parts a BMC synced carry no slot, so
 their names order them. The modules and inventory list on the datasheet
 follow the same order.
 
+The same block can go into the device's [PDF report](reports.md): tick
+**Hardware** in its sections. Both are drawn from the same templates, so the
+report's boxes and tables always read like the sheet's.
+
 **All in one**, the third entry, is the datasheet with the hardware block
 inserted: the three datasheet boxes, details, port utilisation, then the
 CPU, memory and storage boxes, the parts per kind, the modules, the
@@ -94,7 +98,11 @@ sheet is served inline; add `?download=1` for a download. The file is named
 `<name>-spec-<date>.pdf`. On a device, `?variant=hardware` returns the
 hardware sheet and `?variant=full` the all-in-one sheet
 (`<name>-spec-hardware-<serial>.pdf`, `<name>-spec-full-<serial>.pdf`). Reading a sheet needs the same **view** permission
-as the object page, so site scoping applies unchanged.
+as the object page, so site scoping applies unchanged. The parts and modules
+are read through their own lists: without view on inventory items the
+hardware tables say so instead of listing them (and the datasheet's
+inventory list is empty), without view on modules the modules table is left
+out.
 
 The PDF is rendered server-side with the same engine as
 [label templates](label-templates.md), so it looks identical on every machine

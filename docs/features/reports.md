@@ -53,10 +53,28 @@ printing) by itself when it is ready. Keep the dialog open until then.
 
 | Type | Sections |
 |---|---|
-| Device | Overview (attributes and custom fields), Photo (the type's front and rear), Interfaces (type, status, LAG, VLANs, IPs, cable peer), IP addresses, Cables, Installed software (version, end of support, licence), Power ports, Console ports, Lifecycle (platform, software version, warranty, support coverage, next lifecycle date), Monitoring (each check's state), Journal, Change log |
+| Device | Overview (attributes and custom fields), Photo (the type's front and rear), Hardware (the [hardware sheet](spec-sheets.md#the-hardware-sheet)'s parts - off until ticked), Interfaces (type, status, LAG, VLANs, IPs, cable peer), IP addresses, Cables, Installed software (version, end of support, licence), Power ports, Console ports, Lifecycle (platform, software version, warranty, support coverage, next lifecycle date), Monitoring (each check's state), Journal, Change log |
 | Prefix | Overview, Utilisation (a bar with the usable, used and free addresses), VLAN and VRF, Child prefixes, IP addresses (status and role badges, DNS names), IP ranges, Monitoring, Journal, Change log |
 | IP address | Overview, Assignment (device or VM and interface, switch port, MAC), NAT, DNS records, Monitoring, Journal, Change log |
 
+- **Hardware** (devices) - the hardware sheet's block inside the report,
+  drawn from the same templates as the sheet, so the two never differ: the
+  type's front and rear faceplates with their captions, the **CPU**,
+  **Memory** and **Storage** boxes, the sheet's details (serial, part
+  number, primary IP, rack · U · face, type, platform, site, description),
+  then Processors, Memory, Storage, Other parts (PSUs, fans, GPUs,
+  controllers, transceivers…) and Modules, each with slot, model, serial and status. It
+  sits after Photo and before Interfaces: what the box is, then what it
+  connects to. Nothing is printed twice - with **Photo** ticked the
+  faceplates are left to it, with **Overview** ticked the details are. A
+  table with no parts is left out, a missing image is left out, and a
+  device with no parts recorded gets one line, *No hardware recorded.* In
+  a report of several devices each device's page gets its own Hardware
+  block. The parts are read through the inventory items and modules lists
+  as you: without view on inventory items the section is greyed out (and
+  left out with a note), without view on modules the Modules table is
+  left out, and site-scoped permissions drop the parts of devices outside
+  your sites.
 - **Journal and change log entries** - the latest N (20 until you change it,
   at most 200).
 - **Include cover page** - a title page before the report. See

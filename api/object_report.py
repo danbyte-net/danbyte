@@ -303,6 +303,9 @@ DEVICE = ReportType(
             custom_fields=True,
         ),
         Section("photo", "Photo", "photo", default=False),
+        # The hardware sheet's parts (api/spec_sheets.py): after what the box
+        # is, before what it connects to.
+        Section("hardware", "Hardware", "hardware", default=False),
         Section(
             "interfaces",
             "Interfaces",
@@ -1022,6 +1025,8 @@ class Context:
         self.tenant = tenant
         self._views: dict = {}
         self._cats: dict = {}
+        #: The sections the report prints, so one need not repeat another.
+        self.chosen: frozenset = frozenset()
 
     def view(self, path: str, params: dict | None = None):
         if params is None:
@@ -1055,6 +1060,8 @@ def section_available(ctx: Context, s: Section) -> tuple[bool, str]:
         return False, f"You may not view {s.label.lower()}."
     if s.kind == "monitoring" and not _can_view_ips(ctx):
         return False, "You may not view IP addresses."
+    if s.kind == "hardware" and ctx.view("/api/inventory-items/") is None:
+        return False, "You may not view inventory items."
     return True, ""
 
 
@@ -1225,6 +1232,9 @@ def build_section(
     if s.kind == "photo":
         out.html = _photo_html(ctx, row)
         return out
+    if s.kind == "hardware":
+        out.html, out.note = _hardware_html(ctx, row, budget)
+        return out
     return out
 
 
@@ -1356,6 +1366,94 @@ def _photo_html(ctx: Context, row: dict) -> str:
     if not imgs:
         return "<p class='muted'>No photo of this device type.</p>"
     return f"<div class='photos'>{''.join(imgs)}</div>"
+
+
+def _media_src(field) -> str | None:
+    """A device-type image as the URL the PDF fetcher serves
+    (``PdfUrlFetcher``), or None when it is not a stored photo the fetcher
+    would read - a missing image is left out, not drawn broken."""
+    import mimetypes
+    from urllib.parse import quote
+
+    from .drawing_pdf import MAX_MEDIA_BYTES
+
+    name = getattr(field, "name", "") or ""
+    prefix = "device-type-images/"
+    if not name.startswith(prefix):
+        return None
+    if mimetypes.guess_type(name)[0] not in ("image/png", "image/jpeg", "image/webp"):
+        return None
+    try:
+        if field.storage.size(name) > MAX_MEDIA_BYTES:
+            return None
+    except (OSError, NotImplementedError):
+        return None
+    return MEDIA_IMAGES_URL + quote(name[len(prefix) :])
+
+
+def _hardware_html(ctx: Context, row: dict, budget: Budget) -> tuple[str, str]:
+    """The Hardware section: the hardware sheet's parts for this device
+    (``api.spec_sheets.hardware_section``), read as the reader. The
+    faceplates are left to Photo and the details to Overview when those
+    are printed too."""
+    from .models import Device
+    from .spec_sheets import hardware_section
+
+    if ctx.rt is not DEVICE:
+        return "", ""
+    d = (
+        Device.objects.filter(pk=row["id"], tenant=ctx.tenant)
+        .select_related(
+            "device_type__manufacturer",
+            "platform",
+            "site",
+            "rack",
+            "primary_ip",
+            "oob_ip",
+            "tenant",
+        )
+        .first()
+    )
+    if d is None:
+        return "", ""
+    html, shown, total = hardware_section(
+        d,
+        ctx.request,
+        src=_media_src,
+        with_faceplates="photo" not in ctx.chosen,
+        with_details="overview" not in ctx.chosen,
+        rows=budget.left,
+    )
+    budget.take(shown)
+    return html, _left_out(total, shown, "parts")
+
+
+HARDWARE_CSS = (
+    # The spec sheet's boxes, at the report's size.
+    ".hwsec .stats{display:flex;gap:3mm;margin:0 0 3mm}"
+    ".hwsec .stat{flex:1;border:0.25mm solid #d4d4d8;border-radius:0.8mm;padding:2.5mm 3mm 2.2mm}"
+    ".hwsec .stat .label{font-size:6pt;text-transform:uppercase;letter-spacing:0.08em;"
+    "color:#71717a}"
+    ".hwsec .stat .value{font-size:14pt;font-weight:700;margin-top:0.6mm}"
+    ".hwsec .stat .hint{font-size:6.8pt;color:#71717a;margin-top:0.3mm}"
+    # Front and rear side by side: the boxes and tables start on the page.
+    ".hwsec .elevation{display:flex;gap:4mm;margin:0 0 3mm}"
+    ".hwsec .elevation .strip{flex:1;min-width:0;break-inside:avoid}"
+    ".hwsec .elevation img{display:block;width:100%;max-height:30mm;object-fit:contain;"
+    "border:0.2mm solid #d4d4d8}"
+    ".hwsec .elevation .cap{font-size:6.5pt;color:#71717a;margin-top:0.6mm}"
+    ".hwsec section{margin:0 0 2mm}"
+    ".hwsec h4{font-size:7.5pt;font-weight:600;color:#52525b;margin:3mm 0 1mm;"
+    "break-after:avoid}"
+    ".hwsec .kv{display:grid;grid-template-columns:1fr 1fr;column-gap:8mm}"
+    ".hwsec .kv .row{display:flex;gap:3mm;padding:0.9mm 0;border-bottom:0.15mm solid #e4e4e7}"
+    ".hwsec .kv .k{width:30mm;flex:0 0 30mm;color:#71717a}"
+    ".hwsec .kv .v{flex:1;overflow-wrap:anywhere}"
+    "table.hw th{border-bottom:0.3mm solid #a1a1aa}"
+    "table.hw td{border-bottom:0.15mm solid #e4e4e7}"
+    "table.hw .num{text-align:right;white-space:nowrap}"
+    "table.hw .mono{font-family:'DejaVu Sans Mono',monospace;font-size:6.8pt}"
+)
 
 
 # ─── The report ─────────────────────────────────────────────────────────────
@@ -1547,6 +1645,7 @@ def report_html(
     body: str,
     cover: str = "",
     marking=None,
+    extra_css=(),
 ) -> str:
     """The report's page, laid out by the report framework
     (:func:`api.reports.engine.document_html`)."""
@@ -1557,6 +1656,7 @@ def report_html(
         paper=paper,
         orientation=orientation,
         marking=marking,
+        extra_css=list(extra_css),
     )
     return document_html(ctx, body, cover=cover)
 
@@ -1838,6 +1938,7 @@ def _build_report(request, rt: ReportType, data: dict, tenant) -> tuple[str, str
             keys = [s.key for s in rt.sections if s.default]
         sections = [s for s in rt.sections if s.key in set(keys)]
         sections.sort(key=lambda s: keys.index(s.key))
+        ctx.chosen = frozenset(s.key for s in sections)
         for i, row in enumerate(rows):
             body.append(
                 _object_html(
@@ -1927,6 +2028,9 @@ def _page_html(
         body=body,
         cover=cover,
         marking=marking,
+        extra_css=(
+            [HARDWARE_CSS] if rt is DEVICE and "hardware" in (data.get("sections") or ()) else []
+        ),
     )
     return html, generated
 

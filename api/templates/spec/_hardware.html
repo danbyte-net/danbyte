@@ -1,0 +1,9 @@
+{% comment %}The device report's Hardware section (spec_sheets.hardware_section):
+the hardware sheet's own partials under the report's headings.{% endcomment %}
+<div class="hwsec">
+{% include "spec/_elevation.html" %}
+{% include "spec/_stats.html" %}
+{% if details %}{% include "spec/_details.html" %}{% endif %}
+{% include "spec/_parts.html" %}
+{% include "spec/_modules.html" %}
+</div>

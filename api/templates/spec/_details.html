@@ -1,0 +1,8 @@
+{% with h=hx|default:"h2" %}
+<section>
+  <{{ h }}>Details</{{ h }}>
+  <div class="kv">
+    {% for k, v in details %}<div class="row"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>{% endfor %}
+  </div>
+</section>
+{% endwith %}
