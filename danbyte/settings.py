@@ -283,6 +283,10 @@ except _RedisConfigError as _exc:
     raise ImproperlyConfigured(f"Redis: {_exc}") from None
 
 CACHES = {"default": DANBYTE_REDIS.cache()}
+if TESTING:
+    # A test run must not share cache keys with a live instance on the same
+    # Redis (a live value replaced what a test had just set).
+    CACHES["default"]["KEY_PREFIX"] = f"test:{os.getenv('DB_NAME', 'danbyte')}:{os.getpid()}"
 
 # Channels - the channel layer for real-time presence WebSockets, on the same
 # Redis (database 0, as before).

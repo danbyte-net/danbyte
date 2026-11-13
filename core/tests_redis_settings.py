@@ -196,7 +196,8 @@ class ConsumersTests(SimpleTestCase):
         from django_rq.connection_utils import filter_connection_params
 
         conf = settings.DANBYTE_REDIS
-        self.assertEqual(settings.CACHES["default"], conf.cache())
+        self.assertEqual({k: v for k, v in settings.CACHES["default"].items() if k != "KEY_PREFIX"},
+                         conf.cache())
         self.assertEqual(settings.CHANNEL_LAYERS["default"], conf.channels())
         self.assertEqual(set(settings.RQ_QUEUES), {"default", "high", "low", "discovery"})
         connections = {repr(sorted(filter_connection_params(q).items()))
