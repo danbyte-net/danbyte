@@ -31,9 +31,9 @@ import type { IPAddress, Prefix } from "@/lib/api"
 import { Route as DetailRoute } from "./prefixes.$id"
 
 // A prefix page's IPs and Child prefixes tabs carry the lists' Filters /
-// Tree rail, the tree rooted at the page's prefix. A selected node scopes
-// the tab (IPs: the addresses within it; children: it and below), and the
-// tab's own Show available / Show DHCP pool compute against that node.
+// Tree rail as navigation: the branch the prefix sits in, opened down to it
+// with its siblings around it. A picked prefix opens its own page on the
+// same tab, the tree kept; the tabs always show the page's prefix.
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -135,16 +135,30 @@ const ROOT = prefix("root", "10.0.0.0/16", {
   has_descendants: true,
   child_count: 2,
 })
+const TOP = prefix("top", "10.0.0.0/8", { has_descendants: true })
+const SIB = prefix("sib", "10.1.0.0/16")
 const A = prefix("a", "10.0.1.0/29")
 const B = prefix("b", "10.0.8.0/22", { has_descendants: true, child_count: 1 })
 const C = prefix("c", "10.0.8.0/24")
 const FLAT = prefix("flat", "192.168.5.0/29")
+// 172.16.0.0/12 > (a hidden /16) > 172.16.4.0/24: the reveal skips the /16.
+const OUTER = prefix("outer", "172.16.0.0/12")
+const UNDER = prefix("under", "172.16.4.0/24")
+// 10.200.0.0/16 holds 1,000 /29s; "deep" is the 451st.
+const BIG = prefix("big", "10.200.0.0/16", { has_descendants: true })
+const DEEP = prefix("deep", "10.200.1.200/29")
 const PREFIXES: Record<string, Prefix> = {
   root: ROOT,
+  top: TOP,
+  sib: SIB,
   a: A,
   b: B,
   c: C,
   flat: FLAT,
+  outer: OUTER,
+  under: UNDER,
+  big: BIG,
+  deep: DEEP,
 }
 
 const ip = (id: string, address: string, on: Prefix) =>
@@ -165,12 +179,37 @@ const node = (p: Prefix, parent: string | null, child_count = 0) => ({
   parent,
   child_count,
 })
+const step = (n: ReturnType<typeof node>, index: number) => ({ ...n, index })
 const page = <T,>(results: T[]) => ({
   count: results.length,
   next: null,
   previous: null,
   results,
 })
+
+const PATHS: Record<string, ReturnType<typeof step>[]> = {
+  root: [step(node(TOP, null, 2), 0), step(node(ROOT, "top", 2), 0)],
+  a: [
+    step(node(TOP, null, 2), 0),
+    step(node(ROOT, "top", 2), 0),
+    step(node(A, "root"), 0),
+  ],
+  sib: [step(node(TOP, null, 2), 0), step(node(SIB, "top"), 1)],
+  b: [
+    step(node(TOP, null, 2), 0),
+    step(node(ROOT, "top", 2), 0),
+    step(node(B, "root", 1), 1),
+  ],
+  flat: [step(node(FLAT, null), 3)],
+  under: [step(node(OUTER, null, 1), 2), step(node(UNDER, "outer"), 0)],
+  deep: [step(node(BIG, null, 1000), 4), step(node(DEEP, "big"), 450)],
+}
+const CHILDREN: Record<string, ReturnType<typeof node>[]> = {
+  top: [node(ROOT, "top", 2), node(SIB, "top")],
+  root: [node(A, "root"), node(B, "root", 1)],
+  b: [node(C, "b")],
+  outer: [node(UNDER, "outer")],
+}
 
 const calls: string[] = []
 beforeEach(() => {
@@ -184,71 +223,46 @@ beforeEach(() => {
     const url = new URL(path, "http://x")
     const q = url.searchParams
     if (url.pathname === "/api/prefixes/tree/") {
-      if (q.get("reveal")) {
-        const id = q.get("reveal")!
-        const below = id === "c" ? [node(B, "root", 1), node(C, "b")] : []
-        return {
-          vrf: null,
-          path: [
-            {
-              id: "top",
-              cidr: "10.0.0.0/8",
-              parent: null,
-              child_count: 1,
-              index: 0,
-            },
-            { ...node(ROOT, "top", 2), index: 0 },
-            ...(id === "a" ? [{ ...node(A, "root"), index: 0 }] : []),
-            ...(id === "b" ? [{ ...node(B, "root", 1), index: 1 }] : []),
-            ...below.map((n) => ({ ...n, index: n.id === "b" ? 1 : 0 })),
-          ],
-        }
-      }
+      const reveal = q.get("reveal")
+      if (reveal) return { vrf: null, path: PATHS[reveal] }
       if (q.get("q"))
         return {
           q: q.get("q"),
           count: 1,
           truncated: false,
           results: [
-            { ...node(B, "root", 1), match: false },
-            { ...node(C, "b"), match: true },
+            { ...node(ROOT, "top", 2), match: false },
+            { ...node(B, "root", 1), match: true },
           ],
         }
-      const parent = q.get("parent")
-      const results =
-        parent === "root"
-          ? [node(A, "root"), node(B, "root", 1)]
-          : parent === "b"
-            ? [node(C, "b")]
-            : []
-      return { parent, count: results.length, offset: 0, limit: 200, results }
+      const parent = q.get("parent")!
+      const offset = Number(q.get("offset"))
+      if (parent === "big") {
+        const results = Array.from({ length: 200 }, (_, i) => {
+          const n = offset + i
+          return n === 450
+            ? node(DEEP, "big")
+            : { id: `s${n}`, cidr: `10.200.${n}.0/29`, parent, child_count: 0 }
+        })
+        return { parent, count: 1000, offset, limit: 200, results }
+      }
+      const results = CHILDREN[parent] ?? []
+      return { parent, count: results.length, offset, limit: 200, results }
     }
     if (url.pathname === "/api/prefixes/") {
       const within = q.get("within")
       if (within === "root") return page([ROOT, A, B, C])
-      if (within === "b") return page([B, C])
-      if (within === "a") return page([A])
       if (within === "flat") return page([FLAT])
-      return page([ROOT, A, B, C, FLAT])
+      return page([])
     }
     const one = url.pathname.match(/^\/api\/prefixes\/(\w+)\/$/)
     if (one) return PREFIXES[one[1]]
     const ips = url.pathname.match(/^\/api\/prefixes\/(\w+)\/ips\/$/)
     if (ips) {
-      if (ips[1] === "a")
-        return {
-          count: 1,
-          results: [ip("i2", "10.0.1.2", A)],
-          dhcp_ranges: [
-            { scope_id: "s", name: "pool", start: "10.0.1.4", end: "10.0.1.5" },
-          ],
-        }
+      if (ips[1] === "root")
+        return { count: 1, results: [ip("i2", "10.0.1.2", A)], dhcp_ranges: [] }
       return { count: 0, results: [], dhcp_ranges: [] }
     }
-    if (url.pathname === "/api/ips/" && q.get("within") === "a")
-      return page([ip("i2", "10.0.1.2", A)])
-    if (url.pathname === "/api/ips/" && q.get("within") === "b")
-      return page([ip("i9", "10.0.8.9", C)])
     if (url.pathname === "/api/ip-ranges/") return page([])
     if (url.pathname === "/api/custom-fields/") return page([])
     if (url.pathname === "/api/monitoring/status/") return { statuses: {} }
@@ -285,134 +299,160 @@ function setup(url: string) {
 }
 const search = (router: ReturnType<typeof setup>) =>
   router.state.location.search as Record<string, unknown>
-const addresses = () =>
-  [...document.querySelectorAll("tbody tr")]
-    .map((tr) => tr.textContent.match(/10\.0\.\d+\.\d+/)?.[0])
-    .filter(Boolean)
+const item = (name: string) => screen.findByRole("treeitem", { name })
+const level = (el: HTMLElement) => el.getAttribute("aria-level")
 
 describe("prefix page tree rail", () => {
-  it("roots the tree at the prefix, with no VRF picker", async () => {
+  it("opens the branch down to this prefix, its siblings around it", async () => {
     setup("/prefixes/root?tab=ips&rail=tree")
-    const a = await screen.findByRole("treeitem", { name: "10.0.1.0/29" })
-    expect(a.getAttribute("aria-level")).toBe("1")
-    const b = screen.getByRole("treeitem", { name: "10.0.8.0/22" })
-    expect(b.getAttribute("aria-expanded")).toBe("false")
-    expect(screen.queryByRole("treeitem", { name: "10.0.0.0/16" })).toBeNull()
+    const here = await item("10.0.0.0/16")
+    expect(level(await item("10.0.0.0/8"))).toBe("1")
+    expect(level(here)).toBe("2")
+    expect(here.getAttribute("aria-current")).toBe("page")
+    expect(here.getAttribute("aria-expanded")).toBe("true")
+    expect(here.textContent).toContain("This prefix")
+    // Its sibling under the same master, and its own children.
+    expect(level(await item("10.1.0.0/16"))).toBe("2")
+    expect(level(await item("10.0.1.0/29"))).toBe("3")
     expect(screen.queryByRole("combobox", { name: "VRF" })).toBeNull()
-    const tree = calls.filter((c) => c.startsWith("/api/prefixes/tree/"))
-    expect(tree.some((c) => c.includes("parent=root"))).toBe(true)
-    expect(tree.some((c) => c.includes("vrf="))).toBe(false)
+    expect(calls).toContain("/api/prefixes/tree/?reveal=root")
+    expect(calls).toContain("/api/prefixes/tree/?offset=0&limit=200&parent=top")
+    expect(calls).toContain(
+      "/api/prefixes/tree/?offset=0&limit=200&parent=root"
+    )
+    // The table is this prefix's own.
+    expect(calls).toContain("/api/prefixes/root/ips/")
+    expect(calls.some((c) => c.includes("within="))).toBe(false)
+  })
 
-    // Lazily expandable, and the filter box searches inside this prefix.
-    fireEvent.click(b.querySelector("[aria-hidden]")!)
-    expect(
-      await screen.findByRole("treeitem", { name: "10.0.8.0/24" })
-    ).toBeTruthy()
+  it("opens a picked prefix's page, same tab, tree kept", async () => {
+    const router = setup("/prefixes/root?tab=ips&rail=tree")
+    // This prefix: nothing happens.
+    fireEvent.click(await item("10.0.0.0/16"))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(router.state.location.pathname).toBe("/prefixes/root")
+
+    // A child inside it: its page, not a scope.
+    fireEvent.click(await item("10.0.1.0/29"))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/prefixes/a")
+    )
+    expect(search(router)).toEqual({ tab: "ips", rail: "tree" })
+    // The tree centres on it there.
+    await waitFor(async () =>
+      expect((await item("10.0.1.0/29")).getAttribute("aria-current")).toBe(
+        "page"
+      )
+    )
+    expect(calls).toContain("/api/prefixes/tree/?reveal=a")
+
+    // A sibling of the master's.
+    fireEvent.click(await item("10.1.0.0/16"))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/prefixes/sib")
+    )
+    expect(search(router).rail).toBe("tree")
+  })
+
+  it("moves with the arrows and opens with Enter", async () => {
+    const router = setup("/prefixes/root?tab=children&rail=tree")
+    await item("10.0.1.0/29")
+    const tree = screen.getByRole("tree", { name: "Prefixes" })
+    // The active row starts at this prefix; Enter there does nothing.
+    fireEvent.keyDown(tree, { key: "Enter" })
+    fireEvent.keyDown(tree, { key: "ArrowDown" })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(router.state.location.pathname).toBe("/prefixes/root")
+    fireEvent.keyDown(tree, { key: "Enter" })
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/prefixes/a")
+    )
+    expect(search(router)).toEqual({ tab: "children", rail: "tree" })
+  })
+
+  it("searches the whole branch and opens a match", async () => {
+    const router = setup("/prefixes/root?tab=ips&rail=tree")
+    await item("10.0.1.0/29")
     fireEvent.change(screen.getByRole("textbox", { name: "Filter prefixes" }), {
       target: { value: "10.0.8" },
     })
     await waitFor(() =>
-      expect(
-        calls.some((c) => c.includes("parent=root") && c.includes("q=10.0.8"))
-      ).toBe(true)
+      expect(calls).toContain("/api/prefixes/tree/?parent=top&q=10.0.8")
     )
     await waitFor(() =>
-      expect(screen.queryByRole("treeitem", { name: "10.0.1.0/29" })).toBeNull()
+      expect(screen.queryByRole("treeitem", { name: "10.1.0.0/16" })).toBeNull()
     )
-    // A path hanging from the root sits at the top level.
-    expect(
-      screen
-        .getByRole("treeitem", { name: "10.0.8.0/22" })
-        .getAttribute("aria-level")
-    ).toBe("1")
+    expect(level(await item("10.0.0.0/8"))).toBe("1")
+    fireEvent.click(await item("10.0.8.0/22"))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/prefixes/b")
+    )
   })
 
-  it("scopes the IPs tab to a node, with its free and pool rows", async () => {
-    const router = setup("/prefixes/root?tab=ips&rail=tree")
-    // The page's prefix holds others: no free rows to offer.
-    await screen.findByRole("treeitem", { name: "10.0.1.0/29" })
-    expect(screen.queryByText("Show available")).toBeNull()
-
-    fireEvent.click(screen.getByRole("treeitem", { name: "10.0.1.0/29" }))
-    await waitFor(() => expect(search(router).within).toBe("a"))
-    await waitFor(() => expect(addresses()).toEqual(["10.0.1.2"]))
-    expect(calls).toContain("/api/ips/?within=a")
-    expect(await screen.findByText("Within")).toBeTruthy()
-
-    // Show available sits under the switch and counts the /29's hosts.
-    fireEvent.click(await screen.findByText("Show available"))
-    await waitFor(() =>
-      expect(addresses()).toEqual([
-        "10.0.1.1",
-        "10.0.1.2",
-        "10.0.1.3",
-        "10.0.1.4",
-        "10.0.1.5",
-        "10.0.1.6",
-      ])
-    )
-    // The DHCP pool is the node's own.
-    fireEvent.click(screen.getByText("Show available"))
-    fireEvent.click(screen.getByText("Show DHCP pool"))
-    await waitFor(() =>
-      expect(addresses()).toEqual(["10.0.1.2", "10.0.1.4", "10.0.1.5"])
-    )
-
-    // Back to the whole prefix.
-    fireEvent.click(screen.getByRole("button", { name: "Clear prefix scope" }))
-    await waitFor(() => expect(search(router).within).toBeUndefined())
-    await waitFor(() => expect(addresses()).toEqual([]))
-  })
-
-  it("scopes Child prefixes to a node and below", async () => {
-    const router = setup("/prefixes/root?tab=children&rail=tree&within=b")
-    // The path opens from the URL; the node is selected.
-    const b = await screen.findByRole("treeitem", { name: "10.0.8.0/22" })
-    await waitFor(() => expect(b.getAttribute("aria-selected")).toBe("true"))
-    await waitFor(() =>
-      expect(document.querySelector("tbody")?.textContent).toContain(
-        "10.0.8.0/24"
-      )
-    )
-    const body = document.querySelector("tbody")!.textContent
-    expect(body).toContain("10.0.8.0/22")
-    expect(body).not.toContain("10.0.1.0/29")
-    expect(calls).toContain("/api/prefixes/?within=b")
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear prefix scope" }))
-    await waitFor(() => expect(search(router).within).toBeUndefined())
+  it("ignores a within= in the URL", async () => {
+    setup("/prefixes/root?tab=children&rail=tree&within=b")
     await waitFor(() =>
       expect(document.querySelector("tbody")?.textContent).toContain(
         "10.0.1.0/29"
       )
     )
-    // The page's own prefix anchors the list and is not a row of it.
-    expect(document.querySelector("tbody")!.textContent).not.toContain(
-      "10.0.0.0/16"
+    expect(calls).toContain("/api/prefixes/?within=root")
+    expect(calls).not.toContain("/api/prefixes/?within=b")
+    expect(
+      screen.queryByRole("button", { name: "Clear prefix scope" })
+    ).toBeNull()
+  })
+
+  it("opens a long sibling list at the page that holds this prefix", async () => {
+    setup("/prefixes/deep?tab=ips&rail=tree")
+    const here = await item("10.200.1.200/29")
+    expect(here.getAttribute("aria-posinset")).toBe("451")
+    expect(here.getAttribute("aria-setsize")).toBe("1000")
+    expect(calls).toContain(
+      "/api/prefixes/tree/?offset=400&limit=200&parent=big"
+    )
+    expect(calls.some((c) => c.includes("offset=0&limit=200&parent=big"))).toBe(
+      false
+    )
+    expect(
+      screen.getByRole("treeitem", { name: "Show 200 earlier" })
+    ).toBeTruthy()
+    expect(screen.getByRole("treeitem", { name: "Show 200 more" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("treeitem", { name: "Show 200 earlier" }))
+    await waitFor(() =>
+      expect(calls).toContain(
+        "/api/prefixes/tree/?offset=200&limit=200&parent=big"
+      )
+    )
+    fireEvent.click(screen.getByRole("treeitem", { name: "Show 200 more" }))
+    await waitFor(() =>
+      expect(calls).toContain(
+        "/api/prefixes/tree/?offset=600&limit=200&parent=big"
+      )
     )
   })
 
-  it("keeps mode and selection in the URL across tabs and modes", async () => {
-    const router = setup("/prefixes/root?tab=ips&rail=tree&within=a")
-    const a = await screen.findByRole("treeitem", { name: "10.0.1.0/29" })
-    await waitFor(() => expect(a.getAttribute("aria-selected")).toBe("true"))
-    // The reveal names prefixes above the page's: they are not drawn.
-    expect(screen.queryByRole("treeitem", { name: "10.0.0.0/8" })).toBeNull()
+  it("never names a hidden ancestor", async () => {
+    setup("/prefixes/under?tab=ips&rail=tree")
+    const here = await item("172.16.4.0/24")
+    expect(level(here)).toBe("2")
+    expect(level(await item("172.16.0.0/12"))).toBe("1")
+    expect(screen.queryByText(/172\.16\.0\.0\/16/)).toBeNull()
+  })
 
-    fireEvent.click(screen.getByRole("button", { name: "Filters" }))
-    await waitFor(() => expect(search(router).rail).toBeUndefined())
-    expect(screen.queryByRole("tree")).toBeNull()
-    expect(search(router).within).toBe("a")
-    expect(setLayout).toHaveBeenCalledWith({ order: ["filters"], hidden: [] })
-    // The selection still scopes the table, as a chip.
-    await waitFor(() => expect(addresses()).toEqual(["10.0.1.2"]))
-    expect(
-      screen.getByRole("button", { name: "Clear prefix scope" })
-    ).toBeTruthy()
-
-    fireEvent.click(screen.getByRole("button", { name: "Tree" }))
+  it("shows a top-level leaf as the whole tree", async () => {
+    storedMode = ["tree"]
+    const router = setup("/prefixes/flat?tab=ips")
+    const here = await item("192.168.5.0/29")
+    expect(level(here)).toBe("1")
+    expect(here.getAttribute("aria-expanded")).toBeNull()
+    expect(screen.queryByText("No child prefixes.")).toBeNull()
     await waitFor(() => expect(search(router).rail).toBe("tree"))
-    expect(setLayout).toHaveBeenLastCalledWith({ order: ["tree"], hidden: [] })
+    // Its own toggles still work beside the tree.
+    fireEvent.click(await screen.findByText("Show available"))
+    await waitFor(() =>
+      expect(document.querySelectorAll("tbody tr")).toHaveLength(6)
+    )
   })
 
   it("opens a stored Tree on the table tabs only, under one preference", async () => {
@@ -431,15 +471,14 @@ describe("prefix page tree rail", () => {
     expect(search(other).rail).toBeUndefined()
   })
 
-  it("keeps the rail's shape on a prefix with nothing inside", async () => {
-    storedMode = ["tree"]
-    const router = setup("/prefixes/flat?tab=ips")
-    expect(await screen.findByText("No child prefixes.")).toBeTruthy()
+  it("switches modes in the URL", async () => {
+    const router = setup("/prefixes/root?tab=ips&rail=tree")
+    await item("10.0.1.0/29")
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }))
+    await waitFor(() => expect(search(router).rail).toBeUndefined())
+    expect(screen.queryByRole("tree")).toBeNull()
+    expect(setLayout).toHaveBeenCalledWith({ order: ["filters"], hidden: [] })
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }))
     await waitFor(() => expect(search(router).rail).toBe("tree"))
-    // Its own toggles still work beside the empty tree.
-    fireEvent.click(await screen.findByText("Show available"))
-    await waitFor(() =>
-      expect(document.querySelectorAll("tbody tr")).toHaveLength(6)
-    )
   })
 })

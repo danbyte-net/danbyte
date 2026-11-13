@@ -9,6 +9,7 @@ import {
 } from "react"
 import type { ReactElement, ReactNode } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
 import { ChevronRight, ListFilter, ListTree, Search, X } from "lucide-react"
 
 import { api } from "@/lib/api"
@@ -24,10 +25,10 @@ import {
   TREE_VRF_PARAM,
   WITHIN_PARAM,
   flattenTree,
+  focusWindows,
   levelFromPages,
   readRailParams,
   revealLimits,
-  rootedReveal,
   searchExpanded,
   searchLevels,
   treeKey,
@@ -60,23 +61,18 @@ import { TruncatedText } from "@/components/ui/truncated-text"
 // and scopes the table on the server, whichever mode the rail is in - with
 // the filters showing, it is the removable chip over the table.
 //
-// A prefix page's IPs and Child prefixes tabs use the same rail with the
-// tree rooted at that prefix (`root`): its children on top, no VRF picker,
-// the filter box searching inside it. Both tabs share one mode (one pref,
-// `rail-prefix-detail`) and one selection, so a node picked on one tab
-// still scopes the other.
+// A prefix page's IPs and Child prefixes tabs use the same rail as
+// navigation (`focus`): the branch the prefix sits in, from the top prefix
+// above it, opened down to it with its siblings around it and its own
+// children open. A picked prefix opens its page, same tab, tree still
+// open; the filter box searches the branch. Both tabs share one mode (one
+// pref, `rail-prefix-detail`).
 //
 // A VRF page's Prefixes and IPs tabs use it with the tree fixed to that VRF
 // (`vrf`): its top-level prefixes on top, no VRF picker, one mode for both
 // tabs (`rail-vrf-detail`) and one selection.
 
 export type RailPage = "prefixes" | "ips" | "prefix-detail" | "vrf-detail"
-
-/** The prefix a rooted tree hangs from, and its VRF (`global` for none). */
-export interface TreeRoot {
-  id: string
-  vrf: string
-}
 
 const RAIL_ITEMS = [
   { value: "filters", label: "Filters" },
@@ -121,63 +117,75 @@ function revealUrl(id: string) {
 /** Everything a list page needs from the rail: the mode, the selection and
  * its VRF, the params that scope the table, and the view state the tree
  * keeps while it is open (shared by the rail and the narrow-screen sheet).
- * With `root` the tree hangs from that prefix (a prefix page's tabs); with
- * `vrf` it is that VRF's whole tree, without a picker (a VRF page's tabs,
- * which scope their tables to the VRF themselves); while `active` is false
- * a stored Tree is not written into the URL. */
+ * With `focus` the tree is that prefix's branch, opened down to it, and a
+ * pick opens the picked prefix's page (a prefix page's tabs); with `vrf` it
+ * is that VRF's whole tree, without a picker (a VRF page's tabs, which
+ * scope their tables to the VRF themselves); while `active` is false a
+ * stored Tree is not written into the URL. */
 export function usePrefixTreeRail(
   page: RailPage,
   {
-    root = null,
+    focus = null,
     vrf: fixedVrf = null,
     active = true,
-  }: { root?: TreeRoot | null; vrf?: string | null; active?: boolean } = {}
+  }: { focus?: string | null; vrf?: string | null; active?: boolean } = {}
 ) {
   const search = useListSearch()
   const write = useSearchWriter()
+  const nav = useNavigate()
   const { mode, setMode } = useRailMode(page, active)
   const params = readRailParams(search)
-  const pinned = root ? null : fixedVrf
-  const treeVrf = root || pinned ? null : params.treeVrf
-  // The root itself is no selection: the tab shows the whole prefix.
-  const within = root && params.within === root.id ? null : params.within
+  const pinned = focus ? null : fixedVrf
+  const treeVrf = focus || pinned ? null : params.treeVrf
+  // A prefix page's tree navigates: a `within` in its URL is ignored.
+  const within = focus ? null : params.within
 
+  const revealId = focus ?? within
   const reveal = useQuery({
-    queryKey: ["prefix-tree-reveal", within],
-    queryFn: () => api<TreeReveal>(revealUrl(within!)),
-    enabled: !!within,
+    queryKey: ["prefix-tree-reveal", revealId],
+    queryFn: () => api<TreeReveal>(revealUrl(revealId!)),
+    enabled: !!revealId,
     retry: false,
     staleTime: 60_000,
   })
-  // A rooted tree reveals only the path below its root; a selection
-  // outside it reads as unknown and scopes nothing.
-  const shown = useMemo(
-    () =>
-      reveal.data && root ? rootedReveal(reveal.data, root.id) : reveal.data,
-    [reveal.data, root]
-  )
-  // A VRF's tree: a selection in another VRF reads the same way.
+  // A VRF's tree: a selection in another VRF scopes nothing.
   const outside =
+    !!within &&
+    !!pinned &&
     !!reveal.data &&
-    (root ? !shown : !!pinned && (reveal.data.vrf ?? GLOBAL_VRF) !== pinned)
-  const vrf = root
-    ? root.vrf
+    (reveal.data.vrf ?? GLOBAL_VRF) !== pinned
+  const vrf = focus
+    ? (reveal.data?.vrf ?? GLOBAL_VRF)
     : pinned
       ? pinned
       : within && reveal.data
         ? (reveal.data.vrf ?? GLOBAL_VRF)
         : (treeVrf ?? GLOBAL_VRF)
   const selectedCidr =
-    within && shown && !outside
-      ? (shown.path[shown.path.length - 1]?.cidr ?? null)
+    within && reveal.data && !outside
+      ? (reveal.data.path[reveal.data.path.length - 1]?.cidr ?? null)
       : null
 
-  const select = (id: string | null) =>
+  const select = (id: string | null) => {
+    if (focus) {
+      // Another prefix's page, on the same tab, the tree still open.
+      if (!id || id === focus) return
+      void nav({
+        to: "/prefixes/$id",
+        params: { id },
+        search: ((prev: Record<string, unknown>) => ({
+          tab: prev.tab,
+          [RAIL_PARAM]: "tree",
+        })) as never,
+      })
+      return
+    }
     write((prev) => ({
       ...prev,
-      [WITHIN_PARAM]: id && id !== root?.id ? id : undefined,
-      [TREE_VRF_PARAM]: root || pinned || vrf === GLOBAL_VRF ? undefined : vrf,
+      [WITHIN_PARAM]: id ?? undefined,
+      [TREE_VRF_PARAM]: pinned || vrf === GLOBAL_VRF ? undefined : vrf,
     }))
+  }
   const setVrf = (v: string) =>
     write((prev) => ({
       ...prev,
@@ -186,14 +194,13 @@ export function usePrefixTreeRail(
     }))
 
   // The table's scope: the selection; with the tree open and nothing
-  // selected, the tree's VRF.
-  // A rooted or pinned tree's tab is scoped already: no VRF of its own.
+  // selected, the tree's VRF. A prefix or VRF page's tab is scoped already.
   const scopeParams = useMemo((): Record<string, string> => {
     if (within && !outside) return { within }
-    return mode === "tree" && !root && !pinned ? { vrf } : {}
-  }, [within, outside, mode, vrf, root, pinned])
+    return mode === "tree" && !focus && !pinned ? { vrf } : {}
+  }, [within, outside, mode, vrf, focus, pinned])
 
-  const view = useTreeView(vrf, root?.id ?? null, within, shown)
+  const view = useTreeView(vrf, focus, revealId, reveal.data)
 
   return {
     mode,
@@ -203,10 +210,13 @@ export function usePrefixTreeRail(
     setVrf,
     select,
     selectedCidr,
-    revealError: reveal.isError || outside,
-    // The selection that scopes the table (none while it is outside a root).
+    revealError: (!!within && reveal.isError) || outside,
+    // The selection that scopes the table (none while it is outside).
     scoped: within && !outside ? within : null,
-    rooted: !!root,
+    /** The prefix whose page this is (a prefix page's tree). */
+    focus,
+    /** That page's branch failed to load. */
+    focusError: focus ? reveal.error : null,
     /** The tree is one VRF's, with no picker. */
     vrfPinned: !!pinned,
     scopeParams,
@@ -216,14 +226,16 @@ export function usePrefixTreeRail(
 
 export type PrefixTreeRail = ReturnType<typeof usePrefixTreeRail>
 
-/** Open nodes, how far each level has paged, and the filter box. */
+/** Open nodes, the window of each level loaded (first offset and end), and
+ * the filter box. */
 function useTreeView(
   vrf: string,
-  root: string | null,
-  within: string | null,
+  focus: string | null,
+  revealId: string | null,
   reveal: TreeReveal | null | undefined
 ) {
   const [expanded, setExpanded] = useState<string[]>([])
+  const [starts, setStarts] = useState<Record<string, number>>({})
   const [limits, setLimits] = useState<Record<string, number>>({})
   const [text, setText] = useState("")
   const [q, setQ] = useState("")
@@ -235,44 +247,67 @@ function useTreeView(
     return () => clearTimeout(t)
   }, [text])
 
-  // A selection that arrives from the URL opens the path down to it, and
-  // pages each level far enough to show it - once per selection.
+  // A path to show opens down to it, once per prefix: a list's selection
+  // from the URL pages each level far enough to show it; a prefix page
+  // opens its own prefix too, each level at the page that holds the path.
   const revealed = useRef<string | null>(null)
   useEffect(() => {
-    if (!within || !reveal || revealed.current === within) return
-    revealed.current = within
-    const above = reveal.path.slice(0, -1).map((n) => n.id)
-    setExpanded((prev) => [...new Set([...prev, ...above])])
+    if (!revealId || !reveal || revealed.current === revealId) return
+    revealed.current = revealId
+    const ids = reveal.path.map((n) => n.id)
+    const open = focus ? ids : ids.slice(0, -1)
+    setExpanded((prev) => [...new Set([...prev, ...open])])
+    if (focus) {
+      const windows = focusWindows(reveal)
+      setStarts((prev) => ({ ...prev, ...windows }))
+      setLimits((prev) => {
+        const next = { ...prev }
+        for (const [k, start] of Object.entries(windows))
+          next[k] = Math.max(next[k] ?? 0, start + TREE_PAGE)
+        return next
+      })
+      return
+    }
     const need = revealLimits(reveal)
     setLimits((prev) => {
       const next = { ...prev }
       for (const [k, v] of Object.entries(need)) {
-        const key =
-          k === ROOT ? `${ROOT}:${root ?? reveal.vrf ?? GLOBAL_VRF}` : k
+        const key = k === ROOT ? `${ROOT}:${reveal.vrf ?? GLOBAL_VRF}` : k
         next[key] = Math.max(next[key] ?? TREE_PAGE, v)
       }
       return next
     })
-  }, [within, reveal, root])
+  }, [revealId, reveal, focus])
 
-  // The top level pages per VRF, or per root prefix.
-  const limitKey = (parentKey: string) =>
-    parentKey === ROOT ? `${ROOT}:${root ?? vrf}` : parentKey
-  const limitOf = (parentKey: string) =>
-    limits[limitKey(parentKey)] ?? TREE_PAGE
-  const more = (parentKey: string) =>
-    setLimits((prev) => ({
-      ...prev,
-      [limitKey(parentKey)]:
-        (prev[limitKey(parentKey)] ?? TREE_PAGE) + TREE_PAGE,
-    }))
+  // The top level pages per VRF.
+  const keyOf = (parentKey: string) =>
+    parentKey === ROOT ? `${ROOT}:${vrf}` : parentKey
+  const startOf = (parentKey: string) => starts[keyOf(parentKey)] ?? 0
+  const endOf = (parentKey: string) =>
+    limits[keyOf(parentKey)] ?? startOf(parentKey) + TREE_PAGE
+  const more = (parentKey: string, before = false) => {
+    const key = keyOf(parentKey)
+    if (before)
+      setStarts((prev) => ({
+        ...prev,
+        [key]: Math.max(0, (prev[key] ?? 0) - TREE_PAGE),
+      }))
+    else
+      setLimits((prev) => ({
+        ...prev,
+        [key]: (prev[key] ?? (starts[key] ?? 0) + TREE_PAGE) + TREE_PAGE,
+      }))
+  }
 
   return {
     vrf,
-    root,
+    focus,
+    /** A prefix page's branch: the top prefix above it (or itself). */
+    branch: focus ? (reveal?.path[0] ?? null) : null,
     expanded,
     setExpanded,
-    limitOf,
+    startOf,
+    endOf,
     more,
     text,
     setText,
@@ -284,74 +319,84 @@ function useTreeView(
 
 type TreeView = ReturnType<typeof useTreeView>
 
-function pageUrl(
-  vrf: string,
-  root: string | null,
-  parent: string,
-  offset: number
-) {
+function pageUrl(vrf: string, parent: string, offset: number) {
   const p = new URLSearchParams({
     offset: String(offset),
     limit: String(TREE_PAGE),
   })
   if (parent !== ROOT) p.set("parent", parent)
-  else if (root) p.set("parent", root)
   else p.set("vrf", vrf)
   return `/api/prefixes/tree/?${p}`
 }
 
-function searchUrl(vrf: string, root: string | null, q: string) {
-  const p = new URLSearchParams(root ? { parent: root, q } : { vrf, q })
+function searchUrl(vrf: string, branch: string | null, q: string) {
+  const p = new URLSearchParams(branch ? { parent: branch, q } : { vrf, q })
   return `/api/prefixes/tree/?${p}`
 }
 
 /** The tree's rows: the levels loaded for the open nodes, or, while the
- * filter box holds text, the search's paths with lazily opened matches. */
+ * filter box holds text, the search's paths with lazily opened matches. A
+ * prefix page's tree has one top node, its branch's, and searches below it. */
 export function usePrefixTreeRows(view: TreeView) {
-  const { vrf, root, q } = view
+  const { vrf, q, focus, branch } = view
+  const branchId = branch?.id ?? null
   const searching = q !== ""
   const searchQ = useQuery({
-    queryKey: ["prefix-tree-search", root ?? vrf, q],
-    queryFn: () => api<TreeSearch>(searchUrl(vrf, root, q)),
-    enabled: searching,
+    queryKey: ["prefix-tree-search", branchId ?? vrf, q],
+    queryFn: () => api<TreeSearch>(searchUrl(vrf, branchId, q)),
+    enabled: searching && (!focus || !!branchId),
     staleTime: 30_000,
   })
   const { setSearchOpen } = view
   useEffect(() => {
-    if (searchQ.data) setSearchOpen(searchExpanded(searchQ.data))
-  }, [searchQ.data, setSearchOpen])
-  const fromSearch = useMemo(
-    () =>
-      searchQ.data
-        ? searchLevels(searchQ.data, root)
-        : new Map<string, Level>(),
-    [searchQ.data, root]
-  )
+    if (searchQ.data)
+      setSearchOpen([
+        ...(branchId ? [branchId] : []),
+        ...searchExpanded(searchQ.data),
+      ])
+  }, [searchQ.data, setSearchOpen, branchId])
+  // The branch's top prefix as the tree's one top node.
+  const top = useMemo((): Level | null => {
+    if (!branch) return null
+    const { index: _index, ...node } = branch
+    return {
+      nodes: [{ ...node, parent: null }],
+      total: 1,
+      loading: false,
+      partial: true,
+    }
+  }, [branch])
+  const fromSearch = useMemo(() => {
+    const out = searchQ.data
+      ? searchLevels(searchQ.data)
+      : new Map<string, Level>()
+    if (top && searchQ.data) out.set(ROOT, top)
+    return out
+  }, [searchQ.data, top])
 
   const open = searching ? view.searchOpen : view.expanded
   const parents = useMemo(
     () =>
-      searching ? open.filter((id) => !fromSearch.has(id)) : [ROOT, ...open],
-    [searching, open, fromSearch]
+      searching
+        ? open.filter((id) => !fromSearch.has(id))
+        : focus
+          ? open
+          : [ROOT, ...open],
+    [searching, open, fromSearch, focus]
   )
   const plan = parents.flatMap((parent) => {
-    const pages = Math.ceil(view.limitOf(parent) / TREE_PAGE)
+    const start = view.startOf(parent)
+    const pages = Math.ceil((view.endOf(parent) - start) / TREE_PAGE)
     return Array.from({ length: pages }, (_, i) => ({
       parent,
-      offset: i * TREE_PAGE,
+      offset: start + i * TREE_PAGE,
     }))
   })
   const results = useQueries({
     queries: plan.map(({ parent, offset }) => ({
-      // The top level is keyed by its VRF or root prefix; a node's children
-      // are the same whichever tree shows them.
-      queryKey: [
-        "prefix-tree",
-        parent === ROOT ? (root ?? vrf) : vrf,
-        parent,
-        offset,
-      ],
-      queryFn: () => api<TreePage>(pageUrl(vrf, root, parent, offset)),
+      // A node's children are the same whichever tree shows them.
+      queryKey: ["prefix-tree", vrf, parent, offset],
+      queryFn: () => api<TreePage>(pageUrl(vrf, parent, offset)),
       staleTime: 30_000,
     })),
   })
@@ -363,36 +408,39 @@ export function usePrefixTreeRows(view: TreeView) {
     .join(",")
   const levels = useMemo(() => {
     const byParent = new Map<string, typeof results>()
+    const startOf = new Map<string, number>()
     plan.forEach((p, i) => {
       const list = byParent.get(p.parent) ?? []
       list.push(results[i])
       byParent.set(p.parent, list)
+      if (!startOf.has(p.parent)) startOf.set(p.parent, p.offset)
     })
     const out = new Map<string, Level>(fromSearch)
+    if (focus && top && !searching) out.set(ROOT, top)
     for (const [parent, pages] of byParent) {
-      const level = levelFromPages(pages)
+      const level = levelFromPages(pages, startOf.get(parent) ?? 0)
       if (level) out.set(parent, level)
     }
     return out
     // sig stands in for the results' identity.
-  }, [sig, fromSearch])
+  }, [sig, fromSearch, focus, top, searching])
   const openSet = useMemo(() => new Set(open), [open])
   const rows = useMemo(
     () => flattenTree((k) => levels.get(k), openSet),
     [levels, openSet]
   )
-  const top = searching ? undefined : levels.get(ROOT)
+  const first = searching ? undefined : levels.get(ROOT)
   return {
     rows,
     searching,
     search: searchQ,
     rootLoading: searching
-      ? searchQ.isLoading
-      : !top || (top.loading && top.nodes.length === 0),
-    rootError: searching ? searchQ.error : top?.error,
+      ? searchQ.isLoading || (!!focus && !branchId)
+      : !first || (first.loading && first.nodes.length === 0),
+    rootError: searching ? searchQ.error : first?.error,
     empty: searching
       ? !!searchQ.data && searchQ.data.results.length === 0
-      : !!top && !top.loading && top.nodes.length === 0 && !top.error,
+      : !!first && !first.loading && first.nodes.length === 0 && !first.error,
   }
 }
 
@@ -405,13 +453,17 @@ export function RailModeSwitch({
   mode: RailMode
   onChange: (m: RailMode) => void
 }) {
+  // shrink-0: a filter rail is a flex column, and once its facets overflow
+  // it would squeeze the scrolling tab row to nothing.
   return (
-    <SegmentedTabs
-      label="Rail"
-      items={RAIL_ITEMS}
-      value={mode}
-      onValueChange={onChange}
-    />
+    <div className="shrink-0">
+      <SegmentedTabs
+        label="Rail"
+        items={RAIL_ITEMS}
+        value={mode}
+        onValueChange={onChange}
+      />
+    </div>
   )
 }
 
@@ -455,7 +507,7 @@ export function PrefixTreePane({
     queryKey: ["vrfs-picker"],
     queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
-    enabled: !rail.rooted && !rail.vrfPinned,
+    enabled: !rail.focus && !rail.vrfPinned,
   })
   const vrfOptions = useMemo(
     () => [
@@ -474,7 +526,7 @@ export function PrefixTreePane({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-col gap-3 p-4 pb-3">
         {header}
-        {!rail.rooted && !rail.vrfPinned && (
+        {!rail.focus && !rail.vrfPinned && (
           <div>
             <FacetHeading label="VRF" />
             <Combobox
@@ -514,19 +566,15 @@ export function PrefixTreePane({
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-        {tree.rootLoading ? (
+        {rail.focusError ? (
+          <QueryError error={rail.focusError} />
+        ) : tree.rootLoading ? (
           <Loading />
         ) : tree.rootError ? (
           <QueryError error={tree.rootError} />
         ) : tree.empty ? (
           <EmptyState
-            title={
-              tree.searching
-                ? "No matches."
-                : rail.rooted
-                  ? "No child prefixes."
-                  : "No prefixes."
-            }
+            title={tree.searching ? "No matches." : "No prefixes."}
             className="mx-2"
           />
         ) : (
@@ -534,8 +582,10 @@ export function PrefixTreePane({
             <PrefixTree
               rows={tree.rows}
               selected={rail.within}
+              current={rail.focus}
               dimPaths={tree.searching}
               onSelect={(id) => {
+                if (id === rail.focus) return
                 rail.select(id)
                 onPicked?.()
               }}
@@ -568,6 +618,7 @@ export function PrefixTreePane({
 export function PrefixTree({
   rows,
   selected,
+  current: here = null,
   dimPaths = false,
   onSelect,
   onToggle,
@@ -575,16 +626,18 @@ export function PrefixTree({
 }: {
   rows: TreeRow[]
   selected: string | null
+  /** The prefix whose page this is: marked, never a selection. */
+  current?: string | null
   /** A search: the prefixes on a path read muted, the matches don't. */
   dimPaths?: boolean
   onSelect: (id: string) => void
   onToggle: (id: string, open: boolean) => void
-  onMore: (parentKey: string) => void
+  onMore: (parentKey: string, before?: boolean) => void
 }) {
   const base = useId()
   const [active, setActive] = useState(-1)
   const selectedIndex = rows.findIndex(
-    (r) => r.kind === "node" && r.node.id === selected
+    (r) => r.kind === "node" && r.node.id === (selected ?? here)
   )
   const current =
     active >= 0 && active < rows.length
@@ -611,7 +664,7 @@ export function PrefixTree({
     else if (a.type === "expand") onToggle(a.id, true)
     else if (a.type === "collapse") onToggle(a.id, false)
     else if (a.type === "select") onSelect(a.id)
-    else onMore(a.parentKey)
+    else onMore(a.parentKey, a.before)
   }
 
   return (
@@ -650,7 +703,7 @@ export function PrefixTree({
           )
         if (row.kind === "more") {
           const n = Math.min(row.remaining, TREE_PAGE)
-          const label = `Show ${n.toLocaleString()} more`
+          const label = `Show ${n.toLocaleString()} ${row.before ? "earlier" : "more"}`
           return (
             <div
               key={row.key}
@@ -662,7 +715,7 @@ export function PrefixTree({
               style={pad}
               onClick={() => {
                 setActive(i)
-                if (!row.loading) onMore(row.parentKey)
+                if (!row.loading) onMore(row.parentKey, row.before)
               }}
               className={cn(
                 "flex h-7 cursor-pointer items-center gap-1 rounded-md pr-1.5 text-[11px] whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -676,7 +729,8 @@ export function PrefixTree({
                 <>
                   {label}
                   <span className="num ml-auto text-muted-foreground/70">
-                    {row.remaining.toLocaleString()} left
+                    {row.remaining.toLocaleString()}{" "}
+                    {row.before ? "above" : "left"}
                   </span>
                 </>
               )}
@@ -685,6 +739,7 @@ export function PrefixTree({
         }
         const { node } = row
         const isSel = node.id === selected
+        const isCurrent = node.id === here
         return (
           <div
             key={row.key}
@@ -695,6 +750,7 @@ export function PrefixTree({
             aria-posinset={row.pos}
             aria-expanded={row.hasChildren ? row.expanded : undefined}
             aria-selected={isSel}
+            aria-current={isCurrent ? "page" : undefined}
             aria-label={node.cidr}
             style={pad}
             onClick={() => {
@@ -705,7 +761,9 @@ export function PrefixTree({
               "flex h-7 cursor-pointer items-center gap-1 rounded-md pr-1.5 text-xs",
               isSel
                 ? "bg-primary/10 font-medium text-foreground dark:bg-primary/25"
-                : "hover:bg-muted",
+                : isCurrent
+                  ? "cursor-default font-semibold text-foreground"
+                  : "hover:bg-muted",
               dimPaths &&
                 node.match === false &&
                 !isSel &&
@@ -734,6 +792,14 @@ export function PrefixTree({
               <span className="size-4 shrink-0" />
             )}
             <TruncatedText className="font-mono">{node.cidr}</TruncatedText>
+            {isCurrent && (
+              <Badge
+                variant="outline"
+                className="ml-1 h-4 shrink-0 px-1 text-[10px] font-normal whitespace-nowrap"
+              >
+                This prefix
+              </Badge>
+            )}
             {node.child_count > 0 && (
               <Badge
                 variant="secondary"

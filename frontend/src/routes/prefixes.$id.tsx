@@ -99,12 +99,10 @@ import { NarrowRailSheet } from "@/components/narrow-rail-sheet"
 import {
   RailModeSwitch,
   TreeOrFilterRail,
-  WithinChip,
   narrowTreeRail,
   usePrefixTreeRail,
   type PrefixTreeRail,
 } from "@/components/prefix-tree-rail"
-import { GLOBAL_VRF } from "@/lib/prefix-tree-nav"
 
 export const Route = createFileRoute("/prefixes/$id")({
   component: PrefixDetail,
@@ -183,31 +181,12 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
 
   const canShowAvailable = showsAvailable(p)
 
-  // The IPs and Child prefixes tabs' Filters / Tree rail: a tree of the
-  // prefixes inside this one. A selected node (`?within=`) scopes both tabs
-  // to it. Every prefix offers it, so the rail keeps one shape from prefix
-  // to prefix; a prefix with none inside it shows an empty tree.
-  const treeRoot = useMemo(
-    () => ({ id: p.id, vrf: p.vrf?.id ?? GLOBAL_VRF }),
-    [p.id, p.vrf?.id]
-  )
+  // The IPs and Child prefixes tabs' Filters / Tree rail: the branch this
+  // prefix sits in, opened down to it with its siblings around it. A
+  // picked prefix opens its own page; the tabs always show this one.
   const tree = usePrefixTreeRail("prefix-detail", {
-    root: treeRoot,
+    focus: p.id,
     active: tab === "ips" || tab === "children",
-  })
-  const nodeId = tree.scoped
-  const nodeQuery = useQuery({
-    queryKey: ["prefix", nodeId],
-    queryFn: () => api<Prefix>(`/api/prefixes/${nodeId}/`),
-    enabled: !!nodeId,
-  })
-  // The prefix the IPs tab shows: the selected node, or this one.
-  const scope: Prefix | null = nodeId ? (nodeQuery.data ?? null) : p
-  const scopeId = scope?.id ?? p.id
-  const scopeIps = useQuery({
-    queryKey: ["prefix-ips", scopeId],
-    queryFn: () => api<IPListResponse>(`/api/prefixes/${scopeId}/ips/`),
-    enabled: !!scope,
   })
 
   // Open the IP create page pre-seeded with `address` from the
@@ -221,16 +200,6 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       })
     },
     [nav, p.id]
-  )
-  // From the IPs tab: into the selected node when there is one.
-  const openAddIpInScope = useCallback(
-    (address = "") => {
-      nav({
-        to: "/ips/new",
-        search: { address: address || undefined, prefix: scopeId },
-      })
-    },
-    [nav, scopeId]
   )
 
   // Edit from a prefix's IPs tab should return here (this exact tab), not the
@@ -274,16 +243,16 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
 
   const ipsReturnPath = `/prefixes/${p.id}`
 
-  // The IPs tab's own toggles, for the prefix it shows - in the filter rail,
-  // and under the switch in Tree mode, so they work with a selection.
-  const ipToggles = (sp: Prefix) => (
+  // The IPs tab's own toggles - in the filter rail, and under the switch
+  // in Tree mode.
+  const ipToggles = (
     <IpRailToggles
       showAvailable={showAvailable}
       onToggleShowAvailable={setShowAvailable}
-      canShowAvailable={showsAvailable(sp)}
+      canShowAvailable={canShowAvailable}
       compact={compact}
       onToggleCompact={setCompact}
-      hasDhcpPool={(scopeIps.data?.dhcp_ranges?.length ?? 0) > 0}
+      hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
       showDhcpPool={showDhcpPool}
       onToggleShowDhcpPool={setShowDhcpPool}
     />
@@ -455,38 +424,23 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="ips" bare>
-        {scope ? (
-          <PrefixIpsTable
-            prefixId={scope.id}
-            within={!!nodeId}
-            {...ipTreeRail(tree, ipToggles(scope))}
-            showAvailable={showAvailable && showsAvailable(scope)}
-            compact={compact}
-            showDhcpPool={showDhcpPool}
-            cidr={scope.cidr}
-            spans={allocationSpansOf(scope)}
-            hasDescendants={scope.has_descendants}
-            onEdit={handleEditIp}
-            onDelete={handleDeleteIp}
-            onCreateAt={openAddIpInScope}
-            onSelectedRowsChange={setSelectedIps}
-            canEdit={canDo("ipaddress", "change")}
-            canDelete={canDo("ipaddress", "delete")}
-            canAdd={canAddIp}
-          />
-        ) : (
-          // The selected node is on its way: the tree stays, the table waits.
-          <div className="flex min-h-0 min-w-0 flex-1">
-            <TreeOrFilterRail rail={tree} filterRail={null} />
-            <div className="flex min-w-0 flex-1 flex-col p-3">
-              {nodeQuery.isError ? (
-                <QueryError error={nodeQuery.error} />
-              ) : (
-                <Loading />
-              )}
-            </div>
-          </div>
-        )}
+        <PrefixIpsTable
+          prefixId={p.id}
+          {...ipTreeRail(tree, ipToggles)}
+          showAvailable={showAvailable && canShowAvailable}
+          compact={compact}
+          showDhcpPool={showDhcpPool}
+          cidr={p.cidr}
+          spans={allocationSpansOf(p)}
+          hasDescendants={p.has_descendants}
+          onEdit={handleEditIp}
+          onDelete={handleDeleteIp}
+          onCreateAt={openAddIpAt}
+          onSelectedRowsChange={setSelectedIps}
+          canEdit={canDo("ipaddress", "change")}
+          canDelete={canDo("ipaddress", "delete")}
+          canAdd={canAddIp}
+        />
       </DetailTab>
 
       <DetailTab value="children" bare>
@@ -618,8 +572,7 @@ function showsAvailable(p: Prefix): boolean {
 }
 
 /** The IPs tab's rail props: the Filters / Tree switch over its filter
- * rail, the tree in its place in Tree mode, the narrow window's sheet, and
- * the selection's chip. */
+ * rail, the tree in its place in Tree mode, and the narrow window's sheet. */
 function ipTreeRail(tree: PrefixTreeRail, toggles: ReactNode) {
   return {
     railExtras: (
@@ -643,7 +596,6 @@ function ipTreeRail(tree: PrefixTreeRail, toggles: ReactNode) {
         activeFilters: active,
         treeExtras: toggles,
       }),
-    toolbar: tree.within ? <WithinChip rail={tree} /> : null,
   }
 }
 
@@ -1048,7 +1000,7 @@ function ChildPrefixesPane({
   canDelete,
 }: {
   parent: Prefix
-  /** The prefix tree rail; a selected node shows itself and what is below. */
+  /** The prefix tree rail (navigation: it does not scope the list). */
   tree: PrefixTreeRail
   onEdit: (p: Prefix) => void
   onDelete: (p: Prefix) => void
@@ -1056,31 +1008,25 @@ function ChildPrefixesPane({
   canEdit: boolean
   canDelete: boolean
 }) {
-  // The prefix and everything inside it, in its VRF, scoped on the server
-  // (`?within=`) - or the tree's selected node and everything inside that.
-  const nodeId = tree.scoped
-  const scopeId = nodeId ?? parent.id
+  // The prefix and everything inside it, in its VRF, scoped on the server.
   const query = useQuery({
-    queryKey: ["prefixes", "within", scopeId],
+    queryKey: ["prefixes", "within", parent.id],
     queryFn: () =>
       apiAll<Prefix>(
-        `/api/prefixes/?${new URLSearchParams({ within: scopeId })}`
+        `/api/prefixes/?${new URLSearchParams({ within: parent.id })}`
       ),
   })
   const cfQuery = useCustomFieldDefs("prefix")
 
   const rows = useMemo<NestedPrefix[]>(() => {
     const nested = annotateNesting(query.data?.results ?? [])
-    const top = nested.find((p) => p.id === scopeId)?._depth ?? 0
-    // A selected node is a row of its own at depth 0. The page's prefix
-    // anchors the tree but isn't shown - its children start at the edge.
+    const top = nested.find((p) => p.id === parent.id)?._depth ?? 0
+    // The page's prefix anchors the tree but isn't shown - its children
+    // start at the edge.
     return nested
-      .filter((p) => nodeId || p.id !== parent.id)
-      .map((p) => ({
-        ...p,
-        _depth: Math.max(0, p._depth - top - (nodeId ? 0 : 1)),
-      }))
-  }, [query.data, parent.id, scopeId, nodeId])
+      .filter((p) => p.id !== parent.id)
+      .map((p) => ({ ...p, _depth: Math.max(0, p._depth - top - 1) }))
+  }, [query.data, parent.id])
 
   // Filter rail derives from the factory's facet metadata (status, site,
   // utilisation, tags + one facet per tenant custom field) - same machinery as
@@ -1168,7 +1114,6 @@ function ChildPrefixesPane({
           <span className="num text-[11px] text-muted-foreground">
             {filteredRows.length} row{filteredRows.length === 1 ? "" : "s"}
           </span>
-          {tree.within && <WithinChip rail={tree} />}
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-3">
           {query.isLoading ? (

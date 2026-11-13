@@ -156,8 +156,8 @@ picked, it shows the VRF's addresses. The pick is `?within=<id>`, kept as a
 **Within …** chip when you switch back to Filters. Prefixes you may not view
 are left out of the tree as on the prefix list.
 
-A prefix's **IPs** tab has the same switch, with the tree starting at that
-prefix - see
+A prefix's **IPs** tab has the same switch, with the tree showing the
+branch around that prefix for moving between prefix pages - see
 [On a prefix's page](../features/prefix-crud.md#on-a-prefixs-page).
 
 ## API filters

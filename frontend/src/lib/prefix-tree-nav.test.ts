@@ -7,7 +7,7 @@ import {
   levelFromPages,
   readRailParams,
   revealLimits,
-  rootedReveal,
+  focusWindows,
   searchExpanded,
   searchLevels,
   treeKey,
@@ -42,7 +42,7 @@ const shape = (rows: TreeRow[]) =>
     r.kind === "node"
       ? `${"  ".repeat(r.depth)}${r.node.cidr}${r.hasChildren ? (r.expanded ? " -" : " +") : ""}`
       : r.kind === "more"
-        ? `${"  ".repeat(r.depth)}[${r.remaining} more]`
+        ? `${"  ".repeat(r.depth)}[${r.remaining} ${r.before ? "earlier" : "more"}]`
         : `${"  ".repeat(r.depth)}[loading]`
   )
 
@@ -239,46 +239,53 @@ describe("URL and reveal", () => {
   })
 })
 
-describe("a tree rooted at a prefix", () => {
+describe("a prefix page's branch", () => {
   const step = (n: TreeNode, index: number) => ({ ...n, index })
   const reveal = {
     vrf: null,
     path: [
       step(node("p8", "10.0.0.0/8", 1), 0),
-      step(node("p16", "10.1.0.0/16", 1, "p8"), 0),
-      step(node("p24", "10.1.2.0/24", 0, "p16"), 250),
+      step(node("p16", "10.1.0.0/16", 2000, "p8"), 0),
+      step(node("p29", "10.1.7.8/29", 0, "p16"), 1450),
     ],
   }
 
-  it("reveals only the steps below the root, the first on top", () => {
-    const r = rootedReveal(reveal, "p8")!
-    expect(r.path.map((s) => s.id)).toEqual(["p16", "p24"])
-    expect(r.path[0].parent).toBeNull()
-    // The root's own children page from the tree's top level.
-    expect(revealLimits(rootedReveal(reveal, "p16")!)).toEqual({
-      [ROOT]: TREE_PAGE * 2,
-    })
-  })
-
-  it("has nothing to reveal for the root itself or outside it", () => {
-    expect(rootedReveal(reveal, "p24")).toBeNull()
-    expect(rootedReveal(reveal, "elsewhere")).toBeNull()
-  })
-
-  it("hangs a search's top paths from the tree's top", () => {
-    const levels = searchLevels(
-      {
-        q: "10.1.2",
-        count: 1,
-        truncated: false,
-        results: [
-          node("p16", "10.1.0.0/16", 1, "p8", false),
-          node("p24", "10.1.2.0/24", 0, "p16", true),
-        ],
-      },
-      "p8"
+  it("opens each level at the page that holds the path", () => {
+    expect(focusWindows(reveal)).toEqual({ p16: 7 * TREE_PAGE })
+    // The first page needs no window.
+    expect(focusWindows({ vrf: null, path: reveal.path.slice(0, 2) })).toEqual(
+      {}
     )
-    expect(levels.get(ROOT)?.nodes.map((n) => n.id)).toEqual(["p16"])
-    expect(levels.has("p8")).toBe(false)
+  })
+
+  it("pages a window both ways", () => {
+    const start = 7 * TREE_PAGE
+    const sibs = Array.from({ length: TREE_PAGE }, (_, i) =>
+      node(`s${i}`, `10.1.${i}.0/29`, 0, "p16")
+    )
+    const level = levelFromPages([page("p16", sibs, 2000, start)], start)!
+    expect(level.before).toBe(start)
+    const levels = new Map<string, Level>([
+      [ROOT, levelFromPages([page(null, [node("p16", "10.1.0.0/16", 2000)])])!],
+      ["p16", level],
+    ])
+    const rows = flattenTree((k) => levels.get(k), new Set(["p16"]))
+    expect(shape(rows.slice(0, 2))).toEqual([
+      "10.1.0.0/16 -",
+      `  [${start} earlier]`,
+    ])
+    expect(shape(rows.slice(-1))).toEqual([
+      `  [${2000 - start - TREE_PAGE} more]`,
+    ])
+    const first = rows[2]
+    expect(first.kind === "node" && [first.pos, first.size]).toEqual([
+      start + 1,
+      2000,
+    ])
+    expect(treeKey(rows, 1, "Enter")).toEqual({
+      type: "more",
+      parentKey: "p16",
+      before: true,
+    })
   })
 })

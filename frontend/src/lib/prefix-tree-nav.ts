@@ -2,8 +2,8 @@
 //
 // The left rail of /prefixes and /ips shows either the filters or a tree of
 // one VRF's prefixes - and a prefix page's IPs and Child prefixes tabs the
-// same tree rooted at that prefix (components/prefix-tree-rail.tsx). The tree never
-// loads whole: GET /api/prefixes/tree/ answers one level at a time, paged,
+// branch the prefix sits in, opened down to it (components/prefix-tree-rail.tsx).
+// The tree never loads whole: GET /api/prefixes/tree/ answers one level at a time, paged,
 // with each node's direct-child count, and a search answers the matches
 // with the path above them. This module is the pure part - URL params, the
 // API shapes, and turning the loaded levels into the rows the pane draws
@@ -65,6 +65,9 @@ export interface Level {
   error?: unknown
   /** Only some children, on purpose (a search path): no "Show more". */
   partial?: boolean
+  /** Children ahead of the loaded ones: a window opened around a prefix
+   * deep in a long list pages back too. */
+  before?: number
 }
 
 export type TreeRow =
@@ -87,14 +90,18 @@ export type TreeRow =
       depth: number
       remaining: number
       loading: boolean
+      /** The rows ahead of the window ("Show 200 earlier"). */
+      before?: boolean
     }
   | { kind: "loading"; key: string; parentKey: string; depth: number }
 
-/** The pages fetched for one parent → its level. */
+/** The pages fetched for one parent → its level; `start` is the offset of
+ * the first page (a window that does not begin at the first child). */
 export function levelFromPages(
   pages: readonly (
     { data?: TreePage; isFetching?: boolean; error?: unknown } | undefined
-  )[]
+  )[],
+  start = 0
 ): Level | undefined {
   if (pages.length === 0) return undefined
   const nodes: TreeNode[] = []
@@ -113,19 +120,22 @@ export function levelFromPages(
     }
     if (p.isFetching && !p.data) loading = true
   }
-  return { nodes, total: Math.max(total, nodes.length), loading, error }
+  return {
+    nodes,
+    total: Math.max(total, start + nodes.length),
+    loading,
+    error,
+    ...(start > 0 ? { before: start } : {}),
+  }
 }
 
 /** A search answer → its levels: each prefix on a path holds only the path
  * below it. Matches are not in the map - they open like any other node.
- * In a tree rooted at a prefix (`root`), what hangs from it is the top. */
-export function searchLevels(
-  search: TreeSearch,
-  root: string | null = null
-): Map<string, Level> {
+ * A search below a prefix (a prefix page) hangs its paths from it. */
+export function searchLevels(search: TreeSearch): Map<string, Level> {
   const out = new Map<string, Level>()
   for (const n of search.results) {
-    const key = n.parent === null || n.parent === root ? ROOT : n.parent
+    const key = n.parent === null ? ROOT : n.parent
     let level = out.get(key)
     if (!level) {
       level = { nodes: [], total: 0, loading: false, partial: true }
@@ -159,6 +169,17 @@ export function flattenTree(
       return
     }
     const size = level.partial ? level.nodes.length : level.total
+    const before = level.partial ? 0 : (level.before ?? 0)
+    if (before > 0)
+      rows.push({
+        kind: "more",
+        key: `${parentKey}/-`,
+        parentKey,
+        depth,
+        remaining: before,
+        loading: level.loading,
+        before: true,
+      })
     level.nodes.forEach((node, i) => {
       const hasChildren = node.child_count > 0
       const open = hasChildren && expanded.has(node.id)
@@ -170,12 +191,12 @@ export function flattenTree(
         parentKey,
         expanded: open,
         hasChildren,
-        pos: i + 1,
+        pos: before + i + 1,
         size,
       })
       if (open) walk(node.id, depth + 1)
     })
-    const remaining = level.total - level.nodes.length
+    const remaining = level.total - before - level.nodes.length
     if (!level.partial && remaining > 0)
       rows.push({
         kind: "more",
@@ -195,7 +216,7 @@ export type TreeAction =
   | { type: "expand"; id: string }
   | { type: "collapse"; id: string }
   | { type: "select"; id: string }
-  | { type: "more"; parentKey: string }
+  | { type: "more"; parentKey: string; before?: boolean }
 
 /** What a key does on the row at `index` (the WAI-ARIA tree pattern):
  * Up/Down move, Home/End jump, Right opens or steps into a node, Left
@@ -232,7 +253,10 @@ export function treeKey(
     case "Enter":
     case " ":
       if (row.kind === "node") return { type: "select", id: row.node.id }
-      if (row.kind === "more") return { type: "more", parentKey: row.parentKey }
+      if (row.kind === "more")
+        return row.before
+          ? { type: "more", parentKey: row.parentKey, before: true }
+          : { type: "more", parentKey: row.parentKey }
       return null
     default:
       return null
@@ -250,19 +274,16 @@ export function revealLimits(reveal: TreeReveal): Record<string, number> {
   return out
 }
 
-/** A reveal path for a tree rooted at the prefix `root`: only the steps
- * below it, the first one at the top. Null when the selection is the root
- * itself or not inside it. */
-export function rootedReveal(
-  reveal: TreeReveal,
-  root: string
-): TreeReveal | null {
-  const at = reveal.path.findIndex((s) => s.id === root)
-  if (at < 0 || at === reveal.path.length - 1) return null
-  const path = reveal.path
-    .slice(at + 1)
-    .map((s, i) => (i === 0 ? { ...s, parent: null } : s))
-  return { vrf: reveal.vrf, path }
+/** A prefix page's tree: the page of children that holds each step of the
+ * path below the branch's top, so a prefix deep in a long list opens with
+ * the siblings around it. Keyed by parent, the window's first offset. */
+export function focusWindows(reveal: TreeReveal): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const step of reveal.path.slice(1)) {
+    const start = Math.floor(step.index / TREE_PAGE) * TREE_PAGE
+    if (step.parent && start > 0) out[step.parent] = start
+  }
+  return out
 }
 
 /** The rail's state in the URL. */

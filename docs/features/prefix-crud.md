@@ -164,29 +164,30 @@ selects.
 ### On a prefix's page
 
 A prefix's **IPs** and **Child prefixes** tabs have the same **Filters** /
-**Tree** switch. There the tree starts at the prefix itself: its direct
-children on top, each opening as above (a prefix with none shows **No child
-prefixes.**). It has no VRF picker (the prefix's own VRF applies), and
-**Filter prefixes** searches only inside the prefix.
+**Tree** switch. There the tree is for getting around: it shows the branch
+the prefix sits in, from the top prefix above it in its VRF, opened down to
+the prefix. Its parent's other children - its siblings - sit around it, the
+prefix itself is marked **This prefix** and opens to its own children. A
+prefix with nothing above it is the top of its tree. There is no VRF picker
+(the prefix's own VRF applies), and **Filter prefixes** searches the whole
+branch.
 
-Click a prefix in the tree to scope the tab to it:
+When the prefix is deep in a long list (a `/16` with 2,000 `/29`s), its
+level opens at the 200 that hold it, with **Show 200 earlier** above and
+**Show 200 more** below.
 
-- **IPs** lists the addresses inside the picked prefix - on it or on any
-  prefix below it. **Show available** and **Show DHCP pool** stay under the
-  switch in Tree mode and count against the picked prefix: its free hosts
-  (when it holds no prefixes of its own and is small enough to list) and its
-  own DHCP pool. **+ Add** on a free row opens the IP form in the picked
-  prefix.
-- **Child prefixes** lists the picked prefix and everything inside it.
+Click a prefix in the tree (or press ++enter++ on it) to open its page, on
+the same tab with the tree still open - where the tree centres on that
+prefix. That goes for every prefix shown: one above, a sibling, a sibling's
+child, one inside this prefix, or a search match. Clicking this prefix does
+nothing. The tabs always list this prefix's own rows: the tree does not
+scope them, and a `?within=` in a prefix page's link is ignored.
 
-The pick is `?within=<id>` and the mode `?rail=tree`, beside the tab's
-`?tab=`, so a link opens the same view. Both tabs share them: a prefix
-picked on **IPs** still scopes **Child prefixes**. The **Within …** chip
-beside the row count, or **clear** in the tree, goes back to the whole
-prefix. Tree or Filters is remembered per user for prefix pages, apart from
-the two lists - a tree you browse the lists by doesn't change how a prefix
-page opens. On a narrow window the rail opens from the **Filters** /
-**Tree** button beside the row count.
+The mode is `?rail=tree`, beside the tab's `?tab=`, so a link opens the
+same view; both tabs share it. Tree or Filters is remembered per user for
+prefix pages, apart from the two lists - a tree you browse the lists by
+doesn't change how a prefix page opens. On a narrow window the rail opens
+from the **Filters** / **Tree** button beside the row count.
 
 ### On a VRF's page
 
@@ -209,7 +210,8 @@ from the button beside the row count.
 
 The tree holds only prefixes you may view. A prefix whose parent you can't
 view hangs from the nearest prefix above it that you can - or sits at the
-top of the VRF - so a hidden prefix is never named, shown or counted. A
+top of the VRF - so a hidden prefix is never named, shown or counted; on a
+prefix's page the branch starts at the top prefix you can view. A
 selection naming a prefix you can't view lists nothing.
 
 ## Free space in the list

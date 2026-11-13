@@ -54,10 +54,6 @@ const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
 interface PrefixIpsTableProps {
   prefixId: string
-  /** The addresses inside the prefix and every prefix below it (`?within=`
-   * on the address list - a prefix tree selection), instead of those on the
-   * prefix itself. The DHCP pool is still the prefix's own. */
-  within?: boolean
   /** Non-facet controls for the rail (Show available, Compact, DHCP pool);
    * the facets themselves derive from the columns. */
   railExtras?: ReactNode
@@ -95,7 +91,6 @@ interface PrefixIpsTableProps {
 
 function PrefixIpsTableImpl({
   prefixId,
-  within = false,
   railExtras,
   renderRail,
   narrowRail,
@@ -119,16 +114,7 @@ function PrefixIpsTableImpl({
     queryKey: ["prefix-ips", prefixId],
     queryFn: () => api<IPListResponse>(`/api/prefixes/${prefixId}/ips/`),
   })
-  // A tree selection: the prefix's addresses with its child prefixes'.
-  const deep = useQuery({
-    queryKey: ["prefix-ips", prefixId, "within"],
-    queryFn: () =>
-      apiAll<IPAddress>(
-        `/api/ips/?${new URLSearchParams({ within: prefixId })}`
-      ),
-    enabled: within,
-  })
-  const source = within ? deep.data?.results : query.data?.results
+  const source = query.data?.results
 
   // DHCP scope pool ranges (from the ips endpoint) → shade free addresses that
   // fall inside a pool, and back the "Show DHCP pool" ghost rows. Exclusion
@@ -432,14 +418,14 @@ function PrefixIpsTableImpl({
     []
   )
 
-  const pending = query.isLoading || (within && deep.isLoading)
-  const failed = query.isError || (within && deep.isError)
+  const pending = query.isLoading
+  const failed = query.isError
   // Without a rail around it, a pending table is just the spinner.
   if (!renderRail && pending) return <Loading />
   if (!renderRail && failed) {
     return (
       <div className="p-4">
-        <QueryError error={query.error ?? deep.error} />
+        <QueryError error={query.error} />
       </div>
     )
   }
@@ -478,7 +464,7 @@ function PrefixIpsTableImpl({
           {pending ? (
             <Loading />
           ) : failed ? (
-            <QueryError error={query.error ?? deep.error} />
+            <QueryError error={query.error} />
           ) : (
             <DataTable
               data={rows}
