@@ -3222,7 +3222,8 @@ class DeviceCredential(TimestampedModel):
         return f"{self.MANAGED_REF_PREFIX}/{self.id}"
 
     def resolve_secret(self) -> dict:
-        """Fetch the referenced secret from the active store at use-time.
+        """Fetch the referenced secret at use-time, from the store stamped on
+        the row while it is configured, else the active one (#511).
 
         Fail-closed: raises :class:`SecretStoreDisabled` when no store is
         enabled, :class:`SecretPathError` when ``secret_path`` is malformed or
@@ -3232,21 +3233,22 @@ class DeviceCredential(TimestampedModel):
         call this - never list/detail serialization."""
         from .secret_store import (
             SecretStoreError,
+            read_external,
+            read_managed,
             require_secret_store,
-            validate_external_path,
         )
 
-        store = require_secret_store()
+        require_secret_store()
         if not self.secret_path:
             raise SecretStoreError("No secret has been stored for this credential.")
         # Managed: our own {tenant}/{ref} namespace (get), the store refusing a
         # ref that could leave it. External: the operator's own path
-        # (get_at_path), checked against every tenant's managed namespace.
+        # (get_at_path), checked against every tenant's managed namespace of
+        # each store it is read from.
         if self.secret_managed:
-            value = store.get(self.tenant_id, self.secret_path)
+            value = read_managed(self.secret_provider, self.tenant_id, self.secret_path)
         else:
-            validate_external_path(store, self.secret_path)
-            value = store.get_at_path(self.tenant_id, self.secret_path)
+            value = read_external(self.secret_provider, self.tenant_id, self.secret_path)
         if value is None:
             raise SecretStoreError(
                 f"No secret found at '{self.secret_path}' in the configured store."
@@ -3258,17 +3260,14 @@ class DeviceCredential(TimestampedModel):
         derived ref (``device-credentials/<id>``), stamping the provider. The
         ref is always re-derived here: a path on the row, however it got
         there, never decides where a managed secret is written (#315). Only
-        for managed credentials; external ones reference a path instead."""
-        from core.models import DeploymentSettings
+        for managed credentials; external ones reference a path instead. A
+        copy left in the store it was stamped with before goes (#511)."""
+        from .secret_store import write_managed
 
-        from .secret_store import require_secret_store
-
-        store = require_secret_store()
-        self.secret_path = self.managed_secret_ref()
-        self.secret_provider = (
-            DeploymentSettings.load().secrets_provider or ""
-        ).strip()
-        store.put(self.tenant_id, self.secret_path, value or {})
+        ref = self.managed_secret_ref()
+        before = self.secret_provider if self.secret_path == ref else ""
+        self.secret_provider = write_managed(before, self.tenant_id, ref, value or {})
+        self.secret_path = ref
 
 
 class SharedCredential(TimestampedModel):
@@ -3564,6 +3563,9 @@ class CertificateRequest(TimestampedModel):
     # store at ``key_ref``, never on this row.
     csr_pem = models.TextField(blank=True, default="")
     key_ref = models.CharField(max_length=200, blank=True, default="")
+    #: The store the key was written to; it is read from there (#511).
+    #: Blank on keys written before 0.20: read from the active store first.
+    key_provider = models.CharField(max_length=32, blank=True, default="", db_default="")
     issued_certificate = models.ForeignKey(
         "Certificate",
         on_delete=models.SET_NULL,
@@ -3636,6 +3638,8 @@ class Issuer(TimestampedModel):
     # store at ``account_ref`` (never on this row).
     account_uri = models.CharField(max_length=512, blank=True, default="")
     account_ref = models.CharField(max_length=200, blank=True, default="")
+    #: The store the account key was written to (#511); blank before 0.20.
+    account_provider = models.CharField(max_length=32, blank=True, default="", db_default="")
     secrets = EncryptedJSONField(default=dict, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,

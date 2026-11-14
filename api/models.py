@@ -7800,27 +7800,29 @@ class SecretBackedPSK(models.Model):
         stamping which provider took it. Fail-closed: raises
         :class:`SecretStoreDisabled` when no store is configured, because the
         alternative is a key sitting in the database in the clear."""
-        from core.models import DeploymentSettings
-        from monitoring.secret_store import require_secret_store
+        from monitoring.secret_store import write_managed
 
-        store = require_secret_store()
         # Always re-derived: a path on the row, however it got there, never
         # decides where the key is written (#315).
-        self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
-        self.psk_secret_provider = (
-            DeploymentSettings.load().secrets_provider or ""
-        ).strip()
-        store.put(self.tenant_id, self.psk_secret_path, {"psk": value})
+        ref = f"{self.psk_secret_prefix}/{self.id}"
+        before = self.psk_secret_provider if self.psk_secret_path == ref else ""
+        self.psk_secret_provider = write_managed(before, self.tenant_id, ref, {"psk": value})
+        self.psk_secret_path = ref
 
     def resolve_psk(self) -> str:
-        """Read the PSK back at use-time. Only the reveal action calls this -
+        """Read the PSK back at use-time, from the store stamped on the row
+        while it is configured (#511). Only the reveal action calls this -
         never list or detail serialization."""
-        from monitoring.secret_store import SecretStoreError, require_secret_store
+        from monitoring.secret_store import (
+            SecretStoreError,
+            read_managed,
+            require_secret_store,
+        )
 
         if not self.psk_secret_path:
             raise SecretStoreError("No PSK is set.")
-        store = require_secret_store()
-        value = store.get(self.tenant_id, self.psk_secret_path)
+        require_secret_store()
+        value = read_managed(self.psk_secret_provider, self.tenant_id, self.psk_secret_path)
         if value is None:
             raise SecretStoreError(
                 f"No secret found at '{self.psk_secret_path}' in the "

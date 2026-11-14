@@ -51,7 +51,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from .models import AcmeOrder, Issuer
-from .secret_store import require_secret_store
+from .secret_store import read_managed, require_secret_store, write_managed
 
 log = logging.getLogger(__name__)
 
@@ -696,7 +696,7 @@ def register_account(issuer: Issuer) -> str:
     Idempotent against the CA: ACME ``newAccount`` returns the existing account
     for a known key. Returns the account URI. Fail-closed if no secret store.
     """
-    store = require_secret_store()
+    require_secret_store()  # fail closed before any key is generated
     key = ec.generate_private_key(ec.SECP256R1())
     jwk, alg = _jwk_and_alg(key)
     net = _network(issuer, jwk, alg)
@@ -729,10 +729,11 @@ def register_account(issuer: Issuer) -> str:
         serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption(),
     ).decode("ascii")
-    store.put(issuer.tenant_id, ref, {"account_key": pem})
+    before = issuer.account_provider if issuer.account_ref == ref else ""
+    issuer.account_provider = write_managed(before, issuer.tenant_id, ref, {"account_key": pem})
     issuer.account_uri = regr.uri or ""
     issuer.account_ref = ref
-    issuer.save(update_fields=["account_uri", "account_ref", "updated_at"])
+    issuer.save(update_fields=["account_uri", "account_ref", "account_provider", "updated_at"])
     return issuer.account_uri
 
 
@@ -746,8 +747,8 @@ def _client(issuer: Issuer):
     """
     if not issuer.account_uri:
         raise AcmeError("This issuer has no ACME account yet - register it first.")
-    store = require_secret_store()
-    data = store.get(issuer.tenant_id, _account_ref(issuer)) or {}
+    require_secret_store()
+    data = read_managed(issuer.account_provider, issuer.tenant_id, _account_ref(issuer)) or {}
     pem = data.get("account_key")
     if not pem:
         raise AcmeError("The issuer's ACME account key is missing from the secret store.")

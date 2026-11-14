@@ -335,7 +335,8 @@ def _require_manage(request):
         response=OpenApiTypes.OBJECT,
         description="Registered providers: kind, label, description, and the "
         "settings fields each one needs (text | password | checkbox); plus "
-        "monitoring_keys, how many MONITORING_SECRET_KEY entries are configured.",
+        "monitoring_keys, how many MONITORING_SECRET_KEY entries are configured; "
+        "and secret_counts, how many managed secrets each store holds.",
     ),
 )
 @api_view(["GET"])
@@ -354,9 +355,14 @@ def secret_store_providers_view(request):
         key_count = len(monitoring_keys())
     except ImproperlyConfigured:
         key_count = 0
+    from monitoring.secret_refs import secret_counts
+
     return Response({
         "providers": [p.payload() for p in secret_store_providers()],
         "monitoring_keys": key_count,
+        # How many managed secrets each store holds (#511) - counts only, so
+        # the card can warn before a switch leaves them in the old store.
+        "secret_counts": secret_counts(),
     })
 
 

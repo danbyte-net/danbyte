@@ -724,8 +724,12 @@ credentials, PSKs and keys, CSR and ACME keys - see
 [The secret store](../monitoring/certificates.md#the-secret-store-for-issuance-keys).
 Blank disables every feature that needs one. The Key Vault URL and sign-in
 endpoint must be `https://`; a Vault address may be `http://` (with a
-warning). `manage.py cleanup_secret_store` lists and removes secrets whose
-record is gone ([details](../monitoring/certificates.md#removing-orphaned-secrets)).
+warning). Switching stores moves nothing: each secret is read from the store
+it was written to while that stays configured, and the card asks before a
+switch that leaves secrets behind. `manage.py migrate_secret_store --from X
+--to Y [--apply]` moves them ([details](../monitoring/certificates.md#switching-stores));
+`manage.py cleanup_secret_store` lists and removes secrets whose record is
+gone ([details](../monitoring/certificates.md#removing-orphaned-secrets)).
 
 ### What the monitoring key protects
 

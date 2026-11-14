@@ -86,16 +86,24 @@ function SecretStoreCard() {
   const providers = useQuery({
     queryKey: ["secret-store-providers"],
     queryFn: () =>
-      api<{ providers: SecretStoreProvider[]; monitoring_keys?: number }>(
-        "/api/deployment/secret-stores/"
-      ),
-    staleTime: 10 * 60_000,
+      api<{
+        providers: SecretStoreProvider[]
+        monitoring_keys?: number
+        secret_counts?: Record<string, number>
+      }>("/api/deployment/secret-stores/"),
+    staleTime: 60_000,
   })
   const [provider, setProvider] = useState("")
   const [values, setValues] = useState<Record<string, FieldValue>>({})
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const list = providers.data?.providers ?? []
   const keyCount = providers.data?.monitoring_keys
+  const counts = Object.entries(providers.data?.secret_counts ?? {}).filter(
+    ([, n]) => n > 0
+  )
+  const labelOf = (kind: string) =>
+    list.find((p) => p.kind === kind)?.label ?? (kind || "Unknown")
   const selected = list.find((p) => p.kind === provider)
   const stored = (data ?? {}) as unknown as Record<string, unknown>
 
@@ -131,15 +139,42 @@ function SecretStoreCard() {
   const setValue = (name: string, v: FieldValue) =>
     setValues((prev) => ({ ...prev, [name]: v }))
 
+  const switching = provider !== data.secrets_provider
+  // Secrets that stay behind in another store when this switch is saved.
+  const leftBehind = counts.filter(([kind]) => kind !== provider)
+  const leftCount = leftBehind.reduce((sum, [, n]) => sum + n, 0)
+  const doSave = () => save.mutate({ key: "secrets", patch })
+
   return (
     <SettingsCard
       title="Secret store"
-      description="Where private keys for certificate requests (CSR) and ACME are kept - the certificate inventory itself never stores keys either way."
-      onSave={() => save.mutate({ key: "secrets", patch })}
+      description="Where Danbyte keeps the secrets it manages: device and shared credentials, PSKs and keys, CSR and ACME private keys."
+      onSave={() =>
+        switching && leftCount > 0 ? setConfirmOpen(true) : doSave()
+      }
       dirty={dirty}
       saving={savingKey === "secrets"}
       saveLabel="Save secret store"
     >
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch secret store?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {leftBehind
+                .map(([kind, n]) => `${n} in ${labelOf(kind)}`)
+                .join(", ")}{" "}
+              stay where they are. They remain readable while that store stays
+              configured. Move them with{" "}
+              <span className="font-mono">manage.py migrate_secret_store</span>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={doSave}>Switch</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <FormSelect
         label="Provider"
         value={provider || null}
@@ -147,9 +182,12 @@ function SecretStoreCard() {
         noneLabel="Disabled"
         info={
           <>
-            Where CSR / ACME private keys are stored. Deployment-wide on purpose
-            - it decides where the organisation&apos;s keys live.{" "}
-            <b>Disabled</b> turns issuance off.
+            Where Danbyte keeps credentials, PSKs and private keys.
+            Deployment-wide on purpose - it decides where the
+            organisation&apos;s secrets live. <b>Disabled</b> turns every
+            feature that needs one off. Switching moves nothing: each secret is
+            read from the store it was written to while that store stays
+            configured.
             {list.map((p) => (
               <span key={p.kind}>
                 <br />
@@ -199,6 +237,12 @@ function SecretStoreCard() {
             )
           })}
         </div>
+      )}
+      {counts.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          Secrets:{" "}
+          {counts.map(([kind, n]) => `${labelOf(kind)} ${n}`).join(" · ")}
+        </p>
       )}
       {keyCount !== undefined && (
         <p className="text-[11px] text-muted-foreground">

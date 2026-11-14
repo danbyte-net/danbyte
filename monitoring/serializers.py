@@ -384,6 +384,8 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
             # credential turned from external to managed drops its old path
             # until a secret is typed.
             attrs.pop("secret_path", None)
+            # The store is stamped when the secret is written (#511).
+            attrs.pop("secret_provider", None)
             if self.instance is not None and not self.instance.secret_managed:
                 attrs["secret_path"] = ""
             return attrs
@@ -546,6 +548,7 @@ class SharedCredentialSerializer(TenantScopedModelSerializer):
         managed = attrs.get("secret_managed", getattr(inst, "secret_managed", True))
         if managed:
             attrs.pop("secret_path", None)
+            attrs.pop("secret_provider", None)
             if inst is not None and not inst.secret_managed:
                 attrs["secret_path"] = ""
             return attrs

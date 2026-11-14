@@ -382,6 +382,38 @@ plugin store the delete runs once the transaction commits, so a delete that
 fails or is rolled back (a bulk-delete dry run) keeps the secret. An
 unreachable store leaves the secret behind and logs the ref, never the value.
 
+### Switching stores
+
+Every record is stamped with the store its secret was written to
+(`secret_provider`, `psk_secret_provider`, `key_provider`, `account_provider`),
+and a secret is read from that store for as long as it stays configured, with
+the active store as the fallback. Switching the provider therefore moves
+nothing and breaks nothing: new and rewritten secrets go to the new store
+(a rewrite also removes the copy left in the old one), and existing ones keep
+being read from the old store. Only a store whose settings are cleared becomes
+unreadable, with an error naming it. **Disabled** still turns everything off.
+Records written before 0.20 that carry no stamp (CSR and ACME keys) are looked
+for in the active store first, then in every other configured one.
+
+The card shows how many secrets each store holds and asks before a switch
+that leaves some behind. To retire the old store, move them:
+
+```bash
+.venv/bin/python manage.py migrate_secret_store --from local --to azure          # dry run: counts
+.venv/bin/python manage.py migrate_secret_store --from local --to azure --apply  # move
+```
+
+For each record stamped `--from` (or unstamped and present there) it reads
+the secret, writes it to `--to`, reads it back to verify, re-stamps the
+record, and only then deletes it from `--from`. A record whose copy does not
+match is left as it was and the command exits non-zero. It can be stopped and
+run again: moved records are skipped, and an old copy a previous run could not
+delete is removed once the new one is confirmed. `--tenant` limits it to one
+tenant. External credentials point at your own paths and are left alone.
+Values are never printed; each applied run writes one change-log entry per
+tenant with the counts. Both stores must be configured while it runs - switch
+the provider before or after, either works.
+
 ### Removing orphaned secrets
 
 Before 0.20 a deleted device or shared credential left its secret in the store,

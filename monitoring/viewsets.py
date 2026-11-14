@@ -612,7 +612,10 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         if managed:
             return
         path = vd.get("secret_path", getattr(inst, "secret_path", ""))
-        if inst is not None and not inst.secret_managed and path == inst.secret_path:
+        provider = vd.get("secret_provider", getattr(inst, "secret_provider", ""))
+        # The store an external path is read from is part of where it points.
+        if (inst is not None and not inst.secret_managed and path == inst.secret_path
+                and provider == inst.secret_provider):
             return
         if not can_manage_deployment(self.request.user):
             raise PermissionDenied(

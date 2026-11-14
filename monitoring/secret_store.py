@@ -443,6 +443,124 @@ def stores_to_discard(provider: str) -> list[tuple[str, SecretStore]]:
     return out
 
 
+def provider_label(kind: str) -> str:
+    prov = _REGISTRY.get((kind or "").strip())
+    return prov.label if prov is not None else (kind or "unknown")
+
+
+# ─── reading from the store a secret was written to (#511) ─────────────────
+# Every managed secret is stamped with the provider that took it. Switching
+# the active store moves nothing, so a secret is read from its stamped store
+# while that is still configured, and the active store is the fallback (a
+# secret copied over by hand). Unstamped secrets (written before stamps) are
+# looked for in the active store first, then every other configured one.
+# With no active store at all everything stays off: Disabled means disabled.
+
+
+def _stores_to_read(provider: str) -> list[tuple[str, SecretStore]]:
+    active_kind = _provider()
+    active = store_for(active_kind)
+    if active is None:
+        require_secret_store()  # raises SecretStoreDisabled
+    stamped = (provider or "").strip()
+    if not stamped:
+        return [(active_kind, active)] + [
+            (k, s) for k, s in configured_stores() if k != active_kind
+        ]
+    if stamped == active_kind:
+        return [(active_kind, active)]
+    own = store_for(stamped)
+    return ([(stamped, own)] if own is not None else []) + [(active_kind, active)]
+
+
+def _not_found_error(provider: str) -> SecretStoreError | None:
+    stamped = (provider or "").strip()
+    if stamped and stamped != _provider() and store_for(stamped) is None:
+        return SecretStoreError(
+            f"This secret is in the {provider_label(stamped)} store, which is no "
+            "longer configured. Configure it again under Settings → Security → "
+            "Secret store, or move the secrets with manage.py migrate_secret_store."
+        )
+    return None
+
+
+def read_managed(provider: str, tenant_id, ref: str) -> dict | None:
+    """A managed secret, from the store stamped ``provider`` when that is
+    configured, else the active one. ``None`` when no store has it; raises
+    :class:`SecretStoreDisabled` with no active store, and a clear
+    :class:`SecretStoreError` when its stamped store is no longer configured
+    and the active one does not have it either."""
+    error: SecretStoreError | None = None
+    for _kind, store in _stores_to_read(provider):
+        try:
+            value = store.get(tenant_id, ref)
+        except SecretPathError:
+            raise
+        except SecretStoreError as exc:
+            error = error or exc
+            continue
+        if value is not None:
+            return value
+    if error is not None:
+        raise error
+    missing = _not_found_error(provider)
+    if missing is not None:
+        raise missing
+    return None
+
+
+def read_external(provider: str, tenant_id, path: str) -> dict | None:
+    """An operator-authored secret at ``path``: from the active store first
+    (where it has always been read), then the store stamped on the record.
+    Each store checks the path against its own managed namespaces before it
+    is read; a path every store refuses raises that refusal."""
+    candidates = _stores_to_read(provider)
+    # Active first: the stamp on an external credential was the picker's
+    # choice, not where Danbyte wrote anything.
+    candidates.sort(key=lambda ks: ks[0] != _provider())
+    if not (provider or "").strip():
+        candidates = candidates[:1]
+    refused: SecretPathError | None = None
+    error: SecretStoreError | None = None
+    for _kind, store in candidates:
+        try:
+            validate_external_path(store, path)
+        except SecretPathError as exc:
+            refused = refused or exc
+            continue
+        try:
+            value = store.get_at_path(tenant_id, path)
+        except SecretPathError as exc:
+            refused = refused or exc
+            continue
+        except SecretStoreError as exc:
+            error = error or exc
+            continue
+        if value is not None:
+            return value
+    if error is not None:
+        raise error
+    if refused is not None:
+        raise refused
+    return None
+
+
+def write_managed(previous_provider: str, tenant_id, ref: str, value: dict) -> str:
+    """Write a managed secret to the active store and return the provider to
+    stamp. A copy left in the store the record was stamped with before goes
+    (local now, any other store after the commit), so a rewrite after a
+    switch does not leave the old value behind."""
+    from .secret_refs import discard_copy
+
+    store = require_secret_store()
+    kind = _provider()
+    store.put(tenant_id, ref, value)
+    previous = (previous_provider or "").strip()
+    if previous and previous != kind:
+        discard_copy(previous, tenant_id, ref)
+    return kind
+
+
 def require_secret_store() -> SecretStore:
     """The active store, or raise :class:`SecretStoreDisabled` (fail closed)."""
     store = active_secret_store()

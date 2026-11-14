@@ -90,8 +90,9 @@ MANAGED_SECRETS: tuple[ManagedSecret, ...] = (
                   "psk_secret_provider"),
     ManagedSecret("routing.RPKICache", "routing-rpki-caches", "psk_secret_path",
                   "psk_secret_provider"),
-    ManagedSecret("monitoring.CertificateRequest", "csr", "key_ref"),
-    ManagedSecret("monitoring.Issuer", "issuer", "account_ref", implied_ref=_issuer_ref),
+    ManagedSecret("monitoring.CertificateRequest", "csr", "key_ref", "key_provider"),
+    ManagedSecret("monitoring.Issuer", "issuer", "account_ref", "account_provider",
+                  implied_ref=_issuer_ref),
 )
 
 
@@ -156,6 +157,53 @@ def discard_secret(tenant_id, ref: str, provider: str = "") -> None:
             _drop(kind, store, tenant_id, ref)
         else:
             transaction.on_commit(partial(_drop, kind, store, tenant_id, ref))
+
+
+def discard_copy(kind: str, tenant_id, ref: str) -> None:
+    """Remove ``ref`` from the ``kind`` store only - a copy left behind once
+    the secret was rewritten to another store. Same timing as
+    :func:`discard_secret`."""
+    from .secret_store import store_for
+
+    if not ref:
+        return
+    try:
+        store = store_for(kind)
+    except Exception as exc:  # noqa: BLE001 - never fail the write itself
+        log.warning("could not resolve the %s store for %s: %s", kind, ref, exc)
+        return
+    if store is None:
+        return
+    if getattr(store, "transactional", False):
+        _drop(kind, store, tenant_id, ref)
+    else:
+        transaction.on_commit(partial(_drop, kind, store, tenant_id, ref))
+
+
+def secret_counts() -> dict[str, int]:
+    """How many managed secrets each store holds, by the stamp on their
+    records; an unstamped one counts toward the active store, where it is
+    looked for first. Counts only, deployment-wide."""
+    from django.db.models import Count, Q
+
+    from .secret_store import _provider
+
+    active = _provider()
+    out: dict[str, int] = {}
+    for spec in MANAGED_SECRETS:
+        has_ref = ~Q(**{spec.ref_field: ""})
+        if spec.implied_ref is not None:
+            has_ref |= ~Q(account_uri="")
+        rows = spec.managed_rows().filter(has_ref).order_by()
+        if spec.provider_field:
+            grouped = rows.values_list(spec.provider_field).annotate(n=Count("pk"))
+        else:
+            grouped = [("", rows.count())]
+        for kind, n in grouped:
+            key = (kind or "").strip() or active
+            if n:
+                out[key] = out.get(key, 0) + n
+    return out
 
 
 def _on_delete(sender, instance, spec: ManagedSecret, **kwargs) -> None:
