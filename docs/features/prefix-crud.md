@@ -277,6 +277,11 @@ prefix** and **Plan subnets…** buttons, the Space map's **New child prefix
 here** and its free rows' **Create** are not shown. Each prefix in the API
 says so in `permissions.add_child`.
 
+A manual create takes the same lock as allocate and the planner: a row lock
+on every prefix holding the new block, taken before it is checked. A create
+and an allocation running at once wait for each other, so they never land on
+the same block.
+
 ## Plan subnets
 
 **Plan subnets…** on a container or parent prefix (and in the list toolbar

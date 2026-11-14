@@ -38,6 +38,27 @@ _TRUE = ("1", "true", "yes", "on")
 _ALLOCATE_KEYS = ("length", "scope", "strategy")
 
 
+def lock_holders(tenant_id, vrf_id, cidr) -> None:
+    """Row locks on every prefix of ``tenant_id`` and ``vrf_id`` holding
+    ``cidr`` (itself included), outermost first. The allocation lock:
+    allocate, plan and a manual create (PrefixViewSet.create) all take it,
+    so none of them can place a block another is placing. Same order
+    everywhere, so they queue rather than deadlock."""
+    list(
+        Prefix.objects.select_for_update()
+        .filter(tenant_id=tenant_id)
+        .filter(fs._vrf_q({vrf_id}))
+        .annotate(
+            _fs_holds=RawSQL('"api_prefix"."cidr"::inet >>= %s::inet', (str(cidr),),
+                             output_field=BooleanField()),
+            _fs_net=RawSQL('"api_prefix"."cidr"::inet', ()),
+        )
+        .filter(_fs_holds=True)
+        .order_by("_fs_net")
+        .values_list("pk", flat=True)
+    )
+
+
 def _truthy(raw) -> bool:
     if isinstance(raw, bool):
         return raw
@@ -79,19 +100,7 @@ class PrefixSpaceMixin:
     def _space_lock(self, parent):
         """Row locks on the parent and every prefix holding it, outermost
         first, so allocations in nested parents queue behind each other."""
-        list(
-            Prefix.objects.select_for_update()
-            .filter(tenant_id=parent.tenant_id)
-            .filter(fs._vrf_q({parent.vrf_id}))
-            .annotate(
-                _fs_holds=RawSQL('"api_prefix"."cidr"::inet >>= %s::inet', (parent.cidr,),
-                                 output_field=BooleanField()),
-                _fs_net=RawSQL('"api_prefix"."cidr"::inet', ()),
-            )
-            .filter(_fs_holds=True)
-            .order_by("_fs_net")
-            .values_list("pk", flat=True)
-        )
+        lock_holders(parent.tenant_id, parent.vrf_id, parent.cidr)
 
     def _space_blockers(self, parent, targets) -> list[str]:
         """What a site-limited caller may not create: ``targets`` are

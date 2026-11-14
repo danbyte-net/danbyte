@@ -1291,6 +1291,29 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
     def report_job_file(self, request, token=None):
         return object_report.job_file(request, object_report.PREFIX, token)
 
+    def create(self, request, *args, **kwargs):
+        """A manual create takes the allocation lock (lock_holders) on the
+        prefixes holding the new CIDR before it is validated, so it cannot
+        race allocate, plan or another create into the same block."""
+        import ipaddress
+        import uuid
+
+        from .prefix_space_views import lock_holders
+
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            net = ipaddress.ip_network(str(body.get("cidr") or "").strip(), strict=False)
+            raw_vrf = body.get("vrf_id")
+            vrf_id = uuid.UUID(str(raw_vrf)) if raw_vrf else None
+        except (TypeError, ValueError):
+            net = None
+        tenant = _get_active_tenant(request)
+        if net is None or tenant is None:
+            return super().create(request, *args, **kwargs)
+        with transaction.atomic():
+            lock_holders(tenant.pk, vrf_id, net)
+            return super().create(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         prefix = serializer.save(
             **{self.tenant_field: self._tenant_or_403()},

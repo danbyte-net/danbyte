@@ -664,13 +664,22 @@ class AllocateRaceTests(APITransactionTestCase):
         return client.post(f"/api/prefixes/{prefix.id}/allocate/", {"length": 27},
                            format="json")
 
+    def _create(self, n, cidr):
+        client = APIClient()
+        client.cookies.load(self.sessions[n])
+        return client.post("/api/prefixes/", {"cidr": cidr}, format="json")
+
     def race(self, first_parent, second_parent):
+        return self.race_calls(lambda: self._post(0, first_parent),
+                               lambda: self._post(1, second_parent))
+
+    def race_calls(self, first_call, second_call):
         held, release, out = threading.Event(), threading.Event(), {}
 
         def hold():
             try:
                 with transaction.atomic():
-                    out["first"] = self._post(0, first_parent)
+                    out["first"] = first_call()
                     held.set()
                     release.wait(10)
             finally:
@@ -679,7 +688,7 @@ class AllocateRaceTests(APITransactionTestCase):
 
         def run():
             try:
-                out["second"] = self._post(1, second_parent)
+                out["second"] = second_call()
             finally:
                 connection.close()
 
@@ -689,7 +698,7 @@ class AllocateRaceTests(APITransactionTestCase):
         b = threading.Thread(target=run)
         b.start()
         b.join(0.5)
-        self.assertTrue(b.is_alive(), "the second allocation did not wait for the lock")
+        self.assertTrue(b.is_alive(), "the second write did not wait for the lock")
         release.set()
         a.join(10)
         b.join(10)
@@ -707,5 +716,22 @@ class AllocateRaceTests(APITransactionTestCase):
         self.assertEqual(first.json()["cidr"], "10.0.0.0/27")
         # The /25 is used space for the /24 either way; no overlap.
         self.assertEqual(second.json()["cidr"], "10.0.0.128/27")
+        cidrs = list(Prefix.objects.values_list("cidr", flat=True))
+        self.assertEqual(len(cidrs), len(set(cidrs)))
+
+    def test_manual_create_waits_for_an_allocation(self):
+        # The allocation takes 10.0.0.128/27; the manual create of the same
+        # block waits for it and is then refused as a duplicate.
+        first, second = self.race_calls(lambda: self._post(0, self.root),
+                                        lambda: self._create(1, "10.0.0.128/27"))
+        self.assertEqual(first.json()["cidr"], "10.0.0.128/27")
+        self.assertEqual(second.status_code, 400, second.content)
+        self.assertIn("already exists", second.json()["cidr"][0])
+
+    def test_allocation_waits_for_a_manual_create(self):
+        first, second = self.race_calls(lambda: self._create(0, "10.0.0.128/27"),
+                                        lambda: self._post(1, self.root))
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(second.json()["cidr"], "10.0.0.160/27")
         cidrs = list(Prefix.objects.values_list("cidr", flat=True))
         self.assertEqual(len(cidrs), len(set(cidrs)))
