@@ -922,11 +922,19 @@ export function useTilePopover(delayMs = 250) {
     return true
   }
 
+  /** Pin this tile's popover at `at`, whatever the 2D pointer last
+   * hovered - the 3D room's click, which has its own point. */
+  const pinAt = (tile: FloorPlanTile, at: { x: number; y: number }) => {
+    clearTimer()
+    pinned.current = true
+    setTarget({ ...at, tile, pinned: true })
+  }
+
   const close = () => {
     clearTimer()
     pinned.current = false
     setTarget(null)
   }
 
-  return { target, onHover, pinCurrent, pinTile, close }
+  return { target, onHover, pinCurrent, pinTile, pinAt, close }
 }

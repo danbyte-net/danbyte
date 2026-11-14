@@ -1541,6 +1541,10 @@ export function FloorPlanEditor({
                 else if ((k === "rack" || k === "cabinet") && deviceId)
                   openTilePanel(tile, deviceId)
               }}
+              tiles={tiles}
+              popover={popover}
+              popoverFields={popoverFields}
+              onSelectTile={setSelectedId}
               focusTarget={focus3d}
               prefs={prefs}
               capacity={capacity}

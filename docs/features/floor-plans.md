@@ -866,7 +866,13 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   racks as they land. In 3D, non-rack tiles render as translucent ghost
   boxes so the planned room reads as a room rather than empty floor. Each
   carries a camera-facing name tag - the tile's label, else its linked
-  device's name, else the type name. Scroll-zoom dollies **toward the pointer**, so
+  device's name, else the type name. A ghost box is clickable as a rack
+  or device is: a tile linked to a power panel, power feed or cooling
+  source (CRAH, CRAC, in-row), and an unlinked or Hidden tile, is
+  selected (drawn stronger) and its popover pins at the pointer, as a
+  click on the 2D plan pins it - it names the linked object, carries its
+  figures and links to its page. A click on empty floor or Esc deselects
+  it and closes the popover. Scroll-zoom dollies **toward the pointer**, so
   getting close to a far corner of a big hall is one scroll, not a slow
   W-key flight.
 - **Airflow** (View menu, 3D): draws each device's cooling direction as

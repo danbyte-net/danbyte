@@ -154,6 +154,7 @@ export default function FloorScene3D({
   traceCableId,
   onOpenCable,
   onOpenDevice,
+  onOpenTile,
   focusTarget = null,
   showUNumbers = false,
   showNames = false,
@@ -203,6 +204,9 @@ export default function FloorScene3D({
   onOpenCable?: (cableId: string | null) => void
   /** A device clicked: the plan's device panel in place of its card. */
   onOpenDevice?: (tileId: string, deviceId: string) => void
+  /** A tile drawn as massing clicked (power, cooling, unlinked, Hidden):
+   * the plan pins its popover at `at` (px in the room); null: deselected. */
+  onOpenTile?: (tileId: string | null, at?: { x: number; y: number }) => void
   /** Fly to a cable's run or a tile (Find, Show on plan); a new `n` flies
    * again. */
   focusTarget?: { kind: "cable" | "tile"; id: string; n: number } | null
@@ -552,6 +556,20 @@ export default function FloorScene3D({
     if (sel.kind === "device" && sel.deviceId)
       onOpenDevice?.(sel.tileId, sel.deviceId)
   }
+
+  // A massing tile's popover lives on the plan: it closes whenever the
+  // selection moves off that tile, however it moved.
+  const onOpenTileRef = useRef(onOpenTile)
+  onOpenTileRef.current = onOpenTile
+  const selTileId = selection?.kind === "tile" ? selection.tileId : null
+  const hadTile = useRef(false)
+  useEffect(() => {
+    if (selTileId) hadTile.current = true
+    else if (hadTile.current) {
+      hadTile.current = false
+      onOpenTileRef.current?.(null)
+    }
+  }, [selTileId])
 
   // Esc cancels an in-flight connect.
   useEffect(() => {
@@ -960,7 +978,9 @@ export default function FloorScene3D({
   }
 
   return (
-    <div className="relative h-full min-h-0 w-full">
+    // data-floor-canvas: a click in the room is the room's to interpret, as
+    // on the 2D canvas - the pinned tile popover does not dismiss on it.
+    <div className="relative h-full min-h-0 w-full" data-floor-canvas="">
       <Stage
         quality={rq}
         camera={{
@@ -1294,6 +1314,15 @@ export default function FloorScene3D({
               plan={plan}
               tile={t}
               showName={!readableNames}
+              selected={selection?.kind === "tile" && selection.tileId === t.id}
+              ghosted={
+                (focusOn && !!selection && selection.tileId !== t.id) ||
+                !!recedeTileIds?.has(t.id)
+              }
+              onSelect={(at) => {
+                handleSelect({ kind: "tile", tileId: t.id })
+                onOpenTile?.(t.id, at)
+              }}
             />
           ))}
         {/* Devices placed on the floor: their rack-unit box or 3D model. */}
