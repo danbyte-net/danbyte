@@ -946,6 +946,30 @@ class MonitoringSettings(TimestampedModel):
         help_text="New alerts in one scan batch before they're grouped into a digest.",
     )
 
+    # ─── root-cause alerting (#450) ──────────────────────────────────────
+    # Inert until the tenant records device dependencies. db_default so a
+    # rolling upgrade's old code can still insert a settings row.
+    ROOT_CAUSE_SMART = "smart"
+    ROOT_CAUSE_ALWAYS = "always"
+    root_cause_enabled = models.BooleanField(
+        default=True, db_default=True,
+        help_text="Alerts of a device whose upstream is down are explained by "
+        "it, and one root-cause message goes out instead.",
+    )
+    root_cause_hold_seconds = models.PositiveIntegerField(
+        default=60, db_default=60,
+        validators=[MinValueValidator(0), MaxValueValidator(600)],
+        help_text="How long an alert of a device with upstreams waits for its "
+        "upstreams' checks before it is sent.",
+    )
+    root_cause_hold_mode = models.CharField(
+        max_length=8, default=ROOT_CAUSE_SMART, db_default=ROOT_CAUSE_SMART,
+        choices=[(ROOT_CAUSE_SMART, "While an upstream is unconfirmed"),
+                 (ROOT_CAUSE_ALWAYS, "Always")],
+        help_text="smart holds only while an upstream is failing or not "
+        "recently confirmed up; always holds every such alert.",
+    )
+
     # ─── certificate expiry alerting (X2) ────────────────────────────────
     # Thresholds for the expiry alerts raised over certificate *bindings*
     # (endpoints), not certificate rows - see ``monitoring.cert_expiry``.
@@ -1817,6 +1841,32 @@ class Alert(TimestampedModel):
         help_text="Bumped to critical after firing unacked past the threshold.",
     )
 
+    # ─── root cause (#450) ───────────────────────────────────────────────
+    #: sent - announced as always (and every row written before this
+    #: existed); held - waiting for its upstreams until ``notify_after``;
+    #: explained - a down upstream accounts for it, never announced on its
+    #: own; withheld - it cleared while held, so nothing was ever sent.
+    NOTIFY_SENT = "sent"
+    NOTIFY_HELD = "held"
+    NOTIFY_EXPLAINED = "explained"
+    NOTIFY_WITHHELD = "withheld"
+    NOTIFY_STATES = [
+        (NOTIFY_SENT, "Sent"),
+        (NOTIFY_HELD, "Held"),
+        (NOTIFY_EXPLAINED, "Explained"),
+        (NOTIFY_WITHHELD, "Withheld"),
+    ]
+    notify_state = models.CharField(
+        max_length=10, choices=NOTIFY_STATES, default=NOTIFY_SENT,
+        db_default=NOTIFY_SENT,
+    )
+    notify_after = models.DateTimeField(null=True, blank=True)
+    root_cause = models.ForeignKey(
+        "RootCauseIncident", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="alerts",
+        help_text="The incident whose root device explains this alert.",
+    )
+
     class Meta:
         ordering = ["-opened_at"]
         indexes = [
@@ -1831,6 +1881,12 @@ class Alert(TimestampedModel):
                 condition=models.Q(resolved_at__isnull=False),
                 name="alert_tenant_resolved_idx",
             ),
+            # The release sweep's read: held alerts that are due.
+            models.Index(
+                fields=["notify_after"],
+                condition=models.Q(notify_state="held"),
+                name="alert_held_due_idx",
+            ),
         ]
         constraints = [
             # At most one firing alert per condition.
@@ -1843,6 +1899,69 @@ class Alert(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.severity} {self.target_ip_id} {self.check_status} ({self.status})"
+
+
+class RootCauseIncident(TimestampedModel):
+    """One down device explaining the alerts of the devices behind it (#450).
+
+    Opened when the first alert is explained by ``device``; ``recovering``
+    once the device is no longer down, and resolved when it has stayed up
+    through the hold. At most one open or recovering incident per device.
+    The counts are refreshed by the release sweep; ``detail`` keeps the
+    explained device ids and the delivery notes."""
+
+    OPEN = "open"
+    RECOVERING = "recovering"
+    RESOLVED = "resolved"
+    STATUSES = [(OPEN, "Open"), (RECOVERING, "Recovering"), (RESOLVED, "Resolved")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="root_cause_incidents"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="root_cause_incidents"
+    )
+    status = models.CharField(max_length=10, choices=STATUSES, default=OPEN)
+    opened_at = models.DateTimeField(default=timezone.now)
+    recovering_since = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    #: The "opened" message is due at ``announce_at`` (one hold after the
+    #: first explained alert, so the burst is counted) and went out at
+    #: ``announced_at``; ``recovery_announced_at`` the same for "resolved".
+    announce_at = models.DateTimeField(null=True, blank=True)
+    announced_at = models.DateTimeField(null=True, blank=True)
+    recovery_announced_at = models.DateTimeField(null=True, blank=True)
+    explained_count = models.PositiveIntegerField(default=0)
+    already_alerted_count = models.PositiveIntegerField(default=0)
+    reduced_count = models.PositiveIntegerField(default=0)
+    merged_into = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="merged",
+    )
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    ack_note = models.CharField(max_length=255, blank=True, default="")
+    detail = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-opened_at"]
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["tenant", "opened_at"], name="rootcause_tenant_opened_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "device"],
+                condition=models.Q(status__in=["open", "recovering"]),
+                name="uniq_live_rootcause_per_device",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"root cause {self.device_id} ({self.status})"
 
 
 class Silence(TimestampedModel):

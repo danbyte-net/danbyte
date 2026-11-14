@@ -40,6 +40,14 @@ def run_alert_maintenance(now=None) -> dict:
 
     now = now or timezone.now()
     swept = sweep_flapping(now)
+    # Root cause (#450): held alerts that are due, incident messages and
+    # recoveries - also run after every batch, this is the backstop.
+    try:
+        from .root_cause import release_due
+
+        release_due(now=now)
+    except Exception:  # noqa: BLE001 - never sinks the rest of the sweep
+        log.exception("root cause release failed")
     firing = list(
         Alert.objects.filter(status=AlertStatus.FIRING).select_related(
             "target_ip", "template"
@@ -77,6 +85,12 @@ def run_alert_maintenance(now=None) -> dict:
             alert.save(update_fields=["flapping"])
             if is_flapping:
                 flapping += 1
+
+        # Held, explained and withheld alerts were never announced on their
+        # own (#450): no escalation and no reminder for them. A root's
+        # incident follows its root's own alert, which is sent.
+        if alert.notify_state != "sent":
+            continue
 
         acked = alert.acknowledged_at is not None
         age = now - alert.opened_at
@@ -142,6 +156,7 @@ def _close_excluded(alerts, now) -> set:
     excluding them does - one that slipped past it (a verdict racing the
     switch) must not escalate and remind for ever, since its parked check
     never sends the clearing change. Returns their ids."""
+    from .alerts import _announced
     from .exclusion import REASON
     from .notify import notify_alert
 
@@ -158,7 +173,7 @@ def _close_excluded(alerts, now) -> set:
         )
         log.info("closed %d alert(s) on addresses %s", len(alerts), REASON)
     for a in alerts:
-        if a.flapping:
+        if a.flapping or not _announced(a):
             continue
         try:
             notify_alert(a, "resolved")

@@ -11,7 +11,9 @@ access switch depends on its distribution switch, a remote site's router
 depends on the radio link, the radio depends on the core.
 
 Danbyte uses the dependencies to answer "what goes down if this fails?" on
-the device page and in the API, and to fill a maintenance event's impacts.
+the device page and in the API, to fill a maintenance event's impacts, and
+to send one [root-cause alert](../features/monitoring.md#root-causes) for a
+down device instead of one per device behind it.
 
 ## Recording dependencies
 

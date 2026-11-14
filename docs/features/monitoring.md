@@ -1026,6 +1026,7 @@ page opens it, on the deployment half of **Settings → Monitoring**.
 | **Address discovery** | The ping sweep that finds live addresses in prefixes, and stale-IP cleanup (see [below](#auto-discovery-and-cleanup)). |
 | **Host discovery** | [Discovery](discovery.md)'s switches, transports, nmap and deny subnets ([Discovery: settings](discovery-settings.md#switches-in-danbyte)). They save as they change and are changed only here. |
 | **MAC tracking** | How learned MACs are shown, which ports count as uplinks, and how long they are kept (see below). |
+| **Root-cause alerting** | Explain alerts behind a down upstream, the **Hold** in seconds (default 60, at most 600) and **Hold when** (see [Root causes](#root-causes)). |
 
 ### MAC tracking {#mac-tracking}
 
@@ -1219,8 +1220,100 @@ grouping), and all of them respect acknowledgement and silences:
   and excluded from reminders until the state is confirmed clear (or clears
   itself, when auto-clear is on), so a flapping host can't page on a loop.
 
-The Alerts table surfaces *escalated*, *flapping*, *silenced*, and *ack* chips, and
-tracks how many times each alert has notified.
+The Alerts table surfaces *escalated*, *flapping*, *silenced*, *held*,
+*explained* and *ack* chips, and tracks how many times each alert has
+notified.
+
+### Root causes {#root-causes}
+
+When a core switch dies, every device behind it goes down too. With
+[device dependencies](../dcim/dependencies.md) recorded, Danbyte knows which
+device is behind which, and sends **one** message for the device that failed
+instead of one for every device behind it.
+
+- **Explained.** A device is *explained* when every upstream of one of its
+  redundancy groups is down (or behind something down). Its alerts open and
+  are tracked as usual, but are not sent on their own. They point at the
+  **root**: the topmost down device that is not itself explained. A device
+  with only part of a redundancy group down is not explained - it alerts as
+  usual, since its own failure is a real fault.
+- **The root's own alerts** are sent at once, as always.
+- **One root-cause message** goes out one hold after the first explained
+  alert, so the burst is counted: `[ROOT CAUSE] CRITICAL: core-1 down -
+  explains 37 devices (4 with reduced redundancy)`. A channel receives it
+  when the root, or any alert it explains, passes the channel's severity,
+  status and scope - so a channel scoped to an access switch still hears why
+  it went quiet, with how many of the explained devices are in its scope.
+- **Recovery.** Once the root has stayed up for the hold, the incident
+  resolves with one message: `[RECOVERED] core-1 up after 14m - 35 of 37
+  recovered, 2 still down`. Alerts still firing at that point are sent as
+  ordinary alerts, *still down after core-1 recovered* - a second fault is
+  never hidden. A root that goes down again while recovering reopens its
+  incident without a message.
+- **Late upstream.** A downstream alert that went out before its upstream
+  was seen down is linked to the root afterwards (*already alerted* in the
+  message), with no second message.
+- **Merge.** When a root turns out to be behind another down device, its
+  incident folds into that device's, without a message.
+
+**Hold.** A device whose upstreams have not been confirmed up waits
+before its alert is sent - by default up to 60 seconds, **Hold** under
+Settings → Monitoring → Alerting - while those upstreams are checked again
+(the check runs on the next dispatch, at most once a minute per upstream,
+on the built-in engine; an Outpost or external monitor answers on its own
+schedule). In the default mode (**Hold when: Upstream unconfirmed**) the
+hold applies only while an upstream is failing or has not answered *up*
+within the hold; **Always** holds every alert of a device with upstreams. A
+held alert shows a *Held · 0:42* chip; it is then sent, or explained if its
+upstream went down meanwhile. One that clears while held is never sent at
+all. The release runs after every check batch and on the minute
+alert-maintenance beat, so a hold can last up to a minute longer than set.
+An upstream whose check interval is longer than the hold usually answers
+after it: the downstream alert then goes out and is linked later. Give
+upstreams a short interval or the [fast lane](#fast-lane).
+
+**Which checks decide.** A device is *down* when a check on its primary IP
+(or, without one, on any IP assigned to it) is down or stale and none is up
+or degraded. *Unknown* and *skipped* never count, so an upstream that is not
+monitored, or that an external monitor cannot reach, never explains
+anything. Checks from Zabbix, PRTG and Outposts count like local ones.
+
+**Silences and maintenance.** A silence or maintenance window covering the
+root mutes the root-cause messages; the alerts it explains are never sent
+anyway, so the window carries over to everything behind it.
+
+**PagerDuty** gets the root-cause message on the root's own alert's dedup
+key, so the page stays one incident and resolves with the root's alert.
+When the root has no alert of its own, the incident pages as
+`rootcause:<id>` and resolves on recovery. **Webhooks** receive
+`{"event": "root_cause_opened" | "root_cause_resolved", "incident": {…},
+"root": {"id", "name"}, "explained": [device ids, at most 500], "count": n}`;
+every alert payload also carries `notify_state` and `root_cause`.
+
+**Reminders and escalation** skip held and explained alerts; the root's own
+alert is reminded and escalated as usual.
+
+**On the Alerts page**, the **Root causes** tab lists open (and recovering)
+and resolved incidents with the root, how many devices it explains, how many
+it leaves with reduced redundancy, and for how long. Acknowledging an
+incident acknowledges the root's own alerts. The incident page lists the
+root's alerts and the explained ones. The **Firing** view leaves explained
+alerts out; tick **Show explained** to list them with their *Explained by
+core-1* chip. A device's overview says *Explained by core-1* while it is.
+The dashboard's *Firing alerts* and the email digest count unexplained
+alerts and add *+N explained*; the API counts every alert.
+
+**The switch.** **Root-cause alerting** (Settings → Monitoring → Alerting)
+is on by default and does nothing until dependencies exist. Off, or with no
+dependencies, alerts go out exactly as before. Anything that goes wrong
+while classifying sends the alert as usual.
+
+API: `GET /api/monitoring/alerts/?explained=include|exclude|only` (default
+`include`; `counts` gains `explained` and `held`; `root_cause=<id>` lists
+one incident's alerts), `GET /api/monitoring/root-causes/?status=open|resolved|all`,
+`GET /api/monitoring/root-causes/<id>/` (the incident, `alerts` it explains
+and the root's `root_alerts`), and `POST /api/monitoring/root-causes/<id>/ack/`
+(`?action=unack` clears it).
 
 ## Notifications
 

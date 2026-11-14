@@ -28,6 +28,11 @@ from .mac_api import (
     mac_sightings_view,
 )
 from .maintenance_api import EventImpactViewSet, MaintenanceEventViewSet
+from .root_cause_api import (
+    root_cause_ack_view,
+    root_cause_detail_view,
+    root_causes_view,
+)
 from .sla_api import (
     HolidayCalendarViewSet,
     SlaAgreementViewSet,
@@ -286,6 +291,11 @@ urlpatterns = [
          name="monitoring-device-flapping-clear"),
     path("alerts/", alerts_view, name="monitoring-alerts"),
     path("alerts/<uuid:alert_id>/ack/", alert_ack_view, name="monitoring-alert-ack"),
+    path("root-causes/", root_causes_view, name="monitoring-root-causes"),
+    path("root-causes/<uuid:incident_id>/", root_cause_detail_view,
+         name="monitoring-root-cause"),
+    path("root-causes/<uuid:incident_id>/ack/", root_cause_ack_view,
+         name="monitoring-root-cause-ack"),
     path("bulk-check-now/", bulk_check_now_view, name="monitoring-bulk-check-now"),
     path("bulk-discover/", bulk_discover_view, name="monitoring-bulk-discover"),
     path("settings/", settings_view, name="monitoring-settings"),

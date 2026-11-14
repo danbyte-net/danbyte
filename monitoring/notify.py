@@ -916,6 +916,9 @@ def _alert_summary(alert, event: str, ip: str) -> str:
         verb = "CLOSED"
     specific = _alert_specific(alert)
     tail = f" - {closed}" if closed else ""
+    still = (getattr(alert, "detail", None) or {}).get("still_down_after")
+    if still and event == "firing":
+        tail += f" - still down after {still} recovered"
     if specific:
         return f"[{verb}] {alert.severity.upper()}: {ip} - {specific}{tail}"
     name = alert.template.name if alert.template_id else alert.kind
@@ -939,6 +942,9 @@ def _alert_payload(alert, event: str, ip: str) -> dict:
             payload[key] = detail[key]
     if _closed_by(alert, event):
         payload["closed_by"] = detail["closed_by"]
+    payload["notify_state"] = getattr(alert, "notify_state", "sent")
+    rc = getattr(alert, "root_cause_id", None)
+    payload["root_cause"] = str(rc) if rc else None
     return payload
 
 
@@ -1195,14 +1201,24 @@ def silence_covers(silence, alert) -> bool:
     """Whether one silence's matchers cover this alert. The one test, shared
     by delivery and the alert list's "silenced" flag so they cannot disagree.
     ``match_devices`` should be prefetched when checking many alerts."""
-    from .alerts import _ip_matches
-
-    s, ip = silence, alert.target_ip
+    s = silence
     if s.match_kinds and alert.kind not in s.match_kinds:
         return False
     if s.match_statuses and alert.check_status not in s.match_statuses:
         return False
-    if s.match_ip_id and s.match_ip_id != alert.target_ip_id:
+    return silence_covers_ip(s, alert.target_ip, alert.target_ip_id)
+
+
+def silence_covers_ip(silence, ip, ip_id=None) -> bool:
+    """The address half of :func:`silence_covers`: the IP, device, tag and
+    prefix matchers. A root-cause incident asks it for its root's
+    addresses, so a silence on the root mutes what the root explains."""
+    from .alerts import _ip_matches
+
+    s = silence
+    if ip_id is None:
+        ip_id = getattr(ip, "pk", None)
+    if s.match_ip_id and s.match_ip_id != ip_id:
         return False
     device_ids = [d.id for d in s.match_devices.all()]
     if device_ids and (
@@ -1419,6 +1435,262 @@ def notify_alert_group(tenant_id, alerts: list, event: str) -> None:
             _dispatch_group_to_channel(ch, matched, event, dep)
         except Exception:  # noqa: BLE001 - one channel must not break others
             log.exception("grouped channel %s (%s) failed", ch.name, ch.kind)
+
+
+# ─── root causes (#450) ───────────────────────────────────────────────────
+# One message when an incident's burst has been counted, one when its root
+# has recovered. A channel gets it when the root or any alert it explains
+# passes the channel's gates (union targeting), so a channel scoped to the
+# dependents still hears why they went quiet.
+
+def _root_ips(device):
+    """The root's deciding addresses: its primary IP, else every IP
+    assigned to it."""
+    from api.models import IPAddress
+
+    if device.primary_ip_id:
+        return list(IPAddress.objects.filter(pk=device.primary_ip_id))
+    return list(IPAddress.objects.filter(assigned_device_id=device.pk))
+
+
+def _root_alerts(incident):
+    """The root's own alerts during the incident."""
+    from django.db.models import Q
+
+    from .models import Alert
+
+    return list(
+        Alert.objects.filter(
+            tenant_id=incident.tenant_id,
+            target_ip__assigned_device_id=incident.device_id,
+        ).filter(Q(status="firing") | Q(resolved_at__gte=incident.opened_at))
+        .select_related("target_ip", "template")
+    )
+
+
+def root_silenced(incident, now=None) -> bool:
+    """Whether an active silence covers the root: one of its own firing
+    alerts, or - when it has none - one of its addresses, with a silence
+    that names no check kind or status."""
+    from django.utils import timezone
+
+    from .models import Silence
+
+    now = now or timezone.now()
+    silences = list(
+        Silence.objects.filter(
+            tenant_id=incident.tenant_id, starts_at__lte=now, ends_at__gt=now
+        ).select_related("match_prefix", "match_ip").prefetch_related("match_devices")
+    )
+    if not silences:
+        return False
+    firing = [a for a in _root_alerts(incident) if a.status == "firing"]
+    if firing:
+        return any(silence_covers(s, a) for s in silences for a in firing)
+    return any(
+        not s.match_kinds and not s.match_statuses and silence_covers_ip(s, ip)
+        for s in silences for ip in _root_ips(incident.device)
+    )
+
+
+def _passes(ch, severity, check_status, ip_addr, ip_id) -> bool:
+    return (
+        _SEV_RANK.get(severity, 0) >= _SEV_RANK.get(ch.min_severity, 0)
+        and (not ch.on_statuses or check_status in ch.on_statuses)
+        and _scope_allows(ch, ip_addr, ip_id)
+    )
+
+
+def _scoped(ch) -> bool:
+    return bool(ch.match_ip_id or ch.match_device_id or ch.match_prefix_id)
+
+
+def _ago(delta) -> str:
+    s = int(max(delta.total_seconds(), 0))
+    if s < 60:
+        return f"{s}s"
+    m = s // 60
+    if m < 60:
+        return f"{m}m"
+    h = m // 60
+    if h < 24:
+        return f"{h}h {m % 60}m"
+    return f"{h // 24}d {h % 24}h"
+
+
+def _root_cause_text(incident, event, worst, in_scope=None) -> str:
+    name = incident.device.name
+    n = incident.explained_count + incident.already_alerted_count
+    if event == "resolved":
+        d = incident.detail or {}
+        total = d.get("total", n)
+        rec = d.get("recovered", total)
+        still = d.get("still_down", 0)
+        end = incident.resolved_at or incident.recovering_since or incident.opened_at
+        tail = f", {still} still down" if still else ""
+        return (f"[RECOVERED] {name} up after {_ago(end - incident.opened_at)} - "
+                f"{rec} of {total} recovered{tail}")
+    plural = "s" if n != 1 else ""
+    text = f"[ROOT CAUSE] {worst.upper()}: {name} down - explains {n} device{plural}"
+    extra = []
+    if incident.reduced_count:
+        extra.append(f"{incident.reduced_count} with reduced redundancy")
+    if incident.already_alerted_count:
+        extra.append(f"{incident.already_alerted_count} already alerted")
+    if extra:
+        text += f" ({', '.join(extra)})"
+    if in_scope is not None and in_scope != n:
+        text += f" - {in_scope} in this channel's scope"
+    return text
+
+
+def _root_cause_url(dep, incident) -> str | None:
+    base = (dep.public_base_url or "").rstrip("/")
+    return f"{base}/root-causes/{incident.pk}" if base else None
+
+
+def _root_cause_payload(incident, event, explained) -> dict:
+    root = incident.device
+    detail = incident.detail or {}
+    return {
+        "event": f"root_cause_{event}",
+        "incident": {
+            "id": str(incident.pk),
+            "status": incident.status,
+            "opened_at": incident.opened_at.isoformat() if incident.opened_at else None,
+            "resolved_at": incident.resolved_at.isoformat() if incident.resolved_at else None,
+            "explained_count": incident.explained_count,
+            "already_alerted_count": incident.already_alerted_count,
+            "reduced_count": incident.reduced_count,
+            **{k: detail[k] for k in ("recovered", "total", "still_down") if k in detail},
+        },
+        "root": {"id": str(root.pk), "name": root.name},
+        "explained": sorted({str(a.target_ip.assigned_device_id) for a in explained
+                             if a.target_ip.assigned_device_id})[:500],
+        "count": incident.explained_count + incident.already_alerted_count,
+    }
+
+
+def notify_root_cause(incident, event: str) -> None:
+    """Send an incident's "opened" or "resolved" message to every channel
+    the root or one of its explained alerts passes. PagerDuty folds into
+    the root's own alert (its dedup key) when that alert went out, so the
+    page stays one incident; otherwise it pages ``rootcause:<id>``."""
+    from .models import Alert, NotificationChannel
+
+    dep = _deployment()
+    root_alerts = _root_alerts(incident)
+    explained = list(
+        Alert.objects.filter(root_cause=incident)
+        .exclude(target_ip__assigned_device_id=incident.device_id)
+        .select_related("target_ip", "template")
+    )
+    gates = [(a.severity, a.check_status, a.target_ip.ip_address, a.target_ip_id)
+             for a in root_alerts]
+    if not gates:
+        gates = [("critical", "down", ip.ip_address, ip.pk) for ip in _root_ips(incident.device)]
+    worst = max((g[0] for g in gates), key=lambda sv: _SEV_RANK.get(sv, 0), default="critical")
+    detail = dict(incident.detail or {})
+    if event == "opened":
+        sent = [a for a in root_alerts if a.status == "firing" and a.notify_state == "sent"
+                and a.last_notified_at is not None]
+        detail["pd_dedup_key"] = sent[0].dedup_key if sent else f"rootcause:{incident.pk}"
+        type(incident).objects.filter(pk=incident.pk).update(detail=detail)
+        incident.detail = detail
+    pd_key = detail.get("pd_dedup_key") or f"rootcause:{incident.pk}"
+    url = _root_cause_url(dep, incident)
+    payload = _root_cause_payload(incident, event, explained)
+    channels = NotificationChannel.objects.filter(
+        tenant_id=incident.tenant_id, enabled=True
+    ).select_related("match_prefix", "match_ip")
+    for ch in channels:
+        root_ok = any(_passes(ch, *g) for g in gates)
+        in_scope = sum(
+            1 for a in explained
+            if _passes(ch, a.severity, a.check_status, a.target_ip.ip_address, a.target_ip_id)
+        )
+        if not root_ok and not in_scope:
+            continue
+        text = _root_cause_text(incident, event, worst, in_scope if _scoped(ch) else None)
+        try:
+            _dispatch_root_cause(ch, incident, event, text, url, payload, explained,
+                                 worst, pd_key, dep)
+        except Exception:  # noqa: BLE001 - one channel must not break others
+            log.exception("root cause channel %s (%s) failed", ch.name, ch.kind)
+
+
+def _dispatch_root_cause(ch, incident, event, text, url, payload, explained, worst,
+                         pd_key, dep) -> None:
+    cfg = ch.transport_config()
+    timeout, proxies = _timeout(dep), _proxies(dep)
+    linked = f"{text}\n{url}" if url else text
+    kind = ch.kind
+    if kind == "email":
+        from core import email as ek
+        from core.effective_settings import effective_email
+
+        eff = effective_email(ch.tenant_id)
+        recipients = resolve_recipients(ch)
+        if not (recipients and eff.email_enabled):
+            return
+        rows = [
+            [ek.escape(str(a.target_ip.ip_address)),
+             ek.pill(a.check_status, a.check_status),
+             ek.escape(a.template.name if a.template_id else a.kind)]
+            for a in explained[:50]
+        ]
+        parts = [ek.lead(text)]
+        if rows:
+            parts.append(ek.data_table(["Target", "Status", "Check"], rows))
+        if url:
+            parts.append(ek.email_button(url, "View in Danbyte"))
+        html = ek.render_layout(
+            text, "".join(parts), deployment_name=_deployment_name(),
+            kicker="Root cause", preheader=text,
+        )
+        ek.send_html_email(text, recipients, html_body=html, text_body=linked + "\n",
+                           tenant=ch.tenant_id)
+    elif kind == "slack":
+        if cfg.get("url"):
+            _post(cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies)
+    elif kind == "teams":
+        if cfg.get("url"):
+            _post(cfg["url"], json=_teams_card(text, url), timeout=timeout, proxies=proxies)
+    elif kind == "discord":
+        if cfg.get("url"):
+            _post(cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies)
+    elif kind == "telegram":
+        _telegram_send(ch, linked, timeout, proxies)
+    elif kind == "pagerduty":
+        key = cfg.get("routing_key")
+        folded = not pd_key.startswith("rootcause:")
+        if not key or (event == "resolved" and folded):
+            # A folded page resolves with the root's own alert.
+            return
+        _post(
+            "https://events.pagerduty.com/v2/enqueue",
+            json={
+                "routing_key": key,
+                "event_action": "resolve" if event == "resolved" else "trigger",
+                "dedup_key": pd_key,
+                "payload": {
+                    "summary": text,
+                    "severity": _PD_SEV.get(worst, "critical"),
+                    "source": incident.device.name,
+                    "component": "root_cause",
+                },
+                **({"links": [{"href": url, "text": "View in Danbyte"}]} if url else {}),
+            },
+            timeout=timeout,
+            proxies=proxies,
+        )
+    elif kind == "webhook":
+        if cfg.get("url"):
+            body = {**payload, "summary": text}
+            if url:
+                body["url"] = url
+            _post(cfg["url"], json={"channel": ch.name, **body}, timeout=timeout,
+                  proxies=proxies)
 
 
 def send_test(channel) -> None:

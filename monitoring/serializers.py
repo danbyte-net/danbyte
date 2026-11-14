@@ -22,6 +22,7 @@ from .worker import _split_resolver
 from .models import (
     PortUtilizationRule,
     Alert,
+    RootCauseIncident,
     AlertRule,
     AcmeOrder,
     Certificate,
@@ -1216,6 +1217,7 @@ class MonitoringSettingsSerializer(TenantScopedModelSerializer):
             "auto_clear_flapping", "auto_clear_flapping_after_minutes",
             "fast_lane_max_checks",
             "group_notifications", "group_threshold",
+            "root_cause_enabled", "root_cause_hold_seconds", "root_cause_hold_mode",
             "discovery_enabled", "discovery_min_prefix_length",
             "discovery_interval_minutes", "discovery_all_prefixes",
             "cleanup_enabled", "cleanup_after_days",
@@ -1260,6 +1262,7 @@ class AlertSerializer(serializers.ModelSerializer):
     acknowledged = serializers.SerializerMethodField()
     acknowledged_by_name = serializers.SerializerMethodField()
     silenced = serializers.SerializerMethodField()
+    root_cause = serializers.SerializerMethodField()
 
     class Meta:
         model = Alert
@@ -1268,7 +1271,8 @@ class AlertSerializer(serializers.ModelSerializer):
             "status", "check_status", "opened_at", "last_status_at",
             "resolved_at", "detail", "acknowledged", "acknowledged_at",
             "acknowledged_by_name", "ack_note", "silenced", "flapping",
-            "escalated", "notify_count",
+            "escalated", "notify_count", "notify_state", "notify_after",
+            "root_cause",
         ]
 
     def get_acknowledged(self, obj) -> bool:
@@ -1284,6 +1288,55 @@ class AlertSerializer(serializers.ModelSerializer):
         # Set by the view via an annotation/attribute to avoid N+1 silence
         # queries per row; defaults to False when not pre-computed.
         return bool(getattr(obj, "_silenced", False))
+
+    def get_root_cause(self, obj) -> dict | None:
+        """The incident explaining this alert (#450) and its root device."""
+        rc = obj.root_cause if obj.root_cause_id else None
+        if rc is None:
+            return None
+        return {
+            "id": str(rc.id),
+            "status": rc.status,
+            "device": {"id": str(rc.device_id), "name": rc.device.name},
+        }
+
+
+class RootCauseIncidentSerializer(serializers.ModelSerializer):
+    """A root-cause incident (#450): the root device, its lifecycle and
+    counts. ``root_alerts`` is the root's own firing alert count."""
+
+    device = serializers.SerializerMethodField()
+    acknowledged = serializers.SerializerMethodField()
+    acknowledged_by_name = serializers.SerializerMethodField()
+    merged_into = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RootCauseIncident
+        fields = [
+            "id", "device", "status", "opened_at", "recovering_since",
+            "resolved_at", "announced_at", "recovery_announced_at",
+            "explained_count", "already_alerted_count", "reduced_count",
+            "merged_into", "acknowledged", "acknowledged_at",
+            "acknowledged_by_name", "ack_note", "detail",
+        ]
+
+    def get_device(self, obj) -> dict:
+        return {"id": str(obj.device_id), "name": obj.device.name}
+
+    def get_acknowledged(self, obj) -> bool:
+        return obj.acknowledged_at is not None
+
+    def get_acknowledged_by_name(self, obj):
+        u = obj.acknowledged_by
+        if u is None:
+            return None
+        return u.get_full_name() or u.get_username()
+
+    def get_merged_into(self, obj):
+        m = obj.merged_into if obj.merged_into_id else None
+        if m is None:
+            return None
+        return {"id": str(m.id), "device": {"id": str(m.device_id), "name": m.device.name}}
 
 
 class SilenceSerializer(TenantScopedModelSerializer):

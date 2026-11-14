@@ -694,6 +694,10 @@ def _monitoring_block(tenant, ip_filter=None) -> dict:
     alerts = Alert.objects.filter(tenant=tenant, status="firing")
     if ip_filter is not None:
         alerts = alerts.filter(target_ip__in=ip_filter)
+    # Alerts a down upstream explains (#450) are counted apart: the root
+    # cause is the one problem, the rest is "+N explained".
+    alerts_explained = alerts.filter(notify_state="explained").count()
+    alerts = alerts.exclude(notify_state="explained")
     alerts_by_severity = [
         {"key": r["severity"], "name": _titilise(r["severity"]), "count": r["n"],
          "color": sev_colors.get(r["severity"], "var(--chart-1)")}
@@ -702,5 +706,6 @@ def _monitoring_block(tenant, ip_filter=None) -> dict:
     return {
         "check_by_status": check_by_status,
         "alerts_by_severity": alerts_by_severity,
+        "alerts_explained": alerts_explained,
         "reachable_pct": reachable_pct,
     }
