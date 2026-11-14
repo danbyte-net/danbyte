@@ -18811,3 +18811,129 @@ export interface HostPackagePage extends Paginated<HostPackage> {
    * while vulnerability data is off or nothing is matched. */
   advisories?: PackageAdvisoryState | null
 }
+
+// ─── Device dependencies (#450) ─────────────────────────────────────────────
+
+export type DependencyLineStyle = "solid" | "dashed" | "dotted"
+
+/** /api/dependency-media/ - what a dependency runs over (editable catalog). */
+export interface DependencyMedium {
+  id: string
+  name: string
+  slug: string
+  /** #rrggbb or "" for none. */
+  color: string
+  text_color: string
+  /** Lucide icon name, or "". */
+  icon: string
+  line_style: DependencyLineStyle
+  description: string
+  weight: number
+  usage_count: number
+  owning_site: { id: string; name: string } | null
+  permissions?: ObjectPerms
+  created_at: string
+  updated_at: string
+}
+
+/** `?picker=1` on /api/dependency-media/, and a dependency's `medium`. */
+export type DependencyMediumRef = Pick<
+  DependencyMedium,
+  "id" | "name" | "slug" | "color" | "text_color" | "icon" | "line_style"
+>
+
+export interface DependencyMediumWritePayload {
+  name: string
+  slug?: string
+  color: string
+  icon: string
+  line_style: DependencyLineStyle
+  weight: number
+  description: string
+}
+
+export type DependencyKind = "dependency" | "peer"
+
+/** One end of a dependency; null when the caller may not view the device. */
+export interface DependencyEnd {
+  id: string
+  name: string
+  site: { id: string; name: string } | null
+}
+
+/** /api/device-dependencies/ - the downstream depends on the upstream. */
+export interface DeviceDependency {
+  id: string
+  numid: number | null
+  upstream: DependencyEnd | null
+  downstream: DependencyEnd | null
+  kind: DependencyKind
+  kind_display: string
+  medium: DependencyMediumRef | null
+  redundancy_group: string
+  description: string
+  comments: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface DeviceDependencyWritePayload {
+  upstream_id?: string
+  downstream_id?: string
+  kind?: DependencyKind
+  medium_id?: string | null
+  redundancy_group?: string
+  description?: string
+}
+
+export type ImpactLevel = "outage" | "reduced_redundancy"
+
+/** GET /api/devices/<id>/impact/ and /api/device-dependencies/impact/. */
+export interface DependencyImpact {
+  root: { id: string; name: string }[]
+  devices: {
+    id: string
+    name: string
+    level: ImpactLevel
+    depth: number
+    via: { id: string; name: string }[]
+    site: { id: string; name: string } | null
+    rack: { id: string; name: string } | null
+  }[]
+  counts: Record<ImpactLevel, number>
+  truncated: boolean
+  impacts: { object_type: string; object_id: string; level: string }[]
+}
+
+export interface DependencyTreeNode {
+  /** The device id, or `hidden-N` for a device the caller may not view. */
+  id: string
+  name: string
+  hidden: boolean
+  site: { id: string; name: string } | null
+  role: { id: string; name: string; color: string } | null
+  status: StatusMini | null
+  /** Worst live check status of the device's addresses. */
+  check: string | null
+}
+
+export interface DependencyTreeEdge {
+  id: string
+  upstream: string
+  downstream: string
+  kind: DependencyKind
+  medium: DependencyMediumRef | null
+  redundancy_group: string
+  description: string
+}
+
+/** GET /api/devices/<id>/dependencies/. */
+export interface DependencyTree {
+  root: DependencyTreeNode
+  nodes: DependencyTreeNode[]
+  edges: DependencyTreeEdge[]
+  depth: number
+  truncated: { up: boolean; down: boolean }
+}

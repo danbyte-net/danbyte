@@ -80,6 +80,8 @@ export const DOCS_LINKS: Record<string, string> = {
   "/topology/map": "features/topology/",
   "/interfaces": "dcim/interfaces/",
   "/cables": "dcim/cabling/",
+  "/device-dependencies": "dcim/dependencies/",
+  "/dependency-media": "dcim/dependencies/",
   "/port-reservations": "dcim/cabling/",
   "/port-utilization": "dcim/devices/",
   "/fiber-cables": "dcim/cabling/",

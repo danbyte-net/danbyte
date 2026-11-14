@@ -26,7 +26,13 @@ describe("app sidebar sections", () => {
     ).toEqual([
       [
         "Devices",
-        ["/devices", "/virtual-chassis", "/device-roles", "/device-profiles"],
+        [
+          "/devices",
+          "/virtual-chassis",
+          "/device-roles",
+          "/dependency-media",
+          "/device-profiles",
+        ],
       ],
       [
         "Catalog",
@@ -51,7 +57,13 @@ describe("app sidebar sections", () => {
       ],
       [
         "Connections",
-        ["/interfaces", "/cables", "/port-reservations", "/port-utilization"],
+        [
+          "/interfaces",
+          "/cables",
+          "/device-dependencies",
+          "/port-reservations",
+          "/port-utilization",
+        ],
       ],
     ])
   })
@@ -96,6 +108,8 @@ describe("app sidebar sections", () => {
     expect(gate("/platform-groups")).toBe("platformgroup")
     expect(gate("/device-profiles")).toBe("deviceprofile")
     expect(gate("/port-utilization")).toBe("device")
+    expect(gate("/device-dependencies")).toBe("devicedependency")
+    expect(gate("/dependency-media")).toBe("dependencymedium")
   })
 
   it("names the virtual page Virtual topology", () => {

@@ -80,9 +80,19 @@ rack and device *Outage* when nothing else feeds its rack, *Reduced
 redundancy* when something does. The form shows what will be marked and lets
 you drop it before saving; afterwards the impacts are edited as any others.
 
+### From a device's dependents
+
+A device's **Dependencies** tab has **What if this fails?**: the devices
+that go down with it, or lose redundancy, through their
+[dependencies](../dcim/dependencies.md). **Plan maintenance** there opens a
+new event with the device as *Outage* and each of those devices at its
+level. Several devices at once:
+`GET /api/device-dependencies/impact/?device=<id>&device=<id>` answers the
+same `impacts` list.
+
 In the API a create takes the same `impacts` list `ingest` takes - what
-`affected/` answers - and writes them in the same transaction: an object you
-may not view refuses the whole create.
+`affected/` or a device's `impact/` answers - and writes them in the same
+transaction: an object you may not view refuses the whole create.
 
 ## Alert suppression
 

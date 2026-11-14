@@ -185,6 +185,10 @@ import { DeviceRedfishCard } from "@/components/device-redfish-card"
 import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
+import {
+  DeviceDependenciesTab,
+  useDeviceDependencyIds,
+} from "@/components/device-dependencies/device-dependencies-tab"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { DeviceConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
@@ -235,6 +239,7 @@ const DEVICE_TABS = [
   "sensors",
   "snmp",
   "services",
+  "dependencies",
   "software",
   "flows",
   "routing",
@@ -338,6 +343,11 @@ function Body({ device: d }: { device: Device }) {
   // The hook reads `?tab=` itself; seeding the *default* from the URL made
   // re-clicking the active tab clear the param and bounce you to Overview.
   const [tab, setTab] = useUrlTab<DeviceTab>("overview", "tab", DEVICE_TABS)
+  // The device's Change log also holds its dependencies' (#450).
+  const dependencyIds = useDeviceDependencyIds(
+    d.id,
+    tab === "history" && canDo("devicedependency", "view")
+  )
   const vuln = useVulnSettings()
   const pkgs = usePackagesTab("device", d.id)
   // Shared with the header badge and the drift inbox - one request, and the
@@ -520,6 +530,9 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
+        ...(canDo("devicedependency", "view")
+          ? [{ value: "dependencies", label: "Dependencies" }]
+          : []),
         {
           value: "software",
           label: "Software",
@@ -683,6 +696,9 @@ function Body({ device: d }: { device: Device }) {
           parentHasPrimaryIp={!!d.primary_ip}
         />
       </DetailTab>
+      <DetailTab value="dependencies">
+        <DeviceDependenciesTab device={{ id: d.id, name: d.name }} />
+      </DetailTab>
       <DetailTab value="software">
         <InstalledSoftwarePane parent={{ kind: "device", id: d.id }} />
       </DetailTab>
@@ -730,7 +746,11 @@ function Body({ device: d }: { device: Device }) {
         <JournalPanel objectType="api.device" objectId={d.id} />
       </DetailTab>
       <DetailTab value="history">
-        <ChangeLogPanel objectType="api.device" objectId={d.id} />
+        <ChangeLogPanel
+          objectType="api.device"
+          objectId={d.id}
+          relatedIds={dependencyIds}
+        />
       </DetailTab>
 
       <DeviceDeleteDialog

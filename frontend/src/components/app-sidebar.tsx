@@ -687,6 +687,12 @@ export const sections: NavSection[] = [
             objectType: "devicerole",
           },
           {
+            title: "Dependency media",
+            url: "/dependency-media",
+            icon: Waypoints,
+            objectType: "dependencymedium",
+          },
+          {
             title: "Device profiles",
             url: "/device-profiles",
             icon: Layers3,
@@ -784,6 +790,12 @@ export const sections: NavSection[] = [
             url: "/cables",
             icon: CableIcon,
             objectType: "cable",
+          },
+          {
+            title: "Dependencies",
+            url: "/device-dependencies",
+            icon: GitFork,
+            objectType: "devicedependency",
           },
           {
             title: "Port reservations",

@@ -30,6 +30,7 @@ const SEGMENT_SLUG: Record<string, string> = {
   "device-types": "devicetype",
   "module-types": "moduletype",
   "device-roles": "devicerole",
+  "dependency-media": "dependencymedium",
   platforms: "platform",
   manufacturers: "manufacturer",
   contacts: "contact",
