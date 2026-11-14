@@ -1,13 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { DependencyMedium } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DynamicIcon } from "@/components/dynamic-icon"
@@ -22,6 +20,7 @@ import {
 } from "@/components/dependency-medium-badge"
 import { DependencyMediumDeleteDialog } from "@/components/dependency-medium-delete-dialog"
 import { DeviceDependencyTable } from "@/components/device-dependencies/dependency-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -66,27 +65,12 @@ function Body({ medium: m }: { medium: DependencyMedium }) {
       backLabel="Dependency media"
       title={m.name}
       presence={{ type: "dependencymedium", id: m.id }}
-      actions={
-        <>
-          {canChange && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/dependency-media/$id/edit" params={{ id: m.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(m)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canChange && (
+          <EditButton to="/dependency-media/$id/edit" params={{ id: m.id }} />
+        )
       }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(m)} />}
       hero={
         <DetailHero
           title={<DependencyMediumBadge medium={m} />}

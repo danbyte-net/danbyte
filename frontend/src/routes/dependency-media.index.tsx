@@ -70,16 +70,14 @@ function DependencyMediaPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
-      actions={
-        <>
-          <TableActions ioType="dependencymedium" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/dependency-media/new">Add medium</Link>
-            </Button>
-          )}
-        </>
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/dependency-media/new">Add medium</Link>
+          </Button>
+        )
       }
+      actions={<TableActions ioType="dependencymedium" />}
       query={query}
     >
       <DataTable

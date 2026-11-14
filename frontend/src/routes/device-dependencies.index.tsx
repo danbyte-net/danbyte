@@ -82,16 +82,14 @@ function DeviceDependenciesPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
-      actions={
-        <>
-          <TableActions ioType="devicedependency" />
-          {canAdd && (
-            <Button size="sm" onClick={() => setAdding(true)}>
-              Add dependency
-            </Button>
-          )}
-        </>
+      add={
+        canAdd && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            Add dependency
+          </Button>
+        )
       }
+      actions={<TableActions ioType="devicedependency" />}
       query={query}
     >
       <DataTable
