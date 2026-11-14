@@ -80,7 +80,11 @@ The device page's **Dependencies** tab, after **Services**, has two views:
   default, up to 10). Each device shows its status and its live check state;
   each link shows its medium and redundancy group. A device you may not view
   shows as *Hidden* so the shape of the tree still reads. **Peers** lists the
-  device's peer links. Edit and delete each link in place.
+  device's peer links. Edit and delete each link in place. When an
+  upstream's fastest check runs less often than the
+  [root-cause hold](../features/monitoring.md#root-causes), the Upstream
+  tree says so: its dependents' alerts will usually go out before it is
+  seen down.
 - **What if this fails?** - the devices that would go down with this one
   (*Outage*) or lose redundancy, each with the upstream it hangs off. **Plan
   maintenance** opens a new [maintenance event](../features/maintenance.md#from-a-devices-dependents)
@@ -134,7 +138,7 @@ a cycle is refused with its path; the rest of the file still imports.
 | `/api/device-dependencies/` | CRUD. Write `upstream_id`, `downstream_id`, `kind`, `medium_id`, `redundancy_group`, `description`, `comments`, `tag_ids`, `custom_fields`. Filters: `upstream`, `downstream`, `device` (either end), `kind`, `medium`, `redundancy_group`, `site` (either end's), `tag`, `search`. |
 | `/api/device-dependencies/bulk-update/` | Medium, redundancy group, description, tags and custom fields. Never the ends or the kind. |
 | `/api/device-dependencies/bulk-delete/` | The shared safe bulk delete. |
-| `GET /api/devices/<id>/dependencies/?direction=up\|down\|both&depth=3` | The tree for the device tab: `root`, `nodes`, `edges`, `truncated`. |
+| `GET /api/devices/<id>/dependencies/?direction=up\|down\|both&depth=3` | The tree for the device tab: `root`, `nodes`, `edges`, `truncated`, and `hold_seconds` with `slow_upstreams` (upstreams checked less often than the root-cause hold). |
 | `GET /api/devices/<id>/impact/?limit=500` | What goes down if the device fails. |
 | `GET /api/device-dependencies/impact/?device=<id>&device=<id>` | The same for several devices failing together. |
 | `/api/dependency-media/` | The media catalog (`?picker=1`). Deleting a medium in use answers 409. |

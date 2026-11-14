@@ -1270,7 +1270,9 @@ all. The release runs after every check batch and on the minute
 alert-maintenance beat, so a hold can last up to a minute longer than set.
 An upstream whose check interval is longer than the hold usually answers
 after it: the downstream alert then goes out and is linked later. Give
-upstreams a short interval or the [fast lane](#fast-lane).
+upstreams a short interval or the [fast lane](#fast-lane); a device's
+**Dependencies** tab names the upstreams that are checked less often than
+the hold.
 
 **Which checks decide.** A device is *down* when a check on its primary IP
 (or, without one, on any IP assigned to it) is down or stale and none is up

@@ -18,6 +18,7 @@ import { FormSelect } from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { InfoTip } from "@/components/ui/info-tip"
 import { DeviceDependencyDialog } from "@/components/device-dependencies/dependency-dialog"
 import type { DependencyDialogMode } from "@/components/device-dependencies/dependency-dialog"
 import { DeviceDependencyDeleteDialog } from "@/components/device-dependencies/dependency-delete-dialog"
@@ -80,6 +81,38 @@ function Section({
       </div>
       {children}
     </section>
+  )
+}
+
+function every(seconds: number): string {
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`
+  if (seconds % 60 === 0) return `${seconds / 60}m`
+  return `${seconds}s`
+}
+
+/** Upstreams checked less often than the root-cause hold (#450). */
+function SlowUpstreams({ tree }: { tree: DependencyTree }) {
+  const slow = tree.slow_upstreams ?? []
+  if (slow.length === 0 || !tree.hold_seconds) return null
+  return (
+    <p className="flex flex-wrap items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
+      Checked less often than the {tree.hold_seconds}s hold:{" "}
+      {slow.map((s, i) => (
+        <span key={s.id}>
+          {i > 0 && ", "}
+          <Link to="/devices/$id" params={{ id: s.id }} className="link">
+            {s.name}
+          </Link>{" "}
+          ({every(s.interval_seconds)})
+        </span>
+      ))}
+      <InfoTip>
+        Root-cause alerting waits this long for an upstream before sending a
+        dependent's alert. An upstream checked less often is usually seen down
+        after its dependents have alerted; give it a shorter interval or the
+        fast lane.
+      </InfoTip>
+    </p>
   )
 }
 
@@ -193,6 +226,7 @@ export function DeviceDependenciesTab({
                 More beyond depth {tree.depth}.
               </p>
             )}
+            <SlowUpstreams tree={tree} />
           </Section>
           <Section
             title="Dependents"

@@ -148,6 +148,29 @@ describe("DeviceDependenciesTab", () => {
     expect(screen.getByRole("button", { name: /Add upstream/ })).toBeTruthy()
   })
 
+  it("warns of upstreams checked less often than the root-cause hold", async () => {
+    apiMock.mockImplementation(async (path: string) =>
+      path.includes("/impact/")
+        ? IMPACT
+        : {
+            ...TREE,
+            hold_seconds: 60,
+            slow_upstreams: [
+              { id: "core", name: "core-1", interval_seconds: 300 },
+            ],
+          }
+    )
+    renderTab()
+    const note = await screen.findByText(/Checked less often than the 60s hold/)
+    expect(note.textContent).toContain("core-1 (5m)")
+  })
+
+  it("says nothing when every upstream answers within the hold", async () => {
+    renderTab()
+    await screen.findByRole("link", { name: "core-1" })
+    expect(screen.queryByText(/Checked less often/)).toBeNull()
+  })
+
   it("hides the add buttons without the grant", async () => {
     can.current = false
     renderTab()

@@ -18997,4 +18997,8 @@ export interface DependencyTree {
   edges: DependencyTreeEdge[]
   depth: number
   truncated: { up: boolean; down: boolean }
+  /** The root-cause hold (#450); null with root-cause alerting off. */
+  hold_seconds?: number | null
+  /** Upstreams whose fastest check runs less often than the hold. */
+  slow_upstreams?: { id: string; name: string; interval_seconds: number }[]
 }

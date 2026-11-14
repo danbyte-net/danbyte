@@ -209,12 +209,23 @@ def tree(user, tenant, device, depth: int = DEFAULT_DEPTH, direction: str = "bot
             "description": r.description,
         }
 
+    # Upstreams checked less often than the root-cause hold (#450): their
+    # dependents' alerts usually go out before they are seen down.
+    from monitoring.root_cause import slow_upstreams
+
+    up_ids = {str(r.upstream_id) for r in up_edges} & set(visible)
+    hold, slow = slow_upstreams(tenant, up_ids)
     return {
         "root": node(root),
         "nodes": [node(pk) for pk in sorted(ids - {root})],
         "edges": [edge(r) for r in edges],
         "depth": depth,
         "truncated": {"up": up_trunc, "down": down_trunc},
+        "hold_seconds": hold,
+        "slow_upstreams": [
+            {"id": pk, "name": visible[pk].name, "interval_seconds": slow[pk]}
+            for pk in sorted(slow, key=lambda p: visible[p].name)
+        ],
     }
 
 

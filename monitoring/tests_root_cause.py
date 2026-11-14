@@ -816,6 +816,31 @@ class ApiTests(_Fixtures, APITestCase):
         self.assertEqual(r.status_code, 400)
 
 
+class SlowUpstreamTests(_Base):
+    def test_upstreams_checked_less_often_than_the_hold(self):
+        self.chain()
+        # Policy-sourced checks follow the tenant default (300 s).
+        hold, slow = root_cause.slow_upstreams(self.tenant, [self.core.pk, self.dist.pk])
+        self.assertEqual(hold, 60)
+        self.assertEqual(slow, {str(self.core.pk): 300, str(self.dist.pk): 300})
+        CheckState.objects.filter(target_ip=self.core.primary_ip).update(interval_seconds=30)
+        self.assertEqual(root_cause.slow_upstreams(self.tenant, [self.core.pk])[1], {})
+        self.ms.root_cause_enabled = False
+        self.ms.save()
+        self.assertEqual(root_cause.slow_upstreams(self.tenant, [self.dist.pk]), (None, {}))
+
+    def test_the_device_tree_carries_them(self):
+        self.chain()
+        user = User.objects.create_superuser("rc-tree", password="x")
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        body = self.client.get(f"/api/devices/{self.acc.id}/dependencies/").json()
+        self.assertEqual(body["hold_seconds"], 60)
+        self.assertEqual([u["name"] for u in body["slow_upstreams"]], ["core-1", "dist-2"])
+
+
 class CountsTests(_Base):
     def test_dashboard_and_digest_count_explained_apart(self):
         from api.dashboard_views import _monitoring_block

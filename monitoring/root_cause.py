@@ -635,3 +635,42 @@ def announced(alert) -> bool:
     """Whether ``alert`` went out on its own - the ones a closing notice may
     follow. Held, explained and withheld alerts never did."""
     return getattr(alert, "notify_state", SENT) == SENT
+
+
+def slow_upstreams(tenant, device_ids) -> tuple[int | None, dict]:
+    """``(hold seconds, {device id: seconds})`` - the devices of
+    ``device_ids`` whose fastest deciding check runs less often than the
+    root-cause hold, so a dependent's alert usually goes out before they
+    are seen down. ``(None, {})`` with the switch off or no hold."""
+    from api.models import Device, IPAddress
+
+    from .models import CheckState
+    from .worker import _cfg, _load_settings, effective_interval
+
+    ms = _settings(tenant.id)
+    hold = int(ms.root_cause_hold_seconds or 0)
+    if not ms.root_cause_enabled or hold <= 0 or not device_ids:
+        return None, {}
+    primary = {str(pk): ip for pk, ip in Device.objects.filter(
+        tenant=tenant, pk__in=list(device_ids)).values_list("pk", "primary_ip_id")}
+    owner = {ip: dev for dev, ip in primary.items() if ip}
+    bare = [dev for dev, ip in primary.items() if not ip]
+    if bare:
+        for ip, dev in IPAddress.objects.filter(
+            tenant=tenant, assigned_device_id__in=bare
+        ).values_list("pk", "assigned_device_id"):
+            owner[ip] = str(dev)
+    cfg = _cfg(_load_settings([tenant.id]), tenant.id)
+    fastest: dict = {}
+    for st in CheckState.objects.filter(
+        tenant=tenant, target_ip_id__in=list(owner)
+    ).exclude(status="skipped").select_related("assignment", "template"):
+        if st.interval_ms and st.fast_owned:
+            secs = st.interval_ms / 1000
+        else:
+            secs = effective_interval(st, cfg)
+        if secs is None:
+            continue
+        dev = owner[st.target_ip_id]
+        fastest[dev] = min(fastest.get(dev, secs), secs)
+    return hold, {dev: int(s) for dev, s in fastest.items() if s > hold}
