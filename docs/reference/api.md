@@ -520,7 +520,10 @@ own site's space (`403`). The change log's cause is *Allocated in
 &lt;parent&gt;*. A plain `POST /api/prefixes/` takes the same lock on the
 prefixes holding its `cidr` before it is validated, so it waits for an
 allocation in that space and is then refused as a duplicate, or the
-allocation picks the next block.
+allocation picks the next block. A `PUT` or `PATCH` that changes `cidr` or
+`vrf_id`, a `bulk-update/` that sets `vrf_id`, and an import row
+(`/api/io/prefix/import/`) that creates a prefix or changes its CIDR or VRF
+take it too, on the prefixes holding where the prefix lands.
 
 Each prefix's `permissions` carries `add_child` next to `change` and
 `delete`: whether the caller may create a prefix inside it. It is `false`
