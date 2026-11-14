@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.19.1
+  version: 0.20.0-dev2
   description: 'REST API for Danbyte - IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -2541,6 +2541,30 @@ paths:
         required: true
       tags:
       - applications
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/applications/{id}/vulnerabilities/:
+    get:
+      operationId: applications_vulnerabilities_retrieve
+      summary: Vulnerabilities of one application
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
       security:
       - apiToken: []
       - cookieAuth: []
@@ -15320,7 +15344,8 @@ paths:
                 type: object
                 additionalProperties: {}
           description: 'Registered providers: kind, label, description, and the settings
-            fields each one needs (text | password | checkbox).'
+            fields each one needs (text | password | checkbox); plus monitoring_keys,
+            how many MONITORING_SECRET_KEY entries are configured.'
   /api/deployment/topology-card/:
     get:
       operationId: deployment_topology_card_retrieve
@@ -18051,6 +18076,7 @@ paths:
         schema:
           type: string
           enum:
+          - discovery
           - import
           - manual
           - none
@@ -18945,6 +18971,30 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/devices/{id}/packages/:
+    get:
+      operationId: devices_packages_retrieve
+      summary: Inventoried packages of one device
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/devices/{id}/paths/:
     get:
       operationId: devices_paths_retrieve
@@ -19101,6 +19151,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Device'
+          description: ''
+  /api/devices/{id}/vulnerabilities/:
+    get:
+      operationId: devices_vulnerabilities_retrieve
+      summary: Vulnerabilities of one device
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/devices/bulk-create/:
     post:
@@ -20229,6 +20303,886 @@ paths:
           description: No such link for this user and tenant.
         '503':
           description: Print links are unavailable right now.
+  /api/discovery/deployment/:
+    patch:
+      operationId: discovery_deployment_partial_update
+      description: |-
+        ``{enabled: bool}``: the stored deployment switch. Deployment admins
+        only (``can_manage_deployment``: a tenant admin is refused). Refused
+        with 409 while ``DANBYTE_DISCOVERY_ENABLED`` decides. Change-logged on
+        the deployment settings. Answers the status, as ``status/`` does.
+      summary: Allow discovery on this deployment
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/exempt/:
+    post:
+      operationId: discovery_exempt_create
+      description: |-
+        ``{kind: device|virtual_machine|ipaddress|prefix, id, exempt}``, or
+        ``{objects: [{kind, id}, ...], exempt}`` for up to ``EXEMPT_MAX`` at
+        once. Needs ``change`` on each object (row and site scope included).
+        One object not found is a 404; in a list, objects of another tenant or
+        out of the caller's scope count as ``not_found`` and the rest are set
+        (as the host-key accept does). Each change is change-logged like any
+        edit of the object.
+      summary: Exempt hosts, addresses or prefixes from discovery
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/findings/:
+    get:
+      operationId: discovery_findings_retrieve
+      description: |-
+        Proposals from current observations: ``service``, ``software`` and
+        ``cpe`` (``discovery.findings``, with ``ipaddress`` view), and from the
+        package inventory: ``platform``, ``application`` and ``link``
+        (``discovery.inventory_findings``, with ``installedsoftware`` view).
+        Filters as observed services, plus ``kind`` and ``ignored`` (``true``:
+        ignored ones too). ``totals`` counts the open ones by kind.
+      summary: Discovery findings to review
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/findings/accept/:
+    post:
+      operationId: discovery_findings_accept_create
+      description: |-
+        ``{ids: [...]}`` of findings: ``service:`` and ``software:`` create the
+        Service, or the install (and its application when the tenant has none of
+        that name); ``platform:`` puts the host on the platform (creating and
+        mapping it as proposed); ``application:`` creates the application with
+        its package names; ``link:`` sets an application's package names. Each a
+        normal change-logged object. Needs *add* on what is created and *change*
+        on what is changed, site scope included; a row the caller may not
+        create is refused and nothing of it stays. ``cpe:`` findings are
+        accepted through ``POST /api/vulnerabilities/mappings/bulk-create/``.
+        Answers ``created`` (``[{finding, kind, id, name}]``) and ``refused``
+        (``[{id, reason}]``).
+      summary: Accept discovery findings
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/findings/ignore/:
+    post:
+      operationId: discovery_findings_ignore_create
+      description: |-
+        ``{ids: [...], ignore: true|false}``: hide findings until their
+        evidence changes, or show them again. Needs what accepting would need:
+        *add* on services or installed software, *change* on applications for
+        ``cpe:`` and ``link:``, *add* on applications for ``application:``,
+        *change* on the host for ``platform:``.
+      summary: Ignore discovery findings
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/host-keys/accept/:
+    post:
+      operationId: discovery_host_keys_accept_create
+      description: |-
+        ``{ids: [...]}``: mark observed host keys accepted, as **accept
+        observed** on the host-key list does one at a time. Needs ``change`` on
+        SSH host keys (row and site scope included). A key that differs from an
+        accepted key of the same type on its host is refused, never accepted in
+        bulk; ids of another tenant or out of the caller's scope count as not
+        found. Each acceptance is change-logged.
+      summary: Accept observed SSH host keys
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/outposts/:
+    get:
+      operationId: discovery_outposts_retrieve
+      description: |-
+        The tenant's Outposts with what each can run now (``can``: inventory,
+        service_scan, nmap - ``ok`` or the reason), for the Runs on picker.
+        Whoever may view profiles. Filter: ``search``.
+      summary: Outposts discovery can run on
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/policy-scopes/:
+    get:
+      operationId: discovery_policy_scopes_retrieve
+      description: |-
+        The monitoring policies the caller may view, each as the profile
+        fields copying its scope gives (see ``policy-scopes/<id>/``), for the
+        profile dialog's picker. Whoever may add or change profiles. Filter:
+        ``search`` (scope or target name).
+      summary: Monitoring policy scopes, to copy into a profile
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/policy-scopes/{id}/:
+    get:
+      operationId: discovery_policy_scopes_retrieve_2
+      description: |-
+        The scope of monitoring policy ``pk`` as profile fields (``field`` and
+        ``target``, or ``global``), for the profile dialog's copy. Whoever may
+        add or change profiles, for a policy they may view. A copy, never a
+        link: nothing here changes when the policy does.
+      summary: A monitoring policy's scope, to copy into a profile
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/profiles/:
+    get:
+      operationId: discovery_profiles_list
+      description: |-
+        Inventory profiles of the active tenant: what discovery reads, when,
+        and who authorised it. Writing ``authorisation`` (a non-empty statement)
+        records the caller and the time as the authoriser; a change to what it
+        covers without one - the scope, Runs on, for a service scan the ports,
+        the engine, or a higher nmap intensity or timing - clears the
+        authorisation, and a profile without one never runs. Filters:
+        ``enabled``, ``search``. ``bulk-update`` sets ``enabled`` only;
+        ``bulk-delete`` removes profiles with their runs, as the single delete.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInventoryProfileList'
+          description: ''
+    post:
+      operationId: discovery_profiles_create
+      description: |-
+        Inventory profiles of the active tenant: what discovery reads, when,
+        and who authorised it. Writing ``authorisation`` (a non-empty statement)
+        records the caller and the time as the authoriser; a change to what it
+        covers without one - the scope, Runs on, for a service scan the ports,
+        the engine, or a higher nmap intensity or timing - clears the
+        authorisation, and a profile without one never runs. Filters:
+        ``enabled``, ``search``. ``bulk-update`` sets ``enabled`` only;
+        ``bulk-delete`` removes profiles with their runs, as the single delete.
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProfile'
+          description: ''
+  /api/discovery/profiles/{id}/:
+    get:
+      operationId: discovery_profiles_retrieve
+      description: |-
+        Inventory profiles of the active tenant: what discovery reads, when,
+        and who authorised it. Writing ``authorisation`` (a non-empty statement)
+        records the caller and the time as the authoriser; a change to what it
+        covers without one - the scope, Runs on, for a service scan the ports,
+        the engine, or a higher nmap intensity or timing - clears the
+        authorisation, and a profile without one never runs. Filters:
+        ``enabled``, ``search``. ``bulk-update`` sets ``enabled`` only;
+        ``bulk-delete`` removes profiles with their runs, as the single delete.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inventory profile.
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProfile'
+          description: ''
+    put:
+      operationId: discovery_profiles_update
+      description: |-
+        Inventory profiles of the active tenant: what discovery reads, when,
+        and who authorised it. Writing ``authorisation`` (a non-empty statement)
+        records the caller and the time as the authoriser; a change to what it
+        covers without one - the scope, Runs on, for a service scan the ports,
+        the engine, or a higher nmap intensity or timing - clears the
+        authorisation, and a profile without one never runs. Filters:
+        ``enabled``, ``search``. ``bulk-update`` sets ``enabled`` only;
+        ``bulk-delete`` removes profiles with their runs, as the single delete.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inventory profile.
+        required: true
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProfile'
+          description: ''
+    patch:
+      operationId: discovery_profiles_partial_update
+      description: |-
+        Inventory profiles of the active tenant: what discovery reads, when,
+        and who authorised it. Writing ``authorisation`` (a non-empty statement)
+        records the caller and the time as the authoriser; a change to what it
+        covers without one - the scope, Runs on, for a service scan the ports,
+        the engine, or a higher nmap intensity or timing - clears the
+        authorisation, and a profile without one never runs. Filters:
+        ``enabled``, ``search``. ``bulk-update`` sets ``enabled`` only;
+        ``bulk-delete`` removes profiles with their runs, as the single delete.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inventory profile.
+        required: true
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedInventoryProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedInventoryProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedInventoryProfileRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProfile'
+          description: ''
+    delete:
+      operationId: discovery_profiles_destroy
+      description: |-
+        A single delete refuses what the bulk delete keeps, with the
+        same reason: 409 ``{"detail": "In use: 2 BGP sessions."}``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inventory profile.
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/discovery/profiles/{id}/host-keys/:
+    get:
+      operationId: discovery_profiles_host_keys_retrieve
+      description: Observed, not yet accepted SSH host keys of the hosts in scope.
+      summary: Host keys to review for a profile's hosts
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inventory profile.
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/profiles/{id}/hosts/:
+    get:
+      operationId: discovery_profiles_hosts_retrieve
+      description: |-
+        The scope as it resolves now, as the caller may see it: each host,
+        its address, the credential it would use, and why it would be left
+        alone. Nothing is contacted.
+      summary: The hosts a profile reads
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inventory profile.
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/profiles/{id}/run/:
+    post:
+      operationId: discovery_profiles_run_create
+      description: |-
+        Queue a run. Needs ``scan`` on the profile and ``view`` on device
+        credentials: the run logs in only with credentials the caller may
+        view, to hosts they may view.
+      summary: Run a profile now
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this inventory profile.
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/profiles/bulk-delete/:
+    post:
+      operationId: discovery_profiles_bulk_delete_create
+      description: |-
+        Inventory profiles of the active tenant: what discovery reads, when,
+        and who authorised it. Writing ``authorisation`` (a non-empty statement)
+        records the caller and the time as the authoriser; a change to what it
+        covers without one - the scope, Runs on, for a service scan the ports,
+        the engine, or a higher nmap intensity or timing - clears the
+        authorisation, and a profile without one never runs. Filters:
+        ``enabled``, ``search``. ``bulk-update`` sets ``enabled`` only;
+        ``bulk-delete`` removes profiles with their runs, as the single delete.
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProfile'
+          description: ''
+  /api/discovery/profiles/bulk-edit-fields/:
+    get:
+      operationId: discovery_profiles_bulk_edit_fields_retrieve
+      description: |-
+        The bulk-edit dialog's fields, described as
+        ``/api/editable-fields/`` describes a field.
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProfile'
+          description: ''
+  /api/discovery/profiles/bulk-update/:
+    post:
+      operationId: discovery_profiles_bulk_update_create
+      description: |-
+        Inventory profiles of the active tenant: what discovery reads, when,
+        and who authorised it. Writing ``authorisation`` (a non-empty statement)
+        records the caller and the time as the authoriser; a change to what it
+        covers without one - the scope, Runs on, for a service scan the ports,
+        the engine, or a higher nmap intensity or timing - clears the
+        authorisation, and a profile without one never runs. Filters:
+        ``enabled``, ``search``. ``bulk-update`` sets ``enabled`` only;
+        ``bulk-delete`` removes profiles with their runs, as the single delete.
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InventoryProfileRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProfile'
+          description: ''
+  /api/discovery/runs/:
+    get:
+      operationId: discovery_runs_list
+      description: |-
+        Runs of the profiles the caller may view, newest first. Filters:
+        ``profile``, ``status``.
+      summary: Discovery runs
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/runs/{id}/:
+    get:
+      operationId: discovery_runs_retrieve
+      description: |-
+        One run; ``advisories`` says whether the vulnerability store has
+        advisory data for the packages it brought (``discovery.advisories``),
+        null when that does not apply.
+      summary: One discovery run
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/runs/{id}/host-keys/:
+    get:
+      operationId: discovery_runs_host_keys_retrieve
+      description: |-
+        Observed, not yet accepted SSH host keys of the hosts this run
+        considered.
+      summary: Host keys to review for a run's hosts
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/runs/{id}/hosts/:
+    get:
+      operationId: discovery_runs_hosts_retrieve
+      description: |-
+        The hosts the run considered that the caller may view: status,
+        transport, address, package counts. Filter: ``status``.
+      summary: Per-host results of a run
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/services/:
+    get:
+      operationId: discovery_services_retrieve
+      description: |-
+        Open ports service scans found on addresses the caller may view.
+        Filters: ``run``, ``profile``, ``ip_address``, ``device``,
+        ``virtual_machine``, ``confidence``, ``search``, ``current`` (default
+        true: ports open at the last scan).
+      summary: Observed services
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/settings/:
+    get:
+      operationId: discovery_settings_retrieve
+      description: |-
+        Deny subnets (CIDRs, any VRF) nothing in the tenant's discovery
+        contacts, and the transport switches (``transports``: ``ssh_key``,
+        ``ssh_password``, ``winrm``; WinRM only while ``winrm.available``). Read
+        by tenant admins and whoever may view profiles; changed by tenant
+        admins.
+      summary: The tenant's discovery settings
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    patch:
+      operationId: discovery_settings_partial_update
+      description: |-
+        Deny subnets (CIDRs, any VRF) nothing in the tenant's discovery
+        contacts, and the transport switches (``transports``: ``ssh_key``,
+        ``ssh_password``, ``winrm``; WinRM only while ``winrm.available``). Read
+        by tenant admins and whoever may view profiles; changed by tenant
+        admins.
+      summary: The tenant's discovery settings
+      tags:
+      - discovery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/discovery/status/:
+    get:
+      operationId: discovery_status_retrieve
+      description: |-
+        The deployment switch (``deployment``: on/off, ``source`` env or
+        setting, the last change), the tenant's Discovery toggle, and whether
+        both are on. Any tenant member.
+      summary: Whether discovery is on
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/dns-drifts/:
     get:
       operationId: dns_drifts_list
@@ -21762,8 +22716,11 @@ paths:
     get:
       operationId: export_templates_list
       description: |-
-        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
-        :class:`BulkEditSpec`; see the module docstring.
+        Adds ``versions/``, ``versions/<vid>/`` and ``versions/<vid>/restore/``
+        to a tenant-scoped model viewset. ``versions_field`` names the text field.
+
+        Reads go through ``get_object()``, so the tenant filter and the caller's
+        view rights on the object apply; restore is a POST and needs ``change``.
       parameters:
       - name: page
         required: false
@@ -21798,8 +22755,11 @@ paths:
     post:
       operationId: export_templates_create
       description: |-
-        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
-        :class:`BulkEditSpec`; see the module docstring.
+        Adds ``versions/``, ``versions/<vid>/`` and ``versions/<vid>/restore/``
+        to a tenant-scoped model viewset. ``versions_field`` names the text field.
+
+        Reads go through ``get_object()``, so the tenant filter and the caller's
+        view rights on the object apply; restore is a POST and needs ``change``.
       tags:
       - export-templates
       requestBody:
@@ -21828,8 +22788,11 @@ paths:
     get:
       operationId: export_templates_retrieve
       description: |-
-        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
-        :class:`BulkEditSpec`; see the module docstring.
+        Adds ``versions/``, ``versions/<vid>/`` and ``versions/<vid>/restore/``
+        to a tenant-scoped model viewset. ``versions_field`` names the text field.
+
+        Reads go through ``get_object()``, so the tenant filter and the caller's
+        view rights on the object apply; restore is a POST and needs ``change``.
       parameters:
       - in: path
         name: id
@@ -21853,8 +22816,11 @@ paths:
     put:
       operationId: export_templates_update
       description: |-
-        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
-        :class:`BulkEditSpec`; see the module docstring.
+        Adds ``versions/``, ``versions/<vid>/`` and ``versions/<vid>/restore/``
+        to a tenant-scoped model viewset. ``versions_field`` names the text field.
+
+        Reads go through ``get_object()``, so the tenant filter and the caller's
+        view rights on the object apply; restore is a POST and needs ``change``.
       parameters:
       - in: path
         name: id
@@ -21890,8 +22856,11 @@ paths:
     patch:
       operationId: export_templates_partial_update
       description: |-
-        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
-        :class:`BulkEditSpec`; see the module docstring.
+        Adds ``versions/``, ``versions/<vid>/`` and ``versions/<vid>/restore/``
+        to a tenant-scoped model viewset. ``versions_field`` names the text field.
+
+        Reads go through ``get_object()``, so the tenant filter and the caller's
+        view rights on the object apply; restore is a POST and needs ``change``.
       parameters:
       - in: path
         name: id
@@ -21944,6 +22913,48 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/export-templates/{id}/lint/:
+    post:
+      operationId: export_templates_lint_create
+      description: |-
+        The CLI check on a rendered ``output`` (#465): warnings for
+        top-level commands the platform's vocabulary does not know. Reads
+        only configs of this tenant the caller may view; never blocks.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this export template.
+        required: true
+      tags:
+      - export-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/export-templates/{id}/preview/:
     get:
       operationId: export_templates_preview_retrieve
@@ -22009,12 +23020,106 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportTemplate'
           description: ''
+  /api/export-templates/{id}/versions/:
+    get:
+      operationId: export_templates_versions_retrieve
+      description: Every saved version of the body, newest first (paged).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this export template.
+        required: true
+      tags:
+      - export-templates
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/export-templates/{id}/versions/{vid}/:
+    get:
+      operationId: export_templates_versions_retrieve_2
+      description: |-
+        One version's text. ``?against=<vid|current>`` adds a unified diff
+        from that version to this one.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this export template.
+        required: true
+      - in: path
+        name: vid
+        schema:
+          type: string
+        description: A change-log entry id, or `current` for the live text.
+        required: true
+      tags:
+      - export-templates
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/export-templates/{id}/versions/{vid}/restore/:
+    post:
+      operationId: export_templates_versions_restore_create
+      description: |-
+        Save an old version's text as a new version - through the normal
+        update path, logged with the cause "Restored version from <date>".
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this export template.
+        required: true
+      - in: path
+        name: vid
+        schema:
+          type: string
+        description: A change-log entry id, or `current` for the live text.
+        required: true
+      tags:
+      - export-templates
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/export-templates/bulk-delete/:
     post:
       operationId: export_templates_bulk_delete_create
       description: |-
-        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
-        :class:`BulkEditSpec`; see the module docstring.
+        Adds ``versions/``, ``versions/<vid>/`` and ``versions/<vid>/restore/``
+        to a tenant-scoped model viewset. ``versions_field`` names the text field.
+
+        Reads go through ``get_object()``, so the tenant filter and the caller's
+        view rights on the object apply; restore is a POST and needs ``change``.
       tags:
       - export-templates
       requestBody:
@@ -22061,8 +23166,11 @@ paths:
     post:
       operationId: export_templates_bulk_update_create
       description: |-
-        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
-        :class:`BulkEditSpec`; see the module docstring.
+        Adds ``versions/``, ``versions/<vid>/`` and ``versions/<vid>/restore/``
+        to a tenant-scoped model viewset. ``versions_field`` names the text field.
+
+        Reads go through ``get_object()``, so the tenant filter and the caller's
+        view rights on the object apply; restore is a POST and needs ``change``.
       tags:
       - export-templates
       requestBody:
@@ -22086,6 +23194,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExportTemplate'
+          description: ''
+  /api/export-templates/validate/:
+    post:
+      operationId: export_templates_validate_create
+      description: |-
+        Adds ``versions/``, ``versions/<vid>/`` and ``versions/<vid>/restore/``
+        to a tenant-scoped model viewset. ``versions_field`` names the text field.
+
+        Reads go through ``get_object()``, so the tenant filter and the caller's
+        view rights on the object apply; restore is a POST and needs ``change``.
+      tags:
+      - export-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/fhrp-assignments/:
     get:
@@ -32015,6 +33159,97 @@ paths:
               schema:
                 $ref: '#/components/schemas/LabelTemplate'
           description: ''
+  /api/label-templates/{id}/versions/:
+    get:
+      operationId: label_templates_versions_retrieve
+      description: Every saved version of the body, newest first (paged).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this label template.
+        required: true
+      tags:
+      - label-templates
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/label-templates/{id}/versions/{vid}/:
+    get:
+      operationId: label_templates_versions_retrieve_2
+      description: |-
+        One version's text. ``?against=<vid|current>`` adds a unified diff
+        from that version to this one.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this label template.
+        required: true
+      - in: path
+        name: vid
+        schema:
+          type: string
+        description: A change-log entry id, or `current` for the live text.
+        required: true
+      tags:
+      - label-templates
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/label-templates/{id}/versions/{vid}/restore/:
+    post:
+      operationId: label_templates_versions_restore_create
+      description: |-
+        Save an old version's text as a new version - through the normal
+        update path, logged with the cause "Restored version from <date>".
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this label template.
+        required: true
+      - in: path
+        name: vid
+        schema:
+          type: string
+        description: A change-log entry id, or `current` for the live text.
+        required: true
+      tags:
+      - label-templates
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/label-templates/{id}/xlsx/:
     get:
       operationId: label_templates_xlsx_retrieve
@@ -32171,6 +33406,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LabelTemplate'
+          description: ''
+  /api/label-templates/validate/:
+    post:
+      operationId: label_templates_validate_create
+      description: |-
+        Printable per-object label templates (Jinja2 HTML + QR, sized in mm).
+
+        CRUD, plus ``fields`` (token reference for the editor), ``preview`` (render an
+        unsaved draft against a sample object), and ``render`` (render the saved
+        template against a set of objects for the print sheet). All rendering is
+        tenant-scoped and sandboxed.
+      tags:
+      - label-templates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/ldap-group-mappings/:
     get:
@@ -37481,10 +38753,11 @@ paths:
         A tenant's Connect launch templates - plain tenant-scoped CRUD.
 
         No secret is involved: a protocol is a URL template the Connect menu renders
-        client-side. Managing them uses the CRUD verbs; *using* one (the device
-        Connect menu) is gated separately on the device ``connect`` verb.
+        client-side. Managing them uses the CRUD verbs; *using* one (the Connect
+        menu on a device or VM) is gated separately on that type's ``connect`` verb.
 
-        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
+        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows);
+        ``?device=<id>`` or ``?virtual_machine=<id>`` to those that apply to a host.
       parameters:
       - name: page
         required: false
@@ -37522,10 +38795,11 @@ paths:
         A tenant's Connect launch templates - plain tenant-scoped CRUD.
 
         No secret is involved: a protocol is a URL template the Connect menu renders
-        client-side. Managing them uses the CRUD verbs; *using* one (the device
-        Connect menu) is gated separately on the device ``connect`` verb.
+        client-side. Managing them uses the CRUD verbs; *using* one (the Connect
+        menu on a device or VM) is gated separately on that type's ``connect`` verb.
 
-        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
+        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows);
+        ``?device=<id>`` or ``?virtual_machine=<id>`` to those that apply to a host.
       tags:
       - monitoring
       requestBody:
@@ -37557,10 +38831,11 @@ paths:
         A tenant's Connect launch templates - plain tenant-scoped CRUD.
 
         No secret is involved: a protocol is a URL template the Connect menu renders
-        client-side. Managing them uses the CRUD verbs; *using* one (the device
-        Connect menu) is gated separately on the device ``connect`` verb.
+        client-side. Managing them uses the CRUD verbs; *using* one (the Connect
+        menu on a device or VM) is gated separately on that type's ``connect`` verb.
 
-        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
+        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows);
+        ``?device=<id>`` or ``?virtual_machine=<id>`` to those that apply to a host.
       parameters:
       - in: path
         name: id
@@ -37587,10 +38862,11 @@ paths:
         A tenant's Connect launch templates - plain tenant-scoped CRUD.
 
         No secret is involved: a protocol is a URL template the Connect menu renders
-        client-side. Managing them uses the CRUD verbs; *using* one (the device
-        Connect menu) is gated separately on the device ``connect`` verb.
+        client-side. Managing them uses the CRUD verbs; *using* one (the Connect
+        menu on a device or VM) is gated separately on that type's ``connect`` verb.
 
-        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
+        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows);
+        ``?device=<id>`` or ``?virtual_machine=<id>`` to those that apply to a host.
       parameters:
       - in: path
         name: id
@@ -37629,10 +38905,11 @@ paths:
         A tenant's Connect launch templates - plain tenant-scoped CRUD.
 
         No secret is involved: a protocol is a URL template the Connect menu renders
-        client-side. Managing them uses the CRUD verbs; *using* one (the device
-        Connect menu) is gated separately on the device ``connect`` verb.
+        client-side. Managing them uses the CRUD verbs; *using* one (the Connect
+        menu on a device or VM) is gated separately on that type's ``connect`` verb.
 
-        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
+        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows);
+        ``?device=<id>`` or ``?virtual_machine=<id>`` to those that apply to a host.
       parameters:
       - in: path
         name: id
@@ -37670,10 +38947,11 @@ paths:
         A tenant's Connect launch templates - plain tenant-scoped CRUD.
 
         No secret is involved: a protocol is a URL template the Connect menu renders
-        client-side. Managing them uses the CRUD verbs; *using* one (the device
-        Connect menu) is gated separately on the device ``connect`` verb.
+        client-side. Managing them uses the CRUD verbs; *using* one (the Connect
+        menu on a device or VM) is gated separately on that type's ``connect`` verb.
 
-        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows).
+        Filter: ``?enabled=1`` to list only enabled protocols (what a menu shows);
+        ``?device=<id>`` or ``?virtual_machine=<id>`` to those that apply to a host.
       parameters:
       - in: path
         name: id
@@ -37937,7 +39215,8 @@ paths:
         reveal it without the verb), re-checks that the caller may view the target
         device, audits the disclosure, and fails closed when no store is enabled.
 
-        Filter: ``?device=<id>``.
+        Filter: ``?device=<id>``, ``?virtual_machine=<id>`` - a credential logs
+        in to a device or (#451) a VM.
       parameters:
       - name: page
         required: false
@@ -37981,7 +39260,8 @@ paths:
         reveal it without the verb), re-checks that the caller may view the target
         device, audits the disclosure, and fails closed when no store is enabled.
 
-        Filter: ``?device=<id>``.
+        Filter: ``?device=<id>``, ``?virtual_machine=<id>`` - a credential logs
+        in to a device or (#451) a VM.
       tags:
       - monitoring
       requestBody:
@@ -38019,7 +39299,8 @@ paths:
         reveal it without the verb), re-checks that the caller may view the target
         device, audits the disclosure, and fails closed when no store is enabled.
 
-        Filter: ``?device=<id>``.
+        Filter: ``?device=<id>``, ``?virtual_machine=<id>`` - a credential logs
+        in to a device or (#451) a VM.
       parameters:
       - in: path
         name: id
@@ -38052,7 +39333,8 @@ paths:
         reveal it without the verb), re-checks that the caller may view the target
         device, audits the disclosure, and fails closed when no store is enabled.
 
-        Filter: ``?device=<id>``.
+        Filter: ``?device=<id>``, ``?virtual_machine=<id>`` - a credential logs
+        in to a device or (#451) a VM.
       parameters:
       - in: path
         name: id
@@ -38097,7 +39379,8 @@ paths:
         reveal it without the verb), re-checks that the caller may view the target
         device, audits the disclosure, and fails closed when no store is enabled.
 
-        Filter: ``?device=<id>``.
+        Filter: ``?device=<id>``, ``?virtual_machine=<id>`` - a credential logs
+        in to a device or (#451) a VM.
       parameters:
       - in: path
         name: id
@@ -38141,7 +39424,8 @@ paths:
         reveal it without the verb), re-checks that the caller may view the target
         device, audits the disclosure, and fails closed when no store is enabled.
 
-        Filter: ``?device=<id>``.
+        Filter: ``?device=<id>``, ``?virtual_machine=<id>`` - a credential logs
+        in to a device or (#451) a VM.
       parameters:
       - in: path
         name: id
@@ -40312,6 +41596,8 @@ paths:
 
         Synchronous - it is a handful of round trips and the operator wants the
         success/failure immediately. Fail-closed if no secret store is enabled.
+        A CA that is unreachable, untrusted or refuses answers 502 with
+        ``detail``; an issuer setting the caller can fix answers 400 on its field.
       parameters:
       - in: path
         name: id
@@ -41991,6 +43277,354 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MonitoringSettings'
+          description: ''
+  /api/monitoring/shared-credentials/:
+    get:
+      operationId: monitoring_shared_credentials_list
+      description: |-
+        Shared credentials: one login for every host its scope matches
+        (``monitoring.credentials``). The secret handling, the managed/external
+        rules and ``reveal`` are the device credential's (inherited), with this
+        type's own RBAC slug ``sharedcredential``.
+
+        A person whose ``sharedcredential`` grant is limited to sites sees and
+        changes only sets scoped to those sites, and cannot create a tenant-wide
+        one (the serializer refuses it).
+
+        * ``preview`` (POST, ``view``): how many hosts a scope would match, from
+          the same body as a create - nothing is written;
+        * ``matches`` (GET): the hosts a saved set matches now.
+
+        Filters: ``?kind=``, ``?enabled=``, ``?search=``.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - monitoring
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSharedCredentialList'
+          description: ''
+    post:
+      operationId: monitoring_shared_credentials_create
+      description: |-
+        Shared credentials: one login for every host its scope matches
+        (``monitoring.credentials``). The secret handling, the managed/external
+        rules and ``reveal`` are the device credential's (inherited), with this
+        type's own RBAC slug ``sharedcredential``.
+
+        A person whose ``sharedcredential`` grant is limited to sites sees and
+        changes only sets scoped to those sites, and cannot create a tenant-wide
+        one (the serializer refuses it).
+
+        * ``preview`` (POST, ``view``): how many hosts a scope would match, from
+          the same body as a create - nothing is written;
+        * ``matches`` (GET): the hosts a saved set matches now.
+
+        Filters: ``?kind=``, ``?enabled=``, ``?search=``.
+      tags:
+      - monitoring
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedCredential'
+          description: ''
+  /api/monitoring/shared-credentials/{id}/:
+    get:
+      operationId: monitoring_shared_credentials_retrieve
+      description: |-
+        Shared credentials: one login for every host its scope matches
+        (``monitoring.credentials``). The secret handling, the managed/external
+        rules and ``reveal`` are the device credential's (inherited), with this
+        type's own RBAC slug ``sharedcredential``.
+
+        A person whose ``sharedcredential`` grant is limited to sites sees and
+        changes only sets scoped to those sites, and cannot create a tenant-wide
+        one (the serializer refuses it).
+
+        * ``preview`` (POST, ``view``): how many hosts a scope would match, from
+          the same body as a create - nothing is written;
+        * ``matches`` (GET): the hosts a saved set matches now.
+
+        Filters: ``?kind=``, ``?enabled=``, ``?search=``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this shared credential.
+        required: true
+      tags:
+      - monitoring
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedCredential'
+          description: ''
+    put:
+      operationId: monitoring_shared_credentials_update
+      description: |-
+        Shared credentials: one login for every host its scope matches
+        (``monitoring.credentials``). The secret handling, the managed/external
+        rules and ``reveal`` are the device credential's (inherited), with this
+        type's own RBAC slug ``sharedcredential``.
+
+        A person whose ``sharedcredential`` grant is limited to sites sees and
+        changes only sets scoped to those sites, and cannot create a tenant-wide
+        one (the serializer refuses it).
+
+        * ``preview`` (POST, ``view``): how many hosts a scope would match, from
+          the same body as a create - nothing is written;
+        * ``matches`` (GET): the hosts a saved set matches now.
+
+        Filters: ``?kind=``, ``?enabled=``, ``?search=``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this shared credential.
+        required: true
+      tags:
+      - monitoring
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedCredential'
+          description: ''
+    patch:
+      operationId: monitoring_shared_credentials_partial_update
+      description: |-
+        Shared credentials: one login for every host its scope matches
+        (``monitoring.credentials``). The secret handling, the managed/external
+        rules and ``reveal`` are the device credential's (inherited), with this
+        type's own RBAC slug ``sharedcredential``.
+
+        A person whose ``sharedcredential`` grant is limited to sites sees and
+        changes only sets scoped to those sites, and cannot create a tenant-wide
+        one (the serializer refuses it).
+
+        * ``preview`` (POST, ``view``): how many hosts a scope would match, from
+          the same body as a create - nothing is written;
+        * ``matches`` (GET): the hosts a saved set matches now.
+
+        Filters: ``?kind=``, ``?enabled=``, ``?search=``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this shared credential.
+        required: true
+      tags:
+      - monitoring
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSharedCredentialRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSharedCredentialRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSharedCredentialRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedCredential'
+          description: ''
+    delete:
+      operationId: monitoring_shared_credentials_destroy
+      description: |-
+        Shared credentials: one login for every host its scope matches
+        (``monitoring.credentials``). The secret handling, the managed/external
+        rules and ``reveal`` are the device credential's (inherited), with this
+        type's own RBAC slug ``sharedcredential``.
+
+        A person whose ``sharedcredential`` grant is limited to sites sees and
+        changes only sets scoped to those sites, and cannot create a tenant-wide
+        one (the serializer refuses it).
+
+        * ``preview`` (POST, ``view``): how many hosts a scope would match, from
+          the same body as a create - nothing is written;
+        * ``matches`` (GET): the hosts a saved set matches now.
+
+        Filters: ``?kind=``, ``?enabled=``, ``?search=``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this shared credential.
+        required: true
+      tags:
+      - monitoring
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/monitoring/shared-credentials/{id}/matches/:
+    get:
+      operationId: monitoring_shared_credentials_matches_retrieve
+      description: The hosts this set's scope matches now (those the caller may view).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this shared credential.
+        required: true
+      tags:
+      - monitoring
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedCredential'
+          description: ''
+  /api/monitoring/shared-credentials/{id}/reveal/:
+    post:
+      operationId: monitoring_shared_credentials_reveal_create
+      description: |-
+        As a device credential's, without the host check: a shared
+        credential has no host. Needs ``reveal`` on it; audited.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this shared credential.
+        required: true
+      tags:
+      - monitoring
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedCredential'
+          description: ''
+  /api/monitoring/shared-credentials/preview/:
+    post:
+      operationId: monitoring_shared_credentials_preview_create
+      description: The hosts a scope in the request body would match. Writes nothing.
+      tags:
+      - monitoring
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SharedCredentialRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedCredential'
           description: ''
   /api/monitoring/silences/:
     get:
@@ -45418,7 +47052,8 @@ paths:
         * **accept-observed** declares an observed key as the expected one, clearing
           any ``ssh_host_key_mismatch`` for that device+type.
 
-        Filters: ``?device=<id>``, ``?origin=observed|uploaded|both``, ``?key_type=``.
+        Filters: ``?device=<id>``, ``?virtual_machine=<id>`` (a VM's keys, #451),
+        ``?origin=observed|uploaded|both``, ``?key_type=``.
       parameters:
       - name: page
         required: false
@@ -45466,7 +47101,8 @@ paths:
         * **accept-observed** declares an observed key as the expected one, clearing
           any ``ssh_host_key_mismatch`` for that device+type.
 
-        Filters: ``?device=<id>``, ``?origin=observed|uploaded|both``, ``?key_type=``.
+        Filters: ``?device=<id>``, ``?virtual_machine=<id>`` (a VM's keys, #451),
+        ``?origin=observed|uploaded|both``, ``?key_type=``.
       tags:
       - monitoring
       requestBody:
@@ -45507,7 +47143,8 @@ paths:
         * **accept-observed** declares an observed key as the expected one, clearing
           any ``ssh_host_key_mismatch`` for that device+type.
 
-        Filters: ``?device=<id>``, ``?origin=observed|uploaded|both``, ``?key_type=``.
+        Filters: ``?device=<id>``, ``?virtual_machine=<id>`` (a VM's keys, #451),
+        ``?origin=observed|uploaded|both``, ``?key_type=``.
       parameters:
       - in: path
         name: id
@@ -45544,7 +47181,8 @@ paths:
         * **accept-observed** declares an observed key as the expected one, clearing
           any ``ssh_host_key_mismatch`` for that device+type.
 
-        Filters: ``?device=<id>``, ``?origin=observed|uploaded|both``, ``?key_type=``.
+        Filters: ``?device=<id>``, ``?virtual_machine=<id>`` (a VM's keys, #451),
+        ``?origin=observed|uploaded|both``, ``?key_type=``.
       parameters:
       - in: path
         name: id
@@ -47667,6 +49305,48 @@ paths:
                 type: object
                 additionalProperties: {}
           description: The number of IP addresses created.
+  /api/outpost/discovery-results/:
+    post:
+      operationId: outpost_discovery_results_create
+      summary: Report discovery results for claimed items
+      tags:
+      - outpost
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: How many results were accepted and refused.
+  /api/outpost/discovery-work/:
+    get:
+      operationId: outpost_discovery_work_retrieve
+      summary: Claim this Outpost's next batch of discovery work
+      tags:
+      - outpost
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: 'Jobs: one run''s items, credentials included.'
   /api/outpost/download/{version}/:
     get:
       operationId: outpost_download_retrieve
@@ -51552,6 +53232,30 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/platforms/{id}/vulnerabilities/:
+    get:
+      operationId: platforms_vulnerabilities_retrieve
+      summary: Vulnerabilities of one platform
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/platforms/bulk-delete/:
     post:
       operationId: platforms_bulk_delete_create
@@ -53805,27 +55509,7 @@ paths:
   /api/prefixes/:
     get:
       operationId: prefixes_list
-      description: |-
-        Which model fields a *field-level* write path may set on this model.
-
-        Two consumers read this declaration:
-
-        * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-        * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-          edit and for planning's planned changes.
-
-        Declaring it in one place rather than inside either consumer is what stops
-        the metadata endpoint becoming a third list that can silently disagree with
-        the two that already exist.
-
-        A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-        its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-        plan may change and the fields a bulk edit offers can differ.
-
-        ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-        stay authoritative, so the existing component viewsets need no edit. Note
-        the consequence: adding ``editable_*`` to a viewset that *does* have a
-        ``bulk-update`` endpoint also makes those fields bulk-editable.
+      description: Free space on PrefixViewSet. See the module docstring.
       parameters:
       - name: page
         required: false
@@ -53859,27 +55543,7 @@ paths:
           description: ''
     post:
       operationId: prefixes_create
-      description: |-
-        Which model fields a *field-level* write path may set on this model.
-
-        Two consumers read this declaration:
-
-        * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-        * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-          edit and for planning's planned changes.
-
-        Declaring it in one place rather than inside either consumer is what stops
-        the metadata endpoint becoming a third list that can silently disagree with
-        the two that already exist.
-
-        A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-        its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-        plan may change and the fields a bulk edit offers can differ.
-
-        ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-        stay authoritative, so the existing component viewsets need no edit. Note
-        the consequence: adding ``editable_*`` to a viewset that *does* have a
-        ``bulk-update`` endpoint also makes those fields bulk-editable.
+      description: Free space on PrefixViewSet. See the module docstring.
       tags:
       - prefixes
       requestBody:
@@ -53907,27 +55571,7 @@ paths:
   /api/prefixes/{id}/:
     get:
       operationId: prefixes_retrieve
-      description: |-
-        Which model fields a *field-level* write path may set on this model.
-
-        Two consumers read this declaration:
-
-        * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-        * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-          edit and for planning's planned changes.
-
-        Declaring it in one place rather than inside either consumer is what stops
-        the metadata endpoint becoming a third list that can silently disagree with
-        the two that already exist.
-
-        A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-        its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-        plan may change and the fields a bulk edit offers can differ.
-
-        ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-        stay authoritative, so the existing component viewsets need no edit. Note
-        the consequence: adding ``editable_*`` to a viewset that *does* have a
-        ``bulk-update`` endpoint also makes those fields bulk-editable.
+      description: Free space on PrefixViewSet. See the module docstring.
       parameters:
       - in: path
         name: id
@@ -53950,27 +55594,7 @@ paths:
           description: ''
     put:
       operationId: prefixes_update
-      description: |-
-        Which model fields a *field-level* write path may set on this model.
-
-        Two consumers read this declaration:
-
-        * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-        * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-          edit and for planning's planned changes.
-
-        Declaring it in one place rather than inside either consumer is what stops
-        the metadata endpoint becoming a third list that can silently disagree with
-        the two that already exist.
-
-        A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-        its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-        plan may change and the fields a bulk edit offers can differ.
-
-        ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-        stay authoritative, so the existing component viewsets need no edit. Note
-        the consequence: adding ``editable_*`` to a viewset that *does* have a
-        ``bulk-update`` endpoint also makes those fields bulk-editable.
+      description: Free space on PrefixViewSet. See the module docstring.
       parameters:
       - in: path
         name: id
@@ -54005,27 +55629,7 @@ paths:
           description: ''
     patch:
       operationId: prefixes_partial_update
-      description: |-
-        Which model fields a *field-level* write path may set on this model.
-
-        Two consumers read this declaration:
-
-        * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-        * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-          edit and for planning's planned changes.
-
-        Declaring it in one place rather than inside either consumer is what stops
-        the metadata endpoint becoming a third list that can silently disagree with
-        the two that already exist.
-
-        A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-        its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-        plan may change and the fields a bulk edit offers can differ.
-
-        ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-        stay authoritative, so the existing component viewsets need no edit. Note
-        the consequence: adding ``editable_*`` to a viewset that *does* have a
-        ``bulk-update`` endpoint also makes those fields bulk-editable.
+      description: Free space on PrefixViewSet. See the module docstring.
       parameters:
       - in: path
         name: id
@@ -54059,27 +55663,7 @@ paths:
           description: ''
     delete:
       operationId: prefixes_destroy
-      description: |-
-        Which model fields a *field-level* write path may set on this model.
-
-        Two consumers read this declaration:
-
-        * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-        * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-          edit and for planning's planned changes.
-
-        Declaring it in one place rather than inside either consumer is what stops
-        the metadata endpoint becoming a third list that can silently disagree with
-        the two that already exist.
-
-        A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-        its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-        plan may change and the fields a bulk edit offers can differ.
-
-        ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-        stay authoritative, so the existing component viewsets need no edit. Note
-        the consequence: adding ``editable_*`` to a viewset that *does* have a
-        ``bulk-update`` endpoint also makes those fields bulk-editable.
+      description: Free space on PrefixViewSet. See the module docstring.
       parameters:
       - in: path
         name: id
@@ -54096,30 +55680,49 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/prefixes/{id}/allocate/:
+    post:
+      operationId: prefixes_allocate_create
+      description: |-
+        Create the next free child of ``length`` (inside ``scope``, by
+        ``strategy``) with the other body keys as its fields. Two callers
+        never get the same block: the parent's row is locked.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this prefix.
+        required: true
+      tags:
+      - prefixes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prefix'
+          description: ''
   /api/prefixes/{id}/clone/:
     get:
       operationId: prefixes_clone_retrieve
-      description: |-
-        Which model fields a *field-level* write path may set on this model.
-
-        Two consumers read this declaration:
-
-        * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-        * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-          edit and for planning's planned changes.
-
-        Declaring it in one place rather than inside either consumer is what stops
-        the metadata endpoint becoming a third list that can silently disagree with
-        the two that already exist.
-
-        A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-        its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-        plan may change and the fields a bulk edit offers can differ.
-
-        ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-        stay authoritative, so the existing component viewsets need no edit. Note
-        the consequence: adding ``editable_*`` to a viewset that *does* have a
-        ``bulk-update`` endpoint also makes those fields bulk-editable.
+      description: Free space on PrefixViewSet. See the module docstring.
       parameters:
       - in: path
         name: id
@@ -54186,6 +55789,49 @@ paths:
         required: true
       tags:
       - prefixes
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prefix'
+          description: ''
+  /api/prefixes/{id}/plan/:
+    post:
+      operationId: prefixes_plan_create
+      description: |-
+        Place ``requests`` (count × length, with optional fields) inside
+        this prefix: largest first, aligned, by ``strategy``, optionally
+        holding the next block of each size free (``reserve_growth``).
+        ``dry_run`` (default true) returns the placement; false creates it
+        in one transaction, all or nothing, each change logged with the
+        cause "Planned in <parent>". ``cidrs``, the dry run's answer, makes
+        the apply refuse (409) when the space changed in between.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this prefix.
+        required: true
+      tags:
+      - prefixes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PrefixRequest'
+        required: true
       security:
       - apiToken: []
       - cookieAuth: []
@@ -54296,6 +55942,26 @@ paths:
           format: uuid
         description: A UUID string identifying this prefix.
         required: true
+      tags:
+      - prefixes
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prefix'
+          description: ''
+  /api/prefixes/available/:
+    get:
+      operationId: prefixes_available_retrieve
+      description: |-
+        Free blocks: of ``length`` (lowest first, or ``strategy=best``),
+        or the largest aligned ones without it, inside ``within`` (a prefix
+        id or CIDR) or every parent the reader may view, clipped to
+        ``scope``. ``vrf`` and ``site`` narrow the parents.
       tags:
       - prefixes
       security:
@@ -54556,6 +56222,26 @@ paths:
           description: ''
         '404':
           description: No such report, or not done.
+  /api/prefixes/tree/:
+    get:
+      operationId: prefixes_tree_retrieve
+      description: |-
+        One level of the prefix tree, a search in it, or the path to one
+        prefix (api.prefix_tree). Built over the prefixes the reader may
+        view: the tenant/site/RBAC-scoped queryset without the list's
+        per-row annotations.
+      tags:
+      - prefixes
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prefix'
+          description: ''
   /api/presence/:
     get:
       operationId: presence_retrieve
@@ -69856,6 +71542,12 @@ paths:
           type: string
         description: Tag ids or slugs, repeatable or comma-separated.
       - in: query
+        name: vex
+        schema:
+          type: string
+        description: 1 adds the open vulnerability matches of these hosts and installs
+          as a CycloneDX vulnerabilities section (VEX).
+      - in: query
         name: virtual_machine
         schema:
           type: string
@@ -69909,6 +71601,12 @@ paths:
         schema:
           type: string
         description: Tag ids or slugs, repeatable or comma-separated.
+      - in: query
+        name: vex
+        schema:
+          type: string
+        description: 1 adds the open vulnerability matches of these hosts and installs
+          as a CycloneDX vulnerabilities section (VEX).
       - in: query
         name: virtual_machine
         schema:
@@ -70218,6 +71916,97 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Script'
+          description: ''
+  /api/scripts/{id}/versions/:
+    get:
+      operationId: scripts_versions_retrieve
+      description: Every saved version of the body, newest first (paged).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this script.
+        required: true
+      tags:
+      - scripts
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/scripts/{id}/versions/{vid}/:
+    get:
+      operationId: scripts_versions_retrieve_2
+      description: |-
+        One version's text. ``?against=<vid|current>`` adds a unified diff
+        from that version to this one.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this script.
+        required: true
+      - in: path
+        name: vid
+        schema:
+          type: string
+        description: A change-log entry id, or `current` for the live text.
+        required: true
+      tags:
+      - scripts
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/scripts/{id}/versions/{vid}/restore/:
+    post:
+      operationId: scripts_versions_restore_create
+      description: |-
+        Save an old version's text as a new version - through the normal
+        update path, logged with the cause "Restored version from <date>".
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this script.
+        required: true
+      - in: path
+        name: vid
+        schema:
+          type: string
+        description: A change-log entry id, or `current` for the live text.
+        required: true
+      tags:
+      - scripts
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/scripts/bulk-delete/:
     post:
@@ -78166,6 +79955,7 @@ paths:
         schema:
           type: string
           enum:
+          - discovery
           - import
           - manual
           - none
@@ -78392,6 +80182,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/VirtualMachine'
           description: ''
+  /api/virtual-machines/{id}/packages/:
+    get:
+      operationId: virtual_machines_packages_retrieve
+      summary: Inventoried packages of one virtual machine
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - discovery
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/virtual-machines/{id}/provision/:
     post:
       operationId: virtual_machines_provision_create
@@ -78504,6 +80318,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VirtualMachine'
+          description: ''
+  /api/virtual-machines/{id}/vulnerabilities/:
+    get:
+      operationId: virtual_machines_vulnerabilities_retrieve
+      summary: Vulnerabilities of one virtual machine
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/virtual-machines/bulk-delete/:
     post:
@@ -80864,6 +82702,1117 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VRF'
+          description: ''
+  /api/vulnerabilities/:
+    get:
+      operationId: vulnerabilities_list
+      description: |-
+        Records matched in the active tenant, one row per record, with the
+        devices and VMs affected (the ones the caller may see), the worst
+        priority and when it was first seen. Filters as the match list
+        (``severity``, ``kev``, ``priority``, ``epss_min``, ``platform``,
+        ``application``, ``site``, ``q``, …). ``<vuln id>/`` takes a CVE id, an
+        OSV id or an alias.
+      summary: Vulnerabilities matched in the tenant
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/{vuln_id}/:
+    get:
+      operationId: vulnerabilities_retrieve
+      description: |-
+        Records matched in the active tenant, one row per record, with the
+        devices and VMs affected (the ones the caller may see), the worst
+        priority and when it was first seen. Filters as the match list
+        (``severity``, ``kev``, ``priority``, ``epss_min``, ``platform``,
+        ``application``, ``site``, ``q``, …). ``<vuln id>/`` takes a CVE id, an
+        OSV id or an alias.
+      summary: One vulnerability with what it affects
+      parameters:
+      - in: path
+        name: vuln_id
+        schema:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9._:-]+$
+        required: true
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/coverage/:
+    get:
+      operationId: vulnerabilities_coverage_retrieve
+      description: |-
+        Per mapping the caller may view (filters ``platform``,
+        ``device_type``, ``application``): the objects it tests, how many
+        matched, how many have no version or one its scheme cannot read; and
+        from the last recompute, the records it could not decide (bounds that do
+        not parse, ranges in an ecosystem without an ordering).
+      summary: What each mapping could and could not match
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/cpe/search/:
+    get:
+      operationId: vulnerabilities_cpe_search_retrieve
+      description: |-
+        ``remote`` is ``ok``, ``cached``, ``off`` (not server mode: NVD is not
+        asked), ``limited`` (try again in ``retry_after`` seconds) or ``error``.
+      summary: Search CPE names for a product mapping
+      parameters:
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: 'Words, or a cpe:2.3: name'
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/facets/:
+    get:
+      operationId: vulnerabilities_facets_retrieve
+      description: |-
+        Records per facet value, each counted over what the other
+        filters leave (``vulnerabilities.list_api``).
+      summary: Facet counts of the record list
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/import/:
+    post:
+      operationId: vulnerabilities_import_create
+      description: Multipart ``file`` + ``kind`` (``nvd``/``osv``/``kev``/``epss``).
+      summary: Import vulnerability data from an uploaded file (background)
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/mappings/:
+    get:
+      operationId: vulnerabilities_mappings_list
+      description: |-
+        Mappings of the active tenant's platforms, device types and
+        applications to CPE products and package URLs. ``POST`` takes one
+        subject (``platform``/``device_type``/``application``) and an
+        ``identifier`` (``cpe:2.3:o:cisco:ios_xe``, ``pkg:pypi/django``; a full
+        CPE or a template is cut to its product); without one, the subject's
+        own SBOM package URL or CPE is used. Filters: ``platform``,
+        ``device_type``, ``application``, ``kind``, ``enabled``.
+      summary: Product mappings
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    post:
+      operationId: vulnerabilities_mappings_create
+      description: |-
+        Mappings of the active tenant's platforms, device types and
+        applications to CPE products and package URLs. ``POST`` takes one
+        subject (``platform``/``device_type``/``application``) and an
+        ``identifier`` (``cpe:2.3:o:cisco:ios_xe``, ``pkg:pypi/django``; a full
+        CPE or a template is cut to its product); without one, the subject's
+        own SBOM package URL or CPE is used. Filters: ``platform``,
+        ``device_type``, ``application``, ``kind``, ``enabled``.
+      summary: Map a subject to a product
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/mappings/{id}/:
+    get:
+      operationId: vulnerabilities_mappings_retrieve
+      description: |-
+        Mappings of the active tenant's platforms, device types and
+        applications to CPE products and package URLs. ``POST`` takes one
+        subject (``platform``/``device_type``/``application``) and an
+        ``identifier`` (``cpe:2.3:o:cisco:ios_xe``, ``pkg:pypi/django``; a full
+        CPE or a template is cut to its product); without one, the subject's
+        own SBOM package URL or CPE is used. Filters: ``platform``,
+        ``device_type``, ``application``, ``kind``, ``enabled``.
+      summary: One product mapping
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    patch:
+      operationId: vulnerabilities_mappings_partial_update
+      description: |-
+        Mappings of the active tenant's platforms, device types and
+        applications to CPE products and package URLs. ``POST`` takes one
+        subject (``platform``/``device_type``/``application``) and an
+        ``identifier`` (``cpe:2.3:o:cisco:ios_xe``, ``pkg:pypi/django``; a full
+        CPE or a template is cut to its product); without one, the subject's
+        own SBOM package URL or CPE is used. Filters: ``platform``,
+        ``device_type``, ``application``, ``kind``, ``enabled``.
+      summary: Change a product mapping
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    delete:
+      operationId: vulnerabilities_mappings_destroy
+      description: |-
+        Mappings of the active tenant's platforms, device types and
+        applications to CPE products and package URLs. ``POST`` takes one
+        subject (``platform``/``device_type``/``application``) and an
+        ``identifier`` (``cpe:2.3:o:cisco:ios_xe``, ``pkg:pypi/django``; a full
+        CPE or a template is cut to its product); without one, the subject's
+        own SBOM package URL or CPE is used. Filters: ``platform``,
+        ``device_type``, ``application``, ``kind``, ``enabled``.
+      summary: Remove a product mapping
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/vulnerabilities/mappings/bulk-create/:
+    post:
+      operationId: vulnerabilities_mappings_bulk_create_create
+      description: |-
+        ``[{platform|device_type|application, identifier, version_scheme?}]``
+        (up to ``BULK_MAX``), all or nothing: each row is checked as a single
+        create is, and any error answers per row (``errors`` keyed by index;
+        ``403`` when one is a refusal, else ``400``) with nothing created.
+        The saves share one transaction, so the recompute and the fetch of
+        the new products are queued once (``signals``).
+      summary: Map several subjects at once
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/mappings/suggestions/:
+    get:
+      operationId: vulnerabilities_mappings_suggestions_list
+      description: |-
+        Candidate products for the unmapped, in-use platforms, applications
+        and device types the caller may change. Filters: ``subject_type``
+        (``platform``, ``application``, ``device_type``), ``confidence`` of the
+        best candidate (``high``, ``medium``, ``low``, ``none``), ``q`` (name)
+        and ``nvd`` (``true``: look the page's rows without a candidate up in
+        NVD's CPE dictionary, server mode only). Best confidence first, then the
+        most used. ``totals`` counts what every filtered row would cover.
+      summary: Suggested product mappings
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/matches/:
+    get:
+      operationId: vulnerabilities_matches_list
+      description: |-
+        Match rows of the active tenant the caller may see. Open by default
+        (``status=open|resolved|all``). Filters: ``device``, ``virtual_machine``,
+        ``platform``, ``application``, ``mapping``, ``site``, ``cve``,
+        ``priority``, ``confidence``, ``via``, ``severity``, ``kev``,
+        ``epss_min``, ``q``, ``excepted`` (``false`` by default: matches an
+        exception covers are left out; ``true``, ``all``). Worst priority first.
+      summary: Vulnerability matches
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/matches/facets/:
+    get:
+      operationId: vulnerabilities_matches_facets_retrieve
+      description: |-
+        Matches per facet value, each counted over what the other
+        filters leave (``vulnerabilities.list_api``).
+      summary: Facet counts of the match list
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/policy/:
+    get:
+      operationId: vulnerabilities_policy_retrieve
+      description: |-
+        Thresholds (decision 12). Read by anyone who may view devices or VMs;
+        changed by a tenant admin. A change re-prioritises the open matches.
+      summary: The tenant's vulnerability priority policy
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    patch:
+      operationId: vulnerabilities_policy_partial_update
+      description: |-
+        Thresholds (decision 12). Read by anyone who may view devices or VMs;
+        changed by a tenant admin. A change re-prioritises the open matches.
+      summary: The tenant's vulnerability priority policy
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/refresh/:
+    post:
+      operationId: vulnerabilities_refresh_create
+      summary: Fetch vulnerability data from this server now (server mode)
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/settings/:
+    get:
+      operationId: vulnerabilities_settings_retrieve
+      description: |-
+        The NVD API key is write-only: reads say ``nvd_api_key_set``; a blank
+        ``nvd_api_key`` keeps the stored one, ``nvd_api_key_clear: true`` drops
+        it.
+      summary: Vulnerability data settings (deployment-wide)
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    patch:
+      operationId: vulnerabilities_settings_partial_update
+      description: |-
+        The NVD API key is write-only: reads say ``nvd_api_key_set``; a blank
+        ``nvd_api_key`` keeps the stored one, ``nvd_api_key_clear: true`` drops
+        it.
+      summary: Vulnerability data settings (deployment-wide)
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/summary/:
+    get:
+      operationId: vulnerabilities_summary_retrieve
+      description: |-
+        Open matches the caller may see that no exception covers: records
+        per priority, KEV and critical records, records new this week, and the
+        devices and VMs affected; plus how many matches (``excepted``) and
+        records (``excepted_records``) exceptions cover.
+      summary: Vulnerability counts for the tenant
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/sync/:
+    post:
+      operationId: vulnerabilities_sync_create
+      summary: Open or resume a browser sync run
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/sync/{run_id}/:
+    get:
+      operationId: vulnerabilities_sync_retrieve
+      summary: One vulnerability data run
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/sync/{run_id}/epss/:
+    post:
+      operationId: vulnerabilities_sync_epss_create
+      summary: Post one FIRST EPSS answer (browser sync)
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/sync/{run_id}/epss-plan/:
+    post:
+      operationId: vulnerabilities_sync_epss_plan_create
+      summary: The EPSS batches of a browser sync run
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/sync/{run_id}/finish/:
+    post:
+      operationId: vulnerabilities_sync_finish_create
+      summary: Finish or stop a browser sync run
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/sync/{run_id}/nvd/:
+    post:
+      operationId: vulnerabilities_sync_nvd_create
+      summary: Post one NVD CVE API page (browser sync)
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/sync/{run_id}/osv/:
+    post:
+      operationId: vulnerabilities_sync_osv_create
+      summary: Post OSV records (browser sync)
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerabilities/sync/{run_id}/osv-ids/:
+    post:
+      operationId: vulnerabilities_sync_osv_ids_create
+      summary: Post the OSV advisory ids found (browser sync)
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - vulnerabilities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/vulnerability-exceptions/:
+    get:
+      operationId: vulnerability_exceptions_list
+      description: The active tenant's vulnerability exceptions.
+      parameters:
+      - in: query
+        name: active
+        schema:
+          type: string
+      - in: query
+        name: application
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: device
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: owner
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: platform
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: q
+        schema:
+          type: string
+      - in: query
+        name: scope
+        schema:
+          type: string
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+      - in: query
+        name: virtual_machine
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: vuln_id
+        schema:
+          type: string
+      tags:
+      - vulnerability-exceptions
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedVulnerabilityExceptionList'
+          description: ''
+    post:
+      operationId: vulnerability_exceptions_create
+      description: The active tenant's vulnerability exceptions.
+      tags:
+      - vulnerability-exceptions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VulnerabilityException'
+          description: ''
+  /api/vulnerability-exceptions/{id}/:
+    get:
+      operationId: vulnerability_exceptions_retrieve
+      description: The active tenant's vulnerability exceptions.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this vulnerability exception.
+        required: true
+      tags:
+      - vulnerability-exceptions
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VulnerabilityException'
+          description: ''
+    put:
+      operationId: vulnerability_exceptions_update
+      description: The active tenant's vulnerability exceptions.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this vulnerability exception.
+        required: true
+      tags:
+      - vulnerability-exceptions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VulnerabilityException'
+          description: ''
+    patch:
+      operationId: vulnerability_exceptions_partial_update
+      description: The active tenant's vulnerability exceptions.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this vulnerability exception.
+        required: true
+      tags:
+      - vulnerability-exceptions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedVulnerabilityExceptionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedVulnerabilityExceptionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedVulnerabilityExceptionRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VulnerabilityException'
+          description: ''
+    delete:
+      operationId: vulnerability_exceptions_destroy
+      description: The active tenant's vulnerability exceptions.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this vulnerability exception.
+        required: true
+      tags:
+      - vulnerability-exceptions
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/vulnerability-exceptions/bulk-delete/:
+    post:
+      operationId: vulnerability_exceptions_bulk_delete_create
+      description: The active tenant's vulnerability exceptions.
+      tags:
+      - vulnerability-exceptions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VulnerabilityExceptionRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VulnerabilityException'
+          description: ''
+  /api/vulnerability-exceptions/scopes/:
+    get:
+      operationId: vulnerability_exceptions_scopes_retrieve
+      description: |-
+        The scopes the caller may create an exception for: ``device`` and
+        ``virtual_machine`` (when they may view that type), and - for a role
+        without a site limit - ``platform``, ``application`` (when they may
+        view it) and ``tenant``. ``site_limited`` says why the rest is gone.
+        ``can_pick_owner`` says whether the caller may name another owner
+        (the people picker's rule); ``you`` is the caller, the owner otherwise.
+      tags:
+      - vulnerability-exceptions
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/webhooks/:
     get:
@@ -84233,6 +87182,38 @@ components:
         * `left` - Left
         * `center` - Center
         * `right` - Right
+    AnalysisJustificationEnum:
+      enum:
+      - code_not_present
+      - code_not_reachable
+      - requires_configuration
+      - requires_dependency
+      - requires_environment
+      - protected_by_compiler
+      - protected_at_runtime
+      - protected_at_perimeter
+      - protected_by_mitigating_control
+      type: string
+      description: |-
+        * `code_not_present` - Code not present
+        * `code_not_reachable` - Code not reachable
+        * `requires_configuration` - Requires configuration
+        * `requires_dependency` - Requires dependency
+        * `requires_environment` - Requires environment
+        * `protected_by_compiler` - Protected by compiler
+        * `protected_at_runtime` - Protected at runtime
+        * `protected_at_perimeter` - Protected at perimeter
+        * `protected_by_mitigating_control` - Protected by mitigating control
+    AnalysisStateEnum:
+      enum:
+      - not_affected
+      - false_positive
+      - exploitable
+      type: string
+      description: |-
+        * `not_affected` - Not affected
+        * `false_positive` - False positive
+        * `exploitable` - Exploitable
     Antenna:
       type: object
       description: |-
@@ -84615,6 +87596,11 @@ components:
         cpe_template:
           type: string
           maxLength: 255
+        package_names:
+          type: array
+          items:
+            type: string
+            maxLength: 140
         description:
           type: string
         tags:
@@ -85395,6 +88381,11 @@ components:
         cpe_template:
           type: string
           maxLength: 255
+        package_names:
+          type: array
+          items:
+            type: string
+            maxLength: 140
         description:
           type: string
         tag_ids:
@@ -88866,6 +91857,14 @@ components:
           writeOnly: true
       required:
       - name
+    CablesEnum:
+      enum:
+      - lines
+      - bundles
+      type: string
+      description: |-
+        * `lines` - lines
+        * `bundles` - bundles
     Certificate:
       type: object
       description: |-
@@ -89662,7 +92661,8 @@ components:
           maxLength: 120
           pattern: ^[-a-zA-Z0-9_]+$
         kind:
-          $ref: '#/components/schemas/Kind517Enum'
+          type: string
+          maxLength: 32
         params:
           description: Kind-specific, non-secret config (port, oid, path, expected_status,
             thresholds…). Validated per-kind.
@@ -89753,7 +92753,9 @@ components:
           maxLength: 120
           pattern: ^[-a-zA-Z0-9_]+$
         kind:
-          $ref: '#/components/schemas/Kind517Enum'
+          type: string
+          minLength: 1
+          maxLength: 32
         params:
           description: Kind-specific, non-secret config (port, oid, path, expected_status,
             thresholds…). Validated per-kind.
@@ -89820,6 +92822,7 @@ components:
       - coverage
       - software_target
       - expression
+      - vulnerabilities
       type: string
       description: |-
         * `required` - Field must be set
@@ -89831,6 +92834,7 @@ components:
         * `coverage` - Support coverage
         * `software_target` - Software target
         * `expression` - Conditions
+        * `vulnerabilities` - Known vulnerabilities
     Circuit:
       type: object
       description: |-
@@ -91156,6 +94160,15 @@ components:
           type: boolean
         include_software:
           type: boolean
+        vuln_fail_on:
+          oneOf:
+          - $ref: '#/components/schemas/VulnFailOnEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        cvss_min:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,1})?$
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -91229,6 +94242,15 @@ components:
           type: boolean
         include_software:
           type: boolean
+        vuln_fail_on:
+          oneOf:
+          - $ref: '#/components/schemas/VulnFailOnEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        cvss_min:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,1})?$
+          nullable: true
       required:
       - check_type
       - name
@@ -94532,6 +97554,33 @@ components:
         map_satellite_attribution:
           type: string
           maxLength: 512
+        map_basemap:
+          $ref: '#/components/schemas/MapBasemapEnum'
+        map_vector_url:
+          description: TileJSON (Shortbread schema) or MapLibre style URL. Blank =
+            the OpenStreetMap Foundation's Shortbread vector tiles.
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 200
+          - type: string
+            maxLength: 0
+        map_vector_attribution:
+          type: string
+          description: Attribution HTML for the vector tiles. Blank = the OpenStreetMap
+            attribution.
+          maxLength: 512
+        map_label_language:
+          allOf:
+          - $ref: '#/components/schemas/MapLabelLanguageEnum'
+          description: |-
+            Default label language of the vector basemap; each user can override it in their preferences.
+
+            * `en` - English
+            * `en_local` - English and local
+            * `browser` - Browser language
+            * `browser_local` - Browser language and local
+            * `local` - Local
         enhanced_site_separation:
           type: boolean
           description: 'When on, each site behaves like a mini-tenant for site-scoped
@@ -94821,6 +97870,33 @@ components:
         map_satellite_attribution:
           type: string
           maxLength: 512
+        map_basemap:
+          $ref: '#/components/schemas/MapBasemapEnum'
+        map_vector_url:
+          description: TileJSON (Shortbread schema) or MapLibre style URL. Blank =
+            the OpenStreetMap Foundation's Shortbread vector tiles.
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 200
+          - type: string
+            maxLength: 0
+        map_vector_attribution:
+          type: string
+          description: Attribution HTML for the vector tiles. Blank = the OpenStreetMap
+            attribution.
+          maxLength: 512
+        map_label_language:
+          allOf:
+          - $ref: '#/components/schemas/MapLabelLanguageEnum'
+          description: |-
+            Default label language of the vector basemap; each user can override it in their preferences.
+
+            * `en` - English
+            * `en_local` - English and local
+            * `browser` - Browser language
+            * `browser_local` - Browser language and local
+            * `local` - Local
         enhanced_site_separation:
           type: boolean
           description: 'When on, each site behaves like a mini-tenant for site-scoped
@@ -95176,6 +98252,15 @@ components:
           - $ref: '#/components/schemas/LifecycleNext'
           nullable: true
           readOnly: true
+        vulnerabilities:
+          allOf:
+          - $ref: '#/components/schemas/HostVulnerabilities'
+          readOnly: true
+        vulnerability_summary:
+          allOf:
+          - $ref: '#/components/schemas/HostVulnerabilitySummary'
+          nullable: true
+          readOnly: true
         description:
           type: string
         comments:
@@ -95425,6 +98510,11 @@ components:
           type: object
           additionalProperties: {}
           readOnly: true
+        scan_exempt:
+          type: boolean
+          readOnly: true
+          title: Exempt from discovery
+          description: Built-in discovery never contacts it.
         permissions:
           type: object
           additionalProperties:
@@ -95484,6 +98574,7 @@ components:
       - role
       - room
       - routing_count
+      - scan_exempt
       - secondary_ip
       - service_count
       - site
@@ -95495,6 +98586,8 @@ components:
       - updated_at
       - vc_renamed_interfaces
       - virtual_chassis
+      - vulnerabilities
+      - vulnerability_summary
     DeviceBay:
       type: object
       description: |-
@@ -95793,14 +98886,22 @@ components:
         device:
           type: string
           format: uuid
+          nullable: true
         device_name:
+          type: string
+          readOnly: true
+        virtual_machine:
+          type: string
+          format: uuid
+          nullable: true
+        virtual_machine_name:
           type: string
           readOnly: true
         name:
           type: string
           maxLength: 120
         kind:
-          $ref: '#/components/schemas/DeviceCredentialKindEnum'
+          $ref: '#/components/schemas/KindAa6Enum'
         username:
           type: string
           maxLength: 255
@@ -95848,29 +98949,13 @@ components:
           readOnly: true
       required:
       - created_at
-      - device
       - device_name
       - id
       - kind
       - name
       - secret_set
       - updated_at
-    DeviceCredentialKindEnum:
-      enum:
-      - ssh_password
-      - ssh_key
-      - https_login
-      - windows_login
-      - proxmox
-      - vmware
-      type: string
-      description: |-
-        * `ssh_password` - SSH password
-        * `ssh_key` - SSH key
-        * `https_login` - HTTPS login
-        * `windows_login` - Windows login
-        * `proxmox` - Proxmox API token
-        * `vmware` - VMware login
+      - virtual_machine_name
     DeviceCredentialRequest:
       type: object
       description: |-
@@ -95891,12 +98976,17 @@ components:
         device:
           type: string
           format: uuid
+          nullable: true
+        virtual_machine:
+          type: string
+          format: uuid
+          nullable: true
         name:
           type: string
           minLength: 1
           maxLength: 120
         kind:
-          $ref: '#/components/schemas/DeviceCredentialKindEnum'
+          $ref: '#/components/schemas/KindAa6Enum'
         username:
           type: string
           maxLength: 255
@@ -95938,10 +99028,12 @@ components:
         passphrase:
           type: string
           writeOnly: true
+        certificate:
+          type: string
+          writeOnly: true
         description:
           type: string
       required:
-      - device
       - kind
       - name
     DeviceFieldVisibility:
@@ -99762,6 +102854,11 @@ components:
         is_directory:
           type: boolean
           readOnly: true
+        lint_family:
+          oneOf:
+          - $ref: '#/components/schemas/LintFamilyEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        ignore_lint_patterns: {}
         created_at:
           type: string
           format: date-time
@@ -99892,6 +102989,11 @@ components:
         target_path:
           type: string
           maxLength: 255
+        lint_family:
+          oneOf:
+          - $ref: '#/components/schemas/LintFamilyEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        ignore_lint_patterns: {}
       required:
       - name
       - object_type
@@ -100518,6 +103620,7 @@ components:
           $ref: '#/components/schemas/BorderEnum'
         show_name:
           type: boolean
+        name_style: {}
         z:
           type: integer
           maximum: 32767
@@ -100615,6 +103718,7 @@ components:
           $ref: '#/components/schemas/BorderEnum'
         show_name:
           type: boolean
+        name_style: {}
         z:
           type: integer
           maximum: 32767
@@ -102503,6 +105607,40 @@ components:
         dates: {}
       required:
       - name
+    HostVulnerabilities:
+      type: object
+      properties:
+        open:
+          type: integer
+        priority:
+          type: string
+        kev:
+          type: boolean
+      required:
+      - kev
+      - open
+      - priority
+    HostVulnerabilitySummary:
+      type: object
+      properties:
+        open:
+          type: integer
+        worst_severity:
+          type: string
+        max_cvss:
+          type: number
+          format: double
+          nullable: true
+        fix_first:
+          type: integer
+        kev:
+          type: integer
+      required:
+      - fix_first
+      - kev
+      - max_cvss
+      - open
+      - worst_severity
     HttpMethodEnum:
       enum:
       - POST
@@ -102642,6 +105780,19 @@ components:
           title: Availability counts from
           description: Uptime, SLA and availability for this address count from here.
             Earlier history is kept but not counted.
+        scan_exempt:
+          type: boolean
+          readOnly: true
+        scan_exempt_via:
+          type: object
+          additionalProperties: {}
+          description: |-
+            The exempt prefix that keeps discovery off this address, when one
+            does (``{id, cidr}``, or ``{id: null, cidr: null}`` for a prefix the
+            caller may not view); None otherwise. Only the record itself carries
+            it: the nested IP tabs (a device's, an interface's, a prefix's) render
+            many rows and must not pay this lookup per row.
+          readOnly: true
         is_primary_for_device:
           type: boolean
           readOnly: true
@@ -102710,6 +105861,8 @@ components:
       - permissions
       - prefix
       - role
+      - scan_exempt
+      - scan_exempt_via
       - scope
       - site
       - status
@@ -104137,6 +107290,9 @@ components:
           type: string
           format: date-time
           nullable: true
+        observed_version:
+          type: string
+          readOnly: true
         group:
           type: object
           additionalProperties: {}
@@ -104174,6 +107330,7 @@ components:
       - group
       - id
       - numid
+      - observed_version
       - service
       - tags
       - updated_at
@@ -105194,6 +108351,343 @@ components:
       required:
       - device_type_id
       - name
+    InventoryProfile:
+      type: object
+      description: |-
+        Adds a read-only ``permissions`` field - ``{"change": bool, "delete":
+        bool}`` for the *current user on this specific object*, in the active tenant.
+
+        Unlike the frontend's type-level ``canDo`` map, this is **constraint-aware**:
+        a grant restricted to certain rows (e.g. only ``status=active`` prefixes)
+        reports ``change: false`` for an object outside that set, so the UI can hide
+        an Edit button that would only 403. The API still enforces independently;
+        this is presentation, not the boundary.
+
+        The per-action constraint decision is resolved once per request and cached,
+        so serializing a list stays cheap: superuser / ungranted / unconstrained
+        rows never hit the DB; only a genuinely constrained grant runs one indexed
+        ``pk`` lookup per row.
+
+        Set ``rbac_object_type`` on the serializer to override the slug; it defaults
+        to the model's ``model_name``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        numid:
+          type: integer
+          readOnly: true
+          nullable: true
+          description: Per-tenant human-readable number (see NumIdSequence).
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+        enabled:
+          type: boolean
+        kind:
+          $ref: '#/components/schemas/InventoryProfileKindEnum'
+        site_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        prefix_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        virtual_machine_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        region_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        vrf_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        platform_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_type_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        scope_global:
+          type: boolean
+        scope:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        shared_credential_id:
+          type: string
+          format: uuid
+          nullable: true
+        shared_credential:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        interval_hours:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        window_start:
+          type: string
+          format: time
+          nullable: true
+        window_end:
+          type: string
+          format: time
+          nullable: true
+        max_concurrency:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        timeout_seconds:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        ports: {}
+        connects_per_second:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        rate_cap:
+          type: integer
+          readOnly: true
+        scan_engine:
+          $ref: '#/components/schemas/ScanEngineEnum'
+        nmap_version_intensity:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        nmap_timing:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        runs_on:
+          $ref: '#/components/schemas/RunsOnEnum'
+        outpost_id:
+          type: string
+          format: uuid
+          nullable: true
+        outpost:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        authorisation:
+          type: string
+        authorised:
+          type: boolean
+          readOnly: true
+        authorised_by_name:
+          type: string
+          readOnly: true
+        authorised_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        blocked_reason:
+          type: string
+          readOnly: true
+        last_run_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_run:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        permissions:
+          type: object
+          additionalProperties:
+            type: boolean
+          readOnly: true
+      required:
+      - authorised
+      - authorised_at
+      - authorised_by_name
+      - blocked_reason
+      - created_at
+      - id
+      - last_run
+      - last_run_at
+      - name
+      - numid
+      - outpost
+      - permissions
+      - rate_cap
+      - scope
+      - shared_credential
+      - updated_at
+    InventoryProfileKindEnum:
+      enum:
+      - inventory
+      - service_scan
+      type: string
+      description: |-
+        * `inventory` - inventory
+        * `service_scan` - service_scan
+    InventoryProfileRequest:
+      type: object
+      description: |-
+        Adds a read-only ``permissions`` field - ``{"change": bool, "delete":
+        bool}`` for the *current user on this specific object*, in the active tenant.
+
+        Unlike the frontend's type-level ``canDo`` map, this is **constraint-aware**:
+        a grant restricted to certain rows (e.g. only ``status=active`` prefixes)
+        reports ``change: false`` for an object outside that set, so the UI can hide
+        an Edit button that would only 403. The API still enforces independently;
+        this is presentation, not the boundary.
+
+        The per-action constraint decision is resolved once per request and cached,
+        so serializing a list stays cheap: superuser / ungranted / unconstrained
+        rows never hit the DB; only a genuinely constrained grant runs one indexed
+        ``pk`` lookup per row.
+
+        Set ``rbac_object_type`` on the serializer to override the slug; it defaults
+        to the model's ``model_name``.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+        enabled:
+          type: boolean
+        kind:
+          $ref: '#/components/schemas/InventoryProfileKindEnum'
+        site_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        prefix_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        virtual_machine_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        region_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        vrf_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        platform_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_type_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        scope_global:
+          type: boolean
+        shared_credential_id:
+          type: string
+          format: uuid
+          nullable: true
+        interval_hours:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        window_start:
+          type: string
+          format: time
+          nullable: true
+        window_end:
+          type: string
+          format: time
+          nullable: true
+        max_concurrency:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        timeout_seconds:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        ports: {}
+        connects_per_second:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        scan_engine:
+          $ref: '#/components/schemas/ScanEngineEnum'
+        nmap_version_intensity:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        nmap_timing:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        runs_on:
+          $ref: '#/components/schemas/RunsOnEnum'
+        outpost_id:
+          type: string
+          format: uuid
+          nullable: true
+        authorisation:
+          type: string
+      required:
+      - name
     IoExportRequestRequest:
       type: object
       properties:
@@ -105299,6 +108793,16 @@ components:
           readOnly: true
         verify_tls:
           type: boolean
+        ca_certificate:
+          type: string
+          maxLength: 66560
+        ca_certificate_info:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: Subject, expiry and fingerprint of each stored CA certificate.
+          readOnly: true
         dns_provider:
           oneOf:
           - $ref: '#/components/schemas/DnsProviderEnum'
@@ -105320,6 +108824,7 @@ components:
           readOnly: true
       required:
       - account_registered
+      - ca_certificate_info
       - created_at
       - directory_url
       - eab_hmac_set
@@ -105364,6 +108869,9 @@ components:
           writeOnly: true
         verify_tls:
           type: boolean
+        ca_certificate:
+          type: string
+          maxLength: 66560
         dns_provider:
           oneOf:
           - $ref: '#/components/schemas/DnsProviderEnum'
@@ -105610,6 +109118,24 @@ components:
         * `pool` - Resource pool
         * `folder` - Folder
         * `other` - Group
+    KindAa6Enum:
+      enum:
+      - ssh_password
+      - ssh_key
+      - https_login
+      - windows_login
+      - proxmox
+      - vmware
+      - winrm_cert
+      type: string
+      description: |-
+        * `ssh_password` - SSH password
+        * `ssh_key` - SSH key
+        * `https_login` - HTTPS login
+        * `windows_login` - Windows login
+        * `proxmox` - Proxmox API token
+        * `vmware` - VMware login
+        * `winrm_cert` - WinRM certificate
     KindDb4Enum:
       enum:
       - normal
@@ -106622,6 +110148,15 @@ components:
         * `unknown` - Unknown
         * `ok` - OK
         * `broken` - Broken
+    LintFamilyEnum:
+      enum:
+      - 'off'
+      - ios
+      type: string
+      description: |-
+        * `` - Auto
+        * `off` - Off
+        * `ios` - Cisco IOS / IOS-XE
     Location:
       type: object
       description: |-
@@ -107350,6 +110885,28 @@ components:
           writeOnly: true
       required:
       - name
+    MapBasemapEnum:
+      enum:
+      - raster
+      - vector
+      type: string
+      description: |-
+        * `raster` - Raster tiles
+        * `vector` - Vector tiles
+    MapLabelLanguageEnum:
+      enum:
+      - en
+      - en_local
+      - browser
+      - browser_local
+      - local
+      type: string
+      description: |-
+        * `en` - English
+        * `en_local` - English and local
+        * `browser` - Browser language
+        * `browser_local` - Browser language and local
+        * `local` - Local
     MatchByEnum:
       enum:
       - address_name
@@ -108225,6 +111782,8 @@ components:
         agent_ip:
           type: string
           readOnly: true
+        agent_capabilities:
+          readOnly: true
         binding_count:
           type: integer
           readOnly: true
@@ -108240,6 +111799,7 @@ components:
           format: date-time
           readOnly: true
       required:
+      - agent_capabilities
       - agent_hostname
       - agent_ip
       - agent_version
@@ -110489,6 +114049,7 @@ components:
         ip:
           type: string
           minLength: 1
+        capabilities: {}
     OutpostRelease:
       type: object
       description: |-
@@ -113976,6 +117537,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InventoryItemTemplate'
+    PaginatedInventoryProfileList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryProfile'
     PaginatedIssuerList:
       type: object
       required:
@@ -115977,6 +119561,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ServiceTemplate'
+    PaginatedSharedCredentialList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SharedCredential'
     PaginatedSilenceList:
       type: object
       required:
@@ -117035,6 +120642,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/VirtualizationSource'
+    PaginatedVulnerabilityExceptionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/VulnerabilityException'
     PaginatedWatchedEndpointList:
       type: object
       required:
@@ -117825,6 +121455,11 @@ components:
         cpe_template:
           type: string
           maxLength: 255
+        package_names:
+          type: array
+          items:
+            type: string
+            maxLength: 140
         description:
           type: string
         tag_ids:
@@ -119018,7 +122653,9 @@ components:
           maxLength: 120
           pattern: ^[-a-zA-Z0-9_]+$
         kind:
-          $ref: '#/components/schemas/Kind517Enum'
+          type: string
+          minLength: 1
+          maxLength: 32
         params:
           description: Kind-specific, non-secret config (port, oid, path, expected_status,
             thresholds…). Validated per-kind.
@@ -119428,6 +123065,15 @@ components:
           type: boolean
         include_software:
           type: boolean
+        vuln_fail_on:
+          oneOf:
+          - $ref: '#/components/schemas/VulnFailOnEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        cvss_min:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,2}(?:\.\d{0,1})?$
+          nullable: true
     PatchedConfigBundleRequest:
       type: object
       description: The files a device role needs, as the templates that render them.
@@ -120313,12 +123959,17 @@ components:
         device:
           type: string
           format: uuid
+          nullable: true
+        virtual_machine:
+          type: string
+          format: uuid
+          nullable: true
         name:
           type: string
           minLength: 1
           maxLength: 120
         kind:
-          $ref: '#/components/schemas/DeviceCredentialKindEnum'
+          $ref: '#/components/schemas/KindAa6Enum'
         username:
           type: string
           maxLength: 255
@@ -120358,6 +124009,9 @@ components:
           type: string
           writeOnly: true
         passphrase:
+          type: string
+          writeOnly: true
+        certificate:
           type: string
           writeOnly: true
         description:
@@ -121519,6 +125173,11 @@ components:
         target_path:
           type: string
           maxLength: 255
+        lint_family:
+          oneOf:
+          - $ref: '#/components/schemas/LintFamilyEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        ignore_lint_patterns: {}
     PatchedFHRPGroupAssignmentRequest:
       type: object
       description: |-
@@ -121666,6 +125325,7 @@ components:
           $ref: '#/components/schemas/BorderEnum'
         show_name:
           type: boolean
+        name_style: {}
         z:
           type: integer
           maximum: 32767
@@ -123217,6 +126877,130 @@ components:
           type: string
           description: 'Free-form: "7.2K RPM", "PCIe 4.0 x4", "3200 MT/s".'
           maxLength: 64
+    PatchedInventoryProfileRequest:
+      type: object
+      description: |-
+        Adds a read-only ``permissions`` field - ``{"change": bool, "delete":
+        bool}`` for the *current user on this specific object*, in the active tenant.
+
+        Unlike the frontend's type-level ``canDo`` map, this is **constraint-aware**:
+        a grant restricted to certain rows (e.g. only ``status=active`` prefixes)
+        reports ``change: false`` for an object outside that set, so the UI can hide
+        an Edit button that would only 403. The API still enforces independently;
+        this is presentation, not the boundary.
+
+        The per-action constraint decision is resolved once per request and cached,
+        so serializing a list stays cheap: superuser / ungranted / unconstrained
+        rows never hit the DB; only a genuinely constrained grant runs one indexed
+        ``pk`` lookup per row.
+
+        Set ``rbac_object_type`` on the serializer to override the slug; it defaults
+        to the model's ``model_name``.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+        enabled:
+          type: boolean
+        kind:
+          $ref: '#/components/schemas/InventoryProfileKindEnum'
+        site_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        prefix_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        virtual_machine_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        region_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        vrf_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        platform_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_type_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        scope_global:
+          type: boolean
+        shared_credential_id:
+          type: string
+          format: uuid
+          nullable: true
+        interval_hours:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        window_start:
+          type: string
+          format: time
+          nullable: true
+        window_end:
+          type: string
+          format: time
+          nullable: true
+        max_concurrency:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        timeout_seconds:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        ports: {}
+        connects_per_second:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        scan_engine:
+          $ref: '#/components/schemas/ScanEngineEnum'
+        nmap_version_intensity:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        nmap_timing:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        runs_on:
+          $ref: '#/components/schemas/RunsOnEnum'
+        outpost_id:
+          type: string
+          format: uuid
+          nullable: true
+        authorisation:
+          type: string
     PatchedIssuerRequest:
       type: object
       description: |-
@@ -123249,6 +127033,9 @@ components:
           writeOnly: true
         verify_tls:
           type: boolean
+        ca_certificate:
+          type: string
+          maxLength: 66560
         dns_provider:
           oneOf:
           - $ref: '#/components/schemas/DnsProviderEnum'
@@ -126743,6 +130530,88 @@ components:
           writeOnly: true
         custom_fields:
           description: User-defined custom fields
+    PatchedSharedCredentialRequest:
+      type: object
+      description: |-
+        A shared login. Write-only secret fields as on a device credential
+        (``password``, ``private_key``, ``passphrase``); reads carry
+        ``secret_set`` only. Scope ids resolve inside the active tenant.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        kind:
+          $ref: '#/components/schemas/KindAa6Enum'
+        username:
+          type: string
+          maxLength: 255
+        port:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          nullable: true
+        secret_managed:
+          type: boolean
+        secret_provider:
+          oneOf:
+          - $ref: '#/components/schemas/SecretProviderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        secret_path:
+          type: string
+          maxLength: 200
+        password:
+          type: string
+          writeOnly: true
+        private_key:
+          type: string
+          writeOnly: true
+        passphrase:
+          type: string
+          writeOnly: true
+        certificate:
+          type: string
+          writeOnly: true
+        description:
+          type: string
+        enabled:
+          type: boolean
+        weight:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        fall_through:
+          type: boolean
+        applies_to_devices:
+          type: boolean
+        applies_to_vms:
+          type: boolean
+        all_hosts:
+          type: boolean
+        role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_type_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        platform_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        site_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        tag_ids:
+          type: array
+          items:
+            type: integer
     PatchedSilenceRequest:
       type: object
       description: |-
@@ -128760,6 +132629,70 @@ components:
           nullable: true
         enabled:
           type: boolean
+    PatchedVulnerabilityExceptionRequest:
+      type: object
+      description: |-
+        ``ModelSerializer`` that auto-exposes a read-only ``numid`` for any model
+        that carries it (``NumIdMixin``), so every object surfaces its per-tenant
+        human-readable number without each serializer re-listing the field (#82).
+
+        The field is injected into ``get_field_names``; because the model column is
+        ``editable=False``, DRF builds it read-only. Models without numid are
+        untouched, so swapping this in for ``serializers.ModelSerializer`` is a no-op
+        for them.
+      properties:
+        vuln_id:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 64
+        device_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        virtual_machine_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        platform_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        application_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        status:
+          $ref: '#/components/schemas/VulnerabilityExceptionStatusEnum'
+        reason:
+          type: string
+          maxLength: 4000
+        owner_id:
+          type: integer
+          writeOnly: true
+          nullable: true
+        expires_on:
+          type: string
+          format: date
+          nullable: true
+        analysis_state:
+          oneOf:
+          - $ref: '#/components/schemas/AnalysisStateEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        analysis_justification:
+          oneOf:
+          - $ref: '#/components/schemas/AnalysisJustificationEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        analysis_response:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 32
     PatchedWatchedEndpointRequest:
       type: object
       description: |-
@@ -131023,6 +134956,11 @@ components:
           additionalProperties: {}
           nullable: true
           readOnly: true
+        scan_exempt:
+          type: boolean
+          readOnly: true
+          title: Exempt from discovery
+          description: Built-in discovery never contacts it.
         tags:
           type: array
           items:
@@ -131059,6 +134997,7 @@ components:
       - monitoring_engine
       - numid
       - permissions
+      - scan_exempt
       - site
       - static_route_count
       - status
@@ -135709,6 +139648,31 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ReportSheetRequest'
+        cables:
+          allOf:
+          - $ref: '#/components/schemas/CablesEnum'
+          default: lines
+          description: |-
+            `lines` (the default): the cables as the posted drawing has them. `bundles`: the drawing is posted without its cables and they are drawn here - one stroke per stretch, its width stepped by the cables riding it, with counts and a legend.
+
+            * `lines` - lines
+            * `bundles` - bundles
+        trace:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: 'With `cables` in `include`: cables of this floor listed in
+            the report to give a trace page each (the first 20). Any other id is refused.'
+          maxItems: 200
+        trace_svgs:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 8388608
+          description: This floor drawn without cables for each trace page, keyed
+            by cable id (`cable-schedule/closeups/?trace=`).
       required:
       - include
       - scope
@@ -136556,6 +140520,16 @@ components:
       description: |-
         * `caller` - The person who runs it
         * `owner` - The script's owner
+    RunsOnEnum:
+      enum:
+      - server
+      - outpost
+      - host
+      type: string
+      description: |-
+        * `server` - server
+        * `outpost` - outpost
+        * `host` - host
     SSHHostKey:
       type: object
       description: |-
@@ -136577,7 +140551,16 @@ components:
           type: string
           format: uuid
           readOnly: true
+          nullable: true
         device_name:
+          type: string
+          readOnly: true
+        virtual_machine:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        virtual_machine_name:
           type: string
           readOnly: true
         key_type:
@@ -136646,6 +140629,8 @@ components:
       - public_key
       - updated_at
       - uploaded
+      - virtual_machine
+      - virtual_machine_name
     SSHHostKeyRequest:
       type: object
       description: |-
@@ -136729,6 +140714,14 @@ components:
       required:
       - name
       - object_type
+    ScanEngineEnum:
+      enum:
+      - builtin
+      - nmap
+      type: string
+      description: |-
+        * `builtin` - Built-in
+        * `nmap` - nmap
     ScheduleModeEnum:
       enum:
       - follow_global
@@ -137594,6 +141587,187 @@ components:
       description: |-
         * `rect` - Rectangle
         * `polygon` - Polygon
+    SharedCredential:
+      type: object
+      description: |-
+        A shared login. Write-only secret fields as on a device credential
+        (``password``, ``private_key``, ``passphrase``); reads carry
+        ``secret_set`` only. Scope ids resolve inside the active tenant.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        kind:
+          $ref: '#/components/schemas/KindAa6Enum'
+        username:
+          type: string
+          maxLength: 255
+        port:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          nullable: true
+        secret_managed:
+          type: boolean
+        secret_provider:
+          oneOf:
+          - $ref: '#/components/schemas/SecretProviderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        secret_path:
+          type: string
+          maxLength: 200
+        secret_set:
+          type: boolean
+          readOnly: true
+        description:
+          type: string
+        enabled:
+          type: boolean
+        weight:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        fall_through:
+          type: boolean
+        applies_to_devices:
+          type: boolean
+        applies_to_vms:
+          type: boolean
+        all_hosts:
+          type: boolean
+        role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_type_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        platform_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        site_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        tag_ids:
+          type: array
+          items:
+            type: integer
+        scope:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - kind
+      - name
+      - scope
+      - secret_set
+      - updated_at
+    SharedCredentialRequest:
+      type: object
+      description: |-
+        A shared login. Write-only secret fields as on a device credential
+        (``password``, ``private_key``, ``passphrase``); reads carry
+        ``secret_set`` only. Scope ids resolve inside the active tenant.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        kind:
+          $ref: '#/components/schemas/KindAa6Enum'
+        username:
+          type: string
+          maxLength: 255
+        port:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          nullable: true
+        secret_managed:
+          type: boolean
+        secret_provider:
+          oneOf:
+          - $ref: '#/components/schemas/SecretProviderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        secret_path:
+          type: string
+          maxLength: 200
+        password:
+          type: string
+          writeOnly: true
+        private_key:
+          type: string
+          writeOnly: true
+        passphrase:
+          type: string
+          writeOnly: true
+        certificate:
+          type: string
+          writeOnly: true
+        description:
+          type: string
+        enabled:
+          type: boolean
+        weight:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        fall_through:
+          type: boolean
+        applies_to_devices:
+          type: boolean
+        applies_to_vms:
+          type: boolean
+        all_hosts:
+          type: boolean
+        role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        device_type_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        platform_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        site_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        tag_ids:
+          type: array
+          items:
+            type: integer
+      required:
+      - kind
+      - name
     Silence:
       type: object
       description: |-
@@ -139607,6 +143781,7 @@ components:
       - virtualization
       - oxidized
       - import
+      - discovery
       type: string
       description: |-
         * `manual` - Manual
@@ -139614,6 +143789,7 @@ components:
         * `virtualization` - Virtualization
         * `oxidized` - Oxidized
         * `import` - Import
+        * `discovery` - Discovery
     SourceAddressEnum:
       enum:
       - primary
@@ -144291,6 +148467,15 @@ components:
           - $ref: '#/components/schemas/LifecycleNext'
           nullable: true
           readOnly: true
+        vulnerabilities:
+          allOf:
+          - $ref: '#/components/schemas/HostVulnerabilities'
+          readOnly: true
+        vulnerability_summary:
+          allOf:
+          - $ref: '#/components/schemas/HostVulnerabilitySummary'
+          nullable: true
+          readOnly: true
         device:
           allOf:
           - $ref: '#/components/schemas/DeviceMini'
@@ -144442,6 +148627,11 @@ components:
         prtg_host:
           type: string
           maxLength: 255
+        scan_exempt:
+          type: boolean
+          readOnly: true
+          title: Exempt from discovery
+          description: Built-in discovery never contacts it.
         created_at:
           type: string
           format: date-time
@@ -144476,6 +148666,7 @@ components:
       - represents_device
       - role
       - routing_count
+      - scan_exempt
       - service_count
       - site
       - software_version_seen_at
@@ -144485,6 +148676,8 @@ components:
       - synced_from_id
       - tags
       - updated_at
+      - vulnerabilities
+      - vulnerability_summary
     VirtualMachineGroup:
       type: object
       description: A vApp / resource pool / folder, as the hypervisor groups its VMs.
@@ -145186,6 +149379,209 @@ components:
       description: |-
         * `pinned` - Only the chosen VRF
         * `search` - Chosen VRF first, then any other
+    VulnFailOnEnum:
+      enum:
+      - kev
+      - fix_first
+      - high
+      - cvss
+      type: string
+      description: |-
+        * `kev` - In CISA KEV
+        * `fix_first` - Priority fix first
+        * `high` - Priority high or fix first
+        * `cvss` - CVSS score at or over
+    VulnerabilityException:
+      type: object
+      description: |-
+        ``ModelSerializer`` that auto-exposes a read-only ``numid`` for any model
+        that carries it (``NumIdMixin``), so every object surfaces its per-tenant
+        human-readable number without each serializer re-listing the field (#82).
+
+        The field is injected into ``get_field_names``; because the model column is
+        ``editable=False``, DRF builds it read-only. Models without numid are
+        untouched, so swapping this in for ``serializers.ModelSerializer`` is a no-op
+        for them.
+      properties:
+        numid:
+          type: integer
+          readOnly: true
+          nullable: true
+          description: Per-tenant human-readable number (see NumIdSequence).
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        cve:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        scope:
+          type: string
+          readOnly: true
+        device:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        virtual_machine:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        platform:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        application:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/VulnerabilityExceptionStatusEnum'
+        reason:
+          type: string
+          maxLength: 4000
+        owner:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        owner_name:
+          type: string
+          readOnly: true
+        expires_on:
+          type: string
+          format: date
+          nullable: true
+        active:
+          type: boolean
+          readOnly: true
+        analysis_state:
+          oneOf:
+          - $ref: '#/components/schemas/AnalysisStateEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        analysis_justification:
+          oneOf:
+          - $ref: '#/components/schemas/AnalysisJustificationEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        analysis_response:
+          type: array
+          items:
+            type: string
+            maxLength: 32
+        cyclonedx:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        matches:
+          type: integer
+          description: Open matches it covers now, of the hosts the caller may see.
+          readOnly: true
+        created_by:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        expiry_notified_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - active
+      - application
+      - created_at
+      - created_by
+      - cve
+      - cyclonedx
+      - device
+      - expiry_notified_at
+      - id
+      - matches
+      - numid
+      - owner
+      - owner_name
+      - platform
+      - scope
+      - updated_at
+      - virtual_machine
+    VulnerabilityExceptionRequest:
+      type: object
+      description: |-
+        ``ModelSerializer`` that auto-exposes a read-only ``numid`` for any model
+        that carries it (``NumIdMixin``), so every object surfaces its per-tenant
+        human-readable number without each serializer re-listing the field (#82).
+
+        The field is injected into ``get_field_names``; because the model column is
+        ``editable=False``, DRF builds it read-only. Models without numid are
+        untouched, so swapping this in for ``serializers.ModelSerializer`` is a no-op
+        for them.
+      properties:
+        vuln_id:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 64
+        device_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        virtual_machine_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        platform_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        application_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        status:
+          $ref: '#/components/schemas/VulnerabilityExceptionStatusEnum'
+        reason:
+          type: string
+          maxLength: 4000
+        owner_id:
+          type: integer
+          writeOnly: true
+          nullable: true
+        expires_on:
+          type: string
+          format: date
+          nullable: true
+        analysis_state:
+          oneOf:
+          - $ref: '#/components/schemas/AnalysisStateEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        analysis_justification:
+          oneOf:
+          - $ref: '#/components/schemas/AnalysisJustificationEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        analysis_response:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 32
+    VulnerabilityExceptionStatusEnum:
+      enum:
+      - not_applicable
+      - risk_accepted
+      type: string
+      description: |-
+        * `not_applicable` - Not applicable
+        * `risk_accepted` - Risk accepted
     WatchedEndpoint:
       type: object
       description: |-
