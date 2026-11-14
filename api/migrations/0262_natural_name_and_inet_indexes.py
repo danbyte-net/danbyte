@@ -14,6 +14,25 @@ from django.contrib.postgres.operations import AddIndexConcurrently
 from django.db import migrations, models
 
 
+class AddIndexConcurrentlyOutsideTransaction(AddIndexConcurrently):
+    """CONCURRENTLY when the migration runs on its own (an upgrade: atomic
+    is False, so there is no transaction), a plain CREATE/DROP INDEX when a
+    caller has wrapped it in one (a test case migrating back and forth), so
+    both work. The index is the same either way."""
+
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        if schema_editor.connection.in_atomic_block:
+            return migrations.AddIndex.database_forwards(
+                self, app_label, schema_editor, from_state, to_state)
+        return super().database_forwards(app_label, schema_editor, from_state, to_state)
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        if schema_editor.connection.in_atomic_block:
+            return migrations.AddIndex.database_backwards(
+                self, app_label, schema_editor, from_state, to_state)
+        return super().database_backwards(app_label, schema_editor, from_state, to_state)
+
+
 class Migration(migrations.Migration):
 
     atomic = False
@@ -28,7 +47,7 @@ class Migration(migrations.Migration):
             model_name='device',
             index=models.Index(models.F('tenant'), django.db.models.functions.comparison.Collate('name', 'natural_sort'), name='device_tenant_natname_idx'),
         ),
-        AddIndexConcurrently(
+        AddIndexConcurrentlyOutsideTransaction(
             model_name='prefix',
             index=django.contrib.postgres.indexes.GistIndex(django.contrib.postgres.indexes.OpClass(django.db.models.functions.comparison.Cast('cidr', models.GenericIPAddressField()), name='inet_ops'), name='prefix_cidr_inet_gist'),
         ),

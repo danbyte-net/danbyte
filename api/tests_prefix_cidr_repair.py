@@ -124,7 +124,9 @@ class RepairTests(APITestCase):
             cur.execute("CREATE INDEX t_inet ON api_prefix USING gist ((cidr::inet) inet_ops)")
         m0262 = importlib.import_module("api.migrations.0262_natural_name_and_inet_indexes")
         self.assertFalse(m0262.Migration.atomic)
-        self.assertEqual(type(m0262.Migration.operations[1]).__name__, "AddIndexConcurrently")
+        from django.contrib.postgres.operations import AddIndexConcurrently
+
+        self.assertIsInstance(m0262.Migration.operations[1], AddIndexConcurrently)
 
     def test_the_upgrade_probe_reports_what_0265_would_do(self):
         _plant(self.tenant, "10.0.60.0/24", "10.0.60.0/24 ")
