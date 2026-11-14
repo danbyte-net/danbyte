@@ -140,6 +140,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/channels": "features/monitoring/",
   "/alert-rules": "features/monitoring/",
   "/alerts": "features/monitoring/",
+  "/root-causes": "features/monitoring/",
   "/silences": "features/monitoring/",
   "/certificates": "monitoring/certificates/",
   "/certificate-issuers": "monitoring/certificates/",

@@ -196,6 +196,7 @@ import { InstalledSoftwarePane } from "@/components/installed-software-pane"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
+import { ExplainedBy } from "@/components/monitoring/explained-by"
 import {
   MonitoringBar,
   MonitoringHeaderBadge,
@@ -1494,6 +1495,7 @@ function DeviceOverview({
         notify={{ device: d.id }}
         slot="banner"
       />
+      <ExplainedBy deviceId={d.id} />
       <PinnedSensorsCard
         parent={{ device: d.id }}
         sensorLink={(sensor, children) => (

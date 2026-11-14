@@ -165,6 +165,9 @@ export function MonitoringSettingsForm() {
           ),
           group_notifications: draft.group_notifications,
           group_threshold: Number(draft.group_threshold),
+          root_cause_enabled: draft.root_cause_enabled,
+          root_cause_hold_seconds: Number(draft.root_cause_hold_seconds),
+          root_cause_hold_mode: draft.root_cause_hold_mode,
           discovery_enabled: draft.discovery_enabled,
           discovery_min_prefix_length: Number(
             draft.discovery_min_prefix_length
@@ -485,6 +488,43 @@ export function MonitoringSettingsForm() {
                 hint="New alerts in a batch before grouping"
                 value={draft.group_threshold}
                 onChange={(v) => set("group_threshold", v)}
+              />
+            </div>
+          )}
+
+          {/* Root cause (#450) */}
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="root-cause-enabled"
+              checked={draft.root_cause_enabled}
+              onCheckedChange={(v) => set("root_cause_enabled", !!v)}
+            />
+            <Label
+              htmlFor="root-cause-enabled"
+              className="text-sm font-medium whitespace-nowrap"
+            >
+              Root-cause alerting
+            </Label>
+            <InfoTip>
+              A device whose upstream is down is explained by it: its alerts
+              stay on the Alerts page but are not sent, and one root-cause
+              message goes out instead, with one more on recovery. Does nothing
+              until device dependencies exist.
+            </InfoTip>
+          </div>
+          {draft.root_cause_enabled && (
+            <div className="ml-6 grid max-w-sm grid-cols-2 gap-3">
+              <NumberField
+                label="Hold"
+                unit="s"
+                min={0}
+                info="How long an alert of a device with upstreams waits for its upstreams' checks before it is sent. 0 sends at once."
+                value={draft.root_cause_hold_seconds}
+                onChange={(v) => set("root_cause_hold_seconds", v)}
+              />
+              <HoldModeSelect
+                value={draft.root_cause_hold_mode}
+                onChange={(v) => set("root_cause_hold_mode", v)}
               />
             </div>
           )}
@@ -987,6 +1027,53 @@ function NumberField({
           {hint}
         </p>
       )}
+    </div>
+  )
+}
+
+/** When a root-cause hold applies (#450). */
+function HoldModeSelect({
+  value,
+  onChange,
+}: {
+  value: MonitoringSettings["root_cause_hold_mode"]
+  onChange: (v: MonitoringSettings["root_cause_hold_mode"]) => void
+}) {
+  const id = useId()
+  return (
+    <div className="space-y-1">
+      <span className="flex items-center gap-1">
+        <Label
+          id={`${id}-label`}
+          htmlFor={id}
+          className="text-xs whitespace-nowrap"
+        >
+          Hold when
+        </Label>
+        <InfoTip>
+          Smart holds only while an upstream is failing or has not been
+          confirmed up within the hold, and asks for that upstream to be checked
+          again. Always holds every alert of a device with upstreams.
+        </InfoTip>
+      </span>
+      <Select
+        value={value}
+        onValueChange={(v) =>
+          onChange(v as MonitoringSettings["root_cause_hold_mode"])
+        }
+      >
+        <SelectTrigger
+          id={id}
+          aria-labelledby={`${id}-label ${id}`}
+          className="h-8 text-sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="smart">Upstream unconfirmed</SelectItem>
+          <SelectItem value="always">Always</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   )
 }

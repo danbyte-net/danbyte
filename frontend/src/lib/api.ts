@@ -8634,6 +8634,10 @@ export interface MonitoringSettings {
   fast_lane_max_checks: number
   group_notifications: boolean
   group_threshold: number
+  /** Root-cause alerting (#450): explain alerts behind a down upstream. */
+  root_cause_enabled: boolean
+  root_cause_hold_seconds: number
+  root_cause_hold_mode: "smart" | "always"
   discovery_enabled: boolean
   discovery_min_prefix_length: number
   discovery_interval_minutes: number
@@ -9699,13 +9703,68 @@ export interface MonitoringAlert {
   flapping: boolean
   escalated: boolean
   notify_count: number
+  /** #450: sent as usual, held for its upstreams, explained by a down
+   * upstream, or withheld (cleared while held). */
+  notify_state: AlertNotifyState
+  notify_after: string | null
+  root_cause: AlertRootCause | null
+}
+
+export type AlertNotifyState = "sent" | "held" | "explained" | "withheld"
+
+export interface AlertRootCause {
+  id: string
+  status: RootCauseStatus
+  device: { id: string; name: string }
 }
 
 export interface AlertsResponse {
   counts: Partial<
-    Record<AlertSeverity | AlertLifecycle | "acknowledged", number>
+    Record<
+      AlertSeverity | AlertLifecycle | "acknowledged" | "explained" | "held",
+      number
+    >
   >
   results: MonitoringAlert[]
+}
+
+export type RootCauseStatus = "open" | "recovering" | "resolved"
+
+/** One down device explaining the alerts behind it (#450). */
+export interface RootCauseIncident {
+  id: string
+  device: { id: string; name: string }
+  status: RootCauseStatus
+  opened_at: string
+  recovering_since: string | null
+  resolved_at: string | null
+  announced_at: string | null
+  recovery_announced_at: string | null
+  explained_count: number
+  already_alerted_count: number
+  reduced_count: number
+  merged_into: { id: string; device: { id: string; name: string } } | null
+  acknowledged: boolean
+  acknowledged_at: string | null
+  acknowledged_by_name: string | null
+  ack_note: string
+  detail: {
+    silenced?: boolean
+    recovered?: number
+    total?: number
+    still_down?: number
+  } & Record<string, unknown>
+}
+
+export interface RootCausesResponse {
+  counts: Partial<Record<"open" | "resolved", number>>
+  results: RootCauseIncident[]
+}
+
+export interface RootCauseDetail {
+  incident: RootCauseIncident
+  alerts: MonitoringAlert[]
+  root_alerts: MonitoringAlert[]
 }
 
 export interface Silence {
@@ -9829,6 +9888,8 @@ export interface DashboardData {
   device_by_manufacturer: DashDist[]
   check_by_status: DashDist[]
   alerts_by_severity: DashDist[]
+  /** Firing alerts a down upstream explains (#450), not in the above. */
+  alerts_explained?: number
   reachable_pct: number | null
   /** Checks currently flagged as flapping, noisiest first (top 8). */
   flapping: FlappingRow[]

@@ -96,6 +96,9 @@ const SETTINGS: MonitoringSettings = {
   fast_lane_max_checks: 0,
   group_notifications: false,
   group_threshold: 10,
+  root_cause_enabled: true,
+  root_cause_hold_seconds: 60,
+  root_cause_hold_mode: "smart",
   discovery_enabled: false,
   discovery_min_prefix_length: 22,
   discovery_interval_minutes: 30,
@@ -406,5 +409,45 @@ describe("MonitoringSettingsForm - discovery", () => {
     ])
       expect(names).toContain(n)
     expect(screen.getByRole("textbox", { name: "Deny subnets" })).toBeTruthy()
+  })
+})
+
+describe("MonitoringSettingsForm - root cause", () => {
+  // #450: the switch, the hold and when it applies, saved together.
+  it("saves the switch, hold seconds and hold mode", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <TooltipProvider>
+          <MonitoringSettingsForm />
+        </TooltipProvider>
+      </QueryClientProvider>
+    )
+    const box = await screen.findByRole("checkbox", {
+      name: "Root-cause alerting",
+    })
+    expect(box.getAttribute("data-state")).toBe("checked")
+    const hold = screen.getByRole("spinbutton", { name: "Hold" })
+    fireEvent.change(hold, { target: { value: "90" } })
+    expect(screen.getByRole("combobox", { name: /^Hold when/ })).toBeTruthy()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save monitoring settings" })
+    )
+    await waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(([, init]) => init?.method === "PATCH")
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(([, i]) => i?.method === "PATCH")!
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      root_cause_enabled: true,
+      root_cause_hold_seconds: 90,
+      root_cause_hold_mode: "smart",
+    })
+    // Off hides the hold.
+    fireEvent.click(box)
+    expect(screen.queryByRole("spinbutton", { name: "Hold" })).toBeNull()
   })
 })
