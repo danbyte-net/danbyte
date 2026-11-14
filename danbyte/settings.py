@@ -428,10 +428,10 @@ REST_FRAMEWORK = {
     # Converts an uncaught IntegrityError (a duplicate/constraint hit a
     # serializer didn't validate) into a 409 instead of a raw 500.
     "EXCEPTION_HANDLER": "api.exception_handler.exception_handler",
-    # Errors for a nested list stay a list (one entry per item), as before
-    # DRF 3.18 changed the default to a dict keyed by index. The frontend and
-    # API clients read the list form; DRF removes this switch in 3.20.
-    "LIST_SERIALIZER_ERRORS_AS_DICT": False,
+    # Errors for a nested list are a dict keyed by the failing items' index
+    # ({"steps": {"1": {...}}}), DRF's default since 3.18 and its only form
+    # from 3.20. Before 0.20 they were a list with {} for each valid item.
+    "LIST_SERIALIZER_ERRORS_AS_DICT": True,
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "auth_api.token_auth.ApiTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",

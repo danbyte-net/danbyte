@@ -186,12 +186,12 @@ class RailsWithDevicesTests(DinMountingTestCase):
     def test_a_rail_keeps_room_and_a_profile_for_its_devices(self):
         r1 = {**self.rails[0], "length_mm": 280}
         r = self.client.patch(self.url, {"rails": [r1, self.rails[1]]}, format="json")
-        self.assertEqual(r.json(), {"rails": [
-            {"length_mm": ["Too short for its devices (needs 290 mm)."]}, {},
-        ]})
+        self.assertEqual(r.json(), {"rails": {
+            "0": {"length_mm": ["Too short for its devices (needs 290 mm)."]},
+        }})
         r1 = {**self.rails[0], "profile": "g32"}
         r = self.client.patch(self.url, {"rails": [r1, self.rails[1]]}, format="json")
-        self.assertEqual(r.json()["rails"][0], {"profile": ["plc-1 cannot mount on a G 32 rail."]})
+        self.assertEqual(r.json()["rails"]["0"], {"profile": ["plc-1 cannot mount on a G 32 rail."]})
         # Moving the rail is fine: its devices move with it.
         r1 = {**self.rails[0], "x_mm": 50, "y_mm": 120, "length_mm": 300}
         r = self.client.patch(self.url, {"rails": [r1, self.rails[1]]}, format="json")

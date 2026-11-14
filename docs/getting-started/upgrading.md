@@ -587,6 +587,14 @@ rows than they asked for. Fix the parameter, have the client send
 they are fixed ([settings](../reference/settings.md),
 [REST API](../reference/api.md#unknown-query-parameters)).
 
+## Errors of a nested list are keyed by position (0.20)
+
+From 0.20 the errors of a nested list in a `400` (a pipeline's `steps`, a
+cabinet's `rails`) are an object keyed by the failing items' positions
+(`{"steps": {"1": {...}}}`) instead of a list with `{}` for each item that
+passed. A client that reads them by position needs updating
+([Bulk calls](../reference/api.md#bulk-calls)).
+
 ## Upgrading from 0.16 or 0.17.0-dev1
 
 The first upgrade off 0.16.x or 0.17.0-dev1 is started by that release's own
