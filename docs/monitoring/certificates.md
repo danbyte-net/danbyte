@@ -337,7 +337,7 @@ enables under **Settings → Security → Secret store**:
   values go to the other. Saving refuses `http://`, and a value saved before
   that check leaves the store disabled rather than used.
 
-    The app registration needs **Get**, **Set**, **Delete** and **Purge** on
+    The app registration needs **Get**, **Set**, **Delete**, **Purge** and **List** on
     secrets - an access policy, or the *Key Vault Secrets Officer* role on an
     RBAC vault. Deleting drops the secret and then purges it, so a revoked
     request's key really is gone; on a vault with **purge protection** the purge
@@ -357,6 +357,52 @@ enables under **Settings → Security → Secret store**:
 It is a **deployment-tier** choice on purpose - where the organisation's private
 keys live is not a per-tenant decision. Nothing reads a stored secret over the
 API or writes it to the change log. CSR and ACME build on this in later releases.
+
+### What lives in the store
+
+Despite the section title, the store holds every secret Danbyte files itself,
+each under `<folder>/<record id>` in the tenant's namespace:
+
+| Record | Folder |
+|---|---|
+| Device credential (managed) | `device-credentials/` |
+| Shared credential (managed) | `shared-credentials/` |
+| Wireless LAN PSK | `wireless-lans/` |
+| IPsec profile PSK | `ipsec-profiles/` |
+| FHRP group auth key | `fhrp-groups/` |
+| Routing keychain key | `routing-keychains/` |
+| RPKI cache SSH key | `routing-rpki-caches/` |
+| CSR private key | `csr/` |
+| ACME account key | `issuer/<id>/account` |
+
+Deleting a record deletes its secret - a single delete, a bulk delete, or a
+cascade (a device takes its credentials with it, a tenant everything). On the
+local store the row goes in the same transaction; on Vault, Key Vault or a
+plugin store the delete runs once the transaction commits, so a delete that
+fails or is rolled back (a bulk-delete dry run) keeps the secret. An
+unreachable store leaves the secret behind and logs the ref, never the value.
+
+### Removing orphaned secrets
+
+Before 0.20 a deleted device or shared credential left its secret in the store,
+and an unreachable store can still leave one behind. `cleanup_secret_store`
+finds every secret under one of the folders above whose record no longer
+exists in the same tenant:
+
+```bash
+.venv/bin/python manage.py cleanup_secret_store                    # list only
+.venv/bin/python manage.py cleanup_secret_store --delete           # remove local ones
+.venv/bin/python manage.py cleanup_secret_store --delete --remote  # and external ones
+```
+
+`--tenant <slug or id>` limits it to one tenant; without it a deleted tenant's
+leftovers are found too. `--store <kind>` limits it to one store; by default
+every configured store is checked. Output names the store, tenant and ref -
+never a value. Removing from Vault, Key Vault or a plugin store needs
+`--remote` as well, since it cannot be undone. Each removal writes one
+change-log entry per tenant and store, with the refs. Listing needs **List**
+on Key Vault secrets and `list` on the Vault mount's `metadata/` paths; a
+plugin store that cannot list is skipped and named.
 
 ## Requesting a certificate (CSR)
 

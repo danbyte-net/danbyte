@@ -304,6 +304,69 @@ class AzureKeyVaultSecretStore:
         # bare string, so it comes back as {"value": "…"} rather than nothing.
         return parsed if isinstance(parsed, dict) else {"value": raw}
 
+    def _secret_names(self) -> list[str]:
+        """Every secret name in the vault, following ``nextLink`` only while
+        it stays on this vault over https - the bearer token goes with it."""
+        own = urlsplit(self.vault_url)
+        names: list[str] = []
+        path = "secrets"
+        for _ in range(10000):
+            r = self._req("GET", path)
+            if r.status_code != 200:
+                raise SecretStoreError(
+                    f"Key Vault list failed ({r.status_code}): {r.text[:200]}"
+                )
+            body = r.json()
+            for item in body.get("value") or []:
+                name = (item.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
+                if name:
+                    names.append(name)
+            nxt = body.get("nextLink") or ""
+            if not nxt:
+                break
+            parts = urlsplit(nxt)
+            if parts.scheme != "https" or parts.netloc != own.netloc:
+                raise SecretStoreError("Key Vault list pointed at another host; stopped.")
+            # The skip token rides in the query; api-version is added again.
+            query = "&".join(
+                q for q in parts.query.split("&") if not q.startswith("api-version=")
+            )
+            path = parts.path.lstrip("/") + (f"?{query}" if query else "")
+        return names
+
+    def managed_refs(self, tenant_id=None) -> list[tuple[str, str]]:
+        """``(tenant id, ref)`` of every Danbyte-managed secret in the vault -
+        one tenant's, or every tenant's (a deleted tenant's too). A name is
+        mapped back to its ref by rebuilding the name from the ref, so only
+        names Danbyte itself wrote are returned. Never the values."""
+        from .secret_refs import MANAGED_SECRETS
+
+        shape = re.compile(
+            r"danbyte-(?P<tenant>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})-"
+            rf"(?P<body>.+)-[0-9a-f]{{{DIGEST_LEN}}}"
+        )
+        uuid_re = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+        out = []
+        for name in self._secret_names():
+            m = shape.fullmatch(name)
+            if not m:
+                continue
+            tenant = m.group("tenant")
+            if tenant_id is not None and tenant != str(tenant_id):
+                continue
+            body = m.group("body")
+            for spec in MANAGED_SECRETS:
+                folder = _safe(spec.folder)
+                tail = "-account" if spec.folder == "issuer" else ""
+                hit = re.fullmatch(rf"{re.escape(folder)}-({uuid_re}){tail}", body)
+                if not hit:
+                    continue
+                ref = f"{spec.folder}/{hit.group(1)}" + ("/account" if tail else "")
+                if self._name(tenant, ref) == name:
+                    out.append((tenant, ref))
+                break
+        return out
+
     def delete(self, tenant_id, ref: str) -> None:
         name = self._name(tenant_id, ref)
         r = self._req("DELETE", f"secrets/{name}")

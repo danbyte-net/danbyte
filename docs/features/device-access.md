@@ -42,10 +42,12 @@ Each credential sources its secret one of two ways:
   encrypted store **or** Vault (Vault KV holds the `{username, password}` /
   `{private_key}` JSON). Danbyte keeps only its own reference, always
   `device-credentials/<credential id>` inside the tenant's own folder; a
-  `secret_path` sent with a managed credential is ignored.
+  `secret_path` sent with a managed credential is ignored. Deleting the
+  credential - on its own, in bulk, or with its device or VM - deletes the
+  secret too, as does turning it external.
 - **External**: you point at an existing path you manage yourself (e.g. a Vault
   path your team already populates). Danbyte reads it at use-time and stores
-  nothing. Only a **deployment administrator** can create an external
+  nothing; deleting the credential leaves your secret where it is. Only a **deployment administrator** can create an external
   credential, turn a managed one external, or change an external path: the path
   is read with the deployment's one store token, which every tenant shares, so
   naming one is a deployment-level act. Anyone with *change* on the credential
@@ -57,7 +59,8 @@ inside Danbyte's own managed namespace of **any** tenant - on Vault that is
 `<mount>/data/<tenant id>/…` in every KV v2 form (`data`, `metadata`,
 `subkeys`, …), on Azure Key Vault a `danbyte-<tenant id>-…` name, and on the
 local store a `device-credentials/`, `wireless-lans/`, `ipsec-profiles/`,
-`routing-keychains/`, `shared-credentials/`, `csr/` or `issuer/` ref. Paths are compared after
+`routing-keychains/`, `routing-rpki-caches/`, `fhrp-groups/`,
+`shared-credentials/`, `csr/` or `issuer/` ref. Paths are compared after
 percent-decoding. A credential saved before these rules whose path breaks them
 is refused at reveal and connect time with the reason; one that follows them
 keeps working.

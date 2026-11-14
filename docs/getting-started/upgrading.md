@@ -559,6 +559,22 @@ address rows from the backup.
 Neither has been rehearsed on a real 0.19 install. Try the restore on a
 copy of the host first.
 
+## Secrets left by deleted credentials (0.20)
+
+Before 0.20, deleting a managed device or shared credential left its password
+or key in the secret store. From 0.20 a delete takes the secret along, but the
+ones left earlier stay until you remove them. The *After an upgrade* card
+offers the step; it hides itself when only the local store is configured and
+it has nothing to remove.
+
+```bash
+.venv/bin/python manage.py cleanup_secret_store                    # list only
+.venv/bin/python manage.py cleanup_secret_store --delete           # local store
+.venv/bin/python manage.py cleanup_secret_store --delete --remote  # Vault / Key Vault too
+```
+
+See [Removing orphaned secrets](../monitoring/certificates.md#removing-orphaned-secrets).
+
 ## Upgrading from 0.16 or 0.17.0-dev1
 
 The first upgrade off 0.16.x or 0.17.0-dev1 is started by that release's own

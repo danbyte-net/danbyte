@@ -9121,12 +9121,6 @@ class SecretPSKViewSetMixin:
             super().perform_update(serializer)
             self._apply_psk(serializer.instance, value)
 
-    def perform_destroy(self, instance):
-        # Take the key with the record: a profile nobody documents any more
-        # has no business leaving its key in the store.
-        instance.clear_psk()
-        super().perform_destroy(instance)
-
     @action(detail=True, methods=["post"], url_path="reveal-psk")
     def reveal_psk(self, request, pk=None):
         """Return the PSK. Requires the ``reveal`` verb (type and row gates),
@@ -10157,9 +10151,8 @@ class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScope
         return qs
 
     def bulk_destroy(self, rows):
-        # As perform_destroy: each key leaves the secret store with its record.
-        for obj in rows:
-            obj.clear_psk()
+        # Each key leaves the secret store with its record (post_delete,
+        # monitoring.secret_refs).
         self.delete_together(rows)
 
 

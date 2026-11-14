@@ -27,3 +27,8 @@ class MonitoringConfig(AppConfig):
         from .external import hooks as external_hooks
 
         external_hooks.connect()
+
+        # A deleted record's managed secret leaves the store with it (#509).
+        from . import secret_refs
+
+        secret_refs.connect()

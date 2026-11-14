@@ -49,7 +49,6 @@ from acme import challenges, client, messages
 from acme import errors as acme_errors
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from django.db import transaction
 
 from .models import AcmeOrder, Issuer
 from .secret_store import require_secret_store
@@ -737,22 +736,7 @@ def register_account(issuer: Issuer) -> str:
     return issuer.account_uri
 
 
-def forget_account(issuer: Issuer) -> None:
-    """Remove a deleted issuer's ACME account key from the secret store.
-    Call it after the row's delete: the key goes when that commits, so a
-    delete rolled back keeps it. Best effort: a store that is disabled or
-    unreachable leaves the key behind, logged."""
-    if not issuer.account_uri and not issuer.account_ref:
-        return
-    tenant_id, ref = issuer.tenant_id, _account_ref(issuer)
-
-    def drop():
-        try:
-            require_secret_store().delete(tenant_id, ref)
-        except Exception:  # noqa: BLE001 - store disabled/unreachable
-            log.warning("could not remove the ACME account key %s", ref)
-
-    transaction.on_commit(drop)
+# A deleted issuer's account key leaves the store with it: monitoring.secret_refs.
 
 
 def _client(issuer: Issuer):

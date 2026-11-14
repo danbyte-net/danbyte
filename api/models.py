@@ -7833,20 +7833,14 @@ class SecretBackedPSK(models.Model):
 
         Best-effort on the store side: if it is unreachable the reference still
         goes, because leaving a row pointing at a key nobody can read is worse
-        than an orphaned entry an operator can prune."""
-        path = self.psk_secret_path
+        than an orphaned entry an operator can prune. An external store's key
+        goes when the transaction commits (``monitoring.secret_refs``)."""
+        path, provider = self.psk_secret_path, self.psk_secret_provider
         self.psk_secret_path = ""
         self.psk_secret_provider = ""
-        if not path:
-            return
-        from monitoring.secret_store import SecretStoreError, active_secret_store
+        from monitoring.secret_refs import discard_secret
 
-        try:
-            store = active_secret_store()
-            if store is not None:
-                store.delete(self.tenant_id, path)
-        except SecretStoreError:
-            pass
+        discard_secret(self.tenant_id, path, provider)
 
 
 # ─── FHRP groups (VRRP / HSRP / GLBP / CARP) ─────────────────────────────────

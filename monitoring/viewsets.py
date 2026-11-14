@@ -671,12 +671,21 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
     def perform_update(self, serializer):
         from django.db import transaction
 
+        from .secret_refs import discard_secret
+
         self._validate_device(serializer)
         self._validate_external_path(serializer)
         value = self._pop_secret(serializer)
+        inst = serializer.instance
+        # Only the derived ref is ever removed, never a path taken from the row.
+        was_managed = inst.secret_managed and inst.secret_path == inst.managed_secret_ref()
+        old_provider = inst.secret_provider
         with transaction.atomic():
             super().perform_update(serializer)
             self._store_secret(serializer.instance, value)
+            if was_managed and not serializer.instance.secret_managed:
+                # Turned external: the secret Danbyte filed is no longer used.
+                discard_secret(inst.tenant_id, inst.managed_secret_ref(), old_provider)
 
     def _audit_reveal(self, cred):
         """Record who revealed which credential's secret, when - revealing a
@@ -1369,12 +1378,6 @@ class CertificateRequestViewSet(BulkEditMixin, TenantScopedViewSet):
             )}) from exc
         return Response(AcmeOrderSerializer(order).data, status=202)
 
-    def perform_destroy(self, instance):
-        from .csr import delete_key
-
-        delete_key(instance)
-        super().perform_destroy(instance)
-
 
 class IssuerViewSet(BulkEditMixin, TenantScopedViewSet):
     """External CA connectors (ACME directories). The EAB HMAC is write-only and
@@ -1419,13 +1422,6 @@ class IssuerViewSet(BulkEditMixin, TenantScopedViewSet):
         except AcmeError as exc:
             return acme_error_response(exc)
         return Response({"account_uri": uri, **self.get_serializer(issuer).data})
-
-    def perform_destroy(self, instance):
-        # Single and bulk delete both come here (bulk_destroy).
-        from .acme_engine import forget_account
-
-        super().perform_destroy(instance)
-        forget_account(instance)
 
 
 class AcmeOrderViewSet(TenantScopedReadViewSet):

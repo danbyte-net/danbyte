@@ -208,11 +208,4 @@ def get_private_key(req: CertificateRequest) -> str:
     return data.get("private_key", "")
 
 
-def delete_key(req: CertificateRequest) -> None:
-    """Best-effort removal of a request's private key from the secret store."""
-    if not req.key_ref:
-        return
-    try:
-        require_secret_store().delete(req.tenant_id, req.key_ref)
-    except Exception:  # noqa: BLE001 - store disabled/unreachable: nothing to do
-        pass
+# A deleted request's key leaves the store with it: monitoring.secret_refs.

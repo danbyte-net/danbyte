@@ -595,6 +595,29 @@ _PREFIX_LOSS = """\
 # a pg_dump -Fc file of your own instead:
 .venv/bin/python manage.py prefix_loss_report --dump /path/to/danbyte.dump"""
 
+_SECRET_CLEANUP = """\
+# as the service user, in the app directory (Docker: docker compose exec backend python manage.py …):
+.venv/bin/python manage.py cleanup_secret_store            # lists, removes nothing
+.venv/bin/python manage.py cleanup_secret_store --delete   # local store
+.venv/bin/python manage.py cleanup_secret_store --delete --remote   # Vault / Key Vault too"""
+
+
+def _no_secret_orphans() -> bool:
+    """Done when only the local store is configured and it holds no secret
+    whose record is gone. An external store cannot be checked cheaply, so the
+    note stays up while one is configured."""
+    from monitoring.secret_refs import owner_exists
+    from monitoring.secret_store import configured_stores
+
+    stores = configured_stores()
+    if any(not getattr(store, "transactional", False) for _, store in stores):
+        return False
+    return all(
+        owner_exists(tenant, ref)
+        for _, store in stores
+        for tenant, ref in store.managed_refs()
+    )
+
 
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
@@ -649,6 +672,22 @@ NOTES: tuple[UpgradeNote, ...] = (
         snippet=_REDIS_AUTH,
         docs="getting-started/hardening/#redis-authentication",
         check=_redis_auth_on,
+    ),
+    UpgradeNote(
+        id="0.20.0-secret-orphans",
+        version="0.20.0",
+        title="Optional: remove secrets left by deleted credentials",
+        body=(
+            "Deleting a managed device or shared credential used to leave its "
+            "password or key in the secret store, readable to anyone with the "
+            "store's own access. Deletes now take the secret along. Secrets "
+            "left by earlier deletes are still there: list them, then remove "
+            "them. Nothing is removed without --delete, and nothing from Vault "
+            "or Key Vault without --remote."
+        ),
+        snippet=_SECRET_CLEANUP,
+        docs="monitoring/certificates/#removing-orphaned-secrets",
+        check=_no_secret_orphans,
     ),
     UpgradeNote(
         id="0.20.0-nginx-maintenance-csp",

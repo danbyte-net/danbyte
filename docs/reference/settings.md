@@ -716,6 +716,17 @@ deployment-wide singleton `core.DeploymentSettings`; the SMTP password is
 Fernet-encrypted at rest. See
 [Notifications](../features/monitoring.md#notifications).
 
+### The secret store
+
+**Settings → Security → Secret store** (`secrets_provider` on
+`DeploymentSettings`) picks where Danbyte files the secrets it manages -
+credentials, PSKs and keys, CSR and ACME keys - see
+[The secret store](../monitoring/certificates.md#the-secret-store-for-issuance-keys).
+Blank disables every feature that needs one. The Key Vault URL and sign-in
+endpoint must be `https://`; a Vault address may be `http://` (with a
+warning). `manage.py cleanup_secret_store` lists and removes secrets whose
+record is gone ([details](../monitoring/certificates.md#removing-orphaned-secrets)).
+
 ### What the monitoring key protects
 
 `MONITORING_SECRET_KEY` encrypts every `EncryptedJSONField` column - every

@@ -57,6 +57,7 @@ MANAGED_REF_PREFIXES = (
     "wireless-lans/",
     "ipsec-profiles/",
     "routing-keychains/",
+    "routing-rpki-caches/",
     "fhrp-groups/",
     "csr/",
     "issuer/",
@@ -164,6 +165,10 @@ class LocalFernetSecretStore:
     other stored credential.
     """
 
+    #: Writes join the caller's database transaction, so a delete can happen
+    #: at once and still come back with a rollback (``secret_refs``).
+    transactional = True
+
     def put(self, tenant_id, ref: str, value: dict) -> None:
         from .models import StoredSecret
 
@@ -192,6 +197,21 @@ class LocalFernetSecretStore:
                 f"'{path}' is inside Danbyte's managed namespace; an external "
                 "credential cannot reference a secret Danbyte manages."
             )
+
+    def managed_refs(self, tenant_id=None) -> list[tuple[str, str]]:
+        """``(tenant id, ref)`` of every secret under a managed folder, for
+        the orphan sweep. Never the values."""
+        from django.db.models import Q
+
+        from .models import StoredSecret
+
+        under = Q()
+        for prefix in MANAGED_REF_PREFIXES:
+            under |= Q(ref__startswith=prefix)
+        qs = StoredSecret.objects.filter(under)
+        if tenant_id is not None:
+            qs = qs.filter(tenant_id=tenant_id)
+        return [(str(t), r) for t, r in qs.values_list("tenant_id", "ref")]
 
     def get_at_path(self, tenant_id, path: str) -> dict | None:
         """A ``StoredSecret`` whose ``ref`` equals ``path`` **within this
@@ -386,6 +406,41 @@ def active_secret_store() -> SecretStore | None:
     selected kind is no longer registered (a removed plugin fails closed)."""
     prov = _REGISTRY.get(_provider())
     return prov.factory() if prov is not None else None
+
+
+def store_for(kind: str) -> SecretStore | None:
+    """The store for provider ``kind`` when it is registered and configured,
+    whether or not it is the active one; otherwise ``None``."""
+    prov = _REGISTRY.get((kind or "").strip())
+    return prov.factory() if prov is not None else None
+
+
+def configured_stores() -> list[tuple[str, SecretStore]]:
+    """Every configured store as ``(kind, store)``, the active one first."""
+    active = _provider()
+    kinds = sorted(_REGISTRY, key=lambda k: k != active)
+    out = []
+    for kind in kinds:
+        store = store_for(kind)
+        if store is not None:
+            out.append((kind, store))
+    return out
+
+
+def stores_to_discard(provider: str) -> list[tuple[str, SecretStore]]:
+    """Where to delete a managed secret stamped ``provider`` from: that store
+    when it is configured, and the active one; every configured store when
+    nothing was stamped. Deleting never needs the store to be active - a
+    removed record's secret should go wherever it is."""
+    stamped = (provider or "").strip()
+    if not stamped:
+        return configured_stores()
+    out = []
+    for kind in dict.fromkeys((stamped, _provider())):
+        store = store_for(kind) if kind else None
+        if store is not None:
+            out.append((kind, store))
+    return out
 
 
 def require_secret_store() -> SecretStore:
