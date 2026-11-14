@@ -319,6 +319,7 @@ from .serializers import (
     VRFPickerSerializer,
     VRFSerializer,
 )
+from .dependency_actions import DeviceDependencyActionsMixin
 from .visible_ips import assigned_ips_prefetch, forget_visible, outside_ip_prefetch
 from .vlan_bulk import check_vlan_moves, resolve_fenced, resolve_group
 
@@ -4114,7 +4115,7 @@ def _device_rows(*, one: bool = False, counts: bool = False):
 )
 class DeviceViewSet(
     TableListMixin, PrtgCleanupDeleteMixin, FieldWriteAllowList, CloneableMixin,
-    ImageAttachmentMixin, TenantScopedViewSet,
+    ImageAttachmentMixin, DeviceDependencyActionsMixin, TenantScopedViewSet,
 ):
     queryset = _device_rows()
     detail_queryset = _device_rows(one=True, counts=True)

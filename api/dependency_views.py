@@ -14,6 +14,13 @@ filters:
   ``?medium=``, ``?redundancy_group=`` (``?group=``), ``?site=`` (either
   end's site), ``?tag=``, ``?search=`` (``?q=``).
 
+``GET /api/device-dependencies/impact/?device=<id>&device=<id>&limit=`` is
+"what goes down if these fail" for several devices at once (maintenance on
+several devices); ``GET /api/devices/<id>/impact/?limit=`` is the same for
+one, and ``GET /api/devices/<id>/dependencies/?direction=up|down|both&depth=``
+the tree for the device tab (``api.dependency_impact``). All three need view
+on device dependencies.
+
 Both ends must be devices of the active tenant the caller may view; a UUID
 from another tenant or outside the caller's view is "not found". A
 dependency belongs to its downstream's site, else its upstream's
@@ -31,6 +38,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_field
 from rest_framework import serializers
 from rest_framework import status as drf_status
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
@@ -38,6 +46,7 @@ from core.hidden_fields import hidden_related_spec
 from core.models import Tag
 from core.tags import TAGS
 
+from . import dependency_impact as di
 from .bulk_edit import BulkEditMixin, BulkEditSpec
 from .cf_search import cf_text_q
 from .dependencies import bump_graph_version, save_dependency
@@ -323,3 +332,40 @@ class DeviceDependencyViewSet(BulkEditMixin, TenantScopedViewSet):
         tenant = _get_active_tenant(self.request)
         if tenant is not None:
             bump_graph_version(tenant.pk)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("device", OpenApiTypes.UUID, OpenApiParameter.QUERY, many=True),
+            OpenApiParameter("limit", OpenApiTypes.INT, OpenApiParameter.QUERY),
+        ],
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=False, methods=["get"], url_path="impact")
+    def impact(self, request):
+        """What goes down if all of ``?device=`` fail together."""
+        tenant = self._tenant_or_403()
+        raw = [v for v in request.query_params.getlist("device") if v]
+        if not raw:
+            raise ValidationError({"device": "Name at least one device."})
+        ids = []
+        for v in raw[:MAX_ROOTS]:
+            try:
+                ids.append(_uuid.UUID(str(v)))
+            except ValueError:
+                raise ValidationError({"device": "Not a valid id."}) from None
+        from auth_api import rbac
+
+        roots = list(
+            rbac.restrict_queryset(
+                Device.objects.filter(tenant=tenant, pk__in=ids),
+                request.user, tenant, "device", "view",
+            ).values_list("pk", flat=True)
+        )
+        if not roots:
+            raise ValidationError({"device": "No device found."})
+        limit = di.clamp(request.query_params.get("limit"), di.DEFAULT_LIMIT, di.MAX_LIMIT)
+        return Response(di.impact(request.user, tenant, roots, limit))
+
+
+#: Roots one multi-device impact takes.
+MAX_ROOTS = 500
