@@ -76,6 +76,15 @@ where you were, with the new prefix drawn - so the next block is one click away.
 The two create actions only show when you may add prefixes or IPs. Without
 either, a free block has just **Zoom into …**, so a click zooms straight in.
 
+## Really free
+
+A block is drawn free by the same rule as the prefix list's free rows, Next
+available, allocate and the planner: every prefix in the VRF takes space,
+including ones you may not view. A block taken by a prefix you can't see is
+drawn used but is never named or linked - its tooltip says `In a prefix`, or
+just how much of it is used. So a green chip on the map is a block the list
+offers too, and a create there is not refused for overlapping hidden space.
+
 ## Zooming
 
 Zooming re-roots the map at a block. A breadcrumb above the grid shows the path

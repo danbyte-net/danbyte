@@ -1500,9 +1500,6 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
         """
         import ipaddress
 
-        from django.db.models import BooleanField
-        from django.db.models.expressions import RawSQL
-
         def _int_param(name):
             try:
                 return int(request.query_params[name])
@@ -1563,40 +1560,48 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
         # view - the prefix its free blocks belong to.
         from auth_api import rbac
 
+        from . import prefix_space as fs
+
         child_nets = []
+        hidden_nets = set()
         cidr_to_pk: dict[str, str] = {}
         context = None
         zoomed = map_net != net
-        # Only sibling prefixes the caller may view feed the space map - a
-        # site-scoped user must not learn another site's child prefixes.
-        # Postgres narrows them to the ones inside this prefix.
-        for sib in (
-            rbac.restrict_queryset(
-                Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf)
-                .exclude(pk=prefix.pk),
-                request.user, prefix.tenant, "prefix", "view",
-            )
-            .annotate(_inside=RawSQL(
-                "cidr::inet <<= %s::inet", (str(net),),
-                output_field=BooleanField(),
-            ))
-            .filter(_inside=True)
-            .only("id", "cidr")
-        ):
+        # Every prefix inside this one takes space, as in the list's free
+        # rows (prefix_space.prefixes_inside), so a block drawn free is
+        # really free. Only the ones the caller may view are named, linked
+        # or used as the zoom's context: a site-scoped user must not learn
+        # another site's child prefixes.
+        inside = fs.prefixes_inside(prefix.tenant_id, {prefix.vrf_id}, [str(net)])
+        visible = set(
+            rbac.restrict_queryset(inside, request.user, prefix.tenant, "prefix", "view")
+            .values_list("pk", flat=True)
+        )
+        for sib in inside.only("id", "cidr"):
             sn = sib.network
             if sn is None:
                 continue
+            seen = sib.pk in visible
             try:
-                if sn.subnet_of(map_net):
+                if not seen and map_net.subnet_of(sn):
+                    # A hidden prefix holding (or being) the zoomed block
+                    # takes all of it: drawn as its two halves, both taken,
+                    # unnamed.
+                    for half in map_net.subnets(prefixlen_diff=1):
+                        child_nets.append(half)
+                        hidden_nets.add(half)
+                elif sn.subnet_of(map_net):
                     child_nets.append(sn)
-                    cidr_to_pk[str(sn)] = str(sib.id)
-                if zoomed and map_net.subnet_of(sn) and (
+                    if seen:
+                        cidr_to_pk[str(sn)] = str(sib.id)
+                    else:
+                        hidden_nets.add(sn)
+                if seen and zoomed and map_net.subnet_of(sn) and (
                     context is None or sn.prefixlen > context[0]
                 ):
                     context = (sn.prefixlen, str(sib.id), str(sn))
             except (TypeError, ValueError):
                 continue
-
         # The depth preference trims the overview. Once a zoom has gone past
         # it, it has nothing left to trim, so the zoomed view draws its full
         # window instead of a single row per click.
@@ -1605,9 +1610,11 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
             if cap is not None and map_net.prefixlen >= cap:
                 max_v4 = max_v6 = None
 
+        hidden_nets -= {n for n in child_nets if str(n) in cidr_to_pk}
         rows = _build_space_map(
             map_net, child_nets=child_nets, tenant=prefix.tenant,
             vrf=prefix.vrf, max_v4=max_v4, max_v6=max_v6, deeper=deeper,
+            hidden=hidden_nets,
         )
         # Stamp prefix_id onto every "used" cell so the React map can link
         # the right cell to the right detail page.

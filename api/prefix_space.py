@@ -291,6 +291,23 @@ def _vrf_q(vrf_ids) -> Q:
     return q
 
 
+def prefixes_inside(tenant_id, vrf_ids, cidrs):
+    """Every prefix of ``tenant_id`` in ``vrf_ids`` strictly inside one of
+    ``cidrs``, whoever may view it. This is what takes space: the free rows,
+    Next available, allocate, the planner and the Space map all count it, so
+    a block one of them calls free is free in the others too. Which of these
+    the reader may name is the caller's business."""
+    return (
+        Prefix.objects.filter(tenant_id=tenant_id)
+        .filter(_vrf_q(set(vrf_ids)))
+        .annotate(_fs_in=RawSQL(
+            '"api_prefix"."cidr"::inet << ANY(%s::inet[])', (sorted(cidrs),),
+            output_field=BooleanField(),
+        ))
+        .filter(_fs_in=True)
+    )
+
+
 def load_spaces(tenant_id, parents, scope=None) -> dict:
     """``{parent pk: Space}`` for ``parents`` (one tenant), against every
     prefix of that tenant inside them. One query for the whole set. A parent
@@ -308,16 +325,9 @@ def load_spaces(tenant_id, parents, scope=None) -> dict:
     if not nets:
         return {}
     cidrs = sorted({str(n) for _p, n in nets.values()})
-    rows = (
-        Prefix.objects.filter(tenant_id=tenant_id)
-        .filter(_vrf_q({p.vrf_id for p, _n in nets.values()}))
-        .annotate(_fs_in=RawSQL(
-            '"api_prefix"."cidr"::inet << ANY(%s::inet[])', (cidrs,),
-            output_field=BooleanField(),
-        ))
-        .filter(_fs_in=True)
-        .values_list("vrf_id", "cidr")
-    )
+    rows = prefixes_inside(
+        tenant_id, {p.vrf_id for p, _n in nets.values()}, cidrs,
+    ).values_list("vrf_id", "cidr")
     buckets: dict[tuple, list] = {}
     for vrf_id, cidr in rows:
         try:

@@ -448,6 +448,35 @@ class SiteSeparationTests(_Base):
         self.assertEqual(r.json()["free_totals"][str(self.root.id)], len(
             fs.load_spaces(self.tenant.id, [self.root])[self.root.pk].blocks()))
 
+    def test_space_map_uses_the_same_rule(self):
+        r = self.client.get(f"/api/prefixes/{self.root.id}/space-map/", {"details": 0})
+        self.assertEqual(r.status_code, 200, r.content)
+        text = r.content.decode()
+        self.assertNotIn(str(self.hidden.id), text)
+        self.assertNotIn("secret-b-net", text)
+        row = next(x for x in r.json()["rows"] if x["prefixlen"] == 24)
+        cells = {c["cidr"]: c for c in row["cells"]}
+        taken = cells["10.1.1.0/24"]
+        self.assertEqual(taken["state"], "full")
+        self.assertEqual(taken["overlap_with"], [])
+        self.assertIsNone(taken.get("prefix_id"))
+        # Free cells are exactly the free /24s the list and allocate offer.
+        space = fs.load_spaces(self.tenant.id, [self.root])[self.root.pk]
+        self.assertEqual(row["free_count"], space.count(24))
+        self.assertEqual(
+            [c for c, v in cells.items() if v["state"] == "free"][:2],
+            [fs.cidr_of(a, 24, 4) for a in itertools.islice(space.candidates(24), 2)])
+        # A zoom into the hidden prefix is all taken, and has no context.
+        r = self.client.get(f"/api/prefixes/{self.root.id}/space-map/",
+                            {"details": 0, "within": "10.1.1.0/24", "deeper": 1})
+        data = r.json()
+        self.assertIsNone(data["context"])
+        self.assertTrue(all(c["state"] == "full" for row in data["rows"]
+                            for c in row["cells"]))
+        self.assertTrue(all(run[2] == "full" and run[5] is None
+                            for row in data["rows"] for run in row.get("runs", [])))
+        self.assertNotIn(str(self.hidden.id), r.content.decode())
+
     def test_available_skips_hidden_space(self):
         r = self.client.get(f"/api/prefixes/available/?within={self.root.id}&length=24&limit=2")
         self.assertEqual([x["cidr"] for x in r.json()], ["10.1.2.0/24", "10.1.3.0/24"])

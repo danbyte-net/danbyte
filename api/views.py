@@ -317,7 +317,7 @@ def _space_map_next_row(net, last: int, *, max_v4=None, max_v6=None):
     return {"prefixlen": nxt, "count": count} if count <= SPACE_MAP_DEEP_CELLS else None
 
 
-def _space_map_run_row(net, prefixlen, *, tops, kids, ip_ints, ranges):
+def _space_map_run_row(net, prefixlen, *, tops, kids, ip_ints, ranges, hidden=frozenset()):
     """A row past the +8 window as runs of cells, not cells: thousands of
     them would be megabytes. Each run is ``[first, last, state, dirty,
     ranged, prefix]`` - cell indexes, the state every cell in it shares,
@@ -351,7 +351,7 @@ def _space_map_run_row(net, prefixlen, *, tops, kids, ip_ints, ranges):
             continue  # another small child in the same cell
         if i > at:
             segments.append([at, i - 1, "free", None])
-        segments.append([i, j, state, str(kid)])
+        segments.append([i, j, state, None if kid in hidden else str(kid)])
         at = j + 1
     if at < count:
         segments.append([at, count - 1, "free", None])
@@ -415,7 +415,8 @@ def _space_map_run_row(net, prefixlen, *, tops, kids, ip_ints, ranges):
 
 
 def _build_space_map(
-    net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None, deeper=0
+    net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None, deeper=0,
+    hidden=frozenset(),
 ):
     """Build the space-map row list for ``net``.
 
@@ -443,6 +444,11 @@ def _build_space_map(
     A child equal to ``net`` itself is the context the map is drawn inside
     (the operator zoomed into an existing prefix), not a child: it is skipped,
     so its own free space shows as free.
+
+    ``child_nets`` are every prefix inside ``net`` (prefix_space.
+    prefixes_inside, the free-space rule), so a free cell is really free.
+    ``hidden`` are those the reader may not view: they take their cells but
+    are never named in ``overlap_with`` or a run.
 
     ``max_v4`` / ``max_v6`` are the user's per-family "deepest prefix length to
     show" preference. They can only make the map *shallower* - clamped after the
@@ -598,14 +604,17 @@ def _build_space_map(
                 bisect_right(ip_ints, cell_last) - bisect_left(ip_ints, cell_first)
             )
             used = state != "free"
+            named = [c for c in listed if c not in hidden]
             cells.append({
                 "cidr": str(s),
                 "state": state,
                 "used": used,
                 # The cell is exactly an existing child prefix.
-                "exact": bool(covering) and covering[0].prefixlen == new_prefixlen,
-                "overlap_with": [str(c) for c in listed[:3]],
-                "overlap_count": len(listed),
+                "exact": bool(covering) and covering[0].prefixlen == new_prefixlen
+                and covering[0] not in hidden,
+                # Prefixes the reader may not view take space, unnamed.
+                "overlap_with": [str(c) for c in named[:3]],
+                "overlap_count": len(named),
                 "used_fraction": used_fraction,
                 "used_spans": spans,
                 # "dirty" = free but the address range already holds IPs.
@@ -638,7 +647,7 @@ def _build_space_map(
             break
         rows.append(_space_map_run_row(
             net, nxt["prefixlen"], tops=tops, kids=kids, ip_ints=ip_ints,
-            ranges=ranges,
+            ranges=ranges, hidden=hidden,
         ))
         last = nxt["prefixlen"]
     return rows
