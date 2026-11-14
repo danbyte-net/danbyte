@@ -137,6 +137,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const { canDo, humanIds } = useMe()
   const canEditPrefix = objCan(p, "change", canDo("prefix", "change"))
   const canAddPrefix = canDo("prefix", "add")
+  // Children only where the server would accept them: not under shared or
+  // another site's space for a site-limited creator.
+  const canAddChild = canAddPrefix && objCan(p, "add_child", true)
   const canDeletePrefix = objCan(p, "delete", canDo("prefix", "delete"))
   const canAddIp = canDo("ipaddress", "add")
   const [tab, setTab] = useUrlTab<
@@ -301,7 +304,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               </Link>
             </Button>
           )}
-          {canAddPrefix && (
+          {canAddChild && (
             <Button variant="outline" size="sm" asChild>
               <Link
                 to="/prefixes/new"
@@ -316,7 +319,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               </Link>
             </Button>
           )}
-          {canAddPrefix &&
+          {canAddChild &&
             (p.has_descendants || p.status?.slug === "container") && (
               <Button
                 size="sm"
@@ -456,7 +459,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="map">
-        <MapPane prefix={p} canAddPrefix={canAddPrefix} canAddIp={canAddIp} />
+        <MapPane prefix={p} canAddPrefix={canAddChild} canAddIp={canAddIp} />
       </DetailTab>
 
       <DetailTab value="monitoring">

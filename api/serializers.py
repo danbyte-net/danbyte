@@ -1485,6 +1485,89 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     dns_record_count = serializers.SerializerMethodField()
     static_route_count = serializers.SerializerMethodField()
 
+    def get_permissions(self, obj) -> dict[str, bool]:
+        """``change``/``delete`` as for any row, plus ``add_child``: may the
+        reader create a prefix inside this one? A site-limited creator may
+        not when this prefix or one holding it is shared or another site's:
+        the create would be refused (PrefixViewSet._assert_write_in_site_scope,
+        allocate and plan). The UI hides Create under such a parent."""
+        out = super().get_permissions(obj)
+        out["add_child"] = self._can_add_child(obj)
+        return out
+
+    def _can_add_child(self, obj) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if request is None or not getattr(user, "is_authenticated", False):
+            return False
+        if getattr(user, "is_superuser", False):
+            return True
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        tenant = _get_active_tenant(request)
+        memo = getattr(request, "_prefix_add_child_memo", None)
+        if memo is None:
+            memo = request._prefix_add_child_memo = {
+                "sites": rbac.site_scope(user, tenant, "prefix", "add"), "pages": {}}
+        sites = memo["sites"]
+        if sites is None:
+            return True
+        if not sites:
+            return False
+        parent = getattr(self, "parent", None)
+        rows = getattr(parent, "instance", None) if parent is not None else None
+        key = id(rows) if rows is not None else ("one", obj.pk)
+        hit = memo["pages"].get(key)
+        if hit is None or hit[0] is not rows:
+            try:
+                page = [r for r in rows if isinstance(r, Prefix)] if rows is not None else []
+            except TypeError:
+                page = []
+            page = page or [obj]
+            hit = memo["pages"][key] = (rows, self._blocked_parents(tenant, page, sites))
+        return obj.pk not in hit[1]
+
+    @staticmethod
+    def _blocked_parents(tenant, page, sites) -> set:
+        """The prefixes on ``page`` that are, or sit inside, a prefix outside
+        ``sites`` (shared or another site's). One query for the page."""
+        import ipaddress
+
+        from django.db.models import BooleanField, Q
+        from django.db.models.expressions import RawSQL
+
+        nets = {}
+        for p in page:
+            try:
+                nets[p.pk] = (p.vrf_id, ipaddress.ip_network(p.cidr, strict=False))
+            except (TypeError, ValueError):
+                continue
+        if not nets:
+            return set()
+        foreign = (
+            Prefix.objects.filter(tenant=tenant)
+            .filter(Q(site__isnull=True) | ~Q(site_id__in=sites))
+            .annotate(_holds=RawSQL(
+                '"api_prefix"."cidr"::inet >>= ANY(%s::inet[])',
+                (sorted({str(n) for _v, n in nets.values()}),),
+                output_field=BooleanField(),
+            ))
+            .filter(_holds=True)
+            .values_list("vrf_id", "cidr")
+        )
+        holders = []
+        for vrf_id, cidr in foreign:
+            try:
+                holders.append((vrf_id, ipaddress.ip_network(cidr, strict=False)))
+            except (TypeError, ValueError):
+                continue
+        return {
+            pk for pk, (vrf_id, net) in nets.items()
+            if any(hv == vrf_id and hn.version == net.version and net.subnet_of(hn)
+                   for hv, hn in holders)
+        }
+
     def get_static_route_count(self, obj) -> int:
         # Static routes whose destination is this prefix - the page's tab.
         # Detail only, like the DNS count.

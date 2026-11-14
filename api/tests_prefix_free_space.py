@@ -523,6 +523,43 @@ class SiteSeparationTests(_Base):
         self.assertNotIn("10.1.1.0", r.content.decode())
         self.assertEqual(Prefix.objects.count(), before)
 
+    def test_no_create_under_a_shared_parent(self):
+        # View on everything, add only in site A: the shared /16 and what
+        # sits in it are visible but take no children.
+        perm = ObjectPermission.objects.create(
+            name="view-all", object_types=["prefix"], actions=["view"])
+        perm.users.add(self.user)
+        perm.tenants.add(self.tenant)
+        in_shared = Prefix.objects.get(cidr="10.3.0.0/24")
+
+        def add_child(p):
+            r = self.client.get(f"/api/prefixes/{p.id}/")
+            self.assertEqual(r.status_code, 200, r.content)
+            return r.json()["permissions"]["add_child"]
+
+        self.assertTrue(add_child(self.root))
+        self.assertFalse(add_child(self.shared))
+        self.assertFalse(add_child(in_shared))
+        self.assertFalse(add_child(self.foreign))
+        rows = {x["id"]: x["permissions"]["add_child"]
+                for x in self.client.get("/api/prefixes/?page_size=100").json()["results"]}
+        self.assertEqual(rows[str(self.root.id)], True)
+        self.assertEqual(rows[str(self.shared.id)], False)
+        self.assertEqual(rows[str(in_shared.id)], False)
+        # The server refuses what the flag hides, and takes what it offers.
+        before = Prefix.objects.count()
+        for cidr in ("10.3.1.0/24", "10.3.0.128/25"):
+            r = self.client.post("/api/prefixes/", {"cidr": cidr, "site_id": str(self.a.id)},
+                                 format="json")
+            self.assertEqual(r.status_code, 403, cidr)
+        self.assertEqual(Prefix.objects.count(), before)
+        r = self.client.post("/api/prefixes/", {"cidr": "10.1.9.0/24", "site_id": str(self.a.id)},
+                             format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        # Unrestricted creators may create anywhere.
+        self.login(self.admin)
+        self.assertTrue(add_child(self.shared))
+
     def test_plan_in_own_site(self):
         r = self.client.post(f"/api/prefixes/{self.root.id}/plan/",
                              {"requests": [{"count": 2, "length": 24}], "dry_run": False},

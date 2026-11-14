@@ -75,6 +75,9 @@ where you were, with the new prefix drawn - so the next block is one click away.
 
 The two create actions only show when you may add prefixes or IPs. Without
 either, a free block has just **Zoom into …**, so a click zooms straight in.
+**New child prefix here** also hides when your access is limited to some
+sites and the prefix is shared or another site's space (see
+[Prefixes](prefix-crud.md#who-sees-what)).
 
 ## Really free
 

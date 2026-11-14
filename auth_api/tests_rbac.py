@@ -85,11 +85,14 @@ class RBACEnforcementTests(APITestCase):
         }
         # Only the active prefix is even visible (view is constrained too)…
         self.assertIn("10.0.0.0/24", rows)
-        self.assertEqual(rows["10.0.0.0/24"], {"change": True, "delete": True})
+        # No add grant: nothing may be created inside it either.
+        self.assertEqual(rows["10.0.0.0/24"],
+                         {"change": True, "delete": True, "add_child": False})
         # …and the detail of the active one confirms the same.
         active = Prefix.objects.get(cidr="10.0.0.0/24")
         detail = self.client.get(f"/api/prefixes/{active.id}/").json()
-        self.assertEqual(detail["permissions"], {"change": True, "delete": True})
+        self.assertEqual(detail["permissions"],
+                         {"change": True, "delete": True, "add_child": False})
 
     def test_per_object_permissions_flag_false_without_grant(self):
         u = self._user("viewonly")
@@ -100,7 +103,8 @@ class RBACEnforcementTests(APITestCase):
         self._client(u)
         active = Prefix.objects.get(cidr="10.0.0.0/24")
         detail = self.client.get(f"/api/prefixes/{active.id}/").json()
-        self.assertEqual(detail["permissions"], {"change": False, "delete": False})
+        self.assertEqual(detail["permissions"],
+                         {"change": False, "delete": False, "add_child": False})
 
     def test_superuser_unrestricted(self):
         self._client(self._user("root", superuser=True))

@@ -18,7 +18,11 @@ import type { ListRow } from "@/lib/prefix-free"
  */
 export function withFreeCells<T extends ListRow>(
   columns: ColumnDef<T, unknown>[],
-  opts: { canAdd: boolean; onExpand: (parentId: string) => void }
+  opts: {
+    /** May a prefix be created under this parent? */
+    canAdd: (parentId: string) => boolean
+    onExpand: (parentId: string) => void
+  }
 ): ColumnDef<T, unknown>[] {
   return columns.map((col) => {
     const own = col.cell
@@ -53,7 +57,11 @@ function Indent({ depth }: { depth: number }) {
 function freeCell(
   id: string,
   row: ListRow,
-  opts: { canAdd: boolean; onExpand: (parentId: string) => void }
+  opts: {
+    /** May a prefix be created under this parent? */
+    canAdd: (parentId: string) => boolean
+    onExpand: (parentId: string) => void
+  }
 ) {
   const mark = row._free!
   if (mark.kind === "more") {
@@ -87,7 +95,7 @@ function freeCell(
       return (
         <div className="flex items-center gap-0.5">
           <Indent depth={row._depth} />
-          {opts.canAdd ? (
+          {opts.canAdd(mark.parentId) ? (
             <Link
               to="/prefixes/new"
               search={createSearch(row)}
@@ -116,7 +124,7 @@ function freeCell(
         </span>
       )
     case "actions":
-      return opts.canAdd ? (
+      return opts.canAdd(mark.parentId) ? (
         <div className="flex justify-end">
           <Button
             variant="ghost"

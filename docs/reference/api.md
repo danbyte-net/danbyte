@@ -519,6 +519,11 @@ on the parent (else `404`); a site-limited caller may create only in their
 own site's space (`403`). The change log's cause is *Allocated in
 &lt;parent&gt;*.
 
+Each prefix's `permissions` carries `add_child` next to `change` and
+`delete`: whether the caller may create a prefix inside it. It is `false`
+for a site-limited caller when the prefix, or one holding it, is shared or
+another site's - the creates above would be refused.
+
 **Plan.** `POST /api/prefixes/<id>/plan/`:
 
 ```json

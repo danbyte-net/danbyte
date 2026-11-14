@@ -271,6 +271,12 @@ view. Create, allocate and the planner check again on the server: they need
 add on prefixes, and with site-limited access the new prefix must sit in
 your own site's space, as for any new prefix.
 
+With site-limited access, a prefix that is shared (no site) or another
+site's - or sits inside one - takes no children from you, so its **Add child
+prefix** and **Plan subnets…** buttons, the Space map's **New child prefix
+here** and its free rows' **Create** are not shown. Each prefix in the API
+says so in `permissions.add_child`.
+
 ## Plan subnets
 
 **Plan subnets…** on a container or parent prefix (and in the list toolbar

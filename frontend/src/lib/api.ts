@@ -258,6 +258,9 @@ export interface TagUsage {
 export interface ObjectPerms {
   change: boolean
   delete: boolean
+  /** Prefixes only: may a prefix be created inside this one? False for a
+   * site-limited creator under shared or another site's space. */
+  add_child?: boolean
   /** Only present on types that report extra verbs (scripts). */
   run?: boolean
   trust?: boolean

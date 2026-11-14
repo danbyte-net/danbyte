@@ -179,6 +179,15 @@ function PrefixesPage() {
   // as a status column and into the rail as a facet - fetched for all rows,
   // not the filtered ones, so filtering on the rollup can't starve itself.
   const prefixIds = useMemo(() => allRows.map((r) => r.id), [allRows])
+  // Create under a parent only where the server would accept it: a
+  // site-limited creator gets no Create under shared or another site's space.
+  const canCreateIn = useCallback(
+    (parentId: string) => {
+      const parent = allRows.find((r) => r.id === parentId)
+      return canAdd && objCan(parent, "add_child", true)
+    },
+    [allRows, canAdd]
+  )
   const monQuery = useQuery({
     queryKey: ["prefix-mon-status", prefixIds],
     // POST - a page of UUIDs makes a URL longer than proxy request-line
@@ -406,7 +415,7 @@ function PrefixesPage() {
           toggleValue
         ),
         {
-          canAdd,
+          canAdd: canCreateIn,
           onExpand: (id) =>
             setExpandedIds((prev) =>
               prev.includes(id) ? prev : [...prev, id]
@@ -414,7 +423,7 @@ function PrefixesPage() {
         }
       ),
     [
-      canAdd,
+      canCreateIn,
       tagSelection,
       selectedValues,
       toggleValue,
@@ -470,7 +479,7 @@ function PrefixesPage() {
               onChange={sla.setFrame}
             />
             <TableActions ioType="prefix" extraExports={[reportItem]} />
-            {canAdd && planTarget && (
+            {planTarget && canCreateIn(planTarget.id) && (
               <Button
                 size="sm"
                 variant="outline"
@@ -507,13 +516,20 @@ function PrefixesPage() {
           isPlaceholderRow={isFreeRow}
           onRowClick={(r) => {
             // A free block's whole row opens the form, like its Create.
-            if (canAdd && r._free && r._free.kind !== "more")
+            if (
+              r._free &&
+              r._free.kind !== "more" &&
+              canCreateIn(r._free.parentId)
+            )
               void navigate({ to: "/prefixes/new", search: createSearch(r) })
           }}
           rowClassName={(r) =>
             cn(
               r._free?.next && "bg-muted",
-              canAdd && r._free && r._free.kind !== "more" && "cursor-pointer"
+              r._free &&
+                r._free.kind !== "more" &&
+                canCreateIn(r._free.parentId) &&
+                "cursor-pointer"
             )
           }
           onSelectedRowsChange={(picked) =>
