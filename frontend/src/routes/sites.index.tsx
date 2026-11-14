@@ -90,15 +90,17 @@ function SitesPage() {
         onChange: setQ,
         placeholder: "Filter by name, location, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/sites/new">Add Site</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="site" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/sites/new">Add Site</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

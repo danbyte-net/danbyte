@@ -126,14 +126,16 @@ function TunnelGroupsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter groups…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/tunnel-groups/new">Add group</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="tunnelgroup" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/tunnel-groups/new">Add group</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

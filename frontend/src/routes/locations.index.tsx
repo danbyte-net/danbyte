@@ -81,14 +81,16 @@ function LocationsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter locations…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/locations/new">Add location</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="location" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/locations/new">Add location</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

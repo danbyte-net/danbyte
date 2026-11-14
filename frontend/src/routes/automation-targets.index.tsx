@@ -71,6 +71,13 @@ function AutomationTargetsPage() {
         onChange: setQ,
         placeholder: "Filter targets…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/automation-targets/new">Add target</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="automationtarget" />
@@ -80,11 +87,6 @@ function AutomationTargetsPage() {
               Guided setup
             </Link>
           </Button>
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/automation-targets/new">Add target</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

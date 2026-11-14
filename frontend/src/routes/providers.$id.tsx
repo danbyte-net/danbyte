@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { ExternalLink, Pencil, Trash2 } from "lucide-react"
+import { ExternalLink } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import {
@@ -10,7 +10,6 @@ import {
   type Provider,
   type ProviderNetwork,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
@@ -20,6 +19,7 @@ import { BusinessHoursSummary } from "@/components/business-hours-field"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ProviderDeleteDialog } from "@/components/provider-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -64,26 +64,15 @@ function Body({ provider: p }: { provider: Provider }) {
       backLabel="Providers"
       title={p.name}
       presence={{ type: "provider", id: p.id }}
-      actions={
-        <>
-          {canDo("provider", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/providers/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("provider", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(p)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("provider", "change") && (
+          <EditButton to="/providers/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      remove={
+        canDo("provider", "delete") && (
+          <DeleteButton onClick={() => setDeleting(p)} />
+        )
       }
       hero={
         <DetailHero

@@ -1,5 +1,4 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { DetailActions } from "@/components/detail-actions"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight, RotateCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
@@ -94,7 +93,6 @@ function Body({ job }: { job: JobDetail }) {
           </span>
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <DetailActions />
           <StateBadge state={job.state} />
           {canRequeue && (
             <Button

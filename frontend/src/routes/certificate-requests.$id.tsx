@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
-import { Download, KeyRound, Trash2, Upload } from "lucide-react"
+import { Download, KeyRound, Upload } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -24,6 +24,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DeleteButton } from "@/components/action-ribbon"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -157,44 +159,36 @@ function Body({ req }: { req: CertificateRequest }) {
       backLabel="Certificate requests"
       title={<span className="truncate">{req.common_name}</span>}
       actions={
+        canDo("certificaterequest", "change") &&
+        req.status !== "issued" && (
+          <Button size="sm" onClick={() => setImportOpen(true)}>
+            <Upload className="h-3.5 w-3.5" /> Import issued
+          </Button>
+        )
+      }
+      exports={
         <>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
+          <DropdownMenuItem
+            onSelect={() =>
               download(`${req.common_name || "request"}.csr`, req.csr_pem)
             }
           >
             <Download className="h-3.5 w-3.5" /> CSR
-          </Button>
+          </DropdownMenuItem>
           {canDo("certificaterequest", "change") && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={fetchKey.isPending}
-                onClick={() => fetchKey.mutate()}
-              >
-                <KeyRound className="h-3.5 w-3.5" /> Private key
-              </Button>
-              {req.status !== "issued" && (
-                <Button size="sm" onClick={() => setImportOpen(true)}>
-                  <Upload className="h-3.5 w-3.5" /> Import issued
-                </Button>
-              )}
-            </>
-          )}
-          {canDo("certificaterequest", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(true)}
+            <DropdownMenuItem
+              disabled={fetchKey.isPending}
+              onSelect={() => fetchKey.mutate()}
             >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
+              <KeyRound className="h-3.5 w-3.5" /> Private key
+            </DropdownMenuItem>
           )}
         </>
+      }
+      remove={
+        canDo("certificaterequest", "delete") && (
+          <DeleteButton onClick={() => setDeleting(true)} />
+        )
       }
       hero={
         <DetailHero

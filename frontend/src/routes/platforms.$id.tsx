@@ -1,13 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type Platform } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { PlatformDeleteDialog } from "@/components/platform-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -115,26 +114,15 @@ function Body({ platform: p }: { platform: Platform }) {
       backLabel="Platforms"
       title={p.name}
       presence={{ type: "platform", id: p.id }}
-      actions={
-        <>
-          {canDo("platform", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/platforms/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("platform", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(p)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("platform", "change") && (
+          <EditButton to="/platforms/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      remove={
+        canDo("platform", "delete") && (
+          <DeleteButton onClick={() => setDeleting(p)} />
+        )
       }
       hero={
         <DetailHero

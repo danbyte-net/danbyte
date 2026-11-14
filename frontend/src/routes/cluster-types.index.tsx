@@ -67,14 +67,16 @@ function ClusterTypesPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/cluster-types/new">Add cluster type</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="clustertype" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/cluster-types/new">Add cluster type</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -14,7 +13,6 @@ import type {
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { SimpleTable } from "@/components/ui/simple-table"
 import { DynamicIcon } from "@/components/dynamic-icon"
@@ -24,6 +22,7 @@ import type { KvRow } from "@/components/kv-card"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { buildFloorTileColumns } from "@/components/columns/floor-tile-columns"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -72,26 +71,15 @@ function Body({ type: t }: { type: FloorTileType }) {
       backLabel="Floor tiles"
       title={t.name}
       presence={{ type: "floortiletype", id: t.id }}
-      actions={
-        <>
-          {canDo("floortiletype", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/floor-tile-types/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("floortiletype", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(t)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("floortiletype", "change") && (
+          <EditButton to="/floor-tile-types/$id/edit" params={{ id: t.id }} />
+        )
+      }
+      remove={
+        canDo("floortiletype", "delete") && (
+          <DeleteButton onClick={() => setDeleting(t)} />
+        )
       }
       hero={
         <DetailHero

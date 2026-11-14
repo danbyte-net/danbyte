@@ -75,14 +75,16 @@ function DeviceRolesPage() {
         onChange: setQ,
         placeholder: "Filter…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/device-roles/new">Add role</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="devicerole" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/device-roles/new">Add role</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

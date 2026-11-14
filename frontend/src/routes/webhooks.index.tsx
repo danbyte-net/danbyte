@@ -104,14 +104,16 @@ function WebhooksPage() {
         onChange: setQ,
         placeholder: "Filter webhooks…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/webhooks/new">Add webhook</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="webhook" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/webhooks/new">Add webhook</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

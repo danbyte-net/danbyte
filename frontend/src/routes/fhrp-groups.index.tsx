@@ -148,14 +148,16 @@ function FhrpGroupsPage() {
         onChange: setQ,
         placeholder: "Filter by name, group ID…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/fhrp-groups/new">Add FHRP group</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="fhrpgroup" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/fhrp-groups/new">Add FHRP group</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

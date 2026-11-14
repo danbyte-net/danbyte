@@ -1,14 +1,12 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { ContactAssignment, ContactRole, Paginated } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard } from "@/components/kv-card"
@@ -17,6 +15,7 @@ import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { ContactRoleDeleteDialog } from "@/components/contact-role-delete-dialog"
 import { buildContactAssignmentColumns } from "@/components/columns/contact-assignment-columns"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -58,26 +57,15 @@ function Body({ role: r }: { role: ContactRole }) {
       backLabel="Contact roles"
       title={r.name}
       presence={{ type: "contactrole", id: r.id }}
-      actions={
-        <>
-          {canDo("contactrole", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/contact-roles/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("contactrole", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("contactrole", "change") && (
+          <EditButton to="/contact-roles/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("contactrole", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <DetailHero

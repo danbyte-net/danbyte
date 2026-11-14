@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { ExternalLink, Pencil, Trash2 } from "lucide-react"
+import { ExternalLink } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import {
@@ -10,7 +10,6 @@ import {
   type ModuleType,
   type Paginated,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
@@ -18,6 +17,7 @@ import type { KvRow } from "@/components/kv-card"
 import { LocalityBadge } from "@/components/locality-badge"
 import { QueryError } from "@/components/query-error"
 import { ManufacturerDeleteDialog } from "@/components/manufacturer-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { EmbeddedDeviceTypeTable } from "@/components/embedded-device-type-table"
@@ -72,26 +72,15 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
       backLabel="Manufacturers"
       title={m.name}
       presence={{ type: "manufacturer", id: m.id }}
-      actions={
-        <>
-          {canDo("manufacturer", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/manufacturers/$id/edit" params={{ id: m.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("manufacturer", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(m)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("manufacturer", "change") && (
+          <EditButton to="/manufacturers/$id/edit" params={{ id: m.id }} />
+        )
+      }
+      remove={
+        canDo("manufacturer", "delete") && (
+          <DeleteButton onClick={() => setDeleting(m)} />
+        )
       }
       hero={<DetailHero title={m.name} description={m.description} />}
       tabs={[

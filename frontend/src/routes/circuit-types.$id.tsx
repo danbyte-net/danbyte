@@ -1,19 +1,18 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { CircuitType } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { CircuitTypeDeleteDialog } from "@/components/circuit-type-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -56,26 +55,15 @@ function Body({ type: t }: { type: CircuitType }) {
       backLabel="Circuit types"
       title={t.name}
       presence={{ type: "circuittype", id: t.id }}
-      actions={
-        <>
-          {canDo("circuittype", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/circuit-types/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("circuittype", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(t)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("circuittype", "change") && (
+          <EditButton to="/circuit-types/$id/edit" params={{ id: t.id }} />
+        )
+      }
+      remove={
+        canDo("circuittype", "delete") && (
+          <DeleteButton onClick={() => setDeleting(t)} />
+        )
       }
       hero={
         <DetailHero

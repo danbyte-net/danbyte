@@ -1,4 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
+import type { ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { useDateFormat } from "@/lib/datetime"
@@ -66,6 +75,7 @@ import {
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { coerce, exportTable, type ExportFormat } from "@/lib/table-export"
 import { listCapExportNote, useListCap } from "@/lib/list-cap"
+import { useListToolbar } from "@/lib/list-toolbar"
 import { naturalSortingFn } from "@/lib/natural-sort"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -325,6 +335,19 @@ export function DataTable<T>({
   // that arrived, so it says so (#412). A table that fetches everything for
   // export (`exportAll`) is not cut off.
   const listCap = useListCap()
+  // A list page's toolbar row (ListPageShell, #507): the page's main table
+  // moves its selection, Download and Columns up beside the search box
+  // rather than drawing a second row of controls under it.
+  const listToolbar = useListToolbar()
+  const tableKey = useId()
+  const rootRef = useRef<HTMLDivElement>(null)
+  const claim = listToolbar?.claim
+  useLayoutEffect(() => {
+    if (!claim || embedded || !rootRef.current) return
+    return claim(tableKey, rootRef.current)
+  }, [claim, embedded, tableKey])
+  const toolbarSlot =
+    listToolbar && listToolbar.owner === tableKey ? listToolbar.slot : null
   const exportNote =
     listCap && !exportAll && !serverPagination
       ? listCapExportNote(listCap)
@@ -947,6 +970,7 @@ export function DataTable<T>({
     // min-w-0: a table placed straight into a flex row may shrink below its
     // columns' width - the frame below then scrolls instead of the row growing.
     <div
+      ref={rootRef}
       className={cn(
         "flex min-w-0 flex-col gap-2",
         stickyHeader && "min-h-0 flex-1"
@@ -973,8 +997,8 @@ export function DataTable<T>({
           the bar only appears there when rows are selected. It wraps rather
           than overflowing, so a narrow pane never cuts Download / Columns off. */}
       {(!embedded || selectedCount > 0) && (
-        <div className="flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1">
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+        <ToolbarBar slot={toolbarSlot}>
+          <span className="flex items-center gap-2 text-xs text-muted-foreground empty:hidden">
             {selectedCount > 0 && (
               <span className="font-medium text-foreground">
                 {selectedCount} selected
@@ -1197,7 +1221,7 @@ export function DataTable<T>({
               )}
             </div>
           )}
-        </div>
+        </ToolbarBar>
       )}
 
       {/* Table.
@@ -1519,6 +1543,23 @@ export function DataTable<T>({
 /** What to say under a table holding one capped page of a longer list, or
  * null when it holds the lot. `total` is what the server reported; `shown`
  * is what arrived. */
+/** The table's control bar: its own row, or - for a list page's main table -
+ * portaled into the page's toolbar row beside the search box. */
+function ToolbarBar({
+  slot,
+  children,
+}: {
+  slot: HTMLElement | null
+  children: ReactNode
+}) {
+  if (slot) return createPortal(children, slot)
+  return (
+    <div className="flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1">
+      {children}
+    </div>
+  )
+}
+
 export function truncationNotice(
   total: number | undefined,
   shown: number,

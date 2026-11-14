@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Trash2, X } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox"
 import { QueryError } from "@/components/query-error"
 import { FhrpGroupDeleteDialog } from "@/components/fhrp-group-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -65,26 +66,15 @@ function Body({ group: g }: { group: FHRPGroup }) {
       backLabel="FHRP groups"
       title={label}
       presence={{ type: "fhrpgroup", id: g.id }}
-      actions={
-        <>
-          {canDo("fhrpgroup", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/fhrp-groups/$id/edit" params={{ id: g.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("fhrpgroup", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(g)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("fhrpgroup", "change") && (
+          <EditButton to="/fhrp-groups/$id/edit" params={{ id: g.id }} />
+        )
+      }
+      remove={
+        canDo("fhrpgroup", "delete") && (
+          <DeleteButton onClick={() => setDeleting(g)} />
+        )
       }
       hero={
         <DetailHero

@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { DetailActions } from "@/components/detail-actions"
+import { DeleteButton, EditButton } from "@/components/action-ribbon"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type VLAN, type VLANGroup } from "@/lib/api"
@@ -70,24 +71,11 @@ function Body({ group: g }: { group: VLANGroup }) {
         </nav>
         <DetailPresence type="vlangroup" />
         <div className="ml-auto flex items-center gap-1.5">
-          <DetailActions />
           {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/vlan-groups/$id/edit" params={{ id: g.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
+            <EditButton to="/vlan-groups/$id/edit" params={{ id: g.id }} />
           )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(g)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
+          <DetailActions />
+          {canDelete && <DeleteButton onClick={() => setDeleting(g)} />}
         </div>
       </header>
 

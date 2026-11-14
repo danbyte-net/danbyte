@@ -6,25 +6,23 @@ import {
   SoftwareVersionText,
 } from "@/components/cells/software-version-cell"
 import { CatalogCell } from "@/components/cells/catalog-cell"
-import { SpecSheetButton } from "@/components/spec-sheet-button"
+import { SpecSheetMenuItems } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { listRowFromCache } from "@/lib/list-row-cache"
 import { Loading } from "@/components/loading"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   GitCompareArrows,
-  Pencil,
   RefreshCw,
   Target,
-  Trash2,
   TriangleAlert,
 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type VirtualMachine } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import {
   Tooltip,
@@ -217,32 +215,21 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       backLabel="Virtual machines"
       title={vm.name}
       presence={{ type: "virtualmachine", id: vm.id }}
+      edit={
+        canEdit && (
+          <EditButton to="/virtual-machines/$id/edit" params={{ id: vm.id }} />
+        )
+      }
+      exports={<SpecSheetMenuItems kind="vm" id={vm.id} />}
       actions={
         <>
-          <SpecSheetButton kind="vm" id={vm.id} />
           <HostConnectMenu host={vmConnectHost(vm)} />
           {vm.intended && canDo("virtualmachine", "provision") && (
             <VmProvisionButton vm={vm} />
           )}
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/virtual-machines/$id/edit" params={{ id: vm.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
       }
+      remove={canDelete && <DeleteButton onClick={openDelete} />}
       hero={
         <DetailHero
           title={vm.name}

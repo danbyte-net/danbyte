@@ -11,7 +11,8 @@ import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { Cabinet, CabinetSyncDiff } from "@/lib/api"
-import { CabinetSyncTypeButton } from "./cabinet-sync-type-button"
+import { MoreMenu } from "./action-ribbon"
+import { useCabinetSyncType } from "./cabinet-sync-type-button"
 
 // Sync from type is a dry run first: the dialog lists the sizes and rails
 // the type would change, and only Apply writes. Rails the type does not name
@@ -106,23 +107,40 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// As on the cabinet page: an item in the header's More menu, its dialog
+// beside the menu.
+function Harness({ c }: { c: Cabinet }) {
+  const sync = useCabinetSyncType(c)
+  if (!sync.item) return null
+  return (
+    <>
+      <MoreMenu>{sync.item}</MoreMenu>
+      {sync.dialog}
+    </>
+  )
+}
+
 function renderButton(c: Cabinet = cabinet()) {
   const qc = new QueryClient({
     defaultOptions: { mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={qc}>
-      <CabinetSyncTypeButton cabinet={c} />
+      <Harness c={c} />
     </QueryClientProvider>
   )
 }
 
 async function openPreview() {
-  fireEvent.click(screen.getByRole("button", { name: "Sync from type" }))
+  fireEvent.pointerDown(
+    screen.getByRole("button", { name: "More" }),
+    new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+  )
+  fireEvent.click(screen.getByRole("menuitem", { name: "Sync from type" }))
   return screen.findByRole("dialog")
 }
 
-describe("CabinetSyncTypeButton", () => {
+describe("useCabinetSyncType", () => {
   it("is only offered on a cabinet with a type, to whoever may change it", () => {
     const { container } = renderButton(cabinet({ cabinet_type: null }))
     expect(container.textContent).toBe("")

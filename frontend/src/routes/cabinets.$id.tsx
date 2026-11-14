@@ -1,6 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { Suspense, useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -8,7 +7,6 @@ import type { Cabinet } from "@/lib/api"
 import { cabinetTypeLabel } from "@/lib/cabinets"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { RoomCell } from "@/components/cells/room-cell"
 import { TagList } from "@/components/cells/tag-list"
@@ -27,9 +25,10 @@ import {
 } from "@/components/cabinet-devices"
 import { CabinetPlateSection } from "@/components/cabinet-plate-section"
 import { CabinetRailActions } from "@/components/cabinet-rail-actions"
-import { CabinetSyncTypeButton } from "@/components/cabinet-sync-type-button"
+import { useCabinetSyncType } from "@/components/cabinet-sync-type-button"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -72,6 +71,7 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Cabinet | null>(null)
   const openDelete = useCallback(() => setDeleting(c), [c])
+  const syncType = useCabinetSyncType(c)
   const goBack = useCallback(() => nav({ to: "/cabinets" }), [nav])
 
   return (
@@ -80,28 +80,15 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
       backLabel="Cabinets"
       title={c.name}
       presence={{ type: "cabinet", id: c.id }}
-      actions={
-        <>
-          <ShowOnFloorPlan cabinetId={c.id} />
-          <CabinetSyncTypeButton cabinet={c} />
-          {canDo("cabinet", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/cabinets/$id/edit" params={{ id: c.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("cabinet", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("cabinet", "change") && (
+          <EditButton to="/cabinets/$id/edit" params={{ id: c.id }} />
+        )
+      }
+      actions={<ShowOnFloorPlan cabinetId={c.id} />}
+      more={syncType.item}
+      remove={
+        canDo("cabinet", "delete") && <DeleteButton onClick={openDelete} />
       }
       hero={
         <DetailHero
@@ -147,6 +134,7 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={goBack}
       />
+      {syncType.dialog}
     </DetailShell>
   )
 }

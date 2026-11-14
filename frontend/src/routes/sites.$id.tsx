@@ -3,7 +3,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Download, Network, Pencil, Plus, Trash2 } from "lucide-react"
+import { Download, Network, Plus } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import {
@@ -26,6 +26,8 @@ import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { Button } from "@/components/ui/button"
@@ -119,6 +121,11 @@ function SiteDetailBody({ site: s }: { site: Site }) {
       backLabel="Sites"
       title={s.name}
       presence={{ type: "site", id: s.id }}
+      edit={
+        canDo("site", "change") && (
+          <EditButton to="/sites/$id/edit" params={{ id: s.id }} />
+        )
+      }
       actions={
         <>
           <Button variant="outline" size="sm" asChild>
@@ -131,32 +138,18 @@ function SiteDetailBody({ site: s }: { site: Site }) {
               <Network className="h-3.5 w-3.5" /> Topology
             </Link>
           </Button>
-          {(canDo("device", "view") || canDo("virtualmachine", "view")) && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={sbomUrl({ site: [s.id] })} download>
-                <Download className="h-3.5 w-3.5" /> Export SBOM
-              </a>
-            </Button>
-          )}
-          {canDo("site", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/sites/$id/edit" params={{ id: s.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("site", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
       }
+      exports={
+        (canDo("device", "view") || canDo("virtualmachine", "view")) && (
+          <DropdownMenuItem asChild>
+            <a href={sbomUrl({ site: [s.id] })} download>
+              <Download className="h-3.5 w-3.5" /> SBOM
+            </a>
+          </DropdownMenuItem>
+        )
+      }
+      remove={canDo("site", "delete") && <DeleteButton onClick={openDelete} />}
       hero={
         <DetailHero
           title={s.name}

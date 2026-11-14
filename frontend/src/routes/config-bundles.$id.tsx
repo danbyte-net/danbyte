@@ -1,14 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { ConfigBundle, ConfigBundleTemplate } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -17,6 +15,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ConfigBundleDeleteDialog } from "@/components/config-bundle-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -64,26 +63,15 @@ function Body({ bundle: b }: { bundle: ConfigBundle }) {
       backLabel="Config bundles"
       title={b.name}
       presence={{ type: "configbundle", id: b.id }}
-      actions={
-        <>
-          {canDo("configbundle", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/config-bundles/$id/edit" params={{ id: b.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("configbundle", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(b)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("configbundle", "change") && (
+          <EditButton to="/config-bundles/$id/edit" params={{ id: b.id }} />
+        )
+      }
+      remove={
+        canDo("configbundle", "delete") && (
+          <DeleteButton onClick={() => setDeleting(b)} />
+        )
       }
       hero={<DetailHero title={b.name} description={b.description} />}
       tabs={[

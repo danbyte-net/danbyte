@@ -1,6 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -16,7 +15,6 @@ import { pipelineToYaml } from "@/lib/pipeline-code"
 import { useMe } from "@/lib/use-me"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +28,7 @@ import {
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DataTable } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmptyState } from "@/components/empty-state"
 import { KvCard, dash } from "@/components/kv-card"
@@ -99,26 +98,15 @@ function Body({ pipeline: p }: { pipeline: DeployPipeline }) {
       backLabel="Pipelines"
       title={p.name}
       presence={{ type: "deploypipeline", id: p.id }}
-      actions={
-        <>
-          {canDo("deploypipeline", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/pipelines/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("deploypipeline", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("deploypipeline", "change") && (
+          <EditButton to="/pipelines/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      remove={
+        canDo("deploypipeline", "delete") && (
+          <DeleteButton onClick={() => setDeleting(true)} />
+        )
       }
       hero={
         <DetailHero

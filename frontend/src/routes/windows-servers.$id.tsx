@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Plug, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { Plug, Plus, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -26,6 +26,7 @@ import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RowActions } from "@/components/row-actions"
 import { TimeCell } from "@/components/cells/time-ago"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -160,6 +161,7 @@ function Body({ conn }: { conn: WindowsConnection }) {
       backTo="/windows-servers"
       backLabel="Windows servers"
       title={conn.name}
+      edit={canChange && <EditButton onClick={() => setEditing(true)} />}
       actions={
         <>
           <Button
@@ -182,26 +184,12 @@ function Body({ conn }: { conn: WindowsConnection }) {
               {syncNow.isPending ? "Syncing…" : "Sync now"}
             </Button>
           )}
-          {canChange && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEditing(true)}
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Button>
-          )}
-          {canDo("windowsserverconnection", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => del.mutate()}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("windowsserverconnection", "delete") && (
+          <DeleteButton onClick={() => del.mutate()} />
+        )
       }
       hero={
         <DetailHero

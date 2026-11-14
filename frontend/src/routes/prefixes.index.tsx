@@ -472,6 +472,23 @@ function PrefixesPage() {
           onChange: setQ,
           placeholder: "Filter by CIDR, description…",
         }}
+        add={
+          canAdd && (
+            <Button size="sm" asChild>
+              <Link
+                to="/prefixes/new"
+                search={{
+                  cidr: undefined,
+                  vrf: undefined,
+                  site: undefined,
+                  location: undefined,
+                }}
+              >
+                Add prefix
+              </Link>
+            </Button>
+          )
+        }
         actions={
           <>
             <AvailabilityFramePicker
@@ -486,21 +503,6 @@ function PrefixesPage() {
                 onClick={() => setPlanning(true)}
               >
                 <LayoutList className="h-3.5 w-3.5" /> Plan subnets…
-              </Button>
-            )}
-            {canAdd && (
-              <Button size="sm" asChild>
-                <Link
-                  to="/prefixes/new"
-                  search={{
-                    cidr: undefined,
-                    vrf: undefined,
-                    site: undefined,
-                    location: undefined,
-                  }}
-                >
-                  Add prefix
-                </Link>
               </Button>
             )}
           </>

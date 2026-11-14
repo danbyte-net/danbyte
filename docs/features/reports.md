@@ -15,7 +15,7 @@ adds the topology diagram to the tables of what is on it.
 
 | From | Click | The report covers |
 |---|---|---|
-| A device, prefix or IP address page | **PDF report…** in the page actions | That object, with the sections you tick |
+| A device, prefix or IP address page | **Export ▸ PDF report…** in the page header | That object, with the sections you tick |
 | The Devices, Prefixes or IP addresses list | **Import / Export ▸ PDF report…** | Every row the list shows now (its search and filters) |
 | The same lists, rows selected | **Export ▸ PDF report…** in the bulk bar | The selected rows |
 | The topology map | **Export ▸ PDF report…** | The view on the map - see [Topology report](#topology-report) |

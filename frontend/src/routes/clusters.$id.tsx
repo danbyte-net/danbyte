@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 
@@ -26,6 +25,7 @@ import { EmbeddedVmGroupTable } from "@/components/embedded-tables"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -78,27 +78,10 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
       backLabel="Clusters"
       title={c.name}
       presence={{ type: "cluster", id: c.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/clusters/$id/edit" params={{ id: c.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canEdit && <EditButton to="/clusters/$id/edit" params={{ id: c.id }} />
       }
+      remove={canDelete && <DeleteButton onClick={openDelete} />}
       hero={
         <DetailHero
           title={c.name}

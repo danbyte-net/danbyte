@@ -83,14 +83,16 @@ function ZonesPage() {
         </FilterRail>
       }
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/zones/new">Add zone</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="zone" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/zones/new">Add zone</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

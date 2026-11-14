@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowDown, ArrowUp, Plus } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -34,6 +34,7 @@ import { QueryError } from "@/components/query-error"
 import { Loading } from "@/components/loading"
 import { EmptyState } from "@/components/empty-state"
 import { DataTable } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -108,26 +109,18 @@ function Body({ group }: { group: ApplicationGroup }) {
       backLabel="Application groups"
       title={group.name}
       presence={{ type: "applicationgroup", id: group.id }}
-      actions={
-        <>
-          {canDo("applicationgroup", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/application-groups/$id/edit" params={{ id: group.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("applicationgroup", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(group)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("applicationgroup", "change") && (
+          <EditButton
+            to="/application-groups/$id/edit"
+            params={{ id: group.id }}
+          />
+        )
+      }
+      remove={
+        canDo("applicationgroup", "delete") && (
+          <DeleteButton onClick={() => setDeleting(group)} />
+        )
       }
       hero={
         <DetailHero

@@ -65,14 +65,16 @@ function ServiceTemplatesPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/service-templates/new">Add template</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="servicetemplate" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/service-templates/new">Add template</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

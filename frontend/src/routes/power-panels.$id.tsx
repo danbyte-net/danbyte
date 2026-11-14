@@ -1,13 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { PowerPanel } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
 import { SiteCell } from "@/components/cells/site-cell"
@@ -17,6 +15,7 @@ import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { PowerPanelDeleteDialog } from "@/components/power-panel-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -61,26 +60,15 @@ function Body({ panel: p }: { panel: PowerPanel }) {
       backLabel="Power panels"
       title={p.name}
       presence={{ type: "powerpanel", id: p.id }}
-      actions={
-        <>
-          {canDo("powerpanel", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/power-panels/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("powerpanel", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(p)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("powerpanel", "change") && (
+          <EditButton to="/power-panels/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      remove={
+        canDo("powerpanel", "delete") && (
+          <DeleteButton onClick={() => setDeleting(p)} />
+        )
       }
       hero={
         <DetailHero

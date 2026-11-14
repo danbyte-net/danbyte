@@ -1,5 +1,6 @@
 import { usePageTitle } from "@/lib/page-title"
-import { type ReactNode } from "react"
+import { useCallback, useId, useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { LinkProps } from "@tanstack/react-router"
 import { AlertTriangle, ChevronLeft, ChevronRight, Search } from "lucide-react"
@@ -16,6 +17,8 @@ import { QueryError } from "@/components/query-error"
 import { SavedViews, type SavedViewsProps } from "@/components/saved-views"
 import { FacetVisibilityProvider } from "@/components/filter-rail"
 import { useListFacetPrefs } from "@/lib/use-facet-prefs"
+import { ListToolbarContext } from "@/lib/list-toolbar"
+import type { ListToolbar } from "@/lib/list-toolbar"
 import {
   ListCapContext,
   listCap,
@@ -26,8 +29,10 @@ import {
 // ─── The canonical list-page chrome ──────────────────────────────────────
 //
 // Every `/things` list page shares the same shell: an optional filter rail
-// on the left, then a header bar (title + count chip + search + actions)
-// over a scrollable body that switches loading → error → content.
+// on the left, then a header bar (title + count chip + actions) over a
+// scrollable body: a toolbar row (filters, saved views, search - and the
+// table's own Download / Columns, which the table moves up into it, #507),
+// then the content, switching loading → error → content.
 // ListPageShell owns all of it so the ~70 list routes can't drift on header
 // height, rail wiring, search styling, the loading/error triad, or - the
 // bug that keeps recurring - the `min-h-0` that makes the body actually
@@ -40,7 +45,8 @@ import {
 //       count={filteredRows.length}
 //       rail={rail}
 //       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
-//       actions={<><TableActions ioType="manufacturer" />{addButton}</>}
+//       add={canAdd && <Button size="sm" asChild><Link to="/manufacturers/new">Add manufacturer</Link></Button>}
+//       actions={<TableActions ioType="manufacturer" />}
 //       query={query}
 //     >
 //       <DataTable data={filteredRows} columns={columns} tableId="manufacturers" />
@@ -55,6 +61,7 @@ export function ListPageShell({
   count,
   rail,
   search,
+  add,
   actions,
   savedViews,
   query,
@@ -73,13 +80,17 @@ export function ListPageShell({
   count?: number
   /** Filter rail (typically `useTableFilters().rail`) rendered to the left. */
   rail?: ReactNode
-  /** Search box in the header - the shell renders the icon + input. */
+  /** Search box in the toolbar row over the table - the shell renders the
+   * icon + input. */
   search?: {
     value: string
     onChange: (value: string) => void
     placeholder?: string
   }
-  /** Header action cluster (Import/Export, Add, …), right-aligned after search. */
+  /** The header's Add button (solid primary) - first in the action ribbon,
+   * see `components/action-ribbon.tsx`. */
+  add?: ReactNode
+  /** The rest of the header's action cluster (Import/Export, …), after Add. */
   actions?: ReactNode
   /** Saved views for this list. One prop, because the control needs only the
    * list's identity and its filter handle - the search box is already here. */
@@ -99,8 +110,9 @@ export function ListPageShell({
   /** A row above the table once data is ready - e.g. count chips that apply
    * a facet (the Lifecycle page's windows). */
   summary?: ReactNode
-  /** The rail for a window too narrow to show it: a header button (below
-   * `lg`) opening it in a sheet from the left. `content` gets a `close`. */
+  /** The rail for a window too narrow to show it: a toolbar-row button
+   * (below `lg`) opening it in a sheet from the left. `content` gets a
+   * `close`. */
   narrowRail?: NarrowRail
   /** The table (and any dialogs/bulk bars) - rendered once data is ready. */
   children: ReactNode
@@ -109,6 +121,29 @@ export function ListPageShell({
   // Facets the user hid on this list (#285), for the rail to honour.
   const facetPrefs = useListFacetPrefs()
   const cap = listCap(page)
+  // The toolbar row the page's table moves its controls into.
+  const bodyId = useId()
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
+  const [owner, setOwner] = useState<string | null>(null)
+  const claim = useCallback(
+    (id: string, el: HTMLElement) => {
+      // Only a table in this shell's body: not one in a dialog it opened.
+      // Read off the DOM, as the body's ref is not attached yet when its
+      // children's layout effects run.
+      if (
+        el.closest("[data-list-body]")?.getAttribute("data-list-body") ===
+        bodyId
+      )
+        setOwner((cur) => cur ?? id)
+      return () => setOwner((cur) => (cur === id ? null : cur))
+    },
+    [bodyId]
+  )
+  const hasToolbar = !!(search || narrowRail)
+  const toolbar = useMemo<ListToolbar | null>(
+    () => (hasToolbar ? { slot, owner, claim } : null),
+    [hasToolbar, slot, owner, claim]
+  )
   // The rail and the table read the cap too (FilterRail, DataTable's
   // Download), so the whole page sits inside its provider.
   const shell = (
@@ -144,39 +179,51 @@ export function ListPageShell({
               </Badge>
             )}
             <div className="ml-auto flex grow flex-wrap items-center justify-end gap-2">
-              {narrowRail && <NarrowRailSheet rail={narrowRail} />}
-              {savedViews && search && (
-                <SavedViews
-                  objectType={savedViews.objectType}
-                  q={search.value}
-                  onQ={search.onChange}
-                  filters={savedViews.filters}
-                />
-              )}
-              {search && (
-                // Narrows (to 10rem) before anything wraps, and widens back to
-                // 18rem when the row has room.
-                <div className="relative max-w-72 min-w-40 flex-[1_1_10rem]">
-                  <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder={search.placeholder ?? "Filter…"}
-                    value={search.value}
-                    onChange={(e) => search.onChange(e.target.value)}
-                    className="h-8 w-full pl-8 text-xs"
-                  />
-                </div>
-              )}
+              {add}
               {actions}
             </div>
           </header>
           {/* Focusable, so a keyboard can scroll it when the content has
               no links or buttons of its own (#470). */}
           <div
+            data-list-body={bodyId}
             tabIndex={0}
             role="region"
             aria-label={title}
             className="min-h-0 flex-1 overflow-auto p-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring lg:p-6"
           >
+            {hasToolbar && (
+              // One row for finding rows: filters, saved views and search on
+              // the left, the table's selection, Download and Columns (moved
+              // up here by the table) on the right. It sits outside the
+              // loading switch, so the search box never remounts mid-typing.
+              <div className="mb-2 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1.5">
+                {narrowRail && <NarrowRailSheet rail={narrowRail} />}
+                {savedViews && search && (
+                  <SavedViews
+                    objectType={savedViews.objectType}
+                    q={search.value}
+                    onQ={search.onChange}
+                    filters={savedViews.filters}
+                  />
+                )}
+                {search && (
+                  // Narrows (to 10rem) before anything wraps, and widens back
+                  // to 18rem when the row has room.
+                  <div className="relative max-w-72 min-w-40 flex-[1_1_10rem]">
+                    <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder={search.placeholder ?? "Filter…"}
+                      aria-label={search.placeholder ?? "Filter"}
+                      value={search.value}
+                      onChange={(e) => search.onChange(e.target.value)}
+                      className="h-8 w-full pl-8 text-xs"
+                    />
+                  </div>
+                )}
+                <div ref={setSlot} className="contents" />
+              </div>
+            )}
             {query?.isLoading ? (
               <Loading />
             ) : query?.isError ? (
@@ -202,5 +249,11 @@ export function ListPageShell({
       </div>
     </div>
   )
-  return <ListCapContext.Provider value={cap}>{shell}</ListCapContext.Provider>
+  return (
+    <ListCapContext.Provider value={cap}>
+      <ListToolbarContext.Provider value={toolbar}>
+        {shell}
+      </ListToolbarContext.Provider>
+    </ListCapContext.Provider>
+  )
 }

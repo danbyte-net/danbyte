@@ -55,14 +55,16 @@ function FloorPlansPage() {
       title="Floor plans"
       count={query.data ? rows.length : undefined}
       search={{ value: q, onChange: setQ, placeholder: "Filter by name…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/floorplans/new">Add floor plan</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="floorplan" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/floorplans/new">Add floor plan</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

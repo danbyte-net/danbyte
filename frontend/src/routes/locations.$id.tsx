@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Network, Pencil, Plus, Trash2 } from "lucide-react"
+import { Network, Plus } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type FloorPlan, type Location, type Prefix } from "@/lib/api"
@@ -25,6 +25,7 @@ import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { MiniMap } from "@/components/site-map/mini-map"
 import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import {
@@ -97,6 +98,11 @@ function Body({ location: l }: { location: Location }) {
       backLabel="Locations"
       title={l.name}
       presence={{ type: "location", id: l.id }}
+      edit={
+        canDo("location", "change") && (
+          <EditButton to="/locations/$id/edit" params={{ id: l.id }} />
+        )
+      }
       actions={
         <>
           <Button variant="outline" size="sm" asChild>
@@ -127,24 +133,12 @@ function Body({ location: l }: { location: Location }) {
               </Button>
             )
           )}
-          {canDo("location", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/locations/$id/edit" params={{ id: l.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("location", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(l)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("location", "delete") && (
+          <DeleteButton onClick={() => setDeleting(l)} />
+        )
       }
       hero={
         <DetailHero

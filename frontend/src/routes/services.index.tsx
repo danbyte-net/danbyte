@@ -74,14 +74,16 @@ function ServicesPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            Add service
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="service" />
-          {canAdd && (
-            <Button size="sm" onClick={() => setAdding(true)}>
-              Add service
-            </Button>
-          )}
         </>
       }
       query={query}

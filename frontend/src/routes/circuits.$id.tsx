@@ -24,6 +24,7 @@ import { CircuitDeleteDialog } from "@/components/circuit-delete-dialog"
 import { CircuitTerminationDialog } from "@/components/circuit-termination-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { hereUrl } from "@/lib/return-url"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -94,26 +95,15 @@ function Body({ circuit: c }: { circuit: Circuit }) {
       backLabel="Circuits"
       title={<span className="font-mono">{c.cid}</span>}
       presence={{ type: "circuit", id: c.id }}
-      actions={
-        <>
-          {canDo("circuit", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/circuits/$id/edit" params={{ id: c.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("circuit", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(c)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("circuit", "change") && (
+          <EditButton to="/circuits/$id/edit" params={{ id: c.id }} />
+        )
+      }
+      remove={
+        canDo("circuit", "delete") && (
+          <DeleteButton onClick={() => setDeleting(c)} />
+        )
       }
       hero={
         <DetailHero
@@ -359,61 +349,61 @@ function TerminationCard({
           ),
         }
       : {
-      // The switch port the provider handoff is cabled to (#118). A circuit
-      // end is joined to a port by a cable, so this row is where the cable
-      // is made when there is none and where it is reached when there is.
-      label: "Cabled to",
-      value: t.connected_to ? (
-        <span>
-          <Link
-            to={
-              t.connected_to.kind === "circuit_termination"
-                ? "/circuits/$id"
-                : "/devices/$id"
-            }
-            params={{ id: t.connected_to.device.id }}
-            className="link"
-          >
-            {t.connected_to.device.name}
-          </Link>{" "}
-          <span className="text-[11px] text-muted-foreground">
-            {t.connected_to.name}
-          </span>
-          {t.cable && (
-            <>
-              {" · "}
+          // The switch port the provider handoff is cabled to (#118). A circuit
+          // end is joined to a port by a cable, so this row is where the cable
+          // is made when there is none and where it is reached when there is.
+          label: "Cabled to",
+          value: t.connected_to ? (
+            <span>
               <Link
-                to="/cables/$id"
-                params={{ id: t.cable.id }}
-                className="link text-[11px]"
+                to={
+                  t.connected_to.kind === "circuit_termination"
+                    ? "/circuits/$id"
+                    : "/devices/$id"
+                }
+                params={{ id: t.connected_to.device.id }}
+                className="link"
               >
-                cable
+                {t.connected_to.device.name}
+              </Link>{" "}
+              <span className="text-[11px] text-muted-foreground">
+                {t.connected_to.name}
+              </span>
+              {t.cable && (
+                <>
+                  {" · "}
+                  <Link
+                    to="/cables/$id"
+                    params={{ id: t.cable.id }}
+                    className="link text-[11px]"
+                  >
+                    cable
+                  </Link>
+                </>
+              )}
+            </span>
+          ) : canEdit ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-xs"
+              asChild
+            >
+              <Link
+                to="/cables/new"
+                search={{
+                  a_kind: "circuit_termination",
+                  a_id: t.id,
+                  ret: hereUrl(),
+                }}
+              >
+                <CableIcon className="h-3 w-3" /> Connect cable
               </Link>
-            </>
-          )}
-        </span>
-      ) : canEdit ? (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-6 px-2 text-xs"
-          asChild
-        >
-          <Link
-            to="/cables/new"
-            search={{
-              a_kind: "circuit_termination",
-              a_id: t.id,
-              ret: hereUrl(),
-            }}
-          >
-            <CableIcon className="h-3 w-3" /> Connect cable
-          </Link>
-        </Button>
-      ) : (
-        dash
-      ),
-    },
+            </Button>
+          ) : (
+            dash
+          ),
+        },
     { label: "Port speed", value: rate(t.port_speed_kbps) },
     { label: "Upstream speed", value: rate(t.upstream_speed_kbps) },
     {

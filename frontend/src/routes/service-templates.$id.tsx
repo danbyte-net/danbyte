@@ -1,12 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type ServiceTemplate } from "@/lib/api"
-import { Button } from "@/components/ui/button"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -53,26 +52,15 @@ function Body({ template: t }: { template: ServiceTemplate }) {
       backLabel="Service templates"
       title={t.name}
       presence={{ type: "servicetemplate", id: t.id }}
-      actions={
-        <>
-          {canDo("servicetemplate", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/service-templates/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("servicetemplate", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(t)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("servicetemplate", "change") && (
+          <EditButton to="/service-templates/$id/edit" params={{ id: t.id }} />
+        )
+      }
+      remove={
+        canDo("servicetemplate", "delete") && (
+          <DeleteButton onClick={() => setDeleting(t)} />
+        )
       }
       hero={
         <DetailHero

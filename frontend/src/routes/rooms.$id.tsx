@@ -1,13 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { Room } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -19,6 +17,7 @@ import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { RoomDeleteDialog } from "@/components/room-delete-dialog"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import {
@@ -75,28 +74,17 @@ function Body({ room: r }: { room: Room }) {
       backLabel="Rooms"
       title={r.name}
       presence={{ type: "room", id: r.id }}
+      edit={
+        canDo("room", "change") && (
+          <EditButton to="/rooms/$id/edit" params={{ id: r.id }} />
+        )
+      }
       actions={
         <>
           <ShowOnFloorPlan roomAreas={plan.data?.areas} />
-          {canDo("room", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/rooms/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("room", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
       }
+      remove={canDo("room", "delete") && <DeleteButton onClick={openDelete} />}
       hero={
         <DetailHero
           title={r.name}

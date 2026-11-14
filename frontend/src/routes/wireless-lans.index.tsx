@@ -73,14 +73,16 @@ function WirelessLANsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter by SSID…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/wireless-lans/new">Add wireless LAN</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="wirelesslan" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/wireless-lans/new">Add wireless LAN</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -8,20 +8,12 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { HScroll } from "@/components/table-scroll"
-import { PrintLabelButton } from "@/components/print-label-button"
-import { SpecSheetButton } from "@/components/spec-sheet-button"
-import { ObjectReportButton } from "@/components/object-report"
+import { PrintLabelMenuItem } from "@/components/print-label-button"
+import { SpecSheetMenuItems } from "@/components/spec-sheet-button"
+import { useObjectReportItem } from "@/components/object-report"
 import { ShowOnSiteMap } from "@/components/show-on-site-map"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  ChevronDown,
-  CopyPlus,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Trash2,
-  Cable as CableIcon,
-} from "lucide-react"
+import { ChevronDown, Plus, RefreshCw, Cable as CableIcon } from "lucide-react"
 import { useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ColumnDef } from "@tanstack/react-table"
@@ -92,6 +84,11 @@ import {
 import { CabledFilterChips } from "@/components/cabled-filter"
 import { cableState } from "@/lib/cable-state"
 import type { KvRow } from "@/components/kv-card"
+import {
+  EditButton,
+  DeleteButton,
+  CloneMenuItem,
+} from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -337,6 +334,7 @@ function Body({ device: d }: { device: Device }) {
   const canDelete = objCan(d, "delete", canDo("device", "delete"))
   const [deleting, setDeleting] = useState<Device | null>(null)
   const [syncingType, setSyncingType] = useState(false)
+  const report = useObjectReportItem("device", d.id, d.name)
   // The hook reads `?tab=` itself; seeding the *default* from the URL made
   // re-clicking the active tab clear the param and bounce you to Overview.
   const [tab, setTab] = useUrlTab<DeviceTab>("overview", "tab", DEVICE_TABS)
@@ -385,63 +383,51 @@ function Body({ device: d }: { device: Device }) {
       backLabel="Devices"
       title={<span className="font-mono">{d.name}</span>}
       presence={{ type: "device", id: d.id }}
+      edit={
+        canEdit && <EditButton to="/devices/$id/edit" params={{ id: d.id }} />
+      }
       actions={
         <>
-          {" "}
           <ShowOnFloorPlan
             deviceId={d.id}
             rackId={d.rack?.id}
             cabinetId={d.cabinet?.id}
-          />
-          <ShowOnSiteMap
-            deviceId={d.id}
-            hasCoords={d.latitude != null && d.longitude != null}
+            siteMap={{
+              deviceId: d.id,
+              hasCoords: d.latitude != null && d.longitude != null,
+            }}
           />
           <HostConnectMenu host={deviceConnectHost(d)} />
-          <PrintLabelButton
+        </>
+      }
+      exports={
+        <>
+          <SpecSheetMenuItems kind="device" id={d.id} />
+          {report.item}
+          <PrintLabelMenuItem
             objectType="device"
             ids={[d.id]}
             deviceTypeId={d.device_type?.id}
             roleId={d.role?.id}
           />
-          <SpecSheetButton kind="device" id={d.id} />
-          <ObjectReportButton kind="device" id={d.id} name={d.name} />
-          {canEdit && d.device_type && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSyncingType(true)}
-              title="Re-apply the device type's component templates to this device"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Sync from type
-            </Button>
-          )}
-          {canDo("device", "add") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/devices/new" search={{ clone: d.id }}>
-                <CopyPlus className="h-3.5 w-3.5" /> Clone
-              </Link>
-            </Button>
-          )}
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/devices/$id/edit" params={{ id: d.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(d)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
       }
+      more={
+        (canDo("device", "add") || (canEdit && d.device_type)) && (
+          <>
+            {canDo("device", "add") && (
+              <CloneMenuItem to="/devices/new" search={{ clone: d.id }} />
+            )}
+            {canEdit && d.device_type && (
+              // Re-applies the device type's component templates.
+              <DropdownMenuItem onSelect={() => setSyncingType(true)}>
+                <RefreshCw className="h-3.5 w-3.5" /> Sync from type
+              </DropdownMenuItem>
+            )}
+          </>
+        )
+      }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(d)} />}
       hero={
         <DetailHero
           title={d.name}
@@ -761,6 +747,7 @@ function Body({ device: d }: { device: Device }) {
           onOpenChange={setSyncingType}
         />
       )}
+      {report.dialog}
     </DetailShell>
   )
 }

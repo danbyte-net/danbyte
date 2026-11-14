@@ -115,6 +115,13 @@ function DeviceTypesPage() {
         onChange: setQ,
         placeholder: "Filter by name, model…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/device-types/new">Add device type</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="devicetype" />
@@ -149,11 +156,6 @@ function DeviceTypesPage() {
               onClick={() => setReimportingImages(true)}
             >
               Reimport images
-            </Button>
-          )}
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/device-types/new">Add device type</Link>
             </Button>
           )}
         </>

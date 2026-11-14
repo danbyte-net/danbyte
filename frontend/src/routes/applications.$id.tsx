@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Trash2, X } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -22,6 +22,7 @@ import { QueryError } from "@/components/query-error"
 import { Loading } from "@/components/loading"
 import { EmptyState } from "@/components/empty-state"
 import { DataTable } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -173,26 +174,15 @@ function Body({ app }: { app: Application }) {
       backLabel="Applications"
       title={app.name}
       presence={{ type: "application", id: app.id }}
-      actions={
-        <>
-          {canDo("application", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/applications/$id/edit" params={{ id: app.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("application", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(app)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("application", "change") && (
+          <EditButton to="/applications/$id/edit" params={{ id: app.id }} />
+        )
+      }
+      remove={
+        canDo("application", "delete") && (
+          <DeleteButton onClick={() => setDeleting(app)} />
+        )
       }
       hero={
         <DetailHero

@@ -62,14 +62,16 @@ function ConfigBundlesPage() {
         onChange: setQ,
         placeholder: "Filter bundles…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/config-bundles/new">Add bundle</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="configbundle" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/config-bundles/new">Add bundle</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -66,14 +66,16 @@ function IPSecProfilesPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter profiles…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/ipsec-profiles/new">Add profile</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="ipsecprofile" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/ipsec-profiles/new">Add profile</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

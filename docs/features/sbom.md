@@ -184,7 +184,7 @@ vulnerability matching reads, so a template set now is reused there.
   search applied. While [vulnerability data](vulnerabilities.md) is on,
   **SBOM with vulnerabilities** exports the same document with its
   [vulnerabilities section](#vulnerabilities-vex).
-- **Site** page: **Export SBOM** exports the site's devices and VMs.
+- **Site** page: **Export ▸ SBOM** exports the site's devices and VMs.
 - **API**: `GET /api/sbom/` (below).
 
 The file is named `sbom-<site name>-<date>.cdx.json` for one site and

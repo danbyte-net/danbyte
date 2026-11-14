@@ -119,14 +119,16 @@ function CablesPage() {
         onChange: setQ,
         placeholder: "Filter by device, port…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/cables/new">Add cable</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="cable" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/cables/new">Add cable</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

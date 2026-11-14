@@ -21,8 +21,9 @@ import type {
 } from "@/lib/api"
 
 import { BulkExport } from "./bulk-export"
+import { ExportMenu } from "./action-ribbon"
 import {
-  ObjectReportButton,
+  useObjectReportItem,
   ObjectReportDialog,
   coverBackgroundItems,
   coverSubtitle,
@@ -764,9 +765,22 @@ describe("background report", () => {
 })
 
 describe("entry points", () => {
-  it("a detail page's button opens the dialog on its object", async () => {
-    wrap(<ObjectReportButton kind="prefix" id="p1" name="10.0.0.0/24" />)
-    fireEvent.click(screen.getByRole("button", { name: /PDF report…/ }))
+  it("a detail page's menu item opens the dialog on its object", async () => {
+    function Page() {
+      const report = useObjectReportItem("prefix", "p1", "10.0.0.0/24")
+      return (
+        <>
+          <ExportMenu>{report.item}</ExportMenu>
+          {report.dialog}
+        </>
+      )
+    }
+    wrap(<Page />)
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Export" }),
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+    )
+    fireEvent.click(screen.getByRole("menuitem", { name: /PDF report…/ }))
     await screen.findByText("10.0.0.0/24")
     expect(apiMock).toHaveBeenCalledWith("/api/prefixes/report/")
   })

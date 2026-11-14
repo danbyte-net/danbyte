@@ -249,14 +249,23 @@ can't drift page to page (source of truth:
 `frontend/src/components/list-page-shell.tsx`, reference implementation
 `routes/manufacturers.index.tsx`):
 
-- The shell owns the header (title · count chip · search · actions) and the
-  scrolling body. Header order is fixed: **search first, then the action
-  cluster** - `TableActions` (Import / Export) and then `Add X`.
-- The header is one h-14 row when everything fits. When it doesn't, the search
-  box narrows (18rem down to 10rem), then the controls move under the title and
-  wrap onto more rows. Nothing in a page header is ever scrolled out of sight
-  behind a hidden scrollbar - the same goes for `DetailShell`'s actions and tab
-  strip, which wrap too.
+- The shell owns the header (title · count chip · actions) and the scrolling
+  body. The actions follow the [action ribbon](#the-action-ribbon) order:
+  `Add X` (the shell's `add` prop, solid primary) first, then the rest of
+  `actions` - `TableActions` (Import / Export) and any view controls.
+- **Search sits in the toolbar row over the table, not the header** (#507).
+  The shell draws one row at the top of the body - the narrow-window
+  rail button, Saved views, then the search box - and the page's
+  `DataTable` moves its own controls (selection count, Download, Columns) up
+  into the same row, right-aligned, instead of drawing a second row. The row
+  sits outside the loading switch, so the search box never remounts while
+  someone types. A page whose list is not a `DataTable` still gets the row,
+  with search alone.
+- The header is one h-14 row when everything fits; the toolbar row wraps too -
+  the search box narrows (18rem down to 10rem) before Download and Columns
+  move to a second line, so a 320 px window shows every control. Nothing in a
+  page header is ever scrolled out of sight behind a hidden scrollbar - the
+  same goes for `DetailShell`'s actions and tab strip, which wrap too.
 - `Add X` is the copy for a create button, with **no icon**. Not "New X".
 - Filters live in the rail (`FilterRail` + `FacetGroup`, usually via
   `useTableFilters`), not in a second toolbar row under the header. A filter that
@@ -417,6 +426,39 @@ Nothing is reordered, so exports and prints keep the table's order. A
 table where pinning makes no sense passes `pinnable={false}`. Known limit: a
 page's own `rowClassName` tint does not reach the stuck cells, which show
 the plain row colour.
+
+## The action ribbon
+
+A page header's buttons follow one order everywhere (#507) - source of truth
+`frontend/src/components/action-ribbon.tsx`, laid out by `DetailShell` and
+`ListPageShell` from their slot props, so a page never orders them by hand:
+
+| Slot | What goes there | Look |
+| --- | --- | --- |
+| `add` | Creating something: *Add IP*, *Add device*, *Add object* | `Button` default - solid primary |
+| `edit` | `EditButton` (a link to the edit route, or `onClick` for a dialog) | `tinted` - the primary hue, softened; the only tinted button in a header |
+| `actions` | The few verbs an operator uses daily: Connect, Show on, Topology, Run, Check now, Test | `outline` |
+| `exports` | `DropdownMenuItem`s for the **Export** menu: spec sheet, PDF report, Print label, SBOM, CSR. The route's Import / Export joins them | `outline` menu |
+| `more` | `DropdownMenuItem`s for the **More** menu: Clone (`CloneMenuItem`), Sync from type, Move to site…, Renumber…, Add child prefix. *Plan a change* joins them | `outline` menu |
+| `remove` | `DeleteButton` | ghost, destructive text - always last |
+
+- Add and Edit are a pair: Edit always sits right after Add, and is the one
+  tinted button, so the two ways to change data read together.
+- Outputs (anything that hands you a file, a PDF, a label or the clipboard)
+  go in **Export**; rarer verbs in **More**. A page with neither shows
+  neither menu. A menu whose items all decline to render (no label template
+  matches, no import right) says *Nothing available* rather than opening
+  empty.
+- A menu item that opens a dialog keeps the dialog **outside** the menu - the
+  menu unmounts its items when it closes. Such actions are hooks returning
+  `{ item, dialog }` (`useObjectReportItem`, `useRackSyncType`,
+  `useRackMove`, `useCabinetSyncType`, `useExportBundle`); the page puts
+  `item` in the slot and renders `dialog` in its body.
+- Several places to look an object up fold into one **Show on** control
+  (`ShowOnFloorPlan` with `siteMap`, `CableShowOn`): a plain button when
+  there is one place, a menu when there are more.
+- Permission gating stays on the page: pass `canDo(…) && <EditButton …/>`;
+  a falsy slot renders nothing.
 
 ## Column factories
 

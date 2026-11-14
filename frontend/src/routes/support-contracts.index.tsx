@@ -80,14 +80,16 @@ function SupportContractsPage() {
         onChange: setQ,
         placeholder: "Filter by number, reseller…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/support-contracts/new">Add contract</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="supportcontract" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/support-contracts/new">Add contract</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

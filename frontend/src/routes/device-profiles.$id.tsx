@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Pencil, Plus, RotateCw, Trash2 } from "lucide-react"
+import { Plus, RotateCw } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -21,6 +21,7 @@ import { QueryError } from "@/components/query-error"
 import { Loading } from "@/components/loading"
 import { EmptyState } from "@/components/empty-state"
 import { DataTable } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -85,33 +86,24 @@ function Body({ profile: p }: { profile: DeviceProfile }) {
       backLabel="Device profiles"
       title={p.name}
       presence={{ type: "deviceprofile", id: p.id }}
+      edit={
+        canDo("deviceprofile", "change") && (
+          <EditButton to="/device-profiles/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      add={canAddDevice && <AddDeviceButton profileId={p.id} />}
       actions={
-        <>
-          {canAddDevice && <AddDeviceButton profileId={p.id} />}
-          {canAssign && (
-            <Button variant="outline" size="sm" onClick={openAssign}>
-              <Plus className="h-3.5 w-3.5" />{" "}
-              {p.applies_to_devices ? "Assign devices" : "Assign VMs"}
-            </Button>
-          )}
-          {canDo("deviceprofile", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/device-profiles/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("deviceprofile", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(p)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+        canAssign && (
+          <Button variant="outline" size="sm" onClick={openAssign}>
+            <Plus className="h-3.5 w-3.5" />{" "}
+            {p.applies_to_devices ? "Assign devices" : "Assign VMs"}
+          </Button>
+        )
+      }
+      remove={
+        canDo("deviceprofile", "delete") && (
+          <DeleteButton onClick={() => setDeleting(p)} />
+        )
       }
       hero={
         <DetailHero
@@ -190,7 +182,7 @@ function useProfileAddRights(p: DeviceProfile) {
 /** "Add device": the normal device form with this profile already picked. */
 function AddDeviceButton({ profileId }: { profileId: string }) {
   return (
-    <Button variant="outline" size="sm" asChild>
+    <Button size="sm" asChild>
       <Link to="/devices/new" search={{ profile: profileId }}>
         <Plus className="h-3.5 w-3.5" /> Add device
       </Link>

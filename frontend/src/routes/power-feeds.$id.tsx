@@ -1,13 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { PowerFeed } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
 import { RackCell } from "@/components/cells/rack-cell"
@@ -17,6 +15,7 @@ import { Loading } from "@/components/loading"
 import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { PowerFeedDeleteDialog } from "@/components/power-feed-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -70,26 +69,15 @@ function Body({ feed: f }: { feed: PowerFeed }) {
       backLabel="Power feeds"
       title={f.name}
       presence={{ type: "powerfeed", id: f.id }}
-      actions={
-        <>
-          {canDo("powerfeed", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/power-feeds/$id/edit" params={{ id: f.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("powerfeed", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(f)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("powerfeed", "change") && (
+          <EditButton to="/power-feeds/$id/edit" params={{ id: f.id }} />
+        )
+      }
+      remove={
+        canDo("powerfeed", "delete") && (
+          <DeleteButton onClick={() => setDeleting(f)} />
+        )
       }
       hero={
         <DetailHero

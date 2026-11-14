@@ -69,19 +69,17 @@ const portOrder = (a: PortRow, b: PortRow) =>
 function portRows(seen: MacSighting[]): PortRow[] {
   return seen
     .filter((s) => s.source === "fdb")
-    .map(
-      (s, n): PortRow => ({
-        key: `${n}`,
-        device: s.device ?? null,
-        interface: s.interface ?? null,
-        port_name: s.port ?? null,
-        vlan: s.vlan ?? null,
-        role: s.role ?? null,
-        first_seen: s.first_seen ?? null,
-        last_seen: s.last_seen ?? null,
-        state: s.present === false ? "gone" : "present",
-      })
-    )
+    .map((s, n): PortRow => ({
+      key: `${n}`,
+      device: s.device ?? null,
+      interface: s.interface ?? null,
+      port_name: s.port ?? null,
+      vlan: s.vlan ?? null,
+      role: s.role ?? null,
+      first_seen: s.first_seen ?? null,
+      last_seen: s.last_seen ?? null,
+      state: s.present === false ? "gone" : "present",
+    }))
     .sort(portOrder)
 }
 
@@ -303,17 +301,17 @@ function Body({ data }: { data: MacDetail }) {
       backTo="/macs"
       backLabel="MAC addresses"
       title={<span className="font-mono">{data.mac}</span>}
-      actions={
-        <>
-          <Button variant="outline" size="sm" onClick={copy}>
-            <Copy className="h-3.5 w-3.5" /> Copy MAC
+      add={
+        canAdd && (
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add object
           </Button>
-          {canAdd && (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> Add object
-            </Button>
-          )}
-        </>
+        )
+      }
+      actions={
+        <Button variant="outline" size="sm" onClick={copy}>
+          <Copy className="h-3.5 w-3.5" /> Copy MAC
+        </Button>
       }
       hero={
         <DetailHero

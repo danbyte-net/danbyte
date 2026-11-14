@@ -72,14 +72,16 @@ function RegionsPage() {
         onChange: setQ,
         placeholder: "Filter regions…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/regions/new">Add region</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="region" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/regions/new">Add region</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

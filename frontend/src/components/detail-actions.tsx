@@ -1,6 +1,7 @@
 import { useRouterState } from "@tanstack/react-router"
 
-import { TableActions } from "@/components/table-actions"
+import { useTableIO } from "@/components/table-io"
+import { ExportMenu } from "@/components/action-ribbon"
 
 // Detail-route segment → RBAC object slug. `/prefixes/<uuid>` is a "prefix".
 const SEGMENT_SLUG: Record<string, string> = {
@@ -63,31 +64,42 @@ const SEGMENT_SLUG: Record<string, string> = {
 }
 
 /**
- * Import/Export for an object **detail** page, derived from the route so it can
- * drop into any `/<thing>/<uuid>` header with no props. Mounts in the page's own
- * action bar (next to Edit/Delete) - not the global top bar.
+ * Import/Export for an object **detail** page, derived from the route so any
+ * `/<thing>/<uuid>` page gets it with no props. `DetailShell` lists the items
+ * in the header's Export menu and mounts the import dialog beside it.
  *
  * Special case: on a **prefix** page the Import/Export acts on the *IPs inside
  * that prefix* (the workflow that replaced the old "IPs" dropdown).
  */
-export function DetailActions() {
+export function useDetailIO() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const m = pathname.match(/^\/([a-z-]+)\/([0-9a-fA-F-]{36})\/?$/)
-  if (!m) return null
-  const segment = m[1]
-  const id = m[2]
-  const slug = SEGMENT_SLUG[segment]
-  if (!slug) return null
+  const segment = m?.[1] ?? ""
+  const id = m?.[2] ?? ""
+  const slug = SEGMENT_SLUG[segment] as string | undefined
+  // Always called (hooks); off a detail route it asks for a slug no type has.
+  const io = useTableIO(
+    segment === "prefixes"
+      ? {
+          slug: "ipaddress",
+          name: "IPs in this prefix",
+          exportFilter: { prefix: id },
+        }
+      : { slug: slug ?? "", selectedIds: id ? [id] : [] }
+  )
+  if (!slug) return { available: false, items: null, dialog: null }
+  return io
+}
 
-  if (segment === "prefixes") {
-    return (
-      <TableActions
-        ioType="ipaddress"
-        name="IPs in this prefix"
-        exportFilter={{ prefix: id }}
-      />
-    )
-  }
-
-  return <TableActions ioType={slug} selectedIds={[id]} />
+/** The route's Import / Export as a header's Export menu, for a detail page
+ * that draws its own header instead of `DetailShell`. */
+export function DetailActions() {
+  const io = useDetailIO()
+  if (!io.available) return null
+  return (
+    <>
+      <ExportMenu>{io.items}</ExportMenu>
+      {io.dialog}
+    </>
+  )
 }

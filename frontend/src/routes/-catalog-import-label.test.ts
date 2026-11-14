@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest"
 // The three hardware catalogs open one devicetype-library dialog. The device
 // type list once labelled it "Import CSV" while module and rack types said
 // "Import from library" - CSV round-trips live in Import / Export. Pin the
-// shared label and its slot (right after Import / Export, before Add) so the
-// headers stay alike.
+// shared label and its slot (Add first, as on every header, then Import /
+// Export, then the library) so the headers stay alike.
 
 const ROUTES_DIR = dirname(fileURLToPath(import.meta.url))
 const PAGES = [
@@ -27,13 +27,13 @@ describe("catalog library import label", () => {
       expect(src).not.toMatch(/Import CSV/)
     })
 
-    it(`${file} places it after Import / Export and before ${addLabel}`, () => {
+    it(`${file} places it after ${addLabel} and Import / Export`, () => {
       const io = src.indexOf("<TableActions")
       const lib = src.search(/>\s*Import from library\s*</)
       const add = src.indexOf(addLabel)
-      expect(io).toBeGreaterThan(-1)
+      expect(add).toBeGreaterThan(-1)
+      expect(io).toBeGreaterThan(add)
       expect(lib).toBeGreaterThan(io)
-      expect(add).toBeGreaterThan(lib)
     })
   }
 })

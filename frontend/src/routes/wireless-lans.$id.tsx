@@ -1,13 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { WirelessLAN } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/status-badge"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -16,6 +14,7 @@ import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { WirelessLANDeleteDialog } from "@/components/wireless-lan-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { RevealPskButton } from "@/components/reveal-psk-button"
@@ -67,26 +66,15 @@ function Body({ wlan: w }: { wlan: WirelessLAN }) {
       backLabel="Wireless LANs"
       title={w.ssid}
       presence={{ type: "wirelesslan", id: w.id }}
-      actions={
-        <>
-          {canDo("wirelesslan", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/wireless-lans/$id/edit" params={{ id: w.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("wirelesslan", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(w)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("wirelesslan", "change") && (
+          <EditButton to="/wireless-lans/$id/edit" params={{ id: w.id }} />
+        )
+      }
+      remove={
+        canDo("wirelesslan", "delete") && (
+          <DeleteButton onClick={() => setDeleting(w)} />
+        )
       }
       hero={
         <DetailHero
@@ -104,7 +92,11 @@ function Body({ wlan: w }: { wlan: WirelessLAN }) {
               </Link>
             ) : undefined
           }
-          tags={w.tags.length > 0 && <TagList tags={w.tags} listTo="/wireless-lans" />}
+          tags={
+            w.tags.length > 0 && (
+              <TagList tags={w.tags} listTo="/wireless-lans" />
+            )
+          }
           description={w.description}
         />
       }
@@ -140,7 +132,8 @@ function Body({ wlan: w }: { wlan: WirelessLAN }) {
  * needs the `reveal` grant on wireless LANs (#68). */
 function PskRow({ lan }: { lan: WirelessLAN }) {
   const { canDo } = useMe()
-  if (!lan.psk_set) return <span className="text-muted-foreground">Not set</span>
+  if (!lan.psk_set)
+    return <span className="text-muted-foreground">Not set</span>
   return (
     <span className="flex items-center gap-1.5">
       <span className="font-mono text-[13px]">••••••••</span>
@@ -197,11 +190,7 @@ function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
     {
       label: "VLAN",
       value: w.vlan ? (
-        <Link
-          to="/vlans/$id"
-          params={{ id: w.vlan.id }}
-          className="link"
-        >
+        <Link to="/vlans/$id" params={{ id: w.vlan.id }} className="link">
           <VlanBadge vlan={w.vlan} />
         </Link>
       ) : (

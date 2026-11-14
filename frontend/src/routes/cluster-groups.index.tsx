@@ -67,14 +67,16 @@ function ClusterGroupsPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/cluster-groups/new">Add cluster group</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="clustergroup" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/cluster-groups/new">Add cluster group</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

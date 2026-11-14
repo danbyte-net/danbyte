@@ -72,7 +72,7 @@ function TopologyViewsPage() {
       title="Topology"
       count={query.data ? rows.length : undefined}
       search={{ value: q, onChange: setQ, placeholder: "View name…" }}
-      actions={
+      add={
         <Button size="sm" asChild>
           <Link to="/topology/map">
             <Network className="h-3.5 w-3.5" /> Open map

@@ -16,7 +16,7 @@ with it:
 | You start from… | The new prefix inherits… |
 |---|---|
 | The **Add prefix** button on the prefix list | Nothing - it starts as a top-level block. |
-| The **Add child prefix** button on a prefix's detail page | The **site**, **VLAN**, and **VRF** of the parent prefix. |
+| **More ▸ Add child prefix** on a prefix's detail page | The **site**, **VLAN**, and **VRF** of the parent prefix. |
 | A free slot in the **Children** tab, or a free chip in the [Space map](space-map.md) | The **site**, **VLAN**, and **VRF** of the smallest existing prefix that contains the new block. |
 
 When inheritance applies, the form shows a small green chip confirming what's
@@ -74,7 +74,7 @@ would have put it.
 
 When a block you don't control changes - a provider's DHCPv6-PD `/60`, a
 re-issued `/29` - everything under it has to move by the same offset. Open the
-prefix and click **Renumber…**, type the new network, and press **Preview**.
+prefix and pick **More ▸ Renumber…**, type the new network, and press **Preview**.
 The new prefix must be the same family and length, written as a network
 address; the dialog says so as you type. Renumbering stays in the prefix's VRF.
 

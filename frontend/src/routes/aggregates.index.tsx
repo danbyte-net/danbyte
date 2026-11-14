@@ -155,14 +155,16 @@ function AggregatesPage() {
         onChange: setQ,
         placeholder: "Filter by prefix, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/aggregates/new">Add aggregate</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="aggregate" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/aggregates/new">Add aggregate</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

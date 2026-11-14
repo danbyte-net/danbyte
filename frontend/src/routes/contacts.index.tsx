@@ -152,14 +152,16 @@ function ContactsPage() {
         onChange: setQ,
         placeholder: "Filter by name, title, email…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/contacts/new">Add contact</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="contact" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/contacts/new">Add contact</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

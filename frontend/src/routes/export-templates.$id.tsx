@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Download, Pencil, Trash2 } from "lucide-react"
+import { Download } from "lucide-react"
 import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
@@ -16,6 +16,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ExportTemplateDeleteDialog } from "@/components/export-template-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -108,27 +109,20 @@ function Body({ template: t }: { template: ExportTemplate }) {
       backLabel="Export templates"
       title={t.name}
       presence={{ type: "exporttemplate", id: t.id }}
+      edit={
+        canDo("exporttemplate", "change") && (
+          <EditButton to="/export-templates/$id/edit" params={{ id: t.id }} />
+        )
+      }
       actions={
         <>
           <RenderButton template={t} />
-          {canDo("exporttemplate", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/export-templates/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("exporttemplate", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(t)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("exporttemplate", "delete") && (
+          <DeleteButton onClick={() => setDeleting(t)} />
+        )
       }
       hero={
         <DetailHero

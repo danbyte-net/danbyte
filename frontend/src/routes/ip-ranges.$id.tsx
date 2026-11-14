@@ -2,7 +2,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 
@@ -26,6 +25,7 @@ import { IpRangeDeleteDialog } from "@/components/ip-range-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe } from "@/lib/use-me"
 
@@ -70,26 +70,15 @@ function Body({ range: r }: { range: IPRange }) {
         </span>
       }
       presence={{ type: "iprange", id: r.id }}
-      actions={
-        <>
-          {canDo("iprange", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/ip-ranges/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("iprange", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("iprange", "change") && (
+          <EditButton to="/ip-ranges/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("iprange", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <DetailHero

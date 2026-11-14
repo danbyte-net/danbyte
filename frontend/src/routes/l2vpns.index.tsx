@@ -71,14 +71,16 @@ function L2vpnsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter L2VPNs…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/l2vpns/new">Add L2VPN</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="l2vpn" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/l2vpns/new">Add L2VPN</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

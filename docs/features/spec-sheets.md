@@ -7,7 +7,7 @@ icon: lucide/file-text
 A **spec sheet** is a one-object PDF that reads like a vendor datasheet: the
 device, virtual machine or virtual chassis with everything Danbyte knows
 about it, laid out to be handed to an external party, a site technician, or
-a colleague who never opens Danbyte. Open the object and click **Spec sheet**
+a colleague who never opens Danbyte. Open the object and pick **Export → Spec sheet**
 - the PDF opens in a new tab, where the browser's viewer prints or saves it.
 
 ## What is on the page
@@ -58,7 +58,7 @@ the footer.
 
 ## The hardware sheet
 
-A device has a second sheet, **Spec sheet → Hardware sheet**, for when the
+A device has a second sheet, **Export → Spec sheet → Hardware sheet**, for when the
 question is what is inside the box rather than where it sits. The header and
 elevations are the same; the three stat boxes become **CPU** (total cores,
 with sockets, clock and model underneath - or the socket count when no core

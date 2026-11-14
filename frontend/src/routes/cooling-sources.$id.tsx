@@ -1,13 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { CoolingSource } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
 import { SiteCell } from "@/components/cells/site-cell"
@@ -20,6 +18,7 @@ import { StatusBadge } from "@/components/status-badge"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { CoolingSourceDeleteDialog } from "@/components/cooling-source-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -68,26 +67,15 @@ function Body({ source: s }: { source: CoolingSource }) {
       backLabel="Cooling sources"
       title={s.name}
       presence={{ type: "coolingsource", id: s.id }}
-      actions={
-        <>
-          {canDo("coolingsource", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/cooling-sources/$id/edit" params={{ id: s.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("coolingsource", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(s)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("coolingsource", "change") && (
+          <EditButton to="/cooling-sources/$id/edit" params={{ id: s.id }} />
+        )
+      }
+      remove={
+        canDo("coolingsource", "delete") && (
+          <DeleteButton onClick={() => setDeleting(s)} />
+        )
       }
       hero={
         <DetailHero

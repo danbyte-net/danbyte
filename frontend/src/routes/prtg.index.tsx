@@ -216,7 +216,7 @@ function PrtgPage() {
     <ListPageShell
       title="PRTG"
       count={connections.data ? all.length : undefined}
-      actions={
+      add={
         canAdd && (
           <Button size="sm" onClick={() => setAdding(true)}>
             <Plus className="h-3.5 w-3.5" /> Add connection

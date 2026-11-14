@@ -103,14 +103,12 @@ function UsersPage() {
         onChange: setQ,
         placeholder: "Filter by username or email…",
       }}
-      actions={
-        <>
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/users/new">Add user</Link>
-            </Button>
-          )}
-        </>
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/users/new">Add user</Link>
+          </Button>
+        )
       }
       query={query}
     >

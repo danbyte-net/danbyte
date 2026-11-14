@@ -315,7 +315,7 @@ function MonitoringEnginesPage() {
         onChange: setSearch,
         placeholder: "Filter by name, version…",
       }}
-      actions={
+      add={
         <Button size="sm" onClick={() => setAdding(true)}>
           Add Outpost
         </Button>

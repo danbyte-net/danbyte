@@ -1,7 +1,7 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowRightLeft, Pencil, Trash2 } from "lucide-react"
+import { ArrowRightLeft } from "lucide-react"
 import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
@@ -9,6 +9,7 @@ import { api, type Tenant, type TenantPicker } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { QueryError } from "@/components/query-error"
 import { TenantDeleteDialog } from "@/components/tenant-delete-dialog"
@@ -81,6 +82,11 @@ function TenantDetailBody({ tenant: t }: { tenant: Tenant }) {
       backLabel="Tenants"
       title={t.name}
       presence={{ type: "tenant", id: t.id }}
+      edit={
+        canDo("tenant", "change") && (
+          <EditButton to="/tenants/$id/edit" params={{ id: t.id }} />
+        )
+      }
       actions={
         <>
           {!isActive && t.is_active && (
@@ -95,24 +101,10 @@ function TenantDetailBody({ tenant: t }: { tenant: Tenant }) {
                 : "Switch to this tenant"}
             </Button>
           )}
-          {canDo("tenant", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/tenants/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("tenant", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("tenant", "delete") && <DeleteButton onClick={openDelete} />
       }
       hero={
         <>

@@ -15,9 +15,9 @@ created, updated, and skipped.
 
 ## Import / Export - round-trip on every table
 
-Every list page has an **Import / Export** button in its header, next to the
-**Add** button; every detail page has it next to **Edit**. It's the round-trip
-pair:
+Every list page has an **Import / Export** button in its header, after the
+**Add** button; every detail page lists the same entries in its header's
+**Export** menu. It's the round-trip pair:
 
 - **Export** → **CSV**, **Excel (.xlsx)**, or **JSON**. The file carries each
   row's `id` plus stable, human-readable keys for its links, tags, and custom
@@ -103,7 +103,7 @@ that for you: a link whose name alone wouldn't read back to the same object is
 written as its id.
 
 Single objects are exportable too: a detail page (an IP, for example) has the
-same **Import / Export** button, scoped to just that object.
+same entries in its **Export** menu, scoped to just that object.
 
 ## Exporting prefixes
 

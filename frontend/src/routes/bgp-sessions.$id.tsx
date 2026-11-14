@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeftRight, Pencil, Trash2 } from "lucide-react"
+import { ArrowLeftRight } from "lucide-react"
 import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
@@ -22,6 +22,7 @@ import { QueryError } from "@/components/query-error"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { sessionNeighbor } from "@/components/columns/routing-columns"
 import {
@@ -236,26 +237,15 @@ function Body({ s }: { s: BGPSession }) {
       backLabel="BGP sessions"
       title={neighbor}
       presence={{ type: "bgpsession", id: s.id }}
-      actions={
-        <>
-          {canDo("bgpsession", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/bgp-sessions/$id/edit" params={{ id: s.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("bgpsession", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(s)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("bgpsession", "change") && (
+          <EditButton to="/bgp-sessions/$id/edit" params={{ id: s.id }} />
+        )
+      }
+      remove={
+        canDo("bgpsession", "delete") && (
+          <DeleteButton onClick={() => setDeleting(s)} />
+        )
       }
       hero={
         <DetailHero

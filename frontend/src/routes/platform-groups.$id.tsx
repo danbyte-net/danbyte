@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import {
@@ -11,9 +10,9 @@ import {
   type PlatformGroup,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { PlatformGroupDeleteDialog } from "@/components/platform-group-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -117,26 +116,15 @@ function Body({ group: g }: { group: PlatformGroup }) {
       backLabel="Platform groups"
       title={g.name}
       presence={{ type: "platformgroup", id: g.id }}
-      actions={
-        <>
-          {canDo("platformgroup", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/platform-groups/$id/edit" params={{ id: g.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("platformgroup", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(g)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("platformgroup", "change") && (
+          <EditButton to="/platform-groups/$id/edit" params={{ id: g.id }} />
+        )
+      }
+      remove={
+        canDo("platformgroup", "delete") && (
+          <DeleteButton onClick={() => setDeleting(g)} />
+        )
       }
       hero={
         <DetailHero

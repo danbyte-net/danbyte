@@ -1,7 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -9,7 +8,6 @@ import type { Location, LocationType } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DataTable } from "@/components/data-table"
@@ -21,6 +19,7 @@ import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { buildLocationColumns } from "@/components/columns/location-columns"
 import { LocationTypeDeleteDialog } from "@/components/location-type-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -61,26 +60,15 @@ function Body({ type: t }: { type: LocationType }) {
       backLabel="Location types"
       title={t.name}
       presence={{ type: "locationtype", id: t.id }}
-      actions={
-        <>
-          {canDo("locationtype", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/location-types/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("locationtype", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(t)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("locationtype", "change") && (
+          <EditButton to="/location-types/$id/edit" params={{ id: t.id }} />
+        )
+      }
+      remove={
+        canDo("locationtype", "delete") && (
+          <DeleteButton onClick={() => setDeleting(t)} />
+        )
       }
       hero={
         <DetailHero

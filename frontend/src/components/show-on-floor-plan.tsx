@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronDown, LayoutGrid } from "lucide-react"
+import { ChevronDown, LayoutGrid, MapPin } from "lucide-react"
 
 import { apiAll } from "@/lib/api-all"
 import type { FloorPlanRegionArea, FloorPlanTile } from "@/lib/api"
@@ -38,17 +38,25 @@ export function floorLabel(a: FloorPlanRegionArea): string {
  * isn't tiled. Placed on several plans (a device tile and its rack, or a
  * second what-if plan) - a menu lists them. Renders nothing when nothing is
  * placed.
+ *
+ * `siteMap` folds the device's Site map jump into the same control (#507):
+ * one place to look an object up on a map, a "Show on" menu when there is
+ * more than one.
  */
 export function ShowOnFloorPlan({
   deviceId,
   rackId,
   cabinetId,
   roomAreas,
+  siteMap,
 }: {
   deviceId?: string
   rackId?: string
   cabinetId?: string
   roomAreas?: readonly FloorPlanRegionArea[]
+  /** The device to centre the geographic Site map on, when it has
+   * coordinates. */
+  siteMap?: { deviceId: string; hasCoords: boolean }
 }) {
   const deviceQ = usePlacements("device", deviceId)
   const rackQ = usePlacements("rack", rackId)
@@ -86,10 +94,19 @@ export function ShowOnFloorPlan({
       search: { area: a.id },
     })),
   ]
-  if (placements.length === 0) return null
-  const first = placements[0]
+  const onSiteMap = siteMap?.hasCoords ? siteMap.deviceId : null
+  if (placements.length === 0 && !onSiteMap) return null
   const label = (p: Placement) => `${p.name}${p.via ? ` (via ${p.via})` : ""}`
-  if (placements.length === 1)
+  if (placements.length === 0 && onSiteMap)
+    return (
+      <Button variant="outline" size="sm" asChild>
+        <Link to="/site-map" search={{ focus: onSiteMap }}>
+          <MapPin className="h-3.5 w-3.5" /> Site map
+        </Link>
+      </Button>
+    )
+  const first = placements[0]
+  if (placements.length === 1 && !onSiteMap)
     return (
       <Button variant="outline" size="sm" asChild>
         <Link
@@ -109,11 +126,11 @@ export function ShowOnFloorPlan({
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm">
           <LayoutGrid className="h-3.5 w-3.5" />
-          Show on floor plan
+          {onSiteMap ? "Show on" : "Show on floor plan"}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="w-auto">
         {placements.map((p) => (
           <DropdownMenuItem key={p.key} asChild>
             <Link
@@ -121,10 +138,18 @@ export function ShowOnFloorPlan({
               params={{ id: p.planId }}
               search={p.search}
             >
+              {onSiteMap && <LayoutGrid className="h-3.5 w-3.5" />}
               {label(p)}
             </Link>
           </DropdownMenuItem>
         ))}
+        {onSiteMap && (
+          <DropdownMenuItem asChild>
+            <Link to="/site-map" search={{ focus: onSiteMap }}>
+              <MapPin className="h-3.5 w-3.5" /> Site map
+            </Link>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

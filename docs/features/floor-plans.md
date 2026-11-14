@@ -3303,7 +3303,8 @@ click empty floor, or press **Esc** to clear. No Cables mode is needed - it
 works in any mode while the links are on.
 
 **Trace on map from a cable** - the **cable detail page** has a *Trace on
-map* button that jumps to the plan showing that cable, with its route already
+map* button (a *Floor plan* entry under *Show on* when the cable is also on
+the topology or the site map) that jumps to the plan showing that cable, with its route already
 highlighted and the view fitted to it. The **rack/device deep-view** (click a
 rack or device tile) shows each device's end-to-end paths: a ⟿ next to the
 origin traces the **whole run** (all its cables, through patch panels), and
@@ -3694,7 +3695,8 @@ floors.
   button that opens the plan zoomed onto the tile (a room: onto its area, at
   `?area=<area id>`); placed on several plans (its own tile and its rack's, a
   cloned what-if plan, a room drawn on several floors), the button becomes a
-  menu listing them. Nothing placed: no button. The Rack and Device detail pages carry a button
+  menu listing them. Nothing placed: no button. On a device with coordinates
+  the same control also offers the **Site map** and reads *Show on*. The Rack and Device detail pages carry a button
   that jumps to where they're placed (a device falls back to *its rack's* or
   *its cabinet's* plan, marked "via rack" or "via cabinet").
 

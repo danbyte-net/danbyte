@@ -1,6 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 import type { ReactNode } from "react"
 
@@ -8,13 +7,13 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { api } from "@/lib/api"
 import type { ConfigContext } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { TagList } from "@/components/cells/tag-list"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -72,26 +71,15 @@ function Body({ context: c }: { context: ConfigContext }) {
       backLabel="Config contexts"
       title={c.name}
       presence={{ type: "configcontext", id: c.id }}
-      actions={
-        <>
-          {canDo("configcontext", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/config-contexts/$id/edit" params={{ id: c.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("configcontext", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(c)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("configcontext", "change") && (
+          <EditButton to="/config-contexts/$id/edit" params={{ id: c.id }} />
+        )
+      }
+      remove={
+        canDo("configcontext", "delete") && (
+          <DeleteButton onClick={() => setDeleting(c)} />
+        )
       }
       hero={
         <DetailHero

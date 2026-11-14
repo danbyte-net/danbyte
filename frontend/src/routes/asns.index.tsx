@@ -147,14 +147,16 @@ function AsnsPage() {
         onChange: setQ,
         placeholder: "Filter by number, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/asns/new">Add ASN</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="asn" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/asns/new">Add ASN</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

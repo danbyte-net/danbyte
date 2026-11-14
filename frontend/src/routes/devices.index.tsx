@@ -265,6 +265,13 @@ function DevicesPage() {
         onChange: setQ,
         placeholder: "Filter by name, serial…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/devices/new">Add device</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
@@ -274,11 +281,6 @@ function DevicesPage() {
               sbomVex ? [sbom, sbomVex, reportItem] : [sbom, reportItem]
             }
           />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/devices/new">Add device</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

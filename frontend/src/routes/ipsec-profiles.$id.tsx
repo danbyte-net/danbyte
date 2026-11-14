@@ -1,19 +1,18 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { IPSecProfile } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RevealPskButton } from "@/components/reveal-psk-button"
 import { IPSecProfileDeleteDialog } from "@/components/ipsec-profile-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -56,26 +55,15 @@ function Body({ profile: p }: { profile: IPSecProfile }) {
       backLabel="IPSec profiles"
       title={p.name}
       presence={{ type: "ipsecprofile", id: p.id }}
-      actions={
-        <>
-          {canDo("ipsecprofile", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/ipsec-profiles/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("ipsecprofile", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(p)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("ipsecprofile", "change") && (
+          <EditButton to="/ipsec-profiles/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      remove={
+        canDo("ipsecprofile", "delete") && (
+          <DeleteButton onClick={() => setDeleting(p)} />
+        )
       }
       hero={
         <DetailHero

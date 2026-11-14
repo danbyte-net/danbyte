@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useHiddenCustomFieldKeys } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Activity, Pencil, Trash2 } from "lucide-react"
+import { Activity } from "lucide-react"
 import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
@@ -28,6 +28,7 @@ import { ObjectPinnedSensors } from "@/components/prtg/sensor-pins"
 import { servicePortsLabel } from "@/components/service-ports-field"
 import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
 import { ServiceFormDialog } from "@/components/services-pane"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -201,6 +202,11 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
       backLabel="Services"
       title={s.name}
       presence={{ type: "service", id: s.id }}
+      edit={
+        canDo("service", "change") && (
+          <EditButton onClick={() => setEditing(true)} />
+        )
+      }
       actions={
         <>
           <MonitorButton
@@ -213,26 +219,12 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
             }
             onClick={() => monitor.mutate()}
           />
-          {canDo("service", "change") && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditing(true)}
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Button>
-          )}
-          {canDo("service", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(s)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("service", "delete") && (
+          <DeleteButton onClick={() => setDeleting(s)} />
+        )
       }
       hero={
         <DetailHero

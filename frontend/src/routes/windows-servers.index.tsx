@@ -82,7 +82,7 @@ function WindowsServersPage() {
       count={query.data ? rows.length : undefined}
       query={query}
       search={{ value: q, onChange: setQ, placeholder: "Filter servers…" }}
-      actions={
+      add={
         canAdd && (
           <Button size="sm" onClick={() => setCreating(true)}>
             <Plus className="h-3.5 w-3.5" /> Add server

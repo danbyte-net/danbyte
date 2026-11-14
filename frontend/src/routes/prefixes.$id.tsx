@@ -9,9 +9,7 @@ import {
   ArrowRightLeft,
   LayoutList,
   ChevronRight,
-  CopyPlus,
   Layers,
-  Pencil,
   Plus,
 } from "lucide-react"
 
@@ -57,7 +55,8 @@ import {
   useDnsEnabled,
 } from "@/components/integrations/dns-records-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
-import { ObjectReportButton } from "@/components/object-report"
+import { useObjectReportItem } from "@/components/object-report"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import {
   formatCustomValue,
@@ -81,6 +80,12 @@ import { DataTable } from "@/components/data-table"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { VlanBadge } from "@/components/cells/vlan-badge"
+import {
+  CloneMenuItem,
+  DeleteButton,
+  EditButton,
+  MenuLink,
+} from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import {
   Table,
@@ -165,6 +170,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const [showPool, setShowPool] = useState(false)
   const [showRenumber, setShowRenumber] = useState(false)
   const [showPlan, setShowPlan] = useState(false)
+  const report = useObjectReportItem("prefix", p.id, p.cidr)
   const [selectedIps, setSelectedIps] = useState<IPAddress[]>([])
 
   // IP table toggles (the facets live inside the table's own rail).
@@ -276,21 +282,62 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         </>
       }
       presence={{ type: "prefix", id: p.id }}
+      edit={
+        canEditPrefix && (
+          <EditButton to="/prefixes/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      add={
+        canAddIp && (
+          <Button size="sm" asChild>
+            <Link to="/ips/new" search={{ address: undefined, prefix: p.id }}>
+              <Plus className="h-3.5 w-3.5" /> Add IP
+            </Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <AutoDiscoverButton prefixId={p.id} initial={p.auto_discover} />
           <PrefixScanGroup prefixId={p.id} />
-          <ObjectReportButton kind="prefix" id={p.id} name={p.cidr} />
-          {canEditPrefix && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/prefixes/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canAddPrefix && (
-            <Button variant="outline" size="sm" asChild>
-              <Link
+        </>
+      }
+      exports={report.item}
+      more={
+        (canAddPrefix || canAddChild || canEditPrefix || canAddIp) && (
+          <>
+            {canAddChild && (
+              <MenuLink
+                to="/prefixes/new"
+                search={{
+                  cidr: undefined,
+                  vrf: p.vrf?.id,
+                  site: undefined,
+                  location: undefined,
+                }}
+                icon={<Plus className="h-3.5 w-3.5" />}
+              >
+                Add child prefix
+              </MenuLink>
+            )}
+            {canAddIp && canShowAvailable && (
+              <DropdownMenuItem onSelect={() => setShowPool(true)}>
+                <Layers className="h-3.5 w-3.5" /> Add pool
+              </DropdownMenuItem>
+            )}
+            {canAddChild &&
+              (p.has_descendants || p.status?.slug === "container") && (
+                <DropdownMenuItem onSelect={() => setShowPlan(true)}>
+                  <LayoutList className="h-3.5 w-3.5" /> Plan subnets…
+                </DropdownMenuItem>
+              )}
+            {canEditPrefix && (
+              <DropdownMenuItem onSelect={() => setShowRenumber(true)}>
+                <ArrowRightLeft className="h-3.5 w-3.5" /> Renumber…
+              </DropdownMenuItem>
+            )}
+            {canAddPrefix && (
+              <CloneMenuItem
                 to="/prefixes/new"
                 search={{
                   cidr: undefined,
@@ -299,72 +346,13 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
                   location: undefined,
                   clone: p.id,
                 }}
-              >
-                <CopyPlus className="h-3.5 w-3.5" /> Clone
-              </Link>
-            </Button>
-          )}
-          {canAddChild && (
-            <Button variant="outline" size="sm" asChild>
-              <Link
-                to="/prefixes/new"
-                search={{
-                  cidr: undefined,
-                  vrf: p.vrf?.id,
-                  site: undefined,
-                  location: undefined,
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" /> Add child prefix
-              </Link>
-            </Button>
-          )}
-          {canAddChild &&
-            (p.has_descendants || p.status?.slug === "container") && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowPlan(true)}
-              >
-                <LayoutList className="h-3.5 w-3.5" /> Plan subnets…
-              </Button>
+              />
             )}
-          {canEditPrefix && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowRenumber(true)}
-            >
-              <ArrowRightLeft className="h-3.5 w-3.5" /> Renumber…
-            </Button>
-          )}
-          {canAddIp && canShowAvailable && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowPool(true)}
-            >
-              <Layers className="h-3.5 w-3.5" /> Add pool
-            </Button>
-          )}
-          {canAddIp && (
-            <Button size="sm" asChild>
-              <Link to="/ips/new" search={{ address: undefined, prefix: p.id }}>
-                <Plus className="h-3.5 w-3.5" /> Add IP
-              </Link>
-            </Button>
-          )}
-          {canDeletePrefix && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeletePrefix(p)}
-            >
-              Delete
-            </Button>
-          )}
-        </>
+          </>
+        )
+      }
+      remove={
+        canDeletePrefix && <DeleteButton onClick={() => setDeletePrefix(p)} />
       }
       hero={
         <DetailHero
@@ -550,6 +538,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           onCleared={clearSelectedChildren}
         />
       )}
+      {report.dialog}
     </DetailShell>
   )
 }

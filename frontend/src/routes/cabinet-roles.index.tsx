@@ -71,14 +71,16 @@ function CabinetRolesPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/cabinet-roles/new">Add role</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="cabinetrole" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/cabinet-roles/new">Add role</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

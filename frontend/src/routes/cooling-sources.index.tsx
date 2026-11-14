@@ -72,14 +72,16 @@ function CoolingSourcesPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter sources…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/cooling-sources/new">Add source</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="coolingsource" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/cooling-sources/new">Add source</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
-import { PrintLabelButton } from "@/components/print-label-button"
-import { RackSyncTypeButton } from "@/components/rack-sync-type-button"
-import { RackMoveButton } from "@/components/rack-move-dialog"
+import { PrintLabelMenuItem } from "@/components/print-label-button"
+import { useRackSyncType } from "@/components/rack-sync-type-button"
+import { useRackMove } from "@/components/rack-move-dialog"
 import { useQuery } from "@tanstack/react-query"
-import { Minus, Pencil, Plus, Trash2 } from "lucide-react"
+import { Minus, Plus } from "lucide-react"
 import {
   Suspense,
   useCallback,
@@ -21,7 +21,6 @@ import { apiAll } from "@/lib/api-all"
 import type { Device, PortCountRow, Rack, RackPortState } from "@/lib/api"
 import { WITH_PORTS } from "@/lib/port-utilization"
 import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
-import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { RoomCell } from "@/components/cells/room-cell"
@@ -43,6 +42,7 @@ import { RackElevation } from "@/components/rack-elevation"
 import type { RackDisplayMode, RackShow } from "@/components/rack-elevation"
 import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { HScroll } from "@/components/table-scroll"
@@ -91,6 +91,8 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Rack | null>(null)
   const openDelete = useCallback(() => setDeleting(r), [r])
+  const syncType = useRackSyncType(r)
+  const move = useRackMove(r)
   const goBack = useCallback(() => nav({ to: "/racks" }), [nav])
 
   return (
@@ -99,31 +101,22 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
       backLabel="Racks"
       title={r.name}
       presence={{ type: "rack", id: r.id }}
-      actions={
-        <>
-          <ShowOnFloorPlan rackId={r.id} />
-          <PrintLabelButton objectType="rack" ids={[r.id]} />
-          <RackSyncTypeButton rack={r} />
-          <RackMoveButton rack={r} />
-          {canDo("rack", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/racks/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("rack", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("rack", "change") && (
+          <EditButton to="/racks/$id/edit" params={{ id: r.id }} />
+        )
       }
+      actions={<ShowOnFloorPlan rackId={r.id} />}
+      exports={<PrintLabelMenuItem objectType="rack" ids={[r.id]} />}
+      more={
+        (syncType.item || move.item) && (
+          <>
+            {syncType.item}
+            {move.item}
+          </>
+        )
+      }
+      remove={canDo("rack", "delete") && <DeleteButton onClick={openDelete} />}
       hero={
         <DetailHero
           title={r.name}
@@ -193,6 +186,8 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={goBack}
       />
+      {syncType.dialog}
+      {move.dialog}
     </DetailShell>
   )
 }

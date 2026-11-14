@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { CopyPlus, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type DeviceType } from "@/lib/api"
@@ -22,9 +21,14 @@ import {
 import type { SectionKind } from "@/components/device-type-components-pane"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
 import { DeviceSensorsCard } from "@/components/device-sensors-card"
-import { ExportBundleButton } from "@/components/device-bundle"
+import { useExportBundle } from "@/components/device-bundle"
 import { SyncDevicesButton } from "@/components/device-type-sync-dialog"
 import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
+import {
+  EditButton,
+  DeleteButton,
+  CloneMenuItem,
+} from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ObjectDocuments } from "@/components/object-documents"
 import { SnmpVrfControl } from "@/components/snmp-vrf-control"
@@ -108,6 +112,12 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
     !!d.owning_site && editableSites === "all" && canDo("devicetype", "change")
   const canAddDevice = canDo("device", "add")
   const [deleting, setDeleting] = useState<DeviceType | null>(null)
+  // Everything that makes this model work, as one shareable file.
+  const bundle = useExportBundle({
+    deviceTypeId: d.id,
+    name: d.name,
+    hasPhotos: !!(d.front_image || d.rear_image),
+  })
   const goBack = useCallback(() => nav({ to: "/device-types" }), [nav])
 
   return (
@@ -116,14 +126,13 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       backLabel="Device types"
       title={d.name}
       presence={{ type: "devicetype", id: d.id }}
+      edit={
+        canDo("devicetype", "change") && (
+          <EditButton to="/device-types/$id/edit" params={{ id: d.id }} />
+        )
+      }
       actions={
         <>
-          {/* Everything that makes this model work, as one shareable file. */}
-          <ExportBundleButton
-            deviceTypeId={d.id}
-            name={d.name}
-            hasPhotos={!!(d.front_image || d.rear_image)}
-          />
           {/* Push this model's templates at the fleet built from it (#103),
               instead of opening each device's own sync. */}
           {canDo("device", "change") && (
@@ -133,31 +142,18 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
               deviceCount={d.device_count}
             />
           )}
-          {canDo("devicetype", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/device-types/$id/edit" params={{ id: d.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("devicetype", "add") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/device-types/new" search={{ clone: d.id }}>
-                <CopyPlus className="h-3.5 w-3.5" /> Clone
-              </Link>
-            </Button>
-          )}
-          {canDo("devicetype", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(d)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      exports={bundle.item}
+      more={
+        canDo("devicetype", "add") && (
+          <CloneMenuItem to="/device-types/new" search={{ clone: d.id }} />
+        )
+      }
+      remove={
+        canDo("devicetype", "delete") && (
+          <DeleteButton onClick={() => setDeleting(d)} />
+        )
       }
       hero={
         <DetailHero
@@ -266,6 +262,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={goBack}
       />
+      {bundle.dialog}
     </DetailShell>
   )
 }

@@ -50,14 +50,16 @@ function CustomFieldGroupsPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/custom-field-groups/new">Add group</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="customfieldgroup" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/custom-field-groups/new">Add group</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

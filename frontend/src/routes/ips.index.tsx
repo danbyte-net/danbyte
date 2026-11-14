@@ -153,6 +153,13 @@ function IpsPage() {
           objectType: "ipaddress",
           filters: { snapshot, restore, activeCount },
         }}
+        add={
+          canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/ips/new">Add IP</Link>
+            </Button>
+          )
+        }
         actions={
           <>
             <AvailabilityFramePicker
@@ -160,11 +167,6 @@ function IpsPage() {
               onChange={sla.setFrame}
             />
             <TableActions ioType="ipaddress" extraExports={[reportItem]} />
-            {canAdd && (
-              <Button size="sm" asChild>
-                <Link to="/ips/new">Add IP</Link>
-              </Button>
-            )}
           </>
         }
         search={{

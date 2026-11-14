@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Copy, Pencil, Plug, RefreshCw } from "lucide-react"
+import { Copy, Plug, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -30,6 +30,7 @@ import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
 import { SyncStatusBadge } from "@/components/integrations/sync-status-badge"
+import { EditButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { VirtChangesPanel } from "@/components/integrations/virt-changes-dialog"
@@ -327,17 +328,13 @@ function SourceDetailPage() {
       backTo="/virtualization-sources"
       backLabel="Virtualization sources"
       title={source.name}
+      edit={
+        canDo("virtualizationsource", "change") && (
+          <EditButton onClick={() => setEditing(true)} />
+        )
+      }
       actions={
         <>
-          {canDo("virtualizationsource", "change") && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEditing(true)}
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Button>
-          )}
           <Button
             variant="outline"
             size="sm"

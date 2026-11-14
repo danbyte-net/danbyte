@@ -184,6 +184,13 @@ function VirtualMachinesPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/virtual-machines/new">Add VM</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
@@ -191,11 +198,6 @@ function VirtualMachinesPage() {
             ioType="virtualmachine"
             extraExports={sbomVex ? [sbom, sbomVex] : [sbom]}
           />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/virtual-machines/new">Add VM</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

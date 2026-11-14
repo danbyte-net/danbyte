@@ -75,6 +75,13 @@ function DnsRecordsPage() {
       query={query}
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Name or address…" }}
+      add={
+        canAdd && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add record
+          </Button>
+        )
+      }
       actions={
         <>
           {canImport && pending.length > 0 && (
@@ -84,11 +91,6 @@ function DnsRecordsPage() {
               onClick={() => setAddingAll(true)}
             >
               Add all to IPAM
-            </Button>
-          )}
-          {canAdd && (
-            <Button size="sm" onClick={() => setAdding(true)}>
-              <Plus className="h-3.5 w-3.5" /> Add record
             </Button>
           )}
         </>

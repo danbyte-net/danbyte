@@ -72,14 +72,16 @@ function CoolingFeedsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter feeds…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/cooling-feeds/new">Add feed</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="coolingfeed" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/cooling-feeds/new">Add feed</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

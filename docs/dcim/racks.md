@@ -83,7 +83,7 @@ duplicates its strips. Deleting a rack type never touches racks or devices
 #### Syncing a rack with its type
 
 A model changes after its racks are built - the cabinet gains a second PDU,
-or its recorded depth was wrong. **Sync type** on a rack's page (the rack
+or its recorded depth was wrong. **More ▸ Sync type** on a rack's page (the rack
 twin of a device's *Sync from type*) compares the two and shows a preview
 before touching anything:
 
@@ -114,7 +114,7 @@ a dry run that returns the diff.
 
 ## Move a rack to another site
 
-**Move to site…** on the rack page moves the rack and every device in it to
+**More ▸ Move to site…** on the rack page moves the rack and every device in it to
 another site in one step - a re-homed cabinet, a site split or merge. Pick the
 site and, optionally, a location in it. The dialog first shows what the move
 takes:

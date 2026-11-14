@@ -72,14 +72,16 @@ function PowerPanelsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter panels…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/power-panels/new">Add panel</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="powerpanel" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/power-panels/new">Add panel</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

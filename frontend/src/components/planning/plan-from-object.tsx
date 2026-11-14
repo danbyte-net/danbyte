@@ -1,7 +1,8 @@
 import { useState } from "react"
+import type { ReactNode } from "react"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock, Plus } from "lucide-react"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -13,11 +14,7 @@ import { useDateFormat } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormCombobox } from "@/components/forms"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { useCreateTask, usePlanningBoards } from "./use-create-task"
 
 /**
@@ -29,11 +26,13 @@ import { useCreateTask, usePlanningBoards } from "./use-create-task"
  * edit form in plan mode. When no existing task fits, the "+" flow creates one
  * on the spot: the new task auto-links this object, then opens the same editor.
  *
- * Route-derived like `DetailActions`, so it mounts in `DetailShell` once and
+ * Route-derived like `DetailActions`, so `DetailShell` wires it once and it
  * works on every detail page whose type is plan-capable, with no per-page props.
+ * The shell lists it in the header's More menu (`start`) and anchors the
+ * picker to that menu's button (`popover`), so it costs no button of its own.
  */
 
-export function PlanFromObject() {
+export function usePlanFromObject() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { canDo } = useMe()
   const nav = useNavigate()
@@ -81,15 +80,15 @@ export function PlanFromObject() {
     create.mutate({ board: activeBoard, title, link: target })
   }
 
-  if (!target || !isPlanCapable(target.objectType)) return null
   // Recording a change on a task is editing that task.
-  if (!canDo("task", "change")) return null
+  const available =
+    !!target && isPlanCapable(target.objectType) && canDo("task", "change")
 
   const rows = tasks.data?.results ?? []
   // The new task is linked to this object, which needs its own right.
   const canCreate = canDo("task", "add") && canDo("tasklink", "add")
 
-  return (
+  const popover = (anchor: ReactNode) => (
     <Popover
       open={open}
       onOpenChange={(v) => {
@@ -97,16 +96,14 @@ export function PlanFromObject() {
         if (!v) setCreating(false)
       }}
     >
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          title="Record a change to this object on a planning task"
-        >
-          <CalendarClock className="h-3.5 w-3.5" /> Plan a change
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-2">
+      <PopoverAnchor asChild>{anchor}</PopoverAnchor>
+      {/* Opened from a menu item: the closing menu hands focus back to its
+          button, which must not count as leaving the picker. */}
+      <PopoverContent
+        align="end"
+        className="w-80 p-2"
+        onFocusOutside={(e) => e.preventDefault()}
+      >
         {creating ? (
           <div className="space-y-2">
             <Input
@@ -144,7 +141,7 @@ export function PlanFromObject() {
                 disabled={!title.trim() || !activeBoard || create.isPending}
                 onClick={submit}
               >
-                {create.isPending ? "Creating..." : "Create & plan"}
+                {create.isPending ? "Creating…" : "Create & plan"}
               </Button>
             </div>
           </div>
@@ -160,7 +157,7 @@ export function PlanFromObject() {
             <div className="max-h-64 overflow-y-auto">
               {tasks.isLoading && (
                 <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                  Loading...
+                  Loading…
                 </p>
               )}
               {!tasks.isLoading && rows.length === 0 && (
@@ -203,4 +200,11 @@ export function PlanFromObject() {
       </PopoverContent>
     </Popover>
   )
+
+  return {
+    available,
+    /** Open the picker - after the menu that offered it has closed. */
+    start: () => window.setTimeout(() => setOpen(true), 0),
+    popover,
+  }
 }

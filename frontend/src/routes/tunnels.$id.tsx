@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { lazy, Suspense, useCallback, useState } from "react"
 import { toast } from "sonner"
 
@@ -28,6 +27,7 @@ import {
 } from "@/components/ui/table"
 import { ScrollFrame } from "@/components/table-scroll"
 import { TagList } from "@/components/cells/tag-list"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { CopyButton, KvCard, dash, type KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
@@ -87,26 +87,15 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
       backLabel="Tunnels"
       title={t.name}
       presence={{ type: "tunnel", id: t.id }}
-      actions={
-        <>
-          {canDo("tunnel", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/tunnels/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("tunnel", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(t)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("tunnel", "change") && (
+          <EditButton to="/tunnels/$id/edit" params={{ id: t.id }} />
+        )
+      }
+      remove={
+        canDo("tunnel", "delete") && (
+          <DeleteButton onClick={() => setDeleting(t)} />
+        )
       }
       hero={
         <DetailHero

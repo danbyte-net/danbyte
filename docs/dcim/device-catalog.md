@@ -407,7 +407,7 @@ templates, draw the [faceplate](#faceplate-builder), place the photo-port
 markers on the rear image, find the vendor OID that reports drive health. All of
 it is knowledge about the **model** - identical for everyone who owns that box.
 
-A **bundle** is that work in one file. On a device type, **Export bundle**
+A **bundle** is that work in one file. On a device type, **Export ▸ Bundle**
 downloads everything that makes the model work:
 
 - the type's own fields - height, width, depth, airflow, cooling method and
@@ -451,7 +451,7 @@ the markers land correctly.
 
 #### Photos in a bundle {#bundle-photos}
 
-A type with photos asks on **Export bundle** whether to include them; the box
+A type with photos asks on **Export ▸ Bundle** whether to include them; the box
 is ticked. The photos travel inside the file as base64, so the far side gets
 the same pictures the markers and the [calibration](#photo-ports) were
 placed on. Without them a bundle is a small text file you can read and diff.
@@ -547,8 +547,8 @@ Notes:
 ### Sync an existing device to its type
 
 Editing a device type's templates doesn't touch devices that already exist. To
-push the changes onto one, open the device and click **Sync from type** (top-
-right, next to Edit). It opens a **preview** first - no changes until you
+push the changes onto one, open the device and pick **More ▸ Sync from type** (top-
+right). It opens a **preview** first - no changes until you
 confirm:
 
 - **Add** (safe, always applied on confirm) - components the type defines that

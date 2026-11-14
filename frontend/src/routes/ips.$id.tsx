@@ -3,18 +3,12 @@ import { useHiddenCustomFieldKeys } from "@/components/custom-field-display"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  Copy,
-  CopyPlus,
-  Pencil,
-  Play,
-  Table as TableIcon,
-  Trash2,
-} from "lucide-react"
+import { Copy, Play, Table as TableIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
-import { ObjectReportButton } from "@/components/object-report"
+import { useObjectReportItem } from "@/components/object-report"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 
@@ -45,6 +39,11 @@ import {
   DnsRecordsTable,
   useDnsEnabled,
 } from "@/components/integrations/dns-records-table"
+import {
+  EditButton,
+  DeleteButton,
+  CloneMenuItem,
+} from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe, objCan } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -78,6 +77,7 @@ function IPDetail() {
 
 function IPDetailBody({ ip }: { ip: IPAddress }) {
   const [deleteOpen, setDeleteOpen] = useState<IPAddress | null>(null)
+  const report = useObjectReportItem("ipaddress", ip.id, ip.ip_address)
   const [tab, setTab] = useUrlTab<
     | "overview"
     | "monitoring"
@@ -459,6 +459,11 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       }
       title={<span className="font-mono">{ip.ip_address}</span>}
       presence={{ type: "ipaddress", id: ip.id }}
+      edit={
+        objCan(ip, "change", canDo("ipaddress", "change")) && (
+          <EditButton to="/ips/$id/edit" params={{ id: ip.id }} />
+        )
+      }
       actions={
         <>
           <Button
@@ -474,39 +479,25 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           <Button variant="outline" size="sm" onClick={copyIp}>
             <Copy className="h-3.5 w-3.5" /> Copy IP
           </Button>
-          <Button variant="outline" size="sm" onClick={copyAllAsTable}>
-            <TableIcon className="h-3.5 w-3.5" /> Copy as table
-          </Button>
-          <ObjectReportButton
-            kind="ipaddress"
-            id={ip.id}
-            name={ip.ip_address}
-          />
-          {canDo("ipaddress", "add") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/ips/new" search={{ clone: ip.id }}>
-                <CopyPlus className="h-3.5 w-3.5" /> Clone
-              </Link>
-            </Button>
-          )}
-          {objCan(ip, "change", canDo("ipaddress", "change")) && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/ips/$id/edit" params={{ id: ip.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {objCan(ip, "delete", canDo("ipaddress", "delete")) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleteOpen(ip)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      exports={
+        <>
+          <DropdownMenuItem onSelect={copyAllAsTable}>
+            <TableIcon className="h-3.5 w-3.5" /> Copy as table
+          </DropdownMenuItem>
+          {report.item}
+        </>
+      }
+      more={
+        canDo("ipaddress", "add") && (
+          <CloneMenuItem to="/ips/new" search={{ clone: ip.id }} />
+        )
+      }
+      remove={
+        objCan(ip, "delete", canDo("ipaddress", "delete")) && (
+          <DeleteButton onClick={() => setDeleteOpen(ip)} />
+        )
       }
       hero={
         <DetailHero
@@ -668,6 +659,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         onOpenChange={(o) => !o && setDeleteOpen(null)}
         onDeleted={() => window.history.back()}
       />
+      {report.dialog}
     </DetailShell>
   )
 }

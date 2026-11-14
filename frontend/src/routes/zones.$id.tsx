@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Plus } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type VLAN, type Zone } from "@/lib/api"
@@ -18,6 +18,7 @@ import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ZoneDeleteDialog } from "@/components/zone-delete-dialog"
 import { ZoneAssignVlanDialog } from "@/components/zone-assign-vlan-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import {
   LocalityBadge,
@@ -68,27 +69,10 @@ function Body({ zone: z }: { zone: Zone }) {
       backLabel="Zones"
       title={z.name}
       presence={{ type: "zone", id: z.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/zones/$id/edit" params={{ id: z.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(z)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canEdit && <EditButton to="/zones/$id/edit" params={{ id: z.id }} />
       }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(z)} />}
       hero={
         <DetailHero
           title={<ColorBadge name={z.name} color={z.color || undefined} />}
@@ -226,15 +210,19 @@ function ZoneVlansTable({
     <div className="space-y-2">
       {canDo("vlan", "change") && (
         <div className="flex justify-end">
-          <Button size="sm" variant="outline" onClick={() => setAssigning(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setAssigning(true)}
+          >
             <Plus className="h-3.5 w-3.5" /> Assign VLAN
           </Button>
         </div>
       )}
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No VLANs in this zone yet. To remove one, edit that VLAN and clear
-          its zone.
+          No VLANs in this zone yet. To remove one, edit that VLAN and clear its
+          zone.
         </p>
       ) : (
         <DataTable

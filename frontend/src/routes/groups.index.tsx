@@ -66,14 +66,12 @@ function GroupsPage() {
         onChange: setQ,
         placeholder: "Filter groups…",
       }}
-      actions={
-        <>
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/groups/new">Add group</Link>
-            </Button>
-          )}
-        </>
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/groups/new">Add group</Link>
+          </Button>
+        )
       }
       query={query}
     >

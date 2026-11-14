@@ -707,7 +707,7 @@ audited in the change log like any other edit. Edit and Delete send more than
 
 ## Spec sheet
 
-**Spec sheet** in the page actions opens a printable PDF datasheet of the
+**Export → Spec sheet** in the page header opens a printable PDF datasheet of the
 device - stat boxes, details, modules, interfaces with cable peers, comments
 and images - or, from the same menu, the **hardware sheet**: CPU, memory and
 storage totals first, then one table of parts per kind with the slot each
@@ -716,7 +716,7 @@ device and its serial number. See [Spec sheets](../features/spec-sheets.md).
 
 ## PDF report
 
-**PDF report…** in the page actions prints the device with the sections you
+**Export → PDF report…** in the page header prints the device with the sections you
 pick - overview and custom fields, interfaces, IP addresses, cables,
 installed software, power and console ports, lifecycle, monitoring, journal
 and change log - each with its own columns. The device list's **Import /

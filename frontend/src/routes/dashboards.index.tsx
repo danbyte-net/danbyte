@@ -49,7 +49,7 @@ function DashboardsPage() {
       count={query.data ? filteredRows.length : undefined}
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Name or description…" }}
-      actions={
+      add={
         <Button size="sm" onClick={() => setCreating(true)}>
           <Plus className="h-3.5 w-3.5" /> New dashboard
         </Button>

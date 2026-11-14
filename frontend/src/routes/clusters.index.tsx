@@ -86,15 +86,17 @@ function ClustersPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/clusters/new">Add cluster</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="cluster" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/clusters/new">Add cluster</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

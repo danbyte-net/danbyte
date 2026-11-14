@@ -165,14 +165,16 @@ function RtsPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/route-targets/new">Add RT</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="routetarget" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/route-targets/new">Add RT</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

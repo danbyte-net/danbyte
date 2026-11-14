@@ -6,7 +6,6 @@ import {
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { CopyPlus, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 
@@ -22,8 +21,12 @@ import { apiAll } from "@/lib/api-all"
 import { listCap, listCapCount } from "@/lib/list-cap"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  EditButton,
+  DeleteButton,
+  CloneMenuItem,
+} from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
-import { Button } from "@/components/ui/button"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { DataTable } from "@/components/data-table"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
@@ -106,34 +109,13 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
       backLabel="VRFs"
       title={v.name}
       presence={{ type: "vrf", id: v.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/vrfs/$id/edit" params={{ id: v.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("vrf", "add") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/vrfs/new" search={{ clone: v.id }}>
-                <CopyPlus className="h-3.5 w-3.5" /> Clone
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={canEdit && <EditButton to="/vrfs/$id/edit" params={{ id: v.id }} />}
+      more={
+        canDo("vrf", "add") && (
+          <CloneMenuItem to="/vrfs/new" search={{ clone: v.id }} />
+        )
       }
+      remove={canDelete && <DeleteButton onClick={openDelete} />}
       hero={
         <DetailHero
           title={

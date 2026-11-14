@@ -89,7 +89,7 @@ function MaintenancePage() {
         onChange: setQ,
         placeholder: "Filter by name, provider, reference…",
       }}
-      actions={
+      add={
         canAdd && (
           <Button size="sm" asChild>
             <Link to="/maintenance/new">

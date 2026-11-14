@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Play, Trash2 } from "lucide-react"
+import { Play } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DataTable } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmptyState } from "@/components/empty-state"
 import { KvCard, dash } from "@/components/kv-card"
@@ -141,6 +142,11 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
         </Link>
       }
       title={p.name}
+      edit={
+        objCan(p, "change", canDo("inventoryprofile", "change")) && (
+          <EditButton onClick={() => setEditing(true)} />
+        )
+      }
       actions={
         <>
           {canScan && (
@@ -153,26 +159,12 @@ function Body({ profile: p }: { profile: InventoryProfile }) {
               {run.isPending || busy ? "Running…" : "Run now"}
             </Button>
           )}
-          {objCan(p, "change", canDo("inventoryprofile", "change")) && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEditing(true)}
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Button>
-          )}
-          {objCan(p, "delete", canDo("inventoryprofile", "delete")) && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        objCan(p, "delete", canDo("inventoryprofile", "delete")) && (
+          <DeleteButton onClick={() => setDeleting(true)} />
+        )
       }
       hero={
         <DetailHero

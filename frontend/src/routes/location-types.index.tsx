@@ -75,14 +75,16 @@ function LocationTypesPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/location-types/new">Add type</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="locationtype" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/location-types/new">Add type</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Download, Pencil, Trash2 } from "lucide-react"
+import { Download } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog"
 import { FormText } from "@/components/forms/text"
 import { FormTextarea } from "@/components/forms/textarea"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -107,28 +108,15 @@ function Body({ cert }: { cert: Certificate }) {
         </span>
       }
       presence={{ type: "certificate", id: cert.id }}
-      actions={
-        <>
-          {canDo("certificate", "change") && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEditing(true)}
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Button>
-          )}
-          {canDo("certificate", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("certificate", "change") && (
+          <EditButton onClick={() => setEditing(true)} />
+        )
+      }
+      remove={
+        canDo("certificate", "delete") && (
+          <DeleteButton onClick={() => setDeleting(true)} />
+        )
       }
       hero={
         <DetailHero

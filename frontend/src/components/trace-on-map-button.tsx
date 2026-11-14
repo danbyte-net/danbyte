@@ -1,41 +1,145 @@
-import { useNavigate } from "@tanstack/react-router"
+import type { ReactNode } from "react"
+import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Route as RouteIcon, Waypoints } from "lucide-react"
+import {
+  ChevronDown,
+  Network,
+  Route as RouteIcon,
+  Waypoints,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
+/** One place to look a cable up: the topology, the floor plan or the site
+ * map. `solo` labels it when it is the only one. */
+interface Place {
+  key: string
+  label: string
+  solo: string
+  icon: ReactNode
+  render: (body: ReactNode) => ReactNode
+}
 
 /**
- * "Trace on map" - jumps to the floor plan that shows this cable, with its
- * A↔B route highlighted and the view fitted to it (no Cables-mode clicking).
- * Renders nothing when the cable isn't on any plan.
+ * "Show on" for a cable's page (#507): the places that show this cable, as
+ * one control - a plain button when there is one, a menu when there are
+ * more, nothing when there are none.
+ *
+ * - **Topology** - the run's devices (and panels) on the topology map.
+ * - **Floor plan** - the plan that shows the cable, its A↔B route
+ *   highlighted and the view fitted to it.
+ * - **Site map** - the geographic map with the cable drawn along its
+ *   assigned routes.
  */
-export function TraceOnMapButton({ cableId }: { cableId: string }) {
-  const nav = useNavigate()
-  const q = useQuery({
+export function CableShowOn({
+  cableId,
+  topology,
+}: {
+  cableId: string
+  /** The run's devices, comma-joined, when there are two or more. */
+  topology?: { devices: string; panels: boolean } | null
+}) {
+  const plan = useQuery({
     queryKey: ["cable-floor-plan", cableId],
     queryFn: () =>
       api<{ plan_id: string | null }>(`/api/cables/${cableId}/floor-plan/`),
   })
-  const planId = q.data?.plan_id
-  if (!planId) return null
+  const routes = useQuery({
+    queryKey: ["cable-routes", "of-cable", cableId],
+    queryFn: () =>
+      api<{ count: number }>(`/api/cable-routes/?cable=${cableId}&page_size=1`),
+  })
+  const planId = plan.data?.plan_id
+  const places: Place[] = []
+  if (topology)
+    places.push({
+      key: "topology",
+      label: "Topology",
+      solo: "Topology",
+      icon: <Network className="h-3.5 w-3.5" />,
+      render: (body) => (
+        <Link
+          to="/topology/map"
+          search={{
+            devices: topology.devices,
+            ...(topology.panels ? { panels: true } : {}),
+          }}
+        >
+          {body}
+        </Link>
+      ),
+    })
+  if (planId)
+    places.push({
+      key: "plan",
+      label: "Floor plan",
+      solo: "Trace on map",
+      icon: <Waypoints className="h-3.5 w-3.5" />,
+      render: (body) => (
+        <Link
+          to="/floorplans/$id"
+          params={{ id: planId }}
+          search={{ trace: cableId }}
+        >
+          {body}
+        </Link>
+      ),
+    })
+  if (routes.data?.count)
+    places.push({
+      key: "site-map",
+      label: "Site map",
+      solo: "Show on site map",
+      icon: <Waypoints className="h-3.5 w-3.5" />,
+      render: (body) => (
+        <Link to="/site-map" search={{ trace: cableId }}>
+          {body}
+        </Link>
+      ),
+    })
+  if (places.length === 0) return null
+  if (places.length === 1) {
+    const [p] = places
+    return (
+      <Button variant="outline" size="sm" asChild>
+        {p.render(
+          <>
+            {p.icon} {p.solo}
+          </>
+        )}
+      </Button>
+    )
+  }
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() =>
-        nav({
-          to: "/floorplans/$id",
-          params: { id: planId },
-          search: { trace: cableId },
-        })
-      }
-    >
-      <Waypoints className="h-3.5 w-3.5" /> Trace on map
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Waypoints className="h-3.5 w-3.5" /> Show on
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-auto">
+        {places.map((p) => (
+          <DropdownMenuItem key={p.key} asChild>
+            {p.render(
+              <>
+                {p.icon} {p.label}
+              </>
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -92,30 +196,6 @@ export function AutoRouteButton({ cableId }: { cableId: string }) {
     >
       <RouteIcon className="h-3.5 w-3.5" />
       {route.isPending ? "Routing…" : "Auto-route"}
-    </Button>
-  )
-}
-
-/**
- * "Show on site map" - jumps to the geographic map with this cable drawn
- * along its assigned routes and highlighted. Renders nothing when the cable
- * isn't assigned to any route.
- */
-export function TraceOnSiteMapButton({ cableId }: { cableId: string }) {
-  const nav = useNavigate()
-  const q = useQuery({
-    queryKey: ["cable-routes", "of-cable", cableId],
-    queryFn: () =>
-      api<{ count: number }>(`/api/cable-routes/?cable=${cableId}&page_size=1`),
-  })
-  if (!q.data?.count) return null
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() => nav({ to: "/site-map", search: { trace: cableId } })}
-    >
-      <Waypoints className="h-3.5 w-3.5" /> Show on site map
     </Button>
   )
 }

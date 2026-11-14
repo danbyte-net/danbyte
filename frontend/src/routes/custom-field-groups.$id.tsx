@@ -1,7 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -9,7 +8,6 @@ import type { CustomField, CustomFieldGroup, Paginated } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { objCan, useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
@@ -19,6 +17,7 @@ import { LocalityBadge } from "@/components/locality-badge"
 import { QueryError } from "@/components/query-error"
 import { CustomFieldGroupDeleteDialog } from "@/components/custom-field-group-delete-dialog"
 import { buildCustomFieldColumns } from "@/components/columns/custom-field-columns"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -62,27 +61,15 @@ function Body({ group: g }: { group: CustomFieldGroup }) {
       backLabel="Custom field groups"
       title={g.name}
       presence={{ type: "customfieldgroup", id: g.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/custom-field-groups/$id/edit" params={{ id: g.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(g)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canEdit && (
+          <EditButton
+            to="/custom-field-groups/$id/edit"
+            params={{ id: g.id }}
+          />
+        )
       }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(g)} />}
       hero={
         <DetailHero
           title={g.name}

@@ -108,14 +108,12 @@ function TenantsPage() {
         onChange: setQ,
         placeholder: "Filter by name or slug…",
       }}
-      actions={
-        <>
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/tenants/new">Add Tenant</Link>
-            </Button>
-          )}
-        </>
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/tenants/new">Add Tenant</Link>
+          </Button>
+        )
       }
       query={query}
     >

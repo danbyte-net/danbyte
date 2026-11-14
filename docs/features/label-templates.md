@@ -63,8 +63,8 @@ grant - to reveal the bulk bar:
 
 ## Printing
 
-A **Print label** action appears on an object's page (and in the list **bulk
-bar** for a multi-select) whenever a template exists for that type - no
+A **Print label** entry appears in an object page's **Export** menu (and a
+**Print label** button in the list **bulk bar** for a multi-select) whenever a template exists for that type - no
 per-page configuration. Pick a template and Danbyte opens a **PDF** whose page
 is sized exactly to the label (one label per page), rendered server-side. Your
 browser's PDF viewer previews it and prints it to any office or dedicated label
