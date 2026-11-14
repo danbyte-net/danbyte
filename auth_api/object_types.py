@@ -227,6 +227,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("profiles.DeviceProfileAssignment", "Device profile assignments", "DCIM"),
     # Application flows (#163).
     ("api.ApplicationFlow", "Application flows", "DCIM"),
+    # Device dependencies and the media catalog they use (#450).
+    ("api.DeviceDependency", "Device dependencies", "DCIM"),
+    ("api.DependencyMedium", "Dependency media", "DCIM"),
     # Flows with variable ends ("the hosts of an application"); the resolver
     # documents them as generated flows. A tenant-wide catalog; the
     # exclusions are part of their requirement.

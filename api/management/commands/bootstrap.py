@@ -55,6 +55,7 @@ class Command(BaseCommand):
             self._ensure_default_tenant(opts["tenant_name"])
         self._seed_statuses()
         self._seed_roles()
+        self._seed_dependency_media()
         self._seed_connect_protocols()
         self._seed_sensitivity_labels()
         self._seed_backup_target()
@@ -103,6 +104,16 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(f"Seeded IP roles for {tenant.name}: {created} new.")
             )
+
+    def _seed_dependency_media(self):
+        from api.dependency_media_seeds import seed_builtin_media
+
+        for tenant in Tenant.objects.all():
+            created = seed_builtin_media(tenant)
+            if created:
+                self.stdout.write(
+                    self.style.SUCCESS(f"Seeded dependency media for {tenant.name}: {created} new.")
+                )
 
     def _seed_connect_protocols(self):
         from monitoring.connect_protocol_seeds import seed_builtin_connect_protocols

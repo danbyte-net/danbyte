@@ -6,7 +6,7 @@ import uuid
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.contrib.postgres.indexes import GinIndex, GistIndex, OpClass
-from django.db.models.functions import Cast, Upper
+from django.db.models.functions import Cast, Greatest, Least, Upper
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -11080,3 +11080,124 @@ class PanelLayout(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.get_object_kind_display()} panel · {self.get_scope_display()}"
+
+
+# ─── Device dependencies (#450) ─────────────────────────────────────────────
+
+
+class DependencyMedium(_LabeledChoice):
+    """What a dependency runs over - Ethernet, fibre, radio, a VPN (#450).
+
+    An editable per-tenant catalog seeded with six rows
+    (``api.dependency_media_seeds``) so a new tenant can record dependencies
+    straight away; each row can be renamed, recoloured or deleted. ``icon``
+    and ``line_style`` style the dependency on the maps. A medium in use is
+    not deleted (``PROTECT``): the user moves its dependencies first."""
+
+    LINE_STYLE_CHOICES = [
+        ("solid", "Solid"),
+        ("dashed", "Dashed"),
+        ("dotted", "Dotted"),
+    ]
+
+    icon = models.CharField(max_length=64, blank=True, default="", db_default="")
+    line_style = models.CharField(
+        max_length=8, choices=LINE_STYLE_CHOICES, default="solid", db_default="solid",
+    )
+
+    class Meta(_LabeledChoice.Meta):
+        verbose_name = "dependency medium"
+        verbose_name_plural = "dependency media"
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "slug"],
+                                    name="uniq_dependencymedium_tenant_slug"),
+        ]
+
+
+class DeviceDependency(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """The downstream device depends on the upstream one (#450).
+
+    ``kind="peer"`` records a link between equals instead: drawn and listed,
+    never followed by the impact walk. A peer is stored with the lower UUID
+    as ``upstream`` so the pair reads the same whichever way it was entered.
+
+    Dependencies of one downstream that share a non-empty
+    ``redundancy_group`` back each other: the downstream is down only when
+    the whole group is. An ungrouped dependency is a group of its own.
+
+    The database refuses a self-reference, a second relation between the
+    same two devices in either direction (which also refuses a two-node
+    cycle and a peer beside a dependency), and a grouped peer. Longer cycles
+    are refused by ``api.dependencies.save_dependency``."""
+
+    KIND_DEPENDENCY = "dependency"
+    KIND_PEER = "peer"
+    KIND_CHOICES = [
+        (KIND_DEPENDENCY, "Dependency"),
+        (KIND_PEER, "Peer"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="device_dependencies"
+    )
+    upstream = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, related_name="dependents"
+    )
+    downstream = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, related_name="dependencies"
+    )
+    kind = models.CharField(
+        max_length=16, choices=KIND_CHOICES, default=KIND_DEPENDENCY,
+        db_default=KIND_DEPENDENCY,
+    )
+    medium = models.ForeignKey(
+        DependencyMedium, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="dependencies",
+    )
+    #: Dependencies of one downstream sharing a group back each other.
+    redundancy_group = models.CharField(max_length=64, blank=True, default="", db_default="")
+    description = models.CharField(max_length=200, blank=True, default="", db_default="")
+    comments = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["downstream__name", "upstream__name"]
+        verbose_name = "device dependency"
+        verbose_name_plural = "device dependencies"
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(upstream=models.F("downstream")),
+                name="devdep_no_self",
+            ),
+            models.UniqueConstraint(
+                Least("upstream", "downstream"),
+                Greatest("upstream", "downstream"),
+                "tenant",
+                name="devdep_one_per_pair",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(kind="peer") | models.Q(redundancy_group=""),
+                name="devdep_peer_no_group",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "upstream"], name="devdep_tenant_up_idx"),
+            models.Index(fields=["tenant", "downstream"], name="devdep_tenant_down_idx"),
+            models.Index(fields=["tenant", "kind"], name="devdep_tenant_kind_idx"),
+        ]
+
+    def __str__(self) -> str:
+        arrow = "↔" if self.kind == self.KIND_PEER else "→"
+        up = getattr(self.upstream, "name", "?") if self.upstream_id else "?"
+        down = getattr(self.downstream, "name", "?") if self.downstream_id else "?"
+        return f"{up} {arrow} {down}"
+
+    def normalise(self) -> None:
+        """A peer keeps the lower UUID upstream and no group."""
+        if self.kind != self.KIND_PEER:
+            return
+        self.redundancy_group = ""
+        if (self.upstream_id and self.downstream_id
+                and str(self.upstream_id) > str(self.downstream_id)):
+            up, down = self.upstream, self.downstream
+            self.upstream, self.downstream = down, up

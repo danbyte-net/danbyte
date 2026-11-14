@@ -183,6 +183,7 @@ from routing.viewsets import (
 )
 
 from .application_flows_api import ApplicationFlowViewSet
+from .dependency_views import DependencyMediumViewSet, DeviceDependencyViewSet
 from .application_groups_api import ApplicationGroupAssignmentViewSet, ApplicationGroupViewSet
 from .applications_api import ApplicationViewSet, InstalledSoftwareViewSet
 from .csp_views import csp_report
@@ -556,6 +557,10 @@ router.register(r"cable-routes", CableRouteViewSet, basename="cable-route")
 router.register(r"module-interface-templates", ModuleInterfaceTemplateViewSet, basename="module-interface-template")
 router.register(r"modules", ModuleViewSet, basename="module")
 router.register(r"cables",        CableViewSet,       basename="cable")
+# Device dependencies and their media catalog (#450).
+router.register(r"device-dependencies", DeviceDependencyViewSet,
+                basename="device-dependency")
+router.register(r"dependency-media", DependencyMediumViewSet, basename="dependency-medium")
 router.register(r"port-reservations", PortReservationViewSet, basename="port-reservation")
 router.register(r"fiber-settings", FiberSettingsViewSet, basename="fiber-settings")
 router.register(r"custom-fields", CustomFieldViewSet, basename="custom-field")

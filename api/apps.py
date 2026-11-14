@@ -22,7 +22,8 @@ class ApiConfig(AppConfig):
         # by shipping an ``io.py`` that calls ``api.io.register_io``.
         from django.utils.module_loading import autodiscover_modules
 
-        from . import applications, io, signals  # noqa: F401  (signals register on import)
+        # Signals register on import.
+        from . import applications, dependencies, io, signals  # noqa: F401
 
         applications.connect_signals()
         from . import flow_requirements

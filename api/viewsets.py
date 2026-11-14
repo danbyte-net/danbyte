@@ -2970,6 +2970,10 @@ class TenantViewSet(viewsets.ModelViewSet):
         # pre-existing tenants, so seed them here too (needed for the gateway
         # role + site gateway-policy autospawn).
         seed_builtin_roles(tenant)
+        # The starter dependency media (#450), editable like the roles.
+        from .dependency_media_seeds import seed_builtin_media
+
+        seed_builtin_media(tenant)
         # Editable Connect-protocol catalog (SSH/Telnet/RDP/HTTP-S) so the
         # device Connect menu works out of the box for a new tenant.
         from monitoring.connect_protocol_seeds import seed_builtin_connect_protocols

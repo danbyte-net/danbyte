@@ -183,6 +183,9 @@ SITE_PATHS: dict[str, str] = {
         "|source_prefix__site|destination_prefix__site"
         "|source_range__prefix__site|destination_range__prefix__site"
     ),
+    # A device dependency belongs to its downstream's site - the device that
+    # is affected - else its upstream's (#450).
+    "devicedependency": "downstream__site|upstream__site",
 }
 
 # Site-bound types the one-click site roles do NOT grant (auth_api.api.
@@ -266,6 +269,7 @@ CATALOG_SITE_PATHS: dict[str, str] = {
     "customfield": "owning_site",
     "customfieldgroup": "owning_site",
     "zone": "owning_site",
+    "dependencymedium": "owning_site",
     # Component templates inherit the locality of their owning DeviceType.
     "interfacetemplate": "device_type__owning_site",
     "consoleporttemplate": "device_type__owning_site",

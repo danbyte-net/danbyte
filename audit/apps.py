@@ -131,6 +131,8 @@ AUDITED_MODELS = [
     "api.ApplicationFlow",
     "api.ApplicationFlowRequirement",
     "api.ApplicationFlowRequirementExclusion",
+    "api.DeviceDependency",
+    "api.DependencyMedium",
     "api.NATRule",
     "routing.PrefixList",
     "routing.PrefixListRule",
