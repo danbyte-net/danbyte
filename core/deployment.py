@@ -247,6 +247,30 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         so the SSRF guard is not the rule here; scheme and host are (#467)."""
         return clean_vector_url(value)
 
+    def validate_azure_vault_url(self, value):
+        """Blank = not configured. Otherwise https only: the bearer token and
+        the secret values travel to it (#512)."""
+        from monitoring.secret_store_azure import https_url_problem
+
+        value = (value or "").strip()
+        if value:
+            problem = https_url_problem(value, "Key Vault URL")
+            if problem:
+                raise serializers.ValidationError(problem)
+        return value
+
+    def validate_azure_authority(self, value):
+        """Blank = the public cloud. Otherwise https only: the client secret
+        is posted to it (#512)."""
+        from monitoring.secret_store_azure import https_url_problem
+
+        value = (value or "").strip()
+        if value:
+            problem = https_url_problem(value, "Sign-in endpoint")
+            if problem:
+                raise serializers.ValidationError(problem)
+        return value
+
     def validate_display_timezone(self, value):
         return clean_display_timezone(value)
 

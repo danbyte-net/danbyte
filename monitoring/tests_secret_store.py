@@ -426,3 +426,90 @@ class RegistryTests(TestCase):
         )
         self.assertEqual(ok.status_code, 200)
         self.assertEqual(ok.json()["secrets_provider"], "local")
+
+
+class AzureHttpsOnlyTests(TestCase):
+    """The client secret, the bearer token and the secret values never go to
+    a plain-http Key Vault URL or sign-in endpoint (#512). A HashiCorp Vault
+    on plain HTTP inside the LAN stays allowed."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+
+        user = User.objects.create_user("root", password="x", is_superuser=True)
+        self.c = Client()
+        self.c.force_login(user)
+
+    def _put(self, **body):
+        import json
+
+        return self.c.put(
+            "/api/deployment/email/", data=json.dumps(body), content_type="application/json"
+        )
+
+    def test_the_store_refuses_an_http_vault_url_or_authority(self):
+        with self.assertRaises(SecretStoreError):
+            AzureKeyVaultSecretStore("http://kv.vault.azure.net", "d", "c", "s")
+        with self.assertRaises(SecretStoreError):
+            AzureKeyVaultSecretStore(
+                "https://kv.vault.azure.net", "d", "c", "s",
+                authority="http://login.microsoftonline.com",
+            )
+
+    def test_an_http_row_saved_before_the_check_is_disabled_not_used(self):
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = "azure"
+        dep.azure_vault_url = "http://kvmock.vault.azure.test:9080"
+        dep.azure_directory_id = "dir"
+        dep.azure_client_id = "client"
+        dep.azure_authority = ""
+        dep.secrets = {"azure_client_secret": "s"}
+        dep.save()
+        with (
+            mock.patch("monitoring.secret_store_azure.requests.post") as post,
+            mock.patch("monitoring.secret_store_azure.requests.request") as req,
+        ):
+            self.assertIsNone(active_secret_store())
+            with self.assertRaises(SecretStoreDisabled):
+                require_secret_store()
+        post.assert_not_called()
+        req.assert_not_called()
+
+    def test_settings_refuse_http_for_the_vault_url_and_sign_in_endpoint(self):
+        r = self._put(azure_vault_url="http://kvmock.vault.azure.test:9080")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("https://", str(r.json()["azure_vault_url"]))
+        r = self._put(azure_authority="http://login.azure.test:9080")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("https://", str(r.json()["azure_authority"]))
+        r = self._put(azure_vault_url="https:///no-host")
+        self.assertEqual(r.status_code, 400)
+
+    def test_settings_accept_https_and_blank(self):
+        r = self._put(
+            azure_vault_url="https://kv-danbyte.vault.azure.net",
+            azure_authority="https://login.microsoftonline.us",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._put(azure_vault_url="", azure_authority="")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_a_plain_http_hashicorp_vault_still_saves_and_works(self):
+        r = self._put(vault_addr="http://10.0.0.48:8200", vault_token="hvs.x",
+                      secrets_provider="vault")
+        self.assertEqual(r.status_code, 200, r.content)
+        store = VaultSecretStore.from_deployment()
+        self.assertEqual(store.addr, "http://10.0.0.48:8200")
+        with mock.patch(
+            "monitoring.secret_store_vault.requests.request",
+            return_value=_resp(200, {"data": {"data": {"k": "v"}}}),
+        ) as req:
+            self.assertEqual(store.get("t", "csr/x"), {"k": "v"})
+        self.assertTrue(req.call_args[0][1].startswith("http://10.0.0.48:8200/v1/"))
+
+    def test_the_vault_address_field_carries_a_warning_not_a_rule(self):
+        r = self.c.get("/api/deployment/secret-stores/")
+        vault = next(p for p in r.json()["providers"] if p["kind"] == "vault")
+        addr = next(f for f in vault["fields"] if f["name"] == "vault_addr")
+        self.assertIn("warn_http", addr)

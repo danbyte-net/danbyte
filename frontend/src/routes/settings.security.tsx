@@ -186,7 +186,11 @@ function SecretStoreCard() {
                 hint={
                   f.type === "password" && isSet
                     ? "set - blank keeps current"
-                    : f.hint
+                    : f.warn_http &&
+                        typeof v === "string" &&
+                        v.trim().toLowerCase().startsWith("http://")
+                      ? f.warn_http
+                      : f.hint
                 }
                 placeholder={
                   f.type === "password" && isSet ? "••••••" : f.placeholder

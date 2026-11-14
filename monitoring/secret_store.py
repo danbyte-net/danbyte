@@ -300,6 +300,8 @@ register_secret_store(
             "label": "Vault address",
             "type": "text",
             "placeholder": "https://vault.danbyte.lan:8200",
+            # Allowed: a Vault on a trusted LAN often listens on plain HTTP.
+            "warn_http": "Plain HTTP: the token and secrets are not encrypted in transit.",
         },
         {
             "name": "vault_mount",

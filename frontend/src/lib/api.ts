@@ -12638,6 +12638,8 @@ export interface SecretStoreField {
   default?: string | boolean
   /** Password fields: the deployment-settings boolean saying one is stored. */
   set_flag?: string
+  /** Text fields: shown in place of the hint while the value is http://. */
+  warn_http?: string
 }
 
 export interface SecretStoreProvider {

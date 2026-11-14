@@ -12,12 +12,15 @@ Like the Vault backend, the vault URL is **deployment-admin-configured** - the
 same trust tier as the SSRF allowlist - so it is reached directly (TLS-verified,
 redirects disabled, short timeout) rather than through the tenant-facing guard.
 That is also what lets it work against Azure Government, Azure Stack or a
-private endpoint, none of which the public guard would allow.
+private endpoint, none of which the public guard would allow. Both the vault
+URL and the sign-in endpoint must be ``https://``: the client secret goes to
+the one and the bearer token and secret values to the other (#512).
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import time
 from urllib.parse import urlsplit
@@ -25,6 +28,8 @@ from urllib.parse import urlsplit
 import requests
 
 from .secret_store import SecretPathError, SecretStoreError, clean_secret_path
+
+log = logging.getLogger(__name__)
 
 API_VERSION = "7.4"
 PUBLIC_AUTHORITY = "https://login.microsoftonline.com"
@@ -41,6 +46,18 @@ _LEGAL_NAME = re.compile(r"[0-9A-Za-z-]{1,127}")
 _MANAGED_NAME = re.compile(
     r"danbyte-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-", re.I
 )
+
+
+def https_url_problem(value: str, label: str) -> str:
+    """Why ``value`` is not an https URL with a host, or ``""`` when it is.
+
+    Azure serves Entra ID and Key Vault over HTTPS only, so a plain-http value
+    is a typo or a man in the middle: the client secret, the bearer token and
+    the secret values would cross the wire in clear (#512)."""
+    parts = urlsplit((value or "").strip())
+    if parts.scheme.lower() != "https" or not parts.hostname:
+        return f"{label} must be an https:// URL."
+    return ""
 
 
 def _safe(text: str) -> str:
@@ -68,6 +85,13 @@ class AzureKeyVaultSecretStore:
         self.client_id = client_id
         self.client_secret = client_secret
         self.authority = (authority or PUBLIC_AUTHORITY).rstrip("/")
+        # Refused here as well as in the settings form, so a row saved before
+        # the check can never send the client secret in clear.
+        for url, label in ((self.vault_url, "Key Vault URL"),
+                           (self.authority, "Sign-in endpoint")):
+            problem = https_url_problem(url, label)
+            if problem:
+                raise SecretStoreError(problem)
         self.timeout = timeout
         self._token = ""
         self._token_expires = 0.0
@@ -87,13 +111,19 @@ class AzureKeyVaultSecretStore:
         secret = (dep.secrets or {}).get("azure_client_secret", "")
         if not (url and directory and client and secret):
             return None
-        return cls(
-            url,
-            directory,
-            client,
-            secret,
-            authority=(dep.azure_authority or "").strip(),
-        )
+        try:
+            return cls(
+                url,
+                directory,
+                client,
+                secret,
+                authority=(dep.azure_authority or "").strip(),
+            )
+        except SecretStoreError as exc:
+            # A plain-http URL saved before the check: unusable, so disabled
+            # (fail closed) rather than an error on every caller.
+            log.warning("Azure Key Vault secret store refused: %s", exc)
+            return None
 
     # ─── naming ─────────────────────────────────────────────────────────
     def _name(self, tenant_id, ref: str) -> str:

@@ -309,6 +309,8 @@ enables under **Settings → Security → Secret store**:
   is stored encrypted and never returned. The Vault address is admin-configured
   and deployment-tier, so it may be an internal/loopback Vault - Danbyte reaches
   it directly (TLS-verified, redirects off), not through the tenant SSRF guard.
+  A plain `http://` address is accepted for a Vault on a trusted network; the
+  card then warns that the token and the secrets cross the network unencrypted.
   A provider selected but not fully configured counts as disabled (fail closed).
 
     Danbyte files each tenant's secrets under `<mount>/data/<tenant id>/<ref>`.
@@ -327,7 +329,10 @@ enables under **Settings → Security → Secret store**:
   host, so Azure Government and Azure Stack work by URL alone - only the
   **sign-in endpoint** needs setting on a sovereign cloud (blank is
   `login.microsoftonline.com`). No Azure SDK is installed: it is three REST
-  calls and a token.
+  calls and a token. The vault URL and the sign-in endpoint must both be
+  `https://`: the client secret is posted to the one and the token and secret
+  values go to the other. Saving refuses `http://`, and a value saved before
+  that check leaves the store disabled rather than used.
 
     The app registration needs **Get**, **Set**, **Delete** and **Purge** on
     secrets - an access policy, or the *Key Vault Secrets Officer* role on an
