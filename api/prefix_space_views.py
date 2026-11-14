@@ -38,25 +38,39 @@ _TRUE = ("1", "true", "yes", "on")
 _ALLOCATE_KEYS = ("length", "scope", "strategy")
 
 
-def lock_holders(tenant_id, vrf_id, cidr) -> None:
-    """Row locks on every prefix of ``tenant_id`` and ``vrf_id`` holding
-    ``cidr`` (itself included), outermost first. The allocation lock:
-    allocate, plan and a manual create (PrefixViewSet.create) all take it,
-    so none of them can place a block another is placing. Same order
-    everywhere, so they queue rather than deadlock."""
+def lock_holders(tenant_id, vrf_id, *cidrs) -> None:
+    """Row locks on every prefix of ``tenant_id`` and ``vrf_id`` holding any
+    of ``cidrs`` (each itself included), outermost first, in one statement.
+    The allocation lock: allocate, plan, a manual create, a create through
+    an import, and an edit that moves a prefix (a new CIDR or VRF, one at a
+    time or in bulk) all take it, so none of them can place a block another
+    is placing. Same order everywhere, so they queue rather than deadlock."""
+    nets = sorted({str(c) for c in cidrs})
+    if not nets:
+        return
+    holds = " OR ".join(['"api_prefix"."cidr"::inet >>= %s::inet'] * len(nets))
     list(
         Prefix.objects.select_for_update()
         .filter(tenant_id=tenant_id)
         .filter(fs._vrf_q({vrf_id}))
         .annotate(
-            _fs_holds=RawSQL('"api_prefix"."cidr"::inet >>= %s::inet', (str(cidr),),
-                             output_field=BooleanField()),
+            _fs_holds=RawSQL(f"({holds})", tuple(nets), output_field=BooleanField()),
             _fs_net=RawSQL('"api_prefix"."cidr"::inet', ()),
         )
         .filter(_fs_holds=True)
         .order_by("_fs_net")
         .values_list("pk", flat=True)
     )
+
+
+def parse_cidr(raw):
+    """``raw`` as an ``ip_network`` (host bits allowed), or None."""
+    import ipaddress
+
+    try:
+        return ipaddress.ip_network(str(raw or "").strip(), strict=False)
+    except (TypeError, ValueError):
+        return None
 
 
 def _truthy(raw) -> bool:

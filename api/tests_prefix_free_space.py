@@ -735,3 +735,98 @@ class AllocateRaceTests(APITransactionTestCase):
         self.assertEqual(second.json()["cidr"], "10.0.0.160/27")
         cidrs = list(Prefix.objects.values_list("cidr", flat=True))
         self.assertEqual(len(cidrs), len(set(cidrs)))
+
+    # ── the other writes that place a block ─────────────────────────────
+
+    def _client(self, n):
+        client = APIClient()
+        client.cookies.load(self.sessions[n])
+        return client
+
+    def _patch(self, n, prefix, body):
+        return self._client(n).patch(f"/api/prefixes/{prefix.id}/", body, format="json")
+
+    def _bulk_vrf(self, n, prefixes, vrf):
+        return self._client(n).post(
+            "/api/prefixes/bulk-update/",
+            {"ids": [str(p.id) for p in prefixes], "fields": {"vrf_id": str(vrf.id)}},
+            format="json")
+
+    def _import(self, n, cidr):
+        return self._client(n).post(
+            "/api/io/prefix/import/",
+            {"format": "csv", "content": f"cidr\n{cidr}\n", "dry_run": False},
+            format="json")
+
+    def test_patch_moving_a_prefix_waits_for_an_allocation(self):
+        loose = Prefix.objects.create(tenant=self.tenant, cidr="192.168.0.0/27")
+        first, second = self.race_calls(
+            lambda: self._post(0, self.root),
+            lambda: self._patch(1, loose, {"cidr": "10.0.0.128/27"}))
+        self.assertEqual(first.json()["cidr"], "10.0.0.128/27")
+        self.assertEqual(second.status_code, 400, second.content)
+
+    def test_allocation_waits_for_a_patch_moving_a_prefix(self):
+        loose = Prefix.objects.create(tenant=self.tenant, cidr="192.168.0.0/27")
+        first, second = self.race_calls(
+            lambda: self._patch(0, loose, {"cidr": "10.0.0.128/27"}),
+            lambda: self._post(1, self.root))
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(second.json()["cidr"], "10.0.0.160/27")
+
+    def test_patch_to_another_vrf_waits_for_an_allocation_there(self):
+        vrf = VRF.objects.create(tenant=self.tenant, name="blue")
+        parent = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/24", vrf=vrf)
+        mover = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.128/27")
+        first, second = self.race_calls(
+            lambda: self._post(0, parent),
+            lambda: self._patch(1, mover, {"vrf_id": str(vrf.id)}))
+        self.assertEqual(first.json()["cidr"], "10.0.0.0/27")
+        self.assertEqual(second.status_code, 200, second.content)
+
+    def test_bulk_vrf_move_waits_for_an_allocation_there(self):
+        vrf = VRF.objects.create(tenant=self.tenant, name="blue")
+        parent = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/24", vrf=vrf)
+        mover = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/27")
+        first, second = self.race_calls(
+            lambda: self._post(0, parent),
+            lambda: self._bulk_vrf(1, [mover], vrf))
+        self.assertEqual(first.json()["cidr"], "10.0.0.0/27")
+        # The allocation took the block first: the move is refused, not a
+        # second copy of it.
+        self.assertNotEqual(second.status_code, 200, second.content)
+        self.assertEqual(Prefix.objects.filter(vrf=vrf, cidr="10.0.0.0/27").count(), 1)
+
+    def test_import_create_waits_for_an_allocation(self):
+        first, second = self.race_calls(
+            lambda: self._post(0, self.root),
+            lambda: self._import(1, "10.0.0.128/27"))
+        self.assertEqual(first.json()["cidr"], "10.0.0.128/27")
+        self.assertEqual(second.status_code, 200, second.content)
+        self.assertEqual(second.json()["created"], 0, second.content)
+        self.assertEqual(Prefix.objects.filter(cidr="10.0.0.128/27").count(), 1)
+
+    def test_allocation_waits_for_an_import_create(self):
+        first, second = self.race_calls(
+            lambda: self._import(0, "10.0.0.128/27"),
+            lambda: self._post(1, self.root))
+        self.assertEqual(first.json()["created"], 1, first.content)
+        self.assertEqual(second.json()["cidr"], "10.0.0.160/27")
+
+    def test_only_a_move_takes_the_lock(self):
+        from unittest import mock
+
+        vrf = VRF.objects.create(tenant=self.tenant, name="blue")
+        with mock.patch("api.prefix_space_views.lock_holders") as lock:
+            r = self._patch(0, self.inner, {"description": "x"})
+            self.assertEqual(r.status_code, 200, r.content)
+            r = self._patch(0, self.inner, {"cidr": "10.0.0.0/25"})
+            self.assertEqual(r.status_code, 200, r.content)
+            lock.assert_not_called()
+            r = self._patch(0, self.inner, {"cidr": "10.0.0.0/26"})
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertEqual(lock.call_count, 1)
+            self.assertEqual(str(lock.call_args.args[2]), "10.0.0.0/26")
+            r = self._patch(0, self.inner, {"vrf_id": str(vrf.id)})
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertEqual(lock.call_args.args[1], vrf.id)

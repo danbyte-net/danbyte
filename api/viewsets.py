@@ -1315,6 +1315,33 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
             lock_holders(tenant.pk, vrf_id, net)
             return super().create(request, *args, **kwargs)
 
+    def update(self, request, *args, **kwargs):
+        """A PUT or PATCH that moves the prefix (a new CIDR or VRF) takes the
+        allocation lock on the prefixes holding where it lands, as a create
+        does, before it is validated. Any other edit takes none."""
+        import uuid
+
+        from .prefix_space_views import lock_holders, parse_cidr
+
+        body = request.data if isinstance(request.data, dict) else {}
+        if "cidr" not in body and "vrf_id" not in body:
+            return super().update(request, *args, **kwargs)
+        current = self.get_object()
+        net = parse_cidr(body["cidr"]) if "cidr" in body else parse_cidr(current.cidr)
+        try:
+            raw_vrf = body.get("vrf_id") if "vrf_id" in body else current.vrf_id
+            vrf_id = uuid.UUID(str(raw_vrf)) if raw_vrf else None
+        except (TypeError, ValueError):
+            net = None
+        moved = net is not None and (
+            str(net) != str(parse_cidr(current.cidr)) or vrf_id != current.vrf_id
+        )
+        if not moved:
+            return super().update(request, *args, **kwargs)
+        with transaction.atomic():
+            lock_holders(current.tenant_id, vrf_id, net)
+            return super().update(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         prefix = serializer.save(
             **{self.tenant_field: self._tenant_or_403()},
@@ -1898,6 +1925,13 @@ class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, Tenan
         qs = self.get_queryset().filter(pk__in=ids)
 
         with transaction.atomic():
+            if "vrf_id" in updates:
+                # A VRF move lands each prefix in the new VRF: the allocation
+                # lock on what holds them there first, as a single move does.
+                from .prefix_space_views import lock_holders
+
+                lock_holders(getattr(tenant, "pk", None), updates["vrf_id"],
+                             *qs.values_list("cidr", flat=True))
             _rows = list(qs)
             updated_count = qs.update(**updates) if updates else qs.count()
             if "vrf_id" in updates:
