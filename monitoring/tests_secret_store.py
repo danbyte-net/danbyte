@@ -19,7 +19,7 @@ from .secret_store import (
     require_secret_store,
     secret_store_enabled,
 )
-from .secret_store_azure import AzureKeyVaultSecretStore
+from .secret_store_azure import AzureKeyVaultSecretStore, clear_token_cache
 from .secret_store_vault import VaultSecretStore
 
 
@@ -197,8 +197,13 @@ class AzureKeyVaultSecretStoreTests(TestCase):
             "client-secret",
         )
         # Skip the token round-trip in the operation tests - it has its own.
-        self.store._token = "tok"
-        self.store._token_expires = float("inf")
+        clear_token_cache()
+        self.addCleanup(clear_token_cache)
+        patcher = mock.patch.object(
+            AzureKeyVaultSecretStore, "_access_token", return_value="tok"
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tid = "11111111-1111-1111-1111-111111111111"
 
     def test_name_is_deterministic_legal_and_ref_specific(self):
@@ -293,6 +298,89 @@ class AzureKeyVaultSecretStoreTests(TestCase):
         ):
             self.store.delete(self.tid, "csr/abc")
 
+
+class AzureTokenCacheTests(TestCase):
+    """One Entra ID token per expiry period, across store instances (#510)."""
+
+    tid = "11111111-1111-1111-1111-111111111111"
+
+    def setUp(self):
+        clear_token_cache()
+        self.addCleanup(clear_token_cache)
+
+    def _configure(self, secret="s"):
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = "azure"
+        dep.azure_vault_url = "https://kv.vault.azure.net"
+        dep.azure_directory_id = "dir"
+        dep.azure_client_id = "client"
+        dep.azure_authority = ""
+        dep.secrets = {"azure_client_secret": secret}
+        dep.save()
+
+    def test_a_fresh_store_per_operation_reuses_one_token(self):
+        # active_secret_store() builds a new instance every call, as reveal does.
+        self._configure()
+        token = _resp(200, {"access_token": "T", "expires_in": 3600})
+        with (
+            mock.patch("monitoring.secret_store_azure.requests.post",
+                       return_value=token) as post,
+            mock.patch("monitoring.secret_store_azure.requests.request",
+                       return_value=_resp(200, {"value": "{}"})) as req,
+        ):
+            for _ in range(5):
+                active_secret_store().get(self.tid, "device-credentials/x")
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(req.call_count, 5)
+
+    def test_changed_settings_sign_in_again_at_once(self):
+        self._configure("old")
+        tokens = [_resp(200, {"access_token": "A", "expires_in": 3600}),
+                  _resp(200, {"access_token": "B", "expires_in": 3600})]
+        with (
+            mock.patch("monitoring.secret_store_azure.requests.post",
+                       side_effect=tokens) as post,
+            mock.patch("monitoring.secret_store_azure.requests.request",
+                       return_value=_resp(200, {"value": "{}"})) as req,
+        ):
+            active_secret_store().get(self.tid, "a")
+            self._configure("new")
+            active_secret_store().get(self.tid, "a")
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args[1]["data"]["client_secret"], "new")
+        self.assertEqual(req.call_args[1]["headers"]["Authorization"], "Bearer B")
+
+    def test_a_token_is_renewed_before_it_expires(self):
+        store = AzureKeyVaultSecretStore("https://kv.vault.azure.net", "d", "c", "s")
+        tokens = [_resp(200, {"access_token": "A", "expires_in": 3600}),
+                  _resp(200, {"access_token": "B", "expires_in": 3600})]
+        clock = mock.Mock(return_value=1000.0)
+        with (
+            mock.patch("monitoring.secret_store_azure.time.monotonic", clock),
+            mock.patch("monitoring.secret_store_azure.requests.post",
+                       side_effect=tokens) as post,
+        ):
+            self.assertEqual(store._access_token(), "A")
+            clock.return_value = 1000.0 + 3600 - 301
+            self.assertEqual(store._access_token(), "A")
+            clock.return_value = 1000.0 + 3600 - 299
+            self.assertEqual(store._access_token(), "B")
+        self.assertEqual(post.call_count, 2)
+
+    def test_a_refused_token_is_renewed_once(self):
+        store = AzureKeyVaultSecretStore("https://kv.vault.azure.net", "d", "c", "s")
+        tokens = [_resp(200, {"access_token": "A", "expires_in": 3600}),
+                  _resp(200, {"access_token": "B", "expires_in": 3600})]
+        with (
+            mock.patch("monitoring.secret_store_azure.requests.post",
+                       side_effect=tokens),
+            mock.patch("monitoring.secret_store_azure.requests.request",
+                       side_effect=[_resp(401), _resp(200, {"value": '{"k": 1}'})]) as req,
+        ):
+            self.assertEqual(store.get(self.tid, "a"), {"k": 1})
+        auth = [c[1]["headers"]["Authorization"] for c in req.call_args_list]
+        self.assertEqual(auth, ["Bearer A", "Bearer B"])
+
     def test_token_is_fetched_once_and_reused(self):
         store = AzureKeyVaultSecretStore(
             "https://kv.vault.azure.net", "dir-id", "client-id", "sec"
@@ -323,6 +411,8 @@ class AzureKeyVaultSecretStoreTests(TestCase):
                 store.get(self.tid, "a")
         self.assertIn("AADSTS7000215", str(cm.exception))
 
+
+class AzureFromDeploymentTests(TestCase):
     def test_from_deployment_none_until_every_part_is_set(self):
         dep = DeploymentSettings.load()
         dep.secrets_provider = "azure"

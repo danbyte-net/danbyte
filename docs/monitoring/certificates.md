@@ -329,7 +329,10 @@ enables under **Settings → Security → Secret store**:
   host, so Azure Government and Azure Stack work by URL alone - only the
   **sign-in endpoint** needs setting on a sovereign cloud (blank is
   `login.microsoftonline.com`). No Azure SDK is installed: it is three REST
-  calls and a token. The vault URL and the sign-in endpoint must both be
+  calls and a token. Each process keeps the token until five minutes before
+  it expires and reuses it for every read and write, so an operation is one
+  vault request; changing any of these settings signs in again at once, and a
+  token the vault refuses (401) is replaced once. The vault URL and the sign-in endpoint must both be
   `https://`: the client secret is posted to the one and the token and secret
   values go to the other. Saving refuses `http://`, and a value saved before
   that check leaves the store disabled rather than used.

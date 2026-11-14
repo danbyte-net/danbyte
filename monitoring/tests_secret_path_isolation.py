@@ -566,8 +566,11 @@ class AzureStoreBoundaryTests(TestCase):
         self.store = AzureKeyVaultSecretStore(
             "https://kv.vault.azure.net", "dir", "client", "secret"
         )
-        self.store._token = "t"
-        self.store._token_expires = float("inf")
+        patcher = mock.patch.object(
+            AzureKeyVaultSecretStore, "_access_token", return_value="t"
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tid = uuid.uuid4()
         self.other = uuid.uuid4()
 
