@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ApiError, saveDinRails } from "@/lib/api"
+import { ApiError, itemErrors, saveDinRails } from "@/lib/api"
 import type {
   CabinetSizes,
   DinProfile,
@@ -483,8 +483,13 @@ function readServerErrors(
   if (!body || typeof body !== "object" || Array.isArray(body))
     return { byRow, general, mapped: false }
   for (const [field, value] of Object.entries(body)) {
-    if (field === key && Array.isArray(value)) {
-      value.forEach((item: unknown, i) => {
+    // Per rail: DRF's dict keyed by position, or a list in the order sent.
+    const items =
+      field !== key
+        ? null
+        : (itemErrors(value) ?? (Array.isArray(value) ? value : null))
+    if (items) {
+      items.forEach((item: unknown, i) => {
         const rowKey = sentKeys[i] as string | undefined
         if (typeof item === "string") general.push(item)
         else if (item && typeof item === "object" && rowKey)

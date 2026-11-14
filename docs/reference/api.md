@@ -383,6 +383,26 @@ many, as the web UI does with a big selection (see
 A value a field cannot take answers `400` too - `{"non_field_errors":
 [...]}` when no serializer named the field - never a server error.
 
+**Errors in a nested list** (a pipeline's `steps`, a cabinet's `rails`, an
+SLA group's `items`, a report's `sheets`) are an object keyed by the
+position of each item that failed, counting from 0; the items that passed
+are left out:
+
+```json
+{"steps": {"1": {"timeout_minutes": ["Ensure this value is greater than or equal to 1."]}}}
+```
+
+An error about the list as a whole (not a list, empty, too long) stays a
+list of messages under the field. **Changed in 0.20:** before, the field
+held a list with one entry per item sent, `{}` for those that passed
+(`{"steps": [{}, {"timeout_minutes": [...]}]}`). This is Django REST
+framework's own format from 3.18 (`LIST_SERIALIZER_ERRORS_AS_DICT`), and
+the only one from 3.20. A cabinet's own rail checks (on the plate, no
+overlap, room for its devices) answer `rails` and `rail_templates` in the
+same keyed form. The per-row answers of a whole call (a cable
+`bulk-create/`'s `cables`, a cabinet arrange's `placements`) keep their
+list form.
+
 `bulk-update/` checks each value in `fields` exactly as a `PATCH` of that
 type checks it: choices, text length, number range, and that a related id
 is in the active tenant (and behind the site fence). Where the type has

@@ -187,8 +187,8 @@ export function apiErrorMessage(
       const rec = body as Record<string, unknown>
       if (typeof rec.detail === "string" && rec.detail) return rec.detail
       for (const [key, val] of Object.entries(rec)) {
-        const first = Array.isArray(val) ? val[0] : val
-        if (typeof first === "string" && first)
+        const first = firstErrorText(val)
+        if (first)
           return key === "non_field_errors" ? first : `${key}: ${first}`
       }
     }
@@ -197,6 +197,66 @@ export function apiErrorMessage(
   }
   if (err instanceof Error && err.message) return err.message
   return fallback
+}
+
+const INDEX_KEY = /^\d+$/
+
+/** True for a dict of per-item errors keyed by the item's index, the shape
+ * DRF gives a nested list (`{"1": {"name": ["…"]}}`). */
+function isIndexDict(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const keys = Object.keys(value)
+  return keys.length > 0 && keys.every((k) => INDEX_KEY.test(k))
+}
+
+/**
+ * The per-item errors of a list field, by the position each item was sent
+ * at, or null when `value` is not a per-item answer. DRF answers a nested
+ * list as a dict keyed by index holding the failing items only
+ * (`{"1": {...}}`); a hand-built answer (or one from before 0.20) is a list
+ * with `{}` for the items that passed. Both read the same here. A list of
+ * plain messages is about the list as a whole, not its items: null.
+ */
+export function itemErrors(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) {
+    return value.some((v) => v && typeof v === "object") ? value : null
+  }
+  if (!isIndexDict(value)) return null
+  const out: unknown[] = []
+  for (const [k, v] of Object.entries(value)) out[Number(k)] = v
+  for (let i = 0; i < out.length; i++) if (out[i] === undefined) out[i] = {}
+  return out
+}
+
+/**
+ * The first message in a DRF error value of any shape: a string, a list of
+ * messages, a field dict, or per-item errors (either shape), which name the
+ * item ("row 2, name: …").
+ */
+export function firstErrorText(value: unknown): string | null {
+  if (typeof value === "string") return value || null
+  const items = itemErrors(value)
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      const text = firstErrorText(items[i])
+      if (text) return `row ${i + 1}, ${text}`
+    }
+    return null
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      const text = firstErrorText(v)
+      if (text) return text
+    }
+    return null
+  }
+  if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      const text = firstErrorText(v)
+      if (text) return k === "non_field_errors" ? text : `${k}: ${text}`
+    }
+  }
+  return null
 }
 
 // ─── Domain types ──────────────────────────────────────────────────────

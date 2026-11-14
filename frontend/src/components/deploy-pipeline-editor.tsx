@@ -20,7 +20,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { GripVertical, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, ApiError } from "@/lib/api"
+import { api, ApiError, itemErrors } from "@/lib/api"
 import type {
   AutomationTarget,
   DeployPipeline,
@@ -214,13 +214,11 @@ export function DeployPipelineEditor({
       onSaved(saved)
     },
     onError: (err) => {
-      if (
-        err instanceof ApiError &&
-        err.body &&
-        typeof err.body === "object" &&
-        Array.isArray((err.body as { steps?: unknown }).steps)
-      ) {
-        const raw = (err.body as { steps: unknown[] }).steps
+      const raw =
+        err instanceof ApiError && err.body && typeof err.body === "object"
+          ? itemErrors((err.body as { steps?: unknown }).steps)
+          : null
+      if (raw) {
         setStepErrors(
           raw.map((e) => {
             const out: Record<string, string> = {}
@@ -236,10 +234,11 @@ export function DeployPipelineEditor({
     },
   })
 
-  const stepsError =
-    fieldErrors.steps && !fieldErrors.steps.startsWith("[")
-      ? fieldErrors.steps
-      : undefined
+  // Per-step errors show on their rows; only a message about the list as a
+  // whole shows above it.
+  const stepsError = stepErrors.some((e) => Object.keys(e).length)
+    ? undefined
+    : fieldErrors.steps
 
   return (
     <form

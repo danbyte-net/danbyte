@@ -131,9 +131,9 @@ class DinRaceTests(APITransactionTestCase):
         self.assertEqual(out["first"].status_code, 201, out["first"].content)
         self.assertTrue(out["waited"])
         self.assertEqual(out["second"].status_code, 400, out["second"].content)
-        self.assertEqual(out["second"].json(), {"rails": [
-            {"length_mm": ["Too short for its devices (needs 318 mm)."]},
-        ]})
+        self.assertEqual(out["second"].json(), {"rails": {
+            "0": {"length_mm": ["Too short for its devices (needs 318 mm)."]},
+        }})
         self.assert_on_rail()
 
     def test_a_shortened_rail_in_progress_refuses_the_mount_past_its_end(self):

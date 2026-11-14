@@ -8035,7 +8035,7 @@ def _check_rail_set(attrs, key, instance, stored, width, height) -> None:
                 errors[i]["id"] = ["This rail is listed twice."]
             seen.add(rid)
         if any(errors):
-            raise serializers.ValidationError({key: errors})
+            raise serializers.ValidationError({key: din.by_position(errors)})
     try:
         din.check_fit(items, width, height)
     except serializers.ValidationError as exc:

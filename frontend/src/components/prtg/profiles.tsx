@@ -554,7 +554,8 @@ export function ProfileForm({
   })
 
   const intervals = kinds.data?.intervals ?? []
-  const defErrors = (fieldErrors as Record<string, unknown>).definitions
+  // The definitions' errors, as their first message naming the row.
+  const defError = fieldErrors.definitions
 
   return (
     <form
@@ -694,11 +695,7 @@ export function ProfileForm({
             </div>
           )
         })}
-        {Array.isArray(defErrors) && defErrors.some(Boolean) && (
-          <p className="text-xs text-destructive">
-            {JSON.stringify(defErrors.filter(Boolean))}
-          </p>
-        )}
+        {defError && <p className="text-xs text-destructive">{defError}</p>}
         <div>
           <Button
             type="button"

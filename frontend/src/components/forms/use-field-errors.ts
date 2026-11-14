@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react"
 
-import { ApiError } from "@/lib/api"
+import { ApiError, firstErrorText } from "@/lib/api"
 import { PlanStaged } from "@/lib/save-object"
 
 // Manages the per-field error map that DRF 400 responses populate.
@@ -30,7 +30,9 @@ export function useFieldErrors() {
       for (const [k, v] of Object.entries(
         err.body as Record<string, unknown>
       )) {
-        const msg = Array.isArray(v) ? String(v[0]) : String(v)
+        // A nested list's errors (per item, keyed by index) read as their
+        // first message, naming the row.
+        const msg = firstErrorText(v) ?? String(v)
         // `detail` / `non_field_errors` aren't tied to a form field - surface
         // them as the toast message instead of silently highlighting nothing.
         if (k === "detail" || k === "non_field_errors") general = msg

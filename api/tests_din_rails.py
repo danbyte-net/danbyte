@@ -39,16 +39,17 @@ class DinRailTests(CabinetTestCase):
         r = self.put_rails([rail("R1", 50, 100, 460), rail("R2", 0, 10, 100),
                             rail("R3", 0, 590, 100), rail("R4", 0, 300, 100)])
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json()["rails"], [
-            {"length_mm": ["Runs past the plate's right edge (500 mm)."]},
-            {"y_mm": ["Sticks out above the plate."]},
-            {"y_mm": ["Sticks out below the plate (600 mm)."]},
-            {},
-        ])
+        # Keyed by the failing rails' positions, as DRF keys a list's errors.
+        self.assertEqual(r.json()["rails"], {
+            "0": {"length_mm": ["Runs past the plate's right edge (500 mm)."]},
+            "1": {"y_mm": ["Sticks out above the plate."]},
+            "2": {"y_mm": ["Sticks out below the plate (600 mm)."]},
+        })
         # Field rules first: at least 10 mm long, in tenths of a millimetre.
         r = self.put_rails([rail("R1", 0, 100, 5), rail("R2", 0, 300, 12.34)])
         self.assertEqual(r.status_code, 400)
-        self.assertEqual([set(e) for e in r.json()["rails"]], [{"length_mm"}, {"length_mm"}])
+        self.assertEqual({k: set(e) for k, e in r.json()["rails"].items()},
+                         {"0": {"length_mm"}, "1": {"length_mm"}})
         self.assertFalse(DinRail.objects.exists())
 
     def test_rails_may_touch_but_not_overlap(self):
@@ -57,9 +58,9 @@ class DinRailTests(CabinetTestCase):
         self.assertEqual(self.put_rails(ok).status_code, 200)
         r = self.put_rails([*ok, rail("D", 150, 160, 100)])
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json()["rails"][3], {"y_mm": ["Overlaps rail C."]})
+        self.assertEqual(r.json()["rails"]["3"], {"y_mm": ["Overlaps rail C."]})
         r = self.put_rails([rail("A", 0, 100, 200), rail("A", 300, 100, 100)])
-        self.assertEqual(r.json()["rails"][1], {"label": ["Another rail has this label."]})
+        self.assertEqual(r.json()["rails"]["1"], {"label": ["Another rail has this label."]})
 
     def test_ids_keep_rails_and_omitted_rails_go(self):
         rails = self.put_rails([rail("R1", 0, 100, 400), rail("R2", 0, 300, 400)]).json()["rails"]
@@ -84,10 +85,10 @@ class DinRailTests(CabinetTestCase):
                                    format="json").json()["rails"][0]
         r = self.put_rails([theirs])
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json()["rails"][0], {"id": ["Not one of these rails."]})
+        self.assertEqual(r.json()["rails"]["0"], {"id": ["Not one of these rails."]})
         mine = self.put_rails([rail("R1", 0, 100, 100)]).json()["rails"][0]
         r = self.put_rails([mine, {**mine, "label": "R2", "y_mm": 300}])
-        self.assertEqual(r.json()["rails"][1], {"id": ["This rail is listed twice."]})
+        self.assertEqual(r.json()["rails"]["1"], {"id": ["This rail is listed twice."]})
         # On a new cabinet, ids name nothing: the rails are new.
         r = self._cabinet(name="K3", rails=[mine])
         self.assertEqual(r.status_code, 201, r.content)
@@ -166,7 +167,7 @@ class CabinetTypeRailTests(CabinetTestCase):
                                                        rail("R9", 20, 120, 100)]},
                               format="json")
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json()["rail_templates"][1], {"y_mm": ["Overlaps rail R1."]})
+        self.assertEqual(r.json()["rail_templates"]["1"], {"y_mm": ["Overlaps rail R1."]})
         r = self.client.patch(url, {"inner_height_mm": 250}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertIn("inner_height_mm", r.json())

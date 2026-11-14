@@ -4,7 +4,7 @@ import type { QueryClient } from "@tanstack/react-query"
 import { Undo2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, ApiError } from "@/lib/api"
+import { api, ApiError, itemErrors } from "@/lib/api"
 import type {
   Cable,
   CableWritePayload,
@@ -269,9 +269,9 @@ export function CableForm({
       const body = err instanceof ApiError ? err.body : null
       const perPair =
         body && typeof body === "object" && "cables" in body
-          ? body.cables
+          ? itemErrors(body.cables)
           : null
-      if (Array.isArray(perPair)) {
+      if (perPair) {
         setPairErrors(perPair as Record<string, unknown>[])
         toast.error("Nothing was created - fix the marked pairs.")
         return
