@@ -14,11 +14,13 @@ import {
   labelFontCells,
   labelPlate,
   mixHex,
+  pointInPolygon,
   polygonCentroid,
   rotatePoint,
 } from "@/components/floorplan/shapes"
 import type { AreaShape, LabelShape, Pt } from "@/components/floorplan/shapes"
 import { tilePose } from "@/components/floorplan/tile-pose"
+import { findRows, rowAngle, rowName } from "@/components/floorplan/plan-rows"
 import { CELL } from "@/components/floorplan/canvas-geometry"
 import {
   READABLE_FONT_PX,
@@ -28,7 +30,7 @@ import {
 import type { NameCandidate } from "@/components/floorplan/readable"
 
 import { mainAxis, readableAngle } from "./plan-text-fit"
-import { trayElevationM } from "./world"
+import { sceneTileName, trayElevationM } from "./world"
 import type {
   SceneRaisedFloor,
   ScenePayload,
@@ -38,7 +40,8 @@ import type {
 
 // The plan's own text in the 3D room: the labels placed on it, its rooms'
 // and areas' names, its zones' names and its trays' names - what the 2D
-// plan writes, drawn on each level's floor. Labels, area and zone names
+// plan writes, drawn on each level's floor (and the rows' names, which
+// the 2D plan writes under Callouts: Auto). Labels, area and zone names
 // lie flat on the floor like painted floor text, at their 2D size and
 // place and turned with their object; seen from low down, where flat text
 // no longer reads, each stands up as a billboard instead. A tray's name is
@@ -48,13 +51,14 @@ import type {
 // plates, the trays', the zones' and last the areas' names.
 
 /** What a piece of plan text is. */
-export type PlanTextKind = "label" | "area" | "zone" | "tray"
+export type PlanTextKind = "label" | "area" | "zone" | "tray" | "row"
 
 /** Higher wins a clash; the Readable plates rank 0 to 1e6 (a pinned one
  * is Infinity), so labels sit over them and the rest under them. */
 export const PLAN_TEXT_RANK: Record<PlanTextKind, number> = {
   label: 1e7,
   tray: -1e7,
+  row: -1.5e7,
   zone: -2e7,
   area: -3e7,
 }
@@ -107,6 +111,9 @@ export interface PlanTextShow {
   labels: boolean
   areaNames: boolean
   zoneNames: boolean
+  /** Display > Callouts: Auto - the rows' names, as the 2D plan writes
+   * them. */
+  rowNames?: boolean
   /** Display > Object size: Readable - names always on their halo, and a
    * room too small for its name still names it. */
   readable?: boolean
@@ -313,6 +320,76 @@ export function zoneText(t: SceneTile, dark: boolean): PlanTextItem | null {
   }
 }
 
+/** A row's name: 10 px, as a zone's, beside the row. */
+const ROW_NAME_PX = 10
+
+/**
+ * The rows of tiles (plan-rows.ts, the 2D rule: three or more of one kind
+ * and size side by side) named once along them - "Row B · B01–B12" -
+ * beside the row on the floor, turned with it. Like a room's name it
+ * stays inside the room it stands in, clear of the walls: that room's
+ * outline is its region.
+ */
+export function rowTexts(
+  tiles: readonly SceneTile[],
+  areas: readonly AreaShape[],
+  dark: boolean
+): PlanTextItem[] {
+  const rows = findRows(
+    tiles
+      .filter((t) => !t.is_zone)
+      .map((t) => ({
+        id: t.id,
+        x: t.x,
+        y: t.y,
+        w: t.w,
+        h: t.h,
+        angle: tilePose(t).residual,
+        kind: t.kind === "other" ? (t.type_name ?? "") : t.kind,
+        name: sceneTileName(t),
+      }))
+  )
+  const rooms = areas.flatMap((a) =>
+    a.shape === "polygon"
+      ? a.points.length >= 3
+        ? [a.points]
+        : []
+      : [boxCorners(a)]
+  )
+  const font = cells(ROW_NAME_PX)
+  const out: PlanTextItem[] = []
+  for (const r of rows) {
+    const { text } = rowName(r.names)
+    if (!text) continue
+    // Beside the row, on its side along the normal - the 2D first choice.
+    const off = r.depth / 2 + font
+    const at: Pt = [r.centre[0] - r.dir[1] * off, r.centre[1] + r.dir[0] * off]
+    const angle = rowAngle(r.dir)
+    const room = rooms.find((o) => pointInPolygon(r.centre, o))
+    out.push({
+      id: `row:${r.id}`,
+      kind: "row",
+      lines: [clipName(text)],
+      fontCells: font,
+      weight: 600,
+      align: "center",
+      at,
+      pivot: [0.5, 0.5],
+      rotation: angle,
+      room: room ? { outline: room, angles: [angle] } : undefined,
+      elevation: FLOOR_TEXT_Y,
+      ink: {
+        color: LABEL_INK.muted[dark ? 1 : 0],
+        halo: pageInk(dark).page,
+        haloAlpha: 0.8,
+        plate: null,
+        plateBorder: null,
+      },
+    })
+  }
+  return out
+}
+
 /** A tray's name as the 2D plan writes it: name, cables, hidden ones. */
 export function trayName(t: SceneTray): string {
   if (!t.name) return ""
@@ -376,7 +453,8 @@ export function trayText(
 /**
  * Everything the plan writes on a level, as the Display menu asks: the
  * labels and tray names (Labels), the rooms' and areas' names (Room &
- * area names) and the zones' names (Zone labels). `shapes` are those on
+ * area names), the zones' names (Zone labels) and the rows' names
+ * (Callouts: Auto). `shapes` are those on
  * show - the eyes have already taken the hidden ones out.
  */
 export function planTexts({
@@ -402,6 +480,7 @@ export function planTexts({
       push(trayText(scene.plan, t, scene.raised_floors))
   }
   if (show.zoneNames) for (const t of scene.tiles) push(zoneText(t, dark))
+  if (show.rowNames) out.push(...rowTexts(scene.tiles, areas, dark))
   if (show.areaNames)
     for (const a of areas) push(areaText(a, dark, show.readable))
   return out

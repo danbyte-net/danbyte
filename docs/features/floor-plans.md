@@ -1709,6 +1709,13 @@ Hover it to list the row's members; click it to zoom until they read.
 The selected or hovered rack of a named row gets its own callout. Rows
 are found from the tiles' places alone; nothing is stored.
 
+In the **3D** room, with Callouts on **Auto**, each row's name is written on
+the floor beside it, along the row, as the room's other floor text is: it
+stays inside the room the row stands in, clear of the walls, stands up as
+a billboard when seen from low down, and gives way to labels, tray names
+and name plates in the one name layout. With Callouts **Off** the 3D rows
+are not named.
+
 ##### Rows from afar {#rows-from-afar}
 
 A row keeps reading as a row however far you zoom out. With **Icons when

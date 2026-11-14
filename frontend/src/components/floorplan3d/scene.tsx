@@ -338,9 +338,17 @@ export default function FloorScene3D({
       labels: showPlanLabels,
       areaNames: showAreaNames,
       zoneNames: showZoneLabels,
+      // Rows are named under Callouts: Auto, as on the 2D plan.
+      rowNames: readableCallouts,
       readable: readableNames,
     }),
-    [showPlanLabels, showAreaNames, showZoneLabels, readableNames]
+    [
+      showPlanLabels,
+      showAreaNames,
+      showZoneLabels,
+      readableCallouts,
+      readableNames,
+    ]
   )
   const sceneData = scene.data
   // Touching raised floors of one depth and colour are one pad.
