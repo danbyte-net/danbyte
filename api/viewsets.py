@@ -4958,7 +4958,9 @@ class DeviceViewSet(
                                ("status", "status"),
                                ("role", "role_id"), ("platform", "platform_id"),
                                ("location", "location_id"),
-                               ("manufacturer", "device_type__manufacturer_id")):
+                               ("manufacturer", "device_type__manufacturer_id"),
+                               # A cluster's hosts (the cluster page).
+                               ("cluster", "cluster_id")):
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{field: v})
@@ -5970,6 +5972,15 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
             vnet = self.request.query_params.get("pve_vnet")
             if vnet is not None and vnet != "":
                 qs = qs.filter(pve_vnet=vnet.strip())
+            # ?fiber=1: the fibre cables only (an smf*/mmf* type), the
+            # Fibre cables page.
+            if self.request.query_params.get("fiber") in ("1", "true"):
+                from .fiber_colors import _FIBER_PREFIXES
+
+                fibre = Q()
+                for prefix in _FIBER_PREFIXES:
+                    fibre |= Q(type__startswith=prefix)
+                qs = qs.filter(fibre)
         return qs.distinct()
 
     def _assert_write_in_site_scope(self, response, action):

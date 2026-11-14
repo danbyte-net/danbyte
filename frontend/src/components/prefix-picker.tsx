@@ -31,6 +31,7 @@ export function PrefixPicker({ label = "Prefix", ...rest }: PrefixPickerProps) {
       detailEndpoint: (id) => `/api/prefixes/${id}/`,
       detailQueryKey: prefixDetailKey,
       detailLabel: (p) => (p.vrf ? `${p.cidr} · ${p.vrf.name}` : p.cidr),
+      customFieldScope: true,
       listEndpoint: "/api/prefixes/",
       searchHint: "Search CIDR, description…",
       filters: [

@@ -243,7 +243,7 @@ class FreeListTests(_Base):
         r = self.free(length=24, scope="10.20.0.0/16", strategy="best", limit=4)
         self.assertNotIn(UNKNOWN, r)
         # Without free=1 the free-space parameters do nothing - and say so.
-        r = self.client.get("/api/prefixes/?length=24")
+        r = self.client.get("/api/prefixes/?length=24&strict=0")
         self.assertIn("length", r[UNKNOWN])
 
     def test_ipv6(self):

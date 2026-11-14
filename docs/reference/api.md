@@ -184,8 +184,9 @@ curl -s -H "Authorization: Token $TOKEN" \
 
 A list endpoint names every query parameter it did not use. Before 0.19.1 it
 ignored them silently: `GET /api/ips/?device_id=<id>` answered every
-address in the tenant, because the filter is called `device`. Now the
-response carries
+address in the tenant, because the filter is called `device`. From 0.20
+such a request is a `400` (strict mode, below). With strict mode off
+(`?strict=0`, or `API_STRICT_QUERY_PARAMS=0`) the response carries
 
 ```
 X-Danbyte-Unknown-Params: device_id
@@ -205,21 +206,34 @@ cache-buster on every list. A parameter that only counts with another one
 when it was ignored. Details, writes and actions (`facets/`, `table-ids/`,
 `report/`) are not checked, and neither is an error response.
 
-**Strict mode** turns an unknown parameter into a `400`:
+**Strict mode**, the default from 0.20, turns an unknown parameter into a
+`400`:
 
 ```json
-{"detail": "Unknown query parameters", "unknown": ["device_id"], "hint": {"device_id": "device"}}
+{
+  "detail": "Unknown query parameter: device_id (did you mean device?). This list takes: device, format, page, page_size, search, …. Send strict=0 to ignore unknown parameters.",
+  "unknown": ["device_id"],
+  "hint": {"device_id": "device"},
+  "allowed": ["device", "format", "page", "page_size", "search", "strict", "…"]
+}
 ```
 
 `hint` names the parameter you probably meant: `<x>` for `<x>_id` when the
-list takes `<x>`, else the closest name the list knows. Turn it on per
-request with `?strict=1` or the `X-Danbyte-Strict: 1` header, or for the
-whole deployment with `API_STRICT_QUERY_PARAMS`
-([settings](settings.md)). `?strict=0` (or `X-Danbyte-Strict: 0`) turns it
-off for one request. The setting is off in 0.19; **from 0.20 it defaults to
-on**, so a client that sends extra parameters should send `strict=0` or
-stop sending them. API clients, the [scripts SDK](scripts-sdk.md) among them,
-can send `X-Danbyte-Strict: 1` today.
+list takes `<x>`, else the closest name the list knows. `allowed` is what
+the list read on that request, so a parameter that only counts with another
+one (`include` without `view=table`) is not in it. `?strict=0` (or
+`X-Danbyte-Strict: 0`) turns strict mode off for one request: the list
+answers as if the parameter were absent and names it in the headers above.
+`API_STRICT_QUERY_PARAMS=0` ([settings](settings.md)) turns it off for the
+whole install, and `?strict=1` (or `X-Danbyte-Strict: 1`) then turns it on
+for one request.
+
+**Changed in 0.20:** the setting was off in 0.19, so a client that sent a
+parameter a list ignores got the whole list and now gets a `400`. Fix the
+parameter (the `hint` usually names it), send `strict=0`, or set
+`API_STRICT_QUERY_PARAMS=0` until your clients are fixed. The web app's own
+requests are checked against the lists in the test suite
+(`api/tests_frontend_query_params.py`).
 
 Some lists also take `<x>_id` as an alias of an id filter `<x>`. Sending
 both with different values is a `400`.

@@ -548,6 +548,9 @@ class PrtgChangeViewSet(
     change_model = PrtgChange
     connection_model = PrtgConnection
     rbac_action_map = {"apply_object": "change", "decide": "change"}
+    # ``ignored`` is understood with ``state`` too: ``state`` wins over it
+    # (core.query_params, strict by default).
+    extra_query_params = ("ignored",)
 
     @action(detail=True, methods=["post"])
     def decide(self, request, pk=None):

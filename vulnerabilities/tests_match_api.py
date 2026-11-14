@@ -93,7 +93,7 @@ class GateTests(ApiBase):
         }
         for url, params in known.items():
             with self.subTest(url=url):
-                r = self.client.get(f"{url}?zz_probe=1")
+                r = self.client.get(f"{url}?zz_probe=1&strict=0")
                 self.assertEqual(r.get(HEADER), "zz_probe")
                 r = self.client.get(f"{url}?{params}&page_size=5")
                 self.assertEqual(r.status_code, 200)

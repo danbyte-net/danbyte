@@ -30,6 +30,7 @@ export function IpPicker({ label = "IP address", ...rest }: IpPickerProps) {
       detailQueryKey: (id) => ["ip", id],
       detailLabel: (ip) =>
         ip.dns_name ? `${ip.ip_address} · ${ip.dns_name}` : ip.ip_address,
+      customFieldScope: true,
       listEndpoint: "/api/ips/",
       searchHint: "Search address, DNS name…",
       filters: [

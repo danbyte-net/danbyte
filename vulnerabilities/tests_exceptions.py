@@ -302,7 +302,7 @@ class ValidationTests(ApiBase):
         self.assertEqual(self.client.get(URL).status_code, 404)
 
     def test_unknown_params_named(self):
-        r = self.client.get(f"{URL}?zz=1")
+        r = self.client.get(f"{URL}?zz=1&strict=0")
         self.assertEqual(r.get("X-Danbyte-Unknown-Params"), "zz")
         r = self.client.get(f"{URL}?status=risk_accepted&scope=tenant&active=true&q=x"
                             f"&device={self.d_a.pk}&owner={self.owner.pk}")
