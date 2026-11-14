@@ -40,6 +40,7 @@ def _list_routes():
     return sorted(set(out), key=lambda r: r[0])
 
 
+@override_settings(API_STRICT_QUERY_PARAMS=False)
 class _Base(APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="Acme", slug="acme")
@@ -80,7 +81,7 @@ class UnknownParamTests(_Base):
         r = self.client.get("/api/devices/?site_idd=1&strict=1")
         self.assertEqual(r.status_code, 400)
         body = r.json()
-        self.assertEqual(body["detail"], "Unknown query parameters")
+        self.assertTrue(body["detail"].startswith("Unknown query parameter: site_idd"))
         self.assertEqual(body["unknown"], ["site_idd"])
 
     def test_strict_header_and_hint_for_id_suffix(self):
@@ -203,6 +204,50 @@ class EveryListTests(_Base):
                 r = self.client.get(f"{url}?zz_probe=1&strict=1")
                 self.assertEqual(r.status_code, 400, url)
         self.assertGreater(checked, 100)
+
+
+class DefaultStrictTests(_Base):
+    """Strict is the default from 0.20; API_STRICT_QUERY_PARAMS=0 opts out."""
+
+    @override_settings(API_STRICT_QUERY_PARAMS=True)
+    def test_unknown_param_is_a_400_naming_it_and_the_allowed_ones(self):
+        r = self.client.get(f"/api/ips/?device_id={self.r1.pk}&devic=1&page_size=5")
+        self.assertEqual(r.status_code, 400)
+        body = r.json()
+        self.assertEqual(body["unknown"], ["devic"])
+        self.assertEqual(body["hint"], {"devic": "device"})
+        for name in ("device", "page_size", "search", "page"):
+            self.assertIn(name, body["allowed"])
+        self.assertNotIn("_", body["allowed"])
+        self.assertIn("devic (did you mean device?)", body["detail"])
+        self.assertIn("This list takes: ", body["detail"])
+        self.assertIn("device, ", body["detail"])
+        self.assertIn("strict=0", body["detail"])
+
+    @override_settings(API_STRICT_QUERY_PARAMS=True)
+    def test_known_params_still_answer(self):
+        r = self.client.get(f"/api/ips/?device={self.r1.pk}&page_size=5")
+        self.assertEqual(r.status_code, 200)
+
+    @override_settings(API_STRICT_QUERY_PARAMS=True)
+    def test_many_long_names_keep_the_detail_short(self):
+        names = [f"filter_{i:02d}_{'z' * 200}" for i in range(30)]
+        r = self.client.get("/api/devices/?" + "&".join(f"{n}=1" for n in names))
+        self.assertEqual(r.status_code, 400)
+        body = r.json()
+        self.assertEqual(body["unknown"], names)
+        self.assertIn("+20 more", body["detail"])
+        self.assertLess(len(body["detail"]), 4000)
+        self.assertNotIn(HEADER, r)
+
+    def test_setting_defaults_on_and_env_opts_out(self):
+        from danbyte.settings import api_strict_query_params
+
+        self.assertTrue(api_strict_query_params({}))
+        for raw, want in (("", True), ("1", True), ("on", True), ("0", False),
+                          ("false", False), (" OFF ", False), ("no", False)):
+            self.assertEqual(
+                api_strict_query_params({"API_STRICT_QUERY_PARAMS": raw}), want, raw)
 
 
 class HintTests(SimpleTestCase):

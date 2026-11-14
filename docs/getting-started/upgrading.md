@@ -575,6 +575,18 @@ it has nothing to remove.
 
 See [Removing orphaned secrets](../monitoring/certificates.md#removing-orphaned-secrets).
 
+## Unknown list parameters are refused (0.20)
+
+From 0.20 a list endpoint answers `400` to a query parameter it does not
+understand, naming it and the parameters it takes. In 0.19 it ignored the
+parameter and answered the whole list, with only an
+`X-Danbyte-Unknown-Params` header. Scripts, integrations and saved URLs that
+send a misspelt or unsupported filter now fail instead of acting on more
+rows than they asked for. Fix the parameter, have the client send
+`strict=0`, or set `API_STRICT_QUERY_PARAMS=0` in the environment until
+they are fixed ([settings](../reference/settings.md),
+[REST API](../reference/api.md#unknown-query-parameters)).
+
 ## Upgrading from 0.16 or 0.17.0-dev1
 
 The first upgrade off 0.16.x or 0.17.0-dev1 is started by that release's own

@@ -5,13 +5,15 @@ whole list: ``GET /api/ips/?device_id=<uuid>`` returned every address in the
 tenant because the filter is called ``device``. A client that trusted the
 narrowed list could act on the wrong object.
 
-Every list endpoint now says which parameters it ignored:
+Every list endpoint now refuses or names the parameters it ignored:
 
-* ``X-Danbyte-Unknown-Params: device_id, foo`` and
+* Strict mode (the default from 0.20: the ``API_STRICT_QUERY_PARAMS``
+  setting, ``?strict=1`` or the ``X-Danbyte-Strict: 1`` header) answers 400,
+  naming each one with a "did you mean" hint and the parameters the list
+  read.
+* Otherwise (``?strict=0``, or the setting off) the list answers as usual
+  with ``X-Danbyte-Unknown-Params: device_id, foo`` and
   ``Warning: 299 - "Unknown query parameters ignored: device_id, foo"``.
-* Strict mode (``?strict=1``, the ``X-Danbyte-Strict: 1`` header, or the
-  ``API_STRICT_QUERY_PARAMS`` setting) answers 400 instead, with a "did you
-  mean" hint per parameter.
 
 What a list understands is learned while it runs: the request's
 ``query_params`` records every name the view, its filters, its paginator and
@@ -174,7 +176,7 @@ def is_strict(request) -> bool:
             return True
         if v in _FALSE:
             return False
-    return bool(getattr(settings, "API_STRICT_QUERY_PARAMS", False))
+    return bool(getattr(settings, "API_STRICT_QUERY_PARAMS", True))
 
 
 def hint_for(name: str, candidates) -> str | None:
@@ -225,6 +227,27 @@ def _header_value(names) -> str:
     return ", ".join(shown)
 
 
+_DETAIL_NAMES = 10
+
+
+def strict_detail(unknown, hints, allowed) -> str:
+    """The strict-mode 400's message: the unknown names (each with its "did
+    you mean"), what the list takes, and how to send it anyway. The body's
+    ``unknown`` and ``allowed`` carry the full lists."""
+    def name(n):
+        short = n if len(n) <= _MAX_NAME_BYTES else n[:_MAX_NAME_BYTES] + "…"
+        return f"{short} (did you mean {hints[n]}?)" if n in hints else short
+
+    shown = [name(n) for n in unknown[:_DETAIL_NAMES]]
+    if len(unknown) > _DETAIL_NAMES:
+        shown.append(f"+{len(unknown) - _DETAIL_NAMES} more")
+    takes = ", ".join(a for a in allowed if a != "strict")
+    return (
+        f"Unknown query parameter{'s' if len(unknown) != 1 else ''}: {', '.join(shown)}. "
+        f"This list takes: {takes}. Send strict=0 to ignore unknown parameters."
+    )
+
+
 def check_response(request, response, view_cls, tracked: TrackedQueryDict, original_keys):
     """Annotate (or in strict mode replace) a list response that ignored
     some of its query parameters."""
@@ -240,8 +263,14 @@ def check_response(request, response, view_cls, tracked: TrackedQueryDict, origi
             h = hint_for(name, known)
             if h:
                 hints[name] = h
+        allowed = sorted(k for k in known if k not in ("_",))
         return JsonResponse(
-            {"detail": "Unknown query parameters", "unknown": unknown, "hint": hints},
+            {
+                "detail": strict_detail(unknown, hints, allowed),
+                "unknown": unknown,
+                "hint": hints,
+                "allowed": allowed,
+            },
             status=400,
         )
     value = _header_value(unknown)

@@ -75,6 +75,10 @@ export interface ObjectPickerSpec<
   detailLabel?: (row: T) => string
   /** Full list endpoint the modal queries (server-side filtering). */
   listEndpoint: string
+  /** The list narrows to a custom field's scope (`?custom_field=`). Only
+   * then is a `customFieldId` sent: a list that does not take it answers
+   * an unknown parameter with a 400. */
+  customFieldScope?: boolean
   /** Placeholder for the modal's free-text search. */
   searchHint?: string
   filters: PickerFilter[]
@@ -161,11 +165,12 @@ export function ObjectPicker<
   pickLimit,
 }: ObjectPickerProps & { spec: ObjectPickerSpec<T, O> }) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  // Only a list that applies a custom field's scope is sent the field.
+  const scopeField = spec.customFieldScope ? customFieldId : undefined
 
   const compact = useQuery({
-    queryKey: [...spec.pickerQueryKey, customFieldId ?? ""],
-    queryFn: () =>
-      apiAll<O>(withCustomField(spec.pickerEndpoint, customFieldId)),
+    queryKey: [...spec.pickerQueryKey, scopeField ?? ""],
+    queryFn: () => apiAll<O>(withCustomField(spec.pickerEndpoint, scopeField)),
     staleTime: 10 * 60_000,
   })
   // Context-relevant subset (e.g. devices with the floor tile's role) - its
@@ -285,7 +290,7 @@ export function ObjectPicker<
         open={advancedOpen}
         onOpenChange={setAdvancedOpen}
         exclude={exclude}
-        customFieldId={customFieldId}
+        customFieldId={scopeField}
         initialFilters={initialFilters}
         onSelect={(id, row) => {
           onChange(id)

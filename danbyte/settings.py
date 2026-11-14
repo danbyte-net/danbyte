@@ -379,12 +379,18 @@ def api_max_tokens_per_user(env) -> int:
 API_MAX_TOKENS_PER_USER = api_max_tokens_per_user(os.environ)
 
 # A list endpoint names the query parameters it ignored in an
-# X-Danbyte-Unknown-Params header (core/query_params.py). With this on, an
-# unknown parameter is a 400 instead, unless the request sends ?strict=0.
-# Off in 0.19.x; the default becomes on in 0.20.
-API_STRICT_QUERY_PARAMS = (
-    os.getenv("API_STRICT_QUERY_PARAMS", "").strip().lower() in ("1", "true", "yes", "on")
-)
+# X-Danbyte-Unknown-Params header (core/query_params.py). With this on (the
+# default since 0.20), an unknown parameter is a 400 instead, unless the
+# request sends ?strict=0. API_STRICT_QUERY_PARAMS=0 turns it off for the
+# whole install (only the headers then).
+def api_strict_query_params(env) -> bool:
+    """``API_STRICT_QUERY_PARAMS`` from an environment mapping: on unless
+    set to 0/false/no/off."""
+    raw = str(env.get("API_STRICT_QUERY_PARAMS") or "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+API_STRICT_QUERY_PARAMS = api_strict_query_params(os.environ)
 
 
 # Application flow requirements (api.flow_requirements): the preview warns

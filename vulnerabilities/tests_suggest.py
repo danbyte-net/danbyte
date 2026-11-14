@@ -297,7 +297,7 @@ class SuggestionTests(Base):
 
     def test_unknown_params_are_named(self):
         self.login(self.admin)
-        r = self.client.get(f"{URL}?zz_probe=1")
+        r = self.client.get(f"{URL}?zz_probe=1&strict=0")
         self.assertEqual(r.get(HEADER), "zz_probe")
         r = self.client.get(f"{URL}?subject_type=platform&confidence=high&q=x&nvd=false"
                             "&page=1&page_size=5")

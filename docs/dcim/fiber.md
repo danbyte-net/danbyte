@@ -37,7 +37,9 @@ edit it.
 **DCIM → Fibre cables** lists every cable whose type is a fibre medium, with a
 filter rail - narrow by **type** (mmf-om4, smf-os2 …), **strand count**, or
 status, and search by device/port. Each row shows a colour strip of its first
-strands; click through to the cable's Fibres section.
+strands; click through to the cable's Fibres section. Through the API the
+same list is `GET /api/cables/?fiber=1` (before 0.20 the parameter was
+ignored and the page listed every cable).
 
 ## Turning a cable into a fibre cable
 

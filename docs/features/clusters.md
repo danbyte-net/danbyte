@@ -22,7 +22,10 @@ only place you need to set a site.
 | **Description**, **tags** | Notes and labels. |
 
 Its detail page lists the **virtual machines** on it (with a count on the tab)
-and its **VM groups**, plus Journal and Change log.
+and its **VM groups**, plus Journal and Change log. Its physical hosts are the
+devices whose cluster it is: `GET /api/devices/?cluster=<id>` (before 0.20
+the device list ignored `cluster`, so the page counted and listed every
+device).
 
 The Clusters list has **SLA** and **Availability** columns, read from the
 cluster's hosts: the agreements its hosts are in, and the checks on their
