@@ -367,7 +367,9 @@ The server checks every upload, whichever way it arrives:
   [`DEVICE_MODEL_MAX_BYTES`](../reference/settings.md#device-3d-models-device_model_max_bytes);
 - every buffer and image is inside the file (the binary chunk, a buffer view,
   or a `data:` URI). A model can't refer to anything outside itself, so it
-  can't make a viewer's browser fetch from elsewhere;
+  can't make a viewer's browser fetch from elsewhere. The one data-less
+  buffer allowed is a meshopt fallback buffer, which `gltfpack -c` writes
+  and the room never reads;
 - any extension it **requires** is one the room reads without a decoder from
   elsewhere: the `KHR_materials_*` family, `KHR_texture_transform`,
   `KHR_mesh_quantization`, `KHR_lights_punctual`, `EXT_meshopt_compression`,

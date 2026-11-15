@@ -66,6 +66,11 @@ def _mb(n: int) -> str:
     return f"{n / (1024 * 1024):.0f} MB"
 
 
+def _is_meshopt_fallback(buffer: dict) -> bool:
+    ext = (buffer.get("extensions") or {}).get("EXT_meshopt_compression")
+    return isinstance(ext, dict) and ext.get("fallback") is True
+
+
 def validate_glb(data: bytes) -> dict:
     """The parsed JSON chunk of ``data``, or ValidationError saying why the
     file is refused."""
@@ -96,6 +101,8 @@ def validate_glb(data: bytes) -> dict:
     if offset + 8 <= len(data):
         bin_len, bin_type = struct.unpack_from("<II", data, offset)
         has_bin = bin_type == CHUNK_BIN and offset + 8 + bin_len <= len(data)
+    used = doc.get("extensionsUsed") or []
+    meshopt = isinstance(used, list) and "EXT_meshopt_compression" in used
     for key in ("buffers", "images"):
         items = doc.get(key) or []
         if not isinstance(items, list):
@@ -105,8 +112,13 @@ def validate_glb(data: bytes) -> dict:
                 raise ValidationError(f"The file's {key} are malformed.")
             uri = item.get("uri")
             if uri is None:
-                # The BIN chunk (buffer 0), or an image in a buffer view.
-                if key == "buffers" and not (i == 0 and has_bin):
+                # The BIN chunk (buffer 0), an image in a buffer view, or a
+                # meshopt fallback buffer: gltfpack's compressed output
+                # declares one with no data, for loaders that can't decode
+                # (ours can, so nothing is read from it).
+                if key == "buffers" and not (i == 0 and has_bin) and not (
+                    meshopt and _is_meshopt_fallback(item)
+                ):
                     raise ValidationError("A buffer has no data.")
                 continue
             if not isinstance(uri, str) or not uri.startswith("data:"):
