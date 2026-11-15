@@ -197,6 +197,7 @@ const ROWS: Row[] = [
   ["device-dependencies", "Dependencies", "DCIM", "/api/device-dependencies/", { ioType: "devicedependency" }],
   ["dependency-media", "Dependency media", "DCIM", "/api/dependency-media/", { ioType: "dependencymedium" }],
   ["medium-dependencies", "Medium · Dependencies", "DCIM", "/api/device-dependencies/", sub],
+  ["dependency-proposals", "Suggested dependencies", "DCIM", null],
   ["fiber-cables", "Fiber cables", "DCIM", "/api/cables/"],
   ["port-reservations", "Port reservations", "DCIM", "/api/port-reservations/"],
   ["port-utilization", "Port utilization", "DCIM", null],
