@@ -357,6 +357,11 @@ modules in their bays and covers on the empty ones, so a swapped PSU shows
 at once; its ports are the ones the models name. Its
 [status LEDs](model-packs.md#status-leds) glow with the device's state,
 its modules' and its ports', polled every 30 seconds.
+An installed module has a **Status** of its own (the status catalog's
+*Modules* vocabulary: active, planned, staged, offline, failed,
+decommissioning), shown and set in the **Modules** table under Components →
+Hardware and picked when installing. It drives the module's lights; a module
+with none reads as its device's.
 
 ### Locate {#locate}
 
