@@ -9,6 +9,7 @@ import {
   generatedImagePorts,
   imageLedsFromBoxes,
   imagePortsFromAnchors,
+  imagesSourceLabel,
   ledSource,
   nearestFace,
   openingExtent,
@@ -279,5 +280,46 @@ describe("opening size extras", () => {
     const [x, y] = openingExtent([0, 1, 0], [0, 0, -1], 0.014, 0.01)
     expect(x).toBeCloseTo(0.01)
     expect(y).toBeCloseTo(0.014)
+  })
+})
+
+describe("imagesSourceLabel", () => {
+  const pack = {
+    name: "Cisco Catalyst 9500",
+    version: "1.1.0",
+    current: true,
+    note: "",
+  }
+  it("names the pack, a browser render or a hand upload", () => {
+    expect(
+      imagesSourceLabel({ front: "pack", rear: "pack", iso: "pack", pack })
+    ).toBe("From pack Cisco Catalyst 9500 1.1.0")
+    expect(
+      imagesSourceLabel({
+        front: "generated",
+        rear: "generated",
+        iso: null,
+        pack: null,
+      })
+    ).toBe("Generated")
+    expect(
+      imagesSourceLabel({
+        front: "uploaded",
+        rear: null,
+        iso: null,
+        pack: null,
+      })
+    ).toBe("Uploaded")
+  })
+  it("lists the faces of each source when they differ", () => {
+    expect(
+      imagesSourceLabel({ front: "pack", rear: "uploaded", iso: "pack", pack })
+    ).toBe("From pack Cisco Catalyst 9500 1.1.0 (front, ¾) · Uploaded (rear)")
+  })
+  it("is null without images", () => {
+    expect(
+      imagesSourceLabel({ front: null, rear: null, iso: null, pack: null })
+    ).toBeNull()
+    expect(imagesSourceLabel(null)).toBeNull()
   })
 })

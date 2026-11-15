@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, deleteModel3D } from "@/lib/api"
 import type {
   ImagePorts,
+  ImagesSource,
   Model3DEffective,
   Model3DFit,
   Model3DFront,
@@ -35,7 +36,9 @@ import {
   FRONT_CHOICES,
   UP_CHOICES,
 } from "@/components/model-3d-choice"
+import { InfoTip } from "@/components/ui/info-tip"
 import { lazyChunk } from "@/lib/lazy-chunk"
+import { imagesSourceLabel } from "@/lib/model-studio"
 import {
   DeviceStudioDialog,
   DeviceTypeStudioDialog,
@@ -109,6 +112,8 @@ export function Model3DCard({
     pending: boolean
     generated: boolean
     reference: Record<string, string> | null
+    /** Where each face came from (a pack, a browser render, by hand). */
+    source?: ImagesSource | null
   }
   /** A device: what it draws, to render its own faces from. */
   deviceModel?: Model3DEffective | null
@@ -285,10 +290,16 @@ export function Model3DCard({
         label: "Images",
         value: (
           <div className="flex flex-wrap items-center gap-2">
-            {studio.pending ? (
-              <Badge variant="warning">Pending</Badge>
+            {studio.pending && <Badge variant="warning">Pending</Badge>}
+            {studio.source !== undefined ? (
+              <span>{imagesSourceLabel(studio.source) ?? dash}</span>
             ) : (
-              <span>{studio.generated ? "Generated" : dash}</span>
+              !studio.pending && (
+                <span>{studio.generated ? "Generated" : dash}</span>
+              )
+            )}
+            {studio.source?.pack?.note && (
+              <InfoTip>{studio.source.pack.note}</InfoTip>
             )}
             {canEdit && (
               <Button

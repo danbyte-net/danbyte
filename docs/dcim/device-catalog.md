@@ -246,6 +246,12 @@ PDF reports. It can be uploaded or removed by hand like the faces
 is never replaced by generated images unless you tick it in the generate
 dialog.
 
+A [model pack](model-packs.md#rendered-photos) can also ship the faces
+rendered in Blender. Its import uses them as the type's photos and places
+the ports and LEDs on them. They count as generated: a later pack import or
+**Generate images** replaces them. A face uploaded by hand is kept unless
+the import is given `--replace-photos`.
+
 ### Recovering lost images {#reimport-images}
 
 Images live in the media folder; the device types live in the database. Lose
@@ -321,7 +327,7 @@ then:
 | **Far model** | An optional low-detail copy, drawn instead from about 14 m away. **Upload** / **Replace** / **Remove**; it needs the model first, and goes with it when the model is removed. |
 | **Anchors** | What the model's named nodes hold - module bays, ports, status lights - and, on a warning badge, the names that match nothing in the type. See [3D model packs](model-packs.md#names-the-models-carry). |
 | **Modules** | A modular model only: the modules the generated images show - **Covers**, or how many bays show a module. **Edit** picks a module type per bay. See [Generated images](model-packs.md#generated-images). |
-| **Images** | **Generate images** renders the rack-face images, the 3D image, the photo ports and the LED positions from the model. **Pending** while they are missing or were made from an older model. |
+| **Images** | Where the faces came from: *From pack …* (a [model pack's renders](model-packs.md#rendered-photos)), *Generated* or *Uploaded*. **Generate images** renders the rack-face images, the 3D image, the photo ports and the LED positions from the model. **Pending** while they are missing or were made from an older model. |
 
 Uploading, replacing and removing need **change** on the type; anyone who can
 view the type sees the card read-only. Each change lands in the type's

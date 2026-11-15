@@ -17,11 +17,21 @@ The ``model3d:`` block of a type's YAML::
       empty: filler                           # filler | hole | nothing
       leds:
         SYS: { source: device.status }
+      renders:                                # device types: faces rendered in Blender
+        front: models/Cisco/C9500-48Y4C.front.webp
+        rear: models/Cisco/C9500-48Y4C.rear.webp
+        iso: models/Cisco/C9500-48Y4C.iso.webp
+        model_sha256: <sha256 of the .glb>
+        modules: { PS-0: C9K-PWR-650WAC-R }   # bay -> module part number shown
 
 ``apply_model3d`` sets it on a type: each file is checked like an upload
 (api.model_3d.validate_glb), scanned for anchors (api.model_anchors) and
 stored as the type's model. A lone YAML (no pack around it) has nowhere to
 read the files from, so the block is skipped with a note.
+
+``apply_renders`` stores a device type's ``renders`` as its face photos
+(api.model_studio: source ``pack``), sets its reference modules from
+``modules`` and places the ports and LEDs on them (api.model_projection).
 
 ``import_pack`` imports a whole pack: it matches each YAML to an existing
 type by manufacturer and part number, creates the ones that are missing
@@ -30,6 +40,8 @@ import_model_pack`` drives it.
 """
 from __future__ import annotations
 
+import io
+import math
 import posixpath
 import zipfile
 from dataclasses import dataclass, field
@@ -46,6 +58,8 @@ LED_SOURCES = SOURCES
 #: YAML files a pack may hold at most, and each one's size.
 MAX_YAML_FILES = 2000
 MAX_YAML_BYTES = 2 * 1024 * 1024
+#: The faces a device type's ``renders`` may ship.
+RENDER_FACES = ("front", "rear", "iso")
 
 
 def _clean_path(path) -> str | None:
@@ -131,7 +145,11 @@ class PackFiles:
 def model3d_paths(block) -> list[str]:
     if not isinstance(block, dict):
         return []
-    return [str(block[k]) for k in ("file", "far") if isinstance(block.get(k), str)]
+    out = [str(block[k]) for k in ("file", "far") if isinstance(block.get(k), str)]
+    renders = block.get("renders")
+    if isinstance(renders, dict):
+        out += [str(renders[k]) for k in RENDER_FACES if isinstance(renders.get(k), str)]
+    return out
 
 
 def apply_model3d(obj, block, files: PackFiles | None, *, dry_run: bool = False) -> list[str]:
@@ -221,6 +239,292 @@ def apply_model3d(obj, block, files: PackFiles | None, *, dry_run: bool = False)
     return notes
 
 
+# ── faces rendered in Blender ───────────────────────────────────────────────
+
+def _half_up(v: float) -> int:
+    return int(math.floor(v + 0.5))
+
+
+def face_px(frame) -> tuple[int, int] | None:
+    """The front and rear render's exact size for a face frame (mm):
+    2000 px across, the height at the frame's aspect (the export spec,
+    §12). None without a frame height."""
+    from .model_projection import table
+
+    w, h = frame
+    if not w or not h:
+        return None
+    px = table()["face_width_px"]
+    return px, max(1, _half_up(px * h / w))
+
+
+def _render_image(files, path, face, expect, notes):
+    """``(bytes, ext)`` of a render that passes the checks, else None with
+    a note."""
+    from PIL import Image
+
+    from .model_studio import IMAGE_FORMATS, MAX_IMAGE_BYTES
+
+    try:
+        data = files.read(path, MAX_IMAGE_BYTES)
+    except ValidationError as exc:
+        notes.append(f"renders.{face}: {' '.join(exc.messages)} - skipped.")
+        return None
+    if data is None:
+        notes.append(f"renders.{face}: {path} is not in the pack - skipped.")
+        return None
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.verify()
+        fmt = (img.format or "").upper()
+        size = tuple(img.size)
+    except Exception:  # noqa: BLE001 - not an image
+        notes.append(f"renders.{face}: {path} is not an image - skipped.")
+        return None
+    if fmt not in IMAGE_FORMATS:
+        notes.append(f"renders.{face}: {path} is not a WebP or PNG - skipped.")
+        return None
+    if expect is not None and size != tuple(expect):
+        notes.append(f"renders.{face}: {path} is {size[0]} × {size[1]} px; the type's face "
+                     f"frame needs {expect[0]} × {expect[1]} - skipped.")
+        return None
+    return data, fmt.lower()
+
+
+def _map_modules(dt, modules, notes) -> tuple[dict, dict]:
+    """``renders.modules`` (bay → part number) as ``({bay: module type},
+    {bay: part number})``: the tenant's module types with a 3D model, the
+    chassis' manufacturer first when a part number is shared."""
+    from .models import ModuleType
+
+    if modules in (None, "", {}):
+        return {}, {}
+    if not isinstance(modules, dict):
+        notes.append("renders.modules: not a mapping - ignored.")
+        return {}, {}
+    bays = set(dt.module_bay_templates.values_list("name", flat=True))
+    anchored = set(((dt.model_anchors or {}).get("bays") or {}).keys())
+    found, parts = {}, {}
+    for bay, pn in modules.items():
+        bay, pn = str(bay), str(pn or "").strip()
+        if not pn:
+            continue
+        parts[bay] = pn
+        if bay not in bays:
+            notes.append(f"renders.modules.{bay}: no module bay of this name.")
+            continue
+        if anchored and bay not in anchored:
+            notes.append(f"renders.modules.{bay}: the model has no bay:{bay}.")
+            continue
+        hits = list(ModuleType.objects.filter(tenant_id=dt.tenant_id, part_number=pn)[:20])
+        if len(hits) > 1:
+            own = [m for m in hits if m.manufacturer_id == dt.manufacturer_id]
+            hits = own or hits
+        if not hits:
+            notes.append(f"renders.modules.{bay}: no module type {pn}.")
+        elif len(hits) > 1:
+            notes.append(f"renders.modules.{bay}: more than one module type {pn} - ignored.")
+        elif not hits[0].model_3d:
+            notes.append(f"renders.modules.{bay}: {hits[0].name} has no 3D model.")
+        else:
+            found[bay] = hits[0]
+    return found, parts
+
+
+def _set_reference(dt, renders, found, notes):
+    """Set ``model_reference`` from the renders' modules - unless someone
+    changed it since the last pack import set it. Returns the reference the
+    pack now owns (or None)."""
+    from rest_framework.exceptions import ValidationError as DRFValidationError
+
+    from .model_studio import validate_reference
+
+    meta = dt.pack_import if isinstance(dt.pack_import, dict) else {}
+    prev = meta.get("reference") or None
+    cur = dt.model_reference or None
+    if "modules" not in renders:
+        return prev if cur == prev else None
+    ref = {bay: str(mt.id) for bay, mt in found.items()} or None
+    if cur is not None and cur != prev:
+        if cur != ref:
+            notes.append("reference modules: set by hand - kept; the renders show "
+                         "other modules, so they read as out of date.")
+        return None
+    try:
+        value = validate_reference(dt, ref)
+    except DRFValidationError as exc:
+        notes.append(f"renders.modules: {exc.detail} - the reference is unchanged.")
+        return prev if cur == prev else None
+    dt.model_reference = value
+    if value != cur:
+        notes.append(f"reference modules: {len(value or {})} set from the pack.")
+    return value
+
+
+def _place_ports(dt, found, made, frame, replace_photos, notes):
+    """Project the ports and LEDs onto pack faces (api.model_projection)
+    with the modules the renders show; updates ``made``."""
+    from .face_ports import validate_image_ports_doc
+    from .model_projection import ProjectionUnavailable, project_type
+    from .model_studio import PACK, _has_markers, validate_image_leds
+    from .natural import natural_key
+
+    rows = [{"name": b.name, "position": b.position, "type": found.get(b.name)}
+            for b in sorted(dt.module_bay_templates.all(), key=lambda b: natural_key(b.name))]
+    try:
+        placed = project_type(dt, rows)
+    except ProjectionUnavailable:
+        notes.append("ports: the projection table isn't deployed - the type's next "
+                     "browser render places the ports and LEDs.")
+        return
+    notes += placed["notes"]
+
+    def ours(doc) -> bool:
+        return all(made.get(s) == PACK for s in ("front", "rear") if doc.get(s))
+
+    ports = placed["image_ports"]
+    if ports is not None and ours(ports):
+        if _has_markers(dt.image_ports) and "image_ports" not in made and not replace_photos:
+            notes.append("ports: kept the port markers placed by hand "
+                         "(--replace-photos replaces them).")
+        else:
+            cal = {"left": 0, "right": 1, "span_mm": round(frame[0], 1), "rail": None}
+            dt.image_ports = validate_image_ports_doc(
+                {**ports, "view": {"front": {"cal": cal}, "rear": {"cal": cal}}})
+            made["image_ports"] = PACK
+            notes.append(f"ports: {len(ports['front']) + len(ports['rear'])} placed "
+                         "on the renders.")
+    leds = placed["image_leds"]
+    if leds is not None and ours(leds):
+        dt.image_leds = validate_image_leds(leds)
+        made["image_leds"] = PACK
+        notes.append(f"LEDs: {len(leds['front']) + len(leds['rear'])} placed on the renders.")
+    elif leds is None and "image_leds" in made:
+        # An earlier render's LEDs don't stand on these faces.
+        dt.image_leds = None
+        made.pop("image_leds")
+
+
+def apply_renders(dt, block, files: PackFiles, *, pack_name: str = "", pack_version: str = "",
+                  dry_run: bool = False, replace_photos: bool = False) -> list[str]:
+    """Store a device type's Blender renders (``model3d.renders``) as its
+    face photos; the notes for the import report.
+
+    * each file must be in the pack and a WebP or PNG; front and rear must
+      be exactly the type's face frame at 2000 px across, else skipped;
+    * ``model_sha256`` must be the pack's ``.glb``: otherwise the renders are
+      imported but marked out of date;
+    * ``modules`` sets the type's ``model_reference`` - unless someone set it
+      by hand since (it differs from what the last pack import set);
+    * a face uploaded by hand is replaced only with ``replace_photos``; a
+      pack or browser render is replaced;
+    * the ports and LEDs are projected onto the faces from the stored
+      anchors (api.model_projection).
+    """
+    import hashlib
+    import uuid
+
+    from django.core.files.base import ContentFile
+
+    from . import model_3d
+    from .face_ports import drop_calibration
+    from .images import downscale_image
+    from .model_studio import PACK, frame_mm, generated
+
+    renders = block.get("renders") if isinstance(block, dict) else None
+    if renders in (None, "", {}):
+        return []
+    if not isinstance(renders, dict):
+        return ["renders: not a mapping - skipped."]
+    if not dry_run and not dt.model_3d:
+        return ["renders: the type has no 3D model - skipped."]
+    notes: list[str] = []
+
+    # The model the renders were made from.
+    try:
+        glb = files.read(block.get("file"), model_3d.max_bytes())
+    except ValidationError:
+        glb = None
+    actual = hashlib.sha256(glb).hexdigest() if glb else ""
+    raw = renders.get("model_sha256")
+    # An unquoted all-digit hash reads as a YAML number; compare its digits.
+    claimed = raw.strip().lower() if isinstance(raw, str) else ""
+    if raw is not None and not isinstance(raw, str):
+        claimed = str(raw)
+    stale = not claimed or claimed != actual
+    note = ""
+    if not claimed:
+        note = "The pack gives no model_sha256 for its renders."
+    elif stale:
+        note = "The renders were made from another model file than the pack ships."
+    if note:
+        notes.append(f"renders: {note} Imported, marked out of date.")
+
+    frame = frame_mm(dt)
+    expect = face_px(frame)
+    images: dict[str, tuple[bytes, str]] = {}
+    for face in RENDER_FACES:
+        path = renders.get(face)
+        if path in (None, ""):
+            continue
+        if face != "iso" and expect is None:
+            notes.append(f"renders.{face}: the type has no rack units or height to check "
+                         "the frame against - skipped.")
+            continue
+        got = _render_image(files, str(path), face, None if face == "iso" else expect, notes)
+        if got is not None:
+            images[face] = got
+
+    found, parts = _map_modules(dt, renders.get("modules"), notes)
+    reference = _set_reference(dt, renders, found, notes)
+
+    made = dict(generated(dt))
+    written, kept = [], []
+    for face, (data, ext) in images.items():
+        field = getattr(dt, f"{face}_image")
+        if field and face not in made and not replace_photos:
+            kept.append(face)
+            continue
+        written.append(face)
+        if dry_run:
+            continue
+        if field and face in made:
+            # A render of ours: nothing else points at the file.
+            field.delete(save=False)
+        img = downscale_image(ContentFile(data, name=f"{face}.{ext}"))
+        getattr(dt, f"{face}_image").save(f"{face}-{uuid.uuid4().hex[:10]}.{ext}", img,
+                                          save=False)
+        if face != "iso":
+            dt.image_ports = drop_calibration(dt.image_ports, face)
+        made[face] = PACK
+    if kept:
+        notes.append(f"renders: kept the {', '.join(kept)} photo{'s' if len(kept) > 1 else ''} "
+                     "uploaded by hand (--replace-photos replaces them).")
+    if written:
+        notes.append(f"renders: {', '.join(written)} imported.")
+    if dry_run:
+        return notes
+    older = [f for f in RENDER_FACES if f not in written and made.get(f) == PACK]
+    if older and written:
+        stale = True
+        note = f"{note} The {', '.join(older)} render is from an earlier import.".strip()
+    if any(made.get(f) == PACK for f in ("front", "rear")):
+        _place_ports(dt, found, made, frame, replace_photos, notes)
+
+    record = {"pack": {"name": pack_name, "version": pack_version}}
+    if reference:
+        record["reference"] = reference
+    if any(made.get(f) == PACK for f in RENDER_FACES):
+        record["images"] = {
+            "model_sha256": claimed, "model_version": model_3d.version_of(dt.model_3d),
+            "frame_mm": frame, "modules": parts, "stale": stale, "note": note,
+        }
+    dt.pack_import = record
+    dt.images_generated = made or None
+    dt.save()
+    return notes
+
+
 # ── whole packs ─────────────────────────────────────────────────────────────
 
 @dataclass
@@ -258,10 +562,13 @@ def _match(model_cls, tenant, data):
     return (hits[0] if hits else None), None
 
 
-def import_pack(tenant, files: PackFiles, *, dry_run: bool = True) -> PackResult:
+def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
+                replace_photos: bool = False) -> PackResult:
     """Import every device type and module type YAML in the pack with its
-    models. Inside one transaction, rolled back on ``dry_run`` (which also
-    stores no file). Audited as ordinary saves, with the pack as the cause."""
+    models and renders. Inside one transaction, rolled back on ``dry_run``
+    (which also stores no file). Audited as ordinary saves, with the pack as
+    the cause. ``replace_photos`` lets renders replace faces uploaded by
+    hand."""
     from django.db import transaction
 
     from audit.context import cause
@@ -334,6 +641,10 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True) -> PackResult
                     tr.name = obj.name
                 tr.notes += apply_model3d(obj, block, files, dry_run=dry_run) or [
                     "no model3d block."]
+                if kind == "device-type":
+                    tr.notes += apply_renders(
+                        obj, block, files, pack_name=result.name, pack_version=result.version,
+                        dry_run=dry_run, replace_photos=replace_photos)
                 # Rack-face images render in a browser (api.model_studio):
                 # the type's page offers them to its next editor.
                 if kind == "device-type" and not dry_run:

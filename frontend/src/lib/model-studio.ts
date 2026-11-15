@@ -3,7 +3,11 @@ import type {
   ImageLeds,
   ImagePortMarker,
   ImagePorts,
+  ImageSourceKind,
+  ImagesSource,
 } from "@/lib/api"
+
+import table from "./studio-projection.json"
 
 /**
  * Rack-face images from a 3D model ("studio", docs/dcim/model-packs.md):
@@ -26,10 +30,22 @@ export interface FaceFrame {
   h: number
 }
 
+/*
+ * The projection's numbers - the face image size, the face and LED
+ * thresholds, the port box table - live in `studio-projection.json`,
+ * which the server reads too (api.model_projection): it places the ports
+ * and LEDs on a model pack's Blender renders the way this file places them
+ * on a browser render. `studio-projection.cases.json` holds cases both
+ * test suites run.
+ */
+
 /** Face images are this many pixels across (their long edge). */
-export const FACE_WIDTH_PX = 2000
+export const FACE_WIDTH_PX: number = table.face_width_px
 /** The ¾ view's size. */
-export const ISO_SIZE_PX: [number, number] = [1600, 1200]
+export const ISO_SIZE_PX: [number, number] = [
+  table.iso_size_px[0],
+  table.iso_size_px[1],
+]
 
 /** The face frame from the server's `frame_mm` ([width, height or null]);
  * a type with no rack units nor height takes the model's own height. */
@@ -54,7 +70,7 @@ export function faceImagePx(
 
 /** The face a port points out of: its outward direction mostly toward −Z
  * (front) or +Z (rear). A port facing up or sideways shows on neither. */
-export function faceOf(n: V3, min = 0.5): Face | null {
+export function faceOf(n: V3, min: number = table.face_min): Face | null {
   const len = Math.hypot(n[0], n[1], n[2])
   if (len < 1e-9) return null
   const z = n[2] / len
@@ -69,7 +85,7 @@ export function faceOf(n: V3, min = 0.5): Face | null {
 export function nearestFace(
   p: V3,
   depth: number,
-  slack = Math.max(0.03, depth * 0.1)
+  slack = Math.max(table.led_slack.min_m, depth * table.led_slack.depth_ratio)
 ): Face | null {
   const front = Math.abs(p[2] + depth / 2)
   const rear = Math.abs(p[2] - depth / 2)
@@ -101,24 +117,17 @@ const round5 = (v: number) => Math.round(v * 1e5) / 1e5
  * component kind and type slug. The cage or jack outline as seen head-on;
  * close enough to click and to colour, never a measurement.
  */
-export const PORT_BOX_MM = {
-  sfp: [14, 9.5],
-  qsfp: [19, 9.5],
-  osfp: [23, 13],
-  cfp: [42, 14],
-  rj45: [14, 12],
-  usb: [13, 6],
-  usbc: [9, 4],
-  serial: [31, 12],
-  lc: [13, 9],
-  mpo: [13, 8],
-  coax: [10, 10],
-  iec: [28, 20],
-  iec_c20: [32, 22],
-  other: [12, 10],
-} as const satisfies Record<string, readonly [number, number]>
+export const PORT_BOX_MM = table.port_box_mm as unknown as Readonly<
+  Record<keyof typeof table.port_box_mm, readonly [number, number]>
+>
 
 export type PortBoxKind = keyof typeof PORT_BOX_MM
+
+const PORT_BOX_TYPES: readonly [RegExp, PortBoxKind][] =
+  table.port_box_types.map(([re, box]) => [new RegExp(re), box as PortBoxKind])
+const PORT_BOX_KINDS = table.port_box_kinds as Readonly<
+  Record<string, PortBoxKind | undefined>
+>
 
 /** Which box a component wears: by its type slug first, then its kind. */
 export function portBoxKind(
@@ -126,28 +135,8 @@ export function portBoxKind(
   type: string | null | undefined
 ): PortBoxKind {
   const t = (type ?? "").toLowerCase()
-  if (/osfp/.test(t)) return "osfp"
-  if (/qsfp|qsfpdd|qsfp-dd/.test(t)) return "qsfp"
-  if (/cfp/.test(t)) return "cfp"
-  if (/sfp|xfp|x2|gbic/.test(t)) return "sfp"
-  if (/usb-c|usb-type-c/.test(t)) return "usbc"
-  if (/usb/.test(t)) return "usb"
-  if (/c20|c19/.test(t)) return "iec_c20"
-  if (/iec-60320|c14|c16|c13|c15|nema|cee/.test(t)) return "iec"
-  if (/de-9|db-9|db-25|de9|serial/.test(t)) return "serial"
-  if (/mpo|mtp/.test(t)) return "mpo"
-  if (/lc|sc|st|fc|e2000|splice/.test(t)) return "lc"
-  if (/bnc|f-type|coax|smb|sma|n-type/.test(t)) return "coax"
-  if (
-    /base-t|rj-?45|8p8c|rj-?11|base-tx|-t$|^1000base|^100base|^10gbase-t/.test(
-      t
-    )
-  )
-    return "rj45"
-  if (kind === "console-port" || kind === "console-server-port") return "rj45"
-  if (kind === "power-port" || kind === "power-outlet") return "iec"
-  if (kind === "front-port" || kind === "rear-port") return "lc"
-  return "other"
+  for (const [re, box] of PORT_BOX_TYPES) if (re.test(t)) return box
+  return PORT_BOX_KINDS[kind] ?? (table.port_box_default as PortBoxKind)
 }
 
 /** The largest opening (m) the size extras may name - a typo guard, as
@@ -211,6 +200,10 @@ export interface PortAnchor {
    * `PORT_BOX_MM`. */
   size?: [number, number]
   u?: V3
+  /** The opening's extent on the face (m), already worked out - what the
+   * server's projection hands over; used when `size`/`u` are absent. */
+  w?: number
+  h?: number
 }
 
 export interface Placed<T> {
@@ -219,6 +212,21 @@ export interface Placed<T> {
   unknown: string[]
   /** Names facing neither face. */
   offFace: string[]
+}
+
+/** A port's box on the face (mm): the model's own opening size where the
+ * anchor has one, else the table's by kind and type. */
+export function portSizeMm(
+  a: Pick<PortAnchor, "w" | "h" | "size" | "u" | "n">,
+  kind: string,
+  type: string | null | undefined
+): readonly [number, number] {
+  if (a.size && a.u) {
+    const [x, y] = openingExtent(a.u, a.n, a.size[0], a.size[1])
+    return [x * 1000, y * 1000]
+  }
+  if (a.w && a.h && a.w > 0 && a.h > 0) return [a.w * 1000, a.h * 1000]
+  return PORT_BOX_MM[portBoxKind(kind, type)]
 }
 
 /**
@@ -249,12 +257,8 @@ export function imagePortsFromAnchors(
     const known = index[a.name]
     if (!known) unknown.push(a.name)
     const kind = known?.[0] ?? "interface"
-    // The model's exact opening where it names one, else the type's box.
-    const box = PORT_BOX_MM[portBoxKind(kind, known?.[1])]
-    const [wm, hm] =
-      a.size && a.u
-        ? openingExtent(a.u, a.n, a.size[0], a.size[1])
-        : [box[0] / 1000, box[1] / 1000]
+    const [wmm, hmm] = portSizeMm(a, kind, known?.[1])
+    const [wm, hm] = [wmm / 1000, hmm / 1000]
     const { x, y } = projectToFace(a.p, face, frame)
     if (x < 0 || x > 1 || y < 0 || y > 1) {
       offFace.push(a.name)
@@ -337,8 +341,12 @@ export function imageLedsFromBoxes(
       ...(source ? { source } : {}),
       x: round5(x),
       y: round5(y),
-      w: round5(clamp01(Math.max(b.max[0] - b.min[0], 0.001) / frame.w)),
-      h: round5(clamp01(Math.max(b.max[1] - b.min[1], 0.001) / frame.h)),
+      w: round5(
+        clamp01(Math.max(b.max[0] - b.min[0], table.min_led_m) / frame.w)
+      ),
+      h: round5(
+        clamp01(Math.max(b.max[1] - b.min[1], table.min_led_m) / frame.h)
+      ),
     })
   }
   return { doc, unknown: [], offFace }
@@ -405,4 +413,36 @@ export function generatedImagePorts(
     ...doc,
     view: { front: { cal }, rear: { cal } },
   }
+}
+
+/** What the 3D card's Images row says about where the faces came from:
+ * one label when every face shares a source, else each source with its
+ * faces. Null without images. */
+export function imagesSourceLabel(
+  src: ImagesSource | null | undefined
+): string | null {
+  if (!src) return null
+  const label = (k: ImageSourceKind) =>
+    k === "pack"
+      ? ["From pack", src.pack?.name, src.pack?.version]
+          .filter(Boolean)
+          .join(" ")
+      : k === "generated"
+        ? "Generated"
+        : "Uploaded"
+  const faces: [string, ImageSourceKind | null][] = [
+    ["front", src.front],
+    ["rear", src.rear],
+    ["¾", src.iso],
+  ]
+  const byKind = new Map<ImageSourceKind, string[]>()
+  for (const [face, k] of faces) {
+    if (!k) continue
+    byKind.set(k, [...(byKind.get(k) ?? []), face])
+  }
+  if (byKind.size === 0) return null
+  if (byKind.size === 1) return label([...byKind.keys()][0])
+  return [...byKind]
+    .map(([k, fs]) => `${label(k)} (${fs.join(", ")})`)
+    .join(" · ")
 }

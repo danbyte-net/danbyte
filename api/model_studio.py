@@ -17,6 +17,14 @@ decides:
 
 ``images_generated`` on the type records ``{front|rear|iso|image_ports|
 image_leds: token}``; a hand upload or a hand-edited port map drops its key.
+
+A model pack can ship the faces rendered in Blender (api.model_pack,
+``model3d.renders``). Those keys hold ``"pack"`` instead of a token, and
+``pack_import["images"]`` says what they were made from: the pack, the
+model's sha256 (and the stored file's version once it matched), the frame
+and the modules shown. They count as generated - a browser render replaces
+them without asking - and are current while the stored model, the frame and
+the reference modules (by part number) are still the ones they show.
 """
 from __future__ import annotations
 
@@ -38,6 +46,8 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 #: LEDs one image set may place.
 MAX_LEDS = 2048
 IMAGE_FORMATS = ("WEBP", "PNG")
+#: What ``images_generated`` holds for an image a model pack shipped.
+PACK = "pack"
 
 
 # ── the frame and the token ─────────────────────────────────────────────────
@@ -104,20 +114,89 @@ def generated(dt) -> dict:
     return g if isinstance(g, dict) else {}
 
 
+def pack_images(dt) -> dict:
+    """What the type's pack-rendered images were made from (or {})."""
+    meta = dt.pack_import if isinstance(dt.pack_import, dict) else {}
+    images = meta.get("images")
+    return images if isinstance(images, dict) else {}
+
+
+def reference_parts(rows: list[dict]) -> dict:
+    """``{bay: part number}`` of the reference modules - how a pack's
+    ``renders.modules`` names them."""
+    return {r["name"]: (r["type"].part_number or r["type"].name)
+            for r in rows if r["type"] is not None}
+
+
+def pack_current(dt, rows: list[dict] | None = None) -> bool:
+    """Whether the pack's renders still show the type: the model they were
+    rendered from (sha256 matched at import, the stored file unchanged
+    since), the same face frame and the same modules."""
+    from .model_3d import version_of
+
+    meta = pack_images(dt)
+    if not meta or meta.get("stale") or not dt.model_3d:
+        return False
+    if meta.get("model_version") != version_of(dt.model_3d):
+        return False
+    if meta.get("frame_mm") != frame_mm(dt):
+        return False
+    rows = _reference_rows(dt) if rows is None else rows
+    return reference_parts(rows) == (meta.get("modules") or {})
+
+
 def pending(dt, current: str | None = None) -> bool:
     """A type with a model whose images are missing or were made from an
     older model state. Faces made by hand don't count: they stay."""
     if not dt.model_3d:
         return False
-    current = token(dt) if current is None else current
     made = generated(dt)
+    pack_ok = None
     for face in FACES:
         f = getattr(dt, f"{face}_image")
         if not f:
             return True
-        if face in made and made[face] != current:
+        if face not in made:
+            continue
+        if made[face] == PACK:
+            if pack_ok is None:
+                pack_ok = pack_current(dt)
+            if not pack_ok:
+                return True
+            continue
+        current = token(dt) if current is None else current
+        if made[face] != current:
             return True
     return False
+
+
+def sources(dt) -> dict:
+    """Where each face came from: ``pack``, ``generated`` (a browser
+    render), ``uploaded`` (by hand or the library) or None (no image)."""
+    made = generated(dt)
+    out = {}
+    for face in FACES:
+        if not getattr(dt, f"{face}_image"):
+            out[face] = None
+        elif face not in made:
+            out[face] = "uploaded"
+        else:
+            out[face] = "pack" if made[face] == PACK else "generated"
+    return out
+
+
+def images_source(dt) -> dict:
+    """The serializer's ``images_source``: each face's source and, when a
+    face came from a pack, which pack and whether it still matches."""
+    faces = sources(dt)
+    pack = None
+    if PACK in faces.values():
+        meta = dt.pack_import if isinstance(dt.pack_import, dict) else {}
+        info = meta.get("pack") if isinstance(meta.get("pack"), dict) else {}
+        images = pack_images(dt)
+        pack = {"name": info.get("name") or "", "version": info.get("version") or "",
+                "current": pack_current(dt), "note": images.get("note") or ""}
+    return {**faces, "pack": pack}
 
 
 def hand_made(dt) -> list[str]:
@@ -238,6 +317,21 @@ def _leds_of(owner) -> dict:
     return leds if isinstance(leds, dict) else {}
 
 
+def port_index(dt, rows: list[dict]) -> dict:
+    """``{name: [kind, type]}`` of the type's components and the reference
+    modules' interfaces (named for their bay) - what a port anchor names."""
+    from .models import render_module_name
+
+    owners = [(kind, getattr(dt, rel).all(), str) for kind, rel in _TEMPLATE_RELS]
+    for r in rows:
+        mt = r["type"]
+        if mt is not None and mt.model_3d:
+            pos = r["position"]
+            owners.append(("interface", mt.interface_templates.all(),
+                           lambda n, pos=pos: render_module_name(n, pos)))
+    return _port_index_of(owners)
+
+
 def type_payload(dt, user=None, tenant=None) -> dict:
     """``GET /api/device-types/{id}/studio/``: what the renderer needs - the
     model, its frame, the reference modules per bay (with their models,
@@ -289,6 +383,7 @@ def type_payload(dt, user=None, tenant=None) -> dict:
         "pending": pending(dt, current),
         "generated": sorted(generated(dt)),
         "hand_made": hand_made(dt),
+        "sources": images_source(dt),
     }
 
 

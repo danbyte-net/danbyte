@@ -25,7 +25,8 @@ its own plus its descendants'.
      "empties": {"PS-0": 82},
      "ports": {"Te1/0/1": {"node": 145, "p": [x, y, z], "n": [x, y, z],
                            "s": [w, h], "r": r, "u": [x, y, z]}},
-     "leds": {"SYS": {"node": 139, "led_material": true}},
+     "leds": {"SYS": {"node": 139, "led_material": true,
+                      "box": [[minx, miny, minz], [maxx, maxy, maxz]]}},
      "empty_mode": "filler"}          # from a pack's YAML, kept on rescans
 
 A port empty may carry its opening's exact size as glTF node ``extras``
@@ -39,6 +40,11 @@ that sizes a port box - the 3D markers (via ``port_doc``) and a face
 image's ``image_ports`` (``opening`` / ``opening_extent``) - reads them
 from here: one reader of the extras. A port without them has no ``s`` and
 falls back to the standard size for its type.
+
+A port or LED inside an ``empty:`` cover also records ``"cover": <bay>``:
+it shows only while that cover does. An LED's ``box`` is its meshes'
+(descendants' too) as authored - what api.model_projection projects onto a
+pack's rendered faces; LEDs scanned before it was recorded have none.
 
 ``port_doc`` builds the ``model_ports`` doc (api.model_ports) a device's
 drawn model gets from these anchors: the chassis' ports plus each installed
@@ -217,6 +223,52 @@ def scene_box(doc: dict, world: dict | None = None):
     return [[round(x, 6) for x in lo], [round(x, 6) for x in hi]]
 
 
+def _subtree(doc: dict, i: int) -> list[int]:
+    nodes = doc.get("nodes") or []
+    out: list[int] = []
+    seen: set[int] = set()
+    stack = [i]
+    while stack:
+        n = stack.pop()
+        if n in seen or not (0 <= n < len(nodes)) or not isinstance(nodes[n], dict):
+            continue
+        seen.add(n)
+        out.append(n)
+        stack.extend(c for c in nodes[n].get("children") or [] if isinstance(c, int))
+    return out
+
+
+def subtree_box(doc: dict, i: int, world: dict):
+    """The box of node ``i``'s meshes and its descendants', as authored."""
+    nodes = doc.get("nodes") or []
+    lo, hi = [math.inf] * 3, [-math.inf] * 3
+    for n in _subtree(doc, i):
+        if n not in world:
+            continue
+        box = _mesh_box(doc, nodes[n].get("mesh"))
+        if box is None:
+            continue
+        for c in _corners(*box):
+            p = apply_point(world[n], c)
+            lo = [min(a, b) for a, b in zip(lo, p, strict=False)]
+            hi = [max(a, b) for a, b in zip(hi, p, strict=False)]
+    if lo[0] > hi[0]:
+        return None
+    return [[round(x, 6) for x in lo], [round(x, 6) for x in hi]]
+
+
+def _covers(doc: dict, world: dict) -> dict[int, str]:
+    """Each node under an ``empty:<bay>`` node, with that bay's name."""
+    nodes = doc.get("nodes") or []
+    out: dict[int, str] = {}
+    for i in world:
+        name = nodes[i].get("name")
+        if isinstance(name, str) and name.startswith("empty:") and len(name) > 6:
+            for n in _subtree(doc, i):
+                out.setdefault(n, name[6:])
+    return out
+
+
 def _materials_under(doc: dict, i: int) -> set[str]:
     """The material names of node ``i``'s meshes and its descendants' (a
     ``-kn`` export moves a named node's mesh onto a child)."""
@@ -312,6 +364,7 @@ def scan(doc: dict) -> tuple[dict, list[str]]:
     without the LED material). Only nodes in the default scene count."""
     nodes = doc.get("nodes") if isinstance(doc.get("nodes"), list) else []
     world = _world(doc)
+    covers = _covers(doc, world)
     out = {"v": ANCHORS_VERSION, "box": scene_box(doc, world),
            "bays": {}, "empties": {}, "ports": {}, "leds": {}}
     warnings: list[str] = []
@@ -339,10 +392,17 @@ def scan(doc: dict) -> tuple[dict, list[str]]:
                 "n": [round(x, 5) for x in unit(apply_dir(m, [0, 1, 0]))],
                 **(_opening(nodes[i], m) or {}),
             }
+            if i in covers:
+                out["ports"][rest]["cover"] = covers[i]
         else:
             mats = _materials_under(doc, i)
             ok = mats == {LED_MATERIAL}
             out["leds"][rest] = {"node": i, "led_material": ok}
+            box = subtree_box(doc, i, world)
+            if box is not None:
+                out["leds"][rest]["box"] = box
+            if i in covers:
+                out["leds"][rest]["cover"] = covers[i]
             if not ok:
                 warnings.append(f"“{name}” does not use the material “{LED_MATERIAL}”.")
     return out, warnings

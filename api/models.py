@@ -646,6 +646,12 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
         help_text=("Which of front/rear/iso/image_ports/image_leds were "
                    "generated, each keyed to the model state it came from."),
     )
+    pack_import = models.JSONField(
+        null=True, blank=True, default=None, editable=False,
+        help_text=("What the last model-pack import set: {pack: {name, version}, "
+                   "reference: {bay: module type id}, images: {model_sha256, "
+                   "model_version, frame_mm, modules: {bay: part number}, stale, note}}."),
+    )
     is_full_depth = models.BooleanField(
         default=True,
         help_text=("Occupies both the front and rear rack faces. Full-depth "

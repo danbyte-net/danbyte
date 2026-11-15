@@ -48,6 +48,7 @@ model3d:
 | `up`, `front`, `fit` | As the [3D model settings](device-catalog.md#3d-models). Packs follow glTF's Y up, front +Z, so these are normally left out. |
 | `empty` | What an empty bay shows: its cover (`filler`, the default), the modelled hole (`hole`, also drawn by the cover node), or `nothing`. |
 | `leds` | Which data each status light shows. See [Status LEDs](#status-leds). |
+| `renders` | Device types: rack-face photos rendered in Blender. See [Rendered photos](#rendered-photos). |
 
 ## Names the models carry
 
@@ -167,6 +168,81 @@ own modules, to view and download. **Save photo ports** keeps the port map
 as the device's [photo-port override](devices.md); a device keeps drawing
 its type's images.
 
+## Rendered photos
+
+A pack can ship each device type's faces rendered in Blender, which look
+better than a browser render. Danbyte imports them as the type's photos and
+places the ports and LEDs on them itself.
+
+```yaml
+model3d:
+  file: models/Cisco/C9500-48Y4C.glb
+  renders:
+    front: models/Cisco/C9500-48Y4C.front.webp
+    rear:  models/Cisco/C9500-48Y4C.rear.webp
+    iso:   models/Cisco/C9500-48Y4C.iso.webp
+    model_sha256: <sha256 of C9500-48Y4C.glb>
+    modules:                 # what the renders show: bay → module part number
+      PS-0:  C9K-PWR-650WAC-R
+      FAN 0: C9K-T1-FANTRAY
+```
+
+**The camera.** Front and rear are orthographic and framed to the rack face,
+exactly like a [generated image](#generated-images): width W is the type's
+width (0.4826 m for 19 inches, 0.2413 m for half width), height H is
+`u_height × 0.04445` m, 2000 px across and `round(2000 × H / W)` px high
+(2000 × 184 for 1U). Front looks along the model's front, rear from behind
+and not mirrored. The 3D view is 1600 × 1200 from the front right, a little
+above. All three are WebP or PNG with a transparent background. The full
+contract for whoever renders the pack is the export spec's section 12
+("Photos rendered in Blender").
+
+**What the import checks.** Each file must be in the pack and be a WebP or
+PNG. A front or rear that isn't exactly the type's frame size is skipped
+with a note, and so is a missing file. The other faces still import.
+`model_sha256` must be the sha256 of the pack's `.glb`. If it isn't, or is
+missing, the renders are still imported but marked out of date.
+
+**Reference modules.** `modules` maps each bay to the part number of the
+module the renders show. The import looks for the tenant's module type with
+that part number, preferring the chassis' manufacturer, and sets the type's
+**Modules** (`model_reference`) to match. That way a later browser render
+and the LEDs show the same parts. A part number with no module type with a
+model, such as a module the pack doesn't ship yet, is noted and its bay left
+as a cover. The photos are still used. The import changes the reference
+only when nobody has changed it since: it is empty, or it is still what the
+last pack import set. A reference you set yourself is kept.
+
+**Ports and LEDs.** The server places them on the rendered faces without a
+browser, with the same maths and port-box table as a browser render. It
+projects the chassis model's `port:` and `led:` nodes and each reference
+module's, posed by its bay's transform. A port node that gives its own
+opening size uses it. Otherwise the box comes from the component's type.
+The photo calibration is set to the face's width.
+
+**Where a photo came from.** The **Images** row of the 3D model card names
+the source of the faces: *From pack Cisco Catalyst 9500 1.1.0*,
+*Generated* (a browser render) or *Uploaded* (by hand or from the library).
+When faces differ, each source lists its faces.
+
+**Replacing.** Pack photos count as generated photos:
+
+- A pack import replaces pack photos and browser renders.
+- It keeps a face uploaded by hand, and photo ports placed by hand, unless
+  you pass `--replace-photos`.
+- **Generate images** replaces pack photos without asking, for when you
+  want a render of your own configuration.
+
+**Out of date.** Pack photos are current while all of these hold:
+
+- The type still has the model they were rendered from: the sha256 matched
+  at import, and the model hasn't been replaced since.
+- The face frame is the same.
+- The reference modules are the ones `modules` names, by part number.
+
+Otherwise the card shows **Pending**, as for generated images, with the
+reason on the info icon when the import gave one.
+
 ## Status LEDs
 
 A type's `leds:` block binds each `led:<id>` light to a source. A key is an
@@ -231,6 +307,9 @@ one:
 - The run is a **dry run** unless `--apply` is given: everything is read,
   checked and scanned, the report printed, and nothing kept.
 - Models no YAML names are listed and not imported.
+- A device type with [rendered photos](#rendered-photos) gets them as its
+  faces, with its reference modules, ports and LEDs. A face uploaded by
+  hand is kept unless `--replace-photos` is given.
 - A device type left without current [generated images](#generated-images)
   is reported as *images: pending*. They render in a browser, so the type's
   page offers them to its next editor.
@@ -248,7 +327,7 @@ pack.
 | `GET/POST/DELETE /api/module-types/{id}/model/` | A module type's model, as for device types. View / change on the module type. |
 | `GET/POST/DELETE /api/{device-types,module-types,devices}/{id}/model-far/` | The far copy. Needs the full model first; removing the full model removes it too. |
 | `GET /api/devices/{id}/module-model/{module id}/` (and `module-model-far/`) | An installed module's model, through its device. |
-| `GET /api/device-types/{id}/studio/` | What the image renderer needs: the model, `frame_mm` (`[width, height]`), the bays with their reference modules' models and `leds`, the components by name (`ports`: `[kind, type]`), the `token` of the model state, `pending`, `generated` and `hand_made`. View on the type. |
+| `GET /api/device-types/{id}/studio/` | What the image renderer needs: the model, `frame_mm` (`[width, height]`), the bays with their reference modules' models and `leds`, the components by name (`ports`: `[kind, type]`), the `token` of the model state, `pending`, `generated`, `hand_made` and `sources` (as `images_source` below). View on the type. |
 | `POST /api/device-types/{id}/studio/` | Stores a rendered set (multipart): `front_image`, `rear_image`, `iso_image` (WebP or PNG), `image_ports` and `image_leds` (JSON), `token` (a stale one answers 400) and `overwrite` - the hand-made targets to replace, comma-separated. Answers `written`, `kept` and the type. Change on the type. |
 | `GET /api/devices/{id}/studio/` | The same for a device's own faces: its components and its modules' LED bindings. View on the device. |
 | `GET /api/device-leds/?devices=<id>,<id>…` | What the status LEDs show now. Also `?device=<id>` or `?rack=<id>`. POST the same keys as a JSON body for long lists (`{"devices": [...]}`). Any other parameter is a 400. |
@@ -256,7 +335,9 @@ pack.
 
 A device type's read carries `iso_image`, `image_leds`, `model_reference`
 (bay name → module type id, writable with `PATCH`, null for covers) and, on
-the detail read, `images_pending`.
+the detail read, `images_pending` and `images_source`. `images_source` gives
+`front`, `rear` and `iso` as `pack`, `generated`, `uploaded` or null, and
+`pack` as `{name, version, current, note}` when a face came from a pack.
 
 An upload's answer carries `model_scan`: `summary`, `counts` (`bays`,
 `empties`, `ports`, `leds`) and `warnings`. A type's or device's detail read

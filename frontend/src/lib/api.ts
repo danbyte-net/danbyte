@@ -1683,6 +1683,18 @@ export interface ResolvedPhotoCalibration extends PhotoCalibration {
   photo_mm: number
 }
 
+/** Where a type's face images came from: a model pack's Blender renders,
+ * a browser render ("generated") or a hand upload. */
+export type ImageSourceKind = "pack" | "generated" | "uploaded"
+
+export interface ImagesSource {
+  front: ImageSourceKind | null
+  rear: ImageSourceKind | null
+  iso: ImageSourceKind | null
+  /** The pack the `pack` faces came from, and whether they still match. */
+  pack: { name: string; version: string; current: boolean; note: string } | null
+}
+
 export interface DeviceType extends LifecycleInfo {
   id: string
   numid: number | null
@@ -1712,6 +1724,8 @@ export interface DeviceType extends LifecycleInfo {
   model_reference?: Record<string, string> | null
   /** The model has images to (re)generate (detail reads only). */
   images_pending?: boolean
+  /** Where each face came from (detail reads only, api.model_studio). */
+  images_source?: ImagesSource | null
   /** Download URL of the type's 3D model (binary glTF), or null. */
   model_3d?: string | null
   model_3d_fit?: Model3DFit

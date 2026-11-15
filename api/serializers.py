@@ -2909,6 +2909,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     rear_image = serializers.SerializerMethodField()
     iso_image = serializers.SerializerMethodField()
     images_pending = serializers.SerializerMethodField()
+    images_source = serializers.SerializerMethodField()
     # The 3D model's download URL (never its stored path); set through the
     # ``model/`` action.
     model_3d = serializers.SerializerMethodField()
@@ -3021,6 +3022,14 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         from .model_studio import pending
 
         return pending(obj)
+
+    @detail_only(None)
+    def get_images_source(self, obj) -> dict | None:
+        # Where each face came from: a model pack, a browser render or a
+        # hand upload (api.model_studio.images_source).
+        from .model_studio import images_source
+
+        return images_source(obj)
 
     def validate_model_reference(self, value):
         from .model_studio import validate_reference
@@ -3218,6 +3227,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "u_height", "rack_width", "description",
                   "front_image", "rear_image", "faceplate", "image_ports",
                   "iso_image", "image_leds", "model_reference", "images_pending",
+                  "images_source",
                   "topology_photo_size", "icon",
                   "is_full_depth", "airflow", "cooling_method", "heat_output_w",
                   "weight", "weight_unit",
@@ -3233,7 +3243,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         read_only_fields = ["id", "device_count", "component_count",
                   "sensor_count", "document_count",
                   "front_image", "rear_image", "model_3d", "model_3d_far", "model_3d_scan",
-                  "iso_image", "image_leds", "images_pending",
+                  "iso_image", "image_leds", "images_pending", "images_source",
                             "lifecycle_state", "created_at", "updated_at"]
 
 

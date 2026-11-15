@@ -1,0 +1,50 @@
+{
+  "face_width_px": 2000,
+  "iso_size_px": [1600, 1200],
+  "face_min": 0.5,
+  "led_slack": { "min_m": 0.03, "depth_ratio": 0.1 },
+  "min_led_m": 0.001,
+  "port_box_mm": {
+    "sfp": [14, 9.5],
+    "qsfp": [19, 9.5],
+    "osfp": [23, 13],
+    "cfp": [42, 14],
+    "rj45": [14, 12],
+    "usb": [13, 6],
+    "usbc": [9, 4],
+    "serial": [31, 12],
+    "lc": [13, 9],
+    "mpo": [13, 8],
+    "coax": [10, 10],
+    "iec": [28, 20],
+    "iec_c20": [32, 22],
+    "other": [12, 10]
+  },
+  "port_box_types": [
+    ["osfp", "osfp"],
+    ["qsfp|qsfpdd|qsfp-dd", "qsfp"],
+    ["cfp", "cfp"],
+    ["sfp|xfp|x2|gbic", "sfp"],
+    ["usb-c|usb-type-c", "usbc"],
+    ["usb", "usb"],
+    ["c20|c19", "iec_c20"],
+    ["iec-60320|c14|c16|c13|c15|nema|cee", "iec"],
+    ["de-9|db-9|db-25|de9|serial", "serial"],
+    ["mpo|mtp", "mpo"],
+    ["lc|sc|st|fc|e2000|splice", "lc"],
+    ["bnc|f-type|coax|smb|sma|n-type", "coax"],
+    [
+      "base-t|rj-?45|8p8c|rj-?11|base-tx|-t$|^1000base|^100base|^10gbase-t",
+      "rj45"
+    ]
+  ],
+  "port_box_kinds": {
+    "console-port": "rj45",
+    "console-server-port": "rj45",
+    "power-port": "iec",
+    "power-outlet": "iec",
+    "front-port": "lc",
+    "rear-port": "lc"
+  },
+  "port_box_default": "other"
+}

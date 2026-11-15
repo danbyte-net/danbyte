@@ -481,6 +481,7 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
             pending: !!d.images_pending,
             generated: !!(d.front_image || d.rear_image || d.iso_image),
             reference: d.model_reference ?? null,
+            source: d.images_source ?? null,
           }}
         />
       </div>

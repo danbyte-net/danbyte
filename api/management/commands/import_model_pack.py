@@ -3,10 +3,13 @@ blocks, and the ``.glb`` files they name (api.model_pack,
 docs/dcim/model-packs.md).
 
     manage.py import_model_pack <folder|zip> --tenant <slug or id> [--apply]
+                                [--replace-photos]
 
 Each YAML is matched to an existing type by manufacturer and part number;
 a type that isn't there yet is created from the YAML. The matched or created
-type gets the pack's model (and far model), replacing the one it had.
+type gets the pack's model (and far model), replacing the one it had, and a
+device type the pack's Blender renders as its face photos. A face uploaded
+by hand stays unless ``--replace-photos`` is given.
 
 A dry run by default: everything is read, checked and scanned, the report
 printed, and nothing kept. ``--apply`` keeps it; the changes land in the
@@ -27,8 +30,11 @@ class Command(BaseCommand):
         parser.add_argument("--tenant", required=True, help="Tenant slug or id.")
         parser.add_argument("--apply", action="store_true",
                             help="Keep the changes (default: a dry run).")
+        parser.add_argument("--replace-photos", action="store_true",
+                            help="Let the pack's renders replace face photos and port "
+                                 "markers uploaded by hand.")
 
-    def handle(self, *args, pack, tenant, apply=False, **opts):
+    def handle(self, *args, pack, tenant, apply=False, replace_photos=False, **opts):
         from api.model_pack import PackFiles, import_pack
         from core.models import Tenant
 
@@ -44,7 +50,7 @@ class Command(BaseCommand):
         except (FileNotFoundError, OSError) as exc:
             raise CommandError(f"Can't open the pack: {exc}") from exc
         try:
-            result = import_pack(t, files, dry_run=not apply)
+            result = import_pack(t, files, dry_run=not apply, replace_photos=replace_photos)
         finally:
             files.close()
         head = result.name or pack
