@@ -1,13 +1,16 @@
 """Match the store against a tenant's inventory (#451).
 
 ``recompute(tenant)`` builds the tenant's current match set in memory and
-diffs it against the open ``VulnerabilityMatch`` rows: new ones are inserted
-(``first_seen_at``), still-matching ones touched (``last_seen_at``, and
-``version``/``confidence``/``priority`` when they changed, and ``excepted``
-from the tenant's active exceptions), vanished ones
-resolved (``resolved_at``). Bulk statements only, so the query count does not
-grow with the inventory; a per-tenant advisory lock keeps two recomputes from
-interleaving.
+diffs it against the open ``VulnerabilityMatch`` rows, streamed from a
+server-side cursor: new ones are inserted (``first_seen_at``), still-matching
+ones are updated only when ``version``/``confidence``/``priority`` or
+``excepted`` (from the tenant's active exceptions) changed, vanished ones
+resolved (``resolved_at``). A run that finds nothing new writes no match row
+(#521); a full run records when it evaluated the tenant
+(``VulnerabilityTenantState.evaluated_at``), which the API reports as an open
+match's ``last_seen_at`` when it is later than the row's own. Bulk statements
+only, so the query count does not grow with the inventory; a per-tenant
+advisory lock keeps two recomputes from interleaving.
 
 What runs where comes from the SBOM's query (``api.sbom.what_runs_where``):
 each device and VM with its platform (its own, else its device type's), its
@@ -51,7 +54,8 @@ from collections import defaultdict
 from collections.abc import Iterable
 
 from django.db import connection, transaction
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, F, OuterRef, Q, Value
+from django.db.models.functions import Greatest
 from django.utils import timezone
 
 from api.package_ids import render_purl
@@ -66,7 +70,14 @@ from .identifiers import (
     purl_key,
     purl_qualifiers,
 )
-from .models import Cve, CveProduct, ProductMapping, VulnerabilityMatch, VulnerabilityPolicy
+from .models import (
+    Cve,
+    CveProduct,
+    ProductMapping,
+    VulnerabilityMatch,
+    VulnerabilityPolicy,
+    VulnerabilityTenantState,
+)
 from .versions import resolve_scheme
 
 log = logging.getLogger(__name__)
@@ -338,7 +349,7 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
               objects: dict | None = None) -> dict:
     """Rebuild the tenant's matches; returns counts. ``cves``: vuln ids to
     limit the run to. ``objects``: ``{"device": ids, "virtual_machine": ids}``."""
-    counts = {"created": 0, "touched": 0, "updated": 0, "resolved": 0, "hosts": 0}
+    counts = {"created": 0, "unchanged": 0, "updated": 0, "resolved": 0, "hosts": 0}
     cves = None if cves is None else set(cves)
     with transaction.atomic():
         _lock(tenant.pk)
@@ -440,9 +451,14 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                     desired[(cve.pk, device_id, vm_id, None, None, None)] = (
                         hp.build, conf, levels[cve.pk], "os_build", excepted)
 
-        counts.update(_diff(tenant, desired, cves=cves, objects=objects))
-        if cves is None and objects is None:
+        full = cves is None and objects is None
+        state, _ = VulnerabilityTenantState.objects.get_or_create(tenant=tenant)
+        counts.update(_diff(tenant, desired, cves=cves, objects=objects,
+                            seen_before=state.evaluated_at))
+        if full:
             now = timezone.now()
+            # One row per tenant: every open match was evaluated just now.
+            VulnerabilityTenantState.objects.filter(pk=state.pk).update(evaluated_at=now)
             for m in mappings:
                 cand = candidates.get(m.product_key, ()) if not m.device_type_id else ()
                 cov = {"candidates": len(cand),
@@ -494,7 +510,12 @@ def _drop_covered(tenant, desired: dict, pkg_rows, pkg_candidates) -> int:
     return len(drop)
 
 
-def _diff(tenant, desired: dict, *, cves, objects) -> dict:
+def _diff(tenant, desired: dict, *, cves, objects, seen_before=None) -> dict:
+    """Write what differs between ``desired`` (consumed) and the open rows
+    in scope. Rows that still match unchanged are not written (#521). The
+    open rows are streamed, never held: memory is ``desired`` and what
+    changes. ``seen_before``: the tenant's last full evaluation, kept as a
+    resolved row's ``last_seen_at`` when later than its own."""
     now = timezone.now()
     open_rows = VulnerabilityMatch.objects.filter(tenant=tenant, resolved_at__isnull=True)
     if cves is not None:
@@ -503,44 +524,49 @@ def _diff(tenant, desired: dict, *, cves, objects) -> dict:
         open_rows = open_rows.filter(
             Q(device_id__in=list(objects.get("device") or []))
             | Q(virtual_machine_id__in=list(objects.get("virtual_machine") or [])))
-    existing = {}
+
+    changed, gone = [], []
+    unchanged = 0
     for row in open_rows.values_list("pk", "cve_id", "device_id", "virtual_machine_id",
                                      "mapping_id", "installed_software_id",
                                      "host_package_id", "version",
-                                     "confidence", "priority", "excepted_id"):
+                                     "confidence", "priority", "excepted_id").iterator(
+            chunk_size=CHUNK * 5):
         pk, *key, version, conf, prio, excepted = row
-        existing[tuple(key)] = (pk, version, conf, prio, excepted)
-
-    new, changed, touched = [], [], []
-    for key, (version, conf, prio, via, excepted) in desired.items():
-        have = existing.pop(key, None)
-        if have is None:
-            cve_id, device_id, vm_id, mapping_id, install_id, package_id = key
-            new.append(VulnerabilityMatch(
-                tenant=tenant, cve_id=cve_id, device_id=device_id, virtual_machine_id=vm_id,
-                via=via, mapping_id=mapping_id, installed_software_id=install_id,
-                host_package_id=package_id,
-                version=version, confidence=conf, priority=prio, excepted_id=excepted,
-                first_seen_at=now, last_seen_at=now))
-        elif have[1:] != (version, conf, prio, excepted):
-            changed.append(VulnerabilityMatch(pk=have[0], version=version, confidence=conf,
-                                              priority=prio, excepted_id=excepted,
+        want = desired.pop(tuple(key), None)
+        if want is None:
+            gone.append(pk)
+            continue
+        w_version, w_conf, w_prio, _via, w_excepted = want
+        if (version, conf, prio, excepted) != (w_version, w_conf, w_prio, w_excepted):
+            changed.append(VulnerabilityMatch(pk=pk, version=w_version, confidence=w_conf,
+                                              priority=w_prio, excepted_id=w_excepted,
                                               last_seen_at=now))
         else:
-            touched.append(have[0])
-    gone = [v[0] for v in existing.values()]
+            unchanged += 1
+
+    new = []
+    for key, (version, conf, prio, via, excepted) in desired.items():
+        cve_id, device_id, vm_id, mapping_id, install_id, package_id = key
+        new.append(VulnerabilityMatch(
+            tenant=tenant, cve_id=cve_id, device_id=device_id, virtual_machine_id=vm_id,
+            via=via, mapping_id=mapping_id, installed_software_id=install_id,
+            host_package_id=package_id,
+            version=version, confidence=conf, priority=prio, excepted_id=excepted,
+            first_seen_at=now, last_seen_at=now))
+    desired.clear()
 
     VulnerabilityMatch.objects.bulk_create(new, batch_size=CHUNK)
     VulnerabilityMatch.objects.bulk_update(
         changed, ["version", "confidence", "priority", "excepted", "last_seen_at"],
         batch_size=CHUNK)
-    for i in range(0, len(touched), CHUNK * 5):
-        VulnerabilityMatch.objects.filter(pk__in=touched[i:i + CHUNK * 5]).update(
-            last_seen_at=now)
+    last_seen = F("last_seen_at")
+    if seen_before is not None:
+        last_seen = Greatest(F("last_seen_at"), Value(seen_before))
     for i in range(0, len(gone), CHUNK * 5):
         VulnerabilityMatch.objects.filter(pk__in=gone[i:i + CHUNK * 5]).update(
-            resolved_at=now)
-    return {"created": len(new), "updated": len(changed), "touched": len(touched),
+            resolved_at=now, last_seen_at=last_seen)
+    return {"created": len(new), "updated": len(changed), "unchanged": unchanged,
             "resolved": len(gone)}
 
 

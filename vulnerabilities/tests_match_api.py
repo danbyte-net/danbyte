@@ -2,9 +2,13 @@
 RBAC, tenant and site isolation."""
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from api.models import Application, Device, DeviceType, InstalledSoftware, Platform, Site
@@ -12,7 +16,13 @@ from auth_api.models import ObjectPermission, UserProfile
 from core.models import Organization, Tenant
 
 from . import matching
-from .models import ProductMapping, VulnerabilityMatch, VulnerabilityPolicy, VulnerabilitySettings
+from .models import (
+    ProductMapping,
+    VulnerabilityMatch,
+    VulnerabilityPolicy,
+    VulnerabilitySettings,
+    VulnerabilityTenantState,
+)
 from .tests_matching import make_cve, xe_range
 
 User = get_user_model()
@@ -171,6 +181,65 @@ class MatchApiTests(ApiBase):
         self.assertEqual(self.client.get(url).json()["count"], 0)
         self.assertEqual(self.client.get(f"{url}?status=resolved").json()["count"], 2)
         self.assertEqual(self.client.get(f"{url}?status=nope").status_code, 400)
+
+
+def match_writes(captured) -> list[str]:
+    """The statements that wrote match rows."""
+    table = '"vulnerabilities_vulnerabilitymatch"'
+    return [q["sql"] for q in captured
+            if q["sql"].lstrip().split(" ", 1)[0].upper() in ("INSERT", "UPDATE", "DELETE")
+            and table in q["sql"].split(" WHERE ", 1)[0]]
+
+
+class NoChangeRecomputeTests(ApiBase):
+    """#521: a recompute that finds nothing new writes no match row; an open
+    match's last_seen_at is the tenant's last full evaluation."""
+
+    def test_no_change_writes_no_match_row(self):
+        matching.recompute(self.tenant)
+        with CaptureQueriesContext(connection) as ctx:
+            counts = matching.recompute(self.tenant)
+        self.assertEqual((counts["created"], counts["updated"], counts["resolved"],
+                          counts["unchanged"]), (0, 0, 0, 4))
+        self.assertEqual(match_writes(ctx.captured_queries), [])
+        writes = [q["sql"] for q in ctx.captured_queries
+                  if q["sql"].lstrip().split(" ", 1)[0].upper() in ("INSERT", "UPDATE",
+                                                                     "DELETE")]
+        # Only the tenant's evaluation time.
+        self.assertEqual(len(writes), 1, writes)
+        self.assertIn("vulnerabilitytenantstate", writes[0])
+        # A host-scoped run writes nothing at all.
+        with CaptureQueriesContext(connection) as ctx:
+            matching.recompute(self.tenant, objects={"device": [self.d_a.pk]})
+        self.assertEqual(match_writes(ctx.captured_queries), [])
+
+    def test_last_seen_is_the_last_full_evaluation(self):
+        old = timezone.now() - timedelta(days=3)
+        VulnerabilityMatch.objects.filter(tenant=self.tenant).update(last_seen_at=old)
+        matching.recompute(self.tenant)
+        # The rows were not rewritten...
+        self.assertEqual(set(VulnerabilityMatch.objects.filter(tenant=self.tenant)
+                             .values_list("last_seen_at", flat=True)), {old})
+        evaluated = VulnerabilityTenantState.evaluated(self.tenant.pk)
+        self.assertGreater(evaluated, old)
+        # ...but the API reports the evaluation for open matches.
+        self.login(self.admin)
+        rows = self.client.get("/api/vulnerabilities/matches/").json()["results"]
+        self.assertEqual({r["last_seen_at"] for r in rows},
+                         {evaluated.isoformat().replace("+00:00", "Z")})
+        # A match that goes away keeps the last time it was evaluated.
+        Device.objects.filter(pk=self.d_b.pk).update(software_version="17.9.5")
+        matching.recompute(self.tenant, objects={"device": [self.d_b.pk]})
+        gone = VulnerabilityMatch.objects.filter(device=self.d_b, resolved_at__isnull=False)
+        self.assertEqual(gone.count(), 2)
+        self.assertEqual({m.last_seen_at for m in gone}, {evaluated})
+        r = self.client.get(f"/api/devices/{self.d_b.pk}/vulnerabilities/?status=resolved")
+        self.assertEqual({m["last_seen_at"] for m in r.json()["results"]},
+                         {evaluated.isoformat().replace("+00:00", "Z")})
+
+    def test_other_tenant_evaluation_is_its_own(self):
+        matching.recompute(self.tenant)
+        self.assertIsNone(VulnerabilityTenantState.evaluated(self.other.pk))
 
 
 class MappingApiTests(ApiBase):

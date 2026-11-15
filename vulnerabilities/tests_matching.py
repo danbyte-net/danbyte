@@ -119,7 +119,7 @@ class RecomputeTests(Base):
         self.assertEqual(self.mapping.coverage["candidates"], 1)
         self.assertIsNotNone(self.mapping.matched_at)
 
-    def test_diff_new_touched_resolved_priority(self):
+    def test_diff_new_unchanged_resolved_priority(self):
         cve = make_cve("CVE-2024-0001", xe_range("17.9.5"), score=7.5)
         d1 = self.device("d1", "17.9.4")
         d2 = self.device("d2", "17.12.1")
@@ -127,9 +127,10 @@ class RecomputeTests(Base):
         first = self.open_matches().get()
         self.assertEqual((first.device_id, first.priority), (d1.pk, "medium"))
 
-        # Unchanged: touched, nothing new.
+        # Unchanged: nothing written, nothing new.
         counts = matching.recompute(self.tenant)
-        self.assertEqual((counts["created"], counts["touched"], counts["resolved"]), (0, 1, 0))
+        self.assertEqual((counts["created"], counts["unchanged"], counts["updated"],
+                          counts["resolved"]), (0, 1, 0, 0))
 
         # EPSS moves the priority; the row is updated, not replaced.
         Cve.objects.filter(pk=cve.pk).update(epss=Decimal("0.2"))

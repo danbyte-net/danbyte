@@ -630,6 +630,10 @@ class VulnerabilityMatch(models.Model):
         VulnerabilityException, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="matches")
     first_seen_at = models.DateTimeField()
+    #: When the row was last written (created, changed or resolved). The API
+    #: reports an open match's ``last_seen_at`` as the later of this and the
+    #: tenant's last full recompute (``VulnerabilityTenantState``), so an
+    #: unchanged match is never rewritten just to say it is still there (#521).
     last_seen_at = models.DateTimeField()
     resolved_at = models.DateTimeField(null=True, blank=True)
     #: When a notification named it; ``notified_kev`` whether it was in KEV
@@ -676,3 +680,22 @@ class VulnerabilityMatch(models.Model):
 
     def __str__(self) -> str:
         return f"{self.cve_id} on {self.device_id or self.virtual_machine_id}"
+
+
+class VulnerabilityTenantState(models.Model):
+    """Per-tenant bookkeeping of the recompute (#521): when the last full
+    recompute evaluated every host, which an open match's ``last_seen_at``
+    reports. Written once per full run."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(
+        "core.Tenant", on_delete=models.CASCADE, related_name="vulnerability_state")
+    evaluated_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"Vulnerability state of {self.tenant_id}"
+
+    @classmethod
+    def evaluated(cls, tenant_id):
+        return cls.objects.filter(tenant_id=tenant_id).values_list(
+            "evaluated_at", flat=True).first()

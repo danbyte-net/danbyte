@@ -717,6 +717,21 @@ time to patch can be read back; going back to a vulnerable version opens a
 new row. Matches are not in the change log: they are computed, thousands at a
 time.
 
+A recompute writes only what changed: new matches, matches whose version,
+confidence, priority or exception moved, and matches that went away. A
+match that is still there unchanged is not rewritten, so a recompute that
+finds nothing new writes no match row. A match's `first_seen_at` is when it
+appeared; its `last_seen_at` is when a recompute last found it:
+
+- for an open match, the later of the tenant's last full recompute (every
+  host evaluated, as after a store or a mapping change) and the last time
+  the row itself was written;
+- for a resolved match, the last full recompute before it went away (or its
+  last write, when later).
+
+A recompute of a few hosts (a version or install change) does not move the
+tenant's time; it shows on the next full one.
+
 Resolved matches are kept for **365 days** after they were resolved, then
 deleted by the daily `vuln_maintenance` run (open matches are never deleted).
 The purge runs even while vulnerability data is off.
@@ -1055,7 +1070,7 @@ role sees only its own sites' matches, everywhere.
 | `GET /api/vulnerabilities/` | One row per matched record: score, severity, KEV, EPSS, worst priority, devices, VMs and installs affected, first seen. |
 | `GET /api/vulnerabilities/facets/`, `GET /api/vulnerabilities/matches/facets/` | The page's rail: `{facets: {id: [{value, label, count}]}, sortable: [...]}`. Each facet counts records (or matches) over what the other filters leave. |
 | `GET /api/vulnerabilities/<id>/` | The record (CVE id, OSV id or an alias) with its open matches (`affected`, first 1,000; `affected_count`), and `msrc_fixed_in` (`[{product, month, fixed, kbs}]`, Microsoft's fixed builds). 404 unless the tenant matched it or maps one of its products. |
-| `GET /api/vulnerabilities/matches/` | Match rows, worst priority first. |
+| `GET /api/vulnerabilities/matches/` | Match rows, worst priority first. `first_seen_at` and `last_seen_at` as in [Match history](#match-history). |
 | `GET /api/devices/<id>/vulnerabilities/` | One device's matches; likewise `virtual-machines`, `platforms` (through its mappings) and `applications`. |
 | `GET /api/vulnerabilities/summary/` | Open records per priority, KEV and critical records, records new this week (`new_this_week`: a match first seen in the last 7 days), devices and VMs affected. |
 | `GET /api/vulnerabilities/coverage/` | Per mapping: objects tested, matched, with a blank version, with a version the scheme cannot read; and from the last run the records it could not decide (`unparsed_bounds`, `range_not_understood`, `release_unknown`). Filters `platform`, `device_type`, `application`. |

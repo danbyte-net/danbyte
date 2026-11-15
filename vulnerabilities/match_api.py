@@ -56,6 +56,7 @@ from .models import (
     VulnerabilityMatch,
     VulnerabilityPolicy,
     VulnerabilitySettings,
+    VulnerabilityTenantState,
 )
 
 _SCHEMES = tuple(k for k, _ in VERSION_SCHEMES)
@@ -248,7 +249,16 @@ def exception_brief(e) -> dict | None:
     }
 
 
-def match_dict(r: VulnerabilityMatch) -> dict:
+def last_seen(r: VulnerabilityMatch, evaluated) -> object:
+    """When a recompute last found the match (#521): an open match is
+    confirmed by every full recompute without its row being rewritten, so
+    the tenant's last full evaluation counts when it is later."""
+    if r.resolved_at is None and evaluated is not None and evaluated > r.last_seen_at:
+        return evaluated
+    return r.last_seen_at
+
+
+def match_dict(r: VulnerabilityMatch, evaluated=None) -> dict:
     inst = r.installed_software
     return {
         "id": str(r.pk),
@@ -268,9 +278,17 @@ def match_dict(r: VulnerabilityMatch) -> dict:
         "host_package": _package_ref(r.host_package),
         "exception": exception_brief(r.excepted),
         "first_seen_at": r.first_seen_at,
-        "last_seen_at": r.last_seen_at,
+        "last_seen_at": last_seen(r, evaluated),
         "resolved_at": r.resolved_at,
     }
+
+
+def match_dicts(tenant, rows) -> list[dict]:
+    """``match_dict`` of each row; one query for the tenant's last full
+    evaluation."""
+    rows = list(rows)
+    evaluated = VulnerabilityTenantState.evaluated(tenant.pk) if rows else None
+    return [match_dict(r, evaluated) for r in rows]
 
 
 def _package_ref(p) -> dict | None:
@@ -656,7 +674,7 @@ class VulnerabilityMatchViewSet(viewsets.ViewSet):
         list_api.table_params(request)
         qs = list_api.apply_facets(request, self._base(request, tenant), list_api.MATCH_FACETS)
         qs = list_api.ordered_matches(_match_rows(qs).annotate(rank=_RANK), request)
-        return _paginate(request, qs, lambda page: [match_dict(r) for r in page])
+        return _paginate(request, qs, lambda page: match_dicts(tenant, page))
 
     @extend_schema(summary="Facet counts of the match list", tags=["vulnerabilities"],
                    responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
@@ -827,7 +845,7 @@ class VulnerabilityViewSet(viewsets.ViewSet):
         out = cve_detail(c, policy)
         out["affected_count"] = total
         out["excepted_count"] = excepted_count
-        out["affected"] = [match_dict(r) for r in affected[:AFFECTED_MAX]]
+        out["affected"] = match_dicts(tenant, affected[:AFFECTED_MAX])
         return Response(out)
 
 
@@ -853,7 +871,7 @@ def object_vulnerabilities(request, kind: str, pk):
     qs = _filter_matches(request, visible_matches(request, tenant).filter(**{field: obj.pk}))
     qs = _match_rows(qs).annotate(rank=_RANK).order_by(
         "rank", _SCORE_DESC, "cve__vuln_id", "id")
-    return _paginate(request, qs, lambda page: [match_dict(r) for r in page])
+    return _paginate(request, qs, lambda page: match_dicts(tenant, page))
 
 
 def _object_view(kind: str):
