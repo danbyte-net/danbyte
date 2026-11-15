@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.20.0-dev3
+  version: 0.20.0-dev4
   description: 'REST API for Danbyte - IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -14114,6 +14114,273 @@ paths:
             cable, console/power/aux/front-port type choices (each row carries value/label/group),
             duplex/mode/PoE options, airflow directions, cooling methods and rack
             cooling capabilities, connector fibre counts, and common speed suggestions.'
+  /api/dependency-media/:
+    get:
+      operationId: dependency_media_list
+      description: |-
+        Shared CRUD for the Status / IPRole per-tenant catalogs.
+
+        Handles slug autogen (from name when omitted), per-tenant slug uniqueness,
+        search, and a ``usage_count`` annotation (IPs referencing the row). The
+        list action serves a light picker shape on ``?picker=1``.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - dependency-media
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDependencyMediumList'
+          description: ''
+    post:
+      operationId: dependency_media_create
+      description: |-
+        Shared CRUD for the Status / IPRole per-tenant catalogs.
+
+        Handles slug autogen (from name when omitted), per-tenant slug uniqueness,
+        search, and a ``usage_count`` annotation (IPs referencing the row). The
+        list action serves a light picker shape on ``?picker=1``.
+      tags:
+      - dependency-media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyMedium'
+          description: ''
+  /api/dependency-media/{id}/:
+    get:
+      operationId: dependency_media_retrieve
+      description: |-
+        Shared CRUD for the Status / IPRole per-tenant catalogs.
+
+        Handles slug autogen (from name when omitted), per-tenant slug uniqueness,
+        search, and a ``usage_count`` annotation (IPs referencing the row). The
+        list action serves a light picker shape on ``?picker=1``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this dependency medium.
+        required: true
+      tags:
+      - dependency-media
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyMedium'
+          description: ''
+    put:
+      operationId: dependency_media_update
+      description: |-
+        Shared CRUD for the Status / IPRole per-tenant catalogs.
+
+        Handles slug autogen (from name when omitted), per-tenant slug uniqueness,
+        search, and a ``usage_count`` annotation (IPs referencing the row). The
+        list action serves a light picker shape on ``?picker=1``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this dependency medium.
+        required: true
+      tags:
+      - dependency-media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyMedium'
+          description: ''
+    patch:
+      operationId: dependency_media_partial_update
+      description: |-
+        Shared CRUD for the Status / IPRole per-tenant catalogs.
+
+        Handles slug autogen (from name when omitted), per-tenant slug uniqueness,
+        search, and a ``usage_count`` annotation (IPs referencing the row). The
+        list action serves a light picker shape on ``?picker=1``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this dependency medium.
+        required: true
+      tags:
+      - dependency-media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDependencyMediumRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDependencyMediumRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDependencyMediumRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyMedium'
+          description: ''
+    delete:
+      operationId: dependency_media_destroy
+      description: |-
+        A medium in use stays: 409 with how many dependencies use it
+        (every one, also those the caller may not view).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this dependency medium.
+        required: true
+      tags:
+      - dependency-media
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/dependency-media/{id}/assign-site/:
+    post:
+      operationId: dependency_media_assign_site_create
+      description: Re-home a catalog entry to a site (global → local, or move).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this dependency medium.
+        required: true
+      tags:
+      - dependency-media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyMedium'
+          description: ''
+  /api/dependency-media/{id}/promote/:
+    post:
+      operationId: dependency_media_promote_create
+      description: Make a site-local catalog entry global (owning_site → NULL).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this dependency medium.
+        required: true
+      tags:
+      - dependency-media
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DependencyMediumRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyMedium'
+          description: ''
   /api/deploy-pipeline-runs/:
     get:
       operationId: deploy_pipeline_runs_list
@@ -15345,7 +15612,8 @@ paths:
                 additionalProperties: {}
           description: 'Registered providers: kind, label, description, and the settings
             fields each one needs (text | password | checkbox); plus monitoring_keys,
-            how many MONITORING_SECRET_KEY entries are configured.'
+            how many MONITORING_SECRET_KEY entries are configured; and secret_counts,
+            how many managed secrets each store holds.'
   /api/deployment/topology-card/:
     get:
       operationId: deployment_topology_card_retrieve
@@ -16018,6 +16286,399 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeviceBay'
+          description: ''
+  /api/device-dependencies/:
+    get:
+      operationId: device_dependencies_list
+      description: |-
+        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
+        :class:`BulkEditSpec`; see the module docstring.
+      parameters:
+      - in: query
+        name: device
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: downstream
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - dependency
+          - peer
+      - in: query
+        name: medium
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: redundancy_group
+        schema:
+          type: string
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: site
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: tag
+        schema:
+          type: array
+          items:
+            type: string
+      - in: query
+        name: upstream
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - device-dependencies
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDeviceDependencyList'
+          description: ''
+    post:
+      operationId: device_dependencies_create
+      description: |-
+        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
+        :class:`BulkEditSpec`; see the module docstring.
+      tags:
+      - device-dependencies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDependency'
+          description: ''
+  /api/device-dependencies/{id}/:
+    get:
+      operationId: device_dependencies_retrieve
+      description: |-
+        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
+        :class:`BulkEditSpec`; see the module docstring.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this device dependency.
+        required: true
+      tags:
+      - device-dependencies
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDependency'
+          description: ''
+    put:
+      operationId: device_dependencies_update
+      description: |-
+        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
+        :class:`BulkEditSpec`; see the module docstring.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this device dependency.
+        required: true
+      tags:
+      - device-dependencies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDependency'
+          description: ''
+    patch:
+      operationId: device_dependencies_partial_update
+      description: |-
+        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
+        :class:`BulkEditSpec`; see the module docstring.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this device dependency.
+        required: true
+      tags:
+      - device-dependencies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDeviceDependencyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDeviceDependencyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDeviceDependencyRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDependency'
+          description: ''
+    delete:
+      operationId: device_dependencies_destroy
+      description: |-
+        A single delete refuses what the bulk delete keeps, with the
+        same reason: 409 ``{"detail": "In use: 2 BGP sessions."}``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this device dependency.
+        required: true
+      tags:
+      - device-dependencies
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/device-dependencies/bulk-delete/:
+    post:
+      operationId: device_dependencies_bulk_delete_create
+      description: |-
+        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
+        :class:`BulkEditSpec`; see the module docstring.
+      tags:
+      - device-dependencies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDependency'
+          description: ''
+  /api/device-dependencies/bulk-edit-fields/:
+    get:
+      operationId: device_dependencies_bulk_edit_fields_retrieve
+      description: |-
+        The bulk-edit dialog's fields, described as
+        ``/api/editable-fields/`` describes a field.
+      tags:
+      - device-dependencies
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDependency'
+          description: ''
+  /api/device-dependencies/bulk-update/:
+    post:
+      operationId: device_dependencies_bulk_update_create
+      description: |-
+        ``bulk-update``, ``bulk-edit-fields`` and ``bulk-delete`` from one
+        :class:`BulkEditSpec`; see the module docstring.
+      tags:
+      - device-dependencies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceDependencyRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceDependency'
+          description: ''
+  /api/device-dependencies/impact/:
+    get:
+      operationId: device_dependencies_impact_retrieve
+      description: What goes down if all of ``?device=`` fail together.
+      parameters:
+      - in: query
+        name: device
+        schema:
+          type: array
+          items:
+            type: string
+            format: uuid
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      tags:
+      - device-dependencies
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/device-dependencies/suggest/:
+    post:
+      operationId: device_dependencies_suggest_create
+      description: |-
+        Proposed dependencies towards a core device, from cables and LLDP
+        (``api.dependency_suggest``). Reads only: nothing is saved.
+      tags:
+      - device-dependencies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuggestRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SuggestRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SuggestRequestRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/device-dependencies/suggest/confirm/:
+    post:
+      operationId: device_dependencies_suggest_confirm_create
+      description: |-
+        Create the confirmed proposals, each as its own create: the same
+        serializer, ``save_dependency`` (cycle check), site scope and change
+        log. A refused row is reported with its field errors and the others
+        are saved.
+      tags:
+      - device-dependencies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConfirmRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConfirmRequestRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/device-fields/:
     get:
@@ -18477,6 +19138,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeviceCoverage'
           description: ''
+  /api/devices/{id}/dependencies/:
+    get:
+      operationId: devices_dependencies_retrieve
+      description: The dependency tree up and down from this device, and its peers.
+      parameters:
+      - in: query
+        name: depth
+        schema:
+          type: integer
+      - in: query
+        name: direction
+        schema:
+          type: string
+          enum:
+          - both
+          - down
+          - up
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this device.
+        required: true
+      tags:
+      - devices
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/devices/{id}/deploy/:
     post:
       operationId: devices_deploy_create
@@ -18684,6 +19382,35 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/devices/{id}/impact/:
+    get:
+      operationId: devices_impact_retrieve
+      description: What goes down, or loses redundancy, if this device fails.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this device.
+        required: true
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      tags:
+      - devices
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/devices/{id}/interfaces/:
     get:
       operationId: devices_interfaces_retrieve
@@ -36642,10 +37369,43 @@ paths:
           type: string
         description: acknowledged or unacknowledged.
       - in: query
+        name: device
+        schema:
+          type: string
+          format: uuid
+        description: Alerts on IPs assigned to this device.
+      - in: query
+        name: explained
+        schema:
+          type: string
+          enum:
+          - exclude
+          - include
+          - only
+        description: 'Alerts a down upstream explains (#450): include (default), exclude,
+          or only them.'
+      - in: query
+        name: ip
+        schema:
+          type: string
+          format: uuid
+        description: Alerts on this IP.
+      - in: query
+        name: kind
+        schema:
+          type: string
+        description: Filter by check kind.
+      - in: query
         name: q
         schema:
           type: string
         description: Free-text search over IP, description, or rule name.
+      - in: query
+        name: root_cause
+        schema:
+          type: string
+          format: uuid
+        description: Alerts a root-cause incident explains.
       - in: query
         name: severity
         schema:
@@ -36662,6 +37422,12 @@ paths:
         schema:
           type: string
         description: firing (default) or resolved.
+      - in: query
+        name: template
+        schema:
+          type: string
+          format: uuid
+        description: Alerts of this check template.
       tags:
       - monitoring
       security:
@@ -43204,6 +43970,99 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/monitoring/root-causes/:
+    get:
+      operationId: monitoring_root_causes_retrieve
+      summary: Root-cause incidents for the active tenant
+      parameters:
+      - in: query
+        name: device
+        schema:
+          type: string
+          format: uuid
+        description: Incidents of this root device.
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Root device name contains.
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - all
+          - open
+          - resolved
+        description: 'open (default: open and recovering), resolved, or all.'
+      tags:
+      - monitoring
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{counts, results}``.'
+  /api/monitoring/root-causes/{incident_id}/:
+    get:
+      operationId: monitoring_root_causes_retrieve_2
+      summary: One root-cause incident with the alerts it explains
+      parameters:
+      - in: path
+        name: incident_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - monitoring
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{incident, alerts, root_alerts}``.'
+  /api/monitoring/root-causes/{incident_id}/ack/:
+    post:
+      operationId: monitoring_root_causes_ack_create
+      description: |-
+        Acknowledging an incident acknowledges the root's firing alerts the
+        caller may see, through the one acknowledgement path.
+      summary: Acknowledge a root-cause incident and its root's alerts
+      parameters:
+      - in: query
+        name: action
+        schema:
+          type: string
+        description: Pass 'unack' to clear the acknowledgement.
+      - in: path
+        name: incident_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - monitoring
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RootCauseIncident'
+          description: ''
   /api/monitoring/settings/:
     get:
       operationId: monitoring_settings_retrieve
@@ -55543,7 +56402,10 @@ paths:
           description: ''
     post:
       operationId: prefixes_create
-      description: Free space on PrefixViewSet. See the module docstring.
+      description: |-
+        A manual create takes the allocation lock (lock_holders) on the
+        prefixes holding the new CIDR before it is validated, so it cannot
+        race allocate, plan or another create into the same block.
       tags:
       - prefixes
       requestBody:
@@ -55594,7 +56456,10 @@ paths:
           description: ''
     put:
       operationId: prefixes_update
-      description: Free space on PrefixViewSet. See the module docstring.
+      description: |-
+        A PUT or PATCH that moves the prefix (a new CIDR or VRF) takes the
+        allocation lock on the prefixes holding where it lands, as a create
+        does, before it is validated. Any other edit takes none.
       parameters:
       - in: path
         name: id
@@ -73299,7 +74164,9 @@ paths:
           type: string
         description: '`capacity`: each line also carries `capacity` (its speed and
           where the figure came from, or null), `links` (the end-to-end links it carries,
-          the first 50, each with the device, port and speed at either end) and `link_count`.'
+          the first 50, each with the device, port and speed at either end) and `link_count`.
+          `dependencies` (connections only): the response also carries `dependencies`,
+          the device dependency lines (#450). Both: `capacity,dependencies`.'
       tags:
       - site-map
       security:
@@ -73346,7 +74213,9 @@ paths:
           type: string
         description: '`capacity`: each line also carries `capacity` (its speed and
           where the figure came from, or null), `links` (the end-to-end links it carries,
-          the first 50, each with the device, port and speed at either end) and `link_count`.'
+          the first 50, each with the device, port and speed at either end) and `link_count`.
+          `dependencies` (connections only): the response also carries `dependencies`,
+          the device dependency lines (#450). Both: `capacity,dependencies`.'
       tags:
       - site-map
       security:
@@ -77163,6 +78032,14 @@ paths:
           count + role breakdown) with cable-count edges between groups. Ignores device/depth
           focus and `include`.'
       - in: query
+        name: group_clusters
+        schema:
+          type: string
+        description: '''1'': put `cluster` on the hosts of the clusters the caller
+          may view and add `clusters` (members, cables between them, cables to other
+          nodes per far node). Default off. A virtual chassis member is left to its
+          chassis.'
+      - in: query
         name: include
         schema:
           type: string
@@ -77571,6 +78448,85 @@ paths:
           description: ''
         '403':
           description: No view on devices or on virtual chassis.
+  /api/topology/dependencies/:
+    get:
+      operationId: topology_dependencies_retrieve
+      description: |-
+        The Topology map's Dependencies layer. POST is a read too: the same
+        query as a JSON body, for device sets too long for a URL.
+      summary: Device dependencies as topology edges
+      parameters:
+      - in: query
+        name: device
+        schema:
+          type: array
+          items:
+            type: string
+            format: uuid
+      - in: query
+        name: site
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - dcim
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    post:
+      operationId: topology_dependencies_create
+      description: |-
+        The Topology map's Dependencies layer. POST is a read too: the same
+        query as a JSON body, for device sets too long for a URL.
+      summary: Device dependencies as topology edges
+      parameters:
+      - in: query
+        name: device
+        schema:
+          type: array
+          items:
+            type: string
+            format: uuid
+      - in: query
+        name: site
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - dcim
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/topology/export/pdf/:
     post:
       operationId: topology_export_pdf_create
@@ -87045,12 +88001,25 @@ components:
           maximum: 2147483647
           minimum: 0
           description: How many times this alert has been notified.
+        notify_state:
+          $ref: '#/components/schemas/NotifyStateEnum'
+        notify_after:
+          type: string
+          format: date-time
+          nullable: true
+        root_cause:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          description: The incident explaining this alert (#450) and its root device.
+          readOnly: true
       required:
       - acknowledged
       - acknowledged_by_name
       - check_status
       - id
       - kind
+      - root_cause
       - rule_name
       - silenced
       - target_ip
@@ -94500,6 +95469,43 @@ components:
           writeOnly: true
       required:
       - name
+    ConfirmRequestRequest:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfirmRowRequest'
+      required:
+      - rows
+    ConfirmRowRequest:
+      type: object
+      properties:
+        upstream_id:
+          type: string
+          format: uuid
+        downstream_id:
+          type: string
+          format: uuid
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/KindD6fEnum'
+          default: dependency
+        medium_id:
+          type: string
+          format: uuid
+          nullable: true
+        redundancy_group:
+          type: string
+          default: ''
+          maxLength: 64
+        description:
+          type: string
+          default: ''
+          maxLength: 200
+      required:
+      - downstream_id
+      - upstream_id
     ConnectProtocol:
       type: object
       description: |-
@@ -96957,6 +97963,200 @@ components:
         * `` - No
         * `on` - When a default exists
         * `always` - Always
+    DependencyMedium:
+      type: object
+      description: |-
+        Local/global catalog fields (enhanced site separation).
+
+        Read: ``owning_site`` = ``{id, name} | null`` - null renders as "Global".
+        Write: ``owning_site_id`` - tenant-scoped, and under separation a
+        site-scoped user may only pick their own sites (the shared field fence).
+        Include both names in ``Meta.fields``.
+      properties:
+        owning_site:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        permissions:
+          type: object
+          additionalProperties:
+            type: boolean
+          readOnly: true
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 64
+        slug:
+          oneOf:
+          - type: string
+            pattern: ^[-a-zA-Z0-9_]+$
+          - type: string
+            maxLength: 0
+        color:
+          type: string
+          maxLength: 7
+        text_color:
+          type: string
+          readOnly: true
+        description:
+          type: string
+        weight:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          description: Lower weights sort first in dropdowns and lists.
+        icon:
+          type: string
+          maxLength: 64
+        line_style:
+          $ref: '#/components/schemas/LineStyleEnum'
+        usage_count:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - name
+      - owning_site
+      - permissions
+      - text_color
+      - updated_at
+      - usage_count
+    DependencyMediumPicker:
+      type: object
+      description: |-
+        ``ModelSerializer`` that auto-exposes a read-only ``numid`` for any model
+        that carries it (``NumIdMixin``), so every object surfaces its per-tenant
+        human-readable number without each serializer re-listing the field (#82).
+
+        The field is injected into ``get_field_names``; because the model column is
+        ``editable=False``, DRF builds it read-only. Models without numid are
+        untouched, so swapping this in for ``serializers.ModelSerializer`` is a no-op
+        for them.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 64
+        slug:
+          type: string
+          maxLength: 80
+          pattern: ^[-a-zA-Z0-9_]+$
+        color:
+          type: string
+          maxLength: 7
+        text_color:
+          type: string
+          readOnly: true
+        icon:
+          type: string
+          maxLength: 64
+        line_style:
+          $ref: '#/components/schemas/LineStyleEnum'
+        weight:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          description: Lower weights sort first in dropdowns and lists.
+      required:
+      - id
+      - name
+      - slug
+      - text_color
+    DependencyMediumPickerRequest:
+      type: object
+      description: |-
+        ``ModelSerializer`` that auto-exposes a read-only ``numid`` for any model
+        that carries it (``NumIdMixin``), so every object surfaces its per-tenant
+        human-readable number without each serializer re-listing the field (#82).
+
+        The field is injected into ``get_field_names``; because the model column is
+        ``editable=False``, DRF builds it read-only. Models without numid are
+        untouched, so swapping this in for ``serializers.ModelSerializer`` is a no-op
+        for them.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: ^[-a-zA-Z0-9_]+$
+        color:
+          type: string
+          maxLength: 7
+        icon:
+          type: string
+          maxLength: 64
+        line_style:
+          $ref: '#/components/schemas/LineStyleEnum'
+        weight:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          description: Lower weights sort first in dropdowns and lists.
+      required:
+      - name
+      - slug
+    DependencyMediumRequest:
+      type: object
+      description: |-
+        Local/global catalog fields (enhanced site separation).
+
+        Read: ``owning_site`` = ``{id, name} | null`` - null renders as "Global".
+        Write: ``owning_site_id`` - tenant-scoped, and under separation a
+        site-scoped user may only pick their own sites (the shared field fence).
+        Include both names in ``Meta.fields``.
+      properties:
+        owning_site_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        slug:
+          oneOf:
+          - type: string
+            pattern: ^[-a-zA-Z0-9_]+$
+          - type: string
+            maxLength: 0
+        color:
+          type: string
+          maxLength: 7
+        description:
+          type: string
+        weight:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          description: Lower weights sort first in dropdowns and lists.
+        icon:
+          type: string
+          maxLength: 64
+        line_style:
+          $ref: '#/components/schemas/LineStyleEnum'
+      required:
+      - name
     DeployPipeline:
       type: object
       properties:
@@ -98686,8 +99886,6 @@ components:
         name:
           type: string
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -98715,8 +99913,6 @@ components:
           type: string
           minLength: 1
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -99036,6 +100232,124 @@ components:
       required:
       - kind
       - name
+    DeviceDependency:
+      type: object
+      description: |-
+        A row that names related rows the caller may not view shows those
+        fields as ``null`` - in the API and in the spreadsheet export (#413).
+        Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+        list answers its page in one query per related type.
+
+        ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+        check is the related type's own view scope (``rbac.ViewableRows``), so a
+        site viewer never learns the device, interface or prefix of another site
+        through an address that is itself visible (a shared one, or one placed at
+        their site inside another site's prefix).
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        numid:
+          type: integer
+          readOnly: true
+          nullable: true
+          description: Per-tenant human-readable number (see NumIdSequence).
+        upstream:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        downstream:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        kind:
+          $ref: '#/components/schemas/KindD6fEnum'
+        kind_display:
+          type: string
+          readOnly: true
+        medium:
+          allOf:
+          - $ref: '#/components/schemas/DependencyMediumPicker'
+          readOnly: true
+        redundancy_group:
+          type: string
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 200
+        comments:
+          type: string
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+          readOnly: true
+        custom_fields:
+          description: User-defined custom fields
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - downstream
+      - id
+      - kind_display
+      - medium
+      - numid
+      - tags
+      - updated_at
+      - upstream
+    DeviceDependencyRequest:
+      type: object
+      description: |-
+        A row that names related rows the caller may not view shows those
+        fields as ``null`` - in the API and in the spreadsheet export (#413).
+        Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+        list answers its page in one query per related type.
+
+        ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+        check is the related type's own view scope (``rbac.ViewableRows``), so a
+        site viewer never learns the device, interface or prefix of another site
+        through an address that is itself visible (a shared one, or one placed at
+        their site inside another site's prefix).
+      properties:
+        upstream_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        downstream_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        kind:
+          $ref: '#/components/schemas/KindD6fEnum'
+        medium_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        redundancy_group:
+          type: string
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 200
+        comments:
+          type: string
+        tag_ids:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
+        custom_fields:
+          description: User-defined custom fields
     DeviceFieldVisibility:
       type: object
       description: |-
@@ -108264,8 +109578,6 @@ components:
         name:
           type: string
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -108318,8 +109630,6 @@ components:
           type: string
           minLength: 1
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -109136,6 +110446,14 @@ components:
         * `proxmox` - Proxmox API token
         * `vmware` - VMware login
         * `winrm_cert` - WinRM certificate
+    KindD6fEnum:
+      enum:
+      - dependency
+      - peer
+      type: string
+      description: |-
+        * `dependency` - Dependency
+        * `peer` - Peer
     KindDb4Enum:
       enum:
       - normal
@@ -110130,6 +111448,16 @@ components:
         * `dashed` - dashed
         * `solid` - solid
         * `thin` - thin
+    LineStyleEnum:
+      enum:
+      - solid
+      - dashed
+      - dotted
+      type: string
+      description: |-
+        * `solid` - Solid
+        * `dashed` - Dashed
+        * `dotted` - Dotted
     LinkModeEnum:
       enum:
       - auto
@@ -111304,8 +112632,6 @@ components:
         name:
           type: string
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -111340,8 +112666,6 @@ components:
           type: string
           minLength: 1
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -112344,6 +113668,24 @@ components:
           minimum: 0
           description: New alerts in one scan batch before they're grouped into a
             digest.
+        root_cause_enabled:
+          type: boolean
+          description: Alerts of a device whose upstream is down are explained by
+            it, and one root-cause message goes out instead.
+        root_cause_hold_seconds:
+          type: integer
+          maximum: 600
+          minimum: 0
+          description: How long an alert of a device with upstreams waits for its
+            upstreams' checks before it is sent.
+        root_cause_hold_mode:
+          allOf:
+          - $ref: '#/components/schemas/RootCauseHoldModeEnum'
+          description: |-
+            smart holds only while an upstream is failing or not recently confirmed up; always holds every such alert.
+
+            * `smart` - While an upstream is unconfirmed
+            * `always` - Always
         discovery_enabled:
           type: boolean
           description: Master switch for periodic subnet discovery (per-prefix opt-in).
@@ -112578,6 +113920,24 @@ components:
           minimum: 0
           description: New alerts in one scan batch before they're grouped into a
             digest.
+        root_cause_enabled:
+          type: boolean
+          description: Alerts of a device whose upstream is down are explained by
+            it, and one root-cause message goes out instead.
+        root_cause_hold_seconds:
+          type: integer
+          maximum: 600
+          minimum: 0
+          description: How long an alert of a device with upstreams waits for its
+            upstreams' checks before it is sent.
+        root_cause_hold_mode:
+          allOf:
+          - $ref: '#/components/schemas/RootCauseHoldModeEnum'
+          description: |-
+            smart holds only while an upstream is failing or not recently confirmed up; always holds every such alert.
+
+            * `smart` - While an upstream is unconfirmed
+            * `always` - Always
         discovery_enabled:
           type: boolean
           description: Master switch for periodic subnet discovery (per-prefix opt-in).
@@ -113238,6 +114598,18 @@ components:
           description: Admin/group-assigned - the subscriber cannot remove it.
       required:
       - channel
+    NotifyStateEnum:
+      enum:
+      - sent
+      - held
+      - explained
+      - withheld
+      type: string
+      description: |-
+        * `sent` - Sent
+        * `held` - Held
+        * `explained` - Explained
+        * `withheld` - Withheld
     NullEnum:
       enum:
       - null
@@ -116249,6 +117621,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Dashboard'
+    PaginatedDependencyMediumList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DependencyMedium'
     PaginatedDeployPipelineList:
       type: object
       required:
@@ -116433,6 +117828,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DeviceCredential'
+    PaginatedDeviceDependencyList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceDependency'
     PaginatedDeviceList:
       type: object
       required:
@@ -123865,6 +125283,46 @@ components:
           type: integer
           maximum: 2147483647
           minimum: 0
+    PatchedDependencyMediumRequest:
+      type: object
+      description: |-
+        Local/global catalog fields (enhanced site separation).
+
+        Read: ``owning_site`` = ``{id, name} | null`` - null renders as "Global".
+        Write: ``owning_site_id`` - tenant-scoped, and under separation a
+        site-scoped user may only pick their own sites (the shared field fence).
+        Include both names in ``Meta.fields``.
+      properties:
+        owning_site_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        slug:
+          oneOf:
+          - type: string
+            pattern: ^[-a-zA-Z0-9_]+$
+          - type: string
+            maxLength: 0
+        color:
+          type: string
+          maxLength: 7
+        description:
+          type: string
+        weight:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          description: Lower weights sort first in dropdowns and lists.
+        icon:
+          type: string
+          maxLength: 64
+        line_style:
+          $ref: '#/components/schemas/LineStyleEnum'
     PatchedDeployPipelineRequest:
       type: object
       properties:
@@ -123934,8 +125392,6 @@ components:
           type: string
           minLength: 1
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -124016,6 +125472,51 @@ components:
           writeOnly: true
         description:
           type: string
+    PatchedDeviceDependencyRequest:
+      type: object
+      description: |-
+        A row that names related rows the caller may not view shows those
+        fields as ``null`` - in the API and in the spreadsheet export (#413).
+        Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+        list answers its page in one query per related type.
+
+        ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+        check is the related type's own view scope (``rbac.ViewableRows``), so a
+        site viewer never learns the device, interface or prefix of another site
+        through an address that is itself visible (a shared one, or one placed at
+        their site inside another site's prefix).
+      properties:
+        upstream_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        downstream_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        kind:
+          $ref: '#/components/schemas/KindD6fEnum'
+        medium_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        redundancy_group:
+          type: string
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 200
+        comments:
+          type: string
+        tag_ids:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
+        custom_fields:
+          description: User-defined custom fields
     PatchedDeviceProfileAssignmentRequest:
       type: object
       properties:
@@ -126847,8 +128348,6 @@ components:
           type: string
           minLength: 1
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -127527,8 +129026,6 @@ components:
           type: string
           minLength: 1
           maxLength: 64
-        type:
-          type: string
         description:
           type: string
           maxLength: 255
@@ -127966,6 +129463,24 @@ components:
           minimum: 0
           description: New alerts in one scan batch before they're grouped into a
             digest.
+        root_cause_enabled:
+          type: boolean
+          description: Alerts of a device whose upstream is down are explained by
+            it, and one root-cause message goes out instead.
+        root_cause_hold_seconds:
+          type: integer
+          maximum: 600
+          minimum: 0
+          description: How long an alert of a device with upstreams waits for its
+            upstreams' checks before it is sent.
+        root_cause_hold_mode:
+          allOf:
+          - $ref: '#/components/schemas/RootCauseHoldModeEnum'
+          description: |-
+            smart holds only while an upstream is failing or not recently confirmed up; always holds every such alert.
+
+            * `smart` - While an upstream is unconfirmed
+            * `always` - Always
         discovery_enabled:
           type: boolean
           description: Master switch for periodic subnet discovery (per-prefix opt-in).
@@ -134972,6 +136487,12 @@ components:
           type: object
           additionalProperties:
             type: boolean
+          description: |-
+            ``change``/``delete`` as for any row, plus ``add_child``: may the
+            reader create a prefix inside this one? A site-limited creator may
+            not when this prefix or one holding it is shared or another site's:
+            the create would be refused (PrefixViewSet._assert_write_in_site_scope,
+            allocate and plan). The UI hides Create under such a parent.
           readOnly: true
         created_at:
           type: string
@@ -139930,6 +141451,94 @@ components:
       required:
       - location_id
       - name
+    RootCauseHoldModeEnum:
+      enum:
+      - smart
+      - always
+      type: string
+      description: |-
+        * `smart` - While an upstream is unconfirmed
+        * `always` - Always
+    RootCauseIncident:
+      type: object
+      description: |-
+        A root-cause incident (#450): the root device, its lifecycle and
+        counts. ``root_alerts`` is the root's own firing alert count.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        device:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/RootCauseIncidentStatusEnum'
+        opened_at:
+          type: string
+          format: date-time
+        recovering_since:
+          type: string
+          format: date-time
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        announced_at:
+          type: string
+          format: date-time
+          nullable: true
+        recovery_announced_at:
+          type: string
+          format: date-time
+          nullable: true
+        explained_count:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        already_alerted_count:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        reduced_count:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        merged_into:
+          type: string
+          readOnly: true
+        acknowledged:
+          type: boolean
+          readOnly: true
+        acknowledged_at:
+          type: string
+          format: date-time
+          nullable: true
+        acknowledged_by_name:
+          type: string
+          readOnly: true
+        ack_note:
+          type: string
+          maxLength: 255
+        detail: {}
+      required:
+      - acknowledged
+      - acknowledged_by_name
+      - device
+      - id
+      - merged_into
+    RootCauseIncidentStatusEnum:
+      enum:
+      - open
+      - recovering
+      - resolved
+      type: string
+      description: |-
+        * `open` - Open
+        * `recovering` - Recovering
+        * `resolved` - Resolved
     RouteTarget:
       type: object
       description: Read+write Route Target with vrf-usage counts for the list view.
@@ -144409,6 +146018,26 @@ components:
       description: |-
         * `parent` - Parent
         * `child` - Child
+    SuggestRequestRequest:
+      type: object
+      properties:
+        core_device:
+          type: string
+          format: uuid
+        site:
+          type: string
+          format: uuid
+          nullable: true
+        max_depth:
+          type: integer
+          maximum: 20
+          minimum: 1
+          default: 8
+        use_lldp:
+          type: boolean
+          default: true
+      required:
+      - core_device
     SupplyEnum:
       enum:
       - ac
@@ -146152,6 +147781,8 @@ components:
           type: string
           minLength: 1
         collapse_panels:
+          type: boolean
+        group_clusters:
           type: boolean
         group_by:
           $ref: '#/components/schemas/GroupByEnum'
