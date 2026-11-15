@@ -295,8 +295,12 @@ function Body({ record: r }: { record: VulnRecordDetail }) {
           mono
           badges={
             <>
-              <PriorityBadge value={r.priority} />
-              <SeverityBadge value={r.cvss_severity} />
+              <PriorityBadge value={r.priority} name="Priority" />
+              <SeverityBadge
+                value={r.cvss_severity}
+                name="CVSS"
+                score={toNumber(r.cvss_score)}
+              />
               {r.kev && <KevBadge added={r.kev_added} due={r.kev_due} />}
             </>
           }

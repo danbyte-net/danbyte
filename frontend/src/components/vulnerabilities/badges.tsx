@@ -76,17 +76,48 @@ export const CONFIDENCE_LABELS: Record<VulnConfidence, string> = {
   partial: "Partial",
 }
 
-export function PriorityBadge({ value }: { value: VulnPriority | "" }) {
+/** A badge's own name ahead of its level, where nothing else names it
+ * (a record header): "Priority Medium", "CVSS Medium 5.3". */
+function Named({ name }: { name?: string }) {
+  if (!name) return null
+  return <span className="font-normal opacity-75">{name}</span>
+}
+
+export function PriorityBadge({
+  value,
+  name,
+}: {
+  value: VulnPriority | ""
+  /** Shown ahead of the level, e.g. "Priority". */
+  name?: string
+}) {
   if (!value) return dash
   return (
-    <Badge variant={PRIORITY_VARIANT[value]}>{PRIORITY_LABELS[value]}</Badge>
+    <Badge variant={PRIORITY_VARIANT[value]} className="gap-1">
+      <Named name={name} />
+      {PRIORITY_LABELS[value]}
+    </Badge>
   )
 }
 
-export function SeverityBadge({ value }: { value: VulnSeverity }) {
+export function SeverityBadge({
+  value,
+  name,
+  score,
+}: {
+  value: VulnSeverity
+  /** Shown ahead of the level, e.g. "CVSS". */
+  name?: string
+  /** The base score, shown after the level ("Medium 5.3"). */
+  score?: number | null
+}) {
   if (!value) return dash
   return (
-    <Badge variant={SEVERITY_VARIANT[value]}>{SEVERITY_LABELS[value]}</Badge>
+    <Badge variant={SEVERITY_VARIANT[value]} className="gap-1">
+      <Named name={name} />
+      {SEVERITY_LABELS[value]}
+      {score != null && <span className="num">{score.toFixed(1)}</span>}
+    </Badge>
   )
 }
 
