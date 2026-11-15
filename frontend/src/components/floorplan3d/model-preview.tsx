@@ -2,12 +2,12 @@ import { useEffect, useMemo } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
 import * as THREE from "three"
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js"
 
 import { Loading } from "@/components/loading"
 import type { Model3DFront, Model3DUp } from "@/lib/api"
 
 import { useDeviceModel } from "./device-model"
+import { studioEnvironment } from "./studio"
 import { modelRotation } from "./world"
 
 /**
@@ -21,13 +21,11 @@ export function Studio() {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
   useEffect(() => {
-    const pmrem = new THREE.PMREMGenerator(gl)
-    const rt = pmrem.fromScene(new RoomEnvironment(), 0.04)
-    scene.environment = rt.texture
+    const env = studioEnvironment(gl)
+    scene.environment = env.texture
     return () => {
       scene.environment = null
-      rt.dispose()
-      pmrem.dispose()
+      env.dispose()
     }
   }, [gl, scene])
   return null

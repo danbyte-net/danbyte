@@ -1355,7 +1355,7 @@ def _photo_html(ctx: Context, row: dict) -> str:
     d = Device.objects.filter(pk=row["id"]).select_related("device_type").first()
     imgs = []
     dtype = getattr(d, "device_type", None)
-    for attr, label in (("front_image", "Front"), ("rear_image", "Rear")):
+    for attr, label in (("front_image", "Front"), ("rear_image", "Rear"), ("iso_image", "3D")):
         f = getattr(dtype, attr, None) if dtype is not None else None
         name = getattr(f, "name", "") or ""
         if name.startswith("device-type-images/"):

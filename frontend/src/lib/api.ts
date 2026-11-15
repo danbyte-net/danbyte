@@ -1703,6 +1703,14 @@ export interface DeviceType extends LifecycleInfo {
   front_image: string | null
   /** Absolute URL of the rear rack-face image, or null. */
   rear_image: string | null
+  /** The ¾ view rendered from the 3D model, or null. */
+  iso_image?: string | null
+  /** LEDs projected onto the generated faces (api.model_studio). */
+  image_leds?: ImageLeds | null
+  /** Modules the generated images show: bay name → module type id. */
+  model_reference?: Record<string, string> | null
+  /** The model has images to (re)generate (detail reads only). */
+  images_pending?: boolean
   /** Download URL of the type's 3D model (binary glTF), or null. */
   model_3d?: string | null
   model_3d_fit?: Model3DFit
@@ -1815,6 +1823,8 @@ export interface DeviceTypeMini {
   din_rail_mm: number | null
   front_image: string | null
   rear_image: string | null
+  /** The ¾ view rendered from the type's 3D model, or null. */
+  iso_image?: string | null
   /** The front photo's calibration, with its true width; null when it has
    * none. A device's own `image_ports` calibration wins over it. */
   front_cal?: ResolvedPhotoCalibration | null
@@ -1934,6 +1944,64 @@ export interface ModelScan {
   summary: string
   counts: { bays: number; empties: number; ports: number; leds: number }
   warnings: string[]
+}
+
+/** LEDs placed on the generated faces, the `image_ports` shape with kind
+ * "led" (api.model_studio). */
+export interface ImageLed {
+  kind: "led"
+  name: string
+  bay?: string
+  source?: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+export interface ImageLeds {
+  front: ImageLed[]
+  rear: ImageLed[]
+}
+
+/** An LED binding from a model's `leds:` block. */
+export type ModelLedBindings = Record<string, { source?: string }>
+
+/** `GET /api/device-types/{id}/studio/`: what the image renderer needs. */
+export interface DeviceTypeStudio {
+  model: {
+    url: string
+    fit: Model3DFit
+    up: Model3DUp
+    front: Model3DFront
+    empty_mode: ModelEmptyMode
+  } | null
+  size_mm: {
+    width_mm: number | null
+    height_mm: number | null
+    depth_mm: number | null
+  }
+  frame_mm: [number, number | null]
+  bays: (ModelBay & {
+    module_type: { id: string; name: string } | null
+    leds: ModelLedBindings
+  })[]
+  leds: ModelLedBindings
+  ports: Record<string, [string, string]>
+  token: string
+  pending: boolean
+  generated: string[]
+  /** Images and the port map made by hand: kept unless confirmed. */
+  hand_made: string[]
+}
+
+/** `GET /api/devices/{id}/studio/`: the same for one device's own faces. */
+export interface DeviceStudio {
+  frame_mm: [number, number | null] | null
+  size_mm: DeviceTypeStudio["size_mm"]
+  leds: ModelLedBindings
+  bay_leds: Record<string, ModelLedBindings>
+  ports: Record<string, [string, string]>
+  own_image_ports: boolean
 }
 
 export interface Model3DOptions {

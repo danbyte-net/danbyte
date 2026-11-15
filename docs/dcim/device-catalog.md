@@ -236,6 +236,16 @@ photos stored since without it. It removes an old file only once the new one
 has been read back clean with all its frames, and reports any photo it
 kept instead.
 
+A type with a 3D model can have these images **generated** from it, with a
+third **3D** image (a three-quarter view) and its ports and status lights
+placed on the faces - see
+[Generated images](model-packs.md#generated-images). The 3D image shows
+beside the title on the type's and its devices' pages and in spec sheets and
+PDF reports. It can be uploaded or removed by hand like the faces
+(`iso_image` / `clear_iso` on the `images/` action). A face uploaded by hand
+is never replaced by generated images unless you tick it in the generate
+dialog.
+
 ### Recovering lost images {#reimport-images}
 
 Images live in the media folder; the device types live in the database. Lose
@@ -308,6 +318,8 @@ then:
 
 | **Far model** | An optional low-detail copy, drawn instead from about 14 m away. **Upload** / **Replace** / **Remove**; it needs the model first, and goes with it when the model is removed. |
 | **Anchors** | What the model's named nodes hold - module bays, ports, status lights - and, on a warning badge, the names that match nothing in the type. See [3D model packs](model-packs.md#names-the-models-carry). |
+| **Modules** | A modular model only: the modules the generated images show - **Covers**, or how many bays show a module. **Edit** picks a module type per bay. See [Generated images](model-packs.md#generated-images). |
+| **Images** | **Generate images** renders the rack-face images, the 3D image, the photo ports and the LED positions from the model. **Pending** while they are missing or were made from an older model. |
 
 Uploading, replacing and removing need **change** on the type; anyone who can
 view the type sees the card read-only. Each change lands in the type's
@@ -401,6 +413,7 @@ who may view it, as a download (`model/gltf-binary`, `nosniff`, attachment).
 | `POST /api/device-types/{id}/model/` | Sets or replaces it: multipart `file`, optional `fit` (`auto` / `native`), `up` (`y` / `z`), `front` (`+z` / `-z` / `+x` / `-x`). Change on the type. Answers the type, with the scan as `model_scan`. |
 | `DELETE /api/device-types/{id}/model/` | Removes it (change on the type). |
 | `GET/POST/DELETE /api/device-types/{id}/model-far/` | The far-distance copy, the same way. Needs the model first. |
+| `GET/POST /api/device-types/{id}/studio/` | [Generated images](model-packs.md#generated-images): what the renderer needs (view), and storing what it rendered (change). |
 
 The type's `model_3d` is the model's download URL (never a file path), or
 null; `model_3d_fit`, `model_3d_up` and `model_3d_front` are plain fields you

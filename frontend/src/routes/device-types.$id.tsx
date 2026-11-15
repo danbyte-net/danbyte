@@ -158,6 +158,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       hero={
         <DetailHero
           title={d.name}
+          image={d.iso_image}
           badges={
             <>
               <LifecycleBadge state={d.lifecycle_state} />
@@ -476,6 +477,11 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
           canEdit={objCan(d, "change", canDo("devicetype", "change"))}
           queryKey={["device-type", d.id]}
           typeId={d.id}
+          studio={{
+            pending: !!d.images_pending,
+            generated: !!(d.front_image || d.rear_image || d.iso_image),
+            reference: d.model_reference ?? null,
+          }}
         />
       </div>
     </div>

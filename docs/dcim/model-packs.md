@@ -88,6 +88,57 @@ its interface names, character for character.
 - **Budget.** Every part counts against the room's triangle budget. Past
   it, a device draws its chassis alone, then its box.
 
+## Generated images
+
+A device type with a model can have its rack-face images made from it:
+**Generate images** on the type's **3D model** card. The browser renders
+the model - with the same loader, materials and studio light as the 3D
+viewer - and shows what it made before anything is stored:
+
+- **Front** and **Rear**: straight-on (orthographic) views fitted exactly to
+  the rack face - the type's width, else 19 inches (half that for half-width
+  gear) - by its rack units, so they drop into a rack slot as they are.
+  2000 px wide, WebP. Their photo calibration is set to the face's width.
+- **3D**: a three-quarter view, 1600 × 1200, from the front, right and a
+  little above. It shows beside the title on the type's and its devices'
+  pages and in spec sheets and PDF reports.
+- **Photo ports**: every `port:` node is placed on the face it points out
+  of, as a [photo port](device-catalog.md#photo-ports). Its box is sized
+  from the component's type: an SFP, QSFP or OSFP cage, an RJ45 jack, a USB
+  port, a power inlet and so on. `{module}` in a module's port becomes the
+  bay's position. A name that matches no component is placed as an
+  interface and listed in the dialog's notes.
+- **LEDs**: every `led:` node is placed on the face it sits on, with its own
+  outline, as `image_leds` - the photo-port shape with kind `led`, the LED
+  id as `name`, the module's bay as `bay` and its binding as `source`
+  (`port:*` covers port LEDs).
+
+**What the bays show.** By default each bay shows its cover. **Modules** →
+**Edit** on the card picks a module type per bay - a *reference
+configuration*, such as both power supplies and both fan trays - and the
+images show those. A bay must be one of the type's module bays and the
+chassis model must have its `bay:` node; the module type must be the
+tenant's, one you may view, with a model of its own.
+
+**Nothing made by hand is replaced unasked.** A face uploaded by hand (or
+fetched from the library) and a photo-port map placed by hand are kept
+unless you tick them in the dialog; ports are not placed on a face that
+stays hand-made. Uploading a face or moving a marker by hand makes it
+hand-made again.
+
+**Pending.** The card shows **Pending** while an image is missing or was
+made from an older state: a new or replaced model, other reference
+modules, another size. Uploading a model on the card offers the images
+straight away; a [pack import](#importing-a-pack) marks each device type it
+gives a model with *images: pending*, and the type's next editor sees the
+badge.
+
+**A device's own faces.** A device whose installed modules differ from its
+type's can **Render faces** on its 3D model card: the same render with its
+own modules, to view and download. **Save photo ports** keeps the port map
+as the device's [photo-port override](devices.md); a device keeps drawing
+its type's images.
+
 Module models come from the module type. A reader who may view the device
 and its modules but not the module types still sees them: the device serves
 them (`/api/devices/{id}/module-model/{module id}/`).
@@ -111,6 +162,9 @@ one:
 - The run is a **dry run** unless `--apply` is given: everything is read,
   checked and scanned, the report printed, and nothing kept.
 - Models no YAML names are listed and not imported.
+- A device type left without current [generated images](#generated-images)
+  is reported as *images: pending*. They render in a browser, so the type's
+  page offers them to its next editor.
 - Applied changes land in each type's change log as system writes, with the
   pack's name and version as their cause.
 
@@ -125,6 +179,13 @@ pack.
 | `GET/POST/DELETE /api/module-types/{id}/model/` | A module type's model, as for device types. View / change on the module type. |
 | `GET/POST/DELETE /api/{device-types,module-types,devices}/{id}/model-far/` | The far copy. Needs the full model first; removing the full model removes it too. |
 | `GET /api/devices/{id}/module-model/{module id}/` (and `module-model-far/`) | An installed module's model, through its device. |
+| `GET /api/device-types/{id}/studio/` | What the image renderer needs: the model, `frame_mm` (`[width, height]`), the bays with their reference modules' models and `leds`, the components by name (`ports`: `[kind, type]`), the `token` of the model state, `pending`, `generated` and `hand_made`. View on the type. |
+| `POST /api/device-types/{id}/studio/` | Stores a rendered set (multipart): `front_image`, `rear_image`, `iso_image` (WebP or PNG), `image_ports` and `image_leds` (JSON), `token` (a stale one answers 400) and `overwrite` - the hand-made targets to replace, comma-separated. Answers `written`, `kept` and the type. Change on the type. |
+| `GET /api/devices/{id}/studio/` | The same for a device's own faces: its components and its modules' LED bindings. View on the device. |
+
+A device type's read carries `iso_image`, `image_leds`, `model_reference`
+(bay name → module type id, writable with `PATCH`, null for covers) and, on
+the detail read, `images_pending`.
 
 An upload's answer carries `model_scan`: `summary`, `counts` (`bays`,
 `empties`, `ports`, `leds`) and `warnings`. A type's or device's detail read

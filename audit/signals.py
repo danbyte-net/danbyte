@@ -73,7 +73,7 @@ _SUMMARISED_JSON_FIELDS: dict[str, frozenset[str]] = {
     # entries; what changed is enough.
     "api.floorplandrawing": frozenset({"layers", "variants"}),
     # A 3D model's scanned anchors: every port and LED with its position.
-    "api.devicetype": frozenset({"model_anchors"}),
+    "api.devicetype": frozenset({"model_anchors", "image_leds"}),
     "api.device": frozenset({"model_anchors"}),
     "api.moduletype": frozenset({"model_anchors"}),
 }

@@ -430,6 +430,14 @@ model3d:
         self.assertFalse(ModuleType.objects.filter(name="NM-9").exists())
         self.assertEqual(os.listdir(self.media) if os.path.isdir(self.media) else [], [])
 
+    def test_command_apply_flags_images_pending(self):
+        from .model_studio import pending
+
+        out = self._command(self.pack, "--apply")
+        self.assertIn("images: pending", out)
+        self.assertTrue(pending(DeviceType.objects.get(name="Acme X1")))
+        self.assertNotIn("images: pending", self._command(self.pack))
+
     def test_command_apply_creates_and_matches(self):
         # An existing module type, matched by manufacturer + part number.
         acme = Manufacturer.objects.create(tenant=self.tenant, name="Acme", slug="acme")

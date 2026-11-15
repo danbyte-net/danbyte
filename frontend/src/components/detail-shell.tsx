@@ -387,8 +387,11 @@ export function DetailHero({
   description,
   stats,
   statCols = 2,
+  image,
   children,
 }: {
+  /** A small picture before the title: the hardware's generated 3D view. */
+  image?: string | null
   /** The object's identity. Rendered as the page's `<h1>`. */
   title: ReactNode
   /** Mono face for the title - identifiers, not names. */
@@ -412,6 +415,15 @@ export function DetailHero({
 }) {
   return (
     <section className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-3 border-b border-border px-6 py-4">
+      {image && (
+        // The hardware's 3D view, rendered from its model: a picture of
+        // what the page is about, not a fact (no stat rail).
+        <img
+          src={image}
+          alt=""
+          className="-mr-6 h-14 w-auto max-w-40 shrink-0 object-contain"
+        />
+      )}
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
           <h1

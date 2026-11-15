@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, deleteModel3D } from "@/lib/api"
 import type {
   ImagePorts,
+  Model3DEffective,
   Model3DFit,
   Model3DFront,
   Model3DOwnerKind,
@@ -35,6 +36,11 @@ import {
   UP_CHOICES,
 } from "@/components/model-3d-choice"
 import { lazyChunk } from "@/lib/lazy-chunk"
+import {
+  DeviceStudioDialog,
+  DeviceTypeStudioDialog,
+  ModelReferenceDialog,
+} from "@/components/model-studio-dialog"
 
 // three.js stays in the 3D chunk: the converter and the port editor load
 // only when their dialog opens.
@@ -69,6 +75,8 @@ export function Model3DCard({
   queryKey,
   typeId,
   ownImagePorts,
+  studio,
+  deviceModel,
 }: {
   kind: Model3DOwnerKind
   id: string
@@ -96,10 +104,20 @@ export function Model3DCard({
   typeId?: string | null
   /** A device's own photo-port override. */
   ownImagePorts?: ImagePorts | null
+  /** A device type's generated images (model-studio-dialog). */
+  studio?: {
+    pending: boolean
+    generated: boolean
+    reference: Record<string, string> | null
+  }
+  /** A device: what it draws, to render its own faces from. */
+  deviceModel?: Model3DEffective | null
 }) {
   const qc = useQueryClient()
   const [uploading, setUploading] = useState<"full" | "far" | null>(null)
   const [mapping, setMapping] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [referencing, setReferencing] = useState(false)
   const refresh = () => qc.invalidateQueries({ queryKey })
 
   const patch = useMutation({
@@ -234,7 +252,73 @@ export function Model3DCard({
     )
     if (scan)
       rows.push({ label: "Anchors", value: <ScanSummary scan={scan} /> })
+    if (studio) {
+      const refN = Object.keys(studio.reference ?? {}).length
+      if ((scan?.counts.bays ?? 0) > 0)
+        rows.push({
+          label: "Modules",
+          value: (
+            <div className="flex flex-wrap items-center gap-2">
+              <span>
+                {refN ? (
+                  <>
+                    <span className="num">{refN}</span> in the images
+                  </>
+                ) : (
+                  "Covers"
+                )}
+              </span>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => setReferencing(true)}
+                >
+                  Edit
+                </Button>
+              )}
+            </div>
+          ),
+        })
+      rows.push({
+        label: "Images",
+        value: (
+          <div className="flex flex-wrap items-center gap-2">
+            {studio.pending ? (
+              <Badge variant="warning">Pending</Badge>
+            ) : (
+              <span>{studio.generated ? "Generated" : dash}</span>
+            )}
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                onClick={() => setGenerating(true)}
+              >
+                Generate images
+              </Button>
+            )}
+          </div>
+        ),
+      })
+    }
   }
+  if (deviceModel && canEdit)
+    rows.push({
+      label: "Faces",
+      value: (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7"
+          onClick={() => setGenerating(true)}
+        >
+          Render faces
+        </Button>
+      ),
+    })
   // Ports the model's own `port:` nodes place: nothing to map by hand.
   const anchored =
     (scan?.counts.ports ?? 0) > 0 || ports.data?.source === "anchors"
@@ -302,6 +386,8 @@ export function Model3DCard({
                 }
                 onCancel={() => setUploading(null)}
                 onSaved={() => {
+                  // A new model on a type: offer its images straight away.
+                  if (studio && uploading === "full") setGenerating(true)
                   setUploading(null)
                   void refresh()
                   void ports.refetch()
@@ -339,6 +425,28 @@ export function Model3DCard({
           )}
         </DialogContent>
       </Dialog>
+      {studio && (
+        <>
+          <DeviceTypeStudioDialog
+            deviceTypeId={id}
+            open={generating}
+            onOpenChange={setGenerating}
+          />
+          <ModelReferenceDialog
+            deviceTypeId={id}
+            open={referencing}
+            onOpenChange={setReferencing}
+          />
+        </>
+      )}
+      {deviceModel && (
+        <DeviceStudioDialog
+          deviceId={id}
+          model={deviceModel}
+          open={generating}
+          onOpenChange={setGenerating}
+        />
+      )}
     </>
   )
 }

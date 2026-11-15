@@ -442,6 +442,7 @@ function Body({ device: d }: { device: Device }) {
       hero={
         <DetailHero
           title={d.name}
+          image={d.device_type?.iso_image}
           mono
           badges={
             <>
@@ -1480,6 +1481,7 @@ function DeviceOverview({
         queryKey={["device", d.id]}
         typeId={d.device_type?.id ?? null}
         ownImagePorts={d.image_ports ?? null}
+        deviceModel={d.model_3d_effective ?? null}
       />
       <CustomFieldValues
         model="device"

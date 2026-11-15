@@ -27,7 +27,7 @@ import { useMe } from "@/lib/use-me"
 // so the menu only shrinks further.
 const RESIZE_STEPS = ["1600", "1200", "800"] as const
 
-type Face = "front" | "rear"
+type Face = "front" | "rear" | "iso"
 
 /**
  * Front/rear rack-face image management for a device type. Each face shows the
@@ -40,6 +40,7 @@ export function DeviceTypeImages({ deviceType }: { deviceType: DeviceType }) {
     <div className="grid gap-4 sm:grid-cols-2">
       <FaceCard deviceType={deviceType} face="front" />
       <FaceCard deviceType={deviceType} face="rear" />
+      {deviceType.iso_image && <FaceCard deviceType={deviceType} face="iso" />}
     </div>
   )
 }
@@ -58,8 +59,13 @@ function FaceCard({
   const [error, setError] = useState<string | null>(null)
   const [px, setPx] = useState<{ w: number; h: number } | null>(null)
   const [confirming, setConfirming] = useState(false)
-  const image = face === "rear" ? deviceType.rear_image : deviceType.front_image
-  const label = face === "rear" ? "Rear" : "Front"
+  const image =
+    face === "iso"
+      ? (deviceType.iso_image ?? null)
+      : face === "rear"
+        ? deviceType.rear_image
+        : deviceType.front_image
+  const label = face === "iso" ? "3D" : face === "rear" ? "Rear" : "Front"
 
   const invalidate = (next: DeviceType) => {
     qc.setQueryData(["device-type", deviceType.id], next)
@@ -141,7 +147,9 @@ function FaceCard({
         )}
       </div>
 
-      <div className="flex aspect-[6/1] w-full items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted">
+      <div
+        className={`flex ${face === "iso" ? "aspect-[4/3]" : "aspect-[6/1]"} w-full items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted`}
+      >
         {image ? (
           <img
             src={image}

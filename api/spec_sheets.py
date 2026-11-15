@@ -291,13 +291,14 @@ HARDWARE_DETAILS = frozenset({
 
 
 def faceplates(dt, src=None) -> list[dict]:
-    """The device type's front and rear images, ``{src, caption}`` each;
+    """The device type's front, rear and 3D images, ``{src, caption}`` each;
     ``src(field)`` makes an image's source (by default a ``data:`` URI) and
     None leaves it out."""
     src = src or _data_uri
     out = []
     if dt:
-        for label, field in (("Front", dt.front_image), ("Rear", dt.rear_image)):
+        for label, field in (("Front", dt.front_image), ("Rear", dt.rear_image),
+                             ("3D", dt.iso_image)):
             got = src(field)
             if got:
                 out.append({"src": got, "caption": f"{label} · {dt.model or dt.name}"})

@@ -339,6 +339,14 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True) -> PackResult
                     tr.name = obj.name
                 tr.notes += apply_model3d(obj, block, files, dry_run=dry_run) or [
                     "no model3d block."]
+                # Rack-face images render in a browser (api.model_studio):
+                # the type's page offers them to its next editor.
+                if kind == "device-type" and not dry_run:
+                    from .model_studio import pending
+
+                    if pending(obj):
+                        tr.notes.append("images: pending - the type's page offers "
+                                        "to generate them.")
         if dry_run:
             transaction.set_rollback(True)
     result.unused_models = [n for n in names

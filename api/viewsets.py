@@ -3795,10 +3795,20 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             dt.front_image = downscale_image(request.FILES["front_image"])
         if "rear_image" in request.FILES:
             dt.rear_image = downscale_image(request.FILES["rear_image"])
+        if "iso_image" in request.FILES:
+            dt.iso_image = downscale_image(request.FILES["iso_image"])
         if request.data.get("clear_front"):
             dt.front_image = None
         if request.data.get("clear_rear"):
             dt.rear_image = None
+        if request.data.get("clear_iso"):
+            dt.iso_image = None
+        # A face set or cleared by hand is no longer the generated one
+        # (api.model_studio): generating again asks before replacing it.
+        from .model_studio import FACES, forget
+
+        forget(dt, *(f for f in FACES
+                     if f"{f}_image" in request.FILES or request.data.get(f"clear_{f}")))
         # A new or cleared photo's guides no longer stand where the old one's
         # did (#277); a resize below keeps them, being the same picture.
         from .face_ports import drop_calibration
@@ -3813,7 +3823,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
 
         from django.core.files import File
 
-        for face in ("front", "rear"):
+        for face in ("front", "rear", "iso"):
             raw = request.data.get(f"resize_{face}")
             if not raw:
                 continue
@@ -3824,7 +3834,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                     {"detail": "Resize takes a pixel count."}, status=400
                 )
             cap = max(200, min(4000, cap))
-            field = dt.front_image if face == "front" else dt.rear_image
+            field = getattr(dt, f"{face}_image")
             if not field or not field.name:
                 return Response(
                     {"detail": f"No {face} image to resize."}, status=400
@@ -3882,6 +3892,27 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         return model_3d.respond(
             out, DeviceTypeSerializer(dt, context=self.get_serializer_context()).data
         )
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get", "post"], url_path="studio",
+            parser_classes=[MultiPartParser, FormParser])
+    def studio(self, request, pk=None):
+        """Images generated from the type's 3D model (api.model_studio). GET
+        is what the browser renders from; POST stores what it rendered -
+        ``front_image`` / ``rear_image`` / ``iso_image`` files with
+        ``image_ports`` / ``image_leds`` JSON and the ``token`` - keeping
+        anything made by hand unless ``overwrite`` names it. Reading needs
+        view on the type, writing change."""
+        from . import model_studio
+
+        dt = self.get_object()
+        if request.method == "GET":
+            return Response(model_studio.type_payload(
+                dt, request.user, self._tenant_or_403()))
+        with transaction.atomic():
+            out = model_studio.store(dt, request)
+        return Response({**out, "device_type": DeviceTypeSerializer(
+            dt, context=self.get_serializer_context()).data})
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
     @action(detail=True, methods=["get", "put"], url_path="model-ports")
@@ -4369,6 +4400,20 @@ class DeviceViewSet(
         # get_object loaded its parts, scoped to the reader.
         device = self.get_object()
         return model_3d.serve_module(device, module_id, far=True)
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"], url_path="studio")
+    def studio(self, request, pk=None):
+        """What the browser needs to render this device's own faces - its
+        installed modules - and project its ports (api.model_studio). Nothing
+        is stored here: the port map it makes is saved as the device's photo
+        port override."""
+        from . import model_3d, model_studio
+
+        device = self.get_object()
+        # The reader's bays and modules only, as the room loads them.
+        model_3d.installed_parts([device], request.user, self._tenant_or_403())
+        return Response(model_studio.device_payload(device))
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
     @action(detail=True, methods=["get", "put"], url_path="model-ports")

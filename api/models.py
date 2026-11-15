@@ -620,6 +620,29 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
                    "normalized 0..1 (center-anchored). Rendered over the image "
                    "in 2D and on the device face in 3D. Null = none placed."),
     )
+    # Generated from the 3D model (api.model_studio): a three-quarter view,
+    # the LEDs projected onto the faces like image_ports, the modules the
+    # generated images show, and which images came from which model state.
+    iso_image = models.ImageField(
+        upload_to="device-type-images/", blank=True, null=True,
+        help_text="Three-quarter view of the hardware, rendered from its 3D model.",
+    )
+    image_leds = models.JSONField(
+        null=True, blank=True, default=None, editable=False,
+        help_text=("Status lights on the front/rear images, like image_ports: "
+                   "{front:[{kind:'led',name,bay,source,x,y,w,h}], rear:[...]}. "
+                   "Generated from the 3D model's led: nodes."),
+    )
+    model_reference = models.JSONField(
+        null=True, blank=True, default=None,
+        help_text=("Modules the generated images show: {module bay name: "
+                   "module type id}. Bays left out show their cover."),
+    )
+    images_generated = models.JSONField(
+        null=True, blank=True, default=None, editable=False,
+        help_text=("Which of front/rear/iso/image_ports/image_leds were "
+                   "generated, each keyed to the model state it came from."),
+    )
     is_full_depth = models.BooleanField(
         default=True,
         help_text=("Occupies both the front and rear rack faces. Full-depth "

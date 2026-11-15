@@ -168,6 +168,25 @@ function release(url: string) {
   }, RELEASE_AFTER_MS)
 }
 
+/** The model at `url` once it has loaded or failed, outside React (the
+ * studio renderer). Holds it in the shared cache until `releaseModel`. */
+export function acquireModel(url: string): Promise<ModelEntry> {
+  const slot = acquire(url)
+  return new Promise((resolve) => {
+    const check = () => {
+      if (slot.entry.status === "loading") return
+      slot.listeners.delete(check)
+      resolve(slot.entry)
+    }
+    slot.listeners.add(check)
+    check()
+  })
+}
+
+export function releaseModel(url: string) {
+  release(url)
+}
+
 /** The model at `url` (null: no model), loading it on first use. Kicks a
  * frame when it lands - the room draws on demand. */
 export function useDeviceModel(url: string | null): ModelEntry | null {

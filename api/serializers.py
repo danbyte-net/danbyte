@@ -2822,6 +2822,7 @@ LIFECYCLE_FIELDS = [
 class DeviceTypeMiniSerializer(NumIdModelSerializer):
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
+    iso_image = serializers.SerializerMethodField()
     front_cal = serializers.SerializerMethodField()
     lifecycle_state = serializers.ReadOnlyField()
     # Manufacturer NAME (not the nested object) - enough to drive the device
@@ -2836,6 +2837,9 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
 
     def get_rear_image(self, obj) -> str | None:
         return _img_url(self, obj.rear_image)
+
+    def get_iso_image(self, obj) -> str | None:
+        return _img_url(self, obj.iso_image)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_front_cal(self, obj):
@@ -2852,7 +2856,7 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "manufacturer", "manufacturer_id", "icon",
                   "u_height", "rack_width", "is_full_depth",
                   "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
-                  "front_image", "rear_image", "front_cal",
+                  "front_image", "rear_image", "iso_image", "front_cal",
                   "release_date", "end_of_support", "lifecycle_state"]
         extra_kwargs = {f: {"coerce_to_string": False}
                         for f in ("width_mm", "height_mm", "depth_mm", "din_rail_mm")}
@@ -2903,6 +2907,8 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     document_count = serializers.SerializerMethodField()
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
+    iso_image = serializers.SerializerMethodField()
+    images_pending = serializers.SerializerMethodField()
     # The 3D model's download URL (never its stored path); set through the
     # ``model/`` action.
     model_3d = serializers.SerializerMethodField()
@@ -3005,6 +3011,30 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
 
     def get_rear_image(self, obj) -> str | None:
         return _img_url(self, obj.rear_image)
+
+    def get_iso_image(self, obj) -> str | None:
+        return _img_url(self, obj.iso_image)
+
+    @detail_only(False)
+    def get_images_pending(self, obj) -> bool:
+        # The model has images to (re)generate (api.model_studio.pending).
+        from .model_studio import pending
+
+        return pending(obj)
+
+    def validate_model_reference(self, value):
+        from .model_studio import validate_reference
+
+        if self.instance is None:
+            if value:
+                raise serializers.ValidationError("Save the type and its module bays first.")
+            return None
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        from api.views import _get_active_tenant
+
+        return validate_reference(self.instance, value, user,
+                                  _get_active_tenant(request) if request else None)
 
     # Faceplate layout doc - v1 envelope, port slots reference component-
     # template names. Shape-checked here (mirrors Service.validate_ports);
@@ -3111,8 +3141,13 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
 
     def update(self, instance, validated_data):
         from .model_ports import carry_type_frame, frame_of
+        from .model_studio import forget, markers_changed
 
         old = frame_of(instance)
+        # Markers moved by hand: generating again asks before replacing them.
+        if "image_ports" in validated_data and markers_changed(
+                instance.image_ports, validated_data["image_ports"]):
+            forget(instance, "image_ports")
         instance = super().update(instance, validated_data)
         carry_type_frame(instance, old)
         return instance
@@ -3182,6 +3217,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "part_number", "platform", "platform_id",
                   "u_height", "rack_width", "description",
                   "front_image", "rear_image", "faceplate", "image_ports",
+                  "iso_image", "image_leds", "model_reference", "images_pending",
                   "topology_photo_size", "icon",
                   "is_full_depth", "airflow", "cooling_method", "heat_output_w",
                   "weight", "weight_unit",
@@ -3197,6 +3233,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         read_only_fields = ["id", "device_count", "component_count",
                   "sensor_count", "document_count",
                   "front_image", "rear_image", "model_3d", "model_3d_far", "model_3d_scan",
+                  "iso_image", "image_leds", "images_pending",
                             "lifecycle_state", "created_at", "updated_at"]
 
 
