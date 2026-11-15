@@ -10,6 +10,7 @@ import {
   type Device,
   type Paginated,
   type VirtualMachine,
+  type VirtualMachineGroup,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
@@ -19,6 +20,7 @@ import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
 import { EmbeddedVmGroupTable } from "@/components/embedded-tables"
@@ -41,8 +43,7 @@ function ClusterDetail() {
     queryKey: ["cluster", id],
     queryFn: () => api<Cluster>(`/api/clusters/${id}/`),
   })
-  if (cluster.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (cluster.isLoading) return <Loading />
   if (cluster.isError)
     return (
       <div className="p-6">
@@ -68,6 +69,14 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
       api<Paginated<Device>>(`/api/devices/?cluster=${c.id}&page_size=1`),
   })
   const deviceCount = devices.data?.count ?? 0
+  const groups = useQuery({
+    queryKey: ["cluster-vm-groups-count", c.id],
+    queryFn: () =>
+      api<Paginated<VirtualMachineGroup>>(
+        `/api/vm-groups/?cluster=${c.id}&page_size=1`
+      ),
+  })
+  const groupCount = groups.data?.count ?? 0
   const [deleting, setDeleting] = useState<Cluster | null>(null)
   const openDelete = useCallback(() => setDeleting(c), [c])
   const goBack = useCallback(() => nav({ to: "/clusters" }), [nav])
@@ -95,7 +104,7 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "vms", label: "Virtual machines", count: c.vm_count },
-        { value: "groups", label: "VM groups" },
+        { value: "groups", label: "VM groups", count: groupCount },
         { value: "devices", label: "Hosts", count: deviceCount },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -159,8 +168,7 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
       }),
     []
   )
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   if (rows.length === 0)
     return (
