@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
 import type { ThreeEvent } from "@react-three/fiber"
 import {
+  ContactShadows,
   Html,
   OrbitControls,
   OrthographicCamera,
@@ -46,7 +47,7 @@ import {
 } from "./device-model-port-markers"
 import type { MappedPortPick } from "./device-model-port-markers"
 import { bayBoxes } from "./model-assembly"
-import { Studio } from "./model-preview"
+import { Studio, StudioLights } from "./model-preview"
 import { STUDIO_LIGHTS } from "./studio"
 import { modelTargetM } from "./world"
 
@@ -74,8 +75,11 @@ import { modelTargetM } from "./world"
  * its empty bays' covers (model-assembly), as the room does; a type's own
  * model shows as authored.
  *
- * The light is the room's: the studio environment at the room's strength,
- * one key light from the front and a dim fill.
+ * The light is the studio's (STUDIO_LIGHTS), what generated images are
+ * rendered with: AgX tone mapping, the procedural studio environment, one
+ * key light from the front and a dim fill. The three-quarter view stands
+ * the model on a soft contact shadow, drawn once per model and parts set
+ * rather than on every frame; the face views have none, like a drawing.
  */
 
 export type ViewPreset = "front" | "rear" | "top" | "iso"
@@ -123,6 +127,27 @@ export function presetCamera(size: V3): { position: V3; target: V3 } {
   return {
     position: [d * 0.45, cy + d * 0.35, -d * 0.85],
     target: [0, cy, 0],
+  }
+}
+
+/** The three-quarter view's contact shadow for a model of upright size
+ * `size` standing on the origin: a square reaching past the footprint,
+ * catching what stands within `far` of the floor, a hair below it. `blur`
+ * is drei's, in 1/256ths of the square: the soft edge stays about 4% of
+ * the footprint at any model size. */
+export function contactShadowFor(size: V3): {
+  scale: number
+  far: number
+  y: number
+  blur: number
+} {
+  const foot = Math.max(size[0], size[2], 1e-3)
+  const scale = foot * 1.6
+  return {
+    scale,
+    far: Math.max(size[1], 0.05) * 0.8,
+    y: -foot * 1e-3,
+    blur: ((foot * 0.04) / scale) * 256,
   }
 }
 
@@ -332,6 +357,9 @@ function Fitted({
     [entry.box, fitMode, up, front, w, h, dp]
   )
   const size = useMemo(() => fit.size as V3, [fit])
+  const shadow = useMemo(() => contactShadowFor(size), [size])
+  // A new parts set re-draws the shadow (its key).
+  const partsKey = parts.map((p) => `${p.bay}:${p.position}`).join(",")
   // A device's status LEDs, polled; a type's model shows them dark.
   const leds = useDeviceLeds(props.deviceId ? [props.deviceId] : [])
   const view: { preset: ViewPreset; n: number } = props.view ?? {
@@ -383,6 +411,20 @@ function Fitted({
             outlineAll={props.outlineAll}
           />
         ) : null)}
+      {!isFaceView(view.preset) && (
+        // One frame's depth pass per model and parts set (the key), not
+        // one on every frame the demand loop draws.
+        <ContactShadows
+          key={`${props.model.url}|${partsKey}`}
+          position={[0, shadow.y, 0]}
+          scale={shadow.scale}
+          far={shadow.far}
+          opacity={STUDIO_LIGHTS.shadow.opacity}
+          blur={shadow.blur}
+          resolution={512}
+          frames={1}
+        />
+      )}
       {isFaceView(view.preset) ? (
         <OrthographicCamera makeDefault />
       ) : (
@@ -553,16 +595,8 @@ export default function ModelViewer(props: ModelViewerProps) {
           if (e.button === 0) setSelection(null)
         }}
       >
-        <Studio intensity={STUDIO_LIGHTS.environment} />
-        <ambientLight intensity={STUDIO_LIGHTS.ambient} />
-        <directionalLight
-          position={STUDIO_LIGHTS.key.position}
-          intensity={STUDIO_LIGHTS.key.intensity}
-        />
-        <directionalLight
-          position={STUDIO_LIGHTS.fill.position}
-          intensity={STUDIO_LIGHTS.fill.intensity}
-        />
+        <Studio />
+        <StudioLights />
         <Model props={props} pickers={pickers} />
         <OrbitControls makeDefault enableDamping={false} />
       </Canvas>

@@ -7,7 +7,7 @@ import { Loading } from "@/components/loading"
 import type { Model3DFront, Model3DUp } from "@/lib/api"
 
 import { useDeviceModel } from "./device-model"
-import { studioEnvironment } from "./studio"
+import { STUDIO_LIGHTS, studioEnvironment } from "./studio"
 import { modelRotation } from "./world"
 
 /**
@@ -16,24 +16,53 @@ import { modelRotation } from "./world"
  * so its front faces the camera - what the room's tile front will see.
  */
 
-/** Studio light from three's procedural room: no files, airgap-safe.
- * `intensity` scales what it gives; the 3D room's is 0.35 (stage). */
-export function Studio({ intensity = 1 }: { intensity?: number }) {
+/** The studio's light for a viewer canvas (STUDIO_LIGHTS): the procedural
+ * studio environment at `intensity`, and the studio's tone mapping and
+ * exposure, put back on unmount. No files, airgap- and CSP-safe. */
+export function Studio({
+  intensity = STUDIO_LIGHTS.environment,
+}: {
+  intensity?: number
+}) {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
   const invalidate = useThree((s) => s.invalidate)
   useEffect(() => {
     const env = studioEnvironment(gl)
+    const tone = gl.toneMapping
+    const exposure = gl.toneMappingExposure
+    gl.toneMapping = STUDIO_LIGHTS.toneMapping
+    gl.toneMappingExposure = STUDIO_LIGHTS.exposure
     scene.environment = env.texture
     scene.environmentIntensity = intensity
     invalidate()
     return () => {
+      gl.toneMapping = tone
+      gl.toneMappingExposure = exposure
       scene.environment = null
       scene.environmentIntensity = 1
       env.dispose()
     }
   }, [gl, scene, intensity, invalidate])
   return null
+}
+
+/** The studio's lights (STUDIO_LIGHTS): a low ambient, the key from the
+ * front right and a dim fill. */
+export function StudioLights() {
+  return (
+    <>
+      <ambientLight intensity={STUDIO_LIGHTS.ambient} />
+      <directionalLight
+        position={STUDIO_LIGHTS.key.position}
+        intensity={STUDIO_LIGHTS.key.intensity}
+      />
+      <directionalLight
+        position={STUDIO_LIGHTS.fill.position}
+        intensity={STUDIO_LIGHTS.fill.intensity}
+      />
+    </>
+  )
 }
 
 /** The object, turned upright, centred, and the camera backed off to frame
@@ -126,8 +155,7 @@ export default function ModelPreview({
         fallback={<Loading />}
       >
         <Studio />
-        <ambientLight intensity={0.4} />
-        <directionalLight position={[2, 4, -3]} intensity={1.2} />
+        <StudioLights />
         {object ? (
           <Framed object={object} up={up} front={front} />
         ) : url ? (

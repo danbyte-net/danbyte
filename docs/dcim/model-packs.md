@@ -142,6 +142,16 @@ viewer - and shows what it made before anything is stored:
   id as `name`, the module's bay as `bay` and its binding as `source`
   (`port:*` covers port LEDs).
 
+**Light.** The viewer and the generated images share one studio light:
+AgX tone mapping (Blender's default view), a built-in photo-studio
+environment of soft light panels for metal to reflect (no image files),
+one key light from the front right and a dim fill. The images average many
+renders with the key moved across its softbox and a light moved across the
+sky, for soft shadows and contact shading in recesses. **Front** and
+**Rear** keep a transparent background with no ground; the **3D** view and
+the viewer's 3D preset stand the model on a soft shadow. The 3D room keeps
+its own light.
+
 **What the bays show.** By default each bay shows its cover. **Modules** →
 **Edit** on the card picks a module type per bay - a *reference
 configuration*, such as both power supplies and both fan trays - and the
