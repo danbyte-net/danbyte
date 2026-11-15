@@ -4963,12 +4963,23 @@ class DeviceViewSet(
                                ("status", "status"),
                                ("role", "role_id"), ("platform", "platform_id"),
                                ("location", "location_id"),
-                               ("manufacturer", "device_type__manufacturer_id"),
-                               # A cluster's hosts (the cluster page).
-                               ("cluster", "cluster_id")):
+                               ("manufacturer", "device_type__manufacturer_id")):
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{field: v})
+            # ?cluster=<id>: the cluster's hosts (the cluster page, #515) -
+            # the devices whose cluster it is, plus the hosts its VMs run on.
+            # A hypervisor sync links a VM to an existing host Device by node
+            # name without touching that Device's cluster, so the FK alone
+            # would miss hosts the operator modelled before the first sync.
+            cluster = _uuid_param(self.request.query_params, "cluster")
+            if cluster:
+                qs = qs.filter(
+                    Q(cluster_id=cluster)
+                    | Q(id__in=VirtualMachine.objects.filter(
+                        cluster_id=cluster, device__isnull=False,
+                    ).values("device_id"))
+                )
             # ?rack=<id>, or comma-separated ids: the elevations wall reads
             # every rack's devices in one request, not one per rack (#431).
             racks = _uuid_list_param(self.request.query_params, "rack", limit=1000)

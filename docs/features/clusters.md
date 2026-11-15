@@ -21,11 +21,12 @@ only place you need to set a site.
 | **Status** | From your status catalog. |
 | **Description**, **tags** | Notes and labels. |
 
-Its detail page lists the **virtual machines** on it (with a count on the tab)
-and its **VM groups**, plus Journal and Change log. Its physical hosts are the
-devices whose cluster it is: `GET /api/devices/?cluster=<id>` (before 0.20
-the device list ignored `cluster`, so the page counted and listed every
-device).
+Its detail page lists the **virtual machines** on it, its **VM groups** and
+its **Hosts**, each with a count on its tab, plus Journal and Change log. Its
+hosts are the devices whose cluster it is, plus the devices its VMs run on (a
+sync links a VM to an existing host device by node name without setting that
+device's cluster): `GET /api/devices/?cluster=<id>`. Before 0.20 the device
+list ignored `cluster`, so the Hosts tab counted and listed every device.
 
 The Clusters list has **SLA** and **Availability** columns, read from the
 cluster's hosts: the agreements its hosts are in, and the checks on their
