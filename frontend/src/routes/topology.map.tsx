@@ -181,6 +181,9 @@ import {
   readTopoHidden,
   type TopoHidden,
 } from "@/components/topology/hidden"
+import { impactHighlight } from "@/components/topology/what-if"
+import { WhatIfPanel } from "@/components/topology/what-if-panel"
+import { deviceImpactQueryOptions } from "@/components/device-dependencies/impact-panel"
 import { StaleViewDialog } from "@/components/topology/stale-view-dialog"
 import {
   useDefaultView,
@@ -389,6 +392,9 @@ export interface TopologySearch {
   labels?: string
   /** Fold link-aggregation member cables into one edge ("on" by default). */
   lag?: "on" | "off"
+  /** The Dependencies layer (#450): device dependencies as arrowed lines
+   * ("off" by default). */
+  deps?: "on" | "off"
   /** Levels organiser, encoded by `levels-param.ts`. */
   levels?: string
   /** Focused device + how many hops around it. */
@@ -462,6 +468,8 @@ export const Route = createFileRoute("/topology/map")({
     if (color) out.color = color
     const lag = oneOf(s.lag, LAG_MODES)
     if (lag) out.lag = lag
+    const deps = oneOf(s.deps, DEP_MODES)
+    if (deps) out.deps = deps
     const cables = oneOf(s.cables, ROUTINGS)
     if (cables) out.cables = cables
     const mode = oneOf(s.mode, DIAGRAM_MODES)
@@ -664,6 +672,7 @@ const DIRS = ["lr", "tb"] as const
 const HOPS = [1, 2, 3, 4, 5, 6] as const
 const ROUTINGS = ["routed", "straight", "curved"] as const
 const LAG_MODES = ["on", "off"] as const
+const DEP_MODES = ["on", "off"] as const
 const GROUPS = ["none", "site", "location"] as const
 /** The Diagram tab's switches: the card mode, the line type and the labels
  * the links carry. */
@@ -713,6 +722,7 @@ type ViewFilters = Partial<
     viewStyle: ViewStyle
     groupBy: GroupBy
     lag: "on" | "off"
+    deps: "on" | "off"
     devices: string[]
     /** The virtual chassis placed on a hand-picked map. */
     chassis: string[]
@@ -983,6 +993,11 @@ function TopologyPage() {
     "lag",
     oneOf(vf.lag, LAG_MODES) ?? "on",
     LAG_MODES
+  )
+  const [depsMode, setDepsMode] = useUrlEnum(
+    "deps",
+    oneOf(vf.deps, DEP_MODES) ?? "off",
+    DEP_MODES
   )
   const [diagramMode, setDiagramMode] = useUrlEnum<DiagramModeParam>(
     "mode",
@@ -1878,6 +1893,22 @@ function TopologyPage() {
       ),
   })
 
+  // The Dependencies layer (#450): fetched only while it is on, for the
+  // site the map is narrowed to; the page draws those between its cards.
+  const canSeeDeps = canDo("devicedependency", "view")
+  const depsOn = depsMode === "on" && canSeeDeps
+  const deps = useQuery({
+    queryKey: ["topology-dependencies", filters.site],
+    enabled: !canvasless && mapSettled && depsOn,
+    queryFn: ({ signal }) =>
+      api<{ edges: TopoEdge[] }>(
+        `/api/topology/dependencies/${
+          filters.site !== "all" ? `?site=${filters.site}` : ""
+        }`,
+        { signal }
+      ),
+  })
+
   // ── Routing tab ──
   // Its display (card mode, lines, layers on or off) is part of the view
   // document (`filters.routing`): an undo step, saved with the view. Its
@@ -1976,8 +2007,12 @@ function TopologyPage() {
       present.has(e.source) && present.has(e.target)
     const ghostEdges = (ghosts.data?.edges ?? []).filter(between)
     const bgpEdges = (bgp.data?.edges ?? []).filter(between)
-    return { ...q.data, edges: [...q.data.edges, ...ghostEdges, ...bgpEdges] }
-  }, [q.data, ghosts.data, bgp.data, resolving])
+    const depEdges = depsOn ? (deps.data?.edges ?? []).filter(between) : []
+    return {
+      ...q.data,
+      edges: [...q.data.edges, ...ghostEdges, ...bgpEdges, ...depEdges],
+    }
+  }, [q.data, ghosts.data, bgp.data, deps.data, depsOn, resolving])
   // Each device's own Card | Photo, Ports | Edge and line, over the view's.
   const nodeFaces = doc.doc.nodes
   /** A device's own line (undefined: Default), one undo step. */
@@ -2035,6 +2070,22 @@ function TopologyPage() {
     [fullGraph, hidden, isDiagram, diagramFace, nodeFaces, diagramAnchor]
   )
   const hiddenHere = fullGraph ? hiddenOnMap(fullGraph, hidden) : 0
+  // "What if this fails?" (#450): the device a card's menu asked about, its
+  // impact, and the rings that puts on the cards drawn.
+  const [whatIf, setWhatIf] = useState<{ id: string; name: string } | null>(
+    null
+  )
+  const whatIfQ = useQuery({
+    ...deviceImpactQueryOptions(whatIf?.id ?? ""),
+    enabled: !!whatIf && canSeeDeps,
+  })
+  const impact = useMemo(
+    () =>
+      whatIf && whatIfQ.data && graph
+        ? impactHighlight(graph, whatIf.id, whatIfQ.data)
+        : null,
+    [whatIf, whatIfQ.data, graph]
+  )
   // The view's own Card | Photo lays an automatic map out again and
   // refits the camera - once the map asked for with it has arrived, so it
   // is laid out once, with the photos. A device's own face, or photos
@@ -2236,6 +2287,7 @@ function TopologyPage() {
         viewStyle,
         groupBy,
         lag: lagMode,
+        deps: depsMode,
         ...(withDiagram ? { diagram: diagramDisplay } : {}),
         // The Routing tab's table, the URL's.
         ...(doc.doc.filters.routing !== undefined || routingVrf !== "all"
@@ -2889,6 +2941,7 @@ function TopologyPage() {
         viewStyle: "diagram",
         groupBy: "none",
         lag: lagMode,
+        deps: depsMode,
         diagram: diagramDisplay,
       },
       style: "diagram",
@@ -3116,6 +3169,13 @@ function TopologyPage() {
       onHide: nodeId
         ? () => setHiddenNodes(withHidden(hidden, "devices", nodeId, true))
         : undefined,
+      onWhatIf:
+        id && canSeeDeps && !grouped
+          ? () => {
+              clearSel()
+              setWhatIf({ id, name: n.name })
+            }
+          : undefined,
       diagram:
         isDiagram && id
           ? {
@@ -3535,6 +3595,14 @@ function TopologyPage() {
                       onChange={(v) => set({ collapse: !v })}
                       className="items-center pt-1"
                     />
+                    {canSeeDeps && !grouped && (
+                      <FormCheckbox
+                        label="Dependencies"
+                        checked={depsMode === "on"}
+                        onChange={(v) => setDepsMode(v ? "on" : "off")}
+                        className="items-center pt-1"
+                      />
+                    )}
                     {isDiagram && !grouped && (
                       <div className="border-t border-border pt-3">
                         <PopoverField label="Card lines" group>
@@ -4067,6 +4135,7 @@ function TopologyPage() {
                   ) : undefined
                 }
                 matchedIds={matchedIds}
+                impact={impact}
                 selectedEdgeId={selEdgeId}
                 onGhostEdge={setGhost}
                 onBgpEdge={(d) => {
@@ -4205,6 +4274,16 @@ function TopologyPage() {
                 onShowAll={() => setHiddenNodes(NO_TOPO_HIDDEN)}
               />
             )}
+            {impact && impact.offMap > 0 && (
+              <HiddenChip
+                count={impact.offMap}
+                label={`${impact.offMap} affected off the map`}
+                position="top-left"
+                className="static"
+                action="Clear"
+                onShowAll={() => setWhatIf(null)}
+              />
+            )}
           </div>
           {!canvasless && graph && (
             // left-16 clears React Flow's zoom controls in the corner; a
@@ -4215,11 +4294,21 @@ function TopologyPage() {
                 grouped={grouped}
                 colorMode={colorMode}
                 types={presentTypes}
+                dependencies={
+                  depsOn && graph.edges.some((e) => e.type === "dependency")
+                }
                 speeds={presentSpeeds}
                 roles={legendRoles}
                 monitorPill={cardMonitor}
               />
             </div>
+          )}
+          {whatIf && !selNode && (
+            <WhatIfPanel
+              device={whatIf}
+              query={whatIfQ}
+              onClose={() => setWhatIf(null)}
+            />
           )}
           {selNode && (
             <NodePanel
@@ -4299,7 +4388,8 @@ function TopologyPage() {
             onPickEdge={(e) => {
               canvas.current?.focusEdge(e.id)
               clearSel()
-              if (e.data) setSelEdge(e.data)
+              // A dependency has no cable panel: its line is named on hover.
+              if (e.data && e.type !== "dependency") setSelEdge(e.data)
               setSelEdgeId(e.id)
             }}
             onFocusZone={(z) => canvas.current?.focusZone(z)}

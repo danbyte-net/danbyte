@@ -21,7 +21,7 @@ from core.models import DeploymentSettings
 from core.tags import TAGS, TAGS_ATTR, tags_of
 
 from .models import CableRoute, Device, Site, SiteMarker
-from .site_map_links import LinkFigures, include_capacity
+from .site_map_links import LinkFigures, include_capacity, include_dependencies
 from .topology_provider import provider_circuits
 from .views import _get_active_tenant
 
@@ -34,7 +34,9 @@ CAPACITY_PARAMETER = OpenApiParameter(
         "`capacity`: each line also carries `capacity` (its speed and where the "
         "figure came from, or null), `links` (the end-to-end links it carries, "
         "the first 50, each with the device, port and speed at either end) and "
-        "`link_count`."
+        "`link_count`. `dependencies` (connections only): the response also "
+        "carries `dependencies`, the device dependency lines (#450). Both: "
+        "`capacity,dependencies`."
     ),
 )
 
@@ -418,6 +420,16 @@ def _viewable_links(user, tenant, links) -> list:
     return [hop for hop in links if hop[0].id in ok]
 
 
+def _site_ref(site):
+    """A placed site as a line's end names it."""
+    return {
+        "id": str(site.id),
+        "name": site.name,
+        "latitude": float(site.latitude),
+        "longitude": float(site.longitude),
+    }
+
+
 def _termination_site_id(term):
     """Which site a tunnel end sits at, whichever kind of thing it lands on.
 
@@ -504,8 +516,16 @@ def site_map_connections(request):
         if visible_sites else []
     )
     two_sites = len(visible_sites) >= 2
+    # The Dependencies layer (#450): its own lines, asked for beside these.
+    extra: dict = {}
+    if include_dependencies(request):
+        from .dependency_maps import site_map_lines
+
+        extra["dependencies"] = site_map_lines(
+            request.user, tenant, visible_sites, _site_ref,
+        )
     if not two_sites and not pn_rows:
-        return Response({"connections": [], "provider_networks": []})
+        return Response({"connections": [], "provider_networks": [], **extra})
 
     # The cable hops, loaded once: the cable lines below, and with
     # ?include=capacity what each circuit is cabled to and where each trunk's
@@ -532,13 +552,7 @@ def site_map_connections(request):
         if capacity else None
     )
 
-    def site_ref(site):
-        return {
-            "id": str(site.id),
-            "name": site.name,
-            "latitude": float(site.latitude),
-            "longitude": float(site.longitude),
-        }
+    site_ref = _site_ref
 
     def status_ref(status):
         return {"name": status.name, "color": status.color} if status else None
@@ -687,7 +701,7 @@ def site_map_connections(request):
                 edge.update(figures.cables(entry["hops"], site_a_id=entry["a"]))
             edges.append(edge)
 
-    return Response({"connections": edges, "provider_networks": networks})
+    return Response({"connections": edges, "provider_networks": networks, **extra})
 
 
 #: How far (degrees) a provider network's marker sits off the one site it

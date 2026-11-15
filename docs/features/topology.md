@@ -1084,6 +1084,50 @@ You see the line only with view on circuits and on **both** devices: when
 one end's device is outside your `device.view` scope the line is left out,
 so the far device is never named.
 
+## Dependencies {#dependencies}
+
+**Display ▸ Dependencies** draws the
+[device dependencies](../dcim/dependencies.md) between the cards on the
+map (`?deps=on` in the URL; a saved view keeps the setting). Off by
+default, and offered only with view on device dependencies.
+
+- **The line** runs straight from card centre to card centre, over the
+  wiring, with an **arrow at the downstream card**: the arrow points the way
+  an outage travels. It wears its [medium's](../dcim/dependencies.md#media)
+  colour and line style (solid, dashed or dotted); a dependency without a
+  medium is a plain grey line. A **peer** link has no arrow.
+- **Redundancy groups** ride on the line as a small label, so the upstreams
+  that back each other read as a set.
+- **Hover** names it: `acc-7 depends on dist-2 · Fibre · group uplinks`.
+- Dependency lines never move a card: the layout follows the cables.
+- **Hide** them in the Objects sidebar: **Dependencies** is a link family of
+  its own under Cables, with a row per dependency and an eye on each.
+- Only the dependencies between two cards on the map are drawn, and only
+  those you may view between devices you may view. A grouped map has no
+  dependency lines, and the exports (PDF, SVG, PNG, draw.io) leave them out.
+
+### What if this fails? {#what-if}
+
+Right-click a device card → **What if this fails?** rings the cards it
+affects:
+
+| Ring | Means |
+|---|---|
+| thick red | the device you asked about |
+| red | goes down with it - every upstream of one of its redundancy groups is down |
+| dashed amber | loses redundancy - part of a group is down |
+
+Every other card fades. A panel lists the devices that go down and those
+that lose redundancy, each a link to its device, with **Plan maintenance**
+(a new [maintenance event](maintenance.md#from-a-devices-dependents) with
+these impacts). Affected devices that are not on this map are counted in an
+*n affected off the map* chip; **Clear** there, or **Close** on the panel,
+ends it. The answer is the device page's
+[What if this fails?](../dcim/dependencies.md#the-dependencies-tab) - worked
+out over every dependency, listing only the devices you may view - and the
+item is offered only with view on device dependencies. The Dependencies
+layer does not have to be on.
+
 ## Hand-picked maps {#building-a-diagram}
 
 A map normally shows whatever its filters match - a **filtered map**. A
@@ -1199,9 +1243,9 @@ The map has the same eyes as the [site map](site-map.md) and the
 [floor plans](floor-plans.md). In the **Objects** sidebar, every group
 header has one - a **role**, a **site** or a **location** (whichever the
 Devices list is grouped by), a **link family** (a cable type, **No type**
-for cables without one, **LLDP** for discovered links, or **BGP sessions**,
-and **Provider networks**, and **Circuits** for the circuits between your
-sites) - and so does every device row, every cable row, every provider
+for cables without one, **LLDP** for discovered links, **BGP sessions**,
+or **Dependencies**, and **Provider networks**, and **Circuits** for the
+circuits between your sites) - and so does every device row, every cable row, every provider
 network row and every circuit row. Right-click a card →
 **Hide** is the same thing for one card, from the canvas, and right-click a
 line → **Hide** for one line: a cable, a bundle or LAG (its cables), a
@@ -1853,6 +1897,7 @@ back button and a reload all keep it.
 | `dir` | `lr` (default; `tb` on a Diagram showing photos), `tb` |
 | `color` | `cable` (default), `type`, `status`, `speed`, `none` |
 | `lag` | `on` (default) bundles aggregate members, `off` |
+| `deps` | `on` draws the [dependencies](#dependencies), `off` (default) |
 | `levels` | the level order - see below |
 | `device` `depth` | focus on one device, 1-6 hops |
 | `devices` | a comma-separated device set - an unsaved hand-picked map, up to 200 |

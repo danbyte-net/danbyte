@@ -1143,6 +1143,8 @@ export function toDocument(
     const t = rects.get(e.target)
     const d = e.data as DiagramEdgeData | undefined
     if (!s || !t || !d) continue
+    // A dependency (#450) is a screen layer: the exports draw the network.
+    if (d.sem === "dependency") continue
     const overlay = e.type === "overlay"
     const plan = overlay ? undefined : planOf(d, s, t)
     // A BGP session is an overlay, not wiring: it meets the facing side

@@ -183,6 +183,7 @@ from routing.viewsets import (
 )
 
 from .application_flows_api import ApplicationFlowViewSet
+from .dependency_maps import topology_dependencies_view
 from .dependency_views import DependencyMediumViewSet, DeviceDependencyViewSet
 from .application_groups_api import ApplicationGroupAssignmentViewSet, ApplicationGroupViewSet
 from .applications_api import ApplicationViewSet, InstalledSoftwareViewSet
@@ -697,6 +698,9 @@ urlpatterns = [
     path("topology/", topology_view, name="topology"),
     path("routing/topology/bgp/", bgp_topology_view, name="routing-topology-bgp"),
     path("topology/logical/", topology_logical_view, name="topology-logical"),
+    # The Dependencies layer (#450).
+    path("topology/dependencies/", topology_dependencies_view,
+         name="topology-dependencies"),
     path("topology/summary/", topology_summary_view, name="topology-summary"),
     # The Diagram as a PDF (WeasyPrint); ?print=1 answers with a short-lived link.
     path("topology/export/pdf/", topology_pdf_view, name="topology-export-pdf"),

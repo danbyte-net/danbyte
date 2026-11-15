@@ -36,6 +36,7 @@ import {
   type CheckStatus,
   type CustomField,
 } from "@/lib/api"
+import type { SiteMapDependencyEnd } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import {
   DetailRowList,
@@ -110,6 +111,7 @@ import {
   SiteInspector,
 } from "@/components/site-map/inspector"
 import { SiteMapDisplayMenu } from "@/components/site-map/display-menu"
+import { buildDependenciesLayer } from "@/components/site-map/dependencies-layer"
 import type { SiteMapLayers } from "@/components/site-map/display-menu"
 import { useLineDisplay } from "@/components/site-map/line-display"
 import { lineKey } from "@/components/site-map/line-style"
@@ -269,6 +271,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       outlines: true,
       plans: true,
       providers: true,
+      // Off until asked for: it is a planning view, not inventory (#450).
+      dependencies: false,
     }
     try {
       const stored = JSON.parse(
@@ -610,7 +614,10 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
   // With their speeds and links, under the page's own keys - the mini maps
   // keep the plain payload (use-map-lines.ts).
-  const connQuery = useMapConnections()
+  // The Dependencies layer (#450) rides on the same request while it is on.
+  const canSeeDeps = canDo("devicedependency", "view")
+  const depsOn = layers.dependencies && canSeeDeps
+  const connQuery = useMapConnections(depsOn)
   const connections = useMemo(
     () => connQuery.data?.connections ?? [],
     [connQuery.data]
@@ -622,6 +629,20 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     () => connQuery.data?.provider_networks ?? [],
     [connQuery.data]
   )
+  // Dependency lines with both ends on the map: a hidden site or device
+  // takes its lines with it.
+  const shownDependencies = useMemo(() => {
+    if (!depsOn) return []
+    const gone = (e: SiteMapDependencyEnd) =>
+      hiddenDeviceIds.has(e.device_id) ||
+      (e.site_id !== null && hiddenSiteIds.has(e.site_id))
+    return (connQuery.data?.dependencies ?? []).filter((d) =>
+      d.kind === "devices"
+        ? !gone(d.a) && !gone(d.z)
+        : !hiddenSiteIds.has(d.site_a.id) && !hiddenSiteIds.has(d.site_z.id)
+    )
+  }, [depsOn, connQuery.data, hiddenDeviceIds, hiddenSiteIds])
+  const depsRef = useRef<L.LayerGroup | null>(null)
   const pnRef = useRef<L.LayerGroup | null>(null)
   const connRef = useRef<L.LayerGroup | null>(null)
   const midpointsRef = useRef<Map<string, [number, number]>>(new Map())
@@ -1154,6 +1175,18 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     connRef.current = built.group
     midpointsRef.current = built.midpoints
   }, [shownConnections, layers.links, colorBy, util])
+
+  // Dependency lines (#450), over the connection arcs.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    depsRef.current?.remove()
+    depsRef.current = null
+    if (shownDependencies.length === 0) return
+    const group = buildDependenciesLayer(shownDependencies)
+    group.addTo(map)
+    depsRef.current = group
+  }, [shownDependencies])
 
   // Provider network markers (#466): where the circuits to a network meet.
   // A layer of their own, over the lines; never stacked with the sites.
@@ -1821,6 +1854,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           </BarToggle>
           <SiteMapDisplayMenu
             layers={layers}
+            dependencies={canSeeDeps}
             onLayersChange={setLayers}
             stacking={stacking}
             onStackingChange={setStacking}
@@ -1909,6 +1943,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           <div className="absolute bottom-9 left-3 z-[900]">
             <SiteMapLegend
               colorBy={colorBy}
+              dependencies={shownDependencies.length > 0}
               lines={drawnLineKey}
               asOf={live.data?.as_of}
             />

@@ -7,8 +7,8 @@ import { groupLagEdges } from "./lag-bundles"
 import type { LagBundle } from "./lag-bundles"
 
 // What each payload edge means on the map - a cable, a folded aggregate, a
-// Flat-view pair bundle, a ghost, a BGP session, a trace-map link - before
-// any view decides how to lay it out or draw it.
+// Flat-view pair bundle, a ghost, a BGP session, a device dependency, a
+// trace-map link - before any view decides how to lay it out or draw it.
 
 /** One member of a Flat-view bundled edge (the underlying cable's data). */
 export type BundleMember = NonNullable<TopoEdge["data"]>
@@ -32,6 +32,9 @@ export type EdgeClass =
   | (Ends & { sem: "groupedge"; group: GroupEdgeInfo | undefined })
   | (Ends & { sem: "membership" | "through" })
   | (Ends & { sem: "bgp" | "ghost"; raw: TopoEdge["data"] })
+  /** A device dependency (#450): source is the upstream, target the
+   * downstream - never reoriented. */
+  | (Ends & { sem: "dependency"; raw: TopoEdge["data"] })
   | (Ends & {
       sem: "cable"
       raw: TopoEdge["data"]
@@ -93,6 +96,12 @@ export function classifyEdges(
     // no cable).
     if (e.type === "bgp" || e.type === "ghost") {
       out.push({ ...ends, sem: e.type, raw: e.data })
+      continue
+    }
+    // A device dependency (the Dependencies layer, #450): upstream →
+    // downstream, never folded into a pair's cables.
+    if (e.type === "dependency") {
+      out.push({ ...ends, sem: "dependency", raw: e.data })
       continue
     }
     // A circuit to a provider network (#466): its own line, never folded

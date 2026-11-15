@@ -10,6 +10,8 @@ import { hierCardBox } from "./hier-card"
 import type { HierCardData } from "./hier-card"
 import { hierHeight, hierarchyWidth, type HierPortPos } from "./layout"
 import { handleId } from "./port-handles"
+import { IMPACT_RING } from "./what-if"
+import type { ImpactMark } from "./what-if"
 
 export { hierarchyWidth } from "./layout"
 
@@ -24,6 +26,8 @@ export type HierData = TopoNode["data"] &
   HierCardData & {
     /** Search miss or out of the spotlight: drawn faded. */
     dimmed?: boolean
+    /** "What if this fails?" (#450): its ring. */
+    impact?: ImpactMark
     portPos?: Record<string, HierPortPos>
     portSpan?: number
     /** The device's monitoring state, merged in by the canvas. */
@@ -45,6 +49,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
         "relative rounded-lg border border-border bg-card transition-opacity",
         d.panel && "border-dashed",
         selected && "outline-2 outline-offset-2 outline-map-accent",
+        d.impact && IMPACT_RING[d.impact],
         d.dimmed && "opacity-30"
       )}
       style={{ width, height }}

@@ -142,6 +142,21 @@ describe("DeviceMenuItems", () => {
     ])
   })
 
+  it("asks what if this fails, when offered (#450)", async () => {
+    const p = device({ onWhatIf: vi.fn() })
+    await openMenu(<DeviceMenuItems {...p} />)
+    expect(rows()).toEqual([
+      "Open device",
+      "Focus",
+      "What if this fails?",
+      "--",
+      "Start hand-picked map",
+      "HideH",
+    ])
+    fireEvent.click(screen.getByRole("menuitem", { name: /What if/ }))
+    expect(p.onWhatIf).toHaveBeenCalledOnce()
+  })
+
   it("adds and removes on a hand-picked map", async () => {
     const p = device({ builder: true })
     await openMenu(<DeviceMenuItems {...p} />)

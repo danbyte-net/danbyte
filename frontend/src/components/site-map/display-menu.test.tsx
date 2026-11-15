@@ -40,6 +40,7 @@ const LAYERS: SiteMapLayers = {
   outlines: true,
   plans: true,
   providers: true,
+  dependencies: false,
 }
 
 function mount(over: Partial<Parameters<typeof SiteMapDisplayMenu>[0]> = {}) {
@@ -68,6 +69,20 @@ function mount(over: Partial<Parameters<typeof SiteMapDisplayMenu>[0]> = {}) {
 }
 
 describe("SiteMapDisplayMenu", () => {
+  it("offers the Dependencies layer only to who may view them (#450)", () => {
+    const p = mount({ dependencies: true })
+    const box = screen.getByRole("checkbox", { name: "Dependencies" })
+    expect(box.getAttribute("aria-checked")).toBe("false")
+    fireEvent.click(box)
+    expect(p.onLayersChange).toHaveBeenCalledWith({
+      ...LAYERS,
+      dependencies: true,
+    })
+    cleanup()
+    mount()
+    expect(screen.queryByRole("checkbox", { name: "Dependencies" })).toBeNull()
+  })
+
   it("groups its controls under Layers, Labels and Color by", () => {
     mount()
     const layers = screen.getByRole("region", { name: "Layers" })

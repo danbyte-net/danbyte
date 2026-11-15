@@ -11,9 +11,11 @@ access switch depends on its distribution switch, a remote site's router
 depends on the radio link, the radio depends on the core.
 
 Danbyte uses the dependencies to answer "what goes down if this fails?" on
-the device page and in the API, to fill a maintenance event's impacts, and
-to send one [root-cause alert](../features/monitoring.md#root-causes) for a
-down device instead of one per device behind it.
+the device page, the Topology map and in the API, to fill a maintenance
+event's impacts, to send one
+[root-cause alert](../features/monitoring.md#root-causes) for a down device
+instead of one per device behind it, and to draw them on the
+[maps](#on-the-maps).
 
 ## Recording dependencies
 
@@ -108,6 +110,17 @@ dependencies another medium first.
 Under [enhanced site separation](../access/site-separation.md) a medium can
 be local to a site, like the other catalogs.
 
+## On the maps
+
+- **Topology** - **Display ▸ Dependencies** draws them as arrowed lines
+  between the cards, in their medium's colour and line style, with the
+  redundancy group on the line; right-click a card → **What if this fails?**
+  rings what goes down with it. See
+  [Topology → Dependencies](../features/topology.md#dependencies).
+- **Site map** - **Display → Layers → Dependencies** draws a line between
+  two devices with their own coordinates, and one per site pair and medium
+  for the rest. See [Site map → Dependencies](../features/site-map.md#dependencies).
+
 ## Permissions and sites
 
 Two RBAC object types, both in the DCIM group: `devicedependency` and
@@ -142,6 +155,8 @@ a cycle is refused with its path; the rest of the file still imports.
 | `GET /api/devices/<id>/impact/?limit=500` | What goes down if the device fails. |
 | `GET /api/device-dependencies/impact/?device=<id>&device=<id>` | The same for several devices failing together. |
 | `/api/dependency-media/` | The media catalog (`?picker=1`). Deleting a medium in use answers 409. |
+| `GET\|POST /api/topology/dependencies/` | The Topology layer: one edge per dependency, `type: "dependency"`, `source` the upstream card (`dev:<id>`), `target` the downstream one, `data` with `dependency_id`, `kind`, `medium`, `redundancy_group`, `description`, `upstream`, `downstream` (names). `?site=` keeps those with an end at that site; `device` (repeat, or comma-separated; a JSON body `{"device": [...]}` with POST) those between the devices named. Needs view on device dependencies (else 403); a row with an end you may not view is left out. |
+| `GET /api/site-map/connections/?include=dependencies` | The Site map layer, see [its API](../features/site-map.md#include-dependencies). |
 
 The impact answer:
 

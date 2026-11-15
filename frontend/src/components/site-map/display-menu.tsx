@@ -27,6 +27,9 @@ export interface SiteMapLayers {
   plans: boolean
   /** Provider networks and the circuits to them (#466). */
   providers: boolean
+  /** Device dependencies (#450): between placed devices, and per site
+   * pair. Off by default. */
+  dependencies: boolean
 }
 
 const ROW =
@@ -39,6 +42,7 @@ const ROW =
 export function SiteMapDisplayMenu({
   layers,
   onLayersChange,
+  dependencies = false,
   stacking,
   onStackingChange,
   showFov,
@@ -52,6 +56,8 @@ export function SiteMapDisplayMenu({
 }: {
   layers: SiteMapLayers
   onLayersChange: (next: SiteMapLayers) => void
+  /** Offer the Dependencies layer (the caller may view dependencies). */
+  dependencies?: boolean
   stacking: boolean
   onStackingChange: (v: boolean) => void
   showFov: boolean
@@ -94,6 +100,7 @@ export function SiteMapDisplayMenu({
           {layer("regions", "Region boundaries")}
           {layer("outlines", "Outlines")}
           {layer("plans", "Floor plans")}
+          {dependencies && layer("dependencies", "Dependencies")}
           <FormCheckbox
             label="Camera FOV cones"
             checked={showFov}

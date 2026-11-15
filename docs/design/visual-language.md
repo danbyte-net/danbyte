@@ -73,7 +73,14 @@ a lot of data fast - typography and spacing serve that, not decoration.
   flow's (#163): a solid head in the line's own colour at the destination,
   at both ends for a flow both ways, drawn as a polygon (never an SVG
   `<marker>`, which the PDF sanitizer drops). Cables and sessions stay
-  plain lines.
+  plain lines. A device dependency on the Topology map (#450) is the one
+  canvas line with a React Flow marker at its downstream card, in its
+  medium's colour; it is a screen layer the exports leave out.
+- **Impact rings** ("What if this fails?" on the Topology map,
+  `components/topology/what-if.ts`): an outline on the card in the impact
+  colours the impact lists use - thick `--destructive` for the failed
+  device, `--destructive` for down, dashed amber for reduced redundancy -
+  with every other card faded as a search miss is. Never a fill.
 - **Flow diagrams** draw one neutral row band per application, titled with
   its path, and neutral cards: the colour stays with roles and statuses.
 - **Canvas notes** are text in `text-foreground/75` and Lucide icons in

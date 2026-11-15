@@ -19,6 +19,7 @@ import {
   Square,
   Trash2,
   Type,
+  Unplug,
   Waypoints,
 } from "lucide-react"
 
@@ -78,6 +79,9 @@ export interface DeviceMenuProps {
   onStartSet: () => void
   /** Hide the card, as its eye in the Objects sidebar would. */
   onHide?: () => void
+  /** "What if this fails?" (#450): ring what goes down with it. Left out
+   * without the device dependency view. */
+  onWhatIf?: () => void
   /** The Diagram's own card items; left out on the other tabs. */
   diagram?: {
     /** Photo or card; left out on a grouped map. */
@@ -120,6 +124,7 @@ export function DeviceMenuItems({
   onRemove,
   onStartSet,
   onHide,
+  onWhatIf,
   diagram: d,
 }: DeviceMenuProps) {
   const extras =
@@ -138,6 +143,11 @@ export function DeviceMenuItems({
           <DropdownMenuItem onSelect={onFocus}>
             <Crosshair /> Focus
           </DropdownMenuItem>
+          {onWhatIf && (
+            <DropdownMenuItem onSelect={onWhatIf}>
+              <Unplug /> What if this fails?
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           {builder ? (
             <>

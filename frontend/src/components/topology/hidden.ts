@@ -44,6 +44,9 @@ export const NO_ROLE = "No role"
 export const DISCOVERED = "Discovered"
 /** The link family BGP sessions are listed and hidden under. */
 export const BGP_SESSIONS = "BGP sessions"
+/** The link family device dependencies are listed and hidden under
+ * (#450). A stored key in `kinds`, like DISCOVERED. */
+export const DEPENDENCIES = "Dependencies"
 /** The link family of cables with no cable type. A stored key, like
  * DISCOVERED. */
 export const UNTYPED = "Untyped"
@@ -71,6 +74,7 @@ export function familyLabel(family: string): string {
 export function linkFamily(e: TopoEdge): string | null {
   if (e.type === "ghost") return DISCOVERED
   if (e.type === "bgp") return BGP_SESSIONS
+  if (e.type === "dependency") return DEPENDENCIES
   if (e.type === "cable" || !e.type) return e.data?.cable_type || UNTYPED
   return null
 }

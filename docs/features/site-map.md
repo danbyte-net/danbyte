@@ -287,6 +287,25 @@ networks, and only for the circuits whose site end is at a site you may view:
 a reader scoped to some sites never sees a marker built from circuits at the
 others, and its place is worked out from their sites alone.
 
+## Dependencies {#dependencies}
+
+**Display → Layers → Dependencies** (off by default, remembered per
+browser; offered only with view on device dependencies) draws the
+[device dependencies](../dcim/dependencies.md) over the map:
+
+- **Between two devices with their own coordinates**: a straight line from
+  the upstream to the downstream device.
+- **Every other dependency between two placed sites**: one bowed line per
+  site pair, medium and kind, from the upstreams' site to the dependents'
+  site, bowing the other way from the circuit and tunnel arcs. Hover lists
+  the first device pairs and how many there are.
+
+Each line wears its [medium's](../dcim/dependencies.md#media) colour and
+line style, with a chevron pointing downstream; a peer link has none. A
+dependency inside one site whose devices have no coordinates of their own
+draws nothing. A hidden site or device takes its lines with it. You see a
+line only for the dependencies you may view between devices you may view.
+
 ## Link speed on the map
 
 A line shows how fast it is whenever Danbyte can work that out from what you
@@ -759,6 +778,20 @@ site scope:
   the cables you may view.
 - **Circuits** and **tunnels** follow their own view grants. An end on a
   device or VM you may not view reads `restricted` with no device or port.
+
+### Dependencies: `?include=dependencies` {#include-dependencies}
+
+`/api/site-map/connections/` takes `?include=dependencies` (with capacity:
+`?include=capacity,dependencies`) and then also returns `dependencies`, the
+[Dependencies](#dependencies) layer's lines:
+
+| `kind` | Fields |
+|---|---|
+| `devices` | `id` (`dep:<dependency id>`), `dependency_kind` (`dependency` or `peer`), `medium` (`{id, name, slug, color, text_color, icon, line_style}` or null), `redundancy_group`, and `a` (upstream) / `z` (downstream) as `{lat, lng, device_id, device_name, site_id}`. |
+| `sites` | `id`, `dependency_kind`, `medium`, `site_a` (the upstreams' site) / `site_z`, `count`, and `pairs`: the first 20 `{upstream: {id, name}, downstream: {id, name}, redundancy_group}`. A peer pair's sites are sorted. |
+
+Only rows you may view (`devicedependency.view`) between devices you may
+view, between sites you may view; without the grant the list is empty.
 
 ### Link speed: `?include=capacity` {#link-speed}
 

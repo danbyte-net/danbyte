@@ -50,6 +50,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import type { TopoGroupData } from "./group-node"
 import {
   BGP_SESSIONS,
+  DEPENDENCIES,
   CIRCUITS,
   DISCOVERED,
   NO_LOCATION,
@@ -717,6 +718,7 @@ export function TopologyObjectsSidebar({
                     // families that are not a media type stay neutral.
                     fam === DISCOVERED ||
                     fam === BGP_SESSIONS ||
+                    fam === DEPENDENCIES ||
                     fam === UNTYPED
                       ? undefined
                       : typeColor(fam)

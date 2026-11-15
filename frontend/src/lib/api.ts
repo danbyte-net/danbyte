@@ -1420,7 +1420,46 @@ export interface SiteMapProviderNetwork {
 export interface SiteMapConnections {
   connections: SiteMapConnection[]
   provider_networks?: SiteMapProviderNetwork[]
+  /** `?include=dependencies` (#450). */
+  dependencies?: SiteMapDependencyLine[]
 }
+
+/** One end of a device-to-device dependency line on the site map. */
+export interface SiteMapDependencyEnd {
+  lat: number
+  lng: number
+  device_id: string
+  device_name: string
+  site_id: string | null
+}
+
+/** A dependency line on the site map (#450): between two devices with
+ * their own coordinates (upstream at `a`), or the dependencies between two
+ * placed sites aggregated per medium and kind (upstreams at `site_a`). */
+export type SiteMapDependencyLine =
+  | {
+      id: string
+      kind: "devices"
+      dependency_kind: DependencyKind
+      medium: DependencyMediumRef | null
+      redundancy_group: string
+      a: SiteMapDependencyEnd
+      z: SiteMapDependencyEnd
+    }
+  | {
+      id: string
+      kind: "sites"
+      dependency_kind: DependencyKind
+      medium: DependencyMediumRef | null
+      site_a: SiteMapConnection["site_a"]
+      site_z: SiteMapConnection["site_z"]
+      count: number
+      pairs: {
+        upstream: { id: string; name: string }
+        downstream: { id: string; name: string }
+        redundancy_group: string
+      }[]
+    }
 
 /** Where a site map line's speed comes from (#246): a circuit's `commit`
  * rate, its terminations' `port` / upstream speeds, the `interface`s cabled
@@ -4923,11 +4962,20 @@ export interface TopoEdge {
     remote_port?: string
     /** BGP edges: the sessions between the two devices (both directions). */
     sessions?: string[]
-    kind?: "ibgp" | "ebgp" | null
+    /** BGP edges: the session kind; dependency edges: dependency or peer. */
+    kind?: "ibgp" | "ebgp" | DependencyKind | null
     vrf?: string | null
     address_families?: string[]
     a_asn?: number | null
     b_asn?: number | null
+    /** Dependency edges (`type: "dependency"`, #450): source is the
+     * upstream card, target the downstream one. */
+    dependency_id?: string
+    medium?: DependencyMediumRef | null
+    redundancy_group?: string
+    description?: string
+    upstream?: string
+    downstream?: string
   }
 }
 

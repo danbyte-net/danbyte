@@ -13,6 +13,7 @@ import type { EdgeLag } from "../lag-bundles"
 import type { Nub } from "./anchors"
 import type { CardBox } from "./card-layout"
 import type { PhotoShown } from "./photo-anchors"
+import type { ImpactMark } from "../what-if"
 
 // The Diagram tab's shared vocabulary: what the pure layout core (card
 // fields, card layout, anchors, link geometry) hands the renderers and the
@@ -255,6 +256,8 @@ export type DiagramEdgeData = LinkData & {
   ghost?: TopoEdge["data"]
   /** BGP overlay: the sessions between the pair. */
   bgp?: TopoEdge["data"]
+  /** Dependency overlay (#450): the dependency row. */
+  dependency?: TopoEdge["data"]
   /** Grouped map: the aggregated group edge. */
   group?: unknown
   /** Hovered or selected: labels show at every zoom. */
@@ -267,6 +270,8 @@ export type DiagramEdgeData = LinkData & {
 export type DiagramCardData = TopoNode["data"] & {
   /** Search miss or outside the spotlight. */
   dimmed?: boolean
+  /** "What if this fails?" (#450): its ring, merged in by the canvas. */
+  impact?: ImpactMark
   /** The device's monitoring state, merged in outside the build so a
    * refresh never re-lays the map out. */
   monitor?: CheckStatus | null

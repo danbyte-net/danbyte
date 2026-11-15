@@ -55,6 +55,8 @@ export interface LegendOptions {
   roles?: { name: string; color?: string }[]
   /** Diagram and Hierarchy: some card shows the monitoring pill. */
   monitorPill?: boolean
+  /** The Dependencies layer is on and draws a line (#450). */
+  dependencies?: boolean
   /** A map another page embeds (`graphLegend`): only the lines it draws,
    * with a trace's run and the patch panels it passes. */
   present?: LegendPresence
@@ -119,6 +121,7 @@ export function legendRows({
   speeds,
   roles = [],
   monitorPill = false,
+  dependencies = false,
   present,
 }: LegendOptions): LegendItem[] {
   const out: LegendItem[] = []
@@ -208,6 +211,14 @@ export function legendRows({
       { kind: "box", label: "Patch panel", dashed: true }
     )
   }
+  // Its colour and dash are each medium's own; the row keys the arrow.
+  if (dependencies && !grouped)
+    out.push({
+      kind: "line",
+      label: "Dependency →",
+      width: 1.75,
+      color: "var(--muted-foreground)",
+    })
   const tiers = colorMode === "speed" ? speedTones(speeds) : []
   if (colorMode === "type" && types.length > 0)
     for (const t of types.slice(0, MAX_TYPES))
