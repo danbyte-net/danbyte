@@ -21,7 +21,7 @@ def seed_statuses(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0275_model_3d_parts'),
+        ('api', '0276_device_type_studio_images'),
     ]
 
     operations = [
