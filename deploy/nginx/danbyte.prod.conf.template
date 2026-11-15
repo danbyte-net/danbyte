@@ -123,11 +123,15 @@ server {
     # server without internet stays current. A configured mirror goes here
     # too. Those are read-only public APIs; nothing is sent there but the
     # product names being looked up.
+    # script-src also has 'wasm-unsafe-eval': it lets WebAssembly compile
+    # (meshopt's decoder for compressed 3D models and its simplifier,
+    # OpenCascade for STEP/IGES in the CAD worker) and nothing more - eval()
+    # and new Function() stay blocked.
     # frame-ancestors 'self' (and X-Frame-Options SAMEORIGIN): the topology
     # report draws each saved view in a hidden same-origin frame of the map.
     # report-uri feeds /api/csp-report/ so any real-browser violation is logged
     # (danbyte.csp) rather than silently breaking - watch it before tightening.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://vector.openstreetmap.org https://raw.githubusercontent.com https://api.github.com https://services.nvd.nist.gov https://api.first.org https://api.osv.dev; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://vector.openstreetmap.org https://raw.githubusercontent.com https://api.github.com https://services.nvd.nist.gov https://api.first.org https://api.osv.dev; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
     # Only /assets/ gets a value (the map above); not `always`, so a 404
     # there is never cached.
     add_header Cache-Control $danbyte_asset_cache;

@@ -100,7 +100,7 @@ must pass each:
 
 | From | On | Governs |
 |---|---|---|
-| The frontend server (`danbyte-frontend-prod`) | each HTML page | scripts and workers: `script-src 'nonce-…' 'strict-dynamic' 'self' 'unsafe-inline'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; report-uri /api/csp-report/` |
+| The frontend server (`danbyte-frontend-prod`) | each HTML page | scripts and workers: `script-src 'nonce-…' 'strict-dynamic' 'wasm-unsafe-eval' 'self' 'unsafe-inline'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; report-uri /api/csp-report/` |
 | nginx | every response | everything else: the same-origin default, the map tile, GitHub and vulnerability-data hosts, `style-src`, `frame-ancestors` (see [Security headers](../reference/settings.md#security-headers)) |
 
 - **A nonce per page.** The frontend server draws 128 random bits for each
@@ -112,8 +112,16 @@ must pass each:
   run.
 - **Fallbacks.** `'self' 'unsafe-inline'` are only for browsers that know
   neither nonces nor `'strict-dynamic'`; a browser that does ignores them.
-  nginx's own policy keeps `script-src 'self' 'unsafe-inline'` as the floor
-  for the modes below.
+  nginx's own policy keeps `script-src 'self' 'unsafe-inline'
+  'wasm-unsafe-eval'` as the floor for the modes below.
+- **WebAssembly.** Both policies carry `'wasm-unsafe-eval'`. It lets
+  WebAssembly compile and nothing else: `eval()` and `new Function()` stay
+  blocked. Danbyte's WebAssembly is bundled and same-origin: meshopt's
+  decoder, for [3D models](../dcim/device-catalog.md#3d-models) packed with
+  `gltfpack -c` (`EXT_meshopt_compression`), meshopt's simplifier
+  (**Simplify** on upload), and OpenCascade, which reads STEP and IGES
+  uploads in a worker. Without it a compressed model shows *The model could
+  not be loaded* and the report log has `blocked=wasm-eval`.
 - **Styles** keep `'unsafe-inline'`: charts write `<style>` blocks of their
   own. It cannot run code.
 - **Not from the frontend:** the API, `/admin/`, `/static/`, `/media/`,
@@ -126,6 +134,11 @@ must pass each:
   service worker.
 - **Docker.** The frontend container sends the same page policy. The
   image's nginx sends no policy of its own (a proxy in front can).
+
+**Upgrades.** A site still as Danbyte rendered it gets `'wasm-unsafe-eval'`
+from the release's root steps; a site edited by hand, or rendered by an
+older release, shows the step *Let the 3D room decode compressed models*
+until its policy has it.
 
 ### Modes
 

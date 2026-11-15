@@ -301,6 +301,43 @@ class RealNotesTests(APITestCase):
                 subprocess.run(["sh", "-c", script], check=True)
                 self.assertEqual(conf.read_text(), new + "\n")
 
+    def test_the_wasm_csp_step_turns_the_old_policy_into_the_shipped_one(self):
+        # meshopt-compressed 3D models: the step by hand on the policy before
+        # 'wasm-unsafe-eval' gives the template's policy, a second run changes
+        # nothing, and the note hides once the site allows it.
+        import re
+        import shlex
+        import shutil
+        import subprocess
+
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-wasm-csp")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        new = re.search(r'add_header Content-Security-Policy "[^"]*" always;', template).group(0)
+        old = new.replace(" 'wasm-unsafe-eval'", "")
+        self.assertNotEqual(old, new)
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            self.assertFalse(un._wasm_csp_allows_models())
+        with patch("core.upgrade_notes._site_config", return_value=new):
+            self.assertTrue(un._wasm_csp_allows_models())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._wasm_csp_allows_models())
+        if not shutil.which("sed") or not shutil.which("sh"):
+            return
+        command = note.snippet.replace("\\\n", " ")
+        line = next(ln for ln in command.splitlines() if "sudo sed" in ln)
+        with tempfile.TemporaryDirectory() as d:
+            conf = Path(d) / "danbyte.conf"
+            conf.write_text(old + "\n")
+            script = line.replace("/etc/nginx/sites-available/danbyte.conf",
+                                  shlex.quote(str(conf))).replace("sudo ", "")
+            for _ in range(2):  # idempotent: the grep guard skips the second
+                subprocess.run(["sh", "-c", script], check=True)
+                self.assertEqual(conf.read_text(), new + "\n")
+
     def test_the_tls_step_spells_out_the_templates_lines(self):
         # #497: the lines by hand are the template's, and the note hides once
         # the site names its own protocols and suites.

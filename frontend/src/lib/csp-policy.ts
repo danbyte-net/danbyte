@@ -58,7 +58,10 @@ export function cspPolicy(nonce: string): string {
   // base64 through, whoever calls this.
   if (!NONCE_RE.test(nonce)) throw new Error("CSP nonce must be base64")
   return [
-    `script-src 'nonce-${nonce}' 'strict-dynamic' 'self' 'unsafe-inline'`,
+    // 'wasm-unsafe-eval' lets WebAssembly compile (meshopt's decoder and
+    // simplifier for 3D models, OpenCascade for STEP/IGES); it does not
+    // allow eval() or new Function().
+    `script-src 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval' 'self' 'unsafe-inline'`,
     // Workers fall back to script-src, where 'strict-dynamic' drops 'self':
     // name them, as nginx does (MapLibre, the CAD, outline and diagram
     // workers are bundled files; MapLibre may wrap one in a blob).

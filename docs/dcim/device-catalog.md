@@ -385,6 +385,9 @@ The server checks every upload, whichever way it arrives:
   `KHR_mesh_quantization`, `KHR_lights_punctual`, `EXT_meshopt_compression`,
   `EXT_mesh_gpu_instancing`, `EXT_texture_webp` and `EXT_texture_avif`.
   Draco (`KHR_draco_mesh_compression`) and Basis textures are refused.
+  A meshopt-compressed model is decoded by bundled WebAssembly, which the
+  page policy allows with `'wasm-unsafe-eval'` ([Hardening →
+  Content-Security-Policy](../getting-started/hardening.md#content-security-policy)).
 
 The file is stored under the media folder but never served from `/media/`:
 only through the type's (or device's) `model/` endpoint, to a signed-in user

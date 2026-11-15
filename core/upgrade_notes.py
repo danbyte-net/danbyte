@@ -416,6 +416,23 @@ def _vuln_csp_allows_browser_sync() -> bool:
     return "services.nvd.nist.gov" in text
 
 
+_NGINX_WASM_CSP = """\
+# in /etc/nginx/sites-available/danbyte.conf, in the Content-Security-Policy:
+#   script-src: add 'wasm-unsafe-eval' (WebAssembly compile only, not eval)
+grep -q wasm-unsafe-eval /etc/nginx/sites-available/danbyte.conf || \\
+sudo sed -i "s|\\(script-src [^;]*\\);|\\1 'wasm-unsafe-eval';|" \\
+    /etc/nginx/sites-available/danbyte.conf
+sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _wasm_csp_allows_models() -> bool:
+    """Done when the site's CSP lets WebAssembly compile (3D models)."""
+    text = _site_config()
+    if text is None:
+        return False
+    return "'wasm-unsafe-eval'" in text
+
+
 #: The TLS lines of the production template's 443 server (#497); a test
 #: pins them to the template.
 NGINX_TLS_LINES = """\
@@ -779,6 +796,25 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="features/vulnerabilities/#browser-mode",
         platforms=("systemd",),
         check=_vuln_csp_allows_browser_sync,
+        host=True,
+    ),
+    UpgradeNote(
+        id="0.20.0-nginx-wasm-csp",
+        version="0.20.0",
+        title="Let the 3D room decode compressed models",
+        body=(
+            "A 3D model packed with gltfpack -c (meshopt compression) is "
+            "decoded in the browser by WebAssembly, as are Simplify and STEP or "
+            "IGES uploads. The nginx Content-Security-Policy needs "
+            "'wasm-unsafe-eval' in script-src, which lets WebAssembly compile "
+            "and nothing else; until then such a model does not load. Root "
+            "runs this from the bundle of this release, never from the app "
+            "directory."
+        ),
+        snippet=_NGINX_WASM_CSP,
+        docs="getting-started/hardening/#content-security-policy",
+        platforms=("systemd",),
+        check=_wasm_csp_allows_models,
         host=True,
     ),
     UpgradeNote(

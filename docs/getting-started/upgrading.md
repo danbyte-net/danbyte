@@ -744,6 +744,15 @@ The step *Let the browser sync vulnerability data* stays up until the site's
 CSP names `services.nvd.nist.gov`; it is only needed for the Browser update
 source, and a mirror host set there must be added by hand.
 
+Also from 0.20, `script-src` in the nginx CSP gains `'wasm-unsafe-eval'`,
+which lets WebAssembly compile and allows no `eval`: a [3D
+model](../dcim/device-catalog.md#3d-models) packed with `gltfpack -c` is
+decoded by WebAssembly, as are **Simplify** and STEP or IGES uploads
+([Hardening →
+Content-Security-Policy](hardening.md#content-security-policy)). The step
+*Let the 3D room decode compressed models* stays up until the site's CSP
+has `'wasm-unsafe-eval'`; until then such a model does not load.
+
 From 0.20 the site pins its own TLS protocols and suites (TLS 1.2 and 1.3,
 forward-secret AEAD suites only; see [Hardening → TLS](hardening.md#tls)).
 The step *Pin modern TLS in nginx* stays up until the site has

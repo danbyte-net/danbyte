@@ -67,6 +67,7 @@ describe("cspPolicy", () => {
     expect(d["script-src"]).toEqual([
       "'nonce-abc123+/AB=='",
       "'strict-dynamic'",
+      "'wasm-unsafe-eval'",
       "'self'",
       "'unsafe-inline'",
     ])
@@ -74,9 +75,10 @@ describe("cspPolicy", () => {
     expect(d["object-src"]).toEqual(["'none'"])
     expect(d["base-uri"]).toEqual(["'self'"])
     expect(d["report-uri"]).toEqual([CSP_REPORT_URI])
-    // Never unsafe-eval, never a scheme or wildcard source.
+    // WebAssembly compile only: never 'unsafe-eval', never a scheme or
+    // wildcard source.
     const text = cspPolicy("abc")
-    expect(text).not.toContain("unsafe-eval")
+    expect(text).not.toContain("'unsafe-eval'")
     expect(text).not.toMatch(/\s(https?:|\*)(\s|;|$)/)
   })
 

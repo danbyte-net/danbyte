@@ -622,7 +622,9 @@ uniformly and survives an app restart:
   The SPA loads only same-origin bundled assets (no external scripts/styles/
   fonts, no `eval`, bundled web workers; the presence WebSocket is same-origin), so
   the policy doesn't block anything it serves. Its `script-src 'self'
-  'unsafe-inline'` is the floor: every page also carries the frontend
+  'unsafe-inline' 'wasm-unsafe-eval'` is the floor (`'wasm-unsafe-eval'`
+  lets the bundled WebAssembly for 3D models and STEP/IGES compile, and
+  allows no `eval`): every page also carries the frontend
   server's own policy with a fresh nonce and `'strict-dynamic'`, which the
   browser enforces as well, so an injected script does not run
   ([`DANBYTE_CSP_MODE`](#page-script-policy-danbyte_csp_mode)).
