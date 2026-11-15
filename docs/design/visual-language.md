@@ -258,8 +258,8 @@ can't drift page to page (source of truth:
 
 - The shell owns the header (title · count chip · actions) and the scrolling
   body. The actions follow the [action ribbon](#the-action-ribbon) order:
-  `Add X` (the shell's `add` prop, solid primary) first, then the rest of
-  `actions` - `TableActions` (Import / Export) and any view controls.
+  `actions` - `TableActions` (Import / Export) and any view controls - then
+  `Add X` (the shell's `add` prop, solid primary) at the right end.
 - **Search sits in the toolbar row over the table, not the header** (#507).
   The shell draws one row at the top of the body - the narrow-window
   rail button, Saved views, then the search box - and the page's
@@ -449,8 +449,10 @@ A page header's buttons follow one order everywhere (#507) - source of truth
 | `more` | `DropdownMenuItem`s for the **More** menu: Clone (`CloneMenuItem`), Sync from type, Move to site…, Renumber…, Add child prefix. *Plan a change* joins them | `outline` menu |
 | `remove` | `DeleteButton` | ghost, destructive text - always last |
 
-- Add and Edit are a pair: Edit always sits right after Add, and is the one
-  tinted button, so the two ways to change data read together.
+- The order is: page actions, **Export**, **More**, then Add, Edit and
+  Delete at the right end. Edit sits right after Add, is the one tinted
+  button, and only Delete goes further right, so the ways to change data
+  read together where the eye ends.
 - Outputs (anything that hands you a file, a PDF, a label or the clipboard)
   go in **Export**; rarer verbs in **More**. A page with neither shows
   neither menu. A menu whose items all decline to render (no label template

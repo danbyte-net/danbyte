@@ -179,8 +179,8 @@ export function ListPageShell({
               </Badge>
             )}
             <div className="ml-auto flex grow flex-wrap items-center justify-end gap-2">
-              {add}
               {actions}
+              {add}
             </div>
           </header>
           {/* Focusable, so a keyboard can scroll it when the content has

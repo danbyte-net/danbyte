@@ -238,8 +238,6 @@ export function DetailShell({
         </nav>
         <div className="flex min-w-[min(100%,18rem)] flex-1 flex-wrap items-center justify-end gap-1.5">
           <PlannedForRoute />
-          {add}
-          {edit}
           {actions}
           {(exports || io.available) && (
             <ExportMenu>
@@ -265,6 +263,8 @@ export function DetailShell({
                 </MoreMenu>
               </span>
             )}
+          {add}
+          {edit}
           {remove}
           {io.dialog}
         </div>

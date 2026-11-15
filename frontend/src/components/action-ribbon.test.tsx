@@ -127,7 +127,7 @@ describe("detail header", () => {
     )
   }
 
-  it("lays the buttons out Add, Edit, actions, Export, More, Delete", async () => {
+  it("lays the buttons out actions, Export, More, Add, Edit, Delete", async () => {
     mount(<Page />, `/vlans/${ID}`)
     await screen.findByRole("button", { name: "Export" })
     const header = screen.getByText("Add IP").closest("header")!
@@ -135,11 +135,11 @@ describe("detail header", () => {
       .map((el) => el.textContent.trim())
       .filter((t) => t && t !== "VLANs")
     expect(names).toEqual([
-      "Add IP",
-      "Edit",
       "Topology",
       "Export",
       "More",
+      "Add IP",
+      "Edit",
       "Delete",
     ])
   })

@@ -23,15 +23,15 @@ import {
 //
 // A page header's buttons, in one order everywhere:
 //
-//   Add …  ·  Edit  ·  page actions  ·  Export ▾  ·  More ▾  ·  Delete
+//   page actions  ·  Export ▾  ·  More ▾  ·  Add …  ·  Edit  ·  Delete
 //
-// Add is the solid primary; Edit sits right beside it in the `tinted`
-// primary hue, so the two ways to change data read as a pair. Page actions
-// are the few an operator uses daily (Connect, Topology, Show on floor plan,
-// Run). Outputs - spec sheets, reports, labels, Import / Export - fold into
-// Export; rarer verbs (Clone, Sync from type, Move, Plan a change) into
-// More. Delete is last and apart. `DetailShell` and `ListPageShell` lay the
-// slots out; pages fill them with these parts.
+// The ways to change data sit at the right end: Add is the solid primary,
+// Edit beside it in the `tinted` primary hue, and only Delete (last and
+// apart) goes further right. Page actions are the few an operator uses
+// daily (Connect, Topology, Show on floor plan, Run). Outputs - spec
+// sheets, reports, labels, Import / Export - fold into Export; rarer verbs
+// (Clone, Sync from type, Move, Plan a change) into More. `DetailShell`
+// and `ListPageShell` lay the slots out; pages fill them with these parts.
 
 /** Edit, as a link to the edit route or a button that opens a dialog. */
 export function EditButton({
