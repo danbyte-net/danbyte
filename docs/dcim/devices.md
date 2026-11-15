@@ -352,6 +352,10 @@ ports are coloured by state as in the 3D room - live SNMP where the device
 was polled, else cabled by speed, free and disabled grey; hovering one names
 it, its far end and VLAN, and clicking an interface opens it.
 
+A [modular model](../dcim/model-packs.md) draws with the device's installed
+modules in their bays and covers on the empty ones, so a swapped PSU shows
+at once; its ports are the ones the models name.
+
 The **3D model** card manages the model; it says whether the device draws
 its own or its type's (*From device type*). **Upload** gives the device its
 own model, which overrides the type's for this device only; **Remove**

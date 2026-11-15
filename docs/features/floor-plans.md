@@ -766,7 +766,11 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
     one, else the middle of the panel - and rise straight up from there. Far off, every box in the room is one draw call
     without photos. A model over 500,000 triangles, or past the room's
     budget of 2,000,000 for all models together, draws as its bounding box,
-    and a **Model too detailed** card names it.
+    and a **Model too detailed** card names it. A
+    [modular model](../dcim/model-packs.md) draws with its installed
+    modules in their bays, every part counted: past the budget it draws its
+    chassis alone, then its box. From about 14 m off, a model with a far
+    copy draws that instead.
 - **Light that grounds the room**: one shadow-casting key light plus a
   procedural studio environment (no downloaded assets - it works
   airgapped), so cabinets stand *on* the floor instead of floating in

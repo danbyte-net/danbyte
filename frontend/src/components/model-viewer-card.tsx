@@ -19,7 +19,8 @@ export const LazyModelViewer = lazy(
 )
 
 export interface ViewerSource {
-  model: Pick<Model3DEffective, "url" | "fit" | "up" | "front">
+  model: Pick<Model3DEffective, "url" | "fit" | "up" | "front"> &
+    Partial<Pick<Model3DEffective, "bays" | "empty_mode">>
   sizeMm?: ModelViewerProps["sizeMm"]
   /** A device: markers coloured by port state, clicks open the port. */
   deviceId?: string | null

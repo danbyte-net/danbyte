@@ -1,4 +1,10 @@
-import type { ImagePortMarker, ImagePorts, ModelPortsDoc } from "@/lib/api"
+import type {
+  ImagePortMarker,
+  ImagePorts,
+  ModelBay,
+  ModelEmptyMode,
+  ModelPortsDoc,
+} from "@/lib/api"
 import {
   normalizePortName,
   OPENING_MM,
@@ -150,11 +156,17 @@ export function sceneTileName(t: SceneTile): string {
 /** An uploaded 3D model as the room draws it (api.model_3d.effective). */
 export interface SceneModel {
   url: string
+  /** The far-distance copy, drawn from afar; null = none. */
+  far_url?: string | null
   /** Whose model it is: the device's own, or its type's. */
   source: "device" | "type"
   fit: "auto" | "native"
   up: "y" | "z"
   front: "+z" | "-z" | "+x" | "-x"
+  /** The device's module bays when the model names bays: what to pose at
+   * each `bay:` node (lib/model-assembly). */
+  bays?: ModelBay[]
+  empty_mode?: ModelEmptyMode
 }
 
 /** A device placed on the floor: the racked shape plus the type's body

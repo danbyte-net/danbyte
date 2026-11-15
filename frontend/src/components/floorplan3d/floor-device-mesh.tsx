@@ -4,6 +4,7 @@ import type { ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three"
 
 import type { FloorTileCheck } from "@/lib/api"
+import { budgetLevel, plannedParts, wantsFarModel } from "@/lib/model-assembly"
 import { markersVisible } from "@/lib/model-ports"
 
 import { isCameraMoving } from "./camera-motion"
@@ -21,9 +22,10 @@ import {
   PlacedModel,
   SCENE_TRIANGLE_BUDGET,
   fittedModel,
+  readyParts,
   useDeviceModel,
 } from "./device-model"
-import type { ModelEntry } from "./device-model"
+import type { ModelEntry, ReadyPart } from "./device-model"
 import { ModelPortMarkers } from "./device-model-port-markers"
 import type { MappedPortPick } from "./device-model-port-markers"
 import { CHECK_COLOR } from "./rack-mesh"
@@ -58,6 +60,11 @@ import type { ScenePayload, SceneFloorDevice, SceneTile, Tier } from "./world"
  * is its own mesh. Models draw per device (geometry shared), within a
  * triangle budget: a model past it draws as its bounding box, and the room
  * says so.
+ *
+ * A modular model (docs/dcim/model-packs.md) draws its chassis with each
+ * installed module's model posed at its bay, every part counted against the
+ * budget: past it the chassis draws alone, then the box. From afar a model
+ * with a far copy (`far_url`, and each part's) draws that instead.
  */
 
 /** A tile this layer draws, with everything placement needs. */
@@ -100,6 +107,7 @@ export function placedOf(scene: ScenePayload, tile: SceneTile): Placed | null {
 }
 
 const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1)
+const NO_PARTS: readonly ReadyPart[] = []
 const _m = new THREE.Matrix4()
 const _q = new THREE.Quaternion()
 const _p = new THREE.Vector3()
@@ -222,6 +230,7 @@ export function portViewpoint(
 function PlacedDevice({
   p,
   entry,
+  parts,
   overBudget,
   check,
   selected,
@@ -235,6 +244,8 @@ function PlacedDevice({
 }: {
   p: Placed
   entry: ModelEntry | null
+  /** Its installed modules' models, ready to pose (none past the budget). */
+  parts: readonly ReadyPart[]
   overBudget: boolean
   check: FloorTileCheck | null
   selected: boolean
@@ -303,7 +314,14 @@ function PlacedDevice({
     >
       {fit && !overBudget ? (
         <>
-          <PlacedModel entry={entry!} fit={fit} ghosted={ghosted} />
+          <PlacedModel
+            entry={entry!}
+            fit={fit}
+            ghosted={ghosted}
+            parts={parts}
+            bays={model?.bays?.length ? model.bays : null}
+            emptyMode={model?.empty_mode}
+          />
           {/* The pointer's target: one invisible box, not every triangle. */}
           <mesh position={[0, h / 2, 0]} geometry={sharedBox(w, h, d)}>
             <meshBasicMaterial colorWrite={false} depthWrite={false} />
@@ -458,33 +476,90 @@ export function FloorDevicesLayer({
       }),
     []
   )
-  const urls = useMemo(
-    () =>
-      [
-        ...new Set(placed.map((p) => p.dev.model?.url).filter(Boolean)),
-      ] as string[],
-    [placed]
-  )
+  // Devices far enough off to draw their far models (those that have one).
+  const farShown = useRef(new Set<string>())
+  const [farModels, setFarModels] = useState<ReadonlySet<string>>(new Set())
 
-  // The triangle budget, spent in tile order: a model past its own limit,
-  // or past what the room has left, draws as its bounding box.
-  const overBudget = useMemo(() => {
-    const out = new Set<string>()
+  // The chassis URL each device wants (its far copy from afar) and the one
+  // it draws now: the wanted one once loaded; until then, or when it fails,
+  // the other one when that has loaded.
+  const { wantedUrl, chassisUrl } = useMemo(() => {
+    const wanted = new Map<string, string>()
+    const drawn = new Map<string, string>()
+    for (const p of placed) {
+      const m = p.dev.model
+      if (!m) continue
+      const want = farModels.has(p.tile.id) && m.far_url ? m.far_url : m.url
+      const other = want === m.url ? m.far_url : m.url
+      wanted.set(p.tile.id, want)
+      const status = entries.get(want)?.status
+      drawn.set(
+        p.tile.id,
+        status !== "ready" && other && entries.get(other)?.status === "ready"
+          ? other
+          : status === "error" && other
+            ? other
+            : want
+      )
+    }
+    return { wantedUrl: wanted, chassisUrl: drawn }
+  }, [placed, farModels, entries])
+  // Each device's installed parts, once its chassis has loaded and named
+  // its bays.
+  const planned = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof plannedParts>>()
+    for (const p of placed) {
+      const m = p.dev.model
+      const e = entries.get(chassisUrl.get(p.tile.id) ?? "")
+      if (!m?.bays?.length || e?.status !== "ready") continue
+      out.set(
+        p.tile.id,
+        plannedParts(
+          m.bays,
+          new Set(e.anchors.bays),
+          chassisUrl.get(p.tile.id) === m.far_url
+        )
+      )
+    }
+    return out
+  }, [placed, entries, chassisUrl])
+  const urls = useMemo(() => {
+    const all = new Set<string>([...wantedUrl.values(), ...chassisUrl.values()])
+    for (const parts of planned.values())
+      for (const part of parts) all.add(part.url)
+    return [...all]
+  }, [wantedUrl, chassisUrl, planned])
+
+  // The triangle budget, spent in tile order. A device with parts draws
+  // assembled while all of it fits, else its chassis alone; a model past
+  // its own limit, or past what the room has left, draws as its bounding
+  // box.
+  const { overBudget, partsOf } = useMemo(() => {
+    const over = new Set<string>()
+    const byTile = new Map<string, ReadyPart[]>()
     let spent = 0
     for (const p of placed) {
-      const e = p.dev.model ? entries.get(p.dev.model.url) : undefined
+      const e = entries.get(chassisUrl.get(p.tile.id) ?? "")
       if (e?.status !== "ready") continue
-      if (
-        e.triangles > MODEL_TRIANGLE_LIMIT ||
-        spent + e.triangles > SCENE_TRIANGLE_BUDGET
-      ) {
-        out.add(p.tile.id)
+      const parts = readyParts(planned.get(p.tile.id) ?? [], entries)
+      const level = budgetLevel(
+        e.triangles,
+        parts.map((r) => r.entry.triangles),
+        SCENE_TRIANGLE_BUDGET - spent,
+        MODEL_TRIANGLE_LIMIT
+      )
+      if (level === "box") {
+        over.add(p.tile.id)
         continue
       }
       spent += e.triangles
+      if (level === "assembled") {
+        byTile.set(p.tile.id, parts)
+        spent += parts.reduce((n, r) => n + r.entry.triangles, 0)
+      }
     }
-    return out
-  }, [placed, entries])
+    return { overBudget: over, partsOf: byTile }
+  }, [placed, entries, chassisUrl, planned])
   const tooDetailedKey = placed
     .filter((p) => overBudget.has(p.tile.id))
     .map((p) => p.tile.label || p.dev.name)
@@ -505,8 +580,23 @@ export function FloorDevicesLayer({
     if (isCameraMoving()) return
     let changed = false
     let portsChanged = false
+    let farChanged = false
     const next = new Set<string>()
     for (const p of placed) {
+      if (p.dev.model?.far_url) {
+        const dist = Math.hypot(
+          camera.position.x - p.centre[0],
+          camera.position.y - p.floorY,
+          camera.position.z - p.centre[1]
+        )
+        const was = farShown.current.has(p.tile.id)
+        const now = wantsFarModel(dist, was)
+        if (now !== was) {
+          if (now) farShown.current.add(p.tile.id)
+          else farShown.current.delete(p.tile.id)
+          farChanged = true
+        }
+      }
       if (p.dev.model_ports?.ports.length) {
         const dist = Math.hypot(
           camera.position.x - p.centre[0],
@@ -538,6 +628,7 @@ export function FloorDevicesLayer({
     }
     if (changed) setNear(next)
     if (portsChanged) setPortsNear(new Set(portsShown.current))
+    if (farChanged) setFarModels(new Set(farShown.current))
   })
 
   const flyTo = (p: Placed, size: { w: number; h: number; d: number }) => {
@@ -553,7 +644,7 @@ export function FloorDevicesLayer({
   const close: Placed[] = []
   const ghosts: Placed[] = []
   for (const p of placed) {
-    const e = p.dev.model ? entries.get(p.dev.model.url) : undefined
+    const e = entries.get(chassisUrl.get(p.tile.id) ?? "")
     const modelReady = e?.status === "ready"
     const isSel = selection?.tileId === p.tile.id
     // A device whose checks are failing keeps its coloured outline at any
@@ -595,12 +686,13 @@ export function FloorDevicesLayer({
         />
       ))}
       {close.map((p) => {
-        const e = p.dev.model ? (entries.get(p.dev.model.url) ?? null) : null
+        const e = entries.get(chassisUrl.get(p.tile.id) ?? "") ?? null
         return (
           <PlacedDevice
             key={p.tile.id}
             p={p}
             entry={e}
+            parts={partsOf.get(p.tile.id) ?? NO_PARTS}
             overBudget={overBudget.has(p.tile.id)}
             check={checks(p.tile.id)}
             selected={selection?.tileId === p.tile.id}

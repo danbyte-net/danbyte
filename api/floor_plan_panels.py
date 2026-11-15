@@ -429,7 +429,7 @@ def _device_preview(d, user, tenant) -> dict:
     effective``) with its mapped ports. An inherited model points at the
     type's URL only when the reader may view the type, else at the device's
     own download, which serves the same file."""
-    from .model_3d import effective
+    from .model_3d import effective, installed_parts
     from .model_ports import effective_model_ports
     from .models import DeviceType
 
@@ -437,6 +437,7 @@ def _device_preview(d, user, tenant) -> dict:
     type_viewable = dt is not None and rbac.restrict_queryset(
         DeviceType.objects.filter(pk=dt.pk), user, tenant, "devicetype", "view"
     ).exists()
+    installed_parts([d], user, tenant)
     model = effective(d, type_viewable=type_viewable)
 
     def mm(v):

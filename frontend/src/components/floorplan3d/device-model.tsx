@@ -4,6 +4,9 @@ import * as THREE from "three"
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js"
 
+import type { ModelBay, ModelEmptyMode } from "@/lib/api"
+
+import { anchorNames, assembleModel } from "./model-assembly"
 import { modelRotation, modelScale } from "./world"
 import type { SceneModel } from "./world"
 
@@ -19,6 +22,11 @@ import type { SceneModel } from "./world"
  * The loader has meshopt's bundled decoder and nothing else: no Draco or
  * KTX2 decoder path, so nothing is fetched beyond the model itself (the
  * server refuses files that would need one).
+ *
+ * Each node keeps its exact glTF name in `userData.gltfName`, read from the
+ * parser's associations: three rewrites `object.name` (`bay:FAN 1` becomes
+ * `bayFAN_1`), and modular models are put together by those names
+ * (model-assembly).
  */
 
 /** A model this big draws as its bounding box - more triangles than the
@@ -37,6 +45,25 @@ export interface ModelEntry {
   triangles: number
   /** Its own bounding box, as authored. */
   box: THREE.Box3 | null
+  /** The bays and covers it names (`bay:` / `empty:` nodes). */
+  anchors: { bays: string[]; empties: string[] }
+}
+
+const NO_ANCHORS = { bays: [] as string[], empties: [] as string[] }
+
+/** Tag every node with its glTF name (`userData.gltfName`). */
+function keepNodeNames(gltf: {
+  parser: {
+    json: { nodes?: { name?: string }[] }
+    associations: Map<unknown, { nodes?: number } | undefined>
+  }
+}) {
+  const nodes = gltf.parser.json.nodes ?? []
+  gltf.parser.associations.forEach((ref, obj) => {
+    if (!(obj instanceof THREE.Object3D) || ref?.nodes === undefined) return
+    const name = nodes[ref.nodes]?.name
+    if (typeof name === "string") obj.userData.gltfName = name
+  })
 }
 
 interface CacheSlot {
@@ -89,6 +116,7 @@ function load(url: string, slot: CacheSlot) {
       return loader.parseAsync(buf, "")
     })
     .then((gltf) => {
+      keepNodeNames(gltf)
       const scene = gltf.scene
       scene.updateMatrixWorld(true)
       done({
@@ -96,6 +124,7 @@ function load(url: string, slot: CacheSlot) {
         scene,
         triangles: countTriangles(scene),
         box: new THREE.Box3().setFromObject(scene),
+        anchors: anchorNames(scene),
       })
     })
     .catch(() => done({ status: "error" }))
@@ -105,7 +134,13 @@ function acquire(url: string): CacheSlot {
   let slot = cache.get(url)
   if (!slot) {
     slot = {
-      entry: { status: "loading", scene: null, triangles: 0, box: null },
+      entry: {
+        status: "loading",
+        scene: null,
+        triangles: 0,
+        box: null,
+        anchors: NO_ANCHORS,
+      },
       refs: 0,
       listeners: new Set(),
       timer: null,
@@ -154,6 +189,56 @@ export function useDeviceModel(url: string | null): ModelEntry | null {
   return url ? (cache.get(url)?.entry ?? null) : null
 }
 
+/** Several models at once (a device's installed parts), by URL. */
+export function useDeviceModels(
+  urls: readonly string[]
+): Map<string, ModelEntry> {
+  const invalidate = useThree((s) => s.invalidate)
+  const [, bump] = useState(0)
+  const key = [...new Set(urls)].sort().join("\n")
+  useEffect(() => {
+    if (!key) return
+    const list = key.split("\n")
+    const fn = () => {
+      bump((n) => n + 1)
+      invalidate()
+    }
+    const slots = list.map((u) => acquire(u))
+    slots.forEach((s) => s.listeners.add(fn))
+    return () => {
+      slots.forEach((s) => s.listeners.delete(fn))
+      list.forEach((u) => release(u))
+    }
+  }, [key, invalidate])
+  const out = new Map<string, ModelEntry>()
+  for (const u of key ? key.split("\n") : []) {
+    const e = cache.get(u)?.entry
+    if (e) out.set(u, e)
+  }
+  return out
+}
+
+/** Installed parts ready to pose: each bay's loaded module model. */
+export interface ReadyPart {
+  bay: string
+  position: string
+  entry: ModelEntry
+}
+
+/** The parts of `planned` whose models have loaded. */
+export function readyParts(
+  planned: readonly { bay: string; position: string; url: string }[],
+  entries: ReadonlyMap<string, ModelEntry>
+): ReadyPart[] {
+  const out: ReadyPart[] = []
+  for (const p of planned) {
+    const e = entries.get(p.url)
+    if (e?.status === "ready" && e.scene)
+      out.push({ bay: p.bay, position: p.position, entry: e })
+  }
+  return out
+}
+
 /** The model's fitted placement: its upright size (m) and the transform
  * that stands it on the origin, centred, front on −Z. */
 export function fittedModel(
@@ -190,13 +275,37 @@ export function PlacedModel({
   entry,
   fit,
   ghosted = false,
+  parts = [],
+  bays = null,
+  emptyMode = "filler",
 }: {
   entry: ModelEntry
   fit: ReturnType<typeof fittedModel>
   ghosted?: boolean
+  /** Installed modules to pose at their `bay:` nodes (model-assembly). */
+  parts?: readonly ReadyPart[]
+  /** The device's bays: which covers show. Null draws the model as
+   * authored. */
+  bays?: readonly ModelBay[] | null
+  emptyMode?: ModelEmptyMode
 }) {
+  const partsKey = parts
+    .map((p) => `${p.bay}\u0001${p.position}\u0001${p.entry.scene?.uuid}`)
+    .join("\u0000")
+  const baysKey = bays
+    ? bays.map((b) => `${b.name}\u0001${b.installed ? 1 : 0}`).join("\u0000")
+    : null
   const obj = useMemo(() => {
-    const c = entry.scene!.clone(true)
+    const c = assembleModel(
+      entry.scene!,
+      parts.map((p) => ({
+        bay: p.bay,
+        position: p.position,
+        scene: p.entry.scene!,
+      })),
+      bays,
+      emptyMode
+    ).root
     c.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return
       const m = o
@@ -205,7 +314,9 @@ export function PlacedModel({
       m.receiveShadow = true
     })
     return c
-  }, [entry.scene])
+    // The keys stand for parts and bays: a re-render with equal ones keeps
+    // the assembled copy.
+  }, [entry.scene, partsKey, baysKey, emptyMode])
   // Focus ghosting: a see-through copy with its own materials, made only
   // while it is ghosted and dropped after.
   useEffect(() => {

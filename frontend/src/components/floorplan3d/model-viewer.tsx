@@ -5,11 +5,18 @@ import * as THREE from "three"
 
 import { Loading } from "@/components/loading"
 import type { Model3DEffective } from "@/lib/api"
+import { plannedParts } from "@/lib/model-assembly"
 import { PORT_MARKER_M } from "@/lib/model-ports"
 import type { ModelPortsDoc, V3 } from "@/lib/model-ports"
 
-import { PlacedModel, fittedModel, useDeviceModel } from "./device-model"
-import type { ModelEntry } from "./device-model"
+import {
+  PlacedModel,
+  fittedModel,
+  readyParts,
+  useDeviceModel,
+  useDeviceModels,
+} from "./device-model"
+import type { ModelEntry, ReadyPart } from "./device-model"
 import {
   ModelPortMarkers,
   TemplatePortMarkers,
@@ -28,12 +35,17 @@ import { modelTargetM } from "./world"
  * A device's markers are the room's - coloured by port state from the
  * batched face-ports request; a type's are its mapping in one neutral
  * colour. Loaded lazily (three.js stays in its own chunk).
+ *
+ * A device whose model names bays draws its installed modules in them and
+ * its empty bays' covers (model-assembly), as the room does; a type's own
+ * model shows as authored.
  */
 
 export type ViewPreset = "front" | "rear" | "top" | "fit"
 
 export interface ModelViewerProps {
-  model: Pick<Model3DEffective, "url" | "fit" | "up" | "front">
+  model: Pick<Model3DEffective, "url" | "fit" | "up" | "front"> &
+    Partial<Pick<Model3DEffective, "bays" | "empty_mode">>
   /** The type's body size (mm), what the model is fitted to. */
   sizeMm?: {
     width_mm?: number | null
@@ -113,9 +125,11 @@ function Rig({
 
 function Fitted({
   entry,
+  parts,
   props,
 }: {
   entry: ModelEntry
+  parts: readonly ReadyPart[]
   props: ModelViewerProps
 }) {
   const { fit: fitMode, up, front } = props.model
@@ -138,7 +152,13 @@ function Fitted({
   const view = props.view ?? { preset: "fit" as const, n: 0 }
   return (
     <>
-      <PlacedModel entry={entry} fit={fit} />
+      <PlacedModel
+        entry={entry}
+        fit={fit}
+        parts={parts}
+        bays={props.model.bays?.length ? props.model.bays : null}
+        emptyMode={props.model.empty_mode}
+      />
       {props.markers !== false &&
         (props.deviceId ? (
           <ModelPortMarkers
@@ -162,6 +182,16 @@ function Fitted({
 
 function Model(props: ModelViewerProps) {
   const entry = useDeviceModel(props.model.url)
+  // The installed modules' models, once the chassis names its bays.
+  const planned = useMemo(
+    () =>
+      entry?.status === "ready"
+        ? plannedParts(props.model.bays, new Set(entry.anchors.bays))
+        : [],
+    [entry?.status, entry?.anchors, props.model.bays]
+  )
+  const partEntries = useDeviceModels(planned.map((p) => p.url))
+  const parts = readyParts(planned, partEntries)
   if (!entry || entry.status === "loading")
     return (
       <Html center>
@@ -176,7 +206,7 @@ function Model(props: ModelViewerProps) {
         </span>
       </Html>
     )
-  return <Fitted entry={entry} props={props} />
+  return <Fitted entry={entry} parts={parts} props={props} />
 }
 
 export default function ModelViewer(props: ModelViewerProps) {

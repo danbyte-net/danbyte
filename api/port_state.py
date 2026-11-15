@@ -210,6 +210,15 @@ class FacePortLoader:
 
     def __init__(self, devices, rows=None, *, user=None, tenant=None):
         self.devices = list(devices)
+        # Ports placed by a modular model's anchors depend on the modules
+        # installed (api.model_ports.anchored_model_ports): one batch for
+        # every device, unless a caller loaded them already.
+        from .model_3d import installed_parts
+
+        installed_parts(
+            [d for d in self.devices if not hasattr(d, "_installed_parts")],
+            user, tenant,
+        )
         self._rows = dict(rows or {})
         self._user, self._tenant = user, tenant
         needed = {FACE_PORT_KINDS[k][0] for k in _SYNTHETIC_KINDS}

@@ -110,7 +110,14 @@ def effective_model_ports(device) -> dict | None:
 
     The device's own (an override) when it has one; else its type's, but
     only while the type's model is the one drawn - a device with its own
-    model has nothing to borrow from a mapping made on another."""
+    model has nothing to borrow from a mapping made on another.
+
+    A model that names its ports (``port:`` anchors, api.model_anchors) on
+    the chassis or on the installed modules' models gives those instead:
+    hand-placed markers are for models that don't."""
+    anchored = anchored_model_ports(device)
+    if anchored is not None:
+        return anchored
     if device.model_ports is not None:
         return device.model_ports or None
     if device.model_3d:
@@ -119,6 +126,38 @@ def effective_model_ports(device) -> dict | None:
     if dt is None or not dt.model_3d:
         return None
     return dt.model_ports or None
+
+
+def anchored_model_ports(device) -> dict | None:
+    """The ports the drawn model's anchors place: the chassis' ``port:``
+    nodes plus every installed module's, posed at its ``bay:`` node, names
+    rendered as the module's interfaces are (``{module}`` → the bay's
+    position, ``{position}`` → the stack member). None when none apply."""
+    from .model_3d import effective_owner, has_bays, parts_of
+    from .model_anchors import port_doc
+    from .models import _render_module_template
+
+    owner = effective_owner(device)
+    anchors = (owner.model_anchors or {}) if owner is not None else {}
+    if not anchors:
+        return None
+    parts = []
+    if has_bays(owner):
+        vc = device.vc_position
+        for row in parts_of(device):
+            mt = row["type"]
+            mod = (mt.model_anchors or {}) if mt is not None and mt.model_3d else {}
+            if not mod.get("ports"):
+                continue
+            pos = row["position"]
+            parts.append((
+                row["name"],
+                lambda name, pos=pos: _render_module_template(name, pos, vc),
+                mod,
+            ))
+    if not anchors.get("ports") and not parts:
+        return None
+    return port_doc(owner, parts)
 
 
 def similar_bounds(a, b, tol: float = SIMILAR_TOL) -> bool:
@@ -218,7 +257,7 @@ def carry_type_frame(device_type, old: tuple[str, str]) -> None:
 def payload(obj) -> dict:
     """What the ``model-ports/`` action answers: the object's own mapping and
     its version; on a device also the mapping it draws and where that comes
-    from (``own`` / ``type`` / null)."""
+    from (``anchors`` / ``own`` / ``type`` / null)."""
     from .models import Device
 
     out = {"model_ports": obj.model_ports, "version": doc_version(obj.model_ports)}
@@ -226,7 +265,9 @@ def payload(obj) -> dict:
         eff = effective_model_ports(obj)
         out["effective"] = eff
         out["source"] = (
-            None if eff is None else "own" if obj.model_ports is not None else "type"
+            None if eff is None
+            else "anchors" if anchored_model_ports(obj) is not None
+            else "own" if obj.model_ports is not None else "type"
         )
     return out
 
