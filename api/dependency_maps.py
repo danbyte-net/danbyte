@@ -97,6 +97,8 @@ def topology_edge(r) -> dict:
         OpenApiParameter("site", OpenApiTypes.UUID, OpenApiParameter.QUERY),
         OpenApiParameter("device", OpenApiTypes.UUID, OpenApiParameter.QUERY, many=True),
     ],
+    # POST: {"site": <id>, "device": [<id>, ...]}.
+    request=OpenApiTypes.OBJECT,
     responses=OpenApiTypes.OBJECT,
     tags=["dcim"],
 )
