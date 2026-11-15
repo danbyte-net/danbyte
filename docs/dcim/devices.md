@@ -344,13 +344,28 @@ the model leads; with a photo the photo leads, and once you pick **3D** it
 leads for you on every device until you pick a photo view again (kept in
 this browser).
 
-The viewer turns with the mouse (drag to orbit, scroll to zoom). Its
-toolbar has **Front**, **Rear** and **Top** views, **Fit** (back to the
-three-quarter view), **Ports** to show or hide the
-[mapped ports](device-catalog.md#model-ports) and **Fullscreen**. The
-ports are coloured by state as in the 3D room - live SNMP where the device
-was polled, else cabled by speed, free and disabled grey; hovering one names
-it, its far end and VLAN, and clicking an interface opens it.
+The viewer turns with the mouse (drag to orbit, right-drag to pan, scroll
+to zoom). Its toolbar has **Front**, **Rear** and **Top** - each looks
+straight at that face with no perspective, fitted to it like a photo or a
+rack elevation, so every port of a row looks the same - and **3D**, the
+perspective three-quarter view. It opens on **Front**. Orbiting away from
+a face keeps the flat projection (it reads as a drawing; switching to
+perspective mid-drag would jump); pick **3D** for depth. **Fit** re-frames
+the current view, **Ports** shows or hides the
+[mapped ports](device-catalog.md#model-ports) and **Fullscreen** fills
+the screen. The viewer is lit as the 3D room is.
+
+Each port is outlined round its opening in its state colour, as on the 2D
+faceplate - live SNMP where the device was polled, else cabled by speed,
+free and disabled grey, a held port amber - with a faint wash on a port
+that carries a cable; the port's own geometry stays visible. Hovering
+lightens the outline and names the port, its far end and VLAN. A click
+selects it (outlined in the selection colour) and shows it in a panel with
+**Open interface**. A right-click opens its menu: **Open**, **Connect
+cable…**, **Trace cable**, **Disconnect…**, **Reserve…** / **Reservation…**,
+**Mark connected** / **Clear mark** and **Edit**, each the same dialog or
+write the port tables use, and only what you may do (cable add / delete,
+port reservation add, the port's change permission).
 
 A [modular model](../dcim/model-packs.md) draws with the device's installed
 modules in their bays and covers on the empty ones, so a swapped PSU shows
@@ -362,6 +377,17 @@ An installed module has a **Status** of its own (the status catalog's
 decommissioning), shown and set in the **Modules** table under Components →
 Hardware and picked when installing. It drives the module's lights; a module
 with none reads as its device's.
+
+Each installed module (a PSU, fan tray, network module) and each empty
+bay's cover is pickable: a click outlines it and shows the bay, the module
+type, its status, serial and position; a right-click offers, on a module, **Open
+module type**, **Edit…** (status and serial), **Replace…** (another module
+type - the device's interfaces are re-stamped, and dropping any asks again)
+and **Remove from bay…**, and on an empty bay **Install module…**, its
+picker listing the chassis maker's module types first (all of them when it
+has none). These are the Hardware tab's
+[module](device-catalog.md#module-types) dialogs, gated by module add /
+change / delete, and the model re-assembles as soon as the change saves.
 
 ### Locate {#locate}
 

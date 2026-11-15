@@ -16,18 +16,23 @@ import { modelRotation } from "./world"
  * so its front faces the camera - what the room's tile front will see.
  */
 
-/** Studio light from three's procedural room: no files, airgap-safe. */
-export function Studio() {
+/** Studio light from three's procedural room: no files, airgap-safe.
+ * `intensity` scales what it gives; the 3D room's is 0.35 (stage). */
+export function Studio({ intensity = 1 }: { intensity?: number }) {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
+  const invalidate = useThree((s) => s.invalidate)
   useEffect(() => {
     const env = studioEnvironment(gl)
     scene.environment = env.texture
+    scene.environmentIntensity = intensity
+    invalidate()
     return () => {
       scene.environment = null
+      scene.environmentIntensity = 1
       env.dispose()
     }
-  }, [gl, scene])
+  }, [gl, scene, intensity, invalidate])
   return null
 }
 

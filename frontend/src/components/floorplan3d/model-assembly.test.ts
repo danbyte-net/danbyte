@@ -6,6 +6,7 @@ import type { ModelBay } from "@/lib/api"
 import {
   anchorNames,
   assembleModel,
+  bayBoxes,
   namedNodes,
   posedPoint,
 } from "./model-assembly"
@@ -144,5 +145,34 @@ describe("covers", () => {
       "nothing"
     )
     expect(Object.values(visible(root)).some(Boolean)).toBe(false)
+  })
+})
+
+describe("bayBoxes", () => {
+  it("boxes a posed part by its extent and a shown cover by its own", () => {
+    const { root, drawn } = assembleModel(
+      chassis(),
+      [{ bay: "PS-0", position: "0", scene: module() }],
+      [bay("PS-0", "m.glb"), bay("FAN 1", null), bay("FAN 2", null)]
+    )
+    const boxes = bayBoxes(root, drawn)
+    const ps = boxes.find((b) => b.bay === "PS-0")!
+    expect(ps.kind).toBe("module")
+    // The module's 0.3 m depth, posed at the bay.
+    const size = ps.box.getSize(new THREE.Vector3())
+    expect(size.z).toBeCloseTo(0.3)
+    expect(ps.box.getCenter(new THREE.Vector3()).x).toBeCloseTo(0.17)
+    const empties = boxes.filter((b) => b.kind === "empty").map((b) => b.bay)
+    expect(empties.sort()).toEqual(["FAN 1", "FAN 2"])
+  })
+
+  it("leaves out a hidden cover", () => {
+    const { root, drawn } = assembleModel(
+      chassis(),
+      [],
+      [bay("FAN 1", null)],
+      "nothing"
+    )
+    expect(bayBoxes(root, drawn)).toEqual([])
   })
 })

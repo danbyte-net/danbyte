@@ -47,10 +47,15 @@ import { modelTargetM } from "./world"
  * and LEDs are projected with the same frame (lib/model-studio).
  */
 
-/** The viewers' light: ambient plus one key light, over the IBL. */
+/** The viewers' and the studio's light: the 3D room's (stage) - the
+ * environment at the room's strength, ambient, one key light from the
+ * front and a dim fill. At full environment strength shiny parts (port
+ * cages) read near white. */
 export const STUDIO_LIGHTS = {
+  environment: 0.35,
   ambient: 0.4,
-  key: { position: [2, 4, -3] as V3, intensity: 1.2 },
+  key: { position: [2, 4, -3] as V3, intensity: 0.95 },
+  fill: { position: [-2, 1, 3] as V3, intensity: 0.25 },
 }
 
 /** Studio light from three's procedural room: no files, airgap-safe. The
@@ -227,6 +232,7 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
 
     const scene = new THREE.Scene()
     scene.environment = env.texture
+    scene.environmentIntensity = STUDIO_LIGHTS.environment
     scene.add(placed)
     scene.add(new THREE.AmbientLight(0xffffff, STUDIO_LIGHTS.ambient))
     const key = new THREE.DirectionalLight(
@@ -235,6 +241,12 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
     )
     scene.add(key)
     scene.add(key.target)
+    const fill = new THREE.DirectionalLight(
+      0xffffff,
+      STUDIO_LIGHTS.fill.intensity
+    )
+    scene.add(fill)
+    scene.add(fill.target)
     scene.updateMatrixWorld(true)
 
     const box = new THREE.Box3().setFromObject(placed)
@@ -261,6 +273,8 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
       cam.updateMatrixWorld(true)
       const [kx, ky, kz] = STUDIO_LIGHTS.key.position
       key.position.set(kx, ky, face === "front" ? kz : -kz)
+      const [fx, fy, fz] = STUDIO_LIGHTS.fill.position
+      fill.position.set(fx, fy, face === "front" ? fz : -fz)
       renderer.setSize(w * SUPERSAMPLE, h * SUPERSAMPLE, false)
       renderer.render(scene, cam)
       return encode(renderer.domElement, w, h)
@@ -289,6 +303,7 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
     Object.assign(iso, { left: l, right: r, top: t, bottom: b })
     iso.updateProjectionMatrix()
     key.position.set(...STUDIO_LIGHTS.key.position)
+    fill.position.set(...STUDIO_LIGHTS.fill.position)
     renderer.setSize(iw * SUPERSAMPLE, ih * SUPERSAMPLE, false)
     renderer.render(scene, iso)
     const isoBlob = await encode(renderer.domElement, iw, ih)

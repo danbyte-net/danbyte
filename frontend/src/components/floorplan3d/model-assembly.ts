@@ -98,6 +98,45 @@ export function assembleModel(
   return { root, drawn }
 }
 
+/** A bay's pickable box in the assembled model: its installed part's, or
+ * its shown cover's. */
+export interface BayBox {
+  bay: string
+  kind: "module" | "empty"
+  box: THREE.Box3
+}
+
+/**
+ * The bays a viewer can pick on an assembled model, each as a box in the
+ * root's own frame: a bay with a part posed in it (`drawn`) by the part's
+ * extent, an empty bay by its cover while the cover shows. A bay with
+ * neither has nothing to point at and is left out.
+ */
+export function bayBoxes(
+  root: THREE.Object3D,
+  drawn: ReadonlySet<string>
+): BayBox[] {
+  root.updateMatrixWorld(true)
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()
+  const out: BayBox[] = []
+  const boxOf = (o: THREE.Object3D) => {
+    const b = new THREE.Box3().setFromObject(o, true)
+    return b.isEmpty() ? null : b.applyMatrix4(inv)
+  }
+  for (const [name, node] of namedNodes(root)) {
+    const a = parseAnchor(name)!
+    if (a.kind === "bay" && drawn.has(a.name)) {
+      const part = node.children.find((c) => c.userData.danbyteBay === a.name)
+      const box = part && boxOf(part)
+      if (box) out.push({ bay: a.name, kind: "module", box })
+    } else if (a.kind === "empty" && node.visible && !drawn.has(a.name)) {
+      const box = boxOf(node)
+      if (box) out.push({ bay: a.name, kind: "empty", box })
+    }
+  }
+  return out
+}
+
 /** Where a part's local point lands in the chassis' frame once posed at
  * `bay` - the bay node's transform applied (for tests and port maths). */
 export function posedPoint(

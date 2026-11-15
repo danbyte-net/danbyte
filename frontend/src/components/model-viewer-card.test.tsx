@@ -77,7 +77,8 @@ describe("ModelViewerCard", () => {
     expect(viewer.dataset.url).toBe(MODEL.url)
     expect(viewer.dataset.device).toBe("d1")
     expect(viewer.dataset.markers).toBe("true")
-    expect(viewer.dataset.view).toBe("fit")
+    // A face, straight on, first.
+    expect(viewer.dataset.view).toBe("front")
     expect(screen.getByText("3D model")).toBeTruthy()
     expect(screen.getByText("From type")).toBeTruthy()
   })
@@ -89,8 +90,11 @@ describe("ModelViewerCard", () => {
     expect(viewer.dataset.view).toBe("rear")
     fireEvent.click(screen.getByRole("button", { name: "Top" }))
     expect(viewer.dataset.view).toBe("top")
+    // Fit re-frames the view it is on.
     fireEvent.click(screen.getByRole("button", { name: "Fit" }))
-    expect(viewer.dataset.view).toBe("fit")
+    expect(viewer.dataset.view).toBe("top")
+    fireEvent.click(screen.getByRole("button", { name: "3D" }))
+    expect(viewer.dataset.view).toBe("iso")
     fireEvent.click(screen.getByRole("button", { name: "Ports" }))
     expect(viewer.dataset.markers).toBe("false")
     expect(screen.getByRole("button", { name: "Fullscreen" })).toBeTruthy()

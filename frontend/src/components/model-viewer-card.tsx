@@ -1,5 +1,4 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react"
-import { useNavigate } from "@tanstack/react-router"
 import { Maximize2, Minimize2, Scan } from "lucide-react"
 
 import type { Model3DEffective } from "@/lib/api"
@@ -22,22 +21,28 @@ export interface ViewerSource {
   model: Pick<Model3DEffective, "url" | "fit" | "up" | "front"> &
     Partial<Pick<Model3DEffective, "bays" | "empty_mode">>
   sizeMm?: ModelViewerProps["sizeMm"]
-  /** A device: markers coloured by port state, clicks open the port. */
+  /** A device: markers coloured by port state; a click selects a port or
+   * bay, a right-click opens its menu. */
   deviceId?: string | null
+  deviceName?: string
+  /** The chassis' manufacturer: its module types are offered first. */
+  manufacturerId?: string | null
   /** A type: its mapping, drawn neutral. */
   templatePorts?: ModelPortsDoc | null
 }
 
-const PRESETS: { value: Exclude<ViewPreset, "fit">; label: string }[] = [
+const PRESETS: { value: ViewPreset; label: string }[] = [
   { value: "front", label: "Front" },
   { value: "rear", label: "Rear" },
   { value: "top", label: "Top" },
+  { value: "iso", label: "3D" },
 ]
 
 /**
- * The model with its toolbar - Front / Rear / Top / Fit, port markers on or
- * off, fullscreen - for the Overview's "3D model" card and the device
- * Panel's 3D view. `note` sits at the toolbar's end.
+ * The model with its toolbar - Front / Rear / Top (straight on,
+ * orthographic) / 3D (perspective), Fit to re-frame the current view, port
+ * markers on or off, fullscreen - for the Overview's "3D model" card and
+ * the device Panel's 3D view. `note` sits at the toolbar's end.
  */
 export function ModelViewerFrame({
   source,
@@ -48,10 +53,9 @@ export function ModelViewerFrame({
   note?: React.ReactNode
   className?: string
 }) {
-  const navigate = useNavigate()
   const wrap = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<{ preset: ViewPreset; n: number }>({
-    preset: "fit",
+    preset: "front",
     n: 0,
   })
   const [markers, setMarkers] = useState(true)
@@ -82,7 +86,7 @@ export function ModelViewerFrame({
             {p.label}
           </BarButton>
         ))}
-        <BarIconButton label="Fit" onClick={() => go("fit")}>
+        <BarIconButton label="Fit" onClick={() => go(view.preset)}>
           <Scan />
         </BarIconButton>
         {hasPorts && (
@@ -113,18 +117,6 @@ export function ModelViewerFrame({
           markers={markers}
           view={view}
           className={full ? "min-h-0 flex-1" : className}
-          onPort={(pk) => {
-            const port = pk.port
-            if (!port.id || !source.deviceId) return
-            if (port.kind === "interface")
-              void navigate({ to: "/interfaces/$id", params: { id: port.id } })
-            else
-              void navigate({
-                to: "/devices/$id",
-                params: { id: source.deviceId },
-                search: { tab: "components" },
-              })
-          }}
         />
       </Suspense>
     </div>

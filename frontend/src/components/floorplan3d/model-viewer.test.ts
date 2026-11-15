@@ -7,26 +7,36 @@ import {
 } from "@/lib/model-ports"
 
 import { MODEL_PORT_TEMPLATE } from "./device-model-port-markers"
-import { presetCamera, viewerMarkerM } from "./model-viewer"
+import { isFaceView, presetCamera, viewerMarkerM } from "./model-viewer"
+import { STUDIO_LIGHTS } from "./studio"
 
-// The Overview viewer's camera presets and marker sizing; its markers are
+// The viewer's camera presets, light and marker sizing; its markers are
 // the room's, coloured by port state.
 
 describe("presetCamera", () => {
   const size: [number, number, number] = [0.44, 0.044, 0.3]
 
-  it("looks at the model's middle from the preset side", () => {
-    const front = presetCamera("front", size)
-    expect(front.target).toEqual([0, 0.022, 0])
+  it("looks at the model's middle from the front three-quarter", () => {
+    const iso = presetCamera(size)
+    expect(iso.target).toEqual([0, 0.022, 0])
     // The room's front is −Z.
-    expect(front.position[2]).toBeLessThan(0)
-    expect(front.position[0]).toBe(0)
-    expect(presetCamera("rear", size).position[2]).toBeGreaterThan(0)
-    const top = presetCamera("top", size)
-    expect(top.position[1]).toBeGreaterThan(size[1])
-    const fit = presetCamera("fit", size)
-    expect(fit.position[0]).toBeGreaterThan(0)
-    expect(fit.position[2]).toBeLessThan(0)
+    expect(iso.position[0]).toBeGreaterThan(0)
+    expect(iso.position[2]).toBeLessThan(0)
+  })
+})
+
+describe("view presets", () => {
+  it("are orthographic for a face, perspective for 3D", () => {
+    expect(isFaceView("front")).toBe(true)
+    expect(isFaceView("rear")).toBe(true)
+    expect(isFaceView("top")).toBe(true)
+    expect(isFaceView("iso")).toBe(false)
+  })
+
+  it("light the model as the room does", () => {
+    // The room's studio environment is 0.35 (stage.tsx); at full strength
+    // shiny cages read near white.
+    expect(STUDIO_LIGHTS.environment).toBe(0.35)
   })
 })
 

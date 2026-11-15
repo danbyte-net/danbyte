@@ -1,13 +1,34 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
-import { Html, OrbitControls } from "@react-three/drei"
+import type { ThreeEvent } from "@react-three/fiber"
+import {
+  Html,
+  OrbitControls,
+  OrthographicCamera,
+  PerspectiveCamera,
+} from "@react-three/drei"
 import * as THREE from "three"
 
 import { Loading } from "@/components/loading"
-import type { Model3DEffective } from "@/lib/api"
+import { Button } from "@/components/ui/button"
+import { PanelRow, PanelShell } from "@/components/map-panel"
+import { StatusBadge } from "@/components/status-badge"
+import type { PointerMenuAt } from "@/components/pointer-menu"
+import {
+  ModelViewerMenus,
+  bayMenuItems,
+  portMenuItems,
+  useBayPerms,
+  useDeviceBays,
+  useOpenPort,
+  usePortPerms,
+} from "@/components/model-viewer-menus"
+import type { BayMenuAt, PortMenuAt } from "@/components/model-viewer-menus"
+import type { FacePort, Model3DEffective } from "@/lib/api"
+import { faceCamera, faceZoom } from "@/lib/face-camera"
 import { plannedParts } from "@/lib/model-assembly"
 import { useDeviceLeds } from "@/lib/use-device-leds"
-import { PORT_MARKER_M } from "@/lib/model-ports"
+import { MODEL_PORT_SELECTED, PORT_MARKER_M } from "@/lib/model-ports"
 import type { ModelPortsDoc, V3 } from "@/lib/model-ports"
 
 import {
@@ -21,28 +42,47 @@ import type { ModelEntry, ReadyPart } from "./device-model"
 import {
   ModelPortMarkers,
   TemplatePortMarkers,
+  portStateText,
 } from "./device-model-port-markers"
 import type { MappedPortPick } from "./device-model-port-markers"
+import { bayBoxes } from "./model-assembly"
 import { Studio } from "./model-preview"
+import { STUDIO_LIGHTS } from "./studio"
 import { modelTargetM } from "./world"
 
 /**
  * An interactive view of one device or device type model: the Overview's
- * "3D model" card and the floor plan panel's preview. One Canvas, drawn on
- * demand; the model comes from the room's shared cache (one download and
- * parse per URL, freed a while after its last user), stood up and fitted
- * exactly as the room stands it, so mapped ports land where they do there.
+ * "3D model" card, the device Panel's 3D view and the floor plan panel's
+ * preview. One Canvas, drawn on demand; the model comes from the room's
+ * shared cache (one download and parse per URL, freed a while after its
+ * last user), stood up and fitted exactly as the room stands it, so mapped
+ * ports land where they do there.
+ *
+ * Front, Rear and Top look straight at that face through an orthographic
+ * camera fitted to it (lib/face-camera), like a photo or a rack elevation:
+ * every port of a row looks the same. Orbiting away keeps that projection -
+ * a parallel view turned reads as a drawing, where swapping to perspective
+ * mid-drag would jump. "3D" is the perspective three-quarter view.
  *
  * A device's markers are the room's - coloured by port state from the
  * batched face-ports request; a type's are its mapping in one neutral
- * colour. Loaded lazily (three.js stays in its own chunk).
+ * colour. A click on a device's port or module bay selects it and shows
+ * it in a panel; a right-click opens its menu (model-viewer-menus). Loaded
+ * lazily (three.js stays in its own chunk).
  *
  * A device whose model names bays draws its installed modules in them and
  * its empty bays' covers (model-assembly), as the room does; a type's own
  * model shows as authored.
+ *
+ * The light is the room's: the studio environment at the room's strength,
+ * one key light from the front and a dim fill.
  */
 
-export type ViewPreset = "front" | "rear" | "top" | "fit"
+export type ViewPreset = "front" | "rear" | "top" | "iso"
+
+/** The orthographic presets: a face, straight on. */
+export const isFaceView = (p: ViewPreset): p is "front" | "rear" | "top" =>
+  p !== "iso"
 
 export interface ModelViewerProps {
   model: Pick<Model3DEffective, "url" | "fit" | "up" | "front"> &
@@ -55,35 +95,30 @@ export interface ModelViewerProps {
   } | null
   /** A device: its markers coloured by port state. */
   deviceId?: string | null
+  /** For the cable dialog's title. */
+  deviceName?: string
+  /** The chassis' manufacturer: its module types are offered first. */
+  manufacturerId?: string | null
   /** A type: its mapping, drawn neutral. */
   templatePorts?: ModelPortsDoc | null
   markers?: boolean
   /** The camera preset; `n` replays the same one. */
   view?: { preset: ViewPreset; n: number }
+  /** A click on a port goes here instead of selecting it (a small preview
+   * with no room for the panel). */
   onPort?: (pick: MappedPortPick) => void
   className?: string
 }
 
-/** Where the camera stands for a preset, around a model of upright size
- * `size` standing on the origin, front on −Z. */
-export function presetCamera(
-  preset: ViewPreset,
-  size: V3
-): { position: V3; target: V3 } {
+/** Where the perspective camera stands for the three-quarter view, around a
+ * model of upright size `size` standing on the origin, front on −Z. */
+export function presetCamera(size: V3): { position: V3; target: V3 } {
   const cy = size[1] / 2
   const radius = Math.max(Math.hypot(size[0], size[1], size[2]) / 2, 1e-3)
   const d = radius * 2.6
-  const target: V3 = [0, cy, 0]
-  switch (preset) {
-    case "front":
-      return { position: [0, cy, -d], target }
-    case "rear":
-      return { position: [0, cy, d], target }
-    case "top":
-      // A hair toward the front, so "up" on screen is the model's back.
-      return { position: [0, cy + d, -d * 0.001], target }
-    default:
-      return { position: [d * 0.45, cy + d * 0.35, -d * 0.85], target }
+  return {
+    position: [d * 0.45, cy + d * 0.35, -d * 0.85],
+    target: [0, cy, 0],
   }
 }
 
@@ -93,6 +128,11 @@ export function viewerMarkerM(size: V3): number {
   return Math.max(PORT_MARKER_M, Math.max(...size) / 90)
 }
 
+type OrbitLike = { target: THREE.Vector3; update: () => void }
+
+/** The camera for the preset - orthographic for a face, perspective for
+ * 3D - framed on the model. Re-frames on a new preset, a replay, or a
+ * resize (fullscreen). */
 function Rig({
   size,
   view,
@@ -101,17 +141,32 @@ function Rig({
   view: { preset: ViewPreset; n: number }
 }) {
   const camera = useThree((s) => s.camera)
-  const controls = useThree((s) => s.controls) as unknown as {
-    target: THREE.Vector3
-    update: () => void
-  } | null
+  const controls = useThree((s) => s.controls) as unknown as OrbitLike | null
   const invalidate = useThree((s) => s.invalidate)
+  const width = useThree((s) => s.size.width)
+  const height = useThree((s) => s.size.height)
   useEffect(() => {
-    const { position, target } = presetCamera(view.preset, size)
+    let position: V3
+    let target: V3
     const radius = Math.max(Math.hypot(...size) / 2, 1e-3)
+    if (isFaceView(view.preset) && camera instanceof THREE.OrthographicCamera) {
+      const fc = faceCamera(size, view.preset, width / Math.max(height, 1))
+      position = fc.position
+      target = fc.target
+      if (view.preset === "top") {
+        // A hair toward the front: the orbit keeps +Y up, and this way the
+        // model's back is up on screen.
+        position = [position[0], position[1], position[2] - radius * 1e-3]
+      }
+      camera.zoom = faceZoom(fc, width, height)
+      camera.near = fc.near
+      camera.far = fc.far
+    } else {
+      ;({ position, target } = presetCamera(size))
+      camera.near = radius / 100
+      camera.far = radius * 100
+    }
     camera.position.set(...position)
-    camera.near = radius / 100
-    camera.far = radius * 100
     camera.updateProjectionMatrix()
     if (controls) {
       controls.target.set(...target)
@@ -120,18 +175,148 @@ function Rig({
       camera.lookAt(...target)
     }
     invalidate()
-  }, [camera, controls, invalidate, size, view.preset, view.n])
+  }, [camera, controls, invalidate, size, view.preset, view.n, width, height])
   return null
+}
+
+/** A selection in the viewer: a mapped port or a module bay. */
+type Selection = { kind: "port"; port: FacePort } | { kind: "bay"; bay: string }
+
+interface Pickers {
+  selection: Selection | null
+  onSelectPort: (pick: MappedPortPick) => void
+  onPortMenu?: (pick: MappedPortPick, at: PointerMenuAt) => void
+  onSelectBay?: (bay: string) => void
+  onBayMenu?: (bay: string, at: PointerMenuAt) => void
+}
+
+const BAY_HOVER = "#e4e4e7"
+const BAY_WASH_OPACITY = 0.08
+/** The box stands this share proud of the part, so its outline isn't lost
+ * in the part's own edges. */
+const BAY_INFLATE = 0.01
+const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1)
+const UNIT_EDGES = new THREE.EdgesGeometry(UNIT_BOX)
+
+/** The bays a device's model draws, as pickable boxes in the assembled
+ * model's frame: an installed module or an empty bay's cover. A port on a
+ * module stays the port's: the box lets its events through. */
+function BayHits({
+  root,
+  drawn,
+  selected,
+  onSelect,
+  onMenu,
+}: {
+  root: THREE.Object3D
+  drawn: ReadonlySet<string>
+  selected: string | null
+  onSelect?: (bay: string) => void
+  onMenu?: (bay: string, at: PointerMenuAt) => void
+}) {
+  const boxes = useMemo(() => bayBoxes(root, drawn), [root, drawn])
+  const [hover, setHover] = useState<string | null>(null)
+  const rightDown = useRef<{ x: number; y: number } | null>(null)
+  useEffect(
+    () => () => {
+      document.body.style.cursor = ""
+    },
+    []
+  )
+  // A port marker under the pointer wins.
+  const onPort = (e: ThreeEvent<PointerEvent | MouseEvent>) =>
+    e.intersections.some((i) => i.object.userData.portMarkers)
+  // The boxes are in the root's own frame; it may carry a transform of its
+  // own under the fit's turn.
+  return (
+    <group matrix={root.matrix} matrixAutoUpdate={false}>
+      {boxes.map((b) => {
+        const size = b.box.getSize(new THREE.Vector3())
+        const center = b.box.getCenter(new THREE.Vector3())
+        const grow = 1 + BAY_INFLATE
+        const scale: V3 = [size.x * grow, size.y * grow, size.z * grow]
+        const lit =
+          b.bay === selected
+            ? MODEL_PORT_SELECTED
+            : b.bay === hover
+              ? BAY_HOVER
+              : null
+        return (
+          <group key={b.bay} position={center} scale={scale}>
+            <mesh
+              geometry={UNIT_BOX}
+              onPointerMove={(e) => {
+                if (onPort(e)) {
+                  if (hover === b.bay) setHover(null)
+                  return
+                }
+                e.stopPropagation()
+                if (hover !== b.bay) {
+                  setHover(b.bay)
+                  document.body.style.cursor = "pointer"
+                }
+              }}
+              onPointerOut={() => {
+                setHover((h) => (h === b.bay ? null : h))
+                document.body.style.cursor = ""
+              }}
+              onClick={(e) => {
+                if (onPort(e) || !onSelect) return
+                e.stopPropagation()
+                onSelect(b.bay)
+              }}
+              onPointerDown={(e) => {
+                if (e.nativeEvent.button === 2)
+                  rightDown.current = {
+                    x: e.nativeEvent.clientX,
+                    y: e.nativeEvent.clientY,
+                  }
+              }}
+              onPointerUp={(e) => {
+                const from = rightDown.current
+                rightDown.current = null
+                if (e.nativeEvent.button !== 2 || !from || !onMenu) return
+                if (onPort(e)) return
+                const { clientX: x, clientY: y } = e.nativeEvent
+                if (Math.hypot(x - from.x, y - from.y) > 4) return
+                e.stopPropagation()
+                onMenu(b.bay, { x, y })
+              }}
+            >
+              {lit ? (
+                <meshBasicMaterial
+                  color={lit}
+                  transparent
+                  opacity={BAY_WASH_OPACITY}
+                  depthWrite={false}
+                  toneMapped={false}
+                />
+              ) : (
+                <meshBasicMaterial visible={false} />
+              )}
+            </mesh>
+            {lit && (
+              <lineSegments geometry={UNIT_EDGES}>
+                <lineBasicMaterial color={lit} toneMapped={false} />
+              </lineSegments>
+            )}
+          </group>
+        )
+      })}
+    </group>
+  )
 }
 
 function Fitted({
   entry,
   parts,
   props,
+  pickers,
 }: {
   entry: ModelEntry
   parts: readonly ReadyPart[]
   props: ModelViewerProps
+  pickers: Pickers
 }) {
   const { fit: fitMode, up, front } = props.model
   const w = props.sizeMm?.width_mm ?? null
@@ -152,25 +337,47 @@ function Fitted({
   const markerM = viewerMarkerM(size)
   // A device's status LEDs, polled; a type's model shows them dark.
   const leds = useDeviceLeds(props.deviceId ? [props.deviceId] : [])
-  const view = props.view ?? { preset: "fit" as const, n: 0 }
+  const view: { preset: ViewPreset; n: number } = props.view ?? {
+    preset: "front",
+    n: 0,
+  }
+  const bays = props.model.bays?.length ? props.model.bays : null
+  const { selection } = pickers
+  const pickBays = !!props.deviceId && !!bays && !!pickers.onSelectBay
   return (
     <>
       <PlacedModel
         entry={entry}
         fit={fit}
         parts={parts}
-        bays={props.model.bays?.length ? props.model.bays : null}
+        bays={bays}
         emptyMode={props.model.empty_mode}
         leds={props.deviceId ? (leds[props.deviceId] ?? null) : undefined}
+        overlay={
+          pickBays
+            ? (root, drawn) => (
+                <BayHits
+                  root={root}
+                  drawn={drawn}
+                  selected={selection?.kind === "bay" ? selection.bay : null}
+                  onSelect={pickers.onSelectBay}
+                  onMenu={pickers.onBayMenu}
+                />
+              )
+            : undefined
+        }
       />
       {props.markers !== false &&
         (props.deviceId ? (
           <ModelPortMarkers
             deviceId={props.deviceId}
             size={size}
-            selectedPort={null}
+            selectedPort={
+              selection?.kind === "port" ? selection.port.marker : null
+            }
             markerM={markerM}
-            onSelect={(pk) => props.onPort?.(pk)}
+            onSelect={pickers.onSelectPort}
+            onMenu={pickers.onPortMenu}
           />
         ) : props.templatePorts?.ports.length ? (
           <TemplatePortMarkers
@@ -179,12 +386,23 @@ function Fitted({
             markerM={markerM}
           />
         ) : null)}
+      {isFaceView(view.preset) ? (
+        <OrthographicCamera makeDefault />
+      ) : (
+        <PerspectiveCamera makeDefault fov={35} />
+      )}
       <Rig size={size} view={view} />
     </>
   )
 }
 
-function Model(props: ModelViewerProps) {
+function Model({
+  props,
+  pickers,
+}: {
+  props: ModelViewerProps
+  pickers: Pickers
+}) {
   const entry = useDeviceModel(props.model.url)
   // The installed modules' models, once the chassis names its bays.
   const planned = useMemo(
@@ -210,10 +428,119 @@ function Model(props: ModelViewerProps) {
         </span>
       </Html>
     )
-  return <Fitted entry={entry} parts={parts} props={props} />
+  return <Fitted entry={entry} parts={parts} props={props} pickers={pickers} />
+}
+
+/** The selected port or bay, over the canvas's corner. */
+function SelectionPanel({
+  deviceId,
+  selection,
+  onClose,
+}: {
+  deviceId: string
+  selection: Selection
+  onClose: () => void
+}) {
+  const openPort = useOpenPort(deviceId)
+  const bays = useDeviceBays(selection.kind === "bay" ? deviceId : null)
+  if (selection.kind === "port") {
+    const p = selection.port
+    const far = p.peer
+      ? `${p.peer.device} · ${p.peer.port}`
+      : p.connected
+        ? "Cabled"
+        : null
+    return (
+      <PanelShell
+        label="Port"
+        title={<span className="font-mono">{p.name}</span>}
+        titleText={p.name}
+        onClose={onClose}
+        footer={
+          p.id ? (
+            <Button size="sm" variant="outline" onClick={() => openPort(p)}>
+              {p.kind === "interface" ? "Open interface" : "Open on device"}
+            </Button>
+          ) : undefined
+        }
+      >
+        <PanelRow label="State">{portStateText(p)}</PanelRow>
+        {p.type && <PanelRow label="Type">{p.type}</PanelRow>}
+        {far && (
+          <PanelRow label="Far end">
+            <span className="font-mono">{far}</span>
+          </PanelRow>
+        )}
+        {p.vlan && (
+          <PanelRow label="VLAN">
+            <span className="num">{p.vlan.vlan_id}</span>
+            {p.vlan.name ? ` · ${p.vlan.name}` : ""}
+          </PanelRow>
+        )}
+      </PanelShell>
+    )
+  }
+  const row = bays.data?.results.find((b) => b.name === selection.bay) ?? null
+  return (
+    <PanelShell label="Module bay" title={selection.bay} onClose={onClose}>
+      <PanelRow label="Module">
+        {row?.module ? row.module.module_type.name : "Empty"}
+      </PanelRow>
+      {row?.module?.status && (
+        <PanelRow label="Status">
+          <StatusBadge status={row.module.status} />
+        </PanelRow>
+      )}
+      {row?.module?.serial_number && (
+        <PanelRow label="Serial">
+          <span className="font-mono">{row.module.serial_number}</span>
+        </PanelRow>
+      )}
+      {row?.position && (
+        <PanelRow label="Position">
+          <span className="num font-mono">{row.position}</span>
+        </PanelRow>
+      )}
+    </PanelShell>
+  )
 }
 
 export default function ModelViewer(props: ModelViewerProps) {
+  const deviceId = props.deviceId ?? null
+  const [selection, setSelection] = useState<Selection | null>(null)
+  const [portMenu, setPortMenu] = useState<PortMenuAt | null>(null)
+  const [bayMenu, setBayMenu] = useState<BayMenuAt | null>(null)
+  // What a right-click may offer: a menu with nothing in it never opens.
+  const portPermsIface = usePortPerms("interface")
+  const bayPerms = useBayPerms()
+  const bays = useDeviceBays(props.model.bays?.length ? deviceId : null)
+  // A new device or model: nothing of the old one stays selected.
+  useEffect(() => setSelection(null), [deviceId, props.model.url])
+
+  const pickers: Pickers = {
+    selection,
+    onSelectPort: (pk) => {
+      if (props.onPort) props.onPort(pk)
+      else setSelection({ kind: "port", port: pk.port })
+    },
+    onPortMenu: deviceId
+      ? (pk, at) => {
+          // Every port offers Open; the rest is gated in the menu itself.
+          if (portMenuItems(pk.port, portPermsIface).length === 0) return
+          setBayMenu(null)
+          setPortMenu({ ...at, port: pk.port })
+        }
+      : undefined,
+    onSelectBay: props.onPort
+      ? undefined
+      : (bay) => setSelection({ kind: "bay", bay }),
+    onBayMenu: (bay, at) => {
+      const row = bays.data?.results.find((b) => b.name === bay) ?? null
+      if (bayMenuItems(row, bayPerms).length === 0) return
+      setPortMenu(null)
+      setBayMenu({ ...at, bay })
+    },
+  }
   return (
     <div
       className={`relative w-full overflow-hidden ${props.className ?? "h-72"}`}
@@ -225,13 +552,43 @@ export default function ModelViewer(props: ModelViewerProps) {
         camera={{ fov: 35, position: [1, 1, -2] }}
         gl={{ antialias: true }}
         fallback={<Loading />}
+        onPointerMissed={(e) => {
+          if (e.button === 0) setSelection(null)
+        }}
       >
-        <Studio />
-        <ambientLight intensity={0.4} />
-        <directionalLight position={[2, 4, -3]} intensity={1.2} />
-        <Model {...props} />
+        <Studio intensity={STUDIO_LIGHTS.environment} />
+        <ambientLight intensity={STUDIO_LIGHTS.ambient} />
+        <directionalLight
+          position={STUDIO_LIGHTS.key.position}
+          intensity={STUDIO_LIGHTS.key.intensity}
+        />
+        <directionalLight
+          position={STUDIO_LIGHTS.fill.position}
+          intensity={STUDIO_LIGHTS.fill.intensity}
+        />
+        <Model props={props} pickers={pickers} />
         <OrbitControls makeDefault enableDamping={false} />
       </Canvas>
+      {deviceId && selection && (
+        <SelectionPanel
+          deviceId={deviceId}
+          selection={selection}
+          onClose={() => setSelection(null)}
+        />
+      )}
+      {deviceId && (
+        <ModelViewerMenus
+          deviceId={deviceId}
+          deviceName={props.deviceName}
+          manufacturerId={props.manufacturerId}
+          portMenu={portMenu}
+          bayMenu={bayMenu}
+          onClose={() => {
+            setPortMenu(null)
+            setBayMenu(null)
+          }}
+        />
+      )}
     </div>
   )
 }

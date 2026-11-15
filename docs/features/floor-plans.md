@@ -958,12 +958,15 @@ Upload the largest faceplate photo you have.
 
 A floor-placed device whose model has
 [ports mapped onto it](../dcim/device-catalog.md#model-ports) shows them as
-small squares on the model's surface, 8 mm across, facing out of it:
+small outlined squares on the model's surface, 8 mm across, facing out of
+it - a thin rim round the port, with a faint wash when it carries a cable,
+so the port itself stays visible:
 
 - **Colour** is the port's state, as on every faceplate: live SNMP where the
   device is polled (up by its speed, down red, shut grey), else its cable -
-  a cabled port by its speed, a free or disabled one grey. A mapped name the
-  device has no component for is dark.
+  a cabled port by its speed, a free or disabled one grey, a held one
+  amber. A mapped name the device has no component for is dark. Hover
+  lightens the rim; the selected port is outlined in the selection colour.
 - **Hover** names the port, its state, the far end of its cable and an
   interface's untagged VLAN. **Click** selects it and opens the room's port
   card - connect, trace the run, open the cable - as a photo port's does.
@@ -2606,8 +2609,10 @@ out, and so is a section left empty.
 
 The **Preview** block shows the device type's rack-face photo when it has
 one, else the device's [3D model](../dcim/devices.md#3d-model) - small and
-interactive (drag to orbit, scroll to zoom), its mapped ports coloured by
-state; clicking an interface opens it. With both, **Photo** / **3D** picks
+interactive (drag to orbit, scroll to zoom), seen straight from the front
+without perspective, its mapped ports outlined by state; clicking an
+interface opens it, and a right-click on a port or a module bay opens the
+same menu as the device page's viewer. With both, **Photo** / **3D** picks
 one, and the pick is kept for the next panel (in this browser). With
 neither, it is left out. While the plan is in 3D the room is already
 drawing the model, so the block shows only the photo (or nothing) rather

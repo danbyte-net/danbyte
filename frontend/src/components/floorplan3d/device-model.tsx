@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import { useThree } from "@react-three/fiber"
 import * as THREE from "three"
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"
@@ -301,6 +302,7 @@ export function PlacedModel({
   bays = null,
   emptyMode = "filler",
   leds,
+  overlay,
 }: {
   entry: ModelEntry
   fit: ReturnType<typeof fittedModel>
@@ -314,6 +316,9 @@ export function PlacedModel({
   /** The device's status LEDs (led-binding). Undefined leaves the lights
    * as authored (dark); null, or a light it doesn't name, is off. */
   leds?: DeviceLeds | null
+  /** Drawn in the assembled model's own frame, beside it: a viewer's bay
+   * hit boxes. Gets the assembled root and the bays a part was posed in. */
+  overlay?: (root: THREE.Object3D, drawn: ReadonlySet<string>) => ReactNode
 }) {
   const invalidate = useThree((s) => s.invalidate)
   const partsKey = parts
@@ -322,8 +327,8 @@ export function PlacedModel({
   const baysKey = bays
     ? bays.map((b) => `${b.name}\u0001${b.installed ? 1 : 0}`).join("\u0000")
     : null
-  const obj = useMemo(() => {
-    const c = assembleModel(
+  const { root: obj, drawn } = useMemo(() => {
+    const assembled = assembleModel(
       entry.scene!,
       parts.map((p) => ({
         bay: p.bay,
@@ -332,15 +337,15 @@ export function PlacedModel({
       })),
       bays,
       emptyMode
-    ).root
-    c.traverse((o) => {
+    )
+    assembled.root.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return
       const m = o
       m.raycast = () => {}
       m.castShadow = true
       m.receiveShadow = true
     })
-    return c
+    return assembled
     // The keys stand for parts and bays: a re-render with equal ones keeps
     // the assembled copy.
   }, [entry.scene, partsKey, baysKey, emptyMode])
@@ -389,6 +394,7 @@ export function PlacedModel({
     <group position={fit.position} scale={fit.scale}>
       <group rotation={fit.rotation}>
         <primitive object={obj} />
+        {overlay?.(obj, drawn)}
       </group>
     </group>
   )

@@ -1826,7 +1826,13 @@ function DeviceFrontPanel({
       {effView === "model" && model ? (
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           <ModelViewerFrame
-            source={{ model, sizeMm: dt, deviceId }}
+            source={{
+              model,
+              sizeMm: dt,
+              deviceId,
+              deviceName: device.name,
+              manufacturerId: dt?.manufacturer_id,
+            }}
             note={model.source === "type" ? "From type" : "Own model"}
           />
         </div>

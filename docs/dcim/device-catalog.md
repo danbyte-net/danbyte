@@ -302,9 +302,11 @@ which wins over its type's.
 A type with a model shows it on its Overview in a **3D model** viewer at
 the top of the right-hand column. The model stands the way the room stands
 it, front toward you. Drag to orbit and scroll to zoom; the toolbar has
-**Front**, **Rear** and **Top** views, **Fit**, **Ports** (the
-[mapped ports](#model-ports), in one neutral colour - a type has no port
-state; hovering one names it) and **Fullscreen**. The type's rack-face
+**Front**, **Rear** and **Top** (straight at that face, no perspective,
+like a photo), **3D** (the perspective three-quarter view), **Fit**,
+**Ports** (the [mapped ports](#model-ports), outlined in one neutral
+colour - a type has no port state; hovering one names it) and
+**Fullscreen**. A module type's Overview has the same viewer. The type's rack-face
 photos stay in their own section below the cards.
 
 The **3D model** card manages it - **Upload** / **Replace** and **Remove**,

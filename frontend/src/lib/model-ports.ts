@@ -286,8 +286,9 @@ export function similarBounds(
 
 /** A mapped name no component on the device answers to. */
 export const MODEL_PORT_UNDEFINED = "#3f3f46"
-/** The selected port. */
-export const MODEL_PORT_SELECTED = "#fbbf24"
+/** The selected port: the canvases' one selection colour (DEVICE_SELECTED
+ * in floorplan3d/device-mesh) - amber means a held port. */
+export const MODEL_PORT_SELECTED = "#0ea5e9"
 
 /** A mapped port's colour in the room - the port-state colours every
  * faceplate uses: live SNMP when the device was polled (up by speed, down
