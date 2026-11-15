@@ -255,10 +255,172 @@ def apply_facets(request, qs, facets: dict[str, MatchFacet], *, skip: str | None
     return qs
 
 
+def validate_facets(request, facets) -> None:
+    """The rail's selection is known (a 400 otherwise, as on the inventory
+    lists), without building a query."""
+    for key in request.query_params.keys():
+        if not key.startswith("f_"):
+            continue
+        fid = key[2:]
+        facet = facets.get(fid)
+        if facet is None:
+            raise ValidationError({key: f"Unknown filter: {fid}."})
+        if not facet.range_field and len(decode_list(request.query_params.get(key))) > 200:
+            raise ValidationError({"facets": "Too many values in one facet."})
+
+
+def match_groups(qs) -> list[dict]:
+    """The matches of ``qs`` grouped by everything a facet looks at: the
+    record, the priority, the host's site, the platform and application,
+    via, confidence, the first-seen bucket (``_fs``: 0 within 7 days, 1
+    within 30, 2 older) and whether an exception covers them (``_exc``);
+    ``_n`` matches each. One scan."""
+    since7, since30 = _since(7), _since(30)
+    from django.db.models import Case, When
+
+    return list(qs.order_by().annotate(
+        _site=_SITE, _platform=F("mapping__platform_id"),
+        _application=F("installed_software__application_id"),
+        _fs=Case(When(first_seen_at__gte=since7, then=Value(0)),
+                 When(first_seen_at__gte=since30, then=Value(1)),
+                 default=Value(2), output_field=IntegerField()),
+        _exc=Case(When(excepted__isnull=True, then=Value(0)), default=Value(1),
+                  output_field=IntegerField()),
+    ).values("cve_id", "priority", "via", "confidence", "_site", "_platform",
+             "_application", "_fs", "_exc").annotate(_n=Count("id")))
+
+
+def first_seen_bucket(when, since7, since30) -> int:
+    """``match_groups``' ``_fs`` of one first-seen time."""
+    return 0 if when >= since7 else 1 if when >= since30 else 2
+
+
 def facet_counts(request, qs, facets, count_expr: str, tenant) -> dict:
+    """Every facet's counts from **one** grouped scan of ``qs`` (#520)
+    rather than one query per facet. Records (``count_expr="cve_id"``) are
+    distinct records, matches summed."""
+    validate_facets(request, facets)
+    return group_facets(request, match_groups(qs), facets,
+                        records=count_expr == "cve_id", tenant=tenant)
+
+
+def group_facets(request, groups, facets, *, records: bool, tenant) -> dict:
+    """Each facet counted over the groups the other facets' selections
+    leave, as :func:`apply_facets` filters the matches (without an
+    ``excepted`` choice, the matches an exception covers are left out of
+    every facet but ``excepted``)."""
+    from .models import Cve
+
+    params = request.query_params
+    default_live = not _excepted_picked(request) and "excepted" not in params
+    cves = {c["id"]: c for c in Cve.objects.filter(
+        pk__in={g["cve_id"] for g in groups}).values("id", "cvss_severity", "kev_added",
+                                                       "epss")} if groups else {}
+    tests = {fid: _facet_test(fid, facets[fid], params.get(f"f_{fid}"))
+             for fid in facets if params.get(f"f_{fid}")}
     out = {}
     for fid, facet in facets.items():
-        out[fid] = facet.count(apply_facets(request, qs, facets, skip=fid), count_expr, tenant)
+        keep = [g for g in groups
+                if (fid == "excepted" or not default_live or "excepted" not in facets
+                    or not g["_exc"])
+                and all(t(g, cves[g["cve_id"]]) for k, t in tests.items()
+                        if k != fid and t is not None)]
+        out[fid] = _count_groups(fid, facet, keep, cves, records, tenant)
+    return out
+
+
+_FS_BUCKETS = {"7d": (0,), "30d": (0, 1), "older": (2,)}
+
+
+def _key_of(fid, g, cve):
+    """The value of facet ``fid`` for one group."""
+    if fid == "priority":
+        return g["priority"]
+    if fid == "severity":
+        return cve["cvss_severity"] or "unscored"
+    if fid == "kev":
+        return "yes" if cve["kev_added"] is not None else "no"
+    if fid == "excepted":
+        return "yes" if g["_exc"] else "no"
+    if fid in ("via", "confidence"):
+        return g[fid]
+    if fid in ("site", "platform", "application"):
+        v = g[f"_{fid}"]
+        return None if v is None else str(v)
+    return None
+
+
+def _facet_test(fid, facet, raw):
+    """A predicate ``(group, cve) -> bool`` for the rail's selection in
+    ``fid``, or None when it selects nothing (the SQL filter's twin)."""
+    import decimal
+
+    if facet.range_field:
+        lo, hi = decode_range(raw)
+        if lo is None and hi is None:
+            return None
+        lo = None if lo is None else decimal.Decimal(str(lo))
+        hi = None if hi is None else decimal.Decimal(str(hi))
+
+        def in_range(g, cve):
+            v = cve["epss"]
+            return v is not None and (lo is None or v >= lo) and (hi is None or v <= hi)
+        return in_range
+    wanted = decode_list(raw)
+    if not wanted:
+        return None
+    if fid == "first_seen":
+        ok = {b for v in wanted for b in _FS_BUCKETS.get(v, ())}
+        return lambda g, cve: g["_fs"] in ok
+    if facet.values is not None:
+        known = set(facet.values())
+        want = {v for v in wanted if v in known}
+        if fid == "severity":
+            # ``none`` is a CVSS severity of its own; ``unscored`` is ''.
+            return lambda g, cve: (cve["cvss_severity"] or "unscored") in want
+        return lambda g, cve: _key_of(fid, g, cve) in want
+    ids = {v for v in wanted if v != NONE and (not facet.uuid or _is_uuid(v))}
+    if facet.uuid:
+        ids = {str(uuid.UUID(v)) for v in ids}
+    none = facet.none and NONE in wanted
+
+    def member(g, cve):
+        k = _key_of(fid, g, cve)
+        return (k is None and none) or (k is not None and k in ids)
+    return member
+
+
+def _count_groups(fid, facet, groups, cves, records: bool, tenant) -> list[dict]:
+    if facet.range_field:
+        return []
+    found: dict = {}
+    for g in groups:
+        cve = cves[g["cve_id"]]
+        if fid == "first_seen":
+            keys = [k for k, bs in _FS_BUCKETS.items() if g["_fs"] in bs]
+        else:
+            keys = [_key_of(fid, g, cve)]
+        for k in keys:
+            if records:
+                found.setdefault(k, set()).add(g["cve_id"])
+            else:
+                found[k] = found.get(k, 0) + g["_n"]
+    counts = {k: (len(v) if records else v) for k, v in found.items()}
+    if facet.values is not None:
+        labels = facet.labels if isinstance(facet.labels, dict) else {}
+        return [{"value": v, "label": labels.get(v), "count": counts[v]}
+                for v in facet.values() if counts.get(v)]
+    top = sorted(counts.items(), key=lambda kv: -kv[1])[:500]
+    names = facet.labels([uuid.UUID(k) for k, _n in top if k is not None], tenant) \
+        if callable(facet.labels) else {}
+    names = {str(k): v for k, v in names.items()}
+    out = []
+    for k, n in top:
+        if k is None:
+            if facet.none:
+                out.append({"value": NONE, "label": None, "count": n})
+            continue
+        out.append({"value": k, "label": names.get(k), "count": n})
     return out
 
 
@@ -352,7 +514,9 @@ MATCH_ORDERS: dict[str, Order] = {
     "first_seen": Order(("first_seen_at",)),
     "resolved": Order(("resolved_at",)),
 }
-MATCH_DEFAULT = ("rank", F("cve__cvss_score").desc(nulls_last=True), "cve__vuln_id", "id")
+#: Worst first, then the top score, the record and the row: the open-match
+#: index ``vuln_match_open_order`` serves it, so a page reads only its rows.
+MATCH_DEFAULT = ("rank", F("cvss_score").desc(nulls_last=True), "cve_id", "id")
 
 
 def ordered_matches(qs, request):

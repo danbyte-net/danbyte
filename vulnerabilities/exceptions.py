@@ -93,6 +93,7 @@ class Resolver:
 def apply(tenant_id, cve_pks: Iterable | None = None, today=None) -> int:
     """Bring ``excepted`` up to date on the tenant's open matches (of
     ``cve_pks`` only, when given). Returns how many rows changed."""
+    from . import record_stats
     from .matching import _lock
     from .models import VulnerabilityMatch
 
@@ -106,20 +107,29 @@ def apply(tenant_id, cve_pks: Iterable | None = None, today=None) -> int:
         rows = VulnerabilityMatch.objects.filter(tenant_id=tenant_id, resolved_at__isnull=True)
         if cve_pks is not None:
             rows = rows.filter(cve_id__in=cve_pks)
+        moved: set = set()
         if not resolver:
             # Nothing applies: one statement clears what is set.
-            return rows.filter(excepted__isnull=False).update(excepted=None)
-        by_target: dict = defaultdict(list)
-        for pk, cve_id, dev, vm, plat, app, have in rows.values_list(
-                "pk", "cve_id", "device_id", "virtual_machine_id", "mapping__platform_id",
-                "mapping__application_id", "excepted_id"):
-            want = resolver.covering(cve_id, dev, vm, plat, app)
-            if want != have:
-                by_target[want].append(pk)
-        for target, pks in by_target.items():
-            for i in range(0, len(pks), CHUNK):
-                changed += VulnerabilityMatch.objects.filter(pk__in=pks[i:i + CHUNK]).update(
-                    excepted_id=target)
+            stale = rows.filter(excepted__isnull=False)
+            if cve_pks is None:
+                moved = set(stale.order_by().values_list("cve_id", flat=True).distinct())
+            changed = stale.update(excepted=None)
+        else:
+            by_target: dict = defaultdict(list)
+            for pk, cve_id, dev, vm, plat, app, have in rows.values_list(
+                    "pk", "cve_id", "device_id", "virtual_machine_id", "mapping__platform_id",
+                    "mapping__application_id", "excepted_id"):
+                want = resolver.covering(cve_id, dev, vm, plat, app)
+                if want != have:
+                    by_target[want].append(pk)
+                    moved.add(cve_id)
+            for target, pks in by_target.items():
+                for i in range(0, len(pks), CHUNK):
+                    changed += VulnerabilityMatch.objects.filter(
+                        pk__in=pks[i:i + CHUNK]).update(excepted_id=target)
+        # The per-record counts (#520). Named records are always refreshed: a
+        # deleted exception has already cleared its matches (SET_NULL).
+        record_stats.refresh(tenant_id, cve_pks if cve_pks is not None else moved)
     return changed
 
 

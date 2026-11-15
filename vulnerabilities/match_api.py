@@ -32,7 +32,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Case, Count, F, IntegerField, Min, Q, Value, When
+from django.db.models import Count, F, Min, Q
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import viewsets
@@ -65,8 +65,6 @@ _SUBJECTS = {"platform": "platform", "device_type": "devicetype",
              "application": "application"}
 _TRUE = ("1", "true", "yes")
 _FALSE = ("0", "false", "no")
-_RANK = Case(*[When(priority=k, then=Value(v)) for k, v in prio.RANK.items()],
-             default=Value(9), output_field=IntegerField())
 _CPE_TOKEN_OK = set("abcdefghijklmnopqrstuvwxyz0123456789._-~!%\\+")
 _SCORE_DESC = F("cve__cvss_score").desc(nulls_last=True)
 AFFECTED_MAX = 1000
@@ -92,20 +90,49 @@ def _restricted(model, request, tenant, slug: str, action: str = "view"):
                                   slug, action)
 
 
+_SEES_ALL = ("device", "virtualmachine", "installedsoftware")
+
+
+def sees_all(request, tenant) -> bool:
+    """The caller may view every device, VM and install of the tenant (no
+    constraint, no site scope), so every match of the tenant: the per-record
+    counts answer for them (#520). Once per request."""
+    cache = getattr(request, "_vuln_sees_all", None)
+    if cache is not None and cache[0] == tenant.pk:
+        return cache[1]
+    ok = request.user.is_superuser or all(
+        rbac.row_filter(request.user, tenant, s, "view") is True for s in _SEES_ALL)
+    try:
+        request._vuln_sees_all = (tenant.pk, ok)
+    except AttributeError:
+        pass
+    return ok
+
+
 def visible_matches(request, tenant):
     """The tenant's match rows the caller may see."""
     from api.models import Device, InstalledSoftware, VirtualMachine
 
     qs = VulnerabilityMatch.objects.filter(tenant=tenant)
-    if request.user.is_superuser:
+    if sees_all(request, tenant):
         return qs
-    devices = _restricted(Device, request, tenant, "device")
-    vms = _restricted(VirtualMachine, request, tenant, "virtualmachine")
-    installs = _restricted(InstalledSoftware, request, tenant, "installedsoftware")
+    # The visible hosts and installs as id lists, read once per request: the
+    # matches are then found through their host index instead of testing
+    # every match of the tenant against a subquery (#520).
+    ids = getattr(request, "_vuln_visible", None)
+    if ids is None or ids[0] != tenant.pk:
+        ids = (tenant.pk, *(
+            list(_restricted(model, request, tenant, slug).values_list("pk", flat=True))
+            for model, slug in ((Device, "device"), (VirtualMachine, "virtualmachine"),
+                                (InstalledSoftware, "installedsoftware"))))
+        try:
+            request._vuln_visible = ids
+        except AttributeError:
+            pass
+    _t, devices, vms, installs = ids
     qs = qs.filter(
-        Q(device__in=devices.values("pk")) | Q(virtual_machine__in=vms.values("pk"))
-    ).filter(Q(installed_software__isnull=True)
-             | Q(installed_software__in=installs.values("pk")))
+        Q(device_id__in=devices) | Q(virtual_machine_id__in=vms)
+    ).filter(Q(installed_software__isnull=True) | Q(installed_software_id__in=installs))
     # An inventoried package is software on the host: its matches read with
     # installed-software view, as a host's package list does (#451 B2). So
     # do the OS-build matches, from the same inventory read.
@@ -175,6 +202,22 @@ def _decimal(request, name: str, lo: float, hi: float) -> Decimal | None:
     if not d.is_finite() or not lo <= d <= hi:
         raise ValidationError({name: f"A number from {lo} to {hi}."})
     return d
+
+
+class _Counted:
+    """A queryset whose total is already known (the paginator's count)."""
+
+    def __init__(self, qs, n: int):
+        self.qs, self.n, self.ordered = qs, n, True
+
+    def count(self) -> int:
+        return self.n
+
+    def __len__(self) -> int:
+        return self.n
+
+    def __getitem__(self, k):
+        return self.qs[k]
 
 
 def _paginate(request, qs, rows):
@@ -350,9 +393,25 @@ def _filter_matches(request, qs, *, status_default="open", excepted=True,
     if sites is not None:
         qs = qs.filter(Q(device__site_id__in=sites) | Q(virtual_machine__site_id__in=sites))
     for name, field, allowed in (
-            ("priority", "priority", prio.LEVELS),
             ("confidence", "confidence", ("exact", "range", "partial")),
-            ("via", "via", ("platform", "application", "package", "os_build")),
+            ("via", "via", ("platform", "application", "package", "os_build"))):
+        vals = _values(request, name)
+        if vals:
+            bad = [v for v in vals if v not in allowed]
+            if bad:
+                raise ValidationError({name: f"One of: {', '.join(allowed)}."})
+            qs = qs.filter(**{f"{field}__in": vals})
+    return filter_record_params(request, qs)
+
+
+#: The plain parameters about the record (not the match): the same paths
+#: work on matches and on the per-record counts (``stat_lists``).
+RECORD_PARAMS = ("priority", "severity", "kev", "epss_min", "cve", "q")
+
+
+def filter_record_params(request, qs):
+    for name, field, allowed in (
+            ("priority", "priority", prio.LEVELS),
             ("severity", "cve__cvss_severity", ("critical", "high", "medium", "low", "none"))):
         vals = _values(request, name)
         if vals:
@@ -673,7 +732,12 @@ class VulnerabilityMatchViewSet(viewsets.ViewSet):
         tenant = _tenant(request)
         list_api.table_params(request)
         qs = list_api.apply_facets(request, self._base(request, tenant), list_api.MATCH_FACETS)
-        qs = list_api.ordered_matches(_match_rows(qs).annotate(rank=_RANK), request)
+        qs = list_api.ordered_matches(_match_rows(qs), request)
+        from . import stat_lists
+
+        if stat_lists.usable(request, tenant):
+            # The total from the per-record counts, not a count of every row.
+            qs = _Counted(qs, stat_lists.live_matches(request, tenant))
         return _paginate(request, qs, lambda page: match_dicts(tenant, page))
 
     @extend_schema(summary="Facet counts of the match list", tags=["vulnerabilities"],
@@ -682,9 +746,14 @@ class VulnerabilityMatchViewSet(viewsets.ViewSet):
     def facets(self, request):
         """Matches per facet value, each counted over what the other
         filters leave (``vulnerabilities.list_api``)."""
+        from . import stat_lists
+
         tenant = _tenant(request)
-        counts = list_api.facet_counts(request, self._base(request, tenant),
-                                       list_api.MATCH_FACETS, "id", tenant)
+        if stat_lists.usable(request, tenant, rail=True):
+            counts = stat_lists.facets(request, tenant, list_api.MATCH_FACETS, records=False)
+        else:
+            counts = list_api.facet_counts(request, self._base(request, tenant),
+                                           list_api.MATCH_FACETS, "id", tenant)
         return Response({"facets": counts, "sortable": list(list_api.MATCH_ORDERS)})
 
 
@@ -780,8 +849,14 @@ class VulnerabilityViewSet(viewsets.ViewSet):
     @extend_schema(summary="Vulnerabilities matched in the tenant", tags=["vulnerabilities"],
                    responses=OpenApiResponse(response=OpenApiTypes.OBJECT))
     def list(self, request):
+        from . import stat_lists
+
         tenant = _tenant(request)
         list_api.table_params(request)
+        if stat_lists.usable(request, tenant):
+            # The per-record counts: one row per record, no grouping (#520).
+            return _paginate(request, stat_lists.record_rows(request, tenant),
+                             lambda page: [stat_lists.record_dict(r) for r in page])
         # Every match the facets leave, excepted or not: the row counts the
         # live ones and says how many an exception covers.
         qs = list_api.apply_facets(request, self._base(request, tenant, every=True),
@@ -793,7 +868,7 @@ class VulnerabilityViewSet(viewsets.ViewSet):
             installs=Count("installed_software_id", distinct=True, filter=live),
             matches=Count("id", filter=live),
             excepted_n=Count("id", filter=Q(excepted__isnull=False)),
-            worst=Min(_RANK, filter=live),
+            worst=Min("rank", filter=live),
             first_seen_at=Min("first_seen_at", filter=live),
             score=Min("cve__cvss_score"),
         ).filter(matches__gt=0), request)
@@ -820,9 +895,14 @@ class VulnerabilityViewSet(viewsets.ViewSet):
     def facets(self, request):
         """Records per facet value, each counted over what the other
         filters leave (``vulnerabilities.list_api``)."""
+        from . import stat_lists
+
         tenant = _tenant(request)
-        counts = list_api.facet_counts(request, self._base(request, tenant),
-                                       list_api.RECORD_FACETS, "cve_id", tenant)
+        if stat_lists.usable(request, tenant, rail=True):
+            counts = stat_lists.facets(request, tenant, list_api.RECORD_FACETS, records=True)
+        else:
+            counts = list_api.facet_counts(request, self._base(request, tenant),
+                                           list_api.RECORD_FACETS, "cve_id", tenant)
         return Response({"facets": counts, "sortable": list(list_api.RECORD_ORDERS)})
 
     @extend_schema(summary="One vulnerability with what it affects",
@@ -869,8 +949,7 @@ def object_vulnerabilities(request, kind: str, pk):
     if obj is None:
         raise NotFound("Not found.")
     qs = _filter_matches(request, visible_matches(request, tenant).filter(**{field: obj.pk}))
-    qs = _match_rows(qs).annotate(rank=_RANK).order_by(
-        "rank", _SCORE_DESC, "cve__vuln_id", "id")
+    qs = _match_rows(qs).order_by("rank", _SCORE_DESC, "cve__vuln_id", "id")
     return _paginate(request, qs, lambda page: match_dicts(tenant, page))
 
 
@@ -974,7 +1053,12 @@ def vulnerability_summary(request):
     per priority, KEV and critical records, records new this week, and the
     devices and VMs affected; plus how many matches (``excepted``) and
     records (``excepted_records``) exceptions cover."""
+    from . import stat_lists
+
     tenant = _tenant(request)
+    if sees_all(request, tenant):
+        # The per-record counts (#520).
+        return Response(stat_lists.summary(tenant))
     every = visible_matches(request, tenant).filter(resolved_at__isnull=True)
     qs = every.filter(excepted__isnull=True)
     by_priority = dict(qs.values_list("priority").annotate(n=Count("cve_id", distinct=True)))

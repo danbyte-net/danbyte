@@ -9,6 +9,9 @@
   that product at once (no-op in other modes; once per product per
   ``PRODUCT_DEBOUNCE`` seconds, hardware CPEs are never fetched).
 * A policy is saved: the tenant's open matches are re-prioritised.
+* A device's or VM's site changes, or a device, VM or install is deleted
+  (its matches go with it): the tenant's per-record counts are refreshed
+  (``record_stats``, #520), when it has any.
 
 Changes are collected per transaction and queued once it commits, so a bulk
 edit of 500 devices queues one job. Nothing is queued for a tenant without
@@ -33,13 +36,14 @@ MAPPING_FIELDS = ("enabled", "kind", "part", "vendor", "product")
 #: A product asked for once is not asked for again within this window.
 PRODUCT_DEBOUNCE = 300
 _SNAP = "_vuln_snapshot"
+_SITE = "_vuln_site"
 
 _local = threading.local()
 
 
 def _fresh() -> dict:
     return {"objects": defaultdict(lambda: defaultdict(set)), "tenants": set(),
-            "policies": set(), "products": set()}
+            "policies": set(), "products": set(), "stats": set()}
 
 
 def _add(mutate) -> None:
@@ -70,9 +74,10 @@ def _flush() -> None:
     _local.pending = None
     if not p:
         return
-    tenants = set(p["objects"]) | p["tenants"] | p["policies"]
+    tenants = set(p["objects"]) | p["tenants"] | p["policies"] | p["stats"]
     if not tenants or not VulnerabilitySettings.load().enabled:
         return
+    _flush_stats(p["stats"] - p["tenants"])
     mapped = set(ProductMapping.objects.filter(tenant_id__in=tenants, enabled=True)
                  .values_list("tenant_id", flat=True).distinct())
     for tenant_id in p["tenants"]:
@@ -86,6 +91,19 @@ def _flush() -> None:
             jobs.enqueue_objects(tenant_id, objects)
     if p["products"]:
         _fetch_products(p["products"])
+
+
+def _flush_stats(tenants) -> None:
+    """Queue the per-record counts' refresh of the tenants that have any
+    (one query); a tenant whose whole recompute is queued gets it there."""
+    from . import jobs
+    from .models import VulnerabilityRecordStat
+
+    if not tenants:
+        return
+    for tenant_id in set(VulnerabilityRecordStat.objects.filter(tenant_id__in=tenants)
+                         .values_list("tenant_id", flat=True).distinct()):
+        jobs.enqueue_stats(tenant_id)
 
 
 def _fetch_products(keys) -> bool:
@@ -140,11 +158,26 @@ def _changed(instance, fields, update_fields) -> bool:
 
 def _host_init(sender, instance, **kwargs):
     setattr(instance, _SNAP, _snapshot(instance, HOST_FIELDS[sender._meta.model_name]))
+    setattr(instance, _SITE, instance.__dict__.get("site_id", _MISSING))
+
+
+def _site_moved(instance, created, update_fields) -> bool:
+    """The host's site changed (the per-record counts are kept per site)."""
+    before = getattr(instance, _SITE, _MISSING)
+    after = instance.__dict__.get("site_id", _MISSING)
+    setattr(instance, _SITE, after)
+    if created or (update_fields is not None and "site" not in update_fields
+                   and "site_id" not in update_fields):
+        return False
+    return before is _MISSING or after is _MISSING or before != after
 
 
 def _host_saved(sender, instance, created, update_fields=None, raw=False, **kwargs):
     if raw or not instance.tenant_id:
         return
+    if _site_moved(instance, created, update_fields):
+        tenant_id = instance.tenant_id
+        _add(lambda p: p["stats"].add(tenant_id))
     fields = HOST_FIELDS[sender._meta.model_name]
     if created:
         setattr(instance, _SNAP, _snapshot(instance, fields))
@@ -196,6 +229,14 @@ def _install_deleted(sender, instance, **kwargs):
     if not instance.tenant_id:
         return
     _add_hosts(instance.tenant_id, _install_hosts(instance))
+    _host_deleted(sender, instance)
+
+
+def _host_deleted(sender, instance, **kwargs):
+    """Its open matches went with it: the per-record counts follow."""
+    tenant_id = instance.tenant_id
+    if tenant_id:
+        _add(lambda p: p["stats"].add(tenant_id))
 
 
 def _mapping_init(sender, instance, **kwargs):
@@ -237,6 +278,8 @@ def connect() -> None:
     for model in (Device, VirtualMachine):
         post_init.connect(_host_init, sender=model, dispatch_uid=f"vuln-init-{model.__name__}")
         post_save.connect(_host_saved, sender=model, dispatch_uid=f"vuln-save-{model.__name__}")
+        post_delete.connect(_host_deleted, sender=model,
+                            dispatch_uid=f"vuln-del-{model.__name__}")
     post_init.connect(_install_init, sender=InstalledSoftware, dispatch_uid="vuln-init-inst")
     post_save.connect(_install_saved, sender=InstalledSoftware, dispatch_uid="vuln-save-inst")
     post_delete.connect(_install_deleted, sender=InstalledSoftware, dispatch_uid="vuln-del-inst")

@@ -20,7 +20,7 @@ from api.models import (
     VirtualMachine,
 )
 
-from . import matching, vex
+from . import matching, record_stats, vex
 from .models import ProductMapping, VulnerabilityMatch, VulnerabilitySettings
 from .tests_match_api import HEADER, ApiBase
 from .tests_matching import make_cve, xe_range
@@ -181,6 +181,8 @@ class SummaryTests(PagesBase):
         old = timezone.now() - datetime.timedelta(days=40)
         VulnerabilityMatch.objects.filter(cve__vuln_id="CVE-2024-0002").update(
             first_seen_at=old)
+        # A raw UPDATE bypasses the recompute: bring the per-record counts in.
+        record_stats.refresh(self.tenant.pk)
         body = self.client.get("/api/vulnerabilities/summary/").json()
         self.assertEqual(body["by_priority"],
                          {"fix_first": 2, "high": 1, "medium": 1, "low": 0})

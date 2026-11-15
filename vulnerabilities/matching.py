@@ -8,7 +8,10 @@ ones are updated only when ``version``/``confidence``/``priority`` or
 resolved (``resolved_at``). A run that finds nothing new writes no match row
 (#521); a full run records when it evaluated the tenant
 (``VulnerabilityTenantState.evaluated_at``), which the API reports as an open
-match's ``last_seen_at`` when it is later than the row's own. Bulk statements
+match's ``last_seen_at`` when it is later than the row's own. Each written
+row carries its priority ``rank`` and the record's ``cvss_score`` (the match
+list's order), and the records whose matches were written get their counts
+refreshed (:mod:`vulnerabilities.record_stats`, #520). Bulk statements
 only, so the query count does not grow with the inventory; a per-tenant
 advisory lock keeps two recomputes from interleaving.
 
@@ -60,7 +63,7 @@ from django.utils import timezone
 
 from api.package_ids import render_purl
 
-from . import evaluate, priority
+from . import evaluate, priority, record_stats
 from .exceptions import Resolver
 from .identifiers import (
     DISTRO_TYPES,
@@ -395,7 +398,7 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                 excepted = resolver.covering(cve.pk, *host_key, m.platform_id,
                                              m.application_id) if resolver else None
                 desired[(cve.pk, *host_key, m.pk, install_id, None)] = (
-                    target.version, conf, levels[cve.pk], via, excepted)
+                    target.version, conf, levels[cve.pk], via, excepted, cve.cvss_score)
 
         def consider_package(pk, device_id, vm_id, ptype, name, version, ecosystem,
                              _binary=""):
@@ -416,7 +419,8 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                 excepted = resolver.covering(cve.pk, device_id, vm_id, None, None) \
                     if resolver else None
                 desired[(cve.pk, device_id, vm_id, None, None, pk)] = (
-                    target.version, conf, levels[cve.pk], "package", excepted)
+                    target.version, conf, levels[cve.pk], "package", excepted,
+                    cve.cvss_score)
 
         items = list(_targets(tenant, by_platform, by_app, hardware, os_of, objects, counts))
         source_keys = {(item[0].kind, item[0].part, item[0].vendor, item[7]) for item in items
@@ -449,12 +453,19 @@ def recompute(tenant, *, cves: Iterable[str] | None = None,
                     excepted = resolver.covering(cve.pk, device_id, vm_id, None, None) \
                         if resolver else None
                     desired[(cve.pk, device_id, vm_id, None, None, None)] = (
-                        hp.build, conf, levels[cve.pk], "os_build", excepted)
+                        hp.build, conf, levels[cve.pk], "os_build", excepted,
+                        cve.cvss_score)
 
         full = cves is None and objects is None
         state, _ = VulnerabilityTenantState.objects.get_or_create(tenant=tenant)
-        counts.update(_diff(tenant, desired, cves=cves, objects=objects,
-                            seen_before=state.evaluated_at))
+        diff = _diff(tenant, desired, cves=cves, objects=objects,
+                     seen_before=state.evaluated_at)
+        affected = diff.pop("cves")
+        counts.update(diff)
+        # The per-record counts (#520): a full run checks every record (it
+        # writes only the rows that differ), a narrower one the records it
+        # wrote matches of.
+        counts["record_stats"] = record_stats.refresh(tenant.pk, None if full else affected)
         if full:
             now = timezone.now()
             # One row per tenant: every open match was evaluated just now.
@@ -526,40 +537,47 @@ def _diff(tenant, desired: dict, *, cves, objects, seen_before=None) -> dict:
             | Q(virtual_machine_id__in=list(objects.get("virtual_machine") or [])))
 
     changed, gone = [], []
+    affected: set = set()
     unchanged = 0
+    rank_of = priority.RANK
     for row in open_rows.values_list("pk", "cve_id", "device_id", "virtual_machine_id",
                                      "mapping_id", "installed_software_id",
                                      "host_package_id", "version",
-                                     "confidence", "priority", "excepted_id").iterator(
-            chunk_size=CHUNK * 5):
-        pk, *key, version, conf, prio, excepted = row
+                                     "confidence", "priority", "excepted_id", "rank",
+                                     "cvss_score").iterator(chunk_size=CHUNK * 5):
+        pk, *key, version, conf, prio, excepted, rank, score = row
         want = desired.pop(tuple(key), None)
         if want is None:
             gone.append(pk)
+            affected.add(key[0])
             continue
-        w_version, w_conf, w_prio, _via, w_excepted = want
-        if (version, conf, prio, excepted) != (w_version, w_conf, w_prio, w_excepted):
+        w_version, w_conf, w_prio, _via, w_excepted, w_score = want
+        if (version, conf, prio, excepted, rank, score) != (
+                w_version, w_conf, w_prio, w_excepted, rank_of[w_prio], w_score):
             changed.append(VulnerabilityMatch(pk=pk, version=w_version, confidence=w_conf,
-                                              priority=w_prio, excepted_id=w_excepted,
+                                              priority=w_prio, rank=rank_of[w_prio],
+                                              cvss_score=w_score, excepted_id=w_excepted,
                                               last_seen_at=now))
+            affected.add(key[0])
         else:
             unchanged += 1
 
     new = []
-    for key, (version, conf, prio, via, excepted) in desired.items():
+    for key, (version, conf, prio, via, excepted, score) in desired.items():
         cve_id, device_id, vm_id, mapping_id, install_id, package_id = key
         new.append(VulnerabilityMatch(
             tenant=tenant, cve_id=cve_id, device_id=device_id, virtual_machine_id=vm_id,
             via=via, mapping_id=mapping_id, installed_software_id=install_id,
             host_package_id=package_id,
-            version=version, confidence=conf, priority=prio, excepted_id=excepted,
-            first_seen_at=now, last_seen_at=now))
+            version=version, confidence=conf, priority=prio, rank=rank_of[prio],
+            cvss_score=score, excepted_id=excepted, first_seen_at=now, last_seen_at=now))
+        affected.add(cve_id)
     desired.clear()
 
     VulnerabilityMatch.objects.bulk_create(new, batch_size=CHUNK)
     VulnerabilityMatch.objects.bulk_update(
-        changed, ["version", "confidence", "priority", "excepted", "last_seen_at"],
-        batch_size=CHUNK)
+        changed, ["version", "confidence", "priority", "rank", "cvss_score", "excepted",
+                  "last_seen_at"], batch_size=CHUNK)
     last_seen = F("last_seen_at")
     if seen_before is not None:
         last_seen = Greatest(F("last_seen_at"), Value(seen_before))
@@ -567,21 +585,26 @@ def _diff(tenant, desired: dict, *, cves, objects, seen_before=None) -> dict:
         VulnerabilityMatch.objects.filter(pk__in=gone[i:i + CHUNK * 5]).update(
             resolved_at=now, last_seen_at=last_seen)
     return {"created": len(new), "updated": len(changed), "unchanged": unchanged,
-            "resolved": len(gone)}
+            "resolved": len(gone), "cves": affected}
 
 
 def reprioritise(tenant) -> int:
-    """Rewrite the open matches' priority after a policy change, without
-    re-evaluating any version."""
+    """Rewrite the open matches' priority (and rank) after a policy change,
+    without re-evaluating any version; the per-record counts of the records
+    whose priority moved follow."""
     policy = VulnerabilityPolicy.objects.filter(tenant=tenant).first()
     rows = VulnerabilityMatch.objects.filter(tenant=tenant, resolved_at__isnull=True)
-    cve_ids = set(rows.values_list("cve_id", flat=True))
+    cve_ids = set(rows.order_by().values_list("cve_id", flat=True).distinct())
     by_level: dict[str, list] = defaultdict(list)
     for cve in Cve.objects.filter(pk__in=cve_ids).only("id", "cvss_score", "epss", "kev_added"):
         by_level[priority.of_cve(cve, policy)].append(cve.pk)
     n = 0
     with transaction.atomic():
         _lock(tenant.pk)
+        moved: set = set()
         for level, ids in by_level.items():
-            n += rows.filter(cve_id__in=ids).exclude(priority=level).update(priority=level)
+            stale = rows.filter(cve_id__in=ids).exclude(priority=level, rank=priority.RANK[level])
+            moved |= set(stale.order_by().values_list("cve_id", flat=True).distinct())
+            n += stale.update(priority=level, rank=priority.RANK[level])
+        record_stats.refresh(tenant.pk, moved)
     return n

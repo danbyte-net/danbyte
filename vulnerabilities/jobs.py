@@ -7,6 +7,8 @@
   it starts, so a store after that queues the next.
 * ``enqueue_objects(tenant_id, {"device": ids, "virtual_machine": ids})`` -
   some hosts, after a version, platform, device type or install change.
+* ``enqueue_stats(tenant_id)`` - the per-record counts only (#520), after a
+  host's site changed or a host or install was deleted with its matches.
 
 Each run ends with the tenant's one notification about what it found
 (``notifications.after_recompute``).
@@ -105,6 +107,40 @@ def run_objects(tenant_id: str, objects: dict) -> dict | None:
     counts = matching.recompute(tenant, objects=objects)
     counts["notified"] = _notify(tenant)
     return counts
+
+
+def _stats_key(tenant_id) -> str:
+    return f"danbyte:vuln:record-stats:{tenant_id}"
+
+
+def enqueue_stats(tenant_id) -> None:
+    """A whole-tenant refresh of the per-record counts (#520), after a
+    host's site changed or a host or install went with its matches.
+    Debounced like the recompute."""
+    try:
+        import django_rq
+
+        conn = django_rq.get_connection(QUEUE)
+        if not conn.set(_stats_key(tenant_id), "1", nx=True, ex=DEBOUNCE_SECONDS):
+            return
+    except Exception:  # noqa: BLE001 - Redis down: no debounce
+        pass
+    _push(run_stats, str(tenant_id))
+
+
+def run_stats(tenant_id: str) -> int | None:
+    from . import record_stats
+
+    try:
+        import django_rq
+
+        django_rq.get_connection(QUEUE).delete(_stats_key(tenant_id))
+    except Exception:  # noqa: BLE001
+        pass
+    tenant = _tenant(tenant_id)
+    if tenant is None:
+        return None
+    return record_stats.refresh_locked(tenant.pk)
 
 
 def run_reprioritise(tenant_id: str) -> int | None:

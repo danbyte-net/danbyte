@@ -14,7 +14,7 @@ devices costs no more than judging one.
 """
 from __future__ import annotations
 
-from django.db.models import Case, F, IntegerField, Q, Value, When
+from django.db.models import F, Q
 
 DETAIL_TOP = 3
 
@@ -62,7 +62,6 @@ class VulnIndex:
         if key in self._failing:
             return self._failing[key]
         from vulnerabilities.models import VulnerabilityMatch
-        from vulnerabilities.priority import RANK
 
         out: dict = {}
         cond = condition_q(rule)
@@ -73,10 +72,8 @@ class VulnIndex:
                 **{f"{field}__isnull": False})
             if self.hosts is not None:
                 qs = qs.filter(**{f"{field}__in": self.hosts})
-            rank = Case(*[When(priority=k, then=Value(v)) for k, v in RANK.items()],
-                        default=Value(9), output_field=IntegerField())
-            rows = (qs.annotate(rank=rank)
-                    .order_by(field, "rank", F("cve__cvss_score").desc(nulls_last=True),
+            # ``rank``: the match's stored priority rank, worst first (#520).
+            rows = (qs.order_by(field, "rank", F("cve__cvss_score").desc(nulls_last=True),
                               "cve__vuln_id")
                     .values_list(field, "cve__vuln_id", "cve__kev_added"))
             for host, vuln_id, kev in rows:

@@ -748,6 +748,7 @@ The purge runs even while vulnerability data is off.
 | An install created, deleted or its version, application or package URL changed | its host |
 | The policy changed | the priorities of the tenant's open matches |
 | The feature switched on | every tenant with a mapping |
+| A device's or VM's site changes; a device, VM or install is deleted | no matching: the tenant's [counts](#counts-on-a-large-tenant) are refreshed |
 
 All of it runs as background jobs on the `low` queue; a bulk edit queues one
 job. A job re-reads its scope when it runs: nothing happens while the
@@ -871,6 +872,34 @@ Everything is paged, sorted and counted on the server, and kept in the
 address (`/vulnerabilities?priority=fix_first&kev=yes&view=objects`), so a
 link or a [saved view](saved-views.md) keeps it. **Download** exports
 every row the filters match (CSV, Excel, HTML, print), not just the page.
+
+**By object** lists the worst priority first, then the highest CVSS score;
+matches of one record stay together, and records with the same priority and
+score come in a fixed order. Each match stores its priority rank and score
+for this, so the first page is read from an index instead of sorting every
+open match.
+
+#### Counts on a large tenant
+
+The page does not count the open matches on every load. Each recompute,
+exception change and re-prioritisation keeps two small tables in step with
+the matches it changed: per record the devices, VMs, installs and matches
+affected, and per record the matches grouped by site, platform, application,
+via, confidence, first seen and exception. For someone who may view every
+device, VM and install of the tenant, the record list, both rails, the
+*By object* total and the dashboard widget's numbers come from those tables,
+so a page costs about the same with a hundred matches or half a million.
+A filter on a match itself (a site, platform, application, via, confidence
+or first-seen selection in the record list; a host, `status` or `excepted`
+parameter anywhere) reads the matches, as does a role limited to some sites
+or by constraints, which only ever counts what it may see. The answers are
+the same either way.
+
+A full recompute checks every record's counts (it writes only those that
+differ). A host's site change, or a deleted device, VM or install, queues a
+refresh of the tenant's counts on the `low` queue. A site change written
+straight to the database, past the application, shows on the next
+recompute.
 
 ### A record's page
 

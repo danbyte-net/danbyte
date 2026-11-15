@@ -316,6 +316,8 @@ PRIORITIES = [
     ("medium", "Medium"),
     ("low", "Low"),
 ]
+#: ``VulnerabilityMatch.rank`` of a row written without one.
+UNRANKED = 4
 
 
 class ProductMapping(NumIdMixin, TimestampedModel):
@@ -623,6 +625,12 @@ class VulnerabilityMatch(models.Model):
     version = models.CharField(max_length=128, blank=True, default="", db_default="")
     confidence = models.CharField(max_length=8, choices=CONFIDENCES)
     priority = models.CharField(max_length=10, choices=PRIORITIES)
+    #: ``priority`` as a number, worst first (``priority.RANK``; 4 = not yet
+    #: ranked), and the record's CVSS score: the match list's order, served
+    #: by an index (#520). Written with ``priority`` by the recompute and the
+    #: re-prioritisation; ``save()`` derives the rank.
+    rank = models.PositiveSmallIntegerField(default=UNRANKED, db_default=UNRANKED)
+    cvss_score = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
     #: The exception that covers it now (the most specific active one), or
     #: null. Kept by the recompute, by every exception save or delete and by
     #: the daily expiry job.
@@ -676,10 +684,84 @@ class VulnerabilityMatch(models.Model):
             models.Index(fields=["tenant", "cve"], name="vuln_match_cve"),
             models.Index(fields=["resolved_at"], name="vuln_match_resolved",
                          condition=models.Q(resolved_at__isnull=False)),
+            # The match list's default order over the open rows (#520).
+            models.Index(models.F("tenant"), models.F("rank"),
+                         models.F("cvss_score").desc(nulls_last=True), models.F("cve"),
+                         models.F("id"), name="vuln_match_open_order",
+                         condition=models.Q(resolved_at__isnull=True)),
         ]
 
     def __str__(self) -> str:
         return f"{self.cve_id} on {self.device_id or self.virtual_machine_id}"
+
+    def save(self, *args, **kwargs):
+        from .priority import RANK
+
+        self.rank = RANK.get(self.priority, UNRANKED)
+        super().save(*args, **kwargs)
+
+
+class VulnerabilityRecordStat(models.Model):
+    """A record's open matches in a tenant, counted (#520): what the record
+    list, its facets and the summary read instead of grouping every match.
+    Rebuilt from the matches by :mod:`vulnerabilities.record_stats` whenever
+    they change; never edited, never change-logged."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="vulnerability_record_stats")
+    cve = models.ForeignKey(Cve, on_delete=models.CASCADE, related_name="+")
+    #: The worst priority among its open matches (they share one).
+    priority = models.CharField(max_length=10, choices=PRIORITIES)
+    rank = models.PositiveSmallIntegerField()
+    #: Over the live matches (open, no exception covering them).
+    devices = models.PositiveIntegerField()
+    virtual_machines = models.PositiveIntegerField()
+    installs = models.PositiveIntegerField()
+    matches = models.PositiveIntegerField()
+    #: Open matches an exception covers.
+    excepted = models.PositiveIntegerField()
+    #: The first and the latest ``first_seen_at`` of the live matches.
+    first_seen_at = models.DateTimeField(null=True, blank=True)
+    last_first_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "cve"], name="uniq_vuln_record_stat"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.cve_id} in {self.tenant_id}"
+
+
+class VulnerabilityMatchGroup(models.Model):
+    """How many open matches of a record in a tenant share everything a
+    rail facet looks at (#520): the host's site, the platform and
+    application, via, confidence, when they appeared and whether an
+    exception covers them. A few rows per record and site; the facets of
+    both lists count these instead of the matches. Rebuilt with the
+    ``VulnerabilityRecordStat`` rows. Site, platform and application are
+    plain ids, as the matches carry them at the refresh."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="vulnerability_match_groups")
+    cve = models.ForeignKey(Cve, on_delete=models.CASCADE, related_name="+")
+    priority = models.CharField(max_length=10, choices=PRIORITIES)
+    site_id = models.UUIDField(null=True, blank=True)
+    platform_id = models.UUIDField(null=True, blank=True)
+    application_id = models.UUIDField(null=True, blank=True)
+    via = models.CharField(max_length=12, choices=MATCH_VIAS)
+    confidence = models.CharField(max_length=8, choices=CONFIDENCES)
+    first_seen_at = models.DateTimeField()
+    excepted = models.BooleanField()
+    matches = models.PositiveIntegerField()
+
+    class Meta:
+        indexes = [models.Index(fields=["tenant", "cve"], name="vuln_match_group_cve")]
+
+    def __str__(self) -> str:
+        return f"{self.matches} of {self.cve_id} in {self.tenant_id}"
 
 
 class VulnerabilityTenantState(models.Model):
