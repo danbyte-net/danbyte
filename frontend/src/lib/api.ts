@@ -1164,6 +1164,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "location", label: "Locations" },
   { value: "room", label: "Rooms" },
   { value: "inventoryitem", label: "Inventory items" },
+  { value: "module", label: "Modules" },
   { value: "maintenanceevent", label: "Maintenance & outage events" },
   { value: "natrule", label: "NAT rules" },
   { value: "applicationflow", label: "Application flows" },
@@ -2155,6 +2156,8 @@ export interface Device {
   vulnerabilities?: HostVulnerabilities | null
   /** Open-match summary (#451): table rows and the detail read. */
   vulnerability_summary?: HostVulnerabilitySummary | null
+  /** The locate beacon while it is on (docs/dcim/devices.md → Locate). */
+  locate?: { until: string; at: string | null; by: string } | null
   description: string
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
@@ -3693,6 +3696,8 @@ export interface FacePort {
 export interface InstalledModuleMini {
   id: string
   module_type: { id: string; name: string }
+  /** Its lifecycle and health; drives its status LEDs. */
+  status: StatusMini | null
   serial_number: string
 }
 
@@ -4658,6 +4663,7 @@ export interface ModuleWritePayload {
   device_id: string
   module_bay_id: string
   module_type_id: string
+  status_id?: string | null
   serial_number?: string
   description?: string
 }

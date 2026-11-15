@@ -31,6 +31,7 @@ STATUSABLE_MODELS = [
     ("location", "Locations"),
     ("room", "Rooms"),
     ("inventoryitem", "Inventory items"),
+    ("module", "Modules"),
     ("maintenanceevent", "Maintenance & outage events"),
     ("natrule", "NAT rules"),
     ("applicationflow", "Application flows"),
@@ -139,6 +140,7 @@ STATUS_MODEL_SEEDS = [
     ("location", "Location", "active"),
     ("room", "Room", "active"),
     ("inventoryitem", "InventoryItem", "active"),
+    ("module", "Module", "active"),
     ("vlan", "VLAN", "active"),
     ("applicationflow", "ApplicationFlow", "active"),
 ]
@@ -190,6 +192,9 @@ STATUS_MODEL_VALUES = {
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.
     "inventoryitem": ["active", "planned", "failed", "spare", "empty"],
+    # Installed modules (PSUs, fans, line cards): the unit's lifecycle and
+    # health; the colour drives its status LEDs (api.led_state).
+    "module": ["active", "planned", "staged", "offline", "failed", "decommissioning"],
     # Maintenance & outage events (issue #20): the maintenance workflow
     # (tentative → confirmed → in_progress → completed/cancelled/rescheduled)
     # and the outage workflow (reported → investigating → identified →

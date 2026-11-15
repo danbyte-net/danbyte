@@ -4,7 +4,9 @@ import type { ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three"
 
 import type { FloorTileCheck } from "@/lib/api"
+import type { DeviceLeds } from "@/lib/led-state"
 import { budgetLevel, plannedParts, wantsFarModel } from "@/lib/model-assembly"
+import { useDeviceLeds } from "@/lib/use-device-leds"
 import { markersVisible } from "@/lib/model-ports"
 
 import { isCameraMoving } from "./camera-motion"
@@ -238,11 +240,14 @@ function PlacedDevice({
   showName,
   showPorts,
   selectedPort,
+  leds,
   onSelect,
   onZoom,
   onFlyTo,
 }: {
   p: Placed
+  /** Its status LEDs (null: none lit). */
+  leds: DeviceLeds | null
   entry: ModelEntry | null
   /** Its installed modules' models, ready to pose (none past the budget). */
   parts: readonly ReadyPart[]
@@ -321,6 +326,7 @@ function PlacedDevice({
             parts={parts}
             bays={model?.bays?.length ? model.bays : null}
             emptyMode={model?.empty_mode}
+            leds={leds}
           />
           {/* The pointer's target: one invisible box, not every triangle. */}
           <mesh position={[0, h / 2, 0]} geometry={sharedBox(w, h, d)}>
@@ -460,6 +466,15 @@ export function FloorDevicesLayer({
         .map((t) => placedOf(scene, t))
         .filter((p): p is Placed => p !== null),
     [scene, tiles]
+  )
+
+  // Status LEDs of every device wearing a model: one request for the room,
+  // polled; a state change swaps materials, the models stay loaded.
+  const leds = useDeviceLeds(
+    useMemo(
+      () => placed.filter((p) => p.dev.model).map((p) => p.dev.id),
+      [placed]
+    )
   )
 
   // Loaded models by URL (one probe per distinct URL).
@@ -691,6 +706,7 @@ export function FloorDevicesLayer({
           <PlacedDevice
             key={p.tile.id}
             p={p}
+            leds={leds[p.dev.id] ?? null}
             entry={e}
             parts={partsOf.get(p.tile.id) ?? NO_PARTS}
             overBudget={overBudget.has(p.tile.id)}

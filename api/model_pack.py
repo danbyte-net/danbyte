@@ -38,11 +38,11 @@ from pathlib import Path
 import yaml
 from django.core.exceptions import ValidationError
 
+from .led_state import SOURCES, validate_bindings
 from .model_anchors import EMPTY_MODES
 
-#: What a ``leds:`` entry may take its state from (Phase 3 draws them).
-LED_SOURCES = ("device.status", "device.locate", "module.status",
-               "interface.oper_status", "none")
+#: What a ``leds:`` entry may take its state from (api.led_state).
+LED_SOURCES = SOURCES
 #: YAML files a pack may hold at most, and each one's size.
 MAX_YAML_FILES = 2000
 MAX_YAML_BYTES = 2 * 1024 * 1024
@@ -194,17 +194,12 @@ def apply_model3d(obj, block, files: PackFiles | None, *, dry_run: bool = False)
             notes.append(f"model3d.empty: {mode!r} is not one of {', '.join(EMPTY_MODES)}.")
     notes.append(f"model: {report['summary']}")
     notes += [f"model: {w}" for w in report["warnings"]]
-    leds = {}
-    raw = block.get("leds")
-    if isinstance(raw, dict):
-        for led, spec in raw.items():
-            src = spec.get("source") if isinstance(spec, dict) else None
-            if src in LED_SOURCES:
-                leds[str(led)] = {"source": src}
-            else:
-                notes.append(f"model3d.leds.{led}: unknown source {src!r} - dropped.")
-    elif raw not in (None, ""):
-        notes.append("model3d.leds: not a mapping - dropped.")
+    leds, led_notes = validate_bindings(block.get("leds"))
+    notes += [f"model3d.{n}" for n in led_notes]
+    known = set(anchors.get("leds") or {})
+    for key in leds:
+        if not any(c in key for c in "*?[") and key not in known:
+            notes.append(f"model3d.leds.{key}: the model has no led:{key}.")
     far_data, far_doc = load("far")
     if not dry_run:
         obj.model_anchors = anchors

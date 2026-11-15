@@ -33,6 +33,7 @@ from .dcim_choices import (
 )
 from .fields import HostAddressField, split_host_mask
 from .config_context import validate_context_object
+from .led_state import validate_model_leds
 from .natural import natural
 from .software_versions import validate_version_pattern
 from .package_ids import validate_cpe, validate_purl
@@ -539,9 +540,11 @@ class Model3DMixin(models.Model):
         null=True, blank=True, default=None, editable=False,
         help_text="Named anchors found in the 3D model (bays, covers, ports, LEDs).",
     )
-    # LED id -> {source}, from a model pack's ``model3d: leds:`` block.
+    # LED id (or glob, ``port:*``) -> {source[, bays][, only]}, from a model
+    # pack's ``model3d: leds:`` block (api.led_state.validate_bindings).
     model_leds = models.JSONField(
         null=True, blank=True, default=None, editable=False,
+        validators=[validate_model_leds],
         help_text="Status light bindings for the 3D model's LEDs.",
     )
 
@@ -2428,6 +2431,13 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         "exempt from discovery", default=False, db_default=False,
         help_text="Built-in discovery never contacts it.",
     )
+    # The locate beacon (api.led_state): lit while ``locate_until`` is in the
+    # future, drawn as the model's blue BEACON LED. Set by the ``locate/``
+    # action only, which writes its own change-log entry.
+    locate_until = models.DateTimeField(null=True, blank=True, editable=False)
+    locate_at = models.DateTimeField(null=True, blank=True, editable=False)
+    locate_by = models.CharField(
+        max_length=150, blank=True, default="", db_default="", editable=False)
     # Hardware warranty of this unit, for coverage without a support contract
     # (#421). The last covered day; blank = no warranty on record.
     warranty_end = models.DateField(
@@ -4636,6 +4646,12 @@ class Module(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     module_type = models.ForeignKey(
         ModuleType, on_delete=models.PROTECT, related_name="modules"
+    )
+    # Lifecycle and health of this unit (active, failed, …); drives the
+    # module's status LEDs (api.led_state). Null reads as its device's.
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="modules",
     )
     serial_number = models.CharField(max_length=255, blank=True, default="")
     asset_tag = models.CharField(max_length=128, blank=True, default="")

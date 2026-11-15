@@ -36,6 +36,8 @@ model3d:
   leds:
     SYS:    { source: device.status }
     BEACON: { source: device.locate }
+    PSU:    { source: "modules.status: PS-*" }
+    FAN:    { source: "modules.status: FAN *" }
     "port:*": { source: interface.oper_status }
 ```
 
@@ -45,7 +47,7 @@ model3d:
 | `far` | A low-detail copy drawn from a distance. Optional. |
 | `up`, `front`, `fit` | As the [3D model settings](device-catalog.md#3d-models). Packs follow glTF's Y up, front +Z, so these are normally left out. |
 | `empty` | What an empty bay shows: its cover (`filler`, the default), the modelled hole (`hole`, also drawn by the cover node), or `nothing`. |
-| `leds` | Which data each status light shows: `device.status`, `device.locate`, `module.status`, `interface.oper_status` or `none`. Stored with the type; the lights themselves are not drawn yet. |
+| `leds` | Which data each status light shows. See [Status LEDs](#status-leds). |
 
 ## Names the models carry
 
@@ -87,6 +89,11 @@ its interface names, character for character.
   instead, for the chassis and each part that has one.
 - **Budget.** Every part counts against the room's triangle budget. Past
   it, a device draws its chassis alone, then its box.
+- **Status LEDs.** The `led:` lights glow with live state. See below.
+
+Module models come from the module type. A reader who may view the device
+and its modules but not the module types still sees them: the device serves
+them (`/api/devices/{id}/module-model/{module id}/`).
 
 ## Generated images
 
@@ -139,9 +146,50 @@ own modules, to view and download. **Save photo ports** keeps the port map
 as the device's [photo-port override](devices.md); a device keeps drawing
 its type's images.
 
-Module models come from the module type. A reader who may view the device
-and its modules but not the module types still sees them: the device serves
-them (`/api/devices/{id}/module-model/{module id}/`).
+## Status LEDs
+
+A type's `leds:` block binds each `led:<id>` light to a source. A key is an
+LED id without the `led:` prefix, or a glob: `port:*` covers every
+`led:port:` light. An exact key beats a glob. A light with no entry stays
+off.
+
+| Source | The light shows |
+|---|---|
+| `device.status` | Whether the device is up. Monitoring decides, by the rule root-cause alerting uses: the checks on the primary IP, or on every assigned IP when there is no primary. Down is red. Failing within its fall, or degraded, is blinking amber. Up is green. Only stale checks is off. A lifecycle status that is not in service (planned, or a grey one) is off whatever the checks say. Without monitoring the light shows only an amber or red lifecycle status: green means Danbyte has seen it up. |
+| `module.status` | The installed module's status. A module with no status reads as its device's lifecycle status. |
+| `modules.status` | The worst status of the modules installed in the bays that match a glob: `"modules.status: PS-*"`, or `{source: modules.status, bays: ["PS-*"]}`. For a chassis' front PSU and FAN lights. |
+| `interface.oper_status` | A `port:<name>` light: the interface's state from the last SNMP poll. Up is green, testing is amber. Anything else is off: down, admin down, disabled, not polled, or a poll older than three poll intervals (an hour with scheduled polling off). |
+| `device.locate` | The [locate beacon](devices.md#locate): blinking blue while it is on. |
+| `none` | A light Danbyte doesn't drive. Always off. |
+
+An entry may add `only: [red]` (any of `green`, `amber`, `red`, `blue`) so
+the light is lit only in those states. A PSU's FAIL light is
+`{ source: module.status, only: [red] }`.
+
+- **Colours.** Green, amber, red and blue, plus a dim white *neutral*.
+  Unknown or stale data is off: a light never shows a state Danbyte doesn't
+  know.
+- **Lifecycle colours.** A status counts by its own colour in the status
+  catalog, never by its name. A green swatch is green, amber and orange are
+  amber, red is red. Grey, blue, or a status flagged *planned* or *excludes
+  capacity*, is off. Recolouring a status recolours its lights.
+- **Blinking.** Warnings and the beacon blink once a second, every light in
+  step. With *reduce motion* set in the viewer's system, lights hold a
+  steady colour.
+- **Scope.** A reader sees the lights of the devices they may view.
+  Without view on the device's deciding IP addresses, `device.status` is
+  neutral. Without view on an interface, its port light is neutral. Without
+  view on modules, the module lights are neutral. A light never leaks a
+  state the reader couldn't read elsewhere.
+- **Where.** In the 3D room and the device's 3D viewer, polled every 30
+  seconds without reloading the model. On rack-face images that list LED
+  positions, the same lights are drawn as small hardware lights over the
+  photo.
+
+The YAML import checks every entry. An unknown source, a `modules.status`
+without bays, a bad `only` or an unknown key is dropped with a note, and an
+exact key the model has no `led:` for is noted. The stored bindings are
+validated again on save.
 
 ## Importing a pack
 
@@ -182,6 +230,8 @@ pack.
 | `GET /api/device-types/{id}/studio/` | What the image renderer needs: the model, `frame_mm` (`[width, height]`), the bays with their reference modules' models and `leds`, the components by name (`ports`: `[kind, type]`), the `token` of the model state, `pending`, `generated` and `hand_made`. View on the type. |
 | `POST /api/device-types/{id}/studio/` | Stores a rendered set (multipart): `front_image`, `rear_image`, `iso_image` (WebP or PNG), `image_ports` and `image_leds` (JSON), `token` (a stale one answers 400) and `overwrite` - the hand-made targets to replace, comma-separated. Answers `written`, `kept` and the type. Change on the type. |
 | `GET /api/devices/{id}/studio/` | The same for a device's own faces: its components and its modules' LED bindings. View on the device. |
+| `GET /api/device-leds/?devices=<id>,<id>…` | What the status LEDs show now. Also `?device=<id>` or `?rack=<id>`. POST the same keys as a JSON body for long lists (`{"devices": [...]}`). Any other parameter is a 400. |
+| `GET/POST /api/devices/{id}/locate/` | The [locate beacon](devices.md#locate). |
 
 A device type's read carries `iso_image`, `image_leds`, `model_reference`
 (bay name → module type id, writable with `PATCH`, null for covers) and, on
@@ -193,3 +243,11 @@ carries the same as `model_3d_scan`. A device's `model_3d_effective` (and the
 floor plan scene's device `model`) adds `far_url`, `empty_mode` and `bays`:
 each of its module bays with `installed` and the installed module type's
 model URLs as `part` (`url`, `far_url`), or null.
+
+`/api/device-leds/` answers `{as_of, poll_seconds, devices}`. Each device
+the reader may view has `leds` (the chassis' lit lights by id, such as
+`SYS` or `port:Te1/0/1`), `bays` (each bay's installed module's lit lights
+by id, `{module}` resolved to the bay's position) and `locate`. A light left
+out is off. A state is `green`, `amber`, `red`, `blue` or `neutral`, with
+`_blink` added when it blinks. The query count is the same for one device
+as for five hundred.

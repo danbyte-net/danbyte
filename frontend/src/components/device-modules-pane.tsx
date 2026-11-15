@@ -3,11 +3,12 @@ import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type ModuleBayRow,
-  type ModuleTypeOption,
-  type ModuleWritePayload,
+import { api } from "@/lib/api"
+import type {
+  ModuleBayRow,
+  ModuleTypeOption,
+  ModuleWritePayload,
+  Status,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
@@ -38,12 +39,92 @@ import {
 } from "@/components/ui/table"
 import { ScrollFrame } from "@/components/table-scroll"
 import { Section } from "@/components/ui/section"
-import { FormCombobox, FormText, useFieldErrors } from "@/components/forms"
+import {
+  FormCombobox,
+  FormStatusSelect,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
+import { StatusBadge } from "@/components/status-badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { useSaveObject } from "@/lib/save-object"
+
+/** The statuses a module may wear: the catalog's, offered to modules. */
+function useModuleStatuses(enabled = true) {
+  return useQuery({
+    queryKey: ["statuses", "module"],
+    queryFn: () =>
+      apiAll<Status>("/api/statuses/?available_to=module&picker=1"),
+    enabled,
+    staleTime: 5 * 60_000,
+  })
+}
+
+/** An installed module's status, and - for whoever may change the device -
+ * the catalog's statuses to set it to. It drives the module's status LEDs. */
+function ModuleStatusCell({
+  deviceId,
+  module,
+  canWrite,
+}: {
+  deviceId: string
+  module: NonNullable<ModuleBayRow["module"]>
+  canWrite: boolean
+}) {
+  const qc = useQueryClient()
+  const statuses = useModuleStatuses(canWrite)
+  const set = useMutation({
+    mutationFn: (statusId: string) =>
+      api(`/api/modules/${module.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ status_id: statusId }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["device-module-bays", deviceId] })
+      void qc.invalidateQueries({ queryKey: ["device-leds"] })
+    },
+    onError: (err) => apiErrorToast(err, "Couldn't set the module's status"),
+  })
+  const badge = module.status ? (
+    <StatusBadge status={module.status} />
+  ) : (
+    <span className="text-muted-foreground">-</span>
+  )
+  if (!canWrite) return badge
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="rounded-md"
+        disabled={set.isPending}
+        aria-label={`Status of ${module.module_type.name}`}
+      >
+        {badge}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-auto">
+        <DropdownMenuRadioGroup
+          value={module.status?.id ?? ""}
+          onValueChange={(v) => v && set.mutate(v)}
+        >
+          {(statuses.data?.results ?? []).map((s) => (
+            <DropdownMenuRadioItem key={s.id} value={s.id}>
+              <StatusBadge status={s} />
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 /** The device's module bays and what's installed in them. Installing a
  * module stamps its interfaces onto the device ({module} → bay position);
@@ -106,6 +187,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
                 <TableHead>Bay</TableHead>
                 <TableHead>Position</TableHead>
                 <TableHead>Installed module</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Serial</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead />
@@ -130,6 +212,15 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
                     ) : (
                       <span className="text-muted-foreground">empty</span>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    {b.module ? (
+                      <ModuleStatusCell
+                        deviceId={deviceId}
+                        module={b.module}
+                        canWrite={canWrite}
+                      />
+                    ) : null}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
                     {b.module?.serial_number || "-"}
@@ -230,14 +321,22 @@ export function InstallModuleDialog({
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
   const [moduleTypeId, setModuleTypeId] = useState<string | null>(null)
+  const [statusId, setStatusId] = useState<string | null>(null)
   const [serial, setSerial] = useState("")
+  const statuses = useModuleStatuses(!!bay)
 
   useEffect(() => {
     if (!bay) return
     setModuleTypeId(null)
+    setStatusId(null)
     setSerial("")
     reset()
   }, [bay, reset])
+  // The catalog's default for modules, once it has loaded.
+  const defaultStatus =
+    statuses.data?.results.find((s) => s.default_for.includes("module"))?.id ??
+    null
+  const pickedStatus = statusId ?? defaultStatus
 
   const types = useQuery({
     queryKey: ["module-types-picker"],
@@ -252,6 +351,7 @@ export function InstallModuleDialog({
         device_id: deviceId,
         module_bay_id: bay!.id,
         module_type_id: moduleTypeId!,
+        status_id: pickedStatus,
         serial_number: serial.trim(),
       }
       return saveObject<{ created_interfaces?: number }>({
@@ -320,6 +420,12 @@ export function InstallModuleDialog({
               label: t.part_number ? `${t.name} (${t.part_number})` : t.name,
             }))}
             error={fieldErrors.module_type_id}
+          />
+          <FormStatusSelect
+            value={pickedStatus}
+            onChange={setStatusId}
+            options={statuses.data?.results ?? []}
+            error={fieldErrors.status_id}
           />
           <FormText
             label="Serial number"

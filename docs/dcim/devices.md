@@ -354,7 +354,30 @@ it, its far end and VLAN, and clicking an interface opens it.
 
 A [modular model](../dcim/model-packs.md) draws with the device's installed
 modules in their bays and covers on the empty ones, so a swapped PSU shows
-at once; its ports are the ones the models name.
+at once; its ports are the ones the models name. Its
+[status LEDs](model-packs.md#status-leds) glow with the device's state,
+its modules' and its ports', polled every 30 seconds.
+
+### Locate {#locate}
+
+**Locate** in the page header lights the device's blue beacon: its model's
+`BEACON` light blinks in the 3D room, the device's 3D viewer, and on rack-face
+images that show its LEDs, so whoever stands in the hall can find it. The
+button shows on devices that draw a model.
+
+- The beacon stays on for **30 minutes**. While it is on the button reads
+  **Locating**; its menu says until when and who lit it, and offers **Renew
+  30 min** and **Locate off**.
+- Lighting, renewing and switching it off need **change** on the device.
+  Each one is a change-log entry on the device (`locate_until`, `locate_at`,
+  `locate_by`). The device's own `updated_at` doesn't move.
+- Once it runs out the beacon is off. Nothing is written when it expires.
+- The beacon is Danbyte's only. It does not light the real switch's LED.
+
+`GET /api/devices/{id}/locate/` answers `{locate}`: `{until, at, by}` while
+it is on, else null; the device's read carries the same as `locate`. `POST
+{"on": true}` lights it (`"minutes"`, 1-480, sets another length; on again
+renews it) and `{"on": false}` puts it out.
 
 The **3D model** card manages the model; it says whether the device draws
 its own or its type's (*From device type*). **Upload** gives the device its

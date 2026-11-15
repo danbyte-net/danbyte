@@ -241,7 +241,7 @@ def installed_parts(devices, user=None, tenant=None) -> None:
     ids = [d.id for d in wanted]
     bays = ModuleBay.objects.filter(device_id__in=ids).order_by()
     modules = (Module.objects.filter(device_id__in=ids)
-               .select_related("module_type").order_by())
+               .select_related("module_type", "status").order_by())
     if user is not None:
         bays = rbac.restrict_queryset(bays, user, tenant, "modulebay", "view")
         modules = rbac.restrict_queryset(modules, user, tenant, "module", "view")

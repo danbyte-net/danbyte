@@ -70,18 +70,16 @@ class Health:
     verified: bool = False
 
 
-def device_health(tenant_id, device_ids, now, recent_seconds: int) -> dict:
-    """``{device id (str): Health}``. A device is decided by its primary IP,
-    or by every IP assigned to it when it has none. Unknown and skipped
-    states are ignored, so an unmonitored or unreachable-by-us upstream is
-    never down."""
+def deciding_ips(tenant_id, device_ids) -> tuple[set, dict]:
+    """The addresses whose checks decide whether each device is up:
+    ``(device ids found (str), {ip id (str): device id (str)})``. A device is
+    decided by its primary IP, or by every IP assigned to it when it has
+    none. Two queries at most, however many devices."""
     from api.models import Device, IPAddress
-
-    from .models import CheckState
 
     ids = {str(d) for d in device_ids}
     if not ids:
-        return {}
+        return set(), {}
     primary = {
         str(pk): ip for pk, ip in Device.objects.filter(
             tenant_id=tenant_id, pk__in=ids
@@ -94,6 +92,19 @@ def device_health(tenant_id, device_ids, now, recent_seconds: int) -> dict:
             tenant_id=tenant_id, assigned_device_id__in=bare
         ).values_list("pk", "assigned_device_id"):
             owner[str(ip)] = str(dev)
+    return set(primary), owner
+
+
+def device_health(tenant_id, device_ids, now, recent_seconds: int) -> dict:
+    """``{device id (str): Health}``. A device is decided by its primary IP,
+    or by every IP assigned to it when it has none. Unknown and skipped
+    states are ignored, so an unmonitored or unreachable-by-us upstream is
+    never down."""
+    from .models import CheckState
+
+    primary, owner = deciding_ips(tenant_id, device_ids)
+    if not primary:
+        return {}
     states: dict = {dev: [] for dev in primary}
     if owner:
         for ip, status, fails, checked in CheckState.objects.filter(

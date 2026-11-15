@@ -5,7 +5,10 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js"
 
 import type { ModelBay, ModelEmptyMode } from "@/lib/api"
+import { ledsKey, prefersReducedMotion } from "@/lib/led-state"
+import type { DeviceLeds } from "@/lib/led-state"
 
+import { applyLeds, findLeds, useLedBlink } from "./led-binding"
 import { anchorNames, assembleModel } from "./model-assembly"
 import { modelRotation, modelScale } from "./world"
 import type { SceneModel } from "./world"
@@ -297,6 +300,7 @@ export function PlacedModel({
   parts = [],
   bays = null,
   emptyMode = "filler",
+  leds,
 }: {
   entry: ModelEntry
   fit: ReturnType<typeof fittedModel>
@@ -307,7 +311,11 @@ export function PlacedModel({
    * authored. */
   bays?: readonly ModelBay[] | null
   emptyMode?: ModelEmptyMode
+  /** The device's status LEDs (led-binding). Undefined leaves the lights
+   * as authored (dark); null, or a light it doesn't name, is off. */
+  leds?: DeviceLeds | null
 }) {
+  const invalidate = useThree((s) => s.invalidate)
   const partsKey = parts
     .map((p) => `${p.bay}\u0001${p.position}\u0001${p.entry.scene?.uuid}`)
     .join("\u0000")
@@ -336,6 +344,23 @@ export function PlacedModel({
     // The keys stand for parts and bays: a re-render with equal ones keeps
     // the assembled copy.
   }, [entry.scene, partsKey, baysKey, emptyMode])
+  // Status LEDs: each led: node's meshes take the shared material for its
+  // state - on a state change only (the key), never per frame. Skipped
+  // while ghosted; the ghost effect below puts these materials back after.
+  const bound = useMemo(() => findLeds(obj), [obj])
+  const reduced = useMemo(() => prefersReducedMotion(), [])
+  const key = leds === undefined ? null : ledsKey(leds)
+  const [blinks, setBlinks] = useState(false)
+  useEffect(() => {
+    if (key === null || ghosted || bound.length === 0) {
+      setBlinks(false)
+      return
+    }
+    setBlinks(applyLeds(bound, leds, reduced))
+    invalidate()
+    // `key` stands for `leds`: a poll that changed nothing applies nothing.
+  }, [bound, key, ghosted, reduced, invalidate])
+  useLedBlink(blinks)
   // Focus ghosting: a see-through copy with its own materials, made only
   // while it is ghosted and dropped after.
   useEffect(() => {

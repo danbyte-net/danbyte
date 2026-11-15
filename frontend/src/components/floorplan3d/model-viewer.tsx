@@ -6,6 +6,7 @@ import * as THREE from "three"
 import { Loading } from "@/components/loading"
 import type { Model3DEffective } from "@/lib/api"
 import { plannedParts } from "@/lib/model-assembly"
+import { useDeviceLeds } from "@/lib/use-device-leds"
 import { PORT_MARKER_M } from "@/lib/model-ports"
 import type { ModelPortsDoc, V3 } from "@/lib/model-ports"
 
@@ -149,6 +150,8 @@ function Fitted({
   )
   const size = useMemo(() => fit.size as V3, [fit])
   const markerM = viewerMarkerM(size)
+  // A device's status LEDs, polled; a type's model shows them dark.
+  const leds = useDeviceLeds(props.deviceId ? [props.deviceId] : [])
   const view = props.view ?? { preset: "fit" as const, n: 0 }
   return (
     <>
@@ -158,6 +161,7 @@ function Fitted({
         parts={parts}
         bays={props.model.bays?.length ? props.model.bays : null}
         emptyMode={props.model.empty_mode}
+        leds={props.deviceId ? (leds[props.deviceId] ?? null) : undefined}
       />
       {props.markers !== false &&
         (props.deviceId ? (

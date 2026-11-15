@@ -204,6 +204,7 @@ from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import mac_detail_view, mac_list_view
 from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
+from .led_state_api import device_leds_view
 from .panel_layouts_api import PanelLayoutViewSet
 from .platforms_api import PlatformViewSet
 from .presence_views import (
@@ -695,6 +696,8 @@ urlpatterns = [
     # CSP violation report sink (unauthenticated; the browser posts here per the
     # Content-Security-Policy report-uri set at the nginx edge).
     path("csp-report/", csp_report, name="csp-report"),
+    # Status LED states for the 3D room, the viewers and LED overlays.
+    path("device-leds/", device_leds_view, name="device-leds"),
     path("topology/", topology_view, name="topology"),
     path("routing/topology/bgp/", bgp_topology_view, name="routing-topology-bgp"),
     path("topology/logical/", topology_logical_view, name="topology-logical"),

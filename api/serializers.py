@@ -3473,8 +3473,12 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         "device_profiles",
         # Its own column, Vulnerabilities (device-columns.tsx, #451).
         "vulnerabilities", "vulnerability_summary",
+        # The locate beacon: the device page's Locate toggle.
+        "locate",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
+    # The locate beacon while it is on ({until, at, by}), else null.
+    locate = serializers.SerializerMethodField()
     device_type = DeviceTypeMiniSerializer(read_only=True)
     # The slim table row's type (api.list_table, #487).
     table_nested = {"device_type": lambda: DeviceTypeTableSerializer(read_only=True)}
@@ -3734,6 +3738,14 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     @extend_schema_field(VULNERABILITY_SUMMARY_SCHEMA)
     def get_vulnerability_summary(self, obj):
         return _host_vulnerability_summary(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_locate(self, obj):
+        from django.utils import timezone
+
+        from .led_state import locate_state
+
+        return locate_state(obj, timezone.now())
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -4284,7 +4296,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "software_version", "software_version_seen_at",
                   "software_version_source",
                   "warranty_end", "coverage", "lifecycle_next", "vulnerabilities",
-                  "vulnerability_summary",
+                  "vulnerability_summary", "locate",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
                   "width_mm", "height_mm", "depth_mm",
@@ -6031,6 +6043,7 @@ class ModuleBaySerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
                 "id": str(m.module_type_id),
                 "name": m.module_type.name,
             },
+            "status": StatusMiniSerializer(m.status).data if m.status_id else None,
             "serial_number": m.serial_number,
         }
 
@@ -6045,7 +6058,7 @@ class ModuleBaySerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class ModuleSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class ModuleSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     device = DeviceMiniSerializer(read_only=True)
     module_type = ModuleTypeMiniSerializer(read_only=True)
     module_bay = serializers.SerializerMethodField()
@@ -6128,7 +6141,7 @@ class ModuleSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, Num
         model = Module
         fields = ["id", "device", "device_id", "module_bay", "module_bay_id",
                   "module_type", "module_type_id", "module_type_faceplate",
-                  "module_interfaces", "serial_number",
+                  "module_interfaces", "status", "status_id", "serial_number",
                   "asset_tag", "description", "tags", "tag_ids",
                   "custom_fields",
                   "created_at", "updated_at"]

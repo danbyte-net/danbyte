@@ -48,6 +48,16 @@ a lot of data fast - typography and spacing serve that, not decoration.
 - **Tabular nums**: on every counter, percentage, timestamp.
 - **Radii**: `rounded-md` and `rounded-lg` only. `rounded-full` for presence/health dots and avatars.
 - **Statuses are pills, never dots.** A status renders as its `ColorBadge` pill everywhere it appears - table cells, dropdown options, the selected value of a select. A colored dot beside a plain name is not an acceptable compact form of a status.
+- **Hardware LEDs are not status dots.** A device's own status lights - drawn
+  on its 3D model or over its rack-face image (`LedOverlay`,
+  `components/led-overlay.tsx`) - are part of the picture of the hardware:
+  small lights at the places the LEDs sit on the device, in the light's own
+  colour (green, amber, red, blue, a dim neutral white), glowing and blinking
+  as the real one would. They never stand beside a name as a status, so the
+  rule above doesn't apply to them, and they never replace a status pill: a
+  device's status beside its name is still its `StatusBadge`. Their colours
+  are the indicator hues of `lib/led-state.ts`, not the UI palette, and their
+  glow is the light itself, not a decorative shadow.
 - **Badges are squarish, never pills.** Every count/label chip uses the
   `Badge` primitive (`rounded-[5px]`) - including chips floating over a
   canvas (map, floor plan, topology). Do not hand-roll `rounded-full` pill

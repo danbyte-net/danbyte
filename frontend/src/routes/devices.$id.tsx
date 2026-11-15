@@ -98,6 +98,7 @@ import { QueryError } from "@/components/query-error"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { PendingFieldsProvider } from "@/lib/pending-fields"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
+import { DeviceLocateButton } from "@/components/device-locate"
 import { DeviceSyncTypeDialog } from "@/components/device-sync-type-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -409,6 +410,15 @@ function Body({ device: d }: { device: Device }) {
             }}
           />
           <HostConnectMenu host={deviceConnectHost(d)} />
+          {/* The beacon lights the model's BEACON LED: offered where the
+              device draws a model. */}
+          {d.model_3d_effective && (
+            <DeviceLocateButton
+              deviceId={d.id}
+              locate={d.locate}
+              canChange={canEdit}
+            />
+          )}
         </>
       }
       exports={

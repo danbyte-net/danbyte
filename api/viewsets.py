@@ -4426,6 +4426,44 @@ class DeviceViewSet(
 
         return model_ports.handle(request, self.get_object())
 
+    @extend_schema(
+        summary="The device's locate beacon",
+        request=inline_serializer(name="DeviceLocateRequest", fields={
+            "on": serializers.BooleanField(),
+            "minutes": serializers.IntegerField(required=False, min_value=1,
+                                                    max_value=480),
+        }),
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["get", "post"], url_path="locate")
+    def locate(self, request, pk=None):
+        """The locate beacon (api.led_state): ``{locate: {until, at, by} |
+        null}``. POST ``{on: true}`` lights it for 30 minutes (``minutes``,
+        1-480; on again renews it), ``{on: false}`` puts it out. Lighting it
+        needs change on the device; each switch is in its change log."""
+        from django.utils import timezone
+
+        from auth_api import rbac
+
+        from .led_state import LOCATE_MINUTES, locate_state, set_locate
+        from .views import _get_active_tenant
+
+        device = self.get_object()
+        if request.method == "GET":
+            return Response({"locate": locate_state(device, timezone.now())})
+        tenant = _get_active_tenant(request)
+        if not rbac.can_act_on(request.user, tenant, "device", "change", device):
+            raise PermissionDenied("Locating a device needs change on it.")
+        data = request.data if isinstance(request.data, dict) else {}
+        on = data.get("on")
+        if not isinstance(on, bool):
+            raise ValidationError({"on": "true or false."})
+        minutes = data.get("minutes", LOCATE_MINUTES)
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not (
+                1 <= minutes <= 480):
+            raise ValidationError({"minutes": "A whole number of minutes, 1-480."})
+        return Response({"locate": set_locate(device, on, request.user, minutes=minutes)})
+
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):
         from .config_context import render_config_context
@@ -7115,7 +7153,7 @@ class ModuleBayViewSet(_DevicePortViewSet):
     bulk_str_fields = ("description",)
     queryset = (
         ModuleBay.objects.select_related("device")
-        .prefetch_related(TAGS, "module__module_type")
+        .prefetch_related(TAGS, "module__module_type", "module__status")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ModuleBaySerializer
@@ -7130,7 +7168,7 @@ class ModuleViewSet(TenantScopedViewSet):
 
     queryset = (
         Module.objects.select_related(
-            "device", "module_bay", "module_type"
+            "device", "module_bay", "module_type", "status"
         ).prefetch_related(TAGS).order_by(natural("device__name"), natural("module_bay__name"))
     )
     serializer_class = ModuleSerializer
