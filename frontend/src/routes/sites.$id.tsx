@@ -589,7 +589,15 @@ function SiteVmsTable({ siteId }: { siteId: string }) {
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
     () =>
       buildVmColumns({
-        include: ["name", "status", "cluster", "vcpus", "memory", "primary_ip"],
+        include: [
+          "name",
+          "status",
+          "power",
+          "cluster",
+          "vcpus",
+          "memory",
+          "primary_ip",
+        ],
       }),
     []
   )

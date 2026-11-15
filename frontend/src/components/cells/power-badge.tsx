@@ -6,9 +6,9 @@ import { Badge } from "@/components/ui/badge"
  *
  * Deliberately *not* a `StatusBadge`. Status is the operator's lifecycle field
  * (staged / active / decommissioning); power is runtime fact from the
- * hypervisor, and a VM is routinely Active **and** powered off. So this reads
- * as a quieter, outlined companion rather than a second coloured status pill
- * competing with it.
+ * hypervisor, and a VM is routinely Active **and** powered off. It is still
+ * coloured by meaning (#514): powered on reads green, suspended or paused
+ * amber, and powered off or anything unrecognised stays a neutral outline.
  *
  * Renders nothing for a VM no sync tracks - an em dash there would imply the
  * answer is "unknown" when the real answer is "not applicable". */
@@ -20,8 +20,8 @@ export function PowerBadge({
   className?: string
 }) {
   if (!state) return null
-  const Icon =
-    state === "running" ? Power : state === "suspended" ? Pause : PowerOff
+  const held = state === "suspended" || state === "paused"
+  const Icon = state === "running" ? Power : held ? Pause : PowerOff
   const label =
     state === "running"
       ? "Powered on"
@@ -30,9 +30,9 @@ export function PowerBadge({
         : state.charAt(0).toUpperCase() + state.slice(1)
   return (
     <Badge
-      variant="outline"
+      variant={state === "running" ? "success" : held ? "warning" : "outline"}
       className={`gap-1 text-[10px] ${
-        state === "running" ? "" : "text-muted-foreground"
+        state === "running" || held ? "" : "text-muted-foreground"
       } ${className ?? ""}`}
     >
       <Icon className="h-3 w-3" />

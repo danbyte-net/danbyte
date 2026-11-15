@@ -98,7 +98,10 @@ interfaces a VLAN. Then:
 For a VM a [sync](external-sync.md) tracks, Danbyte shows the hypervisor's
 reported **power state** - *Powered on*, *Powered off* or *Suspended* - on the
 VM's hero, in its Overview with the time the reading was taken, and as a
-filterable **Power** column in VM tables.
+filterable **Power** column in VM tables (the VM list, and the VM tabs on
+clusters, VM groups, platforms and sites). The badge is coloured by state:
+*Powered on* green, *Suspended* or *Paused* amber, *Powered off* a neutral
+outline.
 
 It is deliberately separate from **Status**, and the distinction matters:
 

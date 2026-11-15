@@ -164,7 +164,15 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
     () =>
       buildVmColumns({
-        include: ["name", "group", "status", "vcpus", "memory", "primary_ip"],
+        include: [
+          "name",
+          "group",
+          "status",
+          "power",
+          "vcpus",
+          "memory",
+          "primary_ip",
+        ],
       }),
     []
   )
