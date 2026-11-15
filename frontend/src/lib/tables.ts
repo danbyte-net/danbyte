@@ -278,6 +278,7 @@ const ROWS: Row[] = [
 
   // ─── Monitoring ────────────────────────────────────────────────────────
   ["alerts", "Alerts", "Monitoring", null],
+  ["root-causes", "Root causes", "Monitoring", null],
   ["monitoring-history", "Monitoring history", "Monitoring", null],
   ["monitoring-checks", "Monitoring checks", "Monitoring", null],
   ["monitoring-engines", "Monitoring engines", "Monitoring", "/api/monitoring/engines/"],
