@@ -155,6 +155,28 @@ export function PortReserveAction({
   )
 }
 
+/** Set or clear a port's mark_connected: the toggle's write, shared with
+ * the 3D model viewer's port menu. `endpoint` is the port's API base. */
+export function useMarkConnected(
+  endpoint: string,
+  portId: string,
+  marked: boolean
+) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      api(`${endpoint}${portId}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ mark_connected: !marked }),
+      }),
+    onSuccess: () => {
+      toast.success(marked ? "Mark cleared" : "Marked connected")
+      qc.invalidateQueries()
+    },
+    onError: (e) => apiErrorToast(e, "Could not update the port"),
+  })
+}
+
 /**
  * Self-contained "mark connected" toggle for uncabled ports: one click
  * records "there IS a cable here, it just isn't documented yet"; one click
@@ -178,19 +200,7 @@ export function MarkConnectedToggle({
    * matching its Edit/Delete siblings. Default is the row icon button. */
   labeled?: boolean
 }) {
-  const qc = useQueryClient()
-  const toggle = useMutation({
-    mutationFn: () =>
-      api(`${endpoint}${portId}/`, {
-        method: "PATCH",
-        body: JSON.stringify({ mark_connected: !marked }),
-      }),
-    onSuccess: () => {
-      toast.success(marked ? "Mark cleared" : "Marked connected")
-      qc.invalidateQueries()
-    },
-    onError: (e) => apiErrorToast(e, "Could not update the port"),
-  })
+  const toggle = useMarkConnected(endpoint, portId, marked)
   if (!canEdit) return null
   if (labeled)
     return (

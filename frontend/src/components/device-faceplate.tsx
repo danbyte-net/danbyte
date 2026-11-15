@@ -58,14 +58,8 @@ import type { PartRef } from "@/components/part-status"
 import { PointerMenu } from "@/components/pointer-menu"
 import { StatusBadge } from "@/components/status-badge"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
-import { CableForm } from "@/components/cable-form"
+import { ConnectCableDialog } from "@/components/connect-cable-dialog"
 import { VlanBadge } from "@/components/cells/vlan-badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { useMe } from "@/lib/use-me"
 import {
   autoLayout,
@@ -2210,27 +2204,13 @@ export function ImagePortsFaceplate({
             }}
           />
         )}
-        {/* In-place cable maker for a clicked free port. Conditionally mounted
-          AND keyed: CableForm seeds initialA at mount only, so a stale mount
-          would keep the previous port. */}
-        <Dialog open={!!connect} onOpenChange={(o) => !o && setConnect(null)}>
-          <DialogContent size="2xl" className="max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                Connect a cable from {deviceName ? `${deviceName}:` : ""}
-                {connect?.name}
-              </DialogTitle>
-            </DialogHeader>
-            {connect && (
-              <CableForm
-                key={connect.id}
-                initialA={[{ kind: connect.kind, id: connect.id }]}
-                onSaved={() => setConnect(null)}
-                onCancel={() => setConnect(null)}
-              />
-            )}
-          </DialogContent>
-        </Dialog>
+        {/* In-place cable maker for a clicked free port (shared with the 3D
+          model viewer's port menu). */}
+        <ConnectCableDialog
+          from={connect}
+          deviceName={deviceName}
+          onClose={() => setConnect(null)}
+        />
       </div>
     </div>
   )

@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import type { QueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
-import type {
-  ModuleBayRow,
-  ModuleTypeOption,
-  ModuleWritePayload,
-  Status,
+import {
+  ApiError,
+  api,
+  type ModuleBayRow,
+  type ModuleTypeOption,
+  type ModuleWritePayload,
+  type Status,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
@@ -132,7 +134,6 @@ function ModuleStatusCell({
 export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
   const { canDo } = useMe()
   const canWrite = canDo("device", "change")
-  const qc = useQueryClient()
   const [installBay, setInstallBay] = useState<ModuleBayRow | null>(null)
   const [removing, setRemoving] = useState<ModuleBayRow | null>(null)
 
@@ -141,35 +142,6 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
     queryFn: () => apiAll<ModuleBayRow>(`/api/module-bays/?device=${deviceId}`),
   })
   const bays = q.data?.results ?? []
-
-  // Removal-side refresh. Install's invalidations live INSIDE
-  // InstallModuleDialog (shared with the 2D faceplate and the 3D room);
-  // removing a module changes the same caches, so this mirrors that list.
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["device-module-bays", deviceId] })
-    qc.invalidateQueries({ queryKey: ["device-modules-faceplate", deviceId] })
-    qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
-    qc.invalidateQueries({
-      predicate: (x) =>
-        typeof x.queryKey[0] === "string" &&
-        x.queryKey[0].includes("interface"),
-    })
-    // Photo/3D bay markers read occupancy from /face-ports/ - an emptied bay
-    // has to go back to its faint outline.
-    qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
-    invalidatePortCounts(qc)
-  }
-
-  const remove = useMutation({
-    mutationFn: (moduleId: string) =>
-      api<void>(`/api/modules/${moduleId}/`, { method: "DELETE" }),
-    onSuccess: () => {
-      invalidate()
-      toast.success("Module removed - its interfaces are gone too")
-      setRemoving(null)
-    },
-    onError: (err) => apiErrorToast(err),
-  })
 
   if (!q.isLoading && !q.isError && bays.length === 0) return null
 
@@ -265,39 +237,103 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
         onOpenChange={(o) => !o && setInstallBay(null)}
       />
 
-      <AlertDialog
-        open={!!removing}
+      <RemoveModuleDialog
+        deviceId={deviceId}
+        target={
+          removing?.module
+            ? {
+                moduleId: removing.module.id,
+                typeName: removing.module.module_type.name,
+                bayName: removing.name,
+              }
+            : null
+        }
         onOpenChange={(o) => !o && setRemoving(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Remove {removing?.module?.module_type.name} from {removing?.name}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              The interfaces this module contributed to the device are removed
-              with it (matched by name).
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={remove.isPending}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={remove.isPending}
-              onClick={(e) => {
-                e.preventDefault()
-                if (removing?.module) remove.mutate(removing.module.id)
-              }}
-            >
-              {remove.isPending ? "Removing…" : "Remove"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      />
     </Section>
   )
+}
+
+/** Everything a seated or removed module changes: the bay list, the
+ * composed faceplate, the stamped interfaces, the photo/3D markers'
+ * occupancy, and the device itself - its effective 3D model lists the
+ * bays' parts, so the assembled model follows. */
+export function invalidateModuleCaches(qc: QueryClient, deviceId: string) {
+  qc.invalidateQueries({ queryKey: ["device-module-bays", deviceId] })
+  qc.invalidateQueries({ queryKey: ["device-modules-faceplate", deviceId] })
+  qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
+  qc.invalidateQueries({
+    predicate: (x) =>
+      typeof x.queryKey[0] === "string" && x.queryKey[0].includes("interface"),
+  })
+  qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
+  qc.invalidateQueries({ queryKey: ["device", deviceId] })
+  invalidatePortCounts(qc)
+}
+
+/** Remove the module in a bay, after a confirm. Shared by the Modules pane
+ * and the 3D model viewer's bay menu: one write, one set of refreshes. */
+export function RemoveModuleDialog({
+  deviceId,
+  target,
+  onOpenChange,
+  onRemoved,
+}: {
+  deviceId: string
+  target: { moduleId: string; typeName: string; bayName: string } | null
+  onOpenChange: (open: boolean) => void
+  onRemoved?: () => void
+}) {
+  const qc = useQueryClient()
+  const remove = useMutation({
+    mutationFn: (moduleId: string) =>
+      api<void>(`/api/modules/${moduleId}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      invalidateModuleCaches(qc, deviceId)
+      toast.success("Module removed - its interfaces are gone too")
+      onRemoved?.()
+      onOpenChange(false)
+    },
+    onError: (err) => apiErrorToast(err),
+  })
+  return (
+    <AlertDialog open={!!target} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Remove {target?.typeName} from {target?.bayName}?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            The interfaces this module contributed to the device are removed
+            with it (matched by name).
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={remove.isPending}>
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={remove.isPending}
+            onClick={(e) => {
+              e.preventDefault()
+              if (target) remove.mutate(target.moduleId)
+            }}
+          >
+            {remove.isPending ? "Removing…" : "Remove"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+/** The module in a bay, for the dialog's replace and edit modes. */
+export interface SeatedModule {
+  id: string
+  module_type: { id: string; name: string }
+  status?: { id: string } | null
+  serial_number: string
 }
 
 /** Install a module into a bay. Exported so the 2D photo faceplate and the 3D
@@ -309,6 +345,9 @@ export function InstallModuleDialog({
   bay,
   onOpenChange,
   onInstalled,
+  seated = null,
+  mode = "install",
+  manufacturerId = null,
 }: {
   deviceId: string
   bay: { id: string; name: string; position?: string } | null
@@ -316,6 +355,13 @@ export function InstallModuleDialog({
   /** Extra refresh work for the host - the module/interface/face-port caches
    * are already invalidated here. */
   onInstalled?: () => void
+  /** The module already in the bay: `replace` swaps its type (the server
+   * re-stamps its interfaces), `edit` changes its status and serial. */
+  seated?: SeatedModule | null
+  mode?: "install" | "replace" | "edit"
+  /** Offer this manufacturer's module types first: the chassis' own. All
+   * types show when it has none. */
+  manufacturerId?: string | null
 }) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
@@ -324,14 +370,21 @@ export function InstallModuleDialog({
   const [statusId, setStatusId] = useState<string | null>(null)
   const [serial, setSerial] = useState("")
   const statuses = useModuleStatuses(!!bay)
+  // The server named interfaces a type swap would drop: saving again
+  // confirms their removal.
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const existing = mode === "install" ? null : seated
 
   useEffect(() => {
     if (!bay) return
-    setModuleTypeId(null)
-    setStatusId(null)
-    setSerial("")
+    setModuleTypeId(existing?.module_type.id ?? null)
+    setStatusId(existing?.status?.id ?? null)
+    setSerial(existing?.serial_number ?? "")
+    setConfirmRemove(false)
     reset()
-  }, [bay, reset])
+    // Keyed on the module's id: a host building `seated` inline must not
+    // wipe what is being typed on every render.
+  }, [bay, existing?.id, reset])
   // The catalog's default for modules, once it has loaded.
   const defaultStatus =
     statuses.data?.results.find((s) => s.default_for.includes("module"))?.id ??
@@ -341,12 +394,39 @@ export function InstallModuleDialog({
   const types = useQuery({
     queryKey: ["module-types-picker"],
     queryFn: () => apiAll<ModuleTypeOption>("/api/module-types/?picker=1"),
-    enabled: !!bay,
+    enabled: !!bay && mode !== "edit",
     staleTime: 10 * 60_000,
   })
+  const ownMake = useQuery({
+    queryKey: ["module-types-picker", { manufacturer: manufacturerId }],
+    queryFn: () =>
+      apiAll<ModuleTypeOption>(
+        `/api/module-types/?picker=1&manufacturer=${manufacturerId}`
+      ),
+    enabled: !!bay && mode !== "edit" && !!manufacturerId,
+    staleTime: 10 * 60_000,
+  })
+  const typeOptions =
+    manufacturerId && ownMake.data?.results.length
+      ? ownMake.data.results
+      : (types.data?.results ?? [])
 
   const install = useMutation({
     mutationFn: () => {
+      if (existing) {
+        const body: Record<string, unknown> = {
+          serial_number: serial.trim(),
+          status_id: pickedStatus,
+        }
+        if (mode === "replace") body.module_type_id = moduleTypeId
+        if (confirmRemove) body.confirm_remove = true
+        return saveObject<{ created_interfaces?: number }>({
+          objectType: "api.module",
+          endpoint: "/api/modules/",
+          id: existing.id,
+          payload: body,
+        })
+      }
       const payload: ModuleWritePayload = {
         device_id: deviceId,
         module_bay_id: bay!.id,
@@ -362,65 +442,79 @@ export function InstallModuleDialog({
     },
     onSuccess: (r) => {
       // Everything a seated module changes, invalidated HERE so every host -
-      // the Modules pane, the 2D faceplate, the 3D room - refreshes the same
-      // way: the bay list, the composed faceplate, the stamped interfaces,
-      // and the photo markers' occupancy.
-      qc.invalidateQueries({ queryKey: ["device-module-bays", deviceId] })
-      qc.invalidateQueries({
-        queryKey: ["device-modules-faceplate", deviceId],
-      })
-      qc.invalidateQueries({ queryKey: ["device-interfaces", deviceId] })
-      qc.invalidateQueries({
-        predicate: (x) =>
-          typeof x.queryKey[0] === "string" &&
-          x.queryKey[0].includes("interface"),
-      })
-      qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
-      invalidatePortCounts(qc)
-      const n = r.created_interfaces ?? 0
-      toast.success(
-        `Module installed${n ? ` - ${n} interface${n === 1 ? "" : "s"} added` : ""}`
-      )
+      // the Modules pane, the 2D faceplate, the 3D room and viewer -
+      // refreshes the same way.
+      invalidateModuleCaches(qc, deviceId)
+      if (mode === "install") {
+        const n = r.created_interfaces ?? 0
+        toast.success(
+          `Module installed${n ? ` - ${n} interface${n === 1 ? "" : "s"} added` : ""}`
+        )
+      } else
+        toast.success(mode === "replace" ? "Module replaced" : "Module saved")
       onInstalled?.()
       onOpenChange(false)
     },
     onError: (err) => {
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
+      if (
+        err instanceof ApiError &&
+        err.status === 400 &&
+        err.body &&
+        typeof err.body === "object" &&
+        "confirm_remove" in err.body
+      )
+        setConfirmRemove(true)
     },
   })
+  const title =
+    mode === "replace"
+      ? `Replace the module in ${bay?.name ?? ""}`
+      : mode === "edit"
+        ? `Edit the module in ${bay?.name ?? ""}`
+        : `Install a module in ${bay?.name ?? ""}`
 
   return (
     <Dialog open={!!bay} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Install a module in {bay?.name}</DialogTitle>
-          <DialogDescription>
-            The module type's interfaces are stamped onto this device -{" "}
-            <code className="font-mono">{"{module}"}</code> in their names
-            resolves to “{bay?.position || "?"}”.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          {mode === "edit" ? (
+            <DialogDescription>{existing?.module_type.name}</DialogDescription>
+          ) : (
+            <DialogDescription>
+              The module type's interfaces are stamped onto this device -{" "}
+              <code className="font-mono">{"{module}"}</code> in their names
+              resolves to “{bay?.position || "?"}”.
+            </DialogDescription>
+          )}
         </DialogHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            if (moduleTypeId) install.mutate()
+            if (moduleTypeId || mode === "edit") install.mutate()
           }}
           className="grid gap-4"
         >
-          <FormCombobox
-            label="Module type"
-            value={moduleTypeId}
-            onChange={setModuleTypeId}
-            placeholder="Pick a module type"
-            searchPlaceholder="Search module types…"
-            emptyText="No module types - import or add them under DCIM → Catalog → Module types."
-            options={(types.data?.results ?? []).map((t) => ({
-              value: t.id,
-              label: t.part_number ? `${t.name} (${t.part_number})` : t.name,
-            }))}
-            error={fieldErrors.module_type_id}
-          />
+          {mode !== "edit" && (
+            <FormCombobox
+              label="Module type"
+              value={moduleTypeId}
+              onChange={(v) => {
+                setModuleTypeId(v)
+                setConfirmRemove(false)
+              }}
+              placeholder="Pick a module type"
+              searchPlaceholder="Search module types…"
+              emptyText="No module types - import or add them under DCIM → Catalog → Module types."
+              options={typeOptions.map((t) => ({
+                value: t.id,
+                label: t.part_number ? `${t.name} (${t.part_number})` : t.name,
+              }))}
+              error={fieldErrors.module_type_id}
+            />
+          )}
           <FormStatusSelect
             value={pickedStatus}
             onChange={setStatusId}
@@ -435,6 +529,11 @@ export function InstallModuleDialog({
             hint="optional"
             error={fieldErrors.serial_number}
           />
+          {confirmRemove && fieldErrors.confirm_remove && (
+            <p className="text-sm text-destructive">
+              {fieldErrors.confirm_remove}
+            </p>
+          )}
           <div className="flex items-center justify-end gap-2">
             <Button
               type="button"
@@ -443,8 +542,21 @@ export function InstallModuleDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!moduleTypeId || install.isPending}>
-              {install.isPending ? "Installing…" : "Install"}
+            <Button
+              type="submit"
+              disabled={(mode !== "edit" && !moduleTypeId) || install.isPending}
+            >
+              {install.isPending
+                ? mode === "install"
+                  ? "Installing…"
+                  : "Saving…"
+                : mode === "install"
+                  ? "Install"
+                  : mode === "edit"
+                    ? "Save"
+                    : confirmRemove
+                      ? "Replace anyway"
+                      : "Replace"}
             </Button>
           </div>
         </form>
