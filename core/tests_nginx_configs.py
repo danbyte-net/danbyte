@@ -203,7 +203,8 @@ class ConfigTextTests(SimpleTestCase):
         self.assertEqual(csp["worker-src"], ["'self'", "blob:"])
         self.assertNotIn("*", " ".join(csp["connect-src"]))
         self.assertNotIn("https:", csp["connect-src"])
-        self.assertEqual(csp["script-src"], ["'self'", "'unsafe-inline'"])
+        self.assertEqual(csp["script-src"],
+                         ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"])
         self.assertNotIn("'unsafe-eval'", found[0])
         from api.site_map_views import OSM_VECTOR_URL
 
