@@ -19,7 +19,7 @@ instead of one per device behind it, and to draw them on the
 
 ## Recording dependencies
 
-Three ways in:
+Four ways in:
 
 - **The device page.** The **Dependencies** tab has **Add upstream** (what
   this device depends on) and **Add dependents** (what depends on it). Pick
@@ -29,6 +29,9 @@ Three ways in:
   import/export.
 - **Import.** A spreadsheet with the columns below
   ([Import & export](../features/import-export.md)).
+- **Suggest from cables and LLDP.** **Suggest…** on the Dependencies list
+  and on a device's Dependencies tab proposes them for you to review. See
+  [Suggest from cables and LLDP](#suggest).
 
 | Field | What it records |
 |---|---|
@@ -56,6 +59,42 @@ Tags and custom fields work as on any other object.
 - A peer link with a redundancy group.
 
 A peer is stored the same way round whichever device you pick first.
+
+## Suggest from cables and LLDP {#suggest}
+
+Cables and LLDP give adjacency but not direction. **Suggest…** reads the
+direction from a **core device** you pick (from a device's tab, that
+device): Danbyte walks outward from it and proposes that each device
+depends on its neighbours one hop closer to the core.
+
+- **What it follows**: cables between two interfaces - through patch
+  panels, as the Topology map collapses them - and, with **LLDP** on, the
+  LLDP neighbours that have no cable. Console and power cables do not
+  count. **Max hops** (8 by default, up to 20) bounds the walk.
+- **Two neighbours at the same distance** from the core are ordered by
+  their ports: when the link's port is an **uplink** on one side only - the
+  interface's *Uplink: Always*, or the
+  [MAC tracking uplink](../features/snmp-discovery.md#uplinks) rules (an LLDP neighbour that
+  is a switch, a LAG, more learned MACs than *Uplink above*; *Never* wins) -
+  that side depends on the other. Neither or both: no proposal.
+- **Medium**: Fibre when a cable on the link is a fibre or AOC type,
+  Ethernet otherwise and for an LLDP-only link (when your catalog still has
+  those two media).
+- **Redundancy**: a device with two or more proposed upstreams at the same
+  distance gets them in one group, `auto-<core name>`.
+- **Already related** pairs (either way, either kind) are skipped and
+  counted.
+
+The proposals come up in a table - downstream, upstream, medium, group,
+evidence (Cable or LLDP, and *Uplink* when the ports set the direction),
+hops and ports. **Nothing is saved** until you tick rows and **Create
+selected**. Each row goes through the ordinary create: a row that would make
+a cycle, or is outside your sites, is refused with its reason and stays in
+the table; the others are saved and leave it.
+
+The walk sees only the devices you may view (a device outside your view is
+a dead end, never walked through), over the cables you may view, in your
+tenant. Suggesting needs view on device dependencies; creating needs add.
 
 ## Redundancy
 
@@ -155,6 +194,8 @@ a cycle is refused with its path; the rest of the file still imports.
 | `GET /api/devices/<id>/impact/?limit=500` | What goes down if the device fails. |
 | `GET /api/device-dependencies/impact/?device=<id>&device=<id>` | The same for several devices failing together. |
 | `/api/dependency-media/` | The media catalog (`?picker=1`). Deleting a medium in use answers 409. |
+| `POST /api/device-dependencies/suggest/` | Proposals from cables and LLDP. Body: `core_device` (id), `max_depth` (1-20, default 8), `use_lldp` (default true), `site` (optional: walk only that site's devices and the core). Answers `core`, `max_depth`, `reached` (devices walked, the core included), `skipped_existing`, `truncated` and `proposals`: `key`, `upstream`, `downstream`, `distance`, `direction` (`distance` or `uplink`), `evidence` (`cable` or `lldp`), `medium_guess`, `medium`, `redundancy_group`, `ports`. Saves nothing. |
+| `POST /api/device-dependencies/suggest/confirm/` | Creates `rows` (up to 2000; each `upstream_id`, `downstream_id`, and optionally `kind`, `medium_id`, `redundancy_group`, `description`) one by one through the ordinary create. Answers `created` and `results`: per row `{index, ok: true, id}` or `{index, ok: false, errors}`. Needs add on device dependencies. |
 | `GET\|POST /api/topology/dependencies/` | The Topology layer: one edge per dependency, `type: "dependency"`, `source` the upstream card (`dev:<id>`), `target` the downstream one, `data` with `dependency_id`, `kind`, `medium`, `redundancy_group`, `description`, `upstream`, `downstream` (names). `?site=` keeps those with an end at that site; `device` (repeat, or comma-separated; a JSON body `{"device": [...]}` with POST) those between the devices named. Needs view on device dependencies (else 403); a row with an end you may not view is left out. |
 | `GET /api/site-map/connections/?include=dependencies` | The Site map layer, see [its API](../features/site-map.md#include-dependencies). |
 

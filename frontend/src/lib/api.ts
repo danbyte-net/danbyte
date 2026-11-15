@@ -19098,6 +19098,43 @@ export interface DependencyTreeEdge {
   description: string
 }
 
+/** One proposal of POST /api/device-dependencies/suggest/. */
+export interface DependencyProposal {
+  /** `<upstream id>:<downstream id>`. */
+  key: string
+  upstream: DependencyEnd
+  downstream: DependencyEnd
+  /** Hops from the core to the downstream. */
+  distance: number
+  /** How the direction was read: one hop closer to the core, or an uplink
+   * port on one side of two devices at one distance. */
+  direction: "distance" | "uplink"
+  evidence: "cable" | "lldp"
+  medium_guess: string
+  medium: DependencyMediumRef | null
+  redundancy_group: string
+  ports: { downstream: string; upstream: string; evidence: "cable" | "lldp" }[]
+}
+
+export interface DependencySuggestion {
+  core: DependencyEnd
+  max_depth: number
+  /** Devices the walk reached, the core included. */
+  reached: number
+  skipped_existing: number
+  truncated: boolean
+  proposals: DependencyProposal[]
+}
+
+/** POST /api/device-dependencies/suggest/confirm/ - one result per row. */
+export interface DependencyConfirmResult {
+  created: number
+  results: (
+    | { index: number; ok: true; id: string }
+    | { index: number; ok: false; errors: Record<string, unknown> }
+  )[]
+}
+
 /** GET /api/devices/<id>/dependencies/. */
 export interface DependencyTree {
   root: DependencyTreeNode

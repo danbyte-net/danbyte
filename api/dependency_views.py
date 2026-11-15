@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import uuid as _uuid
 
+from django.db import transaction
 from django.db.models import Q
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_field
@@ -50,7 +51,7 @@ from . import dependency_impact as di
 from .bulk_edit import BulkEditMixin, BulkEditSpec
 from .cf_search import cf_text_q
 from .dependencies import bump_graph_version, save_dependency
-from .models import DependencyMedium, Device, DeviceDependency
+from .models import DependencyMedium, Device, DeviceDependency, Site
 from .natural import natural
 from .serializers import (
     CustomFieldsSerializerMixin,
@@ -227,6 +228,36 @@ class DeviceDependencySerializer(
         return attrs
 
 
+class SuggestRequestSerializer(serializers.Serializer):
+    core_device = serializers.UUIDField()
+    site = serializers.UUIDField(required=False, allow_null=True)
+    max_depth = serializers.IntegerField(required=False, min_value=1, default=8,
+                                         max_value=20)
+    use_lldp = serializers.BooleanField(required=False, default=True)
+
+
+class ConfirmRowSerializer(serializers.Serializer):
+    upstream_id = serializers.UUIDField()
+    downstream_id = serializers.UUIDField()
+    kind = serializers.ChoiceField(choices=DeviceDependency.KIND_CHOICES, required=False,
+                                   default=DeviceDependency.KIND_DEPENDENCY)
+    medium_id = serializers.UUIDField(required=False, allow_null=True)
+    redundancy_group = serializers.CharField(required=False, allow_blank=True, default="",
+                                             max_length=64)
+    description = serializers.CharField(required=False, allow_blank=True, default="",
+                                        max_length=200)
+
+    def to_internal_value(self, data):
+        out = super().to_internal_value(data)
+        # The create serializer reads ids as text, as the API takes them.
+        return {k: (str(v) if k.endswith("_id") and v is not None else v)
+                for k, v in out.items()}
+
+
+class ConfirmRequestSerializer(serializers.Serializer):
+    rows = ConfirmRowSerializer(many=True, allow_empty=False, max_length=2000)
+
+
 def _uuid_param(params, key):
     raw = params.get(key)
     if not raw:
@@ -246,6 +277,11 @@ class DeviceDependencyViewSet(BulkEditMixin, TenantScopedViewSet):
         .order_by(natural("downstream__name"), natural("upstream__name"))
     )
     serializer_class = DeviceDependencySerializer
+    rbac_action_map = {
+        **BulkEditMixin.rbac_action_map,
+        "suggest": "view",
+        "suggest_confirm": "add",
+    }
     bulk_edit = BulkEditSpec(
         fields=("medium_id", "redundancy_group", "description"), custom_fields=True,
     )
@@ -365,6 +401,74 @@ class DeviceDependencyViewSet(BulkEditMixin, TenantScopedViewSet):
             raise ValidationError({"device": "No device found."})
         limit = di.clamp(request.query_params.get("limit"), di.DEFAULT_LIMIT, di.MAX_LIMIT)
         return Response(di.impact(request.user, tenant, roots, limit))
+
+
+    @extend_schema(
+        request=SuggestRequestSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=False, methods=["post"], url_path="suggest")
+    def suggest(self, request):
+        """Proposed dependencies towards a core device, from cables and LLDP
+        (``api.dependency_suggest``). Reads only: nothing is saved."""
+        from auth_api import rbac
+
+        from . import dependency_suggest as ds
+
+        tenant = self._tenant_or_403()
+        body = SuggestRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        data = body.validated_data
+        core = rbac.restrict_queryset(
+            Device.objects.filter(tenant=tenant, pk=data["core_device"]),
+            request.user, tenant, "device", "view",
+        ).first()
+        if core is None:
+            raise ValidationError({"core_device": "No device found."})
+        site = data.get("site")
+        if site is not None and not rbac.restrict_queryset(
+            Site.objects.filter(tenant=tenant, pk=site), request.user, tenant, "site", "view",
+        ).exists():
+            raise ValidationError({"site": "No site found."})
+        return Response(ds.suggest(
+            request.user, tenant, core, max_depth=data["max_depth"],
+            use_lldp=data["use_lldp"], site=site,
+        ))
+
+    @extend_schema(
+        request=ConfirmRequestSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=False, methods=["post"], url_path="suggest/confirm")
+    def suggest_confirm(self, request):
+        """Create the confirmed proposals, each as its own create: the same
+        serializer, ``save_dependency`` (cycle check), site scope and change
+        log. A refused row is reported with its field errors and the others
+        are saved."""
+        from rest_framework.exceptions import PermissionDenied
+
+        self._tenant_or_403()
+        body = ConfirmRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        results = []
+        created = 0
+        for i, row in enumerate(body.validated_data["rows"]):
+            try:
+                with transaction.atomic():
+                    ser = self.get_serializer(data=row)
+                    ser.is_valid(raise_exception=True)
+                    self.perform_create(ser)
+                    self._assert_write_in_site_scope(Response({"id": ser.instance.pk}), "add")
+            except ValidationError as exc:
+                results.append({"index": i, "ok": False, "errors": exc.detail})
+                continue
+            except PermissionDenied as exc:
+                results.append({"index": i, "ok": False,
+                                "errors": {"detail": [str(exc.detail)]}})
+                continue
+            created += 1
+            results.append({"index": i, "ok": True, "id": str(ser.instance.pk)})
+        return Response({"created": created, "results": results})
 
 
 #: Roots one multi-device impact takes.

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { Plus } from "lucide-react"
+import { Plus, WandSparkles } from "lucide-react"
 
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
@@ -30,6 +30,7 @@ import {
 } from "@/components/device-dependencies/dependency-tree"
 import type { EdgeActions } from "@/components/device-dependencies/dependency-tree"
 import { DeviceImpactPanel } from "@/components/device-dependencies/impact-panel"
+import { SuggestDependenciesDialog } from "@/components/device-dependencies/suggest-dialog"
 
 // A device's Dependencies tab (#450): what it depends on (up) and what
 // depends on it (down) as trees to a depth, its peer links, and "What if
@@ -130,6 +131,7 @@ export function DeviceDependenciesTab({
   const [depth, setDepth] = useState("3")
   const [dialog, setDialog] = useState<DependencyDialogMode | null>(null)
   const [deleting, setDeleting] = useState<DeviceDependency | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
   const q = useQuery({ ...treeQueryOptions(device.id, depth) })
 
   /** The full row behind a tree edge, for the edit and delete dialogs. */
@@ -171,7 +173,16 @@ export function DeviceDependenciesTab({
           onValueChange={setView}
         />
         {view === "tree" && (
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-end gap-2">
+            {canAdd && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSuggesting(true)}
+              >
+                <WandSparkles className="h-3.5 w-3.5" /> Suggest…
+              </Button>
+            )}
             <div className="w-24">
               <FormSelect
                 label="Depth"
@@ -306,6 +317,11 @@ export function DeviceDependenciesTab({
           onOpenChange={(o) => !o && setDialog(null)}
         />
       )}
+      <SuggestDependenciesDialog
+        open={suggesting}
+        onOpenChange={setSuggesting}
+        core={anchor}
+      />
       <DeviceDependencyDeleteDialog
         dependency={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

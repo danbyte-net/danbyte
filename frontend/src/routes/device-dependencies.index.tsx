@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
+import { WandSparkles } from "lucide-react"
 
 import type { DeviceDependency } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
@@ -13,6 +14,7 @@ import {
   DeviceDependencyDialog,
 } from "@/components/device-dependencies/dependency-dialog"
 import { DeviceDependencyDeleteDialog } from "@/components/device-dependencies/dependency-delete-dialog"
+import { SuggestDependenciesDialog } from "@/components/device-dependencies/suggest-dialog"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { TableActions } from "@/components/table-actions"
@@ -23,6 +25,7 @@ import { useUrlSearch } from "@/lib/url-filters"
 // Device dependencies (#450): which device depends on which, over what
 // medium, with redundancy groups and peer links. Add and edit in a dialog;
 // bulk edit covers the medium, group, description, tags and custom fields.
+// Suggest… proposes them from cables and LLDP towards a core device.
 export const Route = createFileRoute("/device-dependencies/")({
   component: DeviceDependenciesPage,
 })
@@ -34,6 +37,7 @@ function DeviceDependenciesPage() {
   const canEdit = canDo("devicedependency", "change")
   const canDelete = canDo("devicedependency", "delete")
   const [adding, setAdding] = useState(false)
+  const [suggesting, setSuggesting] = useState(false)
   const [editing, setEditing] = useState<DeviceDependency | null>(null)
   const [deleting, setDeleting] = useState<DeviceDependency | null>(null)
   const [selected, setSelected] = useState<DeviceDependency[]>([])
@@ -89,7 +93,20 @@ function DeviceDependenciesPage() {
           </Button>
         )
       }
-      actions={<TableActions ioType="devicedependency" />}
+      actions={
+        <>
+          {canAdd && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSuggesting(true)}
+            >
+              <WandSparkles className="h-3.5 w-3.5" /> Suggest…
+            </Button>
+          )}
+          <TableActions ioType="devicedependency" />
+        </>
+      }
       query={query}
     >
       <DataTable
@@ -122,6 +139,10 @@ function DeviceDependenciesPage() {
           onOpenChange={(o) => !o && setEditing(null)}
         />
       )}
+      <SuggestDependenciesDialog
+        open={suggesting}
+        onOpenChange={setSuggesting}
+      />
       <DeviceDependencyDeleteDialog
         dependency={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
