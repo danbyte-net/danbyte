@@ -20,6 +20,7 @@ import {
   imageLedsFromBoxes,
   imagePortsFromAnchors,
   ledSource,
+  openingFromExtras,
 } from "@/lib/model-studio"
 import type {
   Face,
@@ -156,6 +157,8 @@ function collect(root: THREE.Object3D): {
   const ports: PortAnchor[] = []
   const leds: LedBox[] = []
   const up = new THREE.Vector3()
+  const across = new THREE.Vector3()
+  const scale = new THREE.Vector3()
   const p = new THREE.Vector3()
   const visit = (o: THREE.Object3D, bay: string | undefined) => {
     if (!o.visible) return
@@ -166,7 +169,20 @@ function collect(root: THREE.Object3D): {
       o.getWorldPosition(p)
       // A port's local +Y points out of it (api.model_anchors).
       up.set(0, 1, 0).transformDirection(o.matrixWorld)
-      ports.push({ name: a.name, p: vec(p), n: vec(up) })
+      const anchor: PortAnchor = { name: a.name, p: vec(p), n: vec(up) }
+      // The loader keeps a node's glTF extras in userData: the opening's
+      // exact size (export spec v1.4), in the empty's frame - its parents'
+      // scale (the fit included) carries it into room metres, its own not.
+      const op = openingFromExtras(o.userData)
+      if (op) {
+        o.getWorldScale(scale)
+        const sx = Math.abs(scale.x / (o.scale.x || 1))
+        const sz = Math.abs(scale.z / (o.scale.z || 1))
+        across.set(1, 0, 0).transformDirection(o.matrixWorld)
+        anchor.size = [op.w * sx, op.h * sz]
+        anchor.u = vec(across)
+      }
+      ports.push(anchor)
     } else if (a?.kind === "led") {
       const box = new THREE.Box3().setFromObject(o)
       if (!box.isEmpty())

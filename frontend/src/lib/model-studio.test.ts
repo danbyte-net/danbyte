@@ -11,6 +11,8 @@ import {
   imagePortsFromAnchors,
   ledSource,
   nearestFace,
+  openingExtent,
+  openingFromExtras,
   overwriteList,
   portBoxKind,
   projectToFace,
@@ -126,6 +128,34 @@ describe("imagePortsFromAnchors", () => {
     expect(out.unknown).toEqual(["Nope"])
     expect(out.offFace).toEqual(["Up"])
   })
+  it("uses the model's exact opening over the type's box", () => {
+    const out = imagePortsFromAnchors(
+      [
+        {
+          name: "TwentyFiveGigE1/0/1",
+          p: [0, 0.0222, -0.23],
+          n: [0, 0, -1],
+          size: [0.0131, 0.0088],
+          u: [-1, 0, 0],
+        },
+        // Stood on its side: width runs up the face.
+        {
+          name: "GigabitEthernet0/0",
+          p: [0.05, 0.0222, -0.23],
+          n: [0, 0, -1],
+          size: [0.0131, 0.0088],
+          u: [0, 1, 0],
+        },
+      ],
+      index,
+      frame
+    )
+    const [flat, side] = out.doc.front
+    expect(flat.w).toBeCloseTo(0.0131 / 0.4826, 4)
+    expect(flat.h).toBeCloseTo(0.0088 / 0.04445, 4)
+    expect(side.w).toBeCloseTo(0.0088 / 0.4826, 4)
+    expect(side.h).toBeCloseTo(0.0131 / 0.04445, 4)
+  })
   it("drops points outside the frame", () => {
     const out = imagePortsFromAnchors(
       [{ name: "Far", p: [0.5, 0.02, -0.23], n: [0, 0, -1] }],
@@ -214,5 +244,40 @@ describe("never overwrite by hand-made", () => {
       span_mm: 482.6,
       rail: null,
     })
+  })
+})
+
+describe("opening size extras", () => {
+  it("reads danbyte_w / danbyte_h / danbyte_r as the server's scan does", () => {
+    expect(
+      openingFromExtras({
+        danbyte_w: 0.0142,
+        danbyte_h: 0.0095,
+        danbyte_r: 0.0005,
+      })
+    ).toEqual({ w: 0.0142, h: 0.0095, r: 0.0005 })
+    expect(
+      openingFromExtras({ danbyte_w: 0.01, danbyte_h: 0.004, danbyte_r: 1 })
+    ).toEqual({ w: 0.01, h: 0.004, r: 0.002 })
+    expect(openingFromExtras({ danbyte_w: 0.01, danbyte_h: 0.01 })?.r).toBe(0)
+  })
+  it("ignores missing or out-of-range sizes (the table applies)", () => {
+    for (const e of [
+      null,
+      {},
+      { danbyte_w: 0.01 },
+      { danbyte_w: "0.01", danbyte_h: 0.01 },
+      { danbyte_w: 0.01, danbyte_h: -1 },
+      { danbyte_w: 2, danbyte_h: 0.01 },
+    ])
+      expect(openingFromExtras(e)).toBeNull()
+  })
+  it("spans a turned opening's box on the face", () => {
+    expect(openingExtent([1, 0, 0], [0, 0, -1], 0.014, 0.01)).toEqual([
+      0.014, 0.01,
+    ])
+    const [x, y] = openingExtent([0, 1, 0], [0, 0, -1], 0.014, 0.01)
+    expect(x).toBeCloseTo(0.01)
+    expect(y).toBeCloseTo(0.014)
   })
 })

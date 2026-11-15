@@ -40,8 +40,9 @@ const PRESETS: { value: ViewPreset; label: string }[] = [
 
 /**
  * The model with its toolbar - Front / Rear / Top (straight on,
- * orthographic) / 3D (perspective), Fit to re-frame the current view, port
- * markers on or off, fullscreen - for the Overview's "3D model" card and
+ * orthographic) / 3D (perspective), Fit to re-frame the current view,
+ * Ports to outline every port (else only hovered, selected, cabled and
+ * held ones show), fullscreen - for the Overview's "3D model" card and
  * the device Panel's 3D view. `note` sits at the toolbar's end.
  */
 export function ModelViewerFrame({
@@ -58,7 +59,7 @@ export function ModelViewerFrame({
     preset: "front",
     n: 0,
   })
-  const [markers, setMarkers] = useState(true)
+  const [outlineAll, setOutlineAll] = useState(false)
   const [full, setFull] = useState(false)
   useEffect(() => {
     const onChange = () =>
@@ -90,7 +91,10 @@ export function ModelViewerFrame({
           <Scan />
         </BarIconButton>
         {hasPorts && (
-          <BarToggle pressed={markers} onClick={() => setMarkers((m) => !m)}>
+          <BarToggle
+            pressed={outlineAll}
+            onClick={() => setOutlineAll((m) => !m)}
+          >
             Ports
           </BarToggle>
         )}
@@ -114,7 +118,7 @@ export function ModelViewerFrame({
       <Suspense fallback={<Loading className={className} />}>
         <LazyModelViewer
           {...source}
-          markers={markers}
+          outlineAll={outlineAll}
           view={view}
           className={full ? "min-h-0 flex-1" : className}
         />

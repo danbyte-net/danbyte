@@ -957,16 +957,18 @@ Upload the largest faceplate photo you have.
 ### Port markers on 3D models
 
 A floor-placed device whose model has
-[ports mapped onto it](../dcim/device-catalog.md#model-ports) shows them as
-small outlined squares on the model's surface, 8 mm across, facing out of
-it - a thin rim round the port, with a faint wash when it carries a cable,
-so the port itself stays visible:
+[ports mapped onto it](../dcim/device-catalog.md#model-ports) marks them on the model's surface, facing out of it. Each marker is the
+port's opening - the exact size a model's `port:` anchor names
+([port sizes](../dcim/model-packs.md#port-sizes)), else the standard size
+for the port's type - and is quiet: a free port draws nothing until
+hovered, a cabled one a faint wash, a held one a thin amber rim, so the
+port itself stays visible:
 
 - **Colour** is the port's state, as on every faceplate: live SNMP where the
   device is polled (up by its speed, down red, shut grey), else its cable -
   a cabled port by its speed, a free or disabled one grey, a held one
-  amber. A mapped name the device has no component for is dark. Hover
-  lightens the rim; the selected port is outlined in the selection colour.
+  amber. Hover rims and washes the port; the selected port takes the
+  selection colour.
 - **Hover** names the port, its state, the far end of its cable and an
   interface's untagged VLAN. **Click** selects it and opens the room's port
   card - connect, trace the run, open the cable - as a photo port's does.
@@ -978,7 +980,7 @@ so the port itself stays visible:
   model. A port with no mapping falls back to the box's port side, as
   before.
 - **Up close only.** The markers draw within about 3.5 m of the device and
-  go again past 4.5 m, one draw call per device, so a hall of mapped
+  go again past 4.5 m, a few draw calls per device, so a hall of mapped
   devices costs nothing until you walk up to one. A model drawn as its
   bounding box (over the triangle budget) or ghosted by focus shows no
   markers.

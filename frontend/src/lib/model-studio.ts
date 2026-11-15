@@ -150,6 +150,55 @@ export function portBoxKind(
   return "other"
 }
 
+/** The largest opening (m) the size extras may name - a typo guard, as
+ * the server's scan has it (api.model_anchors.MAX_OPENING_M). */
+export const MAX_OPENING_M = 0.5
+
+/**
+ * A `port:` empty's opening from its glTF extras (export spec v1.4):
+ * `danbyte_w` × `danbyte_h` (m, along the empty's local X and Y as seen
+ * from the front) and an optional corner radius `danbyte_r`, capped at half
+ * the short side. Null without both sizes or with one out of range - the
+ * caller falls back to `PORT_BOX_MM`. The same rules as the server's scan.
+ */
+export function openingFromExtras(
+  extras: unknown
+): { w: number; h: number; r: number } | null {
+  if (!extras || typeof extras !== "object") return null
+  const e = extras as Record<string, unknown>
+  const num = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v) ? v : null
+  const w = num(e.danbyte_w)
+  const h = num(e.danbyte_h)
+  if (w == null || h == null) return null
+  if (!(w > 0 && w <= MAX_OPENING_M && h > 0 && h <= MAX_OPENING_M)) return null
+  const r = num(e.danbyte_r)
+  return { w, h, r: r != null && r > 0 ? Math.min(r, w / 2, h / 2) : 0 }
+}
+
+/**
+ * An opening's axis-aligned extent on a face seen along Z (X and Y spans):
+ * `w` along `u` by `h` along `n × u`, however the port is turned. A port
+ * on its side swaps them.
+ */
+export function openingExtent(
+  u: V3,
+  n: V3,
+  w: number,
+  h: number
+): [number, number] {
+  const v: V3 = [
+    n[1] * u[2] - n[2] * u[1],
+    n[2] * u[0] - n[0] * u[2],
+    n[0] * u[1] - n[1] * u[0],
+  ]
+  const lv = Math.hypot(...v) || 1
+  return [
+    Math.abs(u[0]) * w + (Math.abs(v[0]) / lv) * h,
+    Math.abs(u[1]) * w + (Math.abs(v[1]) / lv) * h,
+  ]
+}
+
 /** One `port:` anchor found in the assembled model. */
 export interface PortAnchor {
   /** The port's name, `{module}` already resolved. */
@@ -157,6 +206,11 @@ export interface PortAnchor {
   p: V3
   /** Its outward direction. */
   n: V3
+  /** The opening's exact width × height (m, room frame) from the model's
+   * size extras, and its width axis; absent, the box comes from
+   * `PORT_BOX_MM`. */
+  size?: [number, number]
+  u?: V3
 }
 
 export interface Placed<T> {
@@ -169,8 +223,8 @@ export interface Placed<T> {
 
 /**
  * `image_ports` from the model's port anchors: each projected onto the
- * face it points out of, its box sized by `portBoxKind`, centre-anchored
- * and normalised. `index` names each port's component `[kind, type]`.
+ * face it points out of, its box the model's exact opening (`size`) or,
+ * without one, sized by `portBoxKind`, centre-anchored and normalised. `index` names each port's component `[kind, type]`.
  */
 export function imagePortsFromAnchors(
   anchors: readonly PortAnchor[],
@@ -195,7 +249,12 @@ export function imagePortsFromAnchors(
     const known = index[a.name]
     if (!known) unknown.push(a.name)
     const kind = known?.[0] ?? "interface"
-    const [wmm, hmm] = PORT_BOX_MM[portBoxKind(kind, known?.[1])]
+    // The model's exact opening where it names one, else the type's box.
+    const box = PORT_BOX_MM[portBoxKind(kind, known?.[1])]
+    const [wm, hm] =
+      a.size && a.u
+        ? openingExtent(a.u, a.n, a.size[0], a.size[1])
+        : [box[0] / 1000, box[1] / 1000]
     const { x, y } = projectToFace(a.p, face, frame)
     if (x < 0 || x > 1 || y < 0 || y > 1) {
       offFace.push(a.name)
@@ -206,8 +265,8 @@ export function imagePortsFromAnchors(
       name: a.name,
       x: round5(x),
       y: round5(y),
-      w: round5(clamp01(wmm / 1000 / frame.w)),
-      h: round5(clamp01(hmm / 1000 / frame.h)),
+      w: round5(clamp01(wm / frame.w)),
+      h: round5(clamp01(hm / frame.h)),
     })
   }
   return { doc, unknown, offFace }

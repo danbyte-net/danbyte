@@ -28,7 +28,7 @@ import type { FacePort, Model3DEffective } from "@/lib/api"
 import { faceCamera, faceZoom } from "@/lib/face-camera"
 import { plannedParts } from "@/lib/model-assembly"
 import { useDeviceLeds } from "@/lib/use-device-leds"
-import { MODEL_PORT_SELECTED, PORT_MARKER_M } from "@/lib/model-ports"
+import { MODEL_PORT_SELECTED } from "@/lib/model-ports"
 import type { ModelPortsDoc, V3 } from "@/lib/model-ports"
 
 import {
@@ -102,6 +102,10 @@ export interface ModelViewerProps {
   /** A type: its mapping, drawn neutral. */
   templatePorts?: ModelPortsDoc | null
   markers?: boolean
+  /** Rim every port (the Ports toggle: mapping, inspection) instead of the
+   * quiet default, where only hovered, selected, cabled and held ports
+   * show (lib/port-marker-look). */
+  outlineAll?: boolean
   /** The camera preset; `n` replays the same one. */
   view?: { preset: ViewPreset; n: number }
   /** A click on a port goes here instead of selecting it (a small preview
@@ -120,12 +124,6 @@ export function presetCamera(size: V3): { position: V3; target: V3 } {
     position: [d * 0.45, cy + d * 0.35, -d * 0.85],
     target: [0, cy, 0],
   }
-}
-
-/** A marker's edge (m) for a model of size `size`: the room's 8 mm, more
- * on a large model so they stay findable. */
-export function viewerMarkerM(size: V3): number {
-  return Math.max(PORT_MARKER_M, Math.max(...size) / 90)
 }
 
 type OrbitLike = { target: THREE.Vector3; update: () => void }
@@ -334,7 +332,6 @@ function Fitted({
     [entry.box, fitMode, up, front, w, h, dp]
   )
   const size = useMemo(() => fit.size as V3, [fit])
-  const markerM = viewerMarkerM(size)
   // A device's status LEDs, polled; a type's model shows them dark.
   const leds = useDeviceLeds(props.deviceId ? [props.deviceId] : [])
   const view: { preset: ViewPreset; n: number } = props.view ?? {
@@ -375,7 +372,7 @@ function Fitted({
             selectedPort={
               selection?.kind === "port" ? selection.port.marker : null
             }
-            markerM={markerM}
+            outlineAll={props.outlineAll}
             onSelect={pickers.onSelectPort}
             onMenu={pickers.onPortMenu}
           />
@@ -383,7 +380,7 @@ function Fitted({
           <TemplatePortMarkers
             ports={props.templatePorts.ports}
             size={size}
-            markerM={markerM}
+            outlineAll={props.outlineAll}
           />
         ) : null)}
       {isFaceView(view.preset) ? (

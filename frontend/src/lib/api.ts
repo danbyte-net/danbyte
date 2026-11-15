@@ -3687,6 +3687,12 @@ export interface FacePort {
    * outward normal in the model's upright box. */
   p?: [number, number, number]
   n?: [number, number, number]
+  /** The opening's exact size where the model's `port:` anchor names it
+   * (export spec size extras): width and height as shares of the upright
+   * box's longest edge, `u` its width axis, `r` its corner radius. */
+  s?: [number, number]
+  u?: [number, number, number]
+  r?: number
   /** A mapped interface's untagged VLAN. */
   vlan?: { vlan_id: number; name: string } | null
 }

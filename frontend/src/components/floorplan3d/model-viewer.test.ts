@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  MODEL_PORT_UNDEFINED,
-  PORT_MARKER_M,
-  modelPortHex,
-} from "@/lib/model-ports"
+import { MODEL_PORT_UNDEFINED, modelPortHex } from "@/lib/model-ports"
 
 import { MODEL_PORT_TEMPLATE } from "./device-model-port-markers"
-import { isFaceView, presetCamera, viewerMarkerM } from "./model-viewer"
+import { isFaceView, presetCamera } from "./model-viewer"
 import { STUDIO_LIGHTS } from "./studio"
 
-// The viewer's camera presets, light and marker sizing; its markers are
+// The viewer's camera presets and light; its markers are
 // the room's, coloured by port state.
 
 describe("presetCamera", () => {
@@ -37,13 +33,6 @@ describe("view presets", () => {
     // The room's studio environment is 0.35 (stage.tsx); at full strength
     // shiny cages read near white.
     expect(STUDIO_LIGHTS.environment).toBe(0.35)
-  })
-})
-
-describe("viewerMarkerM", () => {
-  it("is the room's size on a device, larger on a big model", () => {
-    expect(viewerMarkerM([0.44, 0.044, 0.3])).toBe(PORT_MARKER_M)
-    expect(viewerMarkerM([2, 1, 1])).toBeCloseTo(2 / 90)
   })
 })
 

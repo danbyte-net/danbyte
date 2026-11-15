@@ -351,16 +351,23 @@ rack elevation, so every port of a row looks the same - and **3D**, the
 perspective three-quarter view. It opens on **Front**. Orbiting away from
 a face keeps the flat projection (it reads as a drawing; switching to
 perspective mid-drag would jump); pick **3D** for depth. **Fit** re-frames
-the current view, **Ports** shows or hides the
-[mapped ports](device-catalog.md#model-ports) and **Fullscreen** fills
-the screen. The viewer is lit as the 3D room is.
+the current view, **Ports** outlines every
+[mapped port](device-catalog.md#model-ports) - for mapping and checking -
+and **Fullscreen** fills the screen. The viewer is lit as the 3D room is.
 
-Each port is outlined round its opening in its state colour, as on the 2D
-faceplate - live SNMP where the device was polled, else cabled by speed,
-free and disabled grey, a held port amber - with a faint wash on a port
-that carries a cable; the port's own geometry stays visible. Hovering
-lightens the outline and names the port, its far end and VLAN. A click
-selects it (outlined in the selection colour) and shows it in a panel with
+The ports are quiet by default: the model's own cages and jacks and its
+port LEDs show them, so a free port draws nothing until you point at it.
+A port that carries a cable (or is marked connected) gets a faint wash of
+its state colour, as on the 2D faceplate - live SNMP where the device was
+polled, else cabled by speed - and a held port a thin amber rim. **Ports**
+adds a thin rim round every port in its state colour (free and disabled
+grey). Each marker is the port's own opening: a rounded rectangle of
+exactly the size the model names
+([port sizes](model-packs.md#port-sizes)), turned with the port and
+standing just in front of it, else the standard size for the port's type
+(an SFP or QSFP cage, an RJ45 jack). Hovering rims and washes the port and
+names it, its far end and VLAN. A click
+selects it (in the selection colour) and shows it in a panel with
 **Open interface**. A right-click opens its menu: **Open**, **Connect
 cable…**, **Trace cable**, **Disconnect…**, **Reserve…** / **Reservation…**,
 **Mark connected** / **Clear mark** and **Edit**, each the same dialog or

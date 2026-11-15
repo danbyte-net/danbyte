@@ -23,6 +23,12 @@ export interface ModelPort {
   name: string
   p: V3
   n: V3
+  /** Ports placed by a model's anchors may carry the opening's exact size
+   * (api.model_anchors): `s` width × height and `r` corner radius as shares
+   * of the upright box's longest edge, `u` the width axis, unit length. */
+  s?: [number, number]
+  u?: V3
+  r?: number
 }
 
 export interface ModelPortsDoc {

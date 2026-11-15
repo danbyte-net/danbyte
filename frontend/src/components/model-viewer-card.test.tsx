@@ -23,6 +23,7 @@ vi.mock("@/components/floorplan3d/model-viewer", () => ({
     model: { url: string }
     deviceId?: string | null
     markers?: boolean
+    outlineAll?: boolean
     view?: { preset: string }
   }) => (
     <div
@@ -30,6 +31,7 @@ vi.mock("@/components/floorplan3d/model-viewer", () => ({
       data-url={p.model.url}
       data-device={p.deviceId ?? ""}
       data-markers={String(p.markers)}
+      data-outline={String(!!p.outlineAll)}
       data-view={p.view?.preset}
     />
   ),
@@ -76,14 +78,16 @@ describe("ModelViewerCard", () => {
     const viewer = await screen.findByTestId("model-viewer")
     expect(viewer.dataset.url).toBe(MODEL.url)
     expect(viewer.dataset.device).toBe("d1")
-    expect(viewer.dataset.markers).toBe("true")
+    // Markers always draw (pickable); quiet until Ports outlines them all.
+    expect(viewer.dataset.markers).not.toBe("false")
+    expect(viewer.dataset.outline).toBe("false")
     // A face, straight on, first.
     expect(viewer.dataset.view).toBe("front")
     expect(screen.getByText("3D model")).toBeTruthy()
     expect(screen.getByText("From type")).toBeTruthy()
   })
 
-  it("turns the camera and the markers from its toolbar", async () => {
+  it("turns the camera and the port outlines from its toolbar", async () => {
     mount(<ModelViewerCard source={{ model: MODEL, deviceId: "d1" }} />)
     const viewer = await screen.findByTestId("model-viewer")
     fireEvent.click(screen.getByRole("button", { name: "Rear" }))
@@ -95,12 +99,16 @@ describe("ModelViewerCard", () => {
     expect(viewer.dataset.view).toBe("top")
     fireEvent.click(screen.getByRole("button", { name: "3D" }))
     expect(viewer.dataset.view).toBe("iso")
-    fireEvent.click(screen.getByRole("button", { name: "Ports" }))
-    expect(viewer.dataset.markers).toBe("false")
+    const ports = screen.getByRole("button", { name: "Ports" })
+    fireEvent.click(ports)
+    expect(viewer.dataset.outline).toBe("true")
+    expect(viewer.dataset.markers).not.toBe("false")
+    fireEvent.click(ports)
+    expect(viewer.dataset.outline).toBe("false")
     expect(screen.getByRole("button", { name: "Fullscreen" })).toBeTruthy()
   })
 
-  it("offers no markers toggle for a type with nothing mapped", async () => {
+  it("offers no Ports toggle for a type with nothing mapped", async () => {
     mount(<ModelViewerCard source={{ model: MODEL, templatePorts: null }} />)
     await screen.findByTestId("model-viewer")
     expect(screen.queryByRole("button", { name: "Ports" })).toBeNull()
