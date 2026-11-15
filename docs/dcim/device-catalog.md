@@ -499,6 +499,11 @@ sub-tabs with counts. The open sub-tab is part of the URL
 (`?tab=components&sub=power-port`), so you can link someone straight at one
 kind, and reload or back/forward without losing your place.
 
+Device bay, module bay, inventory item, antenna and cooling templates have no
+**type**; their API endpoints neither take nor return one, and ignore a `type`
+sent anyway (before 0.20, adding a device bay template failed with a server
+error).
+
 **Aux ports** are the catch-all for connectors the other kinds don't cover: USB
 (A/B/C/mini/micro), video outputs (HDMI, VGA, DVI, DisplayPort), SD/microSD
 slots, RJ11, audio jacks, grounding lugs, and **RF connectors** (RP-SMA, SMA,

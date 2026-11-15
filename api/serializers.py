@@ -11,6 +11,7 @@ import math
 import os
 import re
 
+from django.core.exceptions import FieldDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q, QuerySet
@@ -5178,6 +5179,19 @@ class _ComponentTemplateSerializer(serializers.ModelSerializer):
         fields = ["id", "device_type_id", "name", "type", "description",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_fields(self):
+        # Bays, inventory items, antennas and cooling templates have no
+        # `type` column; accepting one would reach Model.objects.create() and
+        # 500 (#513), and reading it would raise AttributeError.
+        fields = super().get_fields()
+        model = getattr(self.Meta, "model", None)
+        if model is not None and "type" in fields:
+            try:
+                model._meta.get_field("type")
+            except FieldDoesNotExist:
+                fields.pop("type")
+        return fields
 
 
 class InterfaceTemplateSerializer(_ComponentTemplateSerializer):
