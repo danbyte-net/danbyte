@@ -80,12 +80,17 @@ async function onCanvas(
     path: "/virtual-chassis/$id",
     component: () => <p>chassis page</p>,
   })
+  const clusterPage = createRoute({
+    getParentRoute: () => root,
+    path: "/clusters/$id",
+    component: () => <p>cluster page</p>,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([map, vcPage]),
+    routeTree: root.addChildren([map, vcPage, clusterPage]),
     history: createMemoryHistory({ initialEntries: ["/topology"] }),
   })
   render(<RouterProvider router={router as never} />)
-  await screen.findByText("stack-01")
+  await screen.findByText(d.vc.name)
   await settle()
   return router
 }
@@ -173,6 +178,34 @@ describe("ChassisNode", () => {
       onUnstack: vi.fn(),
     })
     expect(screen.queryByRole("button", { name: "Remove from map" })).toBeNull()
+  })
+
+  it("frames a cluster (#517): its name opens it, Collapse folds it", async () => {
+    const actions: ChassisActions = {
+      onOrient: vi.fn(),
+      onSide: vi.fn(),
+      onUnstack: vi.fn(),
+      onCollapse: vi.fn(),
+    }
+    const router = await onCanvas(
+      data({ vc: { id: "cl1", name: "prod · 2 hosts" }, kind: "cluster" }),
+      true,
+      actions
+    )
+    expect(screen.queryByRole("button", { name: "Unstack" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Collapse" }))
+    expect(actions.onCollapse).toHaveBeenCalledWith("cl1")
+    expect(actions.onUnstack).not.toHaveBeenCalled()
+    expect(screen.getByRole("link", { name: "Open cluster" })).toBeTruthy()
+    const name = screen.getByRole("link", { name: "prod · 2 hosts" })
+    expect(
+      (name.closest(`.${CHASSIS_DRAG_HANDLE}`) as HTMLElement).getAttribute(
+        "data-tip"
+      )
+    ).toBe("2 hosts · 2 cables between them")
+    fireEvent.click(name)
+    await settle()
+    expect(router.state.location.pathname).toBe("/clusters/cl1")
   })
 
   it("says how many members and inner cables it has", () => {

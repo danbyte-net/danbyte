@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { ArrowUpRight, Crosshair } from "lucide-react"
+import { ArrowUpRight, Crosshair, Maximize2 } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
@@ -20,6 +20,7 @@ import { OpenLink } from "@/components/open-link"
 import { PanelRow, PanelSection, PanelShell } from "@/components/map-panel"
 import { Button } from "@/components/ui/button"
 
+import { clusterCardOf } from "./clusters"
 import type { BundleMember } from "./edge-semantics"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import { sharedLag } from "./lag-bundles"
@@ -61,13 +62,73 @@ interface NodePanelProps {
   onFocus: (deviceId: string) => void
   /** The Diagram: the device's own Line row. */
   line?: React.ReactNode
+  /** A cluster drawn as one card (#517): open it into its frame. */
+  onExpandCluster?: (clusterId: string) => void
 }
 
-/** A card's panel: a device's, or a provider network's (#466). */
+/** A card's panel: a device's, a provider network's (#466) or a cluster
+ * drawn as one card's (#517). */
 export function NodePanel(props: NodePanelProps) {
   if (isProviderNetwork(props.data))
     return <ProviderNetworkPanel data={props.data} onClose={props.onClose} />
+  if (clusterCardOf(props.data))
+    return (
+      <ClusterCardPanel
+        data={props.data}
+        onClose={props.onClose}
+        onExpand={props.onExpandCluster}
+      />
+    )
   return <DevicePanel {...props} />
+}
+
+/** A cluster drawn as one card (#517): its hosts on the map, the cables
+ * between them, and the way into the cluster or its frame. */
+export function ClusterCardPanel({
+  data,
+  onClose,
+  onExpand,
+}: {
+  data: TopoNode["data"]
+  onClose: () => void
+  onExpand?: (clusterId: string) => void
+}) {
+  const c = clusterCardOf(data)!
+  return (
+    <PanelShell
+      label="Cluster"
+      title={c.name}
+      onClose={onClose}
+      footer={
+        <>
+          <OpenLink to="/clusters/$id" params={{ id: c.id }}>
+            Open cluster
+          </OpenLink>
+          {onExpand && (
+            <BarButton onClick={() => onExpand(c.id)}>
+              <Maximize2 /> Expand
+            </BarButton>
+          )}
+        </>
+      }
+    >
+      <PanelRow label="Hosts">
+        <span className="num">{c.member_count}</span>
+      </PanelRow>
+      {c.inner > 0 && (
+        <PanelRow label="Cables between hosts">
+          <span className="num">{c.inner}</span>
+        </PanelRow>
+      )}
+      <PanelSection label="On the map">
+        {c.members.map((name, i) => (
+          <div key={`${i}:${name}`} className="truncate py-0.5">
+            {name}
+          </div>
+        ))}
+      </PanelSection>
+    </PanelShell>
+  )
 }
 
 function DevicePanel({

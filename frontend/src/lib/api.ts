@@ -4727,7 +4727,36 @@ export interface TopoNode {
     service_id?: string
     circuit_count?: number
     circuits?: TopoCircuitRef[]
+    /** `group_clusters` only (#517): the cluster this device hosts. */
+    cluster?: { id: string; name: string }
+    /** A cluster drawn as one card (components/topology/clusters.ts). */
+    cluster_card?: TopoClusterCard
   }
+}
+
+/** A cluster on the topology (`group_clusters`, #517): its hosts on the
+ * map and its cables to each other node, counted per far node. */
+export interface TopoCluster {
+  id: string
+  name: string
+  /** Its frame or card node id (`cl:<id>`). */
+  frame: string
+  /** Host node ids, by name. */
+  members: string[]
+  member_count: number
+  /** Cables between its hosts. */
+  inner: number
+  links: { node: string; cable_count: number; edges: string[] }[]
+}
+
+/** What a cluster drawn as one card carries. */
+export interface TopoClusterCard {
+  id: string
+  name: string
+  member_count: number
+  /** Its hosts' names, by name. */
+  members: string[]
+  inner: number
 }
 
 /** A circuit as the topology's provider network nodes and lines name it. */
@@ -5177,6 +5206,8 @@ export interface TopologyGraph {
   edges: TopoEdge[]
   /** Present only when the query asked for an `include`. */
   meta?: TopologyGraphMeta
+  /** `group_clusters` only (#517). */
+  clusters?: TopoCluster[]
 }
 
 export type TopologyInclude = "card" | "link_ips" | "photo"
@@ -5196,6 +5227,9 @@ export interface TopologyQuery {
   tag?: string
   /** Walk patch panels end to end (the server default is on). */
   collapse_panels?: boolean
+  /** Hosts of a cluster carry `cluster`, and the graph `clusters` (#517).
+   * Off by default; ignored with `group_by`. */
+  group_clusters?: boolean
   group_by?: "site" | "location"
   /** Opt-in enrichment; ignored with `group_by`. */
   include?: TopologyInclude[]
@@ -5221,6 +5255,7 @@ function topologyParams(q: TopologyQuery): URLSearchParams {
   if (q.depth !== undefined) p.set("depth", String(q.depth))
   if (q.collapse_panels !== undefined)
     p.set("collapse_panels", q.collapse_panels ? "1" : "0")
+  if (q.group_clusters) p.set("group_clusters", "1")
   if (q.include?.length) p.set("include", q.include.join(","))
   if (q.card_fields) p.set("card_fields", q.card_fields.join(","))
   return p

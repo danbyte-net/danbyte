@@ -9,6 +9,7 @@ import {
   Cable,
   Columns2,
   Layers,
+  Minimize2,
   Rows2,
   Ungroup,
   Crosshair,
@@ -42,7 +43,7 @@ import type { MenuKeys } from "@/components/pointer-menu"
 import { cn } from "@/lib/utils"
 import { COLOR_PRESETS } from "@/components/ui/color-picker"
 import { bandLook } from "./diagram/band-node"
-import { STRIP_SIDE_ITEMS } from "./diagram/chassis-node"
+import { frameTarget, STRIP_SIDE_ITEMS } from "./diagram/chassis-node"
 import { LINE_LOOKS } from "./diagram/line-tabs"
 import type { LineType, Side } from "./diagram/types"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
@@ -101,6 +102,9 @@ export interface DeviceMenuProps {
 /** A virtual chassis' items, on its stack and on its members' cards. */
 export interface ChassisMenu {
   id: string
+  /** A cluster (#517): its card or frame. `orient` null is its card, and
+   * `onUnstack` folds it back into one. */
+  kind?: "cluster"
   /** Drawn as a stack now, top to bottom or left to right; null: its
    * members are apart. */
   orient: "v" | "h" | null
@@ -211,6 +215,7 @@ export function DeviceMenuItems({
  * it was placed, take it off. */
 export function ChassisMenuItems({
   id,
+  kind,
   orient,
   onOrient,
   onUnstack,
@@ -222,8 +227,8 @@ export function ChassisMenuItems({
   return (
     <>
       <DropdownMenuItem asChild>
-        <Link to="/virtual-chassis/$id" params={{ id }}>
-          <ArrowUpRight /> Open virtual chassis
+        <Link to={frameTarget({ kind }).to} params={{ id }}>
+          <ArrowUpRight /> {frameTarget({ kind }).label}
         </Link>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
@@ -241,9 +246,15 @@ export function ChassisMenuItems({
         <DropdownMenuRadioItem value="h">
           <Columns2 /> Left-right
         </DropdownMenuRadioItem>
-        <DropdownMenuRadioItem value="off">
-          <Ungroup /> Unstacked
-        </DropdownMenuRadioItem>
+        {kind === "cluster" ? (
+          <DropdownMenuRadioItem value="off">
+            <Minimize2 /> Collapsed
+          </DropdownMenuRadioItem>
+        ) : (
+          <DropdownMenuRadioItem value="off">
+            <Ungroup /> Unstacked
+          </DropdownMenuRadioItem>
+        )}
       </DropdownMenuRadioGroup>
       {orient && side && onSide && (
         <DropdownMenuSub>

@@ -246,9 +246,11 @@ import {
   chassisNodeId,
   chassisOrient,
   chassisSide,
-  isChassisNode,
+  frameOfData,
+  isFrameNode,
   vcOf,
 } from "@/components/topology/diagram/chassis"
+import { clusterCardOf, collapseClusters } from "@/components/topology/clusters"
 import type {
   ChassisLook,
   ChassisMode,
@@ -395,6 +397,9 @@ export interface TopologySearch {
   /** The Dependencies layer (#450): device dependencies as arrowed lines
    * ("off" by default). */
   deps?: "on" | "off"
+  /** Diagram tab: each cluster's hosts as one card (#517, "off" by
+   * default). */
+  clusters?: "on" | "off"
   /** Levels organiser, encoded by `levels-param.ts`. */
   levels?: string
   /** Focused device + how many hops around it. */
@@ -470,6 +475,8 @@ export const Route = createFileRoute("/topology/map")({
     if (lag) out.lag = lag
     const deps = oneOf(s.deps, DEP_MODES)
     if (deps) out.deps = deps
+    const clusters = oneOf(s.clusters, CLUSTER_MODES)
+    if (clusters) out.clusters = clusters
     const cables = oneOf(s.cables, ROUTINGS)
     if (cables) out.cables = cables
     const mode = oneOf(s.mode, DIAGRAM_MODES)
@@ -673,6 +680,7 @@ const HOPS = [1, 2, 3, 4, 5, 6] as const
 const ROUTINGS = ["routed", "straight", "curved"] as const
 const LAG_MODES = ["on", "off"] as const
 const DEP_MODES = ["on", "off"] as const
+const CLUSTER_MODES = ["on", "off"] as const
 const GROUPS = ["none", "site", "location"] as const
 /** The Diagram tab's switches: the card mode, the line type and the labels
  * the links carry. */
@@ -723,6 +731,8 @@ type ViewFilters = Partial<
     groupBy: GroupBy
     lag: "on" | "off"
     deps: "on" | "off"
+    /** Group clusters (#517). */
+    clusters: "on" | "off"
     devices: string[]
     /** The virtual chassis placed on a hand-picked map. */
     chassis: string[]
@@ -999,6 +1009,13 @@ function TopologyPage() {
     oneOf(vf.deps, DEP_MODES) ?? "off",
     DEP_MODES
   )
+  // Group clusters (#517): each cluster's hosts as one card on the
+  // Diagram, opened into a frame round them like a virtual chassis.
+  const [clustersMode, setClustersMode] = useUrlEnum(
+    "clusters",
+    oneOf(vf.clusters, CLUSTER_MODES) ?? "off",
+    CLUSTER_MODES
+  )
   const [diagramMode, setDiagramMode] = useUrlEnum<DiagramModeParam>(
     "mode",
     dflt.mode,
@@ -1112,8 +1129,11 @@ function TopologyPage() {
     zoneId?: string
     /** A line: a cable, a bundle, an LLDP neighbour, a BGP session. */
     line?: LineTarget
-    /** A virtual chassis' stack (its frame). */
-    stack?: ChassisNodeData
+    /** A virtual chassis' stack (its frame), or a cluster's frame or card
+     * (#517; `orient` null: its card). */
+    stack?: Pick<ChassisNodeData, "vc" | "kind" | "members" | "inner"> & {
+      orient: "v" | "h" | null
+    }
   } | null>(null)
   // The camera shows a part of a map too large to open whole.
   const [partialMap, setPartialMap] = useState(false)
@@ -1237,6 +1257,16 @@ function TopologyPage() {
   // own look (a document edit, one undo step), and on a hand-picked map
   // the chassis placed on it.
   const looksKey = JSON.stringify(doc.doc.chassisLooks)
+  // Group clusters (#517): on the Diagram, off a grouped map. A cluster is
+  // one card until the view opens it (its look's `open`).
+  const clustersOn = clustersMode === "on" && isDiagram && !grouped
+  const openClusters = useMemo(
+    () =>
+      Object.entries(JSON.parse(looksKey) as Record<string, ChassisLook>)
+        .filter(([, look]) => look.open)
+        .map(([id]) => id),
+    [looksKey]
+  )
   const chassisOpts = useMemo<ChassisOptions | undefined>(
     () =>
       isDiagram
@@ -1244,12 +1274,25 @@ function TopologyPage() {
             mode: stackMode,
             looks: JSON.parse(looksKey) as Record<string, ChassisLook>,
             ...(placedKey ? { placed: placedKey.split(",") } : {}),
+            ...(clustersOn ? { clusters: true } : {}),
           }
         : undefined,
-    [isDiagram, stackMode, looksKey, placedKey]
+    [isDiagram, stackMode, looksKey, placedKey, clustersOn]
   )
   const setChassisLook = (vc: string, value: ChassisLook | null) =>
     edit({ type: "setChassisLook", id: vc, value })
+  /** A cluster drawn as one card, or opened into a frame round its hosts
+   * (#517): its look's `open`, one undo step, its side and orientation
+   * kept. */
+  const setClusterOpen = (id: string, open: boolean, orient?: "v" | "h") => {
+    const { open: _was, ...rest } = doc.doc.chassisLooks[id] ?? {}
+    const look: ChassisLook = {
+      ...rest,
+      ...(orient ? { orient } : {}),
+      ...(open ? { open: true } : {}),
+    }
+    setChassisLook(id, Object.keys(look).length ? look : null)
+  }
   /** A chassis' look turned, or drawn apart: its name's side stays. */
   const lookWith = (vc: string, look: ChassisLook): ChassisLook => {
     const looks: Partial<Record<string, ChassisLook>> = doc.doc.chassisLooks
@@ -1264,6 +1307,7 @@ function TopologyPage() {
     onUnstack: (vc) => setChassisLook(vc, lookWith(vc, { off: true })),
     onRemove: (vc) => removeChassis([vc]),
     placed: (vc) => placedChassisSet.has(vc),
+    onCollapse: (cluster) => setClusterOpen(cluster, false),
   }
   const setViewCardLines = (fields: string[] | null) => {
     const next: TopologyDiagramDisplay = { ...diagramDisplay }
@@ -1732,6 +1776,9 @@ function TopologyPage() {
             : {}),
         }
       : {}
+    // Group clusters (#517): the hosts say which cluster they are in.
+    const withClusters =
+      clustersMode === "on" && !grouped ? { group_clusters: true } : {}
     // Builder mode: exactly this set and the placed chassis' members,
     // nothing else.
     if (custom !== null)
@@ -1739,11 +1786,18 @@ function TopologyPage() {
         devices: custom,
         ...(placedKey ? { chassis: placedKey.split(",") } : {}),
         collapse_panels,
+        ...withClusters,
         ...cards,
       }
     if (focus && !grouped)
-      return { device: focus.id, depth: focus.depth, collapse_panels, ...cards }
-    const g: TopologyQuery = { collapse_panels, ...cards }
+      return {
+        device: focus.id,
+        depth: focus.depth,
+        collapse_panels,
+        ...withClusters,
+        ...cards,
+      }
+    const g: TopologyQuery = { collapse_panels, ...withClusters, ...cards }
     if (filters.site !== "all") g.site = filters.site
     if (filters.role !== "all") g.role = filters.role
     if (filters.status !== "all") g.status = filters.status
@@ -1765,6 +1819,7 @@ function TopologyPage() {
     cardFieldsKey,
     linkIps,
     photos,
+    clustersMode,
   ])
   /** Changes exactly when the map does - the canvas refits on a new one.
    * What the cards and links carry (`include`, the card lines) is not a
@@ -1806,10 +1861,13 @@ function TopologyPage() {
       type: "setPositions",
       style: viewStyle,
       positions: p ?? null,
-      // A virtual chassis' stack is seen with its members.
+      // A virtual chassis' stack is seen with its members, a cluster's
+      // frame or card with its hosts (#517) - but the hosts of a cluster
+      // drawn as one card are not on screen, and keep their places.
       seen: q.data?.nodes.flatMap((n) => {
-        const vc = vcOf(n.data)
-        return vc ? [n.id, chassisNodeId(vc.id)] : [n.id]
+        const frame = frameOfData(n.data, clustersOn)
+        if (!frame) return [n.id]
+        return shutCards.has(frame) ? [frame] : [n.id, frame]
       }),
     })
   }
@@ -2057,17 +2115,35 @@ function TopologyPage() {
    * chip's count - a view saved against one filter can carry names the
    * current query never returns, and offering to restore those would be a
    * lie. The Diagram marks the devices it shows as their photos. */
-  const graph = useMemo(
+  const graph = useMemo(() => {
+    if (!fullGraph) return undefined
+    const shown = applyHidden(fullGraph, hidden)
+    return withFaces(
+      // Group clusters (#517): each shut cluster one card.
+      clustersOn ? collapseClusters(shown, new Set(openClusters)) : shown,
+      isDiagram ? diagramFace : "card",
+      isDiagram ? nodeFaces : undefined,
+      diagramAnchor
+    )
+  }, [
+    fullGraph,
+    hidden,
+    isDiagram,
+    diagramFace,
+    nodeFaces,
+    diagramAnchor,
+    clustersOn,
+    openClusters,
+  ])
+  /** The clusters drawn as one card (#517), by node id. */
+  const shutCards = useMemo(
     () =>
-      fullGraph
-        ? withFaces(
-            applyHidden(fullGraph, hidden),
-            isDiagram ? diagramFace : "card",
-            isDiagram ? nodeFaces : undefined,
-            diagramAnchor
-          )
-        : undefined,
-    [fullGraph, hidden, isDiagram, diagramFace, nodeFaces, diagramAnchor]
+      new Set(
+        (graph?.nodes ?? [])
+          .filter((n) => clusterCardOf(n.data))
+          .map((n) => n.id)
+      ),
+    [graph]
   )
   const hiddenHere = fullGraph ? hiddenOnMap(fullGraph, hidden) : 0
   // "What if this fails?" (#450): the device a card's menu asked about, its
@@ -2288,6 +2364,7 @@ function TopologyPage() {
         groupBy,
         lag: lagMode,
         deps: depsMode,
+        clusters: clustersMode,
         ...(withDiagram ? { diagram: diagramDisplay } : {}),
         // The Routing tab's table, the URL's.
         ...(doc.doc.filters.routing !== undefined || routingVrf !== "all"
@@ -2458,6 +2535,7 @@ function TopologyPage() {
   /** Which kind the device list shows on the Diagram. */
   const [paletteKind, setPaletteKind] = useState<PaletteKind>("devices")
   const canSeeChassis = canDo("virtualchassis", "view")
+  const canSeeClusters = canDo("cluster", "view")
   const pendingCards = useMemo(() => {
     if (!pending.size) return []
     const present = new Set((q.data?.nodes ?? []).map((n) => n.id))
@@ -2579,7 +2657,7 @@ function TopologyPage() {
     const saved = doc.doc.positions[placeStyle] ?? {}
     const out: PosMap = {}
     for (const [id, b] of Object.entries(canvas.current?.boxes() ?? {}))
-      if ((id.startsWith("dev:") || isChassisNode(id)) && !(id in saved))
+      if ((id.startsWith("dev:") || isFrameNode(id)) && !(id in saved))
         out[id] = isDiagram ? [b.x + b.w / 2, b.y + b.h / 2] : [b.x, b.y]
     return out
   }
@@ -2919,7 +2997,7 @@ function TopologyPage() {
     if (start === "map" && isDiagram) {
       const at: PosMap = {}
       for (const [id, b] of Object.entries(canvas.current?.boxes() ?? {}))
-        if (id.startsWith("dev:") || isChassisNode(id))
+        if (id.startsWith("dev:") || isFrameNode(id))
           at[id] = [b.x + b.w / 2, b.y + b.h / 2]
       arranged.diagram = at
     }
@@ -2942,6 +3020,7 @@ function TopologyPage() {
         groupBy: "none",
         lag: lagMode,
         deps: depsMode,
+        clusters: clustersMode,
         diagram: diagramDisplay,
       },
       style: "diagram",
@@ -3119,12 +3198,21 @@ function TopologyPage() {
   const chassisMenu = (
     vc: string,
     stacked: "v" | "h" | null,
-    members: readonly string[]
+    members: readonly string[],
+    kind?: "cluster"
   ): ChassisMenu => ({
     id: vc,
+    ...(kind ? { kind } : {}),
     orient: stacked,
-    onOrient: (orient) => setChassisLook(vc, lookWith(vc, { orient })),
-    onUnstack: () => setChassisLook(vc, lookWith(vc, { off: true })),
+    // A cluster (#517) opens into its frame and collapses into its card.
+    onOrient: (orient) =>
+      kind
+        ? setClusterOpen(vc, true, orient)
+        : setChassisLook(vc, lookWith(vc, { orient })),
+    onUnstack: () =>
+      kind
+        ? setClusterOpen(vc, false)
+        : setChassisLook(vc, lookWith(vc, { off: true })),
     ...(stacked
       ? {
           side: chassisSide(vc, chassisOpts, stacked),
@@ -3595,6 +3683,14 @@ function TopologyPage() {
                       onChange={(v) => set({ collapse: !v })}
                       className="items-center pt-1"
                     />
+                    {isDiagram && !grouped && canSeeClusters && (
+                      <FormCheckbox
+                        label="Group clusters"
+                        checked={clustersMode === "on"}
+                        onChange={(v) => setClustersMode(v ? "on" : "off")}
+                        className="items-center pt-1"
+                      />
+                    )}
                     {canSeeDeps && !grouped && (
                       <FormCheckbox
                         label="Dependencies"
@@ -4171,6 +4267,10 @@ function TopologyPage() {
                 onOpenDevice={(id) =>
                   nav({ to: "/devices/$id", params: { id } })
                 }
+                onOpenCluster={(id) => {
+                  clearSel()
+                  setClusterOpen(id, true)
+                }}
                 zones={zones}
                 onZonesChange={isDiagram ? bands.onRegionsChange : setZones}
                 onBandEdit={isDiagram ? bands.edit : undefined}
@@ -4192,7 +4292,22 @@ function TopologyPage() {
                       y,
                       group: node.data as unknown as TopoGroupData,
                     })
-                  else if (
+                  else if (clusterCardOf(node.data)) {
+                    // A cluster drawn as one card (#517): its stack's
+                    // items, collapsed.
+                    const c = clusterCardOf(node.data)!
+                    setMenu({
+                      x,
+                      y,
+                      stack: {
+                        vc: { id: c.id, name: c.name },
+                        kind: "cluster",
+                        orient: null,
+                        members: [],
+                        inner: c.inner,
+                      },
+                    })
+                  } else if (
                     node.type === "device" ||
                     node.type === "flat" ||
                     node.type === "hier" ||
@@ -4323,6 +4438,10 @@ function TopologyPage() {
                 focusDevice(id)
                 setSelNode(null)
               }}
+              onExpandCluster={(id) => {
+                setSelNode(null)
+                setClusterOpen(id, true)
+              }}
               line={
                 isDiagram && !grouped && selNode.device_id ? (
                   <OwnLineTabs
@@ -4410,7 +4529,9 @@ function TopologyPage() {
           menu?.node
             ? "Device"
             : menu?.stack
-              ? "Virtual chassis"
+              ? menu.stack.kind === "cluster"
+                ? "Cluster"
+                : "Virtual chassis"
               : menu?.group
                 ? "Group"
                 : menu?.zoneId
@@ -4437,7 +4558,12 @@ function TopologyPage() {
           if (m.stack)
             return (
               <ChassisMenuItems
-                {...chassisMenu(m.stack.vc.id, m.stack.orient, m.stack.members)}
+                {...chassisMenu(
+                  m.stack.vc.id,
+                  m.stack.orient,
+                  m.stack.members,
+                  m.stack.kind
+                )}
               />
             )
           if (m.zoneId) {

@@ -28,6 +28,12 @@ sync links a VM to an existing host device by node name without setting that
 device's cluster): `GET /api/devices/?cluster=<id>`. Before 0.20 the device
 list ignored `cluster`, so the Hosts tab counted and listed every device.
 
+On the [Topology](topology.md#grouped-clusters) Diagram, **Display ▸ Group
+clusters** draws a cluster's hosts (the same devices) as one card with its
+name and host count, its cables counted per neighbour, and opens it into a
+frame round the hosts the way a virtual chassis stacks. A host that is also
+a virtual chassis member stays in its chassis' stack.
+
 The Clusters list has **SLA** and **Availability** columns, read from the
 cluster's hosts: the agreements its hosts are in, and the checks on their
 addresses. See [Service level agreements](sla.md#on-lists-and-object-pages).

@@ -253,6 +253,8 @@ export interface DiagramModel {
  * members placed round its frame's centre (chassis.ts). */
 export interface ChassisModel {
   vc: { id: string; name: string }
+  /** A cluster's frame (#517); absent for a virtual chassis. */
+  kind?: "cluster"
   orient: ChassisOrient
   /** The side its name strip runs along. */
   side: Side
@@ -2035,6 +2037,8 @@ const REGROW = 4
 /** What a stack's frame node carries (chassis-node.tsx). */
 export interface ChassisNodeData {
   vc: { id: string; name: string }
+  /** A cluster's frame (#517); absent for a virtual chassis. */
+  kind?: "cluster"
   orient: ChassisOrient
   /** The side its name strip runs along. */
   side: Side
@@ -2052,6 +2056,7 @@ export interface ChassisNodeData {
 function chassisNode(id: string, ch: ChassisModel, f: Rect): Node {
   const data: ChassisNodeData = {
     vc: ch.vc,
+    ...(ch.kind ? { kind: ch.kind } : {}),
     orient: ch.orient,
     side: ch.side,
     members: ch.members,
@@ -2176,6 +2181,7 @@ export function buildDiagram(
     if (members.length < 2 && !placedVcs.has(spec.vc.id)) continue
     chassis.set(spec.id, {
       vc: spec.vc,
+      ...(spec.kind ? { kind: spec.kind } : {}),
       orient: spec.orient,
       side: spec.side,
       members,

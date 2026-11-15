@@ -63,6 +63,7 @@ import { ZoomControls } from "./zoom-controls"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { BAND_DRAG_HANDLE, BAND_NODE_CLASS } from "./diagram/band-node"
+import { clusterCardOf } from "./clusters"
 import { collapseChassis, isChassisNode } from "./diagram/chassis"
 import type { ChassisOptions, ChassisOrient } from "./diagram/chassis"
 import { ChassisActionsContext } from "./diagram/chassis-node"
@@ -865,6 +866,9 @@ export interface TopologyCanvasProps {
   /** Double-clicking a device card opens its page (double-click on a group
    * still drills). Disables React Flow's double-click zoom when set. */
   onOpenDevice?: (deviceId: string) => void
+  /** Double-clicking a cluster drawn as one card (#517) opens it into its
+   * frame. */
+  onOpenCluster?: (clusterId: string) => void
   /** Right-click on a node - screen coords + the raw RF node for branching
    * on type (a device card vs a sitegroup). */
   onNodeContext?: (node: Node, x: number, y: number) => void
@@ -1123,6 +1127,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onSelectGroupEdge,
     onDrillGroup,
     onOpenDevice,
+    onOpenCluster,
     onNodeContext,
     onPaneContext,
     onEdgeContext,
@@ -2322,10 +2327,15 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         if (d.group_id) onDrillGroup?.(d)
         return
       }
+      const card = clusterCardOf(node.data)
+      if (card) {
+        onOpenCluster?.(card.id)
+        return
+      }
       const dev = (node.data as { device_id?: string }).device_id
       if (dev) onOpenDevice?.(dev)
     },
-    [onDrillGroup, onOpenDevice]
+    [onDrillGroup, onOpenDevice, onOpenCluster]
   )
   const onEdgeClick = useCallback(
     (_: unknown, edge: Edge) => {

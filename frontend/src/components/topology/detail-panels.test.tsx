@@ -131,6 +131,42 @@ function expectNoDots(el: HTMLElement) {
 }
 
 describe("NodePanel", () => {
+  it("lays out a cluster drawn as one card (#517): hosts, Open, Expand", async () => {
+    const onExpand = vi.fn()
+    const { aside, router } = await show(
+      <NodePanel
+        data={{
+          name: "prod",
+          ports: [],
+          cluster_card: {
+            id: "c1",
+            name: "prod",
+            member_count: 2,
+            members: ["esx-01", "esx-02"],
+            inner: 1,
+          },
+        }}
+        onClose={() => {}}
+        onFocus={() => {}}
+        onExpandCluster={onExpand}
+      />
+    )
+    expect(aside.getAttribute("aria-label")).toBe("Cluster")
+    expect(rowsOf(aside)).toEqual([
+      ["Hosts", "2"],
+      ["Cables between hosts", "1"],
+    ])
+    expect(within(aside).getByText("esx-01")).toBeTruthy()
+    expect(within(aside).getByText("esx-02")).toBeTruthy()
+    expectNoDots(aside)
+    fireEvent.click(within(aside).getByRole("button", { name: /Expand/ }))
+    expect(onExpand).toHaveBeenCalledWith("c1")
+    fireEvent.click(within(aside).getByRole("link", { name: /Open cluster/ }))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/clusters/c1")
+    )
+  })
+
   it("lays out a device: badges, rows, Open device then Focus", async () => {
     const onFocus = vi.fn()
     const { aside, router } = await show(

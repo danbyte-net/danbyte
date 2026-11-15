@@ -666,7 +666,12 @@ export function chassisBands(
       ...f,
       strip: chassisStrip(ch.side, f),
       side: ch.side,
-      link: danbyteUrl(origin, `/virtual-chassis/${ch.vc.id}`),
+      link: danbyteUrl(
+        origin,
+        ch.kind === "cluster"
+          ? `/clusters/${ch.vc.id}`
+          : `/virtual-chassis/${ch.vc.id}`
+      ),
     })
   }
   return out

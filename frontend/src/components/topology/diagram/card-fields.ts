@@ -5,6 +5,7 @@ import type {
   TopoCardValues,
   TopoNode,
 } from "@/lib/api"
+import { hostsText } from "../clusters"
 
 // What a Diagram card says under the device name, and which pill it wears.
 // The server resolves each device's card lines (device, saved view, role,
@@ -176,6 +177,9 @@ function lineText(
       return v.platform?.name ?? ""
     case "role":
       return data.role?.name ?? ""
+    case "hosts":
+      // A cluster drawn as one card (#517, clusters.ts).
+      return data.cluster_card ? hostsText(data.cluster_card.member_count) : ""
     case "site":
       return data.site ?? ""
     case "location":

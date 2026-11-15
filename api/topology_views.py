@@ -26,6 +26,12 @@ chassis, member number and whether it is the master), and a hand-picked map
 (``devices=``) takes ``chassis=``: those chassis' members as they are now.
 ``GET /api/topology/chassis/`` lists the chassis the Diagram can place.
 
+``group_clusters=1`` (#517) puts ``cluster`` on every host of a cluster the
+caller may view - a device whose cluster it is, or one running that
+cluster's VMs - and adds ``clusters``: each cluster's member nodes and its
+cables to other nodes, counted per far node. A virtual chassis member is
+never a cluster host here: its chassis groups it.
+
 A circuit from a site to a provider network adds that network as a node of
 its own and a ``circuit`` edge to it (#466), and a circuit between two sites
 whose ends are both cabled to devices on the map one ``circuit`` edge
@@ -57,10 +63,12 @@ from rest_framework.response import Response
 from .models import (
     Cable,
     CableTermination,
+    Cluster,
     Device,
     FrontPort,
     RearPort,
     VirtualChassis,
+    VirtualMachine,
 )
 from . import topology_provider
 from .natural import natural, natural_key
@@ -1610,6 +1618,124 @@ def _with_chassis(graph, user, tenant):
     return graph
 
 
+# ─── Clusters (#517) ────────────────────────────────────────────────────────
+#
+# A cluster's hosts drawn as one card (or one frame round them) on the
+# Diagram, the way a virtual chassis' members stack. Like a chassis, a
+# cluster is its own RBAC type: its name and hosts reach the map only for a
+# caller who may view it, and only for the hosts they may view as devices
+# (the graph is already bounded to those).
+
+def _cluster_scope(user, tenant):
+    """The clusters the caller may view in ``tenant``: a queryset, or None
+    when they may view none."""
+    cl_q = rbac.row_filter(user, tenant, "cluster", "view")
+    if cl_q is None:
+        return None
+    qs = Cluster.objects.filter(tenant=tenant)
+    return qs if cl_q is True else qs.filter(cl_q)
+
+
+def _cluster_of(tenant, clusters, ids):
+    """``{device id: (cluster id, name)}`` for the hosts among ``ids``: its
+    own cluster first; failing that the one most of its VMs run in, then by
+    name. Two queries."""
+    of = {
+        str(dev): (str(cl), name)
+        for dev, cl, name in Device.objects.filter(
+            tenant=tenant, id__in=ids, cluster__in=clusters
+        ).values_list("id", "cluster_id", "cluster__name")
+    }
+    rest = [i for i in ids if i not in of]
+    if not rest:
+        return of
+    hosted = (
+        VirtualMachine.objects.filter(
+            tenant=tenant, device_id__in=rest, cluster__in=clusters
+        )
+        .values("device_id", "cluster_id", "cluster__name")
+        .annotate(n=Count("id"))
+        .order_by()
+    )
+    best = {}
+    for row in hosted:
+        dev = str(row["device_id"])
+        rank = (-row["n"], natural_key(row["cluster__name"]), str(row["cluster_id"]))
+        if dev not in best or rank < best[dev][0]:
+            best[dev] = (rank, (str(row["cluster_id"]), row["cluster__name"]))
+    of.update({dev: hit for dev, (_rank, hit) in best.items()})
+    return of
+
+
+def _with_clusters(graph, user, tenant):
+    """Put ``cluster: {id, name}`` on every device node that hosts a cluster
+    the caller may view, and ``clusters`` on the graph: per cluster its
+    ``frame`` id (``cl:<id>``), ``members`` (node ids, by name),
+    ``member_count``, ``inner`` (cables between its members) and ``links`` -
+    its cables to each other node, ``{node, cable_count, edges}``, the far
+    node as it is on the map (the page folds two clusters' rows together
+    when both are drawn as cards).
+
+    A member of a virtual chassis on the map (``vc``) is left to its
+    chassis: a device stacks in one frame only, and the chassis is the
+    tighter fact (one control plane) than the cluster it serves."""
+    graph["clusters"] = []
+    clusters = _cluster_scope(user, tenant)
+    nodes = [
+        n for n in graph.get("nodes", ())
+        if n.get("type") == "device" and n["data"].get("device_id")
+        and "vc" not in n["data"]
+    ]
+    if clusters is None or not nodes:
+        return graph
+    of = _cluster_of(tenant, clusters, [n["data"]["device_id"] for n in nodes])
+    groups = {}
+    member_of = {}
+    for n in nodes:
+        hit = of.get(n["data"]["device_id"])
+        if not hit:
+            continue
+        cid, name = hit
+        n["data"]["cluster"] = {"id": cid, "name": name}
+        groups.setdefault(cid, {"name": name, "members": []})["members"].append(n)
+        member_of[n["id"]] = cid
+    if not groups:
+        return graph
+
+    links = {cid: {} for cid in groups}
+    inner = dict.fromkeys(groups, 0)
+    for e in graph.get("edges", ()):
+        a, b = member_of.get(e["source"]), member_of.get(e["target"])
+        if a and a == b:
+            inner[a] += 1
+            continue
+        for cid, far in ((a, e["target"]), (b, e["source"])):
+            if not cid:
+                continue
+            row = links[cid].setdefault(
+                far, {"node": far, "cable_count": 0, "edges": []}
+            )
+            row["cable_count"] += 1
+            row["edges"].append(e["id"])
+
+    out = []
+    for cid, g in groups.items():
+        members = sorted(
+            g["members"], key=lambda n: (natural_key(n["data"]["name"]), n["id"])
+        )
+        out.append({
+            "id": cid,
+            "name": g["name"],
+            "frame": f"cl:{cid}",
+            "members": [n["id"] for n in members],
+            "member_count": len(members),
+            "inner": inner[cid],
+            "links": list(links[cid].values()),
+        })
+    graph["clusters"] = sorted(out, key=lambda c: (natural_key(c["name"]), c["id"]))
+    return graph
+
+
 def _placed_chassis_q(user, tenant, chassis_ids):
     """The devices of the placed chassis (``chassis=``) the caller may view,
     as a filter: members as they are now, so a member added since the map
@@ -1747,6 +1873,17 @@ _GRAPH_400 = OpenApiResponse(
             ),
         ),
         OpenApiParameter(
+            name="group_clusters",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "'1': put `cluster` on the hosts of the clusters the caller "
+                "may view and add `clusters` (members, cables between them, "
+                "cables to other nodes per far node). Default off. A "
+                "virtual chassis member is left to its chassis."
+            ),
+        ),
+        OpenApiParameter(
             name="include",
             type=OpenApiTypes.STR,
             location=OpenApiParameter.QUERY,
@@ -1793,6 +1930,7 @@ _GRAPH_400 = OpenApiResponse(
             "status": serializers.UUIDField(required=False),
             "tag": serializers.CharField(required=False),
             "collapse_panels": serializers.BooleanField(required=False),
+            "group_clusters": serializers.BooleanField(required=False),
             "group_by": serializers.ChoiceField(
                 choices=["site", "location"], required=False
             ),
@@ -1826,6 +1964,7 @@ def topology_view(request):
 
     p = _query_params(request)
     collapse = _flag_param(p, "collapse_panels")
+    group_clusters = _flag_param(p, "group_clusters", default=False)
     # Every id is parsed before any query: a malformed one is a 400, even in
     # a mode that ignores it.
     focus = _uuid_param(p, "device")
@@ -1886,6 +2025,10 @@ def topology_view(request):
         collect=collect,
     )
     _with_chassis(graph, request.user, tenant)
+    # Clusters (#517): after the chassis, which take precedence, and before
+    # the provider networks, so a cluster's links count cables only.
+    if group_clusters:
+        _with_clusters(graph, request.user, tenant)
     if include:
         from .topology_enrich import enrich
 

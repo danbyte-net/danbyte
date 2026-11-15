@@ -442,6 +442,38 @@ describe("ChassisMenuItems", () => {
     expect(p.onUnstack).toHaveBeenCalledOnce()
   })
 
+  it("opens a cluster (#517) into its frame, or collapses it to its card", async () => {
+    const p = stack({
+      id: "cl1",
+      kind: "cluster",
+      orient: null,
+      onHide: undefined,
+    })
+    await openMenu(<ChassisMenuItems {...p} />)
+    expect(rows()).toEqual(["Open cluster", "--"])
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Open cluster" })
+        .getAttribute("href")
+    ).toBe("/clusters/cl1")
+    const radios = screen.getAllByRole("menuitemradio")
+    expect(radios.map((r) => r.textContent.trim())).toEqual([
+      "Top-down",
+      "Left-right",
+      "Collapsed",
+    ])
+    expect(radios[2].getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(radios[1])
+    expect(p.onOrient).toHaveBeenCalledWith("h")
+  })
+
+  it("collapses an open cluster from its frame's menu", async () => {
+    const p = stack({ id: "cl1", kind: "cluster" })
+    await openMenu(<ChassisMenuItems {...p} />)
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Collapsed" }))
+    expect(p.onUnstack).toHaveBeenCalledOnce()
+  })
+
   it("opens the chassis page as a router link", async () => {
     const { router } = await openMenu(<ChassisMenuItems {...stack()} />)
     fireEvent.click(
