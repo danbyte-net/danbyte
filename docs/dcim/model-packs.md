@@ -61,7 +61,27 @@ The models name the nodes Danbyte reads, exactly, in the glTF file:
 | `led:<id>`, `led:port:<interface name>` | A status light: its own mesh, with the material `LED`. |
 
 A module's origin is its mount point: the centre of the bottom edge of its
-front face. Bay names must equal the type's module bay names and port names
+front face.
+
+### Port sizes
+
+A `port:` empty may carry the exact size of its opening as custom
+properties, exported as glTF node `extras` (export spec v1.4):
+
+| Extra | Meaning |
+|---|---|
+| `danbyte_w` | The opening's width in metres, along the empty's local X as seen from the front. |
+| `danbyte_h` | Its height in metres, along the empty's local Y. |
+| `danbyte_r` | Optional corner radius in metres, capped at half the short side. |
+
+Measure the cage or jack mouth, not the cage body. The scan stores the
+size with the port's anchor, its parents' scale applied (the empty's own
+display size is not), along with the opening's width axis. The 3D viewer
+and the room draw each port marker as a rounded rectangle exactly that
+size, turned with the empty, and generated photo ports use it for their
+box. A port with no size, or a size above 0.5 m, uses the standard size
+for its port type instead. A module's ports keep their size through the
+bay's pose. Bay names must equal the type's module bay names and port names
 its interface names, character for character.
 
 ## What Danbyte does with them
@@ -110,9 +130,10 @@ viewer - and shows what it made before anything is stored:
   little above. It shows beside the title on the type's and its devices'
   pages and in spec sheets and PDF reports.
 - **Photo ports**: every `port:` node is placed on the face it points out
-  of, as a [photo port](device-catalog.md#photo-ports). Its box is sized
-  from the component's type: an SFP, QSFP or OSFP cage, an RJ45 jack, a USB
-  port, a power inlet and so on. `{module}` in a module's port becomes the
+  of, as a [photo port](device-catalog.md#photo-ports). Its box is the
+  opening the model names ([port sizes](#port-sizes)), else sized from the
+  component's type: an SFP, QSFP or OSFP cage, an RJ45 jack, a USB port, a
+  power inlet and so on. `{module}` in a module's port becomes the
   bay's position. A name that matches no component is placed as an
   interface and listed in the dialog's notes.
 - **LEDs**: every `led:` node is placed on the face it sits on, with its own

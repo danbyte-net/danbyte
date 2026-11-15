@@ -897,6 +897,10 @@ upright size, JSON `[w, h, d]`) to keep the mapping; the server keeps it only
 when the proportions match. Each device's `face-ports/` answer lists the
 mapped ports under `model`, resolved to the device's real components like
 photo markers, with their `p` and `n` and an interface's untagged VLAN.
+Ports a model's anchors place may also carry their opening's exact size
+([port sizes](model-packs.md#port-sizes)): `s` (`[w, h]`) and `r` (corner
+radius) as shares of the upright box's longest edge, and `u`, the
+opening's width axis - in the `effective` mapping and in `face-ports/`.
 
 ## Device bays (chassis nesting)
 

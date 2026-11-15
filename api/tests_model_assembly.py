@@ -42,6 +42,26 @@ class PortDocTests(SimpleTestCase):
         self.assertEqual(back["n"], [0.0, 0.0, 1.0])
         self.assertAlmostEqual(back["p"][0], (0.22 - 0.17 + 0.01) / 0.44, places=4)
 
+    def test_opening_sizes_ride_along_through_the_bay(self):
+        from .model_3d import validate_glb
+
+        owner = self.Owner()
+        owner.model_anchors, _ = scan(validate_glb(chassis(sizes=True)))
+        mod, _ = scan(validate_glb(module_glb(sizes=True)))
+        doc = port_doc(owner, [("PS-0", lambda n: n.replace("{module}", "2"), mod)])
+        ports = {p["name"]: p for p in doc["ports"]}
+        longest = 0.45
+        front = ports["Te1/0/1"]
+        self.assertEqual(front["s"], [round(0.0142 / longest, 6), round(0.0095 / longest, 6)])
+        self.assertEqual(front["r"], round(0.0005 / longest, 6))
+        # Front +z turns half round about Y: the width axis flips with it.
+        self.assertEqual(front["u"], [-1.0, 0.0, 0.0])
+        back = ports["Te1/2/1"]
+        self.assertEqual(back["s"], [round(0.019 / longest, 6), round(0.0095 / longest, 6)])
+        self.assertNotIn("r", back)
+        # The rear bay turns the module half round as well: back to +X.
+        self.assertEqual(back["u"], [1.0, 0.0, 0.0])
+
     def test_nothing_without_ports(self):
         owner = self.Owner()
         owner.model_anchors = {"box": [[0, 0, 0], [1, 1, 1]], "ports": {}}
@@ -83,6 +103,19 @@ class InstalledPartsTests(_Base):
         doc = effective_model_ports(Device.objects.get(pk=self.dev.pk))
         names = sorted(p["name"] for p in doc["ports"])
         self.assertEqual(names, ["Te1/0/1", "Te1/0/2", "Te1/1/1"])
+
+    def test_face_ports_carry_the_opening_size(self):
+        self._upload(f"/api/device-types/{self.dt.id}/model/", chassis(sizes=True))
+        fp = self.client.get(f"/api/devices/{self.dev.id}/face-ports/").json()
+        port = next(p for p in fp["model"] if p["name"] == "Te1/0/1")
+        self.assertEqual(port["s"], [round(0.0142 / 0.45, 6), round(0.0095 / 0.45, 6)])
+        self.assertIn("u", port)
+        self.assertIn("r", port)
+
+    def test_face_ports_without_sizes_have_none(self):
+        fp = self.client.get(f"/api/devices/{self.dev.id}/face-ports/").json()
+        port = next(p for p in fp["model"] if p["name"] == "Te1/0/1")
+        self.assertNotIn("s", port)
 
     def test_hand_mapped_ports_give_way_to_anchors(self):
         from .model_ports import effective_model_ports

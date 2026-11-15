@@ -281,6 +281,12 @@ class FacePortLoader:
         model = self._resolve(device, mapped, peer, with_vlan=True)
         for entry, m in zip(model, mapped, strict=False):
             entry["p"], entry["n"] = m.get("p"), m.get("n")
+            # The opening's exact size where the model's anchors name it
+            # (api.model_anchors): ``s``/``r`` shares of the longest edge,
+            # ``u`` the width axis.
+            for key in ("s", "u", "r"):
+                if key in m:
+                    entry[key] = m[key]
         # Power components no photo marker covers still have to be clickable
         # and cable-able in the 3D room (a PDU strip has no photo at all, and
         # many rear photos never got their inlets marked). Emit them as

@@ -22,7 +22,7 @@ from audit.models import ChangeLogEntry
 from auth_api.models import ObjectPermission, UserProfile
 from core.models import Organization, Tenant
 
-from .model_anchors import mismatches, scan, summary
+from .model_anchors import mismatches, opening, opening_extent, scan, summary
 from .models import (
     Device,
     DeviceType,
@@ -71,10 +71,24 @@ def model(nodes: list[dict], *, roots=None, materials=("Metal", "LED")) -> bytes
     return glb(doc)
 
 
-def chassis() -> bytes:
+#: An SFP cage mouth as the export spec's v1.4 extras name it (m).
+SFP_EXTRAS = {"danbyte_w": 0.0142, "danbyte_h": 0.0095, "danbyte_r": 0.0005}
+
+
+def chassis(*, sizes: bool = False) -> bytes:
     """A 1U chassis: a body box, two rear bays with covers (gltfpack -kn
-    style: the cover's mesh on a child), two front ports, two LEDs."""
-    return model([
+    style: the cover's mesh on a child), two front ports, two LEDs.
+    ``sizes`` gives the ports their opening-size extras."""
+    nodes = _chassis_nodes()
+    if sizes:
+        for n in nodes:
+            if n.get("name", "").startswith("port:"):
+                n["extras"] = dict(SFP_EXTRAS)
+    return model(nodes)
+
+
+def _chassis_nodes() -> list[dict]:
+    return ([
         {"name": "Shell", "mesh": "Metal", "scale": [0.44, 0.044, 0.45],
          "translation": [0, 0.022, -0.225]},                                       # 0
         {"name": "bay:PS-0", "translation": [0.17, 0.0015, -0.45], "rotation": HALF_TURN},
@@ -94,13 +108,17 @@ def chassis() -> bytes:
     ])
 
 
-def module_glb() -> bytes:
+def module_glb(*, sizes: bool = False) -> bytes:
     """A network module: origin at its front's bottom centre, one port with
-    the ``{module}`` token, depth toward -Z."""
+    the ``{module}`` token, depth toward -Z (``sizes``: with size extras)."""
+    port = {"name": "port:Te1/{module}/1", "translation": [0.01, 0.02, 0],
+            "rotation": OUT_FRONT}
+    if sizes:
+        port["extras"] = {"danbyte_w": 0.019, "danbyte_h": 0.0095}
     return model([
         {"name": "Body", "mesh": "Metal", "scale": [0.06, 0.04, 0.3],
          "translation": [0, 0.02, -0.15]},
-        {"name": "port:Te1/{module}/1", "translation": [0.01, 0.02, 0], "rotation": OUT_FRONT},
+        port,
         {"name": "led:STATUS", "children": [3]},
         {"mesh": "LED", "scale": [0.002, 0.002, 0.001]},
     ])
@@ -135,6 +153,56 @@ class ScanTests(SimpleTestCase):
         port = anchors["ports"]["Te1/0/1"]
         self.assertEqual(port["p"], [-0.2, 0.03, 0.0])
         self.assertEqual([round(x, 4) for x in port["n"]], [0.0, 0.0, 1.0])
+
+    def test_port_without_size_extras_has_no_size(self):
+        anchors, _ = self._scan(chassis())
+        self.assertNotIn("s", anchors["ports"]["Te1/0/1"])
+        self.assertIsNone(opening(anchors["ports"]["Te1/0/1"]))
+
+    def test_port_size_extras(self):
+        anchors, _ = self._scan(chassis(sizes=True))
+        port = anchors["ports"]["Te1/0/1"]
+        self.assertEqual(port["s"], [0.0142, 0.0095])
+        self.assertEqual(port["r"], 0.0005)
+        # Width along the empty's local X: the model's +X here.
+        self.assertEqual([round(x, 4) for x in port["u"]], [1.0, 0.0, 0.0])
+        w, h, r, u, n = opening(port)
+        self.assertEqual((w, h, r), (0.0142, 0.0095, 0.0005))
+        self.assertAlmostEqual(sum(a * b for a, b in zip(u, n, strict=True)), 0.0)
+
+    def test_parents_scale_counts_the_empties_own_does_not(self):
+        anchors, _ = self._scan(model([
+            {"name": "Root", "scale": [2, 2, 2], "children": [1]},
+            {"name": "port:Gi1", "scale": [5, 5, 5], "rotation": OUT_FRONT,
+             "extras": {"danbyte_w": 0.01, "danbyte_h": 0.005, "danbyte_r": 0.001}},
+        ]))
+        port = anchors["ports"]["Gi1"]
+        self.assertEqual(port["s"], [0.02, 0.01])
+        self.assertEqual(port["r"], 0.002)
+
+    def test_bad_size_extras_are_ignored(self):
+        for extras in ({"danbyte_w": 0.01}, {"danbyte_w": 0.01, "danbyte_h": -1},
+                       {"danbyte_w": True, "danbyte_h": 0.01},
+                       {"danbyte_w": "0.01", "danbyte_h": 0.01},
+                       {"danbyte_w": 2.0, "danbyte_h": 0.01}, "big"):
+            anchors, _ = self._scan(model([
+                {"name": "port:Gi1", "rotation": OUT_FRONT, "extras": extras}]))
+            self.assertNotIn("s", anchors["ports"]["Gi1"], extras)
+
+    def test_radius_is_capped_at_half_the_short_side(self):
+        anchors, _ = self._scan(model([
+            {"name": "port:Gi1", "rotation": OUT_FRONT,
+             "extras": {"danbyte_w": 0.01, "danbyte_h": 0.004, "danbyte_r": 0.05}}]))
+        self.assertEqual(anchors["ports"]["Gi1"]["r"], 0.002)
+
+    def test_opening_extent_follows_a_turned_port(self):
+        # Facing out along +Z: straight on, width along X.
+        self.assertEqual(opening_extent([1, 0, 0], [0, 0, 1], 0.014, 0.0095),
+                         (0.014, 0.0095))
+        # A port stood on its side: width runs up the face.
+        ex, ey = opening_extent([0, 1, 0], [0, 0, 1], 0.014, 0.0095)
+        self.assertAlmostEqual(ex, 0.0095)
+        self.assertAlmostEqual(ey, 0.014)
 
     def test_box_covers_every_mesh_through_its_transforms(self):
         anchors, _ = self._scan(chassis())

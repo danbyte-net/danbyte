@@ -23,9 +23,22 @@ its own plus its descendants'.
      "box": [[minx, miny, minz], [maxx, maxy, maxz]],   # every mesh, as authored
      "bays": {"PS-0": {"node": 75, "m": [16 numbers, row-major]}},
      "empties": {"PS-0": 82},
-     "ports": {"Te1/0/1": {"node": 145, "p": [x, y, z], "n": [x, y, z]}},
+     "ports": {"Te1/0/1": {"node": 145, "p": [x, y, z], "n": [x, y, z],
+                           "s": [w, h], "r": r, "u": [x, y, z]}},
      "leds": {"SYS": {"node": 139, "led_material": true}},
      "empty_mode": "filler"}          # from a pack's YAML, kept on rescans
+
+A port empty may carry its opening's exact size as glTF node ``extras``
+(export spec v1.4): ``danbyte_w`` and ``danbyte_h``, the opening's width
+and height in metres along the empty's local X and Y as seen from the
+front (Blender's X / Y; glTF's X / Z after the +Y-up conversion), and an
+optional corner radius ``danbyte_r``. The scan stores them as ``s`` and
+``r`` in model units (the parents' scale applied, the empty's own not) with
+``u``, the opening's width axis (local +X) in the model frame. Everything
+that sizes a port box - the 3D markers (via ``port_doc``) and a face
+image's ``image_ports`` (``opening`` / ``opening_extent``) - reads them
+from here: one reader of the extras. A port without them has no ``s`` and
+falls back to the standard size for its type.
 
 ``port_doc`` builds the ``model_ports`` doc (api.model_ports) a device's
 drawn model gets from these anchors: the chassis' ports plus each installed
@@ -39,6 +52,8 @@ ANCHORS_VERSION = 1
 PREFIXES = ("bay:", "empty:", "port:", "led:")
 EMPTY_MODES = ("filler", "hole", "nothing")
 LED_MATERIAL = "LED"
+#: The largest port opening (m) the size extras may name - a typo guard.
+MAX_OPENING_M = 0.5
 #: Warnings listed in an upload's answer at most; the rest are counted.
 MAX_WARNINGS = 40
 
@@ -99,6 +114,14 @@ def unit(v):
     if length < 1e-12:
         return [0.0, 0.0, 1.0]
     return [x / length for x in v]
+
+
+def cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def _length(v) -> float:
+    return math.sqrt(sum(x * x for x in v))
 
 
 def flat(m) -> list:
@@ -219,6 +242,70 @@ def _materials_under(doc: dict, i: int) -> set[str]:
     return out
 
 
+def _extra(extras: dict, key: str):
+    v = extras.get(key)
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    return float(v)
+
+
+def _opening(node: dict, m) -> dict | None:
+    """A port empty's opening from its ``danbyte_w`` / ``danbyte_h`` /
+    ``danbyte_r`` extras, in model units: ``{"s": [w, h], "r": r, "u":
+    width axis}``. None without both sizes, or with one out of range."""
+    extras = node.get("extras")
+    if not isinstance(extras, dict):
+        return None
+    w, h = _extra(extras, "danbyte_w"), _extra(extras, "danbyte_h")
+    if w is None or h is None or not (0 < w <= MAX_OPENING_M and 0 < h <= MAX_OPENING_M):
+        return None
+    r = _extra(extras, "danbyte_r")
+    # The extras are in the empty's own frame; its parents' scale carries
+    # them into model units, its own scale (an empty's display size) not.
+    local = node_matrix(node)
+    own_x = _length([local[k][0] for k in range(3)]) or 1.0
+    own_z = _length([local[k][2] for k in range(3)]) or 1.0
+    wx = apply_dir(m, [1, 0, 0])
+    hz = apply_dir(m, [0, 0, 1])
+    sw, sh = _length(wx) / own_x, _length(hz) / own_z
+    if sw < 1e-12 or sh < 1e-12:
+        return None
+    out = {"s": [round(w * sw, 7), round(h * sh, 7)],
+           "u": [round(x, 5) for x in unit(wx)]}
+    if r is not None and r > 0:
+        out["r"] = round(min(r, w / 2, h / 2) * min(sw, sh), 7)
+    return out
+
+
+def opening(anchor) -> tuple[float, float, float, list, list] | None:
+    """A stored port anchor's opening: ``(w, h, r, u, n)`` in model units -
+    width, height, corner radius, width axis, outward normal - or None when
+    the model gave no size (the caller's per-type table applies)."""
+    if not isinstance(anchor, dict):
+        return None
+    s = anchor.get("s")
+    if not (isinstance(s, list) and len(s) == 2):
+        return None
+    w, h = _num(s[0]), _num(s[1])
+    if w <= 0 or h <= 0:
+        return None
+    n = unit(_vec(anchor.get("n"), 3, (0.0, 0.0, 1.0)))
+    u = _vec(anchor.get("u"), 3, (1.0, 0.0, 0.0))
+    # Keep the width axis in the opening's plane.
+    d = sum(a * b for a, b in zip(u, n, strict=False))
+    u = unit([a - d * b for a, b in zip(u, n, strict=False)])
+    return w, h, max(0.0, _num(anchor.get("r"))), u, n
+
+
+def opening_extent(u, n, w: float, h: float) -> tuple[float, float]:
+    """The opening's axis-aligned extent on a face seen along Z (its X and
+    Y spans): a rectangle ``w`` along ``u`` by ``h`` along ``n × u``, turned
+    however the port is. A face image's ``image_ports`` box is this over the
+    face frame (with ``u``/``n`` in the frame the face is projected in)."""
+    v = unit(cross(n, u))
+    return (abs(u[0]) * w + abs(v[0]) * h, abs(u[1]) * w + abs(v[1]) * h)
+
+
 def scan(doc: dict) -> tuple[dict, list[str]]:
     """The anchors of a parsed glTF JSON (``api.model_3d.validate_glb``'s
     result), and warnings about the names themselves (duplicates, LEDs
@@ -250,6 +337,7 @@ def scan(doc: dict) -> tuple[dict, list[str]]:
                 "node": i,
                 "p": [round(x, 6) for x in apply_point(m, [0, 0, 0])],
                 "n": [round(x, 5) for x in unit(apply_dir(m, [0, 1, 0]))],
+                **(_opening(nodes[i], m) or {}),
             }
         else:
             mats = _materials_under(doc, i)
@@ -396,7 +484,17 @@ def _port_points(anchors):
     for name, a in (ports.items() if isinstance(ports, dict) else ()):
         if isinstance(a, dict):
             yield (str(name), _vec(a.get("p"), 3, (0.0, 0.0, 0.0)),
-                   _vec(a.get("n"), 3, (0.0, 0.0, 1.0)))
+                   _vec(a.get("n"), 3, (0.0, 0.0, 1.0)), opening(a))
+
+
+def posed_opening(m, op):
+    """An ``opening`` carried through a transform ``m`` (a module's bay)."""
+    if op is None:
+        return None
+    w, h, r, u, n = op
+    v = unit(cross(n, u))
+    su, sv = _length(apply_dir(m, u)), _length(apply_dir(m, v))
+    return w * su, h * sv, r * min(su, sv), unit(apply_dir(m, u)), unit(apply_dir(m, n))
 
 
 def port_doc(owner, parts) -> dict | None:
@@ -409,17 +507,18 @@ def port_doc(owner, parts) -> dict | None:
     box = anchors.get("box")
     if not (isinstance(box, list) and len(box) == 2):
         return None
-    points: list[tuple[str, list, list]] = []
-    for name, p, n in _port_points(anchors):
-        points.append((name, p, n))
+    points: list[tuple[str, list, list, tuple | None]] = []
+    for name, p, n, op in _port_points(anchors):
+        points.append((name, p, n, op))
     bays = anchors.get("bays") or {}
     for bay_name, render, mod in parts:
         bay = bays.get(bay_name)
         if not isinstance(bay, dict):
             continue
         m = unflat(bay.get("m"))
-        for name, p, n in _port_points(mod):
-            points.append((render(name), apply_point(m, p), apply_dir(m, n)))
+        for name, p, n, op in _port_points(mod):
+            points.append((render(name), apply_point(m, p), apply_dir(m, n),
+                           posed_opening(m, op)))
     if not points:
         return None
     r = _upright(owner.model_3d_up or "y", owner.model_3d_front or "+z")
@@ -430,15 +529,26 @@ def port_doc(owner, parts) -> dict | None:
     size = [b - a for a, b in zip(lo, hi, strict=False)]
     if min(size) <= 0:
         return None
+    longest = max(size)
     ports, seen = [], set()
-    for name, p, n in points:
+    for name, p, n, op in points:
         if not name or len(name) > 64 or name in seen:
             continue
         seen.add(name)
         q = apply_point(r, p)
-        ports.append({
+        entry = {
             "kind": "interface", "name": name,
             "p": [round(min(1.0, max(0.0, (q[i] - lo[i]) / size[i])), 5) for i in range(3)],
             "n": [round(x, 5) for x in unit(apply_dir(r, n))],
-        })
+        }
+        if op is not None:
+            w, h, rad, u, _n = op
+            # Shares of the upright box's longest edge: the model is fitted
+            # with one uniform scale, so the room turns them into metres
+            # with its fitted size alone.
+            entry["s"] = [round(w / longest, 6), round(h / longest, 6)]
+            entry["u"] = [round(x, 5) for x in unit(apply_dir(r, u))]
+            if rad > 0:
+                entry["r"] = round(rad / longest, 6)
+        ports.append(entry)
     return {"bounds": [round(s, 6) for s in size], "ports": ports}

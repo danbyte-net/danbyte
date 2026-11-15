@@ -15,6 +15,11 @@ replaces it wholesale. The doc::
   it survives re-fitting and scaling;
 * ``n`` is the surface's outward normal there, in the same upright frame,
   unit length;
+* a mapping a model's ``port:`` anchors give (``anchored_model_ports``)
+  may also carry each opening's exact size from the export spec's size
+  extras (api.model_anchors): ``s`` ``[w, h]`` and ``r`` (corner radius) as
+  shares of the upright box's longest edge, and ``u``, the opening's width
+  axis, unit length in the upright frame. Hand mappings have none;
 * ``bounds`` is the upright box's size in model units when the mapping was
   made: what the 3D room fits the model with before the file has loaded,
   and what a replacement model is compared with ("keep mappings").
