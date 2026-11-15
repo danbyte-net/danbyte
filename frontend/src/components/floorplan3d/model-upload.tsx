@@ -12,6 +12,7 @@ import {
 } from "@/components/model-3d-choice"
 import { apiErrorToast } from "@/lib/api-toast"
 import { uploadModel3D } from "@/lib/api"
+import type { Model3DOwnerKind, ModelScan } from "@/lib/api"
 import { similarBounds } from "@/lib/model-ports"
 import type { V3 } from "@/lib/model-ports"
 import { FormCheckbox } from "@/components/forms"
@@ -43,16 +44,23 @@ import {
  * material - with its triangles and stored size, simplify it when it is
  * too detailed, and save the binary glTF. Default export for `lazy()`:
  * three.js and the converter load only when the dialog opens.
+ *
+ * Once saved, what the server found in the model's named nodes shows - its
+ * bays, ports and LEDs, and the names that match nothing in the type
+ * (api.model_anchors) - before the dialog closes.
  */
 export default function ModelUpload({
   kind,
   id,
+  lod = "full",
   portsBounds = null,
   onSaved,
   onCancel,
 }: {
-  kind: "device-types" | "devices"
+  kind: Model3DOwnerKind
   id: string
+  /** `far`: the far-distance copy of the model. */
+  lod?: "full" | "far"
   /** The upright size the current model's port mapping was made on: a new
    * model of the same proportions may keep it. */
   portsBounds?: V3 | null
@@ -72,6 +80,9 @@ export default function ModelUpload({
   const [busy, setBusy] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [keepPorts, setKeepPorts] = useState(true)
+  const [saved, setSaved] = useState<{ data: unknown; scan: ModelScan } | null>(
+    null
+  )
 
   const pick = async (f: File) => {
     setError(null)
@@ -163,21 +174,31 @@ export default function ModelUpload({
         id,
         new Blob([glb], { type: "model/gltf-binary" }),
         // Converted files are metres, Y up, front +Z already.
-        {
-          up: "y",
-          front: "+z",
-          fit: "auto",
-          ...(canKeep && keepPorts && newBounds
-            ? { keep_ports: "1", ports_bounds: JSON.stringify(newBounds) }
-            : {}),
-        }
+        lod === "far"
+          ? {}
+          : {
+              up: "y",
+              front: "+z",
+              fit: "auto",
+              ...(canKeep && keepPorts && newBounds
+                ? { keep_ports: "1", ports_bounds: JSON.stringify(newBounds) }
+                : {}),
+            },
+        lod
       )
-      onSaved(data)
+      if (data.model_scan) setSaved({ data, scan: data.model_scan })
+      else onSaved(data)
     } catch (e) {
       apiErrorToast(e, "Couldn't save the model.")
     } finally {
       setSaving(false)
     }
+  }
+
+  if (saved) {
+    return (
+      <ModelScanResult scan={saved.scan} onDone={() => onSaved(saved.data)} />
+    )
   }
 
   return (
@@ -289,4 +310,41 @@ function ModelSize({ group }: { group: THREE.Group }) {
   const f = (v: number) =>
     v >= 1 ? `${v.toFixed(2)} m` : `${Math.round(v * 1000)} mm`
   return <span className="num">{`${f(s.x)} × ${f(s.y)} × ${f(s.z)}`}</span>
+}
+
+/** What the saved model's named nodes hold, and what matched nothing. */
+function ModelScanResult({
+  scan,
+  onDone,
+}: {
+  scan: ModelScan
+  onDone: () => void
+}) {
+  return (
+    <div className="grid gap-3 text-[13px]">
+      <div className="flex flex-wrap items-center gap-2">
+        <span>Saved.</span>
+        <span className="num text-muted-foreground">{scan.summary}</span>
+        {scan.warnings.length > 0 && (
+          <Badge variant="warning">
+            {scan.warnings.length === 1
+              ? "1 mismatch"
+              : `${scan.warnings.length} mismatches`}
+          </Badge>
+        )}
+      </div>
+      {scan.warnings.length > 0 && (
+        <ul className="max-h-56 list-disc overflow-auto pl-5 text-muted-foreground">
+          {scan.warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      )}
+      <div className="flex justify-end">
+        <Button size="sm" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+    </div>
+  )
 }

@@ -162,12 +162,28 @@ def options_of(obj) -> dict:
         "up": obj.model_3d_up or "y",
         "front": obj.model_3d_front or "+z",
     }
+def _owner_base(obj) -> str:
+    from .models import DeviceType, ModuleType
+
+    if isinstance(obj, DeviceType):
+        return f"/api/device-types/{obj.pk}"
+    if isinstance(obj, ModuleType):
+        return f"/api/module-types/{obj.pk}"
+    return f"/api/devices/{obj.pk}"
 
 
 def type_url(dt) -> str | None:
+    """A device type's or module type's own download URL."""
     if not dt.model_3d:
         return None
-    return f"/api/device-types/{dt.pk}/model/?v={version_of(dt.model_3d)}"
+    return f"{_owner_base(dt)}/model/?v={version_of(dt.model_3d)}"
+
+
+def far_type_url(dt) -> str | None:
+    """A type's far-distance model URL - only beside the full model."""
+    if not dt.model_3d or not dt.model_3d_far:
+        return None
+    return f"{_owner_base(dt)}/model-far/?v={version_of(dt.model_3d_far)}"
 
 
 def device_url(device) -> str | None:
@@ -176,6 +192,13 @@ def device_url(device) -> str | None:
     if owner is None:
         return None
     return f"/api/devices/{device.pk}/model/?v={version_of(owner.model_3d)}"
+
+
+def device_far_url(device) -> str | None:
+    owner = effective_owner(device)
+    if owner is None or not owner.model_3d_far:
+        return None
+    return f"/api/devices/{device.pk}/model-far/?v={version_of(owner.model_3d_far)}"
 
 
 def effective_owner(device):
@@ -189,17 +212,115 @@ def effective_owner(device):
     return None
 
 
-def effective(device, type_viewable: bool = False) -> dict | None:
-    """What the 3D room draws for ``device``: ``{url, source, fit, up,
-    front}`` or None. An inherited model points at the type's URL when the
-    reader may view the type, so every device of it shares one download;
-    otherwise at the device's own, which serves the same file."""
+def has_bays(owner) -> bool:
+    return bool(owner is not None and (owner.model_anchors or {}).get("bays"))
+
+
+# ── installed parts ─────────────────────────────────────────────────────────
+
+def installed_parts(devices, user=None, tenant=None) -> None:
+    """Load what each device has in its module bays, for the devices whose
+    drawn model names bays, in one batch: stored on each as
+    ``_installed_parts`` - ``[{name, position, module, type, type_viewable}]``
+    in bay order, ``module`` / ``type`` None for an empty bay.
+
+    With ``user`` (and ``tenant``) only the bays and modules the reader may
+    view count, and a module type's own URL is used only where the reader may
+    view the type. A device whose model names no bays gets ``[]``."""
+    from auth_api import rbac
+
+    from .models import Module, ModuleBay, ModuleType
+    from .natural import natural_key
+
+    devices = list(devices)
+    wanted = [d for d in devices if has_bays(effective_owner(d))]
+    for d in devices:
+        d._installed_parts = []
+    if not wanted:
+        return
+    ids = [d.id for d in wanted]
+    bays = ModuleBay.objects.filter(device_id__in=ids).order_by()
+    modules = (Module.objects.filter(device_id__in=ids)
+               .select_related("module_type").order_by())
+    if user is not None:
+        bays = rbac.restrict_queryset(bays, user, tenant, "modulebay", "view")
+        modules = rbac.restrict_queryset(modules, user, tenant, "module", "view")
+    by_bay = {m.module_bay_id: m for m in modules}
+    viewable: set = set()
+    type_ids = {m.module_type_id for m in by_bay.values()}
+    if type_ids:
+        qs = ModuleType.objects.filter(id__in=type_ids)
+        if user is not None:
+            qs = rbac.restrict_queryset(qs.filter(tenant=tenant), user, tenant,
+                                        "moduletype", "view")
+        viewable = set(qs.values_list("id", flat=True))
+    per: dict = {}
+    for b in bays:
+        m = by_bay.get(b.id)
+        per.setdefault(b.device_id, []).append({
+            "name": b.name, "position": b.position, "module": m,
+            "type": m.module_type if m else None,
+            "type_viewable": bool(m and m.module_type_id in viewable),
+        })
+    for d in wanted:
+        d._installed_parts = sorted(per.get(d.id, []), key=lambda r: natural_key(r["name"]))
+
+
+def parts_of(device) -> list:
+    """The device's ``installed_parts`` rows, loading them (without a
+    reader's scope) when no batch did."""
+    if not hasattr(device, "_installed_parts"):
+        installed_parts([device])
+    return device._installed_parts
+
+
+def _part_urls(device, row) -> dict | None:
+    mt = row["type"]
+    if mt is None or not mt.model_3d:
+        return None
+    if row["type_viewable"]:
+        return {"url": type_url(mt), "far_url": far_type_url(mt)}
+    m = row["module"]
+    return {
+        "url": f"/api/devices/{device.pk}/module-model/{m.pk}/?v={version_of(mt.model_3d)}",
+        "far_url": (f"/api/devices/{device.pk}/module-model-far/{m.pk}/"
+                    f"?v={version_of(mt.model_3d_far)}" if mt.model_3d_far else None),
+    }
+
+
+def effective(device, type_viewable: bool = False, *, load_parts: bool = True) -> dict | None:
+    """What the 3D room draws for ``device``: ``{url, far_url, source, fit,
+    up, front, bays, empty_mode}`` or None. An inherited model points at the
+    type's URL when the reader may view the type, so every device of it
+    shares one download; otherwise at the device's own, which serves the
+    same file.
+
+    ``bays`` lists the device's module bays when the model names bays (its
+    ``bay:`` anchors, api.model_anchors): each ``{name, position, installed,
+    part}``, ``part`` the installed module type's model URLs (``url``,
+    ``far_url``) or null. Call ``installed_parts`` first for many devices;
+    with ``load_parts`` False a device it wasn't called for lists none."""
     owner = effective_owner(device)
     if owner is None:
         return None
     source = "device" if owner is device else "type"
-    url = type_url(owner) if source == "type" and type_viewable else device_url(device)
-    return {"url": url, "source": source, **options_of(owner)}
+    shared = source == "type" and type_viewable
+    out = {
+        "url": type_url(owner) if shared else device_url(device),
+        "far_url": far_type_url(owner) if shared else device_far_url(device),
+        "source": source, **options_of(owner),
+        "bays": [], "empty_mode": "filler",
+    }
+    mode = (owner.model_anchors or {}).get("empty_mode")
+    if mode in ("filler", "hole", "nothing"):
+        out["empty_mode"] = mode
+    if has_bays(owner) and (load_parts or hasattr(device, "_installed_parts")):
+        out["bays"] = [
+            {"name": r["name"], "position": r["position"],
+             "installed": r["module"] is not None, "part": _part_urls(device, r)}
+            for r in parts_of(device)
+        ]
+    return out
 
 
 def serve(field, filename: str):
@@ -219,38 +340,76 @@ def serve(field, filename: str):
     return resp
 
 
-def handle(request, obj, filename_stem: str):
-    """GET/POST/DELETE on an object's ``model/`` action. ``obj`` came from
-    ``get_object()``, so the caller's view or change scope already holds."""
-    from django.core.files.base import ContentFile
+def serve_module(device, module_id, far: bool = False):
+    """An installed module's model, served through its device (``module-
+    model/<id>/``) for a reader who may view the device and the module but
+    not the module type. ``device`` came from ``get_object()``."""
+    from django.http import Http404
+
+    row = next((r for r in parts_of(device)
+                if r["module"] is not None and str(r["module"].pk) == str(module_id)), None)
+    mt = row["type"] if row else None
+    field = (mt.model_3d_far if far else mt.model_3d) if mt is not None else None
+    if mt is None or not mt.model_3d or not field:
+        raise Http404("No 3D model.")
+    from django.utils.text import slugify
+
+    stem = slugify(mt.name) or "module"
+    return serve(field, f"{stem}{'.far' if far else ''}.glb")
+
+
+def handle(request, obj, filename_stem: str, *, far: bool = False):
+    """GET/POST/DELETE on an object's ``model/`` (or, with ``far``,
+    ``model-far/``) action. ``obj`` came from ``get_object()``, so the
+    caller's view or change scope already holds. Answers a Response, or for
+    a POST that stored the file the upload's scan report
+    (api.model_anchors.scan_result) for ``respond`` to send with the object."""
     from django.http import Http404
     from rest_framework import status
     from rest_framework.exceptions import ValidationError as DRFValidationError
     from rest_framework.response import Response
 
-    if request.method == "GET":
-        from .models import Device
+    from . import model_anchors
+    from .models import Device
 
+    field_name = "model_3d_far" if far else "model_3d"
+    if request.method == "GET":
         owner = effective_owner(obj) if isinstance(obj, Device) else obj
-        if owner is None or not owner.model_3d:
+        field = getattr(owner, field_name) if owner is not None else None
+        if owner is None or not owner.model_3d or not field:
             raise Http404("No 3D model.")
-        return serve(owner.model_3d, f"{filename_stem}.glb")
+        return serve(field, f"{filename_stem}{'.far' if far else ''}.glb")
     if request.method == "DELETE":
-        if obj.model_3d:
-            obj.model_3d.delete(save=False)
-            obj.model_3d = None
-            # Ports mapped onto the model go with it (api.model_ports).
-            obj.model_ports = None
+        names = [field_name] if far else ["model_3d", "model_3d_far"]
+        changed = False
+        for name in names:
+            f = getattr(obj, name)
+            if f:
+                f.delete(save=False)
+                setattr(obj, name, None)
+                changed = True
+        if changed:
+            if not far:
+                # Ports mapped onto the model and its anchors go with it
+                # (api.model_ports, api.model_anchors).
+                obj.model_ports = None
+                obj.model_anchors = None
             obj.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
     upload = request.FILES.get("file")
     if upload is None:
         raise DRFValidationError({"file": "Choose a .glb file."})
+    if far and not obj.model_3d:
+        raise DRFValidationError({"file": "Upload the full model first."})
     try:
         data = read_upload(upload)
-        validate_glb(data)
+        doc = validate_glb(data)
     except ValidationError as exc:
         raise DRFValidationError({"file": exc.messages}) from exc
+    anchors, report = model_anchors.scan_result(obj, doc, far=far)
+    if far:
+        store(obj, data, far=True)
+        return report
     errors = {}
     for key, choices in (
         ("fit", ("auto", "native")),
@@ -267,12 +426,32 @@ def handle(request, obj, filename_stem: str):
     if errors:
         raise DRFValidationError(errors)
     obj.model_ports = _kept_ports(request, obj)
-    old = obj.model_3d.name if obj.model_3d else None
-    obj.model_3d.save("model.glb", ContentFile(data), save=False)
+    obj.model_anchors = anchors
+    store(obj, data)
+    return report
+
+
+def store(obj, data: bytes, *, far: bool = False) -> None:
+    """Save checked model bytes on ``obj`` (and the row), removing the file
+    it replaces."""
+    from django.core.files.base import ContentFile
+
+    field = obj.model_3d_far if far else obj.model_3d
+    old = field.name if field else None
+    field.save("model.glb", ContentFile(data), save=False)
     obj.save()
-    if old and old != obj.model_3d.name:
-        obj.model_3d.storage.delete(old)
-    return None
+    if old and old != field.name:
+        field.storage.delete(old)
+
+
+def respond(out, data):
+    """A ``handle`` result as the action's answer: its Response, or the
+    object's ``data`` with the upload's ``model_scan`` report."""
+    from rest_framework.response import Response
+
+    if not isinstance(out, dict):
+        return out
+    return Response({**data, "model_scan": out})
 
 
 def _kept_ports(request, obj):

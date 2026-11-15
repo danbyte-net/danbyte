@@ -1468,6 +1468,8 @@ function DeviceOverview({
         kind="devices"
         id={d.id}
         own={d.model_3d ?? null}
+        farUrl={d.model_3d_far ?? null}
+        scan={d.model_3d_scan ?? null}
         inherited={
           d.model_3d_effective?.source === "type" ? d.model_3d_effective : null
         }

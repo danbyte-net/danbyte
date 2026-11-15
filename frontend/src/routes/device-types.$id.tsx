@@ -468,6 +468,8 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
           kind="device-types"
           id={d.id}
           own={d.model_3d ?? null}
+          farUrl={d.model_3d_far ?? null}
+          scan={d.model_3d_scan ?? null}
           fit={d.model_3d_fit ?? "auto"}
           up={d.model_3d_up ?? "y"}
           front={d.model_3d_front ?? "+z"}

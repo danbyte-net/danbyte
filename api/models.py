@@ -526,6 +526,24 @@ class Model3DMixin(models.Model):
         help_text="Port positions on the 3D model, normalised to its upright "
         "bounding box. Null = none mapped (a device inherits its type's).",
     )
+    # A low-detail copy of the model for long distances (api.model_3d). Only
+    # drawn alongside the full model it was made for.
+    model_3d_far = models.FileField(
+        upload_to=device_model_path, blank=True, null=True, max_length=255,
+        help_text="Far-distance 3D model (binary glTF, .glb), optional.",
+    )
+    # The named nodes found in the model (api.model_anchors): module bays,
+    # their empty covers, ports and LEDs, with node indices and positions.
+    # Filled by scanning the uploaded file; null = not scanned / no model.
+    model_anchors = models.JSONField(
+        null=True, blank=True, default=None, editable=False,
+        help_text="Named anchors found in the 3D model (bays, covers, ports, LEDs).",
+    )
+    # LED id -> {source}, from a model pack's ``model3d: leds:`` block.
+    model_leds = models.JSONField(
+        null=True, blank=True, default=None, editable=False,
+        help_text="Status light bindings for the 3D model's LEDs.",
+    )
 
     class Meta:
         abstract = True
@@ -1082,7 +1100,8 @@ class InventoryItemTemplate(_ComponentTemplate):
 
 # ─── Module types (pluggable line cards / network modules) ───────────────────
 
-class ModuleType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+class ModuleType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
+                 Model3DMixin):
     """A pluggable hardware model - line card, uplink module, PSU sled. Like a
     DeviceType but installed *into* a device's module bay rather than a rack.
     Carries its own interface templates whose names may use ``{module}``."""

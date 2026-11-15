@@ -33,6 +33,8 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
+import { Model3DCard } from "@/components/model-3d-card"
+import { ModelViewerCard } from "@/components/model-viewer-card"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -137,6 +139,30 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
             model="moduletype"
             values={m.custom_fields}
             layout="cards"
+          />
+          {m.model_3d && (
+            <ModelViewerCard
+              source={{
+                model: {
+                  url: m.model_3d,
+                  fit: "native",
+                  up: m.model_3d_up ?? "y",
+                  front: m.model_3d_front ?? "+z",
+                },
+              }}
+            />
+          )}
+          <Model3DCard
+            kind="module-types"
+            id={m.id}
+            own={m.model_3d ?? null}
+            farUrl={m.model_3d_far ?? null}
+            scan={m.model_3d_scan ?? null}
+            fit={m.model_3d_fit ?? "auto"}
+            up={m.model_3d_up ?? "y"}
+            front={m.model_3d_front ?? "+z"}
+            canEdit={canDo("moduletype", "change")}
+            queryKey={["module-type", m.id]}
           />
         </div>
         <div className="mt-6">

@@ -2880,7 +2880,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     cf_model = "devicetype"
     # The 3D model's placement settings are render plumbing, not columns.
     list_columns_exclude = ("model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
-                            "model_ports")
+                            "model_ports", "model_3d_far", "model_3d_scan")
     manufacturer = ManufacturerMiniSerializer(read_only=True)
     manufacturer_id = TenantScopedPrimaryKeyRelatedField(
         source="manufacturer", queryset=Manufacturer.objects.all(),
@@ -2906,11 +2906,27 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     # The 3D model's download URL (never its stored path); set through the
     # ``model/`` action.
     model_3d = serializers.SerializerMethodField()
+    # Its far-distance copy (``model-far/``) and what the model's named
+    # anchors hold (api.model_anchors).
+    model_3d_far = serializers.SerializerMethodField()
+    model_3d_scan = serializers.SerializerMethodField()
 
     def get_model_3d(self, obj) -> str | None:
         from .model_3d import type_url
 
         return type_url(obj)
+
+    def get_model_3d_far(self, obj) -> str | None:
+        from .model_3d import far_type_url
+
+        return far_type_url(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_model_3d_scan(self, obj):
+        from .model_anchors import report_for
+
+        return report_for(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
@@ -3172,7 +3188,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "subdevice_role", "exclude_from_utilization",
                   "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
                   "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
-                  "model_ports",
+                  "model_ports", "model_3d_far", "model_3d_scan",
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
                   "tags", "tag_ids", "device_count", "component_count", "component_counts",
@@ -3180,7 +3196,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "component_count",
                   "sensor_count", "document_count",
-                  "front_image", "rear_image", "model_3d",
+                  "front_image", "rear_image", "model_3d", "model_3d_far", "model_3d_scan",
                             "lifecycle_state", "created_at", "updated_at"]
 
 
@@ -3409,7 +3425,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         "vc_renamed_interfaces", "image_ports", "port_labels", "topology_card",
         "topology_photo_size",
         "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front", "model_3d_effective",
-        "model_ports", "local_context_data",
+        "model_ports", "model_3d_far", "model_3d_scan", "local_context_data",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
         # Its own column, Next end of life (device-columns.tsx).
@@ -3429,6 +3445,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     # 3D room draws for it - its own, else its type's.
     model_3d = serializers.SerializerMethodField()
     model_3d_effective = serializers.SerializerMethodField()
+    model_3d_far = serializers.SerializerMethodField()
+    model_3d_scan = serializers.SerializerMethodField()
 
     def get_model_3d(self, obj) -> str | None:
         from .model_3d import version_of
@@ -3437,11 +3455,27 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
             return None
         return f"/api/devices/{obj.pk}/model/?v={version_of(obj.model_3d)}"
 
+    def get_model_3d_far(self, obj) -> str | None:
+        from .model_3d import version_of
+
+        if not obj.model_3d or not obj.model_3d_far:
+            return None
+        return f"/api/devices/{obj.pk}/model-far/?v={version_of(obj.model_3d_far)}"
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_model_3d_scan(self, obj):
+        from .model_anchors import report_for
+
+        return report_for(obj)
+
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_model_3d_effective(self, obj):
         from .model_3d import effective
 
-        return effective(obj)
+        # Its bays only where the view loaded them (DeviceViewSet.get_object,
+        # scoped to the reader): never a module query per listed row.
+        return effective(obj, load_parts=False)
     site = SiteRegionMiniSerializer(read_only=True)
     primary_ip = serializers.SerializerMethodField()
     secondary_ip = serializers.SerializerMethodField()
@@ -4220,7 +4254,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "effective_width_mm", "effective_height_mm", "effective_depth_mm",
                   "port_labels", "topology_card", "topology_photo_size", "icon",
                   "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
-                  "model_3d_effective", "model_ports",
+                  "model_3d_effective", "model_ports", "model_3d_far", "model_3d_scan",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
                   "primary_ip", "primary_ip_id",
@@ -4236,8 +4270,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "permissions", "created_at", "updated_at"]
         # scan_exempt: set through /api/discovery/exempt/ (#451).
         read_only_fields = ["id", "numid", "u_height", "rack_width", "scan_exempt",
-                            "model_3d", "model_3d_effective",
-                            "software_version_seen_at", "software_version_source",
+                            "model_3d", "model_3d_effective", "model_3d_far",
+                            "model_3d_scan", "software_version_seen_at", "software_version_source",
                             "created_at", "updated_at"]
 
 
@@ -5726,6 +5760,9 @@ class TopologyDefaultViewSerializer(serializers.Serializer):
 
 class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "moduletype"
+    # The 3D model's placement settings are render plumbing, not columns.
+    list_columns_exclude = ("model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
+                            "model_3d_far", "model_3d_scan")
 
     def validate_faceplate(self, value):
         # Same document rules as device types - one validator, two owners.
@@ -5754,14 +5791,40 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
         v = getattr(obj, "module_count_annotated", None)
         return v if v is not None else _visible_count(self, obj, "modules")
 
+    # The 3D model's download URLs (never stored paths), set through the
+    # ``model/`` and ``model-far/`` actions, and its scan (api.model_anchors).
+    model_3d = serializers.SerializerMethodField()
+    model_3d_far = serializers.SerializerMethodField()
+    model_3d_scan = serializers.SerializerMethodField()
+
+    def get_model_3d(self, obj) -> str | None:
+        from .model_3d import type_url
+
+        return type_url(obj)
+
+    def get_model_3d_far(self, obj) -> str | None:
+        from .model_3d import far_type_url
+
+        return far_type_url(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_model_3d_scan(self, obj):
+        from .model_anchors import report_for
+
+        return report_for(obj)
+
     class Meta:
         model = ModuleType
         fields = ["id", "name", "manufacturer", "manufacturer_id",
                   "part_number", "description", "faceplate", "cooling_method",
+                  "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
+                  "model_3d_far", "model_3d_scan",
                   "custom_fields",
                   "tags", "tag_ids", "interface_template_count",
                   "module_count", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "model_3d", "model_3d_far", "model_3d_scan",
+                            "created_at", "updated_at"]
 
 
 class ModuleInterfaceTemplateSerializer(serializers.ModelSerializer):

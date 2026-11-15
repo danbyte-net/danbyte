@@ -3858,10 +3858,30 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         from . import model_3d
 
         dt = self.get_object()
-        resp = model_3d.handle(request, dt, slugify(dt.name) or "model")
-        if resp is not None:
-            return resp
-        return Response(DeviceTypeSerializer(dt, context={"request": request}).data)
+        out = model_3d.handle(request, dt, slugify(dt.name) or "model")
+        return model_3d.respond(
+            out, DeviceTypeSerializer(dt, context=self.get_serializer_context()).data
+        )
+
+    @extend_schema(
+        request={"multipart/form-data": {"type": "object", "properties": {
+            "file": {"type": "string", "format": "binary"},
+        }}},
+        responses={200: OpenApiTypes.BINARY},
+    )
+    @action(detail=True, methods=["get", "post", "delete"], url_path="model-far",
+            parser_classes=[MultiPartParser, FormParser])
+    def model_far_file(self, request, pk=None):
+        """The type's far-distance 3D model (api.model_3d), drawn instead of
+        the full one from afar. GET / POST ``file`` / DELETE, as ``model/``;
+        it needs the full model first."""
+        from . import model_3d
+
+        dt = self.get_object()
+        out = model_3d.handle(request, dt, slugify(dt.name) or "model", far=True)
+        return model_3d.respond(
+            out, DeviceTypeSerializer(dt, context=self.get_serializer_context()).data
+        )
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
     @action(detail=True, methods=["get", "put"], url_path="model-ports")
@@ -4183,6 +4203,18 @@ class DeviceViewSet(
     pagination_class = StandardPagination
     # Server paging, sorting, facets and the slim row (#482, #487).
     table_spec = list_specs.DEVICE_TABLE
+
+    def get_object(self):
+        """The device, with what its module bays hold where its 3D model
+        names bays (api.model_3d.installed_parts): the detail read's
+        ``model_3d_effective`` lists them, scoped to the reader."""
+        from . import model_3d
+
+        obj = super().get_object()
+        model_3d.installed_parts(
+            [obj], self.request.user, _get_active_tenant(self.request)
+        )
+        return obj
     rbac_action_map = {
         **PrtgCleanupDeleteMixin.rbac_action_map, **object_report.RBAC_ACTIONS,
         "bulk_create": "add",
@@ -4289,10 +4321,54 @@ class DeviceViewSet(
         from . import model_3d
 
         device = self.get_object()
-        resp = model_3d.handle(request, device, slugify(device.name) or "model")
-        if resp is not None:
-            return resp
-        return Response(DeviceSerializer(device, context={"request": request}).data)
+        out = model_3d.handle(request, device, slugify(device.name) or "model")
+        return model_3d.respond(
+            out, DeviceSerializer(device, context=self.get_serializer_context()).data
+        )
+
+    @extend_schema(
+        request={"multipart/form-data": {"type": "object", "properties": {
+            "file": {"type": "string", "format": "binary"},
+        }}},
+        responses={200: OpenApiTypes.BINARY},
+    )
+    @action(detail=True, methods=["get", "post", "delete"], url_path="model-far",
+            parser_classes=[MultiPartParser, FormParser])
+    def model_far_file(self, request, pk=None):
+        """The far-distance copy of the device's 3D model: GET serves the
+        drawn model's (its own, else its type's), POST / DELETE set or remove
+        its own, beside its own full model."""
+        from . import model_3d
+
+        device = self.get_object()
+        out = model_3d.handle(request, device, slugify(device.name) or "model", far=True)
+        return model_3d.respond(
+            out, DeviceSerializer(device, context=self.get_serializer_context()).data
+        )
+
+    @extend_schema(responses={200: OpenApiTypes.BINARY})
+    @action(detail=True, methods=["get"],
+            url_path=r"module-model/(?P<module_id>[0-9a-fA-F-]{36})")
+    def module_model(self, request, pk=None, module_id=None):
+        """The 3D model of the module installed as ``module_id`` (its module
+        type's), for a reader who may view the device and that module. The
+        3D room uses it when the reader may not view the module type."""
+        from . import model_3d
+
+        # get_object loaded its parts, scoped to the reader.
+        device = self.get_object()
+        return model_3d.serve_module(device, module_id)
+
+    @extend_schema(responses={200: OpenApiTypes.BINARY})
+    @action(detail=True, methods=["get"],
+            url_path=r"module-model-far/(?P<module_id>[0-9a-fA-F-]{36})")
+    def module_model_far(self, request, pk=None, module_id=None):
+        """The far-distance copy of an installed module's 3D model."""
+        from . import model_3d
+
+        # get_object loaded its parts, scoped to the reader.
+        device = self.get_object()
+        return model_3d.serve_module(device, module_id, far=True)
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
     @action(detail=True, methods=["get", "put"], url_path="model-ports")
@@ -6902,6 +6978,48 @@ class ModuleTypeViewSet(TenantScopedViewSet):
 
     def perform_create(self, serializer):
         serializer.save(tenant=self._tenant_or_403())
+
+    @extend_schema(
+        request={"multipart/form-data": {"type": "object", "properties": {
+            "file": {"type": "string", "format": "binary"},
+            "fit": {"type": "string"}, "up": {"type": "string"},
+            "front": {"type": "string"},
+        }}},
+        responses={200: OpenApiTypes.BINARY},
+    )
+    @action(detail=True, methods=["get", "post", "delete"], url_path="model",
+            parser_classes=[MultiPartParser, FormParser])
+    def model_file(self, request, pk=None):
+        """The module type's 3D model (api.model_3d), drawn in every device
+        it is installed in, posed at the bay's ``bay:`` anchor. GET downloads
+        it; POST a multipart ``file`` sets or replaces it (the answer carries
+        the anchor scan, ``model_scan``); DELETE removes it. Reading needs
+        view on the module type, writing change."""
+        from . import model_3d
+
+        mt = self.get_object()
+        out = model_3d.handle(request, mt, slugify(mt.name) or "module")
+        return model_3d.respond(
+            out, ModuleTypeSerializer(mt, context=self.get_serializer_context()).data
+        )
+
+    @extend_schema(
+        request={"multipart/form-data": {"type": "object", "properties": {
+            "file": {"type": "string", "format": "binary"},
+        }}},
+        responses={200: OpenApiTypes.BINARY},
+    )
+    @action(detail=True, methods=["get", "post", "delete"], url_path="model-far",
+            parser_classes=[MultiPartParser, FormParser])
+    def model_far_file(self, request, pk=None):
+        """The module type's far-distance 3D model, beside its full one."""
+        from . import model_3d
+
+        mt = self.get_object()
+        out = model_3d.handle(request, mt, slugify(mt.name) or "module", far=True)
+        return model_3d.respond(
+            out, ModuleTypeSerializer(mt, context=self.get_serializer_context()).data
+        )
 
 
 class ModuleInterfaceTemplateViewSet(NameRangeCreateMixin, TenantScopedViewSet):
@@ -14218,6 +14336,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
             )
         )
         viewable_types = scene_geo.viewable_type_ids(user, tenant, placed.values())
+        # What each one has in its module bays, for models that name bays:
+        # one batch for the whole room (api.model_3d.installed_parts).
+        from . import model_3d as _model_3d
+
+        _model_3d.installed_parts(placed.values(), user, tenant)
 
         def placed_geo(t):
             d = placed.get(t.device_id) if t.device_id else None

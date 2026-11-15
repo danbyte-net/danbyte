@@ -1710,6 +1710,10 @@ export interface DeviceType extends LifecycleInfo {
   model_3d_front?: Model3DFront
   /** Ports mapped onto the 3D model (lib/model-ports); null = none. */
   model_ports?: ModelPortsDoc | null
+  /** Its far-distance copy's URL, or null. */
+  model_3d_far?: string | null
+  /** What the model's named anchors hold (detail reads only). */
+  model_3d_scan?: ModelScan | null
   /** Saved front-panel layout (drag-and-drop builder); null = auto layout. */
   faceplate: FaceplateDoc | null
   /** Port markers anchored on the front/rear photo; null = none placed. */
@@ -1893,13 +1897,43 @@ export type Model3DFit = "auto" | "native"
 export type Model3DUp = "y" | "z"
 export type Model3DFront = "+z" | "-z" | "+x" | "-x"
 
+/** What a model's empty bays show: their cover (`empty:` node), the
+ * modelled hole (also the cover node), or nothing. */
+export type ModelEmptyMode = "filler" | "hole" | "nothing"
+
+/** One of a device's module bays, for a model that names bays
+ * (api.model_3d.effective). */
+export interface ModelBay {
+  name: string
+  /** What `{module}` resolves to in the installed module's port names. */
+  position: string
+  /** A module is installed (whether or not its type has a model). */
+  installed: boolean
+  /** The installed module type's model, or null. */
+  part: { url: string; far_url: string | null } | null
+}
+
 /** What the 3D room draws for a device: its own model, else its type's. */
 export interface Model3DEffective {
   url: string
+  /** The far-distance copy, or null. */
+  far_url?: string | null
   source: "device" | "type"
   fit: Model3DFit
   up: Model3DUp
   front: Model3DFront
+  /** The device's module bays when the model names bays, else empty. */
+  bays?: ModelBay[]
+  empty_mode?: ModelEmptyMode
+}
+
+/** What an uploaded model's named anchors hold (api.model_anchors):
+ * `summary` like "7 bays, 53 ports, 54 LEDs"; `warnings` the names that
+ * match nothing in the type, and the type's bays the model lacks. */
+export interface ModelScan {
+  summary: string
+  counts: { bays: number; empties: number; ports: number; leds: number }
+  warnings: string[]
 }
 
 export interface Model3DOptions {
@@ -1918,9 +1952,10 @@ export interface ModelPortsState {
   model_ports: ModelPortsDoc | null
   /** What a save names; a stale one answers 409. */
   version: string
-  /** A device: the mapping it draws and whose it is. */
+  /** A device: the mapping it draws and whose it is - `anchors` when the
+   * model's own `port:` nodes place them. */
   effective?: ModelPortsDoc | null
-  source?: "own" | "type" | null
+  source?: "anchors" | "own" | "type" | null
 }
 
 export function saveModelPorts(
@@ -1934,25 +1969,37 @@ export function saveModelPorts(
   })
 }
 
-/** Set or replace a device type's or device's 3D model (a .glb). */
+/** Who carries an uploaded 3D model. */
+export type Model3DOwnerKind = "device-types" | "devices" | "module-types"
+
+/** Set or replace a 3D model (a .glb); `lod: "far"` sets the far-distance
+ * copy. The answer is the object with the upload's `model_scan`. */
 export function uploadModel3D<T>(
-  kind: "device-types" | "devices",
+  kind: Model3DOwnerKind,
   id: string,
   glb: Blob,
-  opts: Model3DOptions = {}
-): Promise<T> {
+  opts: Model3DOptions = {},
+  lod: "full" | "far" = "full"
+): Promise<T & { model_scan?: ModelScan }> {
   const fd = new FormData()
   fd.append("file", glb, "model.glb")
   for (const [k, v] of Object.entries(opts)) if (v) fd.append(k, v)
-  return api<T>(`/api/${kind}/${id}/model/`, { method: "POST", body: fd })
+  const path = lod === "far" ? "model-far" : "model"
+  return api<T & { model_scan?: ModelScan }>(`/api/${kind}/${id}/${path}/`, {
+    method: "POST",
+    body: fd,
+  })
 }
 
-/** Remove a device type's or device's own 3D model. */
+/** Remove an object's own 3D model (with its far copy), or only the far
+ * copy. */
 export function deleteModel3D(
-  kind: "device-types" | "devices",
-  id: string
+  kind: Model3DOwnerKind,
+  id: string,
+  lod: "full" | "far" = "full"
 ): Promise<void> {
-  return api<void>(`/api/${kind}/${id}/model/`, { method: "DELETE" })
+  const path = lod === "far" ? "model-far" : "model"
+  return api<void>(`/api/${kind}/${id}/${path}/`, { method: "DELETE" })
 }
 
 export interface Device {
@@ -1971,6 +2018,10 @@ export interface Device {
   model_3d_effective?: Model3DEffective | null
   /** Its own port mapping on the model; null inherits the type's. */
   model_ports?: ModelPortsDoc | null
+  /** Its own model's far-distance copy, or null. */
+  model_3d_far?: string | null
+  /** Its own model's anchors (detail reads only). */
+  model_3d_scan?: ModelScan | null
   /** PRTG registration: follow policies, always, or never. */
   prtg_sync?: PrtgSync
   /** What PRTG polls instead of the primary address ("" = the primary). */
@@ -4289,6 +4340,13 @@ export interface ModuleType {
   faceplate: FaceplateDoc | null
   /** How the module is cooled (#434); "" = not recorded. */
   cooling_method?: string
+  /** Its 3D model's download URL, posed at a chassis' `bay:` anchor. */
+  model_3d?: string | null
+  model_3d_fit?: Model3DFit
+  model_3d_up?: Model3DUp
+  model_3d_front?: Model3DFront
+  model_3d_far?: string | null
+  model_3d_scan?: ModelScan | null
   description: string
   custom_fields: Record<string, unknown>
   tags: Tag[]

@@ -247,13 +247,17 @@ def _get_or_create_manufacturer(tenant, name: str, owning_site=None):
 
 def import_devicetype_yaml(
     tenant, text: str, *, stack_positions: bool = False, owning_site=None,
-    image_inventory: set[str] | None = None,
+    image_inventory: set[str] | None = None, files=None,
 ) -> dict:
     """Create a DeviceType (+ templates) from one devicetype-library YAML doc.
 
     Returns ``{"ok", "name", "created", "skipped", "error"}`` - ``created`` is
     a per-kind count dict, ``skipped`` a list of human-readable notes. Never
     raises for content problems; the caller shows the report.
+
+    A ``model3d:`` block (a model pack's, api.model_pack) sets the type's 3D
+    model from ``files`` (a ``PackFiles``); without them it is skipped with
+    a note.
     """
     try:
         data = yaml.safe_load(text)
@@ -465,6 +469,8 @@ def import_devicetype_yaml(
             f"{key}: {'%d entries ' % n if n else ''}not modelled in Danbyte - skipped"
         )
 
+    skipped += _model3d(dt, data, files)
+
     return {
         "ok": True,
         "name": dt.name,
@@ -534,10 +540,18 @@ def import_yaml_auto(
     }
 
 
-def import_moduletype_yaml(tenant, text: str, *, owning_site=None) -> dict:
+def _model3d(obj, data: dict, files) -> list[str]:
+    """The notes of setting a type's 3D model from its ``model3d:`` block."""
+    from .model_pack import apply_model3d
+
+    return apply_model3d(obj, data.get("model3d"), files)
+
+
+def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None) -> dict:
     """Create a ModuleType (+ interface templates) from a module-types YAML
     doc. Port names keep their ``{module}`` token - it resolves to the bay
-    position at install time. Same report shape as the device-type importer."""
+    position at install time. Same report shape as the device-type importer;
+    a ``model3d:`` block is handled as there."""
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
@@ -586,6 +600,7 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None) -> dict:
                     "module-bays")
         if data.get(key)
     ]
+    skipped += _model3d(mt, data, files)
     return {
         "ok": True,
         "name": mt.name,

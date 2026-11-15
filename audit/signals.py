@@ -72,6 +72,10 @@ _SUMMARISED_JSON_FIELDS: dict[str, frozenset[str]] = {
     # A CAD drawing's layer list and cached renders can run to thousands of
     # entries; what changed is enough.
     "api.floorplandrawing": frozenset({"layers", "variants"}),
+    # A 3D model's scanned anchors: every port and LED with its position.
+    "api.devicetype": frozenset({"model_anchors"}),
+    "api.device": frozenset({"model_anchors"}),
+    "api.moduletype": frozenset({"model_anchors"}),
 }
 
 

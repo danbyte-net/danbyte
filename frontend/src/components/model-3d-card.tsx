@@ -6,14 +6,22 @@ import type {
   ImagePorts,
   Model3DFit,
   Model3DFront,
+  Model3DOwnerKind,
   Model3DUp,
   ModelPortsState,
+  ModelScan,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card"
 import {
   Dialog,
   DialogContent,
@@ -38,16 +46,21 @@ const ModelPortsEditor = lazy(
 )
 
 /**
- * The "3D model" card on a device type's and a device's Overview: what the
- * 3D room draws for it, and upload / replace / remove. The model itself is
- * drawn once, by the Overview's viewer (model-viewer-card). A device shows its type's model until it gets its own. "Map
- * ports" opens the editor that places the ports on the model
- * (floorplan3d/model-ports-editor).
+ * The "3D model" card on a device type's, a module type's and a device's
+ * Overview: what the 3D room draws for it, and upload / replace / remove,
+ * for the model and its optional far-distance copy. The model itself is
+ * drawn once, by the Overview's viewer (model-viewer-card). A device shows
+ * its type's model until it gets its own. "Anchors" sums up the model's
+ * named nodes (bays, ports, LEDs) and what matched nothing in the type.
+ * "Map ports" opens the editor that places the ports on a model that names
+ * none itself (floorplan3d/model-ports-editor).
  */
 export function Model3DCard({
   kind,
   id,
   own,
+  farUrl = null,
+  scan = null,
   inherited,
   fit,
   up,
@@ -57,10 +70,14 @@ export function Model3DCard({
   typeId,
   ownImagePorts,
 }: {
-  kind: "device-types" | "devices"
+  kind: Model3DOwnerKind
   id: string
   /** The object's own model URL, or null. */
   own: string | null
+  /** Its own model's far-distance copy, or null. */
+  farUrl?: string | null
+  /** What its own model's named nodes hold. */
+  scan?: ModelScan | null
   /** A device's type's model, drawn while it has none of its own. */
   inherited?: {
     url: string
@@ -81,7 +98,7 @@ export function Model3DCard({
   ownImagePorts?: ImagePorts | null
 }) {
   const qc = useQueryClient()
-  const [uploading, setUploading] = useState(false)
+  const [uploading, setUploading] = useState<"full" | "far" | null>(null)
   const [mapping, setMapping] = useState(false)
   const refresh = () => qc.invalidateQueries({ queryKey })
 
@@ -95,7 +112,7 @@ export function Model3DCard({
     onError: (e) => apiErrorToast(e),
   })
   const remove = useMutation({
-    mutationFn: () => deleteModel3D(kind, id),
+    mutationFn: (lod: "full" | "far") => deleteModel3D(kind, id, lod),
     onSuccess: refresh,
     onError: (e) => apiErrorToast(e),
   })
@@ -110,10 +127,12 @@ export function Model3DCard({
           fit: inherited.fit ?? "auto",
         }
       : null
+  // A module type's ports come from its model's anchors only.
+  const mapsPorts = kind !== "module-types"
   const ports = useQuery({
     queryKey: ["model-ports", kind, id],
     queryFn: () => api<ModelPortsState>(`/api/${kind}/${id}/model-ports/`),
-    enabled: !!shown,
+    enabled: !!shown && mapsPorts,
   })
   const drawn =
     kind === "devices" ? ports.data?.effective : ports.data?.model_ports
@@ -132,7 +151,7 @@ export function Model3DCard({
                 size="sm"
                 variant="outline"
                 className="h-7"
-                onClick={() => setUploading(true)}
+                onClick={() => setUploading("full")}
               >
                 {own ? "Replace" : "Upload"}
               </Button>
@@ -142,9 +161,11 @@ export function Model3DCard({
                   variant="ghost"
                   className="h-7"
                   disabled={remove.isPending}
-                  onClick={() => remove.mutate()}
+                  onClick={() => remove.mutate("full")}
                 >
-                  {remove.isPending ? "Removing…" : "Remove"}
+                  {remove.isPending && remove.variables === "full"
+                    ? "Removing…"
+                    : "Remove"}
                 </Button>
               )}
             </>
@@ -176,10 +197,48 @@ export function Model3DCard({
     rows.push(
       choice("Size", "model_3d_fit", fit, FIT_CHOICES),
       choice("Up axis", "model_3d_up", up, UP_CHOICES),
-      choice("Front", "model_3d_front", front, FRONT_CHOICES)
+      choice("Front", "model_3d_front", front, FRONT_CHOICES),
+      {
+        label: "Far model",
+        value: (
+          <div className="flex flex-wrap items-center gap-2">
+            <span>{farUrl ? "Uploaded" : dash}</span>
+            {canEdit && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => setUploading("far")}
+                >
+                  {farUrl ? "Replace" : "Upload"}
+                </Button>
+                {farUrl && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate("far")}
+                  >
+                    {remove.isPending && remove.variables === "far"
+                      ? "Removing…"
+                      : "Remove"}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        ),
+      }
     )
+    if (scan)
+      rows.push({ label: "Anchors", value: <ScanSummary scan={scan} /> })
   }
-  if (shown) {
+  // Ports the model's own `port:` nodes place: nothing to map by hand.
+  const anchored =
+    (scan?.counts.ports ?? 0) > 0 || ports.data?.source === "anchors"
+  if (shown && mapsPorts) {
     rows.push({
       label: "Ports",
       value: (
@@ -187,14 +246,15 @@ export function Model3DCard({
           <span>
             {mappedN ? (
               <>
-                <span className="num">{mappedN}</span> mapped
+                <span className="num">{mappedN}</span>{" "}
+                {anchored ? "on the model" : "mapped"}
                 {ports.data?.source === "type" ? " · from device type" : ""}
               </>
             ) : (
               dash
             )}
           </span>
-          {canEdit && typeId && (
+          {canEdit && typeId && !anchored && (
             <Button
               size="sm"
               variant="outline"
@@ -212,11 +272,20 @@ export function Model3DCard({
   return (
     <>
       <KvCard title="3D model" rows={rows} />
-      <Dialog open={uploading} onOpenChange={setUploading}>
+      <Dialog
+        open={uploading !== null}
+        onOpenChange={(o) => !o && setUploading(null)}
+      >
         <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
-              {own ? "Replace 3D model" : "Upload 3D model"}
+              {uploading === "far"
+                ? farUrl
+                  ? "Replace far model"
+                  : "Upload far model"
+                : own
+                  ? "Replace 3D model"
+                  : "Upload 3D model"}
             </DialogTitle>
           </DialogHeader>
           {uploading && (
@@ -224,13 +293,16 @@ export function Model3DCard({
               <ModelUpload
                 kind={kind}
                 id={id}
+                lod={uploading}
                 // A replaced model may keep the mapping when it matches.
                 portsBounds={
-                  own ? (ports.data?.model_ports?.bounds ?? null) : null
+                  own && uploading === "full"
+                    ? (ports.data?.model_ports?.bounds ?? null)
+                    : null
                 }
-                onCancel={() => setUploading(false)}
+                onCancel={() => setUploading(null)}
                 onSaved={() => {
-                  setUploading(false)
+                  setUploading(null)
                   void refresh()
                   void ports.refetch()
                 }}
@@ -247,7 +319,7 @@ export function Model3DCard({
           {mapping && shown && typeId && (
             <Suspense fallback={<Loading />}>
               <ModelPortsEditor
-                kind={kind}
+                kind={kind as "device-types" | "devices"}
                 id={id}
                 typeId={typeId}
                 url={shown.url}
@@ -268,5 +340,33 @@ export function Model3DCard({
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+/** "7 bays, 53 ports, 54 LEDs", with the mismatches on hover. */
+function ScanSummary({ scan }: { scan: ModelScan }) {
+  const n = scan.warnings.length
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="num">{scan.summary}</span>
+      {n > 0 && (
+        <HoverCard openDelay={100} closeDelay={60}>
+          <HoverCardTrigger asChild>
+            <button type="button" className="inline-flex">
+              <Badge variant="warning">
+                {n === 1 ? "1 mismatch" : `${n} mismatches`}
+              </Badge>
+            </button>
+          </HoverCardTrigger>
+          <HoverCardContent className="w-96 text-xs">
+            <ul className="list-disc space-y-1 pl-4">
+              {scan.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </HoverCardContent>
+        </HoverCard>
+      )}
+    </div>
   )
 }

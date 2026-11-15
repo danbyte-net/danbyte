@@ -306,9 +306,19 @@ then:
 | **Up axis** | **Y up** (glTF's convention) or **Z up** (most CAD exports). |
 | **Front** | The model axis its front faces: +Z (glTF's convention), −Z, +X or −X. The room turns that face to the tile's front edge. |
 
+| **Far model** | An optional low-detail copy, drawn instead from about 14 m away. **Upload** / **Replace** / **Remove**; it needs the model first, and goes with it when the model is removed. |
+| **Anchors** | What the model's named nodes hold - module bays, ports, status lights - and, on a warning badge, the names that match nothing in the type. See [3D model packs](model-packs.md#names-the-models-carry). |
+
 Uploading, replacing and removing need **change** on the type; anyone who can
 view the type sees the card read-only. Each change lands in the type's
 change log.
+
+A model can be **modular**: the chassis names its module bays, and each
+[module type](#module-types) has a model of its own. A device then draws
+with its installed modules in their bays and covers on its empty ones, and
+the ports the models name are its port markers. Saving a model shows what
+it names (*7 bays, 53 ports, 54 LEDs*) and what matched nothing. Whole
+families come as [3D model packs](model-packs.md).
 
 #### What can be uploaded
 
@@ -385,14 +395,17 @@ who may view it, as a download (`model/gltf-binary`, `nosniff`, attachment).
 | Call | Does |
 |---|---|
 | `GET /api/device-types/{id}/model/` | Downloads the model (view on the type). |
-| `POST /api/device-types/{id}/model/` | Sets or replaces it: multipart `file`, optional `fit` (`auto` / `native`), `up` (`y` / `z`), `front` (`+z` / `-z` / `+x` / `-x`). Change on the type. Answers the type. |
+| `POST /api/device-types/{id}/model/` | Sets or replaces it: multipart `file`, optional `fit` (`auto` / `native`), `up` (`y` / `z`), `front` (`+z` / `-z` / `+x` / `-x`). Change on the type. Answers the type, with the scan as `model_scan`. |
 | `DELETE /api/device-types/{id}/model/` | Removes it (change on the type). |
+| `GET/POST/DELETE /api/device-types/{id}/model-far/` | The far-distance copy, the same way. Needs the model first. |
 
 The type's `model_3d` is the model's download URL (never a file path), or
 null; `model_3d_fit`, `model_3d_up` and `model_3d_front` are plain fields you
 can `PATCH`. The spreadsheet export carries the three settings; the file
 itself is never imported or exported. Library bundles and the NetBox
-library import don't carry models.
+library import don't carry models; a library YAML with a `model3d:` block
+imports without it, and [`import_model_pack`](model-packs.md#importing-a-pack)
+brings the files.
 
 ### Jumping to the devices
 
@@ -1007,6 +1020,17 @@ it, the device type does not define it (as a template or a faceplate or photo
 marker), and it was created no earlier than the module. Anything else stays
 the device's own - it survives removing the module, and you delete it by hand
 if it was the module's.
+
+### A module type's 3D model {#module-3d-model}
+
+A module type can carry a **3D model** of its own, on the **3D model** card
+of its Overview (with the viewer above it): **Upload** / **Replace** /
+**Remove**, and an optional **Far model**. Its origin is the module's mount
+point, so a device whose chassis model names the bay (`bay:<bay name>`)
+draws the module there - in the 3D room and in the device's 3D viewer. Ports
+the module's model names keep the `{module}` token and resolve to the bay's
+position. See [3D model packs](model-packs.md). Reading needs **view** on
+the module type, changing it **change**.
 
 ### Re-stamping a module
 
