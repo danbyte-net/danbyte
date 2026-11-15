@@ -125,3 +125,41 @@ class ComponentTemplateDialogPayloadTests(APITestCase):
                 )
                 self.assertEqual(r.status_code, 201, r.content)
                 self.assertNotIn("type", r.json())
+
+
+class TemplateParentScopeTests(APITestCase):
+    """A power outlet or front port template can't name another tenant's
+    inlet or rear port template; the id reads as unknown."""
+
+    def test_foreign_parent_template_is_unknown(self):
+        from django.contrib.auth.models import User
+        from rest_framework.test import APIClient
+
+        from api.models import DeviceType, Manufacturer, PowerPortTemplate, RearPortTemplate
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="O", slug="o")
+        a = Tenant.objects.create(org=org, name="A", slug="a")
+        b = Tenant.objects.create(org=org, name="B", slug="b")
+        ma = Manufacturer.objects.create(tenant=a, name="M", slug="m")
+        mb = Manufacturer.objects.create(tenant=b, name="M", slug="m")
+        dta = DeviceType.objects.create(tenant=a, manufacturer=ma, model="X")
+        dtb = DeviceType.objects.create(tenant=b, manufacturer=mb, model="Y")
+        ppt = PowerPortTemplate.objects.create(device_type=dtb, name="PSU")
+        rpt = RearPortTemplate.objects.create(device_type=dtb, name="R1", type="8p8c")
+        user = User.objects.create_superuser("root", "r@x.test", "pw")
+        c = APIClient()
+        c.force_login(user)
+        s = c.session
+        s["current_tenant_id"] = str(a.id)
+        s.save()
+        r = c.post("/api/power-outlet-templates/", {
+            "device_type_id": str(dta.id), "name": "O1",
+            "power_port_template_id": str(ppt.id)}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("does not exist", str(r.json().get("power_port_template_id")))
+        r = c.post("/api/front-port-templates/", {
+            "device_type_id": str(dta.id), "name": "F1", "type": "8p8c",
+            "rear_port_template_id": str(rpt.id), "rear_port_position": 1}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("does not exist", str(r.json().get("rear_port_template_id")))

@@ -350,6 +350,8 @@ _PARENT_TENANT_PATH = {
     "CoolingIntake": "device__tenant",
     "CoolingOutflow": "device__tenant",
     "CoolingIntakeTemplate": "device_type__tenant",
+    "PowerPortTemplate": "device_type__tenant",
+    "RearPortTemplate": "device_type__tenant",
     "AuxPort": "device__tenant",
     "DinRail": "cabinet__tenant",
     "FloorPlanArea": "floor_plan__tenant",
@@ -6048,7 +6050,7 @@ class PowerPortTemplateSerializer(_ComponentTemplateSerializer):
 
 class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
     power_port_template = serializers.SerializerMethodField()
-    power_port_template_id = serializers.PrimaryKeyRelatedField(
+    power_port_template_id = TenantScopedPrimaryKeyRelatedField(
         source="power_port_template", queryset=PowerPortTemplate.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
@@ -6357,7 +6359,7 @@ class RearPortTemplateSerializer(_ComponentTemplateSerializer):
 
 class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
     rear_port_template = serializers.SerializerMethodField()
-    rear_port_template_id = serializers.PrimaryKeyRelatedField(
+    rear_port_template_id = TenantScopedPrimaryKeyRelatedField(
         source="rear_port_template", queryset=RearPortTemplate.objects.all(),
         write_only=True,
     )
