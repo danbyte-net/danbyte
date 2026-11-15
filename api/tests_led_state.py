@@ -150,6 +150,12 @@ class SourceTests(SimpleTestCase):
         self.assertEqual(port_led({"oper_status": "up", "admin_status": "down"}), "off")
         self.assertEqual(port_led({"oper_status": "testing"}), "amber")
         self.assertEqual(port_led({"oper_status": "up"}, enabled=False), "off")
+        # A device SNMP doesn't poll: what Danbyte records decides.
+        self.assertEqual(port_led(None, True, documented=True), "green")
+        self.assertEqual(port_led(None, True, documented=False), "off")
+        self.assertEqual(port_led(None, False, documented=True), "off")
+        # A polled device (documented None) with no row stays off.
+        self.assertEqual(port_led(None, True, documented=None), "off")
         self.assertEqual(port_led(None), "off")
 
 

@@ -27,7 +27,9 @@ devices at once, with a constant number of queries:
   modules installed in matching bays: the chassis' front PSU and FAN LEDs.
 * ``interface.oper_status`` on ``port:<name>`` - the interface's ifOperStatus
   from the device's last SNMP poll: up → green, testing → amber, anything
-  else (down, admin down, disabled, not polled, a stale poll) → off.
+  else (down, admin down, disabled, a stale poll) → off. A device SNMP
+  doesn't poll at all shows what Danbyte records instead: green for an
+  enabled port that is cabled or marked connected, else off.
 * ``device.locate`` - the locate beacon (``Device.locate_until``): blinking
   blue while it is on.
 * ``none`` - a light Danbyte does not drive; always off.
@@ -264,9 +266,19 @@ def device_status_led(lifecycle: str | None, verdict: str) -> str:
     return lifecycle if lifecycle in ("amber", "red") else "off"
 
 
-def port_led(observed: dict | None, enabled: bool = True) -> str:
-    """``interface.oper_status`` from one observed ifTable row."""
-    if not enabled or not observed:
+def port_led(observed: dict | None, enabled: bool = True,
+             documented: bool | None = None) -> str:
+    """``interface.oper_status`` from one observed ifTable row.
+
+    ``documented`` is used only for a device SNMP doesn't poll at all (no
+    snapshot): then the port is lit green when Danbyte records it as in use -
+    enabled, and cabled or marked connected. A device whose poll went stale
+    is not guessed for: its ports stay off."""
+    if not enabled:
+        return "off"
+    if observed is None and documented is not None:
+        return "green" if documented else "off"
+    if not observed:
         return "off"
     if str(observed.get("admin_status") or "").lower() == "down":
         return "off"
@@ -347,14 +359,16 @@ class LedStates:
         return out
 
     def _interfaces(self, device_ids) -> dict:
-        """``{device id: {interface name: (visible, enabled, observed row)}}``."""
+        """``{device id: {interface name: (visible, enabled, observed row,
+        documented)}}``. ``documented`` is None for a device with an SNMP
+        snapshot, else whether the port is cabled or marked connected."""
         from django.db.models import BooleanField, Case, Value, When
 
         from auth_api import rbac
         from monitoring.models import DeviceSnmp, MonitoringSettings
         from monitoring.snmp_drift import _intent_by_observed_name, _match_observed
 
-        from .models import Interface
+        from .models import CableTermination, Interface
 
         q = True if self._super else rbac.row_filter(self.user, self.tenant, "interface", "view")
         qs = Interface.objects.filter(device__tenant=self.tenant, device_id__in=device_ids)
@@ -366,7 +380,9 @@ class LedStates:
             vis = Case(When(q, then=Value(True)), default=Value(False),
                        output_field=BooleanField())
         ifaces = list(qs.annotate(_vis=vis).only(
-            "id", "device_id", "name", "snmp_name", "enabled").order_by())
+            "id", "device_id", "name", "snmp_name", "enabled", "mark_connected").order_by())
+        cabled = set(CableTermination.objects.filter(
+            interface_id__in=[i.id for i in ifaces]).values_list("interface_id", flat=True))
         minutes = (MonitoringSettings.objects.filter(tenant=self.tenant)
                    .values_list("snmp_poll_interval_minutes", flat=True).first()) or 0
         limit = self.now - timedelta(minutes=minutes * STALE_SNMP_INTERVALS
@@ -391,8 +407,11 @@ class LedStates:
                     iface = _match_observed(o, by_name)
                     if iface is not None and iface.id not in observed:
                         observed[iface.id] = o
+            polled = dev_id in snaps
             out[str(dev_id)] = {
-                i.name: (bool(i._vis), i.enabled, observed.get(i.id)) for i in items
+                i.name: (bool(i._vis), i.enabled, observed.get(i.id),
+                         None if polled else (i.id in cabled or bool(i.mark_connected)))
+                for i in items
             }
         return out
 
@@ -467,8 +486,8 @@ class LedStates:
                     hit = _ifaces.get(led_id[5:])
                     if hit is None:
                         return "off"
-                    visible, enabled, observed = hit
-                    return port_led(observed, enabled) if visible else "neutral"
+                    visible, enabled, observed, documented = hit
+                    return port_led(observed, enabled, documented) if visible else "neutral"
                 return "off"
 
             for led_id in _led_ids(owner.model_anchors):

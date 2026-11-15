@@ -158,7 +158,7 @@ off.
 | `device.status` | Whether the device is up. Monitoring decides, by the rule root-cause alerting uses: the checks on the primary IP, or on every assigned IP when there is no primary. Down is red. Failing within its fall, or degraded, is blinking amber. Up is green. Only stale checks is off. A lifecycle status that is not in service (planned, or a grey one) is off whatever the checks say. Without monitoring the light shows only an amber or red lifecycle status: green means Danbyte has seen it up. |
 | `module.status` | The installed module's status. A module with no status reads as its device's lifecycle status. |
 | `modules.status` | The worst status of the modules installed in the bays that match a glob: `"modules.status: PS-*"`, or `{source: modules.status, bays: ["PS-*"]}`. For a chassis' front PSU and FAN lights. |
-| `interface.oper_status` | A `port:<name>` light: the interface's state from the last SNMP poll. Up is green, testing is amber. Anything else is off: down, admin down, disabled, not polled, or a poll older than three poll intervals (an hour with scheduled polling off). |
+| `interface.oper_status` | A `port:<name>` light: the interface's state from the last SNMP poll. Up is green, testing is amber, anything else is off, and so is a poll that went stale. A device SNMP doesn't poll at all shows what Danbyte records: green for an enabled port that is cabled or marked connected. |
 | `device.locate` | The [locate beacon](devices.md#locate): blinking blue while it is on. |
 | `none` | A light Danbyte doesn't drive. Always off. |
 
