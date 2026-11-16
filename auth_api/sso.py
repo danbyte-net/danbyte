@@ -22,6 +22,7 @@ import secrets
 import time
 from urllib.parse import urlencode
 
+import jwt
 import requests
 
 from core.ssrf import warn_if_private
@@ -125,19 +126,52 @@ def exchange_code(provider, code, redirect_uri, nonce, code_verifier) -> dict:
     return claims
 
 
-def _validate_id_token(id_token, provider, doc, nonce) -> dict:
-    from authlib.jose import JsonWebKey, jwt
-    from authlib.jose.errors import JoseError
+#: The signing algorithms an ID token may use: asymmetric only, so neither
+#: ``none`` nor an HMAC keyed with a public key is ever accepted.
+ID_TOKEN_ALGORITHMS = (
+    "RS256", "RS384", "RS512", "PS256", "PS384", "PS512",
+    "ES256", "ES384", "ES512", "EdDSA",
+)
+#: Seconds of clock skew allowed on exp / iat / nbf.
+ID_TOKEN_LEEWAY = 60
 
+
+def _signing_key(jwks: dict, header: dict):
+    """The JWKS key that signed the token: by ``kid``, or the only signing
+    key of the token's type when the token names none."""
+    keys = [
+        k for k in jwt.PyJWKSet.from_dict(jwks).keys
+        if k.public_key_use in (None, "sig")
+    ]
+    kid = header.get("kid")
+    if kid:
+        keys = [k for k in keys if k.key_id == kid]
+    if len(keys) != 1:
+        raise SsoError("ID token signing key not found in the provider's JWKS.")
+    return keys[0]
+
+
+def _validate_id_token(id_token, provider, doc, nonce) -> dict:
     jwks_uri = doc.get("jwks_uri")
     if not jwks_uri:
         raise SsoError("OIDC discovery document has no jwks_uri.")
     try:
+        header = jwt.get_unverified_header(id_token)
+        alg = header.get("alg")
+        if alg not in ID_TOKEN_ALGORITHMS:
+            raise SsoError(f"ID token signed with an unsupported algorithm ({alg}).")
         jwks = requests.get(jwks_uri, timeout=HTTP_TIMEOUT).json()
-        key = JsonWebKey.import_key_set(jwks)
-        claims = jwt.decode(id_token, key)
-        claims.validate()  # exp / iat / nbf
-    except (requests.RequestException, JoseError, ValueError, KeyError) as exc:
+        key = _signing_key(jwks, header)
+        # iss / aud / azp / nonce are checked below, against the discovery
+        # document and the provider.
+        claims = jwt.decode(
+            id_token,
+            key.key,
+            algorithms=[alg],
+            leeway=ID_TOKEN_LEEWAY,
+            options={"verify_aud": False, "verify_iss": False, "require": ["exp", "iat"]},
+        )
+    except (requests.RequestException, jwt.PyJWTError, ValueError, KeyError) as exc:
         raise SsoError(f"ID token validation failed: {exc}") from exc
 
     if claims.get("iss") != doc.get("issuer"):
@@ -153,7 +187,7 @@ def _validate_id_token(id_token, provider, doc, nonce) -> dict:
             raise SsoError("ID token azp mismatch.")
     if nonce and claims.get("nonce") != nonce:
         raise SsoError("ID token nonce mismatch - possible replay.")
-    return dict(claims)
+    return claims
 
 
 def _userinfo(doc, access_token) -> dict:
