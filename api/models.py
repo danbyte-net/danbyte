@@ -2078,11 +2078,20 @@ def module_component_names(module) -> dict:
             for k in _module_kinds()}
 
 
+# A component type that only holds a place: the device library gives a
+# chassis's module uplinks and PSU inlets type "other" until a module fills
+# them.
+PLACEHOLDER_TYPES = {"", "other"}
+
+
 def _adoptable(component, t) -> bool:
     """A device component a module may take over: the device's own (no
-    module) and of the template's media type, or with no type on either."""
+    module) and of the template's media type, or with no real type on
+    either (blank or the "other" placeholder)."""
     return component.module_id is None and (
-        not component.type or not t.type or component.type == t.type
+        component.type in PLACEHOLDER_TYPES
+        or t.type in PLACEHOLDER_TYPES
+        or component.type == t.type
     )
 
 
@@ -2133,7 +2142,7 @@ def _adopt(module, kind, component, t) -> None:
     """Hand a device component to ``module``: same row, so its cables, IPs,
     MACs, VLANs, tags and custom fields stay. A per-row save, audited."""
     updates = {"module": module, "module_template": t}
-    if not component.type and t.type:
+    if component.type in PLACEHOLDER_TYPES and t.type not in PLACEHOLDER_TYPES:
         updates.update(kind.retype(t))
     for k, v in updates.items():
         setattr(component, k, v)

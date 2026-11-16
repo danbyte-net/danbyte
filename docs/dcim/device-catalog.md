@@ -1067,11 +1067,13 @@ When the install or replace dialog reports the clash, it offers **Adopt
 existing components**: tick it and save again, and each clashing interface
 or power port is handed to the module instead of a new one being created.
 It is the same row, so its cables, IP addresses, MACs, VLANs, tags, custom
-fields, description and journal stay; one with no media type takes the
-template's.
+fields, description and journal stay; one with no media type, or type
+`Other`, takes the template's.
 
 Only a component without a module and of the template's media type (or
-with no type on either side) is adoptable. If any clashing component is
+with no type or `Other` on either side) is adoptable. `Other` counts as no
+type because the device library gives a chassis's module uplinks and PSU
+inlets that type as placeholders. If any clashing component is
 another module's or of another type, nothing is adopted and the install is
 refused. In the API, send `"adopt_components": true` with
 `POST /api/modules/` or the `PATCH` that replaces the type; a refused

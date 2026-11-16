@@ -303,6 +303,17 @@ class AdoptTests(_Psu):
         self.assertNotIn("Te1/1/1", r.json()["module_type_id"])
         self.assertIsNone(Interface.objects.get(pk=self.te1.pk).module_id)
 
+    def test_other_placeholder_is_adopted_and_retyped(self):
+        Interface.objects.filter(pk=self.te2.pk).update(type="other")
+        PowerPortTemplate.objects.create(device_type=self.dt, name="PSU1", type="other")
+        materialize_device_components(self.device)
+        r = self._adopt_install(self.nm8x)
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(Interface.objects.get(pk=self.te2.pk).type, "10gbase-x-sfpp")
+        r = self._adopt_install(self.psu, self.ps1)
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(self.device.power_ports.get(name="PSU1").type, "iec-60320-c16")
+
     def test_adopts_a_device_type_power_port(self):
         PowerPortTemplate.objects.create(device_type=self.dt, name="PSU1")
         materialize_device_components(self.device)
