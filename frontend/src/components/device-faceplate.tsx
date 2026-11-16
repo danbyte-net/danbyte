@@ -59,6 +59,8 @@ import { PointerMenu } from "@/components/pointer-menu"
 import { StatusBadge } from "@/components/status-badge"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { ConnectCableDialog } from "@/components/connect-cable-dialog"
+import { interfacePort, useDeviceMenus } from "@/components/model-viewer-menus"
+import type { DeviceMenuTarget } from "@/components/model-viewer-menus"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { useMe } from "@/lib/use-me"
 import {
@@ -335,6 +337,28 @@ export function PortTraceProvider({
   )
 }
 
+/** A right-click on a port or bay of the face: the device menus (see
+ * `model-viewer-menus`) at the pointer. Null where the face offers none -
+ * no device, or a host that opted out. */
+type FaceMenu = (
+  e: React.MouseEvent,
+  target: DeviceMenuTarget,
+  deviceName?: string
+) => void
+
+const FaceMenuContext = React.createContext<FaceMenu | null>(null)
+
+/** A marker's contextmenu handler for `target`, or undefined when the
+ * face has no menus. */
+function faceMenuHandler(
+  menu: FaceMenu | null,
+  target: DeviceMenuTarget | null,
+  deviceName?: string
+): React.MouseEventHandler | undefined {
+  if (!menu || !target) return undefined
+  return (e) => menu(e, target, deviceName)
+}
+
 /** A port link's click handler that traces instead of navigating. */
 function traceInstead(go: () => void): React.MouseEventHandler {
   return (e) => {
@@ -424,6 +448,7 @@ function Cage({
   const capability = portCapabilityHex(tint)
   // `use`, not `useContext`: this runs after the early returns above.
   const onTrace = React.use(PortTraceContext)
+  const faceMenu = React.use(FaceMenuContext)
   return (
     <HoverCard openDelay={100} closeDelay={80}>
       <HoverCardTrigger asChild>
@@ -442,6 +467,11 @@ function Cage({
                 )
               : undefined
           }
+          onContextMenu={faceMenuHandler(
+            faceMenu,
+            { port: interfacePort(i) },
+            i.device.name
+          )}
           data-cable-state={cableState(i)}
           data-port-name={i.name}
           data-port-kind="interface"
@@ -1194,6 +1224,7 @@ export function FaceplateView({
   facePorts,
   modules,
   components,
+  menus = true,
 }: {
   mode?: FaceplateMode
   deviceTypeId?: string | null
@@ -1219,6 +1250,9 @@ export function FaceplateView({
   facePorts?: FacePorts
   modules?: InstalledModule[]
   components?: Partial<Record<SlotKind, PortComponent[]>>
+  /** Right-click menus on ports and bays (with a `deviceId`). Off where
+   * the face is itself a picker or lives in a transient popover. */
+  menus?: boolean
 }) {
   const hasImage = useHasImagePorts(deviceTypeId)
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
@@ -1228,6 +1262,22 @@ export function FaceplateView({
       color: faceplatePortLabelColor,
     }),
     [faceplatePortLabels, faceplatePortLabelColor, portLabels]
+  )
+  // Right-click a port or a bay: the device menus, as on the 3D model.
+  const { open: openMenu, menus: menuHost } = useDeviceMenus()
+  const faceMenu = useMemo<FaceMenu | null>(
+    () =>
+      deviceId && menus
+        ? (e, target, deviceName) => {
+            e.preventDefault()
+            e.stopPropagation()
+            void openMenu({ deviceId, deviceName }, target, {
+              x: e.clientX,
+              y: e.clientY,
+            })
+          }
+        : null,
+    [deviceId, menus, openMenu]
   )
   const panel =
     mode === "image" && hasImage && deviceTypeId ? (
@@ -1264,7 +1314,10 @@ export function FaceplateView({
     )
   return (
     <PortLabelContext.Provider value={labelStyle}>
-      {panel}
+      <FaceMenuContext.Provider value={faceMenu}>
+        {panel}
+      </FaceMenuContext.Provider>
+      {menuHost}
     </PortLabelContext.Provider>
   )
 }
@@ -1395,6 +1448,7 @@ export function ImagePortsFaceplate({
   const labelStyle = usePortLabelStyle()
   const { canDo } = useMe()
   const onTrace = React.use(PortTraceContext)
+  const faceMenu = React.use(FaceMenuContext)
   // Editing a bay writes to the device's parts, so it needs the same permission
   // the Hardware tab does - and a device to write them to. Module bays install
   // through the same gate (matching the Modules pane).
@@ -1861,6 +1915,12 @@ export function ImagePortsFaceplate({
             const bayStyle = mod
               ? { ...style, ...portOverlayStyle(hex) }
               : { ...style, borderColor: `${hex}59` }
+            // Right-click: the bay's module menu (install, replace, remove).
+            const onBayMenu = faceMenuHandler(
+              faceMenu,
+              fp?.id ? { bay: fp.name } : null,
+              deviceName
+            )
             return (
               <HoverCard
                 key={`${m.name}-${idx}`}
@@ -1876,11 +1936,15 @@ export function ImagePortsFaceplate({
                       onClick={() =>
                         fp.id && setInstallBay({ id: fp.id, name: fp.name })
                       }
+                      onContextMenu={onBayMenu}
+                      data-bay-name={fp.name}
                       className="absolute cursor-pointer rounded-[2px] border-2 hover:ring-2 hover:ring-primary/40"
                     />
                   ) : (
                     <span
                       style={bayStyle}
+                      onContextMenu={onBayMenu}
+                      data-bay-name={fp?.name}
                       className="absolute rounded-[2px] border-2"
                     />
                   )}
@@ -1948,6 +2012,12 @@ export function ImagePortsFaceplate({
               fp.drift &&
                 "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
             )
+            // Right-click: the port menu, whichever click it answers.
+            const onPortMenu = faceMenuHandler(
+              faceMenu,
+              { port: fp },
+              deviceName
+            )
             // The marker's box in photo pixels - the aspect PortLabelText
             // fits the text to. Unknown until the photo has loaded.
             const labelStr = portLabelText(
@@ -1977,6 +2047,7 @@ export function ImagePortsFaceplate({
                       data-cable-state={fp.cable_state}
                       data-port-name={fp.name}
                       data-port-kind={termKind ?? ""}
+                      onContextMenu={onPortMenu}
                       data-port-id={fp.id ?? ""}
                       title={`${fp.name} - free, click to connect a cable`}
                       onClick={() =>
@@ -1997,6 +2068,7 @@ export function ImagePortsFaceplate({
                       data-cable-state={fp.cable_state}
                       data-port-name={fp.name}
                       data-port-kind={termKind ?? ""}
+                      onContextMenu={onPortMenu}
                       data-port-id={fp.id}
                       aria-label={`Trace ${fp.name}`}
                       onClick={() =>
@@ -2020,6 +2092,7 @@ export function ImagePortsFaceplate({
                       data-cable-state={fp.cable_state}
                       data-port-name={fp.name}
                       data-port-kind={termKind ?? ""}
+                      onContextMenu={onPortMenu}
                       data-port-id={fp.id ?? ""}
                       className={portClass}
                     >
@@ -2097,6 +2170,11 @@ export function ImagePortsFaceplate({
                   data-cable-state={cableState(iface)}
                   data-port-name={iface.name}
                   data-port-kind="interface"
+                  onContextMenu={faceMenuHandler(
+                    faceMenu,
+                    { port: interfacePort(iface) },
+                    deviceName
+                  )}
                   data-port-id={iface.id}
                   style={
                     // On a photo: cabled markers get an OPAQUE tier border +

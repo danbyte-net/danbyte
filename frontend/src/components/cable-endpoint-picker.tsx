@@ -443,6 +443,7 @@ export function CableEndpointPicker({
                   deviceId={deviceId}
                   deviceTypeId={device.data?.device_type?.id ?? null}
                   mode={effView === "rendered" ? "rendered" : "image"}
+                  menus={false}
                   side={side}
                   fit="container"
                 />

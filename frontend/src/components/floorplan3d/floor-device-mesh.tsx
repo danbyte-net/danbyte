@@ -28,7 +28,10 @@ import {
   useDeviceModel,
 } from "./device-model"
 import type { ModelEntry, ReadyPart } from "./device-model"
+import type { OnDeviceMenu } from "@/components/model-viewer-menus"
+
 import { ModelPortMarkers } from "./device-model-port-markers"
+import { BayHits } from "./bay-hits"
 import { useModelBudget } from "./rack-model-draw"
 import type { ModelBudget } from "./rack-models"
 import type { MappedPortPick } from "./device-model-port-markers"
@@ -246,8 +249,11 @@ function PlacedDevice({
   onSelect,
   onZoom,
   onFlyTo,
+  onDeviceMenu,
 }: {
   p: Placed
+  /** A port or bay on its model right-clicked: the device menus. */
+  onDeviceMenu?: OnDeviceMenu
   /** Its status LEDs (null: none lit). */
   leds: DeviceLeds | null
   entry: ModelEntry | null
@@ -329,6 +335,25 @@ function PlacedDevice({
             bays={model?.bays?.length ? model.bays : null}
             emptyMode={model?.empty_mode}
             leds={leds}
+            overlay={
+              // Up close, as its ports: a bay's module menu on right-click.
+              showPorts && !ghosted && onDeviceMenu && model?.bays?.length
+                ? (root, drawn) => (
+                    <BayHits
+                      root={root}
+                      drawn={drawn}
+                      selected={null}
+                      onMenu={(bay, at) =>
+                        onDeviceMenu(
+                          { deviceId: dev.id, deviceName: dev.name },
+                          { bay },
+                          at
+                        )
+                      }
+                    />
+                  )
+                : undefined
+            }
           />
           {/* The pointer's target: one invisible box, not every triangle. */}
           <mesh position={[0, h / 2, 0]} geometry={sharedBox(w, h, d)}>
@@ -356,6 +381,16 @@ function PlacedDevice({
                 const vp = portViewpoint(p, pk)
                 onFlyTo(vp.target, vp.position)
               }}
+              onMenu={
+                onDeviceMenu
+                  ? (pk, at) =>
+                      onDeviceMenu(
+                        { deviceId: dev.id, deviceName: dev.name },
+                        { port: pk.port },
+                        at
+                      )
+                  : undefined
+              }
             />
           )}
         </>
@@ -449,6 +484,7 @@ export function FloorDevicesLayer({
   onTooDetailed,
   leds: roomLeds,
   budget: roomBudget,
+  onDeviceMenu,
 }: {
   /** The room's triangle budget, shared with its racks (rack-model-draw). */
   budget?: ModelBudget
@@ -468,6 +504,8 @@ export function FloorDevicesLayer({
   onSelect: (sel: Sel) => void
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
   onTooDetailed?: (names: string[]) => void
+  /** A port or bay on a model right-clicked: the device menus. */
+  onDeviceMenu?: OnDeviceMenu
 }) {
   const placed = useMemo(
     () =>
@@ -745,6 +783,7 @@ export function FloorDevicesLayer({
             onSelect={onSelect}
             onZoom={(size) => flyTo(p, size)}
             onFlyTo={onFlyTo}
+            onDeviceMenu={onDeviceMenu}
           />
         )
       })}

@@ -202,6 +202,7 @@ function TileFaceplate({
         side={side}
         fit="container"
         photoMaxHeight={big ? "75dvh" : "14rem"}
+        menus={false}
       />
     )
   const sides = hasRear && (

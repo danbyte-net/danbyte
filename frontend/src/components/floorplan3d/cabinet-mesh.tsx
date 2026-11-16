@@ -40,6 +40,7 @@ import {
 } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 import type { PointerMenuAt } from "@/components/pointer-menu"
+import type { OnDeviceMenu } from "@/components/model-viewer-menus"
 
 /** Light grey enclosure steel - the RAL 7035 most DIN-rail cabinets ship
  * in, and a neutral that sets the box apart from the room's dark racks. */
@@ -128,6 +129,7 @@ export function CabinetMesh({
   onSelectPort,
   onHoverPort,
   onPortMenu,
+  onDeviceMenu,
   onLegend,
 }: {
   plan: ScenePayload["plan"]
@@ -184,6 +186,8 @@ export function CabinetMesh({
     marker: ImagePortMarker,
     at: PointerMenuAt
   ) => void
+  /** A port or module bay inside right-clicked: the device menus. */
+  onDeviceMenu?: OnDeviceMenu
   /** The colours the ports inside put on screen, by device. */
   onLegend?: LegendReporter
 }) {
@@ -426,6 +430,7 @@ export function CabinetMesh({
                       onPortMenu(tileId, deviceId, marker, at)
                   : undefined
               }
+              onDeviceMenu={onDeviceMenu}
               onLegend={onLegend}
             />
           </group>

@@ -30,6 +30,7 @@ import {
 } from "./world"
 import type { ScenePayload, SceneTile, Tier } from "./world"
 import type { PointerMenuAt } from "@/components/pointer-menu"
+import type { OnDeviceMenu } from "@/components/model-viewer-menus"
 import type { DeviceLeds } from "@/lib/led-state"
 import { useDeviceLeds } from "@/lib/use-device-leds"
 
@@ -142,6 +143,7 @@ export function RackMesh({
   onFlyTo,
   onLegend,
   onPortMenu,
+  onDeviceMenu,
   portLabelSource = "",
   portLabelColor = "#ffffff",
   engaged: engagedProp = false,
@@ -179,6 +181,9 @@ export function RackMesh({
   onLegend?: LegendReporter
   /** A hardware marker right-clicked: the port it is, at the pointer. */
   onPortMenu?: (sel: Sel, at: PointerMenuAt) => void
+  /** A port or module bay of a device right-clicked (photo face or model):
+   * the device menus for it, at the pointer. */
+  onDeviceMenu?: OnDeviceMenu
   /** Deployment port-label choice and colour, forwarded to each device. */
   portLabelSource?: PortLabelSource
   portLabelColor?: string
@@ -436,6 +441,7 @@ export function RackMesh({
                 model={models.get(d.id) ?? null}
                 leds={leds[d.id] ?? null}
                 showModelPorts={liveData}
+                onDeviceMenu={onDeviceMenu}
                 onSelectModelPort={(deviceId, pk) =>
                   onSelect({
                     kind: "port",

@@ -39,6 +39,7 @@ import {
 } from "./device-mesh"
 import { mm } from "./world"
 import type { PointerMenuAt } from "@/components/pointer-menu"
+import type { OnDeviceMenu } from "@/components/model-viewer-menus"
 
 /** Galvanised steel: the mounting plate, and the brighter zinc of the
  * rails. */
@@ -121,6 +122,7 @@ export function CabinetInterior({
   onSelectPort,
   onHoverPort,
   onPortMenu,
+  onDeviceMenu,
   onLegend,
 }: {
   cabinetId: string
@@ -147,6 +149,8 @@ export function CabinetInterior({
   ) => void
   /** The colours the ports put on screen, by device. */
   onLegend?: LegendReporter
+  /** A port or module bay on a photo right-clicked: the device menus. */
+  onDeviceMenu?: OnDeviceMenu
 }) {
   const cabinet = useQuery({
     queryKey: ["cabinet", cabinetId],
@@ -250,6 +254,7 @@ export function CabinetInterior({
           onSelectPort={onSelectPort}
           onHoverPort={onHoverPort}
           onPortMenu={onPortMenu}
+          onDeviceMenu={onDeviceMenu}
           onLegend={onLegend}
         />
       ))}
@@ -272,6 +277,7 @@ function InteriorDevice({
   onSelectPort,
   onHoverPort,
   onPortMenu,
+  onDeviceMenu,
   onLegend,
 }: {
   placed: PlacedDevice
@@ -292,6 +298,7 @@ function InteriorDevice({
     at: PointerMenuAt
   ) => void
   onLegend?: LegendReporter
+  onDeviceMenu?: OnDeviceMenu
 }) {
   const { device: d, rail, body, box } = placed
   const [hovered, setHovered] = useState(false)
@@ -408,6 +415,16 @@ function InteriorDevice({
               onHoverPort ? (m, on) => onHoverPort(id, m, on) : undefined
             }
             onMenu={onPortMenu ? (m, at) => onPortMenu(id, m, at) : undefined}
+            onObjectMenu={
+              onDeviceMenu
+                ? (target, at) =>
+                    onDeviceMenu(
+                      { deviceId: id, deviceName: d.name },
+                      target,
+                      at
+                    )
+                : undefined
+            }
           />
         </group>
       )}

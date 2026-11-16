@@ -643,8 +643,26 @@ save. The same works in the
 **Install module** on an empty bay and **Edit part** on a hardware marker (the
 same part editor the 2D faceplate opens for disk bays and PSUs). A **free**
 power / console / aux / front / rear marker connects a cable in place - see
-[Cabling](cabling.md#connecting-from-a-port). Removing a module stays on the
-Hardware tab.
+[Cabling](cabling.md#connecting-from-a-port).
+
+**Right-click menus.** A right-click on a port marker - on the photo panel
+or a drawn (**Rendered**) interface cage - opens the same port menu as the
+[3D model](#3d-model): **Open**, **Connect cable…**, **Trace cable**,
+**Disconnect…**, **Reserve…** / **Reservation…**, **Mark connected** /
+**Clear mark** and **Edit**. A right-click on a photo's module-bay marker
+opens the module menu: **Install module…** on an empty bay; **Open module
+type**, **Edit…**, **Replace…** and **Remove from bay…** on a full one. Each
+item is the dialog the port tables and the Hardware tab use and shows only
+when you may do it (cable add / delete, port reservation add, the port's
+change permission, module add / change / delete). A left-click keeps what
+it does - the interface link, the trace, connect or install - and a hardware
+marker's right-click stays its [part status](#part-status) menu. The same
+menus open on photo ports wherever they show: a
+[rack's elevation](racks.md#live-ports-on-the-elevation), a
+[cabinet's plate](cabinets.md), a stack's members, and the
+[3D room](../features/floor-plans.md#the-3d-room-view). The cable picker's
+port view and the floor plan's hover card have none.
+{ #right-click-menus }
 
 **Part status.** A hardware marker - a disk, a PSU, a fan - wears its part's
 status, and the status can be changed wherever the marker shows: on the

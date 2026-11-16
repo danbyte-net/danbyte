@@ -14,6 +14,7 @@ import { BarButton } from "@/components/map-toolbar"
 import { QueryError } from "@/components/query-error"
 import { useLegendCollector } from "@/components/speed-scale"
 import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
+import { useDeviceMenus } from "@/components/model-viewer-menus"
 import type { PartMarkerAt } from "@/components/part-status"
 
 import type { FlyToRequest } from "./camera-rig"
@@ -138,6 +139,8 @@ function RackView({
   // A right-click on a disk or a PSU: its part's statuses at the pointer.
   const canSetStatus = useCanSetPartStatus()
   const [partMenu, setPartMenu] = useState<PartMarkerAt | null>(null)
+  // A right-click on a port or a module bay: the device menus.
+  const deviceMenus = useDeviceMenus()
   const card = useCardPlace()
   const { content: legend, report: onLegend } = useLegendCollector()
   const flyToRef = useRef<FlyToRequest | null>(null)
@@ -218,6 +221,10 @@ function RackView({
               invalidateRef.current?.()
             }}
             onLegend={onLegend}
+            onDeviceMenu={(dev, target, at) => {
+              setPartMenu(null)
+              void deviceMenus.open(dev, target, at)
+            }}
             onPortMenu={
               canSetStatus
                 ? (sel, at) =>
@@ -251,6 +258,7 @@ function RackView({
           />
         )}
         <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
+        {deviceMenus.menus}
       </div>
       {/* The room's key, to what the faces actually draw - under the view,
           as the 2D plate keeps its own, so it never sits under a card. */}

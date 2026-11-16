@@ -66,6 +66,8 @@ import { CabinetMesh } from "./cabinet-mesh"
 import { DeviceHud, PortHud, rackPortPosition } from "./hud-cards"
 import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
 import type { PartMarkerAt } from "@/components/part-status"
+import { useDeviceMenus } from "@/components/model-viewer-menus"
+import type { OnDeviceMenu } from "@/components/model-viewer-menus"
 import type { FlyToRequest, NavApi } from "./camera-rig"
 import { areaBox, planBounds, smallestArea, wallBox } from "./focus-boxes"
 import type { FocusBox } from "./focus-boxes"
@@ -314,6 +316,20 @@ export default function FloorScene3D({
   // A right-click on a disk or a PSU: its part's statuses at the pointer.
   const canSetStatus = useCanSetPartStatus()
   const [partMenu, setPartMenu] = useState<PartMarkerAt | null>(null)
+  // A right-click on a port or a module bay (photo face or model): the
+  // device menus the 3D viewer opens. A write there redraws the room's
+  // cables and seated modules from the scene payload.
+  const deviceMenus = useDeviceMenus({
+    onChanged: () =>
+      void qc.invalidateQueries({ queryKey: ["floor-plan-scene"] }),
+  })
+  const onDeviceMenu = useCallback<OnDeviceMenu>(
+    (dev, target, at) => {
+      setPartMenu(null)
+      void deviceMenus.open(dev, target, at)
+    },
+    [deviceMenus.open]
+  )
   const [cableSel, setCableSel] = useState<string | null>(null)
   /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
   const [traySel, setTraySel] = useState<string | null>(null)
@@ -613,7 +629,8 @@ export default function FloorScene3D({
   // first, then isolation, then the selection - flying back to the whole
   // plan (the connect flow's own Esc wins while it is arming, and an open
   // dialog keeps its Esc to itself).
-  const dialogOpen = !!modal || !!installBay || !!partEdit || !!partMenu
+  const dialogOpen =
+    !!modal || !!installBay || !!partEdit || !!partMenu || deviceMenus.isOpen
   useEffect(() => {
     const editable = (t: EventTarget | null) =>
       t instanceof Element &&
@@ -1163,6 +1180,7 @@ export default function FloorScene3D({
             }
             onSelect={handleSelect}
             onLegend={onLegend}
+            onDeviceMenu={onDeviceMenu}
             onPortMenu={
               canSetStatus
                 ? (sel, at) =>
@@ -1235,6 +1253,7 @@ export default function FloorScene3D({
               })
             }
             onHoverPort={hoverCabinetPort}
+            onDeviceMenu={onDeviceMenu}
             onPortMenu={
               canSetStatus
                 ? (_, deviceId, marker, at) =>
@@ -1374,6 +1393,7 @@ export default function FloorScene3D({
             setViewSide("front")
           }}
           onTooDetailed={setTooDetailed}
+          onDeviceMenu={onDeviceMenu}
           leds={roomLeds}
           budget={modelBudget}
         />
@@ -1606,6 +1626,7 @@ export default function FloorScene3D({
         <CableHud planId={planId} cableId={cableSel} />
       )}
       <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
+      {deviceMenus.menus}
       {traySel && (
         <TrayHud
           planId={planId}

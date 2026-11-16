@@ -1,6 +1,7 @@
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import type { QueryClient } from "@tanstack/react-query"
 import {
   ArrowUpRight,
   Bookmark,
@@ -18,11 +19,13 @@ import { api } from "@/lib/api"
 import type {
   Cable,
   FacePort,
+  Interface,
   ModuleBayRow,
   PortReservationMini,
   TerminationKind,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { cableState } from "@/lib/cable-state"
 import { portEndpoint } from "@/lib/cable-runs"
 import { hereUrl } from "@/lib/return-url"
 import { useMe } from "@/lib/use-me"
@@ -45,12 +48,13 @@ import {
 } from "@/components/device-modules-pane"
 
 /**
- * The 3D model viewer's right-click menus: on a mapped port, the actions
- * its row offers in the device's port tables (connect, trace, disconnect,
- * reserve, mark connected, edit); on a bay, the Modules pane's (install,
- * replace, edit, remove). Each item opens the dialog those surfaces use -
- * one write path, one set of refreshes - and shows only when the user may
- * do it; the server checks again.
+ * The device right-click menus: on a port, the actions its row offers in
+ * the device's port tables (connect, trace, disconnect, reserve, mark
+ * connected, edit); on a bay, the Modules pane's (install, replace, edit,
+ * remove). Each item opens the dialog those surfaces use - one write path,
+ * one set of refreshes - and shows only when the user may do it; the
+ * server checks again. The 3D viewer, the photo faceplate and the 3D room
+ * all open these same menus.
  */
 
 // ─── Ports ───────────────────────────────────────────────────────────────
@@ -198,14 +202,38 @@ export function useBayPerms(): BayPerms {
   }
 }
 
+const baysQuery = (deviceId: string) => ({
+  queryKey: ["device-module-bays", deviceId],
+  queryFn: () => apiAll<ModuleBayRow>(`/api/module-bays/?device=${deviceId}`),
+})
+
 /** The device's module bays - the Modules pane's request and cache, so an
  * install from either surface refreshes both. */
 export function useDeviceBays(deviceId: string | null | undefined) {
   return useQuery({
-    queryKey: ["device-module-bays", deviceId],
-    queryFn: () => apiAll<ModuleBayRow>(`/api/module-bays/?device=${deviceId}`),
+    ...baysQuery(deviceId ?? ""),
     enabled: !!deviceId,
   })
+}
+
+/** An interface row as the port menu reads it: the face-ports shape, from
+ * the interface list a faceplate already holds. */
+export function interfacePort(i: Interface): FacePort {
+  return {
+    marker: i.name,
+    name: i.name,
+    kind: "interface",
+    id: i.id,
+    connected: !!i.cable,
+    cable_state: cableState(i),
+    cable_id: i.cable?.id ?? null,
+    enabled: i.enabled,
+    speed: i.speed,
+    type: i.type,
+    status: null,
+    module: null,
+    drift: null,
+  }
 }
 
 const PORT_ICON: Record<PortAction, React.ReactNode> = {
@@ -256,6 +284,8 @@ export function ModelViewerMenus({
   portMenu,
   bayMenu,
   onClose,
+  onChanged,
+  onDialog,
 }: {
   deviceId: string
   deviceName?: string
@@ -264,8 +294,21 @@ export function ModelViewerMenus({
   portMenu: PortMenuAt | null
   bayMenu: BayMenuAt | null
   onClose: () => void
+  /** Extra refresh work for the host after a cable or module write (the
+   * 3D room's scene payload) - the port, module and LED caches are
+   * refreshed here already. */
+  onChanged?: () => void
+  /** One of the menus' dialogs opened or closed - a host whose keys act on
+   * its canvas holds them while one is up. */
+  onDialog?: (open: boolean) => void
 }) {
   const navigate = useNavigate()
+  const qc = useQueryClient()
+  // A cable or a module changes what the device's LEDs show.
+  const changed = () => {
+    void qc.invalidateQueries({ queryKey: ["device-leds"] })
+    onChanged?.()
+  }
   const openPort = useOpenPort(deviceId)
   const portPerms = usePortPerms(portMenu?.port.kind ?? null)
   const bayPerms = useBayPerms()
@@ -280,6 +323,14 @@ export function ModelViewerMenus({
     mode: "install" | "replace" | "edit"
   } | null>(null)
   const [removing, setRemoving] = useState<ModuleBayRow | null>(null)
+  const dialogOpen =
+    !!connect ||
+    !!trace ||
+    !!disconnect ||
+    !!reserve ||
+    !!bayDialog ||
+    !!removing
+  useEffect(() => onDialog?.(dialogOpen), [dialogOpen, onDialog])
 
   const menuPort = portMenu?.port ?? null
   const endpoint = menuPort?.kind ? portEndpoint(menuPort.kind) : null
@@ -387,7 +438,11 @@ export function ModelViewerMenus({
       <ConnectCableDialog
         from={connect}
         deviceName={deviceName}
-        onClose={() => setConnect(null)}
+        onClose={() => {
+          // Saved or cancelled: the form does not say which.
+          if (connect) changed()
+          setConnect(null)
+        }}
       />
       <InterfaceTraceDialog
         target={
@@ -409,6 +464,7 @@ export function ModelViewerMenus({
         <CableDeleteDialog
           cable={cable.data ?? null}
           onOpenChange={(o) => !o && setDisconnect(null)}
+          onDeleted={changed}
         />
       )}
       <PortReservationDialog
@@ -422,6 +478,7 @@ export function ModelViewerMenus({
         seated={bayDialog?.row.module ?? null}
         manufacturerId={manufacturerId}
         onOpenChange={(o) => !o && setBayDialog(null)}
+        onInstalled={changed}
       />
       <RemoveModuleDialog
         deviceId={deviceId}
@@ -435,7 +492,108 @@ export function ModelViewerMenus({
             : null
         }
         onOpenChange={(o) => !o && setRemoving(null)}
+        onRemoved={changed}
       />
     </>
   )
+}
+
+// ─── Hosts without a fixed device ────────────────────────────────────────
+
+/** The device a menu is for. */
+export interface MenuDevice {
+  deviceId: string
+  deviceName?: string
+  manufacturerId?: string | null
+}
+
+/** What was right-clicked on a device: one of its ports, or a module bay
+ * by name. */
+export type DeviceMenuTarget = { port: FacePort } | { bay: string }
+
+/** Does a right-click on this port open anything? Every resolved port
+ * offers Open; a marker with no port behind it offers nothing. */
+export const portHasMenu = (port: Pick<FacePort, "id" | "kind">) =>
+  !!port.id && !!port.kind
+
+/** The bay's row, from the shared cache or fetched into it. */
+async function bayRow(
+  qc: QueryClient,
+  deviceId: string,
+  bay: string
+): Promise<ModuleBayRow | null> {
+  const rows = await qc
+    .fetchQuery({ ...baysQuery(deviceId), staleTime: 10_000 })
+    .catch(() => null)
+  return rows?.results.find((b) => b.name === bay) ?? null
+}
+
+/** A right-click a surface reports up to its menus' host. */
+export type OnDeviceMenu = (
+  device: MenuDevice,
+  target: DeviceMenuTarget,
+  at: PointerMenuAt
+) => void
+
+/** The hook's opener: true when a menu opened (one with nothing in it
+ * never does). */
+export type OpenDeviceMenu = (
+  device: MenuDevice,
+  target: DeviceMenuTarget,
+  at: PointerMenuAt
+) => Promise<boolean>
+
+/**
+ * The same menus for a surface that shows many devices - a rack's photo
+ * faces, the 3D room - or one that may never be right-clicked: nothing
+ * mounts (no bay request, no dialogs) until the first menu opens, and the
+ * dialogs then stay with the device last right-clicked.
+ */
+export function useDeviceMenus({ onChanged }: { onChanged?: () => void } = {}) {
+  const qc = useQueryClient()
+  const bayPerms = useBayPerms()
+  const permsRef = useRef(bayPerms)
+  permsRef.current = bayPerms
+  const [device, setDevice] = useState<MenuDevice | null>(null)
+  const [portMenu, setPortMenu] = useState<PortMenuAt | null>(null)
+  const [bayMenu, setBayMenu] = useState<BayMenuAt | null>(null)
+  const [dialog, setDialog] = useState(false)
+
+  const open = useCallback<OpenDeviceMenu>(
+    async (dev, target, at) => {
+      if ("port" in target) {
+        if (!portHasMenu(target.port)) return false
+        setDevice(dev)
+        setBayMenu(null)
+        setPortMenu({ x: at.x, y: at.y, port: target.port })
+        return true
+      }
+      const row = await bayRow(qc, dev.deviceId, target.bay)
+      if (bayMenuItems(row, permsRef.current).length === 0) return false
+      setDevice(dev)
+      setPortMenu(null)
+      setBayMenu({ x: at.x, y: at.y, bay: target.bay })
+      return true
+    },
+    [qc]
+  )
+
+  const menus = device ? (
+    <ModelViewerMenus
+      deviceId={device.deviceId}
+      deviceName={device.deviceName}
+      manufacturerId={device.manufacturerId}
+      portMenu={portMenu}
+      bayMenu={bayMenu}
+      onChanged={onChanged}
+      onDialog={setDialog}
+      onClose={() => {
+        setPortMenu(null)
+        setBayMenu(null)
+      }}
+    />
+  ) : null
+  /** A menu or one of its dialogs is up. */
+  const isOpen = !!portMenu || !!bayMenu || dialog
+  return { open, menus, isOpen }
 }

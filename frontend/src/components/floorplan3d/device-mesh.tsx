@@ -20,6 +20,11 @@ import {
 } from "@/components/device-faceplate"
 import type { ObservedPort } from "@/components/device-faceplate"
 import type { PointerMenuAt } from "@/components/pointer-menu"
+import type {
+  DeviceMenuTarget,
+  MenuDevice,
+  OnDeviceMenu,
+} from "@/components/model-viewer-menus"
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
 import type { DeviceLeds } from "@/lib/led-state"
@@ -29,6 +34,7 @@ import { facePortsOnSide } from "@/lib/faceplate-layout"
 
 import { PlacedModel } from "./device-model"
 import { ModelPortMarkers } from "./device-model-port-markers"
+import { BayHits } from "./bay-hits"
 import type { MappedPortPick } from "./device-model-port-markers"
 import type { RackModelDraw } from "./rack-model-draw"
 import { FaceLabel } from "./text-sprite"
@@ -307,6 +313,7 @@ export function PortQuads({
   onSelect,
   onHover,
   onMenu,
+  onObjectMenu,
 }: {
   markers: ImagePortMarker[]
   resolved: Map<string, FacePort>
@@ -326,6 +333,9 @@ export function PortQuads({
   /** A hardware marker right-clicked - pressed and let go where it was
    * pressed, so a right-drag still pans the camera - at the pointer. */
   onMenu?: (marker: ImagePortMarker, at: PointerMenuAt) => void
+  /** A resolved port or module bay right-clicked, the same way: the device
+   * menus (`model-viewer-menus`) for it, at the pointer. */
+  onObjectMenu?: (target: DeviceMenuTarget, at: PointerMenuAt) => void
 }) {
   const [hoveredPort, setHoveredPort] = useState<number | null>(null)
   // Where the right button went down, to tell a click from a pan.
@@ -398,6 +408,14 @@ export function PortQuads({
         // Undefined markers sit dim in the back; idle ports and empty bays
         // faint (the photo stays the star - mirrors the 2D ~35% outline);
         // lit ports, hardware and filled bays solid.
+        // What a right-click here opens: a part's statuses, else the port's
+        // or the bay's menu.
+        const menu: ((at: PointerMenuAt) => void) | null =
+          hardware && onMenu
+            ? (at) => onMenu(m, at)
+            : defined && !hardware && onObjectMenu
+              ? (at) => onObjectMenu(bay ? { bay: fp.name } : { port: fp }, at)
+              : null
         const opacity =
           isSel || isHot
             ? 0.9
@@ -441,7 +459,7 @@ export function PortQuads({
                 onSelect(m)
               }}
               onPointerDown={
-                hardware && onMenu
+                menu
                   ? (e) => {
                       if (e.nativeEvent.button === 2)
                         rightDown.current = {
@@ -452,7 +470,7 @@ export function PortQuads({
                   : undefined
               }
               onPointerUp={
-                hardware && onMenu
+                menu
                   ? (e) => {
                       const from = rightDown.current
                       rightDown.current = null
@@ -460,7 +478,7 @@ export function PortQuads({
                       const { clientX: x, clientY: y } = e.nativeEvent
                       if (Math.hypot(x - from.x, y - from.y) > 4) return
                       e.stopPropagation()
-                      onMenu(m, { x, y })
+                      menu({ x, y })
                     }
                   : undefined
               }
@@ -552,6 +570,7 @@ export function DeviceMesh({
   leds,
   showModelPorts = false,
   onSelectModelPort,
+  onDeviceMenu,
 }: {
   rack: SceneRack
   dev: SceneDevice
@@ -610,9 +629,13 @@ export function DeviceMesh({
   showModelPorts?: boolean
   /** A port on the model was clicked. */
   onSelectModelPort?: (deviceId: string, pick: MappedPortPick) => void
+  /** A port or module bay right-clicked - on the photo face or the model -
+   * at the pointer: the device menus for it. */
+  onDeviceMenu?: OnDeviceMenu
 }) {
   const [hovered, setHovered] = useState(false)
   const labelSource = effectivePortLabelSource(portLabelSource, dev.port_labels)
+  const menuDev: MenuDevice = { deviceId: dev.id, deviceName: dev.name }
   // Shared geometry - the cables layer anchors runs to these same numbers.
   const { y, h, dx, dz, dw, dd, boxH, mountedRear } = deviceBoxM(
     rack,
@@ -720,6 +743,18 @@ export function DeviceMesh({
             bays={model.bays}
             emptyMode={model.emptyMode}
             leds={leds ?? null}
+            overlay={
+              onDeviceMenu && model.bays?.length
+                ? (root, drawn) => (
+                    <BayHits
+                      root={root}
+                      drawn={drawn}
+                      selected={null}
+                      onMenu={(bay, at) => onDeviceMenu(menuDev, { bay }, at)}
+                    />
+                  )
+                : undefined
+            }
           />
         )}
         <mesh position={[0, mh / 2, 0]} geometry={sharedBox(mw, mh, md)}>
@@ -744,6 +779,11 @@ export function DeviceMesh({
             size={model.fit.size}
             selectedPort={selectedPort ?? null}
             onSelect={(pk) => onSelectModelPort(dev.id, pk)}
+            onMenu={
+              onDeviceMenu
+                ? (pk, at) => onDeviceMenu(menuDev, { port: pk.port }, at)
+                : undefined
+            }
           />
         )}
       </group>
@@ -813,6 +853,11 @@ export function DeviceMesh({
             // the mount face made every rear-panel port unresolvable from the
             // HUD.
             onSelect={(m) => onSelectPort(dev.id, m, side)}
+            onObjectMenu={
+              onDeviceMenu
+                ? (target, at) => onDeviceMenu(menuDev, target, at)
+                : undefined
+            }
             onMenu={
               onPortMenu
                 ? (m, at) => onPortMenu(dev.id, m, side, at)

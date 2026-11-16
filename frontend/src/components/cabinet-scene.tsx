@@ -11,6 +11,7 @@ import { FaceplateLegend } from "@/components/device-faceplate"
 import { BarButton } from "@/components/map-toolbar"
 import { useLegendCollector } from "@/components/speed-scale"
 import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
+import { useDeviceMenus } from "@/components/model-viewer-menus"
 import type { PartMarkerAt } from "@/components/part-status"
 import {
   CabinetDeviceHoverHud,
@@ -99,6 +100,8 @@ export default function CabinetScene({
   // A right-click on a part: its statuses at the pointer.
   const canSetStatus = useCanSetPartStatus()
   const [partMenu, setPartMenu] = useState<PartMarkerAt | null>(null)
+  // A right-click on a port or a module bay: the device menus.
+  const deviceMenus = useDeviceMenus()
   const card = useCardPlace()
   const [hover] = useState(createHoverStore)
   const hoverDevice = useCallback(
@@ -224,6 +227,10 @@ export default function CabinetScene({
                 }
                 onHoverPort={hoverPort}
                 onLegend={onLegend}
+                onDeviceMenu={(dev, target, at) => {
+                  setPartMenu(null)
+                  void deviceMenus.open(dev, target, at)
+                }}
                 onPortMenu={
                   canSetStatus
                     ? (_, deviceId, marker, at) =>
@@ -271,6 +278,7 @@ export default function CabinetScene({
                 />
               ))}
             <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
+            {deviceMenus.menus}
           </>
         ) : (
           <NoWebGL />

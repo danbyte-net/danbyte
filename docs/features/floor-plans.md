@@ -801,8 +801,10 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
     - Click selects the device, double-click flies to it, focus ghosts its
       siblings back to boxes. In the rack you are working on, its
       [model's ports](#port-markers-on-3d-models) show up close, as on a
-      floor device; the photo ports and their right-click part menus stay
-      with the box.
+      floor device, and a right-click on one, or on an installed module or
+      an empty bay's cover, opens its
+      [device menu](#device-menus-in-the-room); the photo ports and their
+      right-click part menus stay with the box.
 - **Light that grounds the room**: one shadow-casting key light plus a
   procedural studio environment (no downloaded assets - it works
   airgapped), so cabinets stand *on* the floor instead of floating in
@@ -927,8 +929,9 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   bay's card carries the part's **status** as pills to pick from, and a
   right-click on the bay - pressed and let go without dragging, since a
   right-drag pans - opens the same choices at the pointer (see
-  [part status](../dcim/devices.md#part-status)). The same goes for a rack's
-  3D view and a cabinet's. Marker names
+  [part status](../dcim/devices.md#part-status)). A right-click on a port
+  or a module bay opens its [device menu](#device-menus-in-the-room). The
+  same goes for a rack's 3D view and a cabinet's. Marker names
   match their components case-insensitively, so a photo marked `Psu 1` still
   resolves a port named `PSU 1`.
 - **Power ports the photo doesn't mark still exist**: any power port or
@@ -1020,6 +1023,26 @@ port itself stays visible:
 A racked device drawn as its full model shows its mapped ports the same
 way, up close, in the rack you have selected (or the rack's own page); a
 racked device drawn as its box shows its photo ports.
+
+### Device menus in the room
+
+A **right-click** on a port - a photo port on a racked or cabinet device, or
+a port mapped onto a floor or racked device's model - opens the port menu
+of the device page's [3D model](../dcim/devices.md#3d-model): **Open**,
+**Connect cable…**, **Trace cable**, **Disconnect…**, **Reserve…** /
+**Reservation…**, **Mark connected** / **Clear mark** and **Edit**. A
+right-click on a module bay - a photo's bay marker, or an installed module
+or an empty bay's cover on a model drawn up close - opens the module menu:
+**Install module…** on an empty bay; **Open module type**, **Edit…**,
+**Replace…** and **Remove from bay…** on a full one. They are the port
+tables' and the Hardware tab's dialogs, and each item shows only when you
+may do it (cable add / delete, port reservation add, the port's change
+permission, module add / change / delete); the server checks again. A
+press and release without dragging opens the menu, so a right-drag still
+pans; a left-click still selects the port or the device. A hardware bay's
+right-click stays its [part status](../dcim/devices.md#part-status) menu.
+After a change the room redraws the cables and seated modules and reads
+the lights again. A rack's and a cabinet's 3D views offer the same menus.
 
 ### Drift in the room
 

@@ -380,6 +380,12 @@ one request while the Overview is open (the
   card - or a right-click on it - sets the part's
   [status](devices.md#part-status); the rest of the part is edited on the
   device.
+- **Right-click** a port for the device's port menu - connect a cable,
+  trace, disconnect, reserve, mark connected, edit - and a module bay on a
+  photo for its module menu (install, replace, edit, remove), the
+  [device page's menus](devices.md#right-click-menus), each item shown only
+  when you may do it. The [rack in 3D](#the-rack-in-3d) offers the same on its
+  devices' photo ports, mapped model ports and module bays.
 - Every block shows its **ports in use** over its counted ports - `38 / 48`,
   in all three modes, on the face the device is mounted on only - by the
   [port counting rule](devices.md#what-counts-as-a-port): ports cabled or
