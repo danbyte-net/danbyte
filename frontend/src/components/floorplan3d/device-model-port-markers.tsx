@@ -35,6 +35,8 @@ import {
   useObservedPorts,
 } from "@/components/device-faceplate"
 
+import { PORT_MARKERS_KEY } from "./port-pick"
+
 /**
  * The ports mapped onto a floor device's 3D model, each drawn as its own
  * opening (lib/port-marker-look): a rounded rectangle exactly the size the
@@ -361,13 +363,14 @@ function MarkerMesh<TPick extends Shaped>({
         key={`hit-${placed.length}`}
         ref={hitRef}
         args={[QUAD, undefined, placed.length]}
-        userData={{ portMarkers: true }}
+        userData={{ [PORT_MARKERS_KEY]: true }}
         onPointerMove={(e) => {
           e.stopPropagation()
-          if (e.instanceId != null && e.instanceId !== hover) {
-            setHover(e.instanceId)
-            if (onSelect) document.body.style.cursor = "pointer"
-          }
+          if (e.instanceId == null) return
+          // Every move, not only a new port's: crossing a quad's diagonal
+          // is a new hit to r3f, which outs the port first.
+          setHover(e.instanceId)
+          if (onSelect) document.body.style.cursor = "pointer"
         }}
         onPointerOut={() => {
           setHover(null)

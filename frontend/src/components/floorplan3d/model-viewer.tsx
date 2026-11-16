@@ -45,6 +45,7 @@ import {
 } from "./device-model-port-markers"
 import type { MappedPortPick } from "./device-model-port-markers"
 import { BayHits } from "./bay-hits"
+import { PortPickPrecedence } from "./port-pick"
 import { Studio, StudioLights } from "./model-preview"
 import { STUDIO_LIGHTS } from "./studio"
 import { modelTargetM } from "./world"
@@ -476,6 +477,7 @@ export default function ModelViewer(props: ModelViewerProps) {
           if (e.button === 0) setSelection(null)
         }}
       >
+        <PortPickPrecedence />
         <Studio />
         <StudioLights />
         <Model props={props} pickers={pickers} />

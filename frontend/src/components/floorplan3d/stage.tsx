@@ -11,6 +11,7 @@ import type { RenderQuality } from "@/lib/render-quality"
 import { cn } from "@/lib/utils"
 
 import { CameraRig } from "./camera-rig"
+import { PortPickPrecedence } from "./port-pick"
 
 /**
  * The stage every 3D view in this folder stands on - the room, one rack,
@@ -156,6 +157,7 @@ export function Stage({
     >
       {invalidateRef && <InvalidatorBridge apiRef={invalidateRef} />}
       <InvalidateOnToggle stamp={stamp} />
+      <PortPickPrecedence />
       {captureRef && <CaptureBridge captureRef={captureRef} />}
       {/* Light rig: soft ambient + one shadow-casting key light + a dim
           fill, over a procedural studio environment (PMREM'd

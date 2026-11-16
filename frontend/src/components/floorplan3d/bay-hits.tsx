@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three"
 
 import type { PointerMenuAt } from "@/components/pointer-menu"
@@ -44,9 +43,9 @@ export function BayHits({
     },
     []
   )
-  // A port marker under the pointer wins.
-  const onPort = (e: ThreeEvent<PointerEvent | MouseEvent>) =>
-    e.intersections.some((i) => i.object.userData.portMarkers)
+  // A port on a module stays the port's: the canvas hands a port on the
+  // box's face its events first (port-pick), so the box only sees the
+  // module's body.
   // The boxes are in the root's own frame; it may carry a transform of its
   // own under the fit's turn.
   return (
@@ -67,22 +66,16 @@ export function BayHits({
             <mesh
               geometry={UNIT_BOX}
               onPointerMove={(e) => {
-                if (onPort(e)) {
-                  if (hover === b.bay) setHover(null)
-                  return
-                }
                 e.stopPropagation()
-                if (hover !== b.bay) {
-                  setHover(b.bay)
-                  document.body.style.cursor = "pointer"
-                }
+                setHover(b.bay)
+                document.body.style.cursor = "pointer"
               }}
               onPointerOut={() => {
                 setHover((h) => (h === b.bay ? null : h))
                 document.body.style.cursor = ""
               }}
               onClick={(e) => {
-                if (onPort(e) || !onSelect) return
+                if (!onSelect) return
                 e.stopPropagation()
                 onSelect(b.bay)
               }}
@@ -97,7 +90,6 @@ export function BayHits({
                 const from = rightDown.current
                 rightDown.current = null
                 if (e.nativeEvent.button !== 2 || !from || !onMenu) return
-                if (onPort(e)) return
                 const { clientX: x, clientY: y } = e.nativeEvent
                 if (Math.hypot(x - from.x, y - from.y) > 4) return
                 e.stopPropagation()
