@@ -224,6 +224,9 @@ _GEO_BLANK = {
     "serial_number": "", "front_image": None, "rear_image": None,
     "has_faceplate": False, "image_ports": None, "power_ports": [],
     "power_outlets": [], "power_legs": {}, "power_feed_type": "",
+    # The device's 3D model (api.model_3d.effective), added with racks
+    # drawing models; none of the fixture's types has one.
+    "model": None,
 }
 
 
