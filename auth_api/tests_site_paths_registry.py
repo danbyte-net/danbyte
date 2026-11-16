@@ -229,6 +229,9 @@ DEPENDENCIES = importlib.import_module(
 MODULE_POWER = importlib.import_module(
     "auth_api.migrations.0055_site_roles_module_power_ports"
 )
+ACCESSORIES = importlib.import_module(
+    "auth_api.migrations.0056_site_roles_accessory_types"
+)
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -417,7 +420,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 + OUTLINES.NEW_CATALOGS + AREA_TYPES.NEW_CATALOGS
                 + ROUTING_ROWS.NEW_CATALOGS + RPKI.NEW_CATALOGS
                 + SENSITIVITY.NEW_CATALOGS + DEPENDENCIES.NEW_CATALOGS
-                + MODULE_POWER.NEW_CATALOGS
+                + MODULE_POWER.NEW_CATALOGS + ACCESSORIES.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -933,3 +936,29 @@ class SiteRoleModulePowerUpgradeTests(SiteRoleRoutingRowsUpgradeTests):
         self.assertIn("modulepowerporttemplate", catalog.object_types)
         self.assertEqual(len(view.object_types), len(set(view.object_types)))
         self.assertEqual(custom.object_types, ["device", "prefix"])
+
+
+class SiteRoleAccessoryUpgradeTests(SiteRoleRoutingRowsUpgradeTests):
+    """0056 gives the viewers and the editors' catalog view accessory
+    types; editors do not write them."""
+
+    def test_roles_gain_accessory_types(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        catalog = ObjectPermission.objects.create(
+            name="B - catalog view", actions=["view"],
+            object_types=sorted(CATALOG_MIGRATION.ROLE_CATALOGS + OUTLINES.NEW_CATALOGS
+                                + AREA_TYPES.NEW_CATALOGS),
+        )
+        catalog.sites.set([self.site_a])
+        for mod in (ROUTING_ROWS, RPKI, SENSITIVITY, VULN_EXCEPTIONS, DEPENDENCIES,
+                    MODULE_POWER):
+            mod.forwards(django_apps, None)
+        ACCESSORIES.forwards(django_apps, None)
+        ACCESSORIES.forwards(django_apps, None)
+        for perm in (view, edit, catalog):
+            perm.refresh_from_db()
+        self.assertIn("accessorytype", view.object_types)
+        self.assertNotIn("accessorytype", edit.object_types)
+        self.assertIn("accessorytype", catalog.object_types)
+        self.assertEqual(len(view.object_types), len(set(view.object_types)))
