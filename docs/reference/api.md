@@ -163,6 +163,11 @@ ones always. `GET <list>/table-ids/` answers every matching id in list
 order (`{"count", "truncated", "results"}`, at most 50,000). Both are scoped
 exactly like the list: tenant, permissions and site scope.
 
+A page costs about the same whatever its number and its sort: the list reads
+the page's ids first, with only the filters and the sort, then those rows in
+full. A deep page or a sort on a joined column (site, type, status) does not
+make the server build every row it skips.
+
 The facets per list:
 
 - **Devices**: `status`, `role`, `platform`, `eol`, `coverage`, `type`,

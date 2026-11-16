@@ -221,6 +221,61 @@ class Facet:
         return _cap(out, selected)
 
 
+def ordering_annotations(qs) -> list[str]:
+    """The annotations ``qs``'s ORDER BY reads, by name."""
+    from django.db.models.expressions import Ref
+
+    known = qs.query.annotations
+    names: list[str] = []
+
+    def walk(e):
+        if isinstance(e, str):
+            name = e.lstrip("-")
+        elif isinstance(e, F):
+            name = e.name
+        elif isinstance(e, Ref):
+            name = e.refs
+        else:
+            for s in e.get_source_expressions():
+                if s is not None:
+                    walk(s)
+            return
+        if name in known and name not in names:
+            names.append(name)
+
+    for term in qs.query.order_by:
+        walk(term)
+    return names
+
+
+def page_by_ids(queryset, paginate):
+    """One page of ``queryset`` in two steps (#524): ``paginate`` (the
+    viewset's own ``paginate_queryset``) over the page's ids alone - the
+    filters and the ORDER BY, the annotations it reads and nothing else -
+    then those rows with every join, prefetch and per-row subquery the
+    serializer reads, in the page's order.
+
+    Paged in one query, Postgres sorted every row of the list with all its
+    joined columns, and computed each per-row subquery (support coverage,
+    software end, vulnerabilities) for every row an OFFSET skipped too.
+    The ids step reads narrow rows: a deep page or a sort on a joined column
+    costs about the same as page 1. One query more per page.
+
+    A DISTINCT queryset (a to-many filter) is paged as before: its ORDER BY
+    must be in its SELECT, and those lists are already narrow."""
+    if queryset.query.distinct:
+        return paginate(queryset)
+    sort_by = ordering_annotations(queryset)
+    got = paginate(queryset.values_list("pk", *sort_by).prefetch_related(None))
+    if got is None:
+        return None
+    ids = [row[0] for row in got]
+    if not ids:
+        return []
+    rows = {obj.pk: obj for obj in queryset.order_by().filter(pk__in=ids)}
+    return [rows[pk] for pk in ids if pk in rows]
+
+
 def _is_uuid(v: str) -> bool:
     try:
         uuid.UUID(str(v))
@@ -712,6 +767,14 @@ class TableListMixin:
         if sort.prepare:
             qs = sort.prepare(qs, self.request)
         return qs.order_by(*_order_terms(sort, desc), "pk")
+
+    #: Page the list by id first (:func:`page_by_ids`, #524).
+    page_ids_first = True
+
+    def paginate_queryset(self, queryset):
+        if not self.page_ids_first or getattr(self, "action", None) != "list":
+            return super().paginate_queryset(queryset)
+        return page_by_ids(queryset, super().paginate_queryset)
 
     def filter_queryset(self, queryset):
         queryset = super().filter_queryset(queryset)

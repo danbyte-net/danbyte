@@ -632,13 +632,18 @@ class DeviceListTests(_Base):
         self.assertIsNone(rows["d-04"]["din_rail"])
         with CaptureQueriesContext(connection) as ctx:
             self.client.get("/api/devices/?page_size=12")
-        page = [
+        # Paged by id first (#524): the page's ids, then those rows in full.
+        device_reads = [
             q["sql"] for q in ctx.captured_queries
-            if q["sql"].startswith('SELECT "api_device"') and " LIMIT " in q["sql"]
+            if q["sql"].startswith('SELECT "api_device"')
         ]
-        self.assertEqual(len(page), 1)
-        self.assertNotIn('JOIN "api_cabinet"', page[0])
-        self.assertNotIn('JOIN "api_dinrail"', page[0])
+        ids = [s for s in device_reads if s.startswith('SELECT "api_device"."id" AS "pk" ')]
+        rows = [s for s in device_reads if s not in ids and '"api_device"."id" IN (' in s]
+        self.assertEqual(len(ids), 1, ids)
+        self.assertEqual(len(rows), 1, rows)
+        for sql in (ids[0], rows[0]):
+            self.assertNotIn('JOIN "api_cabinet"', sql)
+            self.assertNotIn('JOIN "api_dinrail"', sql)
 
     def test_a_site_scoped_user_pays_one_permission_query_per_page(self):
         """A site-scoped grant always yields a Q, so the per-row lookup was

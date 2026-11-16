@@ -45,7 +45,8 @@ search box, the rail and the Advanced filter all go to the API, so a list of
 - **Download**, the **SBOM** and the **PDF report** cover every matching
   row, fetched from the server, not just the page;
 - the URL keeps the page and the sort too (`?page=3&ordering=-site`), so a
-  link or Back lands on the same page;
+  link or Back lands on the same page. The last page, or a sort by site or
+  type, takes about as long as the first page sorted by name;
 - the page size is your **Default page size** preference (the **Rows**
   control under the table sets it), up to 1,000.
 
