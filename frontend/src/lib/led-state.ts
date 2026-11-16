@@ -22,6 +22,11 @@ export interface DeviceLeds {
   bays: Partial<Record<string, Partial<Record<string, LedState>>>>
   /** The locate beacon while it is on. */
   locate: { until: string; at: string | null; by: string } | null
+  /** Port covers to hide (lib/port-covers): the chassis' `cover:port:`
+   * names, as authored. */
+  covers?: string[]
+  /** Each bay's installed module's covers to hide, `{module}` resolved. */
+  bay_covers?: Partial<Record<string, string[]>>
 }
 
 /** `GET|POST /api/device-leds/`. */

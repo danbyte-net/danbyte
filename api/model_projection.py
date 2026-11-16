@@ -13,6 +13,11 @@ thresholds - are read from the SPA's ``frontend/src/lib/studio-projection
 .json``; ``studio-projection.cases.json`` beside it holds cases both test
 suites run. The functions below mirror lib/model-studio one for one.
 
+Port covers (``cover:port:``, api.port_covers) are geometry, not markers:
+a type has no cabling, so its faces render with every cover in place and
+nothing here reads them. A device's own render hides its ports in use's
+covers in the browser.
+
 Positions are the room's frame after the model is fitted (device-model
 ``fittedModel``): metres, Y up, centred on X and Z, standing on y = 0, the
 front facing -Z.

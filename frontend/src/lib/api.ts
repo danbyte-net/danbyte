@@ -1957,7 +1957,13 @@ export interface Model3DEffective {
  * match nothing in the type, and the type's bays the model lacks. */
 export interface ModelScan {
   summary: string
-  counts: { bays: number; empties: number; ports: number; leds: number }
+  counts: {
+    bays: number
+    empties: number
+    ports: number
+    leds: number
+    port_covers?: number
+  }
   warnings: string[]
 }
 
@@ -2017,6 +2023,9 @@ export interface DeviceStudio {
   bay_leds: Record<string, ModelLedBindings>
   ports: Record<string, [string, string]>
   own_image_ports: boolean
+  /** Port covers its ports in use hide (api.port_covers). */
+  covers?: string[]
+  bay_covers?: Partial<Record<string, string[]>>
 }
 
 export interface Model3DOptions {

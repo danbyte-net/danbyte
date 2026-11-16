@@ -1,6 +1,6 @@
 """``/api/device-leds/``: what the status LEDs of a set of devices show now
-(api.led_state), for the 3D room, the device viewer and LED overlays on
-rack-face images. Light enough to poll every 30 seconds; the query count
+(api.led_state), and which port covers to hide (api.port_covers), for the
+3D room, the device viewer and LED overlays on rack-face images. Light enough to poll every 30 seconds; the query count
 does not grow with the number of devices.
 
 ``GET ?devices=<id>,<id>…`` (or ``?device=<id>``, or ``?rack=<id>`` for the
@@ -54,11 +54,15 @@ def _params(request):
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def device_leds_view(request):
-    """``{as_of, poll_seconds, devices: {id: {leds, bays, locate}}}``:
+    """``{as_of, poll_seconds, devices: {id: {leds, bays, locate, covers,
+    bay_covers}}}``:
     ``leds`` the chassis' lit LEDs by id (``SYS``, ``port:Te1/0/1``),
     ``bays`` each bay's installed module's lit LEDs, ``locate`` the beacon
     while it is on. An LED left out is off. States are green, amber, red,
-    blue or neutral, ``_blink`` appended when blinking."""
+    blue or neutral, ``_blink`` appended when blinking. ``covers`` names
+    the chassis' port covers to hide (its ports in use: cabled or marked
+    connected, among the interfaces the reader may view) and ``bay_covers``
+    each installed module's (api.port_covers)."""
     from .models import Device, Rack
     from .topology_views import _parse_uuid, _uuid_list_param
     from .views import _get_active_tenant

@@ -9,6 +9,7 @@ import type {
   ModelEmptyMode,
 } from "@/lib/api"
 import { parseAnchor } from "@/lib/model-assembly"
+import type { DeviceCovers } from "@/lib/port-covers"
 import {
   FACE_WIDTH_PX,
   ISO_DIRECTION,
@@ -33,6 +34,7 @@ import type {
 import { acquireModel, fittedModel, releaseModel } from "./device-model"
 import type { ModelEntry } from "./device-model"
 import { assembleModel } from "./model-assembly"
+import { applyPortCovers, findPortCovers } from "./port-covers"
 import { modelTargetM } from "./world"
 
 /**
@@ -176,6 +178,9 @@ export interface StudioSource {
   bay_leds: Record<string, Record<string, { source?: string }>>
   /** Components by name: `[kind, type]`. */
   ports: Record<string, [string, string]>
+  /** A device's port covers to hide (its ports in use). A type has no
+   * cabling: left out, every cover renders as authored. */
+  covers?: DeviceCovers | null
 }
 
 export interface StudioResult {
@@ -474,6 +479,7 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
       src.bays.length ? src.bays : null,
       src.model.empty_mode ?? "filler"
     )
+    applyPortCovers(findPortCovers(root), src.covers)
     // The assembled copy is this render's own: it casts and takes the
     // passes' shadows.
     root.traverse((o) => {

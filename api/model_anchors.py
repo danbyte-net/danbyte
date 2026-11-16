@@ -12,7 +12,10 @@ Danbyte reads, exactly, in the glTF JSON:
   ``port:Gi1/0/1`` matches the template ``Gi{position}/0/1`` and is member
   2's ``Gi2/0/1`` (api.anchor_names);
 * ``led:<id>`` and ``led:port:<interface name>`` - status lights, each its
-  own mesh with the material ``LED``.
+  own mesh with the material ``LED``;
+* ``cover:port:<interface name>`` (export spec v1.5) - a removable blank or
+  dust plug in a port, its own mesh, drawn while the port is not in use
+  (api.port_covers). Matched to interfaces as ports are.
 
 The names are read from the glTF JSON, never from a loader's object names:
 three.js drops ``:`` and ``/`` and turns spaces into ``_``. gltfpack ``-kn``
@@ -29,6 +32,7 @@ its own plus its descendants'.
                            "s": [w, h], "r": r, "u": [x, y, z]}},
      "leds": {"SYS": {"node": 139, "led_material": true,
                       "box": [[minx, miny, minz], [maxx, maxy, maxz]]}},
+     "port_covers": {"StackPort1/1": {"node": 160}},
      "empty_mode": "filler"}          # from a pack's YAML, kept on rescans
 
 A port empty may carry its opening's exact size as glTF node ``extras``
@@ -43,7 +47,8 @@ image's ``image_ports`` (``opening`` / ``opening_extent``) - reads them
 from here: one reader of the extras. A port without them has no ``s`` and
 falls back to the standard size for its type.
 
-A port or LED inside an ``empty:`` cover also records ``"cover": <bay>``:
+A port, LED or port cover inside an ``empty:`` cover also records
+``"cover": <bay>``:
 it shows only while that cover does. An LED's ``box`` is its meshes'
 (descendants' too) as authored - what api.model_projection projects onto a
 pack's rendered faces; LEDs scanned before it was recorded have none.
@@ -59,7 +64,9 @@ import math
 from .anchor_names import NameMatcher
 
 ANCHORS_VERSION = 1
-PREFIXES = ("bay:", "empty:", "port:", "led:")
+PREFIXES = ("bay:", "empty:", "port:", "led:", "cover:")
+#: The one ``cover:`` form Danbyte reads.
+PORT_COVER = "cover:port:"
 EMPTY_MODES = ("filler", "hole", "nothing")
 LED_MATERIAL = "LED"
 #: The largest port opening (m) the size extras may name - a typo guard.
@@ -370,17 +377,24 @@ def scan(doc: dict) -> tuple[dict, list[str]]:
     world = _world(doc)
     covers = _covers(doc, world)
     out = {"v": ANCHORS_VERSION, "box": scene_box(doc, world),
-           "bays": {}, "empties": {}, "ports": {}, "leds": {}}
+           "bays": {}, "empties": {}, "ports": {}, "leds": {}, "port_covers": {}}
     warnings: list[str] = []
     for i in sorted(world):
         name = nodes[i].get("name")
         if not isinstance(name, str) or not name.startswith(PREFIXES):
             continue
         prefix, _, rest = name.partition(":")
+        if prefix == "cover":
+            if not name.startswith(PORT_COVER):
+                warnings.append(f"“{name}” is not a port cover ({PORT_COVER}<interface>); "
+                                "it is ignored.")
+                continue
+            rest = name[len(PORT_COVER):]
         if not rest:
             warnings.append(f"“{name}” has no name after the prefix.")
             continue
-        key = {"bay": "bays", "empty": "empties", "port": "ports", "led": "leds"}[prefix]
+        key = {"bay": "bays", "empty": "empties", "port": "ports", "led": "leds",
+               "cover": "port_covers"}[prefix]
         if rest in out[key]:
             warnings.append(f"“{name}” is in the model twice; the first one counts.")
             continue
@@ -389,6 +403,10 @@ def scan(doc: dict) -> tuple[dict, list[str]]:
             out["bays"][rest] = {"node": i, "m": flat(m)}
         elif key == "empties":
             out["empties"][rest] = i
+        elif key == "port_covers":
+            out["port_covers"][rest] = {"node": i}
+            if i in covers:
+                out["port_covers"][rest]["cover"] = covers[i]
         elif key == "ports":
             out["ports"][rest] = {
                 "node": i,
@@ -414,16 +432,21 @@ def scan(doc: dict) -> tuple[dict, list[str]]:
 
 def counts(anchors: dict | None) -> dict:
     a = anchors or {}
-    return {k: len(a.get(k) or {}) for k in ("bays", "empties", "ports", "leds")}
+    return {k: len(a.get(k) or {})
+            for k in ("bays", "empties", "ports", "leds", "port_covers")}
 
 
 def summary(anchors: dict | None) -> str:
-    """``"7 bays, 53 ports, 54 LEDs"`` - what the upload found."""
+    """``"7 bays, 53 ports, 54 LEDs"`` - what the upload found (and ``, 4
+    port covers`` when it has any)."""
     c = counts(anchors)
     parts = []
     for key, one, many in (("bays", "bay", "bays"), ("ports", "port", "ports"),
-                           ("leds", "LED", "LEDs")):
+                           ("leds", "LED", "LEDs"),
+                           ("port_covers", "port cover", "port covers")):
         n = c[key]
+        if key == "port_covers" and not n:
+            continue
         parts.append(f"{n} {one if n == 1 else many}")
     return ", ".join(parts)
 
@@ -476,6 +499,7 @@ def mismatches(anchors: dict, bay_names, interface_names) -> list[str]:
     empties = anchors.get("empties") or {}
     ports = anchors.get("ports") or {}
     leds = anchors.get("leds") or {}
+    port_covers = anchors.get("port_covers") or {}
     names = (interface_names if isinstance(interface_names, NameMatcher)
              else NameMatcher(interface_names or []))
     if bay_names is None:
@@ -513,6 +537,8 @@ def mismatches(anchors: dict, bay_names, interface_names) -> list[str]:
     for led in leds:
         if led.startswith("port:"):
             check(f"led:{led}", led[5:])
+    for c in port_covers:
+        check(f"{PORT_COVER}{c}", c)
     return out
 
 

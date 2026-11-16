@@ -4411,9 +4411,10 @@ class DeviceViewSet(
         from . import model_3d, model_studio
 
         device = self.get_object()
+        tenant = self._tenant_or_403()
         # The reader's bays and modules only, as the room loads them.
-        model_3d.installed_parts([device], request.user, self._tenant_or_403())
-        return Response(model_studio.device_payload(device))
+        model_3d.installed_parts([device], request.user, tenant)
+        return Response(model_studio.device_payload(device, request.user, tenant))
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
     @action(detail=True, methods=["get", "put"], url_path="model-ports")

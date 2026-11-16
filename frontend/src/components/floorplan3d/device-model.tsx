@@ -8,9 +8,11 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import type { ModelBay, ModelEmptyMode } from "@/lib/api"
 import { ledsKey, prefersReducedMotion } from "@/lib/led-state"
 import type { DeviceLeds } from "@/lib/led-state"
+import { coversKey } from "@/lib/port-covers"
 
 import { applyLeds, findLeds, useLedBlink } from "./led-binding"
 import { anchorNames, assembleModel } from "./model-assembly"
+import { applyPortCovers, findPortCovers } from "./port-covers"
 import { modelRotation, modelScale } from "./world"
 import type { SceneModel } from "./world"
 
@@ -313,8 +315,10 @@ export function PlacedModel({
    * authored. */
   bays?: readonly ModelBay[] | null
   emptyMode?: ModelEmptyMode
-  /** The device's status LEDs (led-binding). Undefined leaves the lights
-   * as authored (dark); null, or a light it doesn't name, is off. */
+  /** The device's status LEDs (led-binding) and the port covers its ports
+   * in use hide (port-covers). Undefined leaves the lights as authored
+   * (dark); null, or a light it doesn't name, is off. A cover hides only
+   * when the payload names it. */
   leds?: DeviceLeds | null
   /** Drawn in the assembled model's own frame, beside it: a viewer's bay
    * hit boxes. Gets the assembled root and the bays a part was posed in. */
@@ -366,6 +370,13 @@ export function PlacedModel({
     // `key` stands for `leds`: a poll that changed nothing applies nothing.
   }, [bound, key, ghosted, reduced, invalidate])
   useLedBlink(blinks)
+  // Port covers: hidden for the ports the payload names, shown otherwise.
+  const covers = useMemo(() => findPortCovers(obj), [obj])
+  const coverKey = coversKey(leds)
+  useEffect(() => {
+    if (covers.length && applyPortCovers(covers, leds)) invalidate()
+    // `coverKey` stands for `leds`' covers.
+  }, [covers, coverKey, invalidate])
   // Focus ghosting: a see-through copy with its own materials, made only
   // while it is ghosted and dropped after.
   useEffect(() => {

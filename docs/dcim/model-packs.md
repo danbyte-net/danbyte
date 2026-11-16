@@ -60,6 +60,7 @@ The models name the nodes Danbyte reads, exactly, in the glTF file:
 | `empty:<module bay name>` | The cover drawn while that bay is empty. |
 | `port:<interface name>` | A port, at the opening, pointing out of it. A module's ports keep their template's `{module}` token, for example `port:TwentyFiveGigE{module}/0/1`. |
 | `led:<id>`, `led:port:<interface name>` | A status light: its own mesh, with the material `LED`. |
+| `cover:port:<interface name>` | A removable blank or dust plug in a port, such as a StackWise blank or an SFP plug: its own mesh, placed where it sits. Shown while the port is free (export spec v1.5). See [Port covers](#port-covers). |
 
 A module's origin is its mount point: the centre of the bottom edge of its
 front face.
@@ -72,8 +73,8 @@ templates use the [stack-member token](virtual-chassis.md#position-aware-interfa
 `GigabitEthernet{position}/0/1`, matches them, and on each member they are
 that member's own ports: on member 2 the anchor is `GigabitEthernet2/0/1`.
 This holds for chassis ports, module ports (`{module}` and `{position}`
-together, `TenGigabitEthernet{position}/{module}/1`), port LEDs and the
-ports placed on generated photos.
+together, `TenGigabitEthernet{position}/{module}/1`), port LEDs, port covers
+and the ports placed on generated photos.
 
 - Only the leading member number counts: `{position}` must be the name's
   first number (`Gi{position}/0/1`, `ge-{position:0}/0/0`). A type that
@@ -114,8 +115,9 @@ its interface names, character for character.
   and the upload dialog show what was found (*7 bays, 53 ports, 54 LEDs*)
   and, as warnings, what matched nothing: a `bay:` with no module bay of
   that name, a module bay the model has no anchor for, a `port:` that is no
-  interface, an LED without the `LED` material. Warnings never block the
-  save.
+  interface, an LED without the `LED` material, a `cover:port:` that is no
+  interface, a `cover:` node that is not `cover:port:`. Warnings never block
+  the save.
 - **Assembly.** A device draws its chassis, then each installed module
   whose type has a model, posed at the matching `bay:` node. An empty bay
   shows its `empty:` cover; so does a bay whose module has no model yet,
@@ -139,6 +141,8 @@ its interface names, character for character.
   it, a floor device draws its chassis alone, then its box; a racked device
   its far copy, then its box. Floor devices spend first.
 - **Status LEDs.** The `led:` lights glow with live state. See below.
+- **Port covers.** A `cover:port:` blank hides once its port is cabled or
+  marked connected. See [Port covers](#port-covers).
 
 Module models come from the module type. A reader who may view the device
 and its modules but not the module types still sees them: the device serves
@@ -425,6 +429,30 @@ render's module part number may then be a module type the tenant has.
 
 The in-app check runs the same checker, with the tenant.
 
+## Port covers
+
+A `cover:port:<interface name>` mesh is a blank or dust plug that comes
+out when a cable goes in: the StackWise blanks on a C9300's stack ports, an
+SFP cage's plug. Cage and jack geometry that is always there stays part of
+the chassis.
+
+- **When it shows.** On a device, a cover shows while its port is free and
+  hides once the port has a cable on it or is marked connected. Removing
+  the cable brings it back on the next poll (30 seconds).
+- **Names.** The name is matched as a `port:` anchor's: authored as stack
+  member 1 (`cover:port:StackPort1/1` is member 2's `StackPort2/1`), and a
+  module's covers keep `{module}`, which takes the bay's position.
+- **Where.** In the device's 3D viewer and in the 3D room, on floor and
+  racked devices. A rack's far copies are drawn instanced, one draw for
+  every identical device; a cover there is hidden for each device on its
+  own.
+- **Types.** A device type has no cabling: its viewer, its generated images
+  and a pack's rendered photos show every cover. A device's own **Render
+  faces** hides the covers of its ports in use.
+- **Scope.** Only the interfaces the reader may view count. Without
+  interface view every cover stays as modelled, so the cabling doesn't
+  show.
+
 ## Importing a pack
 
 A pack can also be imported with a management command, from a folder or a
@@ -472,7 +500,7 @@ pack.
 | `GET /api/devices/{id}/module-model/{module id}/` (and `module-model-far/`) | An installed module's model, through its device. |
 | `GET /api/device-types/{id}/studio/` | What the image renderer needs: the model, `frame_mm` (`[width, height]`), the bays with their reference modules' models and `leds`, the components by name (`ports`: `[kind, type]`), the `token` of the model state, `pending`, `generated`, `hand_made` and `sources` (as `images_source` below). View on the type. |
 | `POST /api/device-types/{id}/studio/` | Stores a rendered set (multipart): `front_image`, `rear_image`, `iso_image` (WebP or PNG), `image_ports` and `image_leds` (JSON), `token` (a stale one answers 400) and `overwrite` - the hand-made targets to replace, comma-separated. Answers `written`, `kept` and the type. Change on the type. |
-| `GET /api/devices/{id}/studio/` | The same for a device's own faces: its components and its modules' LED bindings. View on the device. |
+| `GET /api/devices/{id}/studio/` | The same for a device's own faces: its components, its modules' LED bindings and the port covers to hide (`covers`, `bay_covers`, as on `/api/device-leds/`). View on the device. |
 | `GET /api/device-leds/?devices=<id>,<id>…` | What the status LEDs show now. Also `?device=<id>` or `?rack=<id>`. POST the same keys as a JSON body for long lists (`{"devices": [...]}`). Any other parameter is a 400. |
 | `GET/POST /api/devices/{id}/locate/` | The [locate beacon](devices.md#locate). |
 
@@ -483,7 +511,7 @@ the detail read, `images_pending` and `images_source`. `images_source` gives
 `pack` as `{name, version, current, note}` when a face came from a pack.
 
 An upload's answer carries `model_scan`: `summary`, `counts` (`bays`,
-`empties`, `ports`, `leds`) and `warnings`. A type's or device's detail read
+`empties`, `ports`, `leds`, `port_covers`) and `warnings`. A type's or device's detail read
 carries the same as `model_3d_scan`. A device's `model_3d_effective` (and the
 floor plan scene's device `model`) adds `far_url`, `empty_mode` and `bays`:
 each of its module bays with `installed` and the installed module type's
@@ -492,7 +520,9 @@ model URLs as `part` (`url`, `far_url`), or null.
 `/api/device-leds/` answers `{as_of, poll_seconds, devices}`. Each device
 the reader may view has `leds` (the chassis' lit lights by id, such as
 `SYS` or `port:Te1/0/1`), `bays` (each bay's installed module's lit lights
-by id, `{module}` resolved to the bay's position) and `locate`. A light left
+by id, `{module}` resolved to the bay's position) and `locate`. `covers`
+lists the chassis' port covers to hide, by their names in the model, and
+`bay_covers` each bay's installed module's, `{module}` resolved. A light left
 out is off. A state is `green`, `amber`, `red`, `blue` or `neutral`, with
 `_blink` added when it blinks. The query count is the same for one device
 as for five hundred.

@@ -15,6 +15,7 @@ import type { ModelBay, ModelEmptyMode } from "@/lib/api"
 import { ledLook, ledStateOf, ledsKey } from "@/lib/led-state"
 import type { DeviceLeds } from "@/lib/led-state"
 import { plannedParts } from "@/lib/model-assembly"
+import { coverHidden, coversKey } from "@/lib/port-covers"
 import type { PlannedPart } from "@/lib/model-assembly"
 
 import { isCameraMoving } from "./camera-motion"
@@ -28,6 +29,7 @@ import {
 import type { ModelEntry, ReadyPart } from "./device-model"
 import { findLeds } from "./led-binding"
 import { assembleModel } from "./model-assembly"
+import { findPortCovers } from "./port-covers"
 import {
   createModelBudget,
   instanceGroupKey,
@@ -55,7 +57,9 @@ import type { SceneDevice, SceneModel, SceneRack } from "./world"
  * shared through the model cache), in DeviceMesh; far copies draw here,
  * ONE instanced mesh per part of the model for every device in the rack
  * with the same far copy, parts and covers - a rack of forty identical
- * switches costs one model's draw calls, not forty.
+ * switches costs one model's draw calls, not forty. A port cover a device's
+ * cabling hides (port-covers) is dropped from that device's instance alone
+ * (a zero-scale matrix), so the group stays shared.
  */
 
 /** The room's budget, shared by its floor devices and every rack. */
@@ -390,16 +394,25 @@ interface PartMesh {
   /** Its matrix in the assembled root's frame. */
   local: THREE.Matrix4
   led: { name: string; bay: string | null; off: THREE.Color } | null
+  /** The port cover it belongs to, if any. */
+  cover: { name: string; bay: string | null } | null
 }
 
+/** An instance's matrix while its cover hides: nothing drawn. */
+const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
+
 /** The visible meshes of an assembled copy, each with its matrix in the
- * copy's frame and the LED it lights, if any. */
+ * copy's frame, the LED it lights and the port cover it is part of, if
+ * any. */
 function partMeshes(root: THREE.Object3D): PartMesh[] {
   root.updateMatrixWorld(true)
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()
   const leds = new Map<THREE.Mesh, { name: string; bay: string | null }>()
   for (const l of findLeds(root))
     for (const m of l.meshes) leds.set(m, { name: l.name, bay: l.bay })
+  const covers = new Map<THREE.Mesh, { name: string; bay: string | null }>()
+  for (const c of findPortCovers(root))
+    for (const m of c.meshes) covers.set(m, { name: c.name, bay: c.bay })
   const out: PartMesh[] = []
   const walk = (o: THREE.Object3D) => {
     if (!o.visible) return
@@ -414,6 +427,7 @@ function partMeshes(root: THREE.Object3D): PartMesh[] {
         mesh: o,
         local: new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld),
         led: led ? { ...led, off } : null,
+        cover: covers.get(o) ?? null,
       })
     }
     o.children.forEach(walk)
@@ -470,11 +484,16 @@ function InstanceGroup({
   const posesKey = draws
     .map((d) => `${d.pose.position.join(":")}:${d.pose.rotY}:${d.fit.scale}`)
     .join(",")
+  // Port covers: an instance whose device hides the cover draws nothing.
+  const coverKey = ids.map((id) => coversKey(leds[id])).join("\u0003")
   useLayoutEffect(() => {
     draws.forEach((d, i) => {
       const slot = slotMatrix(d.pose, d.fit)
       instanced.forEach((im, k) => {
-        im.setMatrixAt(i, _m.multiplyMatrices(slot, meshes[k].local))
+        const cover = meshes[k].cover
+        if (cover && coverHidden(leds[ids[i]], cover.name, cover.bay))
+          im.setMatrixAt(i, HIDDEN)
+        else im.setMatrixAt(i, _m.multiplyMatrices(slot, meshes[k].local))
       })
     })
     for (const im of instanced) {
@@ -482,8 +501,8 @@ function InstanceGroup({
       im.computeBoundingSphere()
     }
     invalidate()
-    // `posesKey` stands for the draws' poses.
-  }, [instanced, meshes, posesKey, invalidate])
+    // `posesKey` stands for the draws' poses, `coverKey` for their covers.
+  }, [instanced, meshes, posesKey, coverKey, invalidate])
   // LEDs: each instance takes its state's colour, steady (a far copy is too
   // small for a blink to read), or the LED's own dark colour.
   const ledKey = ids.map((id) => ledsKey(leds[id])).join("\u0003")

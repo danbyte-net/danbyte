@@ -379,6 +379,7 @@ export function DeviceStudioDialog({
       leds: p.leds,
       bay_leds: p.bay_leds,
       ports: p.ports,
+      covers: { covers: p.covers, bay_covers: p.bay_covers },
     }
   }, [open, payload.data, modelKey])
   const { result, urls, error } = useRender(source)
