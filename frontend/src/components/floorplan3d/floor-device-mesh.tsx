@@ -5,6 +5,7 @@ import * as THREE from "three"
 
 import type { FloorTileCheck } from "@/lib/api"
 import type { DeviceLeds } from "@/lib/led-state"
+import { pluggedNames } from "@/lib/port-plugs"
 import { budgetLevel, plannedParts, wantsFarModel } from "@/lib/model-assembly"
 import { useDeviceLeds } from "@/lib/use-device-leds"
 import { markersVisible } from "@/lib/model-ports"
@@ -244,6 +245,7 @@ function PlacedDevice({
   ghosted,
   showName,
   showPorts,
+  full,
   selectedPort,
   leds,
   onSelect,
@@ -266,6 +268,8 @@ function PlacedDevice({
   showName: boolean
   /** Close enough to draw the ports mapped onto its model. */
   showPorts: boolean
+  /** It draws its full model (not the far copy): plugs show. */
+  full: boolean
   /** The mapped port selected in the room, if it is on this device. */
   selectedPort: string | null
   onSelect: (sel: Sel) => void
@@ -335,6 +339,7 @@ function PlacedDevice({
             bays={model?.bays?.length ? model.bays : null}
             emptyMode={model?.empty_mode}
             leds={leds}
+            showPlugs={full}
             overlay={
               // Up close, as its ports: a bay's module menu on right-click.
               showPorts && !ghosted && onDeviceMenu && model?.bays?.length
@@ -363,6 +368,7 @@ function PlacedDevice({
             <ModelPortMarkers
               deviceId={dev.id}
               size={fit.size}
+              plugged={full ? pluggedNames(leds) : undefined}
               selectedPort={selectedPort}
               onSelect={(pk) =>
                 onSelect({
@@ -773,6 +779,9 @@ export function FloorDevicesLayer({
             }
             showName={showNames}
             showPorts={portsNear.has(p.tile.id)}
+            full={
+              !!p.dev.model && chassisUrl.get(p.tile.id) === p.dev.model.url
+            }
             selectedPort={
               selection?.kind === "port" &&
               selection.portSide === "model" &&

@@ -4403,6 +4403,24 @@ class DeviceViewSet(
         device = self.get_object()
         return model_3d.serve_module(device, module_id, far=True)
 
+    @extend_schema(responses={200: OpenApiTypes.BINARY})
+    @action(detail=True, methods=["get"],
+            url_path=r"accessory-model/(?P<accessory_id>[0-9a-fA-F-]{36})")
+    def accessory_model(self, request, pk=None, accessory_id=None):
+        """The 3D model of an accessory type (a plug seated in a cabled
+        port, api.port_plugs) for a reader who may view the device but not
+        module types. The part must be the device's tenant's."""
+        from django.http import Http404
+
+        from . import model_3d
+        from .models import AccessoryType
+
+        device = self.get_object()
+        acc = AccessoryType.objects.filter(tenant_id=device.tenant_id, pk=accessory_id).first()
+        if acc is None or not acc.model_3d:
+            raise Http404("No 3D model.")
+        return model_3d.serve(acc.model_3d, f"{slugify(acc.name) or 'accessory'}.glb")
+
     @extend_schema(responses={200: OpenApiTypes.OBJECT})
     @action(detail=True, methods=["get"], url_path="studio")
     def studio(self, request, pk=None):

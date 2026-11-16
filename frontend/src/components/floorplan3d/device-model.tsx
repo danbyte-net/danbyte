@@ -13,6 +13,7 @@ import { coversKey } from "@/lib/port-covers"
 import { applyLeds, findLeds, useLedBlink } from "./led-binding"
 import { anchorNames, assembleModel } from "./model-assembly"
 import { applyPortCovers, findPortCovers } from "./port-covers"
+import { PortPlugs } from "./port-plugs"
 import { modelRotation, modelScale } from "./world"
 import type { SceneModel } from "./world"
 
@@ -304,6 +305,7 @@ export function PlacedModel({
   bays = null,
   emptyMode = "filler",
   leds,
+  showPlugs = false,
   overlay,
 }: {
   entry: ModelEntry
@@ -320,6 +322,9 @@ export function PlacedModel({
    * (dark); null, or a light it doesn't name, is off. A cover hides only
    * when the payload names it. */
   leds?: DeviceLeds | null
+  /** Seat the plugs `leds` names in its cabled ports (port-plugs) - the
+   * full model up close, never a far copy. Skipped while ghosted. */
+  showPlugs?: boolean
   /** Drawn in the assembled model's own frame, beside it: a viewer's bay
    * hit boxes. Gets the assembled root and the bays a part was posed in. */
   overlay?: (root: THREE.Object3D, drawn: ReadonlySet<string>) => ReactNode
@@ -405,6 +410,9 @@ export function PlacedModel({
     <group position={fit.position} scale={fit.scale}>
       <group rotation={fit.rotation}>
         <primitive object={obj} />
+        {showPlugs && !ghosted && leds?.plugs?.length ? (
+          <PortPlugs root={obj} plugs={leds.plugs} />
+        ) : null}
         {overlay?.(obj, drawn)}
       </group>
     </group>

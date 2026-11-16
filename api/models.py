@@ -6164,6 +6164,53 @@ class ModelPack(TimestampedModel):
         return f"{label} {self.version}".strip()
 
 
+#: What an accessory is (export spec §13): a cable plug, a transceiver
+#: (with its connector seated) or a power cord's plug.
+ACCESSORY_KIND_CHOICES = [
+    ("plug", "Plug"), ("transceiver", "Transceiver"), ("cord", "Cord"),
+]
+
+
+class AccessoryType(TimestampedModel):
+    """A part Danbyte seats in a cabled port on a 3D model - an RJ45 plug,
+    an SFP with its LC connector, a DAC head, a power cord (api.port_plugs,
+    docs/dcim/model-packs.md → Accessory types). Comes with a model pack
+    (``accessory-types/<Vendor>/<NAME>.yaml``) and is tenant-wide like
+    module types; a port takes the part whose ``fits`` names its type."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="accessory_types"
+    )
+    vendor = models.CharField(max_length=100, blank=True, default="")
+    name = models.CharField(max_length=100)
+    kind = models.CharField(max_length=16, choices=ACCESSORY_KIND_CHOICES, default="plug")
+    connector = models.CharField(
+        max_length=32, blank=True, default="",
+        help_text="The connector it ends in: rj45, lc, mpo, dac, iec-c13, usb-mini-b…",
+    )
+    fits = models.JSONField(
+        default=list, blank=True,
+        help_text="The interface, console port and power port type slugs it plugs into.",
+    )
+    model_3d = models.FileField(
+        upload_to=device_model_path, blank=True, null=True, max_length=255,
+        help_text="The part's 3D model (binary glTF, .glb).",
+    )
+    # The pack that brought it: {name, version}.
+    pack_import = models.JSONField(null=True, blank=True, default=None, editable=False)
+
+    class Meta:
+        ordering = ["vendor", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "vendor", "name"],
+                                    name="api_accessorytype_unique_name"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vendor} {self.name}".strip()
+
+
 class TopologyView(NumIdMixin, TimestampedModel):
     """A saved topology-map view: the filter set plus hand-tuned node
     positions, so a curated diagram survives reloads and re-layouts."""

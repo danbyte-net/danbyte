@@ -11,6 +11,8 @@
  * that are on: anything it leaves out - unknown, stale, not bound - is off.
  */
 
+import type { PortPlug } from "@/lib/port-plugs"
+
 export type LedColor = "green" | "amber" | "red" | "blue"
 export type LedBase = LedColor | "neutral" | "off"
 export type LedState = LedBase | `${LedColor}_blink`
@@ -27,6 +29,8 @@ export interface DeviceLeds {
   covers?: string[]
   /** Each bay's installed module's covers to hide, `{module}` resolved. */
   bay_covers?: Partial<Record<string, string[]>>
+  /** The parts seated in its cabled ports (lib/port-plugs). */
+  plugs?: PortPlug[]
 }
 
 /** `GET|POST /api/device-leds/`. */

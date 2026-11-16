@@ -1,6 +1,6 @@
 """Import a 3D model pack: device type and module type YAML with ``model3d:``
-blocks, and the ``.glb`` files they name (api.model_pack,
-docs/dcim/model-packs.md).
+blocks, accessory types (plugs seated in cabled ports, api.port_plugs), and
+the ``.glb`` files they name (api.model_pack, docs/dcim/model-packs.md).
 
     manage.py import_model_pack <folder|zip> --tenant <slug or id> [--apply]
                                 [--replace-photos]
@@ -9,7 +9,8 @@ Each YAML is matched to an existing type by manufacturer and part number;
 a type that isn't there yet is created from the YAML. The matched or created
 type gets the pack's model (and far model), replacing the one it had, and a
 device type the pack's Blender renders as its face photos. A face uploaded
-by hand stays unless ``--replace-photos`` is given.
+by hand stays unless ``--replace-photos`` is given. An accessory type is
+matched by its folder (vendor) and name, and created or updated.
 
 A dry run by default: everything is read, checked and scanned, the report
 printed, and nothing kept. ``--apply`` keeps it; the changes land in the
@@ -24,7 +25,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
-    help = "Import a 3D model pack (device/module type YAML plus .glb models)."
+    help = "Import a 3D model pack (device/module/accessory type YAML plus .glb models)."
 
     def add_arguments(self, parser):
         parser.add_argument("pack", help="The pack: a folder or a .zip of one.")
@@ -61,7 +62,7 @@ class Command(BaseCommand):
             head += f" {result.version}"
         self.stdout.write(f"{head} → {t.name}{'' if apply else ' (dry run)'}")
         for tr in result.types:
-            noun = "module type" if tr.kind == "module-type" else "device type"
+            noun = tr.kind.replace("-", " ")
             self.stdout.write(f"\n{noun} {tr.name or tr.path}: {tr.action} ({tr.path})")
             for note in tr.notes:
                 self.stdout.write(f"  - {note}")

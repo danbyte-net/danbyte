@@ -395,12 +395,14 @@ def device_payload(device, user=None, tenant=None) -> dict:
     """``GET /api/devices/{id}/studio/``: the same for one device drawn with
     the modules it has installed (its ``model_3d_effective`` bays), and its
     own components by name. ``covers`` / ``bay_covers`` are the port covers
-    its ports in use hide (api.port_covers, as ``user`` may see them); a
-    type's render has none. Nothing is stored for a device but its photo
+    its ports in use hide (api.port_covers, as ``user`` may see them), and
+    ``plugs`` the parts seated in its cabled ports (api.port_plugs); a
+    type's render has neither. Nothing is stored for a device but its photo
     port override, through the usual PATCH."""
     from .face_ports import FACE_PORT_KINDS
     from .model_3d import effective_owner, parts_of
     from .port_covers import hidden_covers
+    from .port_plugs import plugs
 
     dt = device.device_type
     owner = effective_owner(device)
@@ -413,9 +415,11 @@ def device_payload(device, user=None, tenant=None) -> dict:
     for r in parts_of(device):
         if r["type"] is not None and r["type_viewable"]:
             leds[r["name"]] = _leds_of(r["type"])
-    covers = {"covers": [], "bay_covers": {}}
+    covers = {"covers": [], "bay_covers": {}, "plugs": []}
     if user is not None and tenant is not None:
         covers = hidden_covers([device], {device.id: owner}, user, tenant)[str(device.id)]
+        covers["plugs"] = plugs([device], {device.id: owner}, user, tenant).get(
+            str(device.id), [])
     return {
         "frame_mm": frame_mm(dt) if dt is not None else None,
         "size_mm": {f: float(getattr(dt, f)) if dt is not None and getattr(dt, f) is not None

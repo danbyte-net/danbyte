@@ -421,26 +421,35 @@ class LedStates:
     # the states
 
     def payload(self, devices) -> dict:
-        """``{device id: {leds, bays, locate, covers, bay_covers}}`` for
-        ``devices``: ``covers`` / ``bay_covers`` the port covers to hide
-        (api.port_covers)."""
+        """``{device id: {leds, bays, locate, covers, bay_covers, plugs}}``
+        for ``devices``: ``covers`` / ``bay_covers`` the port covers to hide
+        (api.port_covers), ``plugs`` the parts seated in cabled ports
+        (api.port_plugs)."""
         from .anchor_names import chassis_interface, module_interface
         from .model_3d import effective_owner, has_bays, installed_parts
         from .models import render_module_name
         from .port_covers import has_covers, hidden_covers
+        from .port_plugs import accessories_of, has_ports, plugs
 
         devices = list(devices)
         owners = {d.id: effective_owner(d) for d in devices}
         lit = [d for d in devices
                if owners[d.id] is not None and _led_ids(owners[d.id].model_anchors)]
         lit_ids = {d.id for d in lit}
+        # The tenant's accessory types, asked for only when a drawn model
+        # names a port (api.port_plugs).
+        accessories = (accessories_of(self.tenant)
+                       if any(has_ports(d, owners[d.id]) or has_bays(owners[d.id])
+                              for d in devices) else [])
         # Parts for the lit devices and for any whose chassis or modules may
-        # carry port covers (api.port_covers) - one batch either way.
+        # carry port covers (api.port_covers) or plugs - one batch either way.
         drawn = [d for d in devices if d.id in lit_ids or has_bays(owners[d.id])
-                 or has_covers(d, owners[d.id])]
+                 or has_covers(d, owners[d.id])
+                 or (accessories and has_ports(d, owners[d.id]))]
         installed_parts(drawn, self.user, self.tenant)
         covers = hidden_covers([d for d in drawn if has_covers(d, owners[d.id])],
                                owners, self.user, self.tenant)
+        seated = plugs(drawn, owners, self.user, self.tenant, accessories) if accessories else {}
 
         # Which sources are in play, so a scene without port LEDs costs no
         # interface query.
@@ -460,7 +469,8 @@ class LedStates:
         out: dict = {}
         for d in devices:
             entry: dict = {"leds": {}, "bays": {}, "locate": locate_state(d, self.now),
-                           "covers": [], "bay_covers": {}}
+                           "covers": [], "bay_covers": {},
+                           "plugs": seated.get(str(d.id), [])}
             entry.update(covers.get(str(d.id), {}))
             out[str(d.id)] = entry
             owner = owners[d.id]

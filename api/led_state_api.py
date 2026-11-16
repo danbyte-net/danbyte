@@ -1,5 +1,6 @@
 """``/api/device-leds/``: what the status LEDs of a set of devices show now
-(api.led_state), and which port covers to hide (api.port_covers), for the
+(api.led_state), which port covers to hide (api.port_covers) and which
+plugs to seat in cabled ports (api.port_plugs), for the
 3D room, the device viewer and LED overlays on rack-face images. Light enough to poll every 30 seconds; the query count
 does not grow with the number of devices.
 
@@ -55,14 +56,16 @@ def _params(request):
 @permission_classes([IsAuthenticated])
 def device_leds_view(request):
     """``{as_of, poll_seconds, devices: {id: {leds, bays, locate, covers,
-    bay_covers}}}``:
+    bay_covers, plugs}}}``:
     ``leds`` the chassis' lit LEDs by id (``SYS``, ``port:Te1/0/1``),
     ``bays`` each bay's installed module's lit LEDs, ``locate`` the beacon
     while it is on. An LED left out is off. States are green, amber, red,
     blue or neutral, ``_blink`` appended when blinking. ``covers`` names
     the chassis' port covers to hide (its ports in use: cabled or marked
     connected, among the interfaces the reader may view) and ``bay_covers``
-    each installed module's (api.port_covers)."""
+    each installed module's (api.port_covers). ``plugs`` lists the parts
+    seated in cabled ports - ``{port, bay, name, url, color}`` - when the
+    tenant has accessory types (api.port_plugs)."""
     from .models import Device, Rack
     from .topology_views import _parse_uuid, _uuid_list_param
     from .views import _get_active_tenant

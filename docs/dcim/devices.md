@@ -381,7 +381,10 @@ at once; its ports are the ones the models name. Its
 its modules' and its ports', polled every 30 seconds. Its
 [port covers](model-packs.md#port-covers) - stack blanks, SFP dust plugs -
 show on free ports and drop away once a port is cabled or marked
-connected.
+connected. A cabled port shows what is plugged into it - an RJ45 plug, an
+SFP with its LC connector, a DAC head, a power cord - in the cable's
+colour, once a pack brings those [accessory types](model-packs.md#accessory-types);
+hovering or right-clicking the plug is the port's.
 An installed module has a **Status** of its own (the status catalog's
 *Modules* vocabulary: active, planned, staged, offline, failed,
 decommissioning), shown and set in the **Modules** table under Components →

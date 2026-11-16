@@ -21,6 +21,9 @@ What it checks:
   written), LEDs on the ``LED`` material, the far LOD's names, ``leds:``
   keys against the model's ``led:`` nodes (equal on a module type), port
   opening sizes (a warning when missing);
+* accessory types (``accessory-types/``, api.port_plugs): name, kind,
+  ``fits`` and ``model3d.file``, the model valid and within the part
+  budget, and listed under ``types: accessory:``;
 * renders: the files, WebP or PNG, front and rear exactly the type's face
   frame at 2000 px, a transparent background, ``model_sha256`` equal to the
   ``.glb``, and ``modules`` naming real bays and module types in the pack
@@ -70,7 +73,7 @@ class Finding:
 @dataclass
 class Part:
     """One type's row in the report table."""
-    kind: str           # "device-type" | "module-type"
+    kind: str           # "device-type" | "module-type" | "accessory-type"
     path: str
     part: str = ""
     triangles: int | None = None
@@ -189,6 +192,7 @@ class _Checker:
         self.sizes = files.sizes()
         self.glbs: dict[str, tuple[bytes, dict] | None] = {}
         self.referenced: set[str] = set()
+        self.accessories: dict[str, dict] = {}
 
     def add(self, level, path, message, part: Part | None = None):
         self.report.findings.append(Finding(level, path, message))
@@ -283,6 +287,42 @@ class _Checker:
                 self.add("error", "pack.yaml", f"types.{key} lists {pn}, which has no YAML.")
             for pn in sorted(have - listed):
                 self.add("warning", "pack.yaml", f"types.{key} doesn't list {pn}.")
+        listed = types.get("accessory") or []
+        listed = {str(x) for x in listed} if isinstance(listed, list) else set()
+        have = {str(d.get("name") or "") for d in self.accessories.values()}
+        for name in sorted(listed - have):
+            self.add("error", "pack.yaml", f"types.accessory lists {name}, which has no YAML.")
+        for name in sorted(have - listed):
+            if name:
+                self.add("warning", "pack.yaml", f"types.accessory doesn't list {name}.")
+
+    # an accessory -----------------------------------------------------
+
+    def accessory(self, path: str, data):
+        from .port_plugs import ACCESSORY_TRIANGLES, read_accessory
+
+        row = Part(kind="accessory-type", path=path,
+                   part=str(data.get("name") or "") if isinstance(data, dict) else "")
+        self.report.parts.append(row)
+        fields, notes = read_accessory(path, data)
+        for n in notes:
+            self.add("warning" if fields is not None else "error", path, n, row)
+        if fields is None:
+            return
+        rel = fields["file"]
+        self.referenced.add(rel)
+        if rel not in self.names:
+            self.add("error", path, f"model3d.file {rel} is not in the pack.", row)
+            return
+        got = self.glb(rel)
+        if got is None:
+            row.errors += 1
+            return
+        data_bytes, doc = got
+        row.triangles, row.bytes = triangles(doc), len(data_bytes)
+        if row.triangles > ACCESSORY_TRIANGLES:
+            self.add("warning", rel, f"{row.triangles} triangles; a part's budget is "
+                                     f"{ACCESSORY_TRIANGLES}.", row)
 
     # a type -----------------------------------------------------------
 
@@ -509,10 +549,22 @@ class _Checker:
     # run --------------------------------------------------------------
 
     def run(self) -> CheckReport:
+        from .port_plugs import ACCESSORY_DIR
+
         for r in self.files.refusals():
             self.add("error", r.split(":", 1)[0], r)
         yamls: dict[str, dict] = {}
         for p in self.names:
+            if p.startswith(ACCESSORY_DIR) and p.endswith((".yaml", ".yml")):
+                try:
+                    doc = yaml.safe_load(
+                        (self.files.read(p, MAX_YAML_BYTES) or b"").decode("utf-8"))
+                except (ValidationError, UnicodeDecodeError, yaml.YAMLError) as exc:
+                    self.add("error", p, f"Not readable: {exc}")
+                    continue
+                self.accessories[p] = doc if isinstance(doc, dict) else {}
+                self.accessory(p, doc)
+                continue
             if not p.startswith(("device-types/", "module-types/")) or not p.endswith(
                     (".yaml", ".yml")):
                 continue

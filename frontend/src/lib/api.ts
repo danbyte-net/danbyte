@@ -19385,7 +19385,7 @@ export interface ModelPackFinding {
 
 /** One type's row of the pack checker's table. */
 export interface ModelPackPart {
-  kind: "device-type" | "module-type"
+  kind: "device-type" | "module-type" | "accessory-type"
   path: string
   part: string
   triangles: number | null
@@ -19401,7 +19401,7 @@ export interface ModelPackPart {
 
 /** A type the dry run or the install matched or created. */
 export interface ModelPackType {
-  kind: "device-type" | "module-type"
+  kind: "device-type" | "module-type" | "accessory-type"
   path: string
   name: string
   action: "matched" | "created" | "error"

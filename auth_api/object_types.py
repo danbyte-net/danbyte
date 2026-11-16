@@ -216,6 +216,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Its endpoints gate on device and module type rights
     # (api.model_pack_install); listed so its change log reads like theirs.
     ("api.ModelPack", "3D model packs", "DCIM"),
+    # Parts seated in cabled ports (api.port_plugs); its endpoints gate on
+    # module type rights, as the parts come with the module types.
+    ("api.AccessoryType", "Accessory types", "DCIM"),
     ("api.DeviceRole", "Device roles", "DCIM"),
     ("api.PlatformGroup", "Platform groups", "DCIM"),
     ("api.Platform", "Platforms", "DCIM"),

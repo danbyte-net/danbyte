@@ -28,6 +28,7 @@ import type {
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
 import type { DeviceLeds } from "@/lib/led-state"
+import { pluggedNames } from "@/lib/port-plugs"
 import type { PortLabelSource } from "@/lib/api"
 import { fetchFacePortsBatched } from "@/lib/face-ports-batch"
 import { facePortsOnSide } from "@/lib/faceplate-layout"
@@ -743,6 +744,7 @@ export function DeviceMesh({
             bays={model.bays}
             emptyMode={model.emptyMode}
             leds={leds ?? null}
+            showPlugs
             overlay={
               onDeviceMenu && model.bays?.length
                 ? (root, drawn) => (
@@ -777,6 +779,7 @@ export function DeviceMesh({
           <ModelPortMarkers
             deviceId={dev.id}
             size={model.fit.size}
+            plugged={pluggedNames(leds)}
             selectedPort={selectedPort ?? null}
             onSelect={(pk) => onSelectModelPort(dev.id, pk)}
             onMenu={

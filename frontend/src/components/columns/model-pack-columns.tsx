@@ -134,6 +134,12 @@ const ACTION_VARIANT = {
   error: "destructive",
 } as const
 
+const KIND_LABEL: Record<ModelPackType["kind"], string> = {
+  "device-type": "Device type",
+  "module-type": "Module type",
+  "accessory-type": "Accessory",
+}
+
 export function buildModelPackTypeColumns(): ColumnDef<
   ModelPackType,
   unknown
@@ -146,7 +152,9 @@ export function buildModelPackTypeColumns(): ColumnDef<
       cell: ({ row }) => {
         const t = row.original
         const label = t.name || t.path
-        if (!t.id) return <span className="font-medium">{label}</span>
+        // Accessory types have no page of their own.
+        if (!t.id || t.kind === "accessory-type")
+          return <span className="font-medium">{label}</span>
         return t.kind === "module-type" ? (
           <Link
             to="/module-types/$id"
@@ -174,7 +182,7 @@ export function buildModelPackTypeColumns(): ColumnDef<
       enableSorting: false,
       cell: ({ row }) => (
         <span className="whitespace-nowrap">
-          {row.original.kind === "module-type" ? "Module type" : "Device type"}
+          {KIND_LABEL[row.original.kind]}
         </span>
       ),
       meta: { label: "Kind" },
@@ -296,7 +304,11 @@ export function buildModelPackPartColumns(): ColumnDef<
       header: "Kind",
       enableSorting: false,
       cell: ({ row }) =>
-        row.original.kind === "module-type" ? "Module" : "Device",
+        row.original.kind === "module-type"
+          ? "Module"
+          : row.original.kind === "accessory-type"
+            ? "Accessory"
+            : "Device",
       meta: { label: "Kind" },
     },
     {

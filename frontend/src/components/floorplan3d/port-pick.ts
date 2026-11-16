@@ -18,6 +18,10 @@ import * as THREE from "three"
  * over the body it sits on. A marker facing away - a rear port seen
  * through the device - is no pick at all. `PortPickPrecedence` installs it
  * on a canvas.
+ *
+ * A port with a plug seated in it (port-plugs) has a pick volume reaching
+ * out over the plug, which never takes the pointer itself: hovering or
+ * right-clicking the plug is the port's pick, ahead of the body behind it.
  */
 
 /** How far behind the nearest hit (m, along the ray) a port still counts

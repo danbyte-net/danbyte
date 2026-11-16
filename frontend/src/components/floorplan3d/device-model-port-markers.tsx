@@ -56,7 +56,16 @@ import { KeepInView } from "./keep-in-view"
  * markers on the model they frame.
  */
 
-const QUAD = new THREE.PlaneGeometry(1, 1)
+/** A port's pick volume: a unit box from the opening (z 0) out to z 1,
+ * scaled to the opening and to how far out its plug reaches - a free port
+ * keeps a sliver, a plugged one covers its plug (port-plugs), so the plug
+ * hovers and right-clicks as its port. */
+const HIT_BOX = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5)
+/** How far a seated plug reaches out of its port (m): the body, boot and
+ * the part's 40 mm cable stub (export spec §13). */
+export const PLUG_REACH_M = 0.06
+/** A free port's pick depth (m): flat as the opening. */
+const HIT_DEPTH_M = 0.0005
 const _m = new THREE.Matrix4()
 const _r = new THREE.Matrix4()
 const _q = new THREE.Quaternion()
@@ -95,10 +104,14 @@ export function ModelPortMarkers({
   onFly,
   onMenu,
   outlineAll = false,
+  plugged,
 }: {
   deviceId: string
   /** The fitted model's upright size (m). */
   size: V3
+  /** The ports (by name) a plug is seated in: their pick reaches over the
+   * plug. */
+  plugged?: ReadonlySet<string>
   /** The mapped port selected in the room (its marker name), if any. */
   selectedPort: string | null
   onSelect: (pick: MappedPortPick) => void
@@ -119,12 +132,18 @@ export function ModelPortMarkers({
     () => (facePorts.data?.model ?? []).filter((p) => p.p && p.n),
     [facePorts.data]
   )
+  // Keyed on the names: the set is rebuilt on every render.
+  const pluggedKey = plugged ? [...plugged].sort().join("\u0000") : ""
   const placed = useMemo(
     () =>
       ports.map((fp) => ({
         port: fp,
         at: portLocal(fp.p!, size),
         normal: fp.n!,
+        reach:
+          pluggedKey && pluggedKey.split("\u0000").includes(fp.name)
+            ? PLUG_REACH_M
+            : 0,
         shape: markerShape(
           {
             n: fp.n!,
@@ -137,7 +156,7 @@ export function ModelPortMarkers({
           size
         ),
       })),
-    [ports, size]
+    [ports, size, pluggedKey]
   )
   const hexes = useMemo(
     () =>
@@ -254,16 +273,18 @@ interface Shaped {
   at: V3
   normal: V3
   shape: MarkerShape
+  /** How far out of the port its pick reaches (m): a seated plug's. */
+  reach?: number
 }
 
 /** The pose of a marker: at `at`, lifted `lift` along its normal, its X
  * across the opening, Y up it, Z out of the port. */
-function pose(pk: Shaped, lift: number, sx: number, sy: number) {
+function pose(pk: Shaped, lift: number, sx: number, sy: number, sz = 1) {
   const { u, v, n } = pk.shape
   _r.makeBasis(_u.set(...u), _v.set(...v), _n.set(...n))
   _q.setFromRotationMatrix(_r)
   _p.set(...pk.at).addScaledVector(_n, lift)
-  return _m.compose(_p, _q, _s.set(sx, sy, 1))
+  return _m.compose(_p, _q, _s.set(sx, sy, sz))
 }
 
 /**
@@ -336,7 +357,13 @@ function MarkerMesh<TPick extends Shaped>({
       const rim = rimWidth(pk.shape.w, pk.shape.h)
       hit.setMatrixAt(
         i,
-        pose(pk, LIFT_M, pk.shape.w + 2 * rim, pk.shape.h + 2 * rim)
+        pose(
+          pk,
+          LIFT_M,
+          pk.shape.w + 2 * rim,
+          pk.shape.h + 2 * rim,
+          Math.max(pk.reach ?? 0, HIT_DEPTH_M)
+        )
       )
     })
     hit.count = placed.length
@@ -363,7 +390,7 @@ function MarkerMesh<TPick extends Shaped>({
         // A new count needs a new buffer.
         key={`hit-${placed.length}`}
         ref={hitRef}
-        args={[QUAD, undefined, placed.length]}
+        args={[HIT_BOX, undefined, placed.length]}
         userData={{ [PORT_MARKERS_KEY]: true }}
         onPointerMove={(e) => {
           e.stopPropagation()

@@ -780,7 +780,10 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
       on the front rails and it runs back from there; a rear-mounted one is
       turned round, its front on the rear rails. It turns with the rack.
     - **Assembled**: installed modules in their bays, covers over the empty
-      ones, as on the floor ([model packs](../dcim/model-packs.md)).
+      ones, as on the floor ([model packs](../dcim/model-packs.md)). Up
+      close, on the full model, cabled ports show their plugs
+      ([accessory types](../dcim/model-packs.md#accessory-types)); the far
+      copies draw none.
     - **By distance**: within about 3.5 m (back past 4.5 m) the full model;
       out to about 9 m (back past 11 m) the far copy - the full model when
       there is none - drawn as one instanced mesh per part for every device
