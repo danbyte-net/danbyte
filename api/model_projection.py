@@ -115,7 +115,13 @@ def port_size_mm(a: dict, kind: str, type_: str | None) -> tuple[float, float]:
 def image_ports_from_anchors(anchors, index: dict, frame: dict) -> dict:
     """``{doc, unknown, offFace}`` - lib/model-studio imagePortsFromAnchors.
     ``anchors`` are ``{name, p, n, w?, h?}``; ``index`` names each port's
-    ``[kind, type]``."""
+    ``[kind, type]``. An anchor is looked up as api.anchor_names matches
+    it, and a marker carries the name it matched: ``Gi1/0/1`` over the
+    template ``Gi{position}/0/1`` is placed as the template, which each
+    stack member renders as its own port."""
+    from .anchor_names import NameMatcher
+
+    names = NameMatcher(index)
     doc: dict[str, list] = {"front": [], "rear": []}
     unknown: list[str] = []
     off: list[str] = []
@@ -129,7 +135,8 @@ def image_ports_from_anchors(anchors, index: dict, frame: dict) -> dict:
         if not face:
             off.append(name)
             continue
-        known = index.get(name)
+        key = names.resolve(name)
+        known = index.get(key) if key is not None else None
         if not known:
             unknown.append(name)
         kind = known[0] if known else "interface"
@@ -139,7 +146,7 @@ def image_ports_from_anchors(anchors, index: dict, frame: dict) -> dict:
             off.append(name)
             continue
         doc[face].append({
-            "kind": kind, "name": name, "x": round5(x), "y": round5(y),
+            "kind": kind, "name": key if known else name, "x": round5(x), "y": round5(y),
             "w": round5(_clamp01(wmm / 1000 / frame["w"])),
             "h": round5(_clamp01(hmm / 1000 / frame["h"])),
         })

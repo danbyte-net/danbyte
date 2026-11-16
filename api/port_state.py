@@ -24,6 +24,7 @@ from collections import defaultdict
 
 from core.tags import tags_of
 
+from .anchor_names import chassis_interface
 from .face_ports import (
     FACE_PORT_KINDS,
     ComponentIndex,
@@ -343,6 +344,12 @@ class FacePortLoader:
             if mapping:
                 relation, term_kind = mapping
                 comp = self._index(relation, device.id).match(name)
+                if comp is None and kind == "interface" and device.vc_position is not None:
+                    # A marker authored as stack member 1 (a model pack's
+                    # ``Gi1/0/1`` over ``Gi{position}/0/1`` templates) names
+                    # this member's own port (api.anchor_names).
+                    comp = self._index(relation, device.id).match(
+                        chassis_interface(device, raw))
                 if comp is not None and kind == "module-bay":
                     # Module bay - reads occupied/empty, never cable-able.
                     # The reverse OneToOne raises (an AttributeError

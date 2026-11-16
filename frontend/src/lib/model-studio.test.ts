@@ -129,6 +129,17 @@ describe("imagePortsFromAnchors", () => {
     expect(out.unknown).toEqual(["Nope"])
     expect(out.offFace).toEqual(["Up"])
   })
+  it("places a member-1 anchor as its {position} template", () => {
+    const out = imagePortsFromAnchors(
+      [{ name: "GigabitEthernet1/0/1", p: [0, 0.0222, -0.23], n: [0, 0, -1] }],
+      { "GigabitEthernet{position}/0/1": ["interface", "1000base-t"] },
+      frame
+    )
+    expect(out.unknown).toEqual([])
+    expect(out.doc.front.map((m) => m.name)).toEqual([
+      "GigabitEthernet{position}/0/1",
+    ])
+  })
   it("uses the model's exact opening over the type's box", () => {
     const out = imagePortsFromAnchors(
       [

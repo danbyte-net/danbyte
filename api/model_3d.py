@@ -229,6 +229,7 @@ def installed_parts(devices, user=None, tenant=None) -> None:
     view the type. A device whose model names no bays gets ``[]``."""
     from auth_api import rbac
 
+    from .anchor_names import prime as prime_anchor_names
     from .models import Module, ModuleBay, ModuleType
     from .natural import natural_key
 
@@ -237,6 +238,7 @@ def installed_parts(devices, user=None, tenant=None) -> None:
     for d in devices:
         d._installed_parts = []
     if not wanted:
+        prime_anchor_names(devices)
         return
     ids = [d.id for d in wanted]
     bays = ModuleBay.objects.filter(device_id__in=ids).order_by()
@@ -264,6 +266,9 @@ def installed_parts(devices, user=None, tenant=None) -> None:
         })
     for d in wanted:
         d._installed_parts = sorted(per.get(d.id, []), key=lambda r: natural_key(r["name"]))
+    # A stack member's anchors resolve against its types' templates: loaded
+    # here for the batch too.
+    prime_anchor_names(devices)
 
 
 def parts_of(device) -> list:

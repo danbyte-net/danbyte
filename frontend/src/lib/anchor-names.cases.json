@@ -1,0 +1,122 @@
+{
+  "_comment": "Cases both test suites run: frontend lib/anchor-names.test.ts and api/tests_anchor_names.py. A model is authored as stack member 1.",
+  "authored": [
+    ["GigabitEthernet{position}/0/1", "GigabitEthernet1/0/1"],
+    ["GigabitEthernet1/0/1", "GigabitEthernet1/0/1"],
+    ["ge-{position:0}/0/0", "ge-0/0/0"],
+    ["{position}/1/1", "1/1/1"],
+    [
+      "TenGigabitEthernet{position}/{module}/1",
+      "TenGigabitEthernet1/{module}/1"
+    ],
+    [
+      "TenGigabitEthernet1/{module}/{position}",
+      "TenGigabitEthernet1/{module}/{position}"
+    ],
+    ["Gi1/0/{position}", "Gi1/0/{position}"],
+    ["Ethernet{position}", "Ethernet1"],
+    ["{module}/{position}", "{module}/{position}"]
+  ],
+  "match": [
+    {
+      "why": "a literal anchor finds a {position} template",
+      "names": [
+        "GigabitEthernet{position}/0/1",
+        "GigabitEthernet{position}/0/2"
+      ],
+      "anchor": "GigabitEthernet1/0/1",
+      "candidates": ["GigabitEthernet{position}/0/1"],
+      "resolve": "GigabitEthernet{position}/0/1"
+    },
+    {
+      "why": "exact names still match",
+      "names": ["GigabitEthernet1/0/1", "GigabitEthernet1/0/2"],
+      "anchor": "GigabitEthernet1/0/2",
+      "candidates": ["GigabitEthernet1/0/2"],
+      "resolve": "GigabitEthernet1/0/2"
+    },
+    {
+      "why": "a model is authored as member 1, never another member",
+      "names": ["GigabitEthernet{position}/0/1"],
+      "anchor": "GigabitEthernet2/0/1",
+      "candidates": [],
+      "resolve": null
+    },
+    {
+      "why": "no prefix or suffix stretching",
+      "names": [
+        "GigabitEthernet{position}/0/11",
+        "GigabitEthernet{position}/0/1"
+      ],
+      "anchor": "GigabitEthernet1/0/11",
+      "candidates": ["GigabitEthernet{position}/0/11"],
+      "resolve": "GigabitEthernet{position}/0/11"
+    },
+    {
+      "why": "only the leading member segment is the stack member",
+      "names": ["Gi1/0/{position}"],
+      "anchor": "Gi1/0/1",
+      "candidates": [],
+      "resolve": null
+    },
+    {
+      "why": "an anchor may carry the token itself",
+      "names": ["GigabitEthernet1/0/1"],
+      "anchor": "GigabitEthernet{position}/0/1",
+      "candidates": ["GigabitEthernet1/0/1"],
+      "resolve": "GigabitEthernet1/0/1"
+    },
+    {
+      "why": "token anchor over a token template",
+      "names": ["GigabitEthernet{position}/0/1"],
+      "anchor": "GigabitEthernet{position}/0/1",
+      "candidates": ["GigabitEthernet{position}/0/1"],
+      "resolve": "GigabitEthernet{position}/0/1"
+    },
+    {
+      "why": "the exact name wins over a {position} template of the same spelling",
+      "names": ["GigabitEthernet{position}/0/1", "GigabitEthernet1/0/1"],
+      "anchor": "GigabitEthernet1/0/1",
+      "candidates": ["GigabitEthernet1/0/1"],
+      "resolve": "GigabitEthernet1/0/1"
+    },
+    {
+      "why": "two templates of one authored spelling are ambiguous",
+      "names": ["Gi{position}/0/1", "Gi{position:1}/0/1"],
+      "anchor": "Gi1/0/1",
+      "candidates": ["Gi{position}/0/1", "Gi{position:1}/0/1"],
+      "resolve": null
+    },
+    {
+      "why": "a 0-based vendor is authored as member 0",
+      "names": ["xe-{position:0}/0/0", "xe-{position:0}/0/1"],
+      "anchor": "xe-0/0/1",
+      "candidates": ["xe-{position:0}/0/1"],
+      "resolve": "xe-{position:0}/0/1"
+    },
+    {
+      "why": "module ports keep {module} on both sides",
+      "names": ["TenGigabitEthernet{position}/{module}/1"],
+      "anchor": "TenGigabitEthernet1/{module}/1",
+      "candidates": ["TenGigabitEthernet{position}/{module}/1"],
+      "resolve": "TenGigabitEthernet{position}/{module}/1"
+    },
+    {
+      "why": "a module rendered for its bay, as the studio index names it",
+      "names": [
+        "TenGigabitEthernet{position}/1/1",
+        "TenGigabitEthernet{position}/1/2"
+      ],
+      "anchor": "TenGigabitEthernet1/1/2",
+      "candidates": ["TenGigabitEthernet{position}/1/2"],
+      "resolve": "TenGigabitEthernet{position}/1/2"
+    },
+    {
+      "why": "case is not folded here",
+      "names": ["GigabitEthernet{position}/0/1"],
+      "anchor": "gigabitethernet1/0/1",
+      "candidates": [],
+      "resolve": null
+    }
+  ]
+}

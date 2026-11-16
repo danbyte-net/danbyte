@@ -29,7 +29,9 @@ devices at once, with a constant number of queries:
   from the device's last SNMP poll: up → green, testing → amber, anything
   else (down, admin down, disabled, a stale poll) → off. A device SNMP
   doesn't poll at all shows what Danbyte records instead: green for an
-  enabled port that is cabled or marked connected, else off.
+  enabled port that is cabled or marked connected, else off. The name is
+  matched as a port anchor's is (api.anchor_names): on stack member 2 a
+  model's ``port:Gi1/0/1`` is the member's ``Gi2/0/1``.
 * ``device.locate`` - the locate beacon (``Device.locate_until``): blinking
   blue while it is on.
 * ``none`` - a light Danbyte does not drive; always off.
@@ -419,6 +421,7 @@ class LedStates:
 
     def payload(self, devices) -> dict:
         """``{device id: {leds, bays, locate}}`` for ``devices``."""
+        from .anchor_names import chassis_interface, module_interface
         from .model_3d import effective_owner, installed_parts
         from .models import render_module_name
 
@@ -463,7 +466,7 @@ class LedStates:
                 own = status_led(m.status)
                 return own if own is not None else (_life or "off")
 
-            def state(spec, led_id, module_row=None, *, _d=d, _key=key,
+            def state(spec, led_id, module_row=None, iface=None, *, _d=d, _key=key,
                       _life=life, _ifaces=dev_iface, _mods=mods):
                 src = spec.get("source")
                 if src == "device.status":
@@ -481,9 +484,9 @@ class LedStates:
                     return worst(module_led(r) for name, r in _mods.items()
                                  if any(fnmatch.fnmatchcase(name, g) for g in globs))
                 if src == "interface.oper_status":
-                    if not led_id.startswith("port:"):
+                    if iface is None:
                         return "off"
-                    hit = _ifaces.get(led_id[5:])
+                    hit = _ifaces.get(iface)
                     if hit is None:
                         return "off"
                     visible, enabled, observed, documented = hit
@@ -494,7 +497,11 @@ class LedStates:
                 spec = binding_for(owner.model_leds, led_id)
                 if spec is None:
                     continue
-                s = _filtered(state(spec, led_id), spec)
+                # A stack member's own port (api.anchor_names): the model
+                # is authored as member 1.
+                iface = (chassis_interface(d, led_id[5:])
+                         if led_id.startswith("port:") else None)
+                s = _filtered(state(spec, led_id, None, iface), spec)
                 if s != "off":
                     entry["leds"][led_id] = s
             for row in d._installed_parts:
@@ -507,7 +514,9 @@ class LedStates:
                     if spec is None:
                         continue
                     led_id = render_module_name(raw_id, row["position"])
-                    s = _filtered(state(spec, led_id, row), spec)
+                    iface = (module_interface(d, mt, raw_id[5:], row["position"])
+                             if raw_id.startswith("port:") else None)
+                    s = _filtered(state(spec, led_id, row, iface), spec)
                     if s != "off":
                         bay[led_id] = s
                 if bay:

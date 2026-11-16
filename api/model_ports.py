@@ -136,11 +136,12 @@ def effective_model_ports(device) -> dict | None:
 def anchored_model_ports(device) -> dict | None:
     """The ports the drawn model's anchors place: the chassis' ``port:``
     nodes plus every installed module's, posed at its ``bay:`` node, names
-    rendered as the module's interfaces are (``{module}`` → the bay's
-    position, ``{position}`` → the stack member). None when none apply."""
+    named as the device's interfaces (api.anchor_names: the template an
+    anchor matches, ``{module}`` → the bay's position, ``{position}`` → the
+    stack member). None when none apply."""
+    from .anchor_names import chassis_interface, module_interface, prime
     from .model_3d import effective_owner, has_bays, parts_of
     from .model_anchors import port_doc
-    from .models import _render_module_template
 
     owner = effective_owner(device)
     anchors = (owner.model_anchors or {}) if owner is not None else {}
@@ -148,21 +149,21 @@ def anchored_model_ports(device) -> dict | None:
         return None
     parts = []
     if has_bays(owner):
-        vc = device.vc_position
         for row in parts_of(device):
             mt = row["type"]
             mod = (mt.model_anchors or {}) if mt is not None and mt.model_3d else {}
             if not mod.get("ports"):
                 continue
-            pos = row["position"]
             parts.append((
                 row["name"],
-                lambda name, pos=pos: _render_module_template(name, pos, vc),
+                lambda name, mt=mt, pos=row["position"]: module_interface(
+                    device, mt, name, pos),
                 mod,
             ))
     if not anchors.get("ports") and not parts:
         return None
-    return port_doc(owner, parts)
+    prime([device])
+    return port_doc(owner, parts, rename=lambda name: chassis_interface(device, name))
 
 
 def similar_bounds(a, b, tol: float = SIMILAR_TOL) -> bool:

@@ -64,6 +64,28 @@ The models name the nodes Danbyte reads, exactly, in the glTF file:
 A module's origin is its mount point: the centre of the bottom edge of its
 front face.
 
+### Stack members
+
+A model is authored as **stack member 1**: its ports carry the device
+library's names, `port:GigabitEthernet1/0/1`. A type whose interface
+templates use the [stack-member token](virtual-chassis.md#position-aware-interface-names),
+`GigabitEthernet{position}/0/1`, matches them, and on each member they are
+that member's own ports: on member 2 the anchor is `GigabitEthernet2/0/1`.
+This holds for chassis ports, module ports (`{module}` and `{position}`
+together, `TenGigabitEthernet{position}/{module}/1`), port LEDs and the
+ports placed on generated photos.
+
+- Only the leading member number counts: `{position}` must be the name's
+  first number (`Gi{position}/0/1`, `ge-{position:0}/0/0`). A type that
+  counts members from 0 (`{position:0}`) is authored as member 0.
+- An exact name always wins. A template literally named
+  `GigabitEthernet1/0/1` is matched before a `{position}` one.
+- A model may spell the token itself, `port:GigabitEthernet{position}/0/1`.
+- An anchor that matches two templates (`Gi{position}/0/1` and
+  `Gi{position:1}/0/1`) matches neither, and the scan warns.
+- Names never match across members or by case: `port:GigabitEthernet2/0/1`
+  is not member 1's port.
+
 ### Port sizes
 
 A `port:` empty may carry the exact size of its opening as custom

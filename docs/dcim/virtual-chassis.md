@@ -80,6 +80,10 @@ another interface, that port is skipped and everything else still renames.
 The API reports the count (`vc_renamed_interfaces`) and the UI toasts it -
 "added to stack - 28 interfaces renamed to match".
 
+**3D models follow too.** A [model pack](model-packs.md#stack-members) is
+authored as member 1 (`port:GigabitEthernet1/0/1`); on member 2 its ports,
+port lights and generated photo ports are `GigabitEthernet2/0/…`.
+
 ## The stack page
 
 Open a stack to see its tabs:

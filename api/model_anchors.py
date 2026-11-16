@@ -8,7 +8,9 @@ Danbyte reads, exactly, in the glTF JSON:
 * ``empty:<module bay name>`` - the cover drawn while that bay is empty;
 * ``port:<interface name>`` - a port, its local +Y pointing out of it
   (Blender's +Z after the exporter's +Y-up conversion). A module's ports keep
-  their template's ``{module}`` token;
+  their template's ``{module}`` token. A model is authored as stack member 1:
+  ``port:Gi1/0/1`` matches the template ``Gi{position}/0/1`` and is member
+  2's ``Gi2/0/1`` (api.anchor_names);
 * ``led:<id>`` and ``led:port:<interface name>`` - status lights, each its
   own mesh with the material ``LED``.
 
@@ -53,6 +55,8 @@ module's, posed at its bay, in the chassis' upright frame.
 from __future__ import annotations
 
 import math
+
+from .anchor_names import NameMatcher
 
 ANCHORS_VERSION = 1
 PREFIXES = ("bay:", "empty:", "port:", "led:")
@@ -443,16 +447,37 @@ def template_names(obj) -> tuple[list[str] | None, list[str]]:
     return [], []
 
 
+def interface_matcher(obj, interface_names) -> NameMatcher:
+    """What a ``port:`` anchor of ``obj``'s model is matched against
+    (api.anchor_names): its interface names; on a stack member with its own
+    model also its type's ``{position}`` templates, so a model authored as
+    member 1 (``Gi1/0/1``) finds member 2's ``Gi2/0/1``."""
+    from .models import Device, render_component_name
+
+    aliases = {}
+    if isinstance(obj, Device) and obj.vc_position is not None and obj.device_type_id:
+        have = set(interface_names or [])
+        for t in obj.device_type.interface_templates.values_list("name", flat=True):
+            rendered = render_component_name(t, obj.vc_position)
+            if rendered in have and rendered != t:
+                aliases[t] = rendered
+    return NameMatcher(interface_names or [], aliases)
+
+
 def mismatches(anchors: dict, bay_names, interface_names) -> list[str]:
     """Names in the model with nothing to match in the type, and the type's
     bays the model has no anchor for. Warnings only: a model may cover part
-    of a type, and the names can be fixed on either side."""
+    of a type, and the names can be fixed on either side. ``interface_names``
+    (a list, or a ``NameMatcher``) match as api.anchor_names says: a model
+    authored as stack member 1 matches ``{position}`` templates, and an
+    anchor matching several names is ambiguous."""
     out: list[str] = []
     bays = anchors.get("bays") or {}
     empties = anchors.get("empties") or {}
     ports = anchors.get("ports") or {}
     leds = anchors.get("leds") or {}
-    ifaces = set(interface_names or [])
+    names = (interface_names if isinstance(interface_names, NameMatcher)
+             else NameMatcher(interface_names or []))
     if bay_names is None:
         for b in bays:
             out.append(f"bay:{b} - a module's model holds no bays; it is ignored.")
@@ -467,18 +492,27 @@ def mismatches(anchors: dict, bay_names, interface_names) -> list[str]:
     for e in empties:
         if e not in bays:
             out.append(f"empty:{e} has no bay:{e} beside it.")
-    for p in ports:
-        if p not in ifaces:
-            out.append(f"port:{p} matches no interface.")
+    def check(label: str, name: str) -> str | None:
+        found = names.candidates(name)
+        if not found:
+            out.append(f"{label} matches no interface.")
+            return None
+        if len(found) > 1:
+            shown = ", ".join(found[:3]) + (", …" if len(found) > 3 else "")
+            out.append(f"{label} matches more than one interface ({shown}).")
+            return None
+        return found[0]
+
+    covered = {check(f"port:{p}", p) for p in ports}
     if ports:
-        missing = [i for i in interface_names or [] if i not in ports]
+        missing = [i for i in names.names if i not in covered]
         if missing:
             n = len(missing)
             out.append(f"{n} interface{'s' if n != 1 else ''} without a port: anchor "
                        f"(first: {missing[0]}).")
     for led in leds:
-        if led.startswith("port:") and led[5:] not in ifaces:
-            out.append(f"led:{led} matches no interface.")
+        if led.startswith("port:"):
+            check(f"led:{led}", led[5:])
     return out
 
 
@@ -510,7 +544,7 @@ def scan_result(obj, doc: dict, *, far: bool = False) -> tuple[dict, dict]:
         warnings += far_mismatches(obj.model_anchors, anchors)
     else:
         bay_names, ifaces = template_names(obj)
-        warnings += mismatches(anchors, bay_names, ifaces)
+        warnings += mismatches(anchors, bay_names, interface_matcher(obj, ifaces))
         mode = (obj.model_anchors or {}).get("empty_mode")
         if mode in EMPTY_MODES:
             anchors["empty_mode"] = mode
@@ -526,7 +560,8 @@ def report_for(obj) -> dict | None:
         return None
     bay_names, ifaces = template_names(obj)
     return {"summary": summary(anchors), "counts": counts(anchors),
-            "warnings": capped(mismatches(anchors, bay_names, ifaces))}
+            "warnings": capped(mismatches(anchors, bay_names,
+                                          interface_matcher(obj, ifaces)))}
 
 
 # ── ports from anchors ──────────────────────────────────────────────────────
@@ -557,19 +592,20 @@ def posed_opening(m, op):
     return w * su, h * sv, r * min(su, sv), unit(apply_dir(m, u)), unit(apply_dir(m, n))
 
 
-def port_doc(owner, parts) -> dict | None:
+def port_doc(owner, parts, rename=None) -> dict | None:
     """The ``model_ports`` doc the anchors give ``owner``'s model (a device
     type's or a device's own) with ``parts`` installed: ``[(bay_name,
-    render, module_anchors)]``, ``render`` turning a module template's name
-    into the device's interface name. None when no port anchor applies or
-    the model's box is unknown."""
+    render, module_anchors)]``, ``render`` turning a module's anchor name
+    into the device's interface name as ``rename`` does the chassis' (both
+    api.anchor_names: a stack member's real names). None when no port
+    anchor applies or the model's box is unknown."""
     anchors = owner.model_anchors or {}
     box = anchors.get("box")
     if not (isinstance(box, list) and len(box) == 2):
         return None
     points: list[tuple[str, list, list, tuple | None]] = []
     for name, p, n, op in _port_points(anchors):
-        points.append((name, p, n, op))
+        points.append((rename(name) if rename is not None else name, p, n, op))
     bays = anchors.get("bays") or {}
     for bay_name, render, mod in parts:
         bay = bays.get(bay_name)

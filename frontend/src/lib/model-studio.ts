@@ -7,6 +7,7 @@ import type {
   ImagesSource,
 } from "@/lib/api"
 
+import { NameMatcher } from "./anchor-names"
 import table from "./studio-projection.json"
 
 /**
@@ -233,6 +234,10 @@ export function portSizeMm(
  * `image_ports` from the model's port anchors: each projected onto the
  * face it points out of, its box the model's exact opening (`size`) or,
  * without one, sized by `portBoxKind`, centre-anchored and normalised. `index` names each port's component `[kind, type]`.
+ * An anchor is looked up as lib/anchor-names matches it, and a marker
+ * carries the name it matched: `Gi1/0/1` over the template
+ * `Gi{position}/0/1` is placed as the template, which each stack member
+ * renders as its own port.
  */
 export function imagePortsFromAnchors(
   anchors: readonly PortAnchor[],
@@ -243,6 +248,7 @@ export function imagePortsFromAnchors(
     front: [],
     rear: [],
   }
+  const names = new NameMatcher(Object.keys(index))
   const unknown: string[] = []
   const offFace: string[] = []
   const seen = new Set<string>()
@@ -254,7 +260,8 @@ export function imagePortsFromAnchors(
       offFace.push(a.name)
       continue
     }
-    const known = index[a.name]
+    const key = names.resolve(a.name)
+    const known = key !== null ? index[key] : undefined
     if (!known) unknown.push(a.name)
     const kind = known?.[0] ?? "interface"
     const [wmm, hmm] = portSizeMm(a, kind, known?.[1])
@@ -266,7 +273,7 @@ export function imagePortsFromAnchors(
     }
     doc[face].push({
       kind,
-      name: a.name,
+      name: known && key !== null ? key : a.name,
       x: round5(x),
       y: round5(y),
       w: round5(clamp01(wm / frame.w)),
