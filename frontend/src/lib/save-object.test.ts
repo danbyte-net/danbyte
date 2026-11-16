@@ -56,6 +56,9 @@ const UNMIGRATED_FORMS = new Set<string>([
   "components/dashboard/named-board.tsx",
   // Uploads a file to a generic attachment endpoint.
   "components/object-documents.tsx",
+  // Uploads a 3D model pack archive and starts its check / install job: a
+  // background run that creates many types, not a single-object save.
+  "components/model-pack-install-dialog.tsx",
   // Row action, not the object's form: flips `monitored` on one service.
   "routes/services.$id.tsx",
   // Deployment settings, not a domain object.
