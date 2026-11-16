@@ -745,6 +745,7 @@ export function DeviceMesh({
             emptyMode={model.emptyMode}
             leds={leds ?? null}
             showPlugs
+            deviceId={dev.id}
             overlay={
               onDeviceMenu && model.bays?.length
                 ? (root, drawn) => (

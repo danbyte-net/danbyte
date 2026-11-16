@@ -6264,6 +6264,10 @@ class AccessoryType(TimestampedModel):
     )
     standard = models.CharField(max_length=64, blank=True, default="", db_default="")
     wavelength_nm = models.PositiveIntegerField(null=True, blank=True)
+    # A cord's run (``cable:`` in the pack, export spec §13 v1.9):
+    # {profile: zipcord | round, jacket_mm, pitch_mm, min_bend_mm}, or null.
+    # Danbyte draws the cable from the part's ``cable`` empty with it.
+    cable = models.JSONField(null=True, blank=True, default=None)
     model_3d = models.FileField(
         upload_to=device_model_path, blank=True, null=True, max_length=255,
         help_text="The part's 3D model (binary glTF, .glb).",

@@ -327,6 +327,7 @@ export function PlacedModel({
   emptyMode = "filler",
   leds,
   showPlugs = false,
+  deviceId,
   overlay,
 }: {
   entry: ModelEntry
@@ -346,6 +347,9 @@ export function PlacedModel({
   /** Seat the plugs `leds` names in its cabled ports (port-plugs) - the
    * full model up close, never a far copy. Skipped while ghosted. */
   showPlugs?: boolean
+  /** The device drawn: in the 3D room its cords' cable ends are published
+   * under it (cord-ends), so its cable runs start at them. */
+  deviceId?: string
   /** Drawn in the assembled model's own frame, beside it: a viewer's bay
    * hit boxes. Gets the assembled root and the bays a part was posed in. */
   overlay?: (root: THREE.Object3D, drawn: ReadonlySet<string>) => ReactNode
@@ -432,7 +436,7 @@ export function PlacedModel({
       <group rotation={fit.rotation}>
         <primitive object={obj} />
         {showPlugs && !ghosted && leds?.plugs?.length ? (
-          <PortPlugs root={obj} plugs={leds.plugs} />
+          <PortPlugs root={obj} plugs={leds.plugs} deviceId={deviceId} />
         ) : null}
         {overlay?.(obj, drawn)}
       </group>

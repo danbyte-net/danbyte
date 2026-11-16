@@ -85,7 +85,7 @@ class ChoiceTests(SimpleTestCase):
         self.assertEqual(fields, {"vendor": "Generic", "name": "RJ45-PLUG", "kind": "plug",
                                   "connector": "rj45", "fits": ["1000base-t"],
                                   "parts": [], "standard": "", "wavelength_nm": None,
-                                  "file": "models/Generic/RJ45-PLUG.glb"})
+                                  "cable": None, "file": "models/Generic/RJ45-PLUG.glb"})
         self.assertEqual(notes, ["fits: 'bad slug' is not a type slug - ignored."])
         for bad, why in (({**doc, "kind": "cable"}, "kind"), ({**doc, "fits": []}, "fits"),
                          ({**doc, "model3d": {"file": "../x.glb"}}, "model3d.file"),
@@ -240,6 +240,12 @@ class _Base(_CoverBase):
         return f"/api/accessory-types/{acc.pk}/model/?v={version_of(acc.model_3d)}"
 
 
+def shown(p):
+    """The URL a one-part port draws: its cord's, else its transceiver's."""
+    part = p["cord_part"] or p["transceiver_part"]
+    return part["url"] if part else None
+
+
 class PayloadTests(_Base):
     def test_free_ports_have_no_plugs(self):
         self.assertEqual(self._plugs(), [])
@@ -249,16 +255,19 @@ class PayloadTests(_Base):
         self._cable(self._iface(self.dev, "Te1/0/2"), type="mmf-om4")
         self._cable(console=ConsolePort.objects.get(device=self.dev))
         url = {p["port"]: p for p in self._plugs()}
-        self.assertEqual(url["Te1/0/1"], {"port": "Te1/0/1", "bay": None, "name": "Te1/0/1",
-                                          "url": self._url(self.dac), "color": "#ff0000",
-                                          "cabled": True, "transceiver": None})
-        self.assertEqual((url["Te1/0/2"]["url"], url["Te1/0/2"]["color"]),
+        self.assertEqual(url["Te1/0/1"], {
+            "port": "Te1/0/1", "bay": None, "name": "Te1/0/1", "port_type": "10gbase-x-sfpp",
+            "cabled": True, "color": "#ff0000", "cable_type": "dac-passive",
+            "transceiver": None, "transceiver_part": None,
+            "cord_part": {"url": self._url(self.dac), "kind": "plug", "connector": "dac",
+                          "cable": None}})
+        self.assertEqual((shown(url["Te1/0/2"]), url["Te1/0/2"]["color"]),
                          (self._url(self.sr), None))
-        self.assertEqual(url["con 0"]["url"], self._url(self.rj45))
+        self.assertEqual(shown(url["con 0"]), self._url(self.rj45))
 
     def test_marked_connected_takes_the_default_part(self):
         Interface.objects.filter(device=self.dev, name="Te1/0/2").update(mark_connected=True)
-        self.assertEqual([(p["port"], p["url"], p["color"]) for p in self._plugs()],
+        self.assertEqual([(p["port"], shown(p), p["color"]) for p in self._plugs()],
                          [("Te1/0/2", self._url(self.sr), None)])
 
     def test_nothing_fits(self):
@@ -278,7 +287,7 @@ class PayloadTests(_Base):
         self.psu.save()
         self._cable(Interface.objects.create(device=self.dev, name="Te1/1/9",
                                              type="1000base-t"))
-        self.assertEqual([(p["bay"], p["port"], p["url"]) for p in self._plugs()],
+        self.assertEqual([(p["bay"], p["port"], shown(p)) for p in self._plugs()],
                          [("PS-1", "Te1/1/9", self._url(self.rj45))])
 
     def test_query_count_does_not_grow_with_devices(self):
@@ -292,7 +301,7 @@ class PayloadTests(_Base):
         with CaptureQueriesContext(connection) as six:
             out = self._leds(self.dev, *more)
         self.assertEqual(len(six), len(one))
-        self.assertEqual({k: [(p["port"], p["url"]) for p in v["plugs"]]
+        self.assertEqual({k: [(p["port"], shown(p)) for p in v["plugs"]]
                           for k, v in out.items()},
                          {str(self.dev.id): [("Te1/0/1", self._url(self.sr))],
                           **{str(d.id): [("Te1/0/2", self._url(self.dac))] for d in more}})
@@ -310,7 +319,7 @@ class PayloadTests(_Base):
         self._cable(self._iface(self.dev, "Te1/0/2"), type="dac-passive")
         res = self.client.get(f"/api/devices/{self.dev.id}/studio/")
         self.assertEqual(res.status_code, 200, res.content)
-        self.assertEqual([(p["port"], p["url"]) for p in res.json()["plugs"]],
+        self.assertEqual([(p["port"], shown(p)) for p in res.json()["plugs"]],
                          [("Te1/0/2", self._url(self.dac))])
 
 
@@ -333,15 +342,15 @@ class ScopeTests(_Base):
         self._cable(self._iface(self.dev, "Te1/0/1"), type="dac-passive", color="#ff0000")
         self._reader(["device", "devicetype", "interface", "moduletype"])
         # The medium is unknown: the default part, grey.
-        self.assertEqual([(p["url"], p["color"]) for p in self._plugs()],
+        self.assertEqual([(shown(p), p["color"]) for p in self._plugs()],
                          [(self._url(self.sr), None)])
 
     def test_without_module_type_view_the_part_comes_through_the_device(self):
         self._cable(self._iface(self.dev, "Te1/0/1"), type="mmf")
         self._reader(["device", "devicetype", "interface", "cable"])
         [p] = self._plugs()
-        self.assertTrue(p["url"].startswith(
-            f"/api/devices/{self.dev.id}/accessory-model/{self.sr.id}/?v="), p["url"])
+        self.assertTrue(shown(p).startswith(
+            f"/api/devices/{self.dev.id}/accessory-model/{self.sr.id}/?v="), shown(p))
         self.assertEqual(self.client.get("/api/accessory-types/").status_code, 403)
 
 

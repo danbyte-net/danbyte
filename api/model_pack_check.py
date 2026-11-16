@@ -22,9 +22,11 @@ What it checks:
   keys against the model's ``led:`` nodes (equal on a module type), port
   opening sizes (a warning when missing);
 * accessory types (``accessory-types/``, api.port_plugs): name, kind,
-  ``fits``, ``parts`` / ``standard`` / ``wavelength_nm`` and
-  ``model3d.file``, the model valid and within the part budget, listed
-  under ``types: accessory:``, and no part number claimed twice;
+  ``fits``, ``parts`` / ``standard`` / ``wavelength_nm``, a cord's
+  ``cable:`` block and ``model3d.file``, the model valid and within its
+  budget (a transceiver 1,500 triangles, a cord or plug 2,000), the
+  ``port:<connector>`` / ``cable`` empties stacking needs, listed under
+  ``types: accessory:``, and no part number claimed twice;
 * renders: the files, WebP or PNG, front and rear exactly the type's face
   frame at 2000 px, a transparent background, ``model_sha256`` equal to the
   ``.glb``, and ``modules`` naming real bays and module types in the pack
@@ -313,7 +315,7 @@ class _Checker:
                 claimed.setdefault(key, path)
 
     def accessory(self, path: str, data):
-        from .port_plugs import ACCESSORY_TRIANGLES, read_accessory
+        from .port_plugs import empty_warnings, read_accessory, triangle_budget
 
         row = Part(kind="accessory-type", path=path,
                    part=str(data.get("name") or "") if isinstance(data, dict) else "")
@@ -334,9 +336,12 @@ class _Checker:
             return
         data_bytes, doc = got
         row.triangles, row.bytes = triangles(doc), len(data_bytes)
-        if row.triangles > ACCESSORY_TRIANGLES:
-            self.add("warning", rel, f"{row.triangles} triangles; a part's budget is "
-                                     f"{ACCESSORY_TRIANGLES}.", row)
+        budget = triangle_budget(fields["kind"])
+        if row.triangles > budget:
+            self.add("warning", rel, f"{row.triangles} triangles; a {fields['kind']}'s "
+                                     f"budget is {budget}.", row)
+        for w in empty_warnings(doc, fields):
+            self.add("warning", rel, w, row)
 
     # a type -----------------------------------------------------------
 

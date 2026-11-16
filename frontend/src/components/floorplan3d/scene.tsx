@@ -104,6 +104,8 @@ import { useScene } from "./use-scene"
 import { BuildingLevels, RiserRuns, Roofline, Slab } from "./building"
 import { levelsBounds, placeLevels } from "./building-math"
 import { ExplodeDriver } from "./level-explode-3d"
+import { CordEndsContext } from "./cord-ends"
+import { CordEndStore } from "@/lib/cord-run"
 import { poseBounds, tilePose } from "../floorplan/tile-pose"
 import type { LevelMode } from "./building-math"
 import {
@@ -445,6 +447,8 @@ export default function FloorScene3D({
   // outside the <Canvas>, and with frameloop="demand" a bare flyToRef
   // mutation would sit unnoticed until something else rendered a frame.
   const invalidateRef = useRef<(() => void) | null>(null)
+  // Where the room's drawn cords start their cables (cord-ends).
+  const [cordEnds] = useState(() => new CordEndStore())
 
   // ── Cable building ─────────────────────────────────────────────────────────
   // `connecting` holds the resolved A end while the user picks the far end in
@@ -1089,373 +1093,378 @@ export default function FloorScene3D({
           setFocusOn(false)
         }}
       >
-        <ExplodeDriver store={explodeStore} />
-        <Room
-          scene={data}
-          xray={shellMode === "xray"}
-          ceiling={showCeiling}
-          drawingFloor={drawingFloor}
-          muted={muteBackground}
-          slab={!(building && levels.length > 1 && building.mode !== "only")}
-        />
-        {building && levels.length > 1 && building.mode !== "only" && (
-          <>
-            <Slab scene={data} sink />
-            <BuildingLevels
-              levels={levels}
-              explode={explodeStore}
-              onGo={building.onGoLevel}
-              ghostWalls={showCables}
-              muted={muteBackground}
-            />
-            {roofLevel && roofLevel !== activeLevel && (
-              <Roofline placement={roofLevel} explode={explodeStore} />
-            )}
-            {showCables && (
-              <RiserRuns
+        <CordEndsContext.Provider value={cordEnds}>
+          <ExplodeDriver store={explodeStore} />
+          <Room
+            scene={data}
+            xray={shellMode === "xray"}
+            ceiling={showCeiling}
+            drawingFloor={drawingFloor}
+            muted={muteBackground}
+            slab={!(building && levels.length > 1 && building.mode !== "only")}
+          />
+          {building && levels.length > 1 && building.mode !== "only" && (
+            <>
+              <Slab scene={data} sink />
+              <BuildingLevels
                 levels={levels}
                 explode={explodeStore}
-                selectedId={cableSel}
-                onSelect={(id) => {
-                  setSelection(null)
-                  setStructSel(null)
-                  setTraySel(null)
-                  setCableSel(id)
-                  onOpenCable?.(id)
-                }}
+                onGo={building.onGoLevel}
+                ghostWalls={showCables}
+                muted={muteBackground}
               />
-            )}
-          </>
-        )}
-        {cameraViews.length > 0 && (
-          <CameraFanMeshes plan={plan} views={cameraViews} />
-        )}
-        {areas.map((a) => (
-          <AreaFloorMesh
-            key={a.id}
-            plan={plan}
-            area={a}
-            selected={structSel?.kind === "area" && structSel.id === a.id}
-            onPick={(ids, frame) => {
-              // Floor inside an area: what a click into nothing does, and
-              // the area (the innermost under the pointer) as the target.
-              const hit = smallestArea(areas, ids, plan)
-              setSelection(null)
-              setConnecting(null)
-              setCableSel(null)
-              setTraySel(null)
-              setFocusOn(false)
-              setStructSel(hit ? { kind: "area", id: hit.id } : null)
-              const box = hit && frame ? areaBox(plan, hit) : null
-              if (box) navRef.current?.frame(box.min, box.max)
-            }}
-          />
-        ))}
-        {shownRacks.map((t) => (
-          <RackMesh
-            key={t.id}
-            plan={plan}
-            tile={t}
-            check={liveState?.tiles[t.id]?.check ?? null}
-            tint={tints?.get(t.id) ?? null}
-            highlighted={!!pointTileIds?.has(t.id)}
-            selection={selection}
-            attention={attention}
-            showUNumbers={showUNumbers}
-            showNames={showNames}
-            namesScope={namesScope}
-            namesAtEdge={namesAtEdge}
-            portLabelSource={portLabelsShown ? faceplatePortLabels : ""}
-            portLabelColor={faceplatePortLabelColor}
-            showAirflow={showAirflow}
-            shellMode={shellMode}
-            ghosted={
-              (focusOn && !!selection && selection.tileId !== t.id) ||
-              !!recedeTileIds?.has(t.id)
-            }
-            focusDeviceId={
-              focusOn && selection?.tileId === t.id
-                ? (selection.deviceId ?? null)
-                : null
-            }
-            onSelect={handleSelect}
-            onLegend={onLegend}
-            onDeviceMenu={onDeviceMenu}
-            onPortMenu={
-              canSetStatus
-                ? (sel, at) =>
-                    sel.deviceId &&
-                    sel.portName &&
-                    setPartMenu({
-                      ...at,
-                      deviceId: sel.deviceId,
-                      marker: sel.portName,
-                      side: sel.portSide === "model" ? undefined : sel.portSide,
-                    })
-                : undefined
-            }
-            onFlyTo={(target, position) => {
-              flyToRef.current = { target, position }
-              setViewSide("front")
-            }}
-            leds={roomLeds}
-            budget={modelBudget}
-          />
-        ))}
-        {shownCabinets.map((t) => (
-          <CabinetMesh
-            key={t.id}
-            plan={plan}
-            tile={t}
-            check={liveState?.tiles[t.id]?.check ?? null}
-            selected={
-              selection?.tileId === t.id && selection.kind === "cabinet"
-            }
-            ghosted={
-              (focusOn && !!selection && selection.tileId !== t.id) ||
-              !!recedeTileIds?.has(t.id)
-            }
-            xray={shellMode === "xray"}
-            attention={attention}
-            doorOpen={openDoors.has(t.id)}
-            selectedDeviceId={
-              selection?.tileId === t.id &&
-              (selection.kind === "device" || selection.kind === "port")
-                ? (selection.deviceId ?? null)
-                : null
-            }
-            selectedPort={
-              selection?.tileId === t.id &&
-              selection.kind === "port" &&
-              selection.deviceId &&
-              selection.portName
-                ? { deviceId: selection.deviceId, marker: selection.portName }
-                : null
-            }
-            // A hold on a port inside draws amber, as on the rack page.
-            markReserved
-            portLabelSource={portLabelsShown ? faceplatePortLabels : ""}
-            portLabelColor={faceplatePortLabelColor}
-            onSelect={handleSelect}
-            onHover={hoverStore.set}
-            onSelectDevice={(tileId, deviceId) =>
-              handleSelect({ kind: "device", tileId, deviceId })
-            }
-            onHoverDevice={hoverCabinetDevice}
-            onSelectPort={(tileId, deviceId, marker) =>
-              handleSelect({
-                kind: "port",
-                tileId,
-                deviceId,
-                portName: marker.name,
-                portKind: marker.kind,
-                portSide: "front",
-              })
-            }
-            onHoverPort={hoverCabinetPort}
-            onDeviceMenu={onDeviceMenu}
-            onPortMenu={
-              canSetStatus
-                ? (_, deviceId, marker, at) =>
-                    setPartMenu({
-                      ...at,
-                      deviceId,
-                      marker: marker.name,
-                      side: "front",
-                    })
-                : undefined
-            }
-            onLegend={onLegend}
-            onFlyTo={(target, position) => {
-              flyToRef.current = { target, position }
-              setViewSide("front")
-            }}
-          />
-        ))}
-        {data.trays.map((tr) => (
-          <TrayMesh
-            key={tr.id}
-            plan={plan}
-            tray={tr}
-            areas={scene.data.raised_floors}
-            junctions={trayJointPoints}
-            selected={traySel === tr.id}
-            onSelect={(id) => {
-              setSelection(null)
-              setStructSel(null)
-              setCableSel(null)
-              setTraySel((cur) => (cur === id ? null : id))
-            }}
-          />
-        ))}
-        {/* One plate per joint, at scene level: a crossing belongs to both
-            runs, so drawing it per tray would stack two in one place. */}
-        {trayJoints.map((j, i) => {
-          const owner = data.trays.find((t) => t.id === j.trayIds[0])
-          if (!owner) return null
-          return (
-            <TrayJunctionMesh
-              key={`joint-${i}`}
-              at={j.at}
-              y={trayElevationM(plan, owner, scene.data.raised_floors)}
-              color={owner.color || undefined}
-            />
-          )
-        })}
-        {raisedPads.map((rg) => (
-          <RaisedFloorMesh
-            key={rg.rows[0].id}
-            plan={plan}
-            region={rg}
-            // X-ray lifts every raised floor - the plenum is half the point.
-            peek={
-              floorPeek ||
-              shellMode === "xray" ||
-              rg.rows.some((r) => liftedIds.has(r.id))
-            }
-            onToggleLift={(ids) =>
-              setLiftedIds((prev) => {
-                const next = new Set(prev)
-                const lifted = ids.some((id) => next.has(id))
-                for (const id of ids)
-                  if (lifted) next.delete(id)
-                  else next.add(id)
-                return next
-              })
-            }
-          />
-        ))}
-        {showWalls &&
-          (scene.data.walls ?? []).map((wl) => (
-            <WallMesh
-              key={wl.id}
+              {roofLevel && roofLevel !== activeLevel && (
+                <Roofline placement={roofLevel} explode={explodeStore} />
+              )}
+              {showCables && (
+                <RiserRuns
+                  levels={levels}
+                  explode={explodeStore}
+                  selectedId={cableSel}
+                  onSelect={(id) => {
+                    setSelection(null)
+                    setStructSel(null)
+                    setTraySel(null)
+                    setCableSel(id)
+                    onOpenCable?.(id)
+                  }}
+                />
+              )}
+            </>
+          )}
+          {cameraViews.length > 0 && (
+            <CameraFanMeshes plan={plan} views={cameraViews} />
+          )}
+          {areas.map((a) => (
+            <AreaFloorMesh
+              key={a.id}
               plan={plan}
-              wall={wl}
-              mode={shellMode === "xray" ? "ghost" : "solid"}
-              selected={structSel?.kind === "wall" && structSel.id === wl.id}
-              onPick={(frame) => {
+              area={a}
+              selected={structSel?.kind === "area" && structSel.id === a.id}
+              onPick={(ids, frame) => {
+                // Floor inside an area: what a click into nothing does, and
+                // the area (the innermost under the pointer) as the target.
+                const hit = smallestArea(areas, ids, plan)
                 setSelection(null)
+                setConnecting(null)
                 setCableSel(null)
                 setTraySel(null)
                 setFocusOn(false)
-                setStructSel({ kind: "wall", id: wl.id })
-                const box = frame ? wallBox(plan, wl) : null
+                setStructSel(hit ? { kind: "area", id: hit.id } : null)
+                const box = hit && frame ? areaBox(plan, hit) : null
                 if (box) navRef.current?.frame(box.min, box.max)
               }}
             />
           ))}
-        {/* Unlinked / non-rack tiles as ghost massing - a typed tile holds
-            its ground before any object is linked ("build in advance"). */}
-        {scene.data.tiles
-          .filter(
-            (t) =>
-              !t.is_zone &&
-              !t.rack &&
-              !t.cabinet &&
-              !isPlacedDevice(t) &&
-              !hiddenTileIds?.has(t.id) &&
-              (!isolation || isolation.ids.has(t.id))
-          )
-          .map((t) => (
-            <TileGhostMesh
-              key={`ghost-${t.id}`}
+          {shownRacks.map((t) => (
+            <RackMesh
+              key={t.id}
               plan={plan}
               tile={t}
-              showName={!readableNames}
-              selected={selection?.kind === "tile" && selection.tileId === t.id}
+              check={liveState?.tiles[t.id]?.check ?? null}
+              tint={tints?.get(t.id) ?? null}
+              highlighted={!!pointTileIds?.has(t.id)}
+              selection={selection}
+              attention={attention}
+              showUNumbers={showUNumbers}
+              showNames={showNames}
+              namesScope={namesScope}
+              namesAtEdge={namesAtEdge}
+              portLabelSource={portLabelsShown ? faceplatePortLabels : ""}
+              portLabelColor={faceplatePortLabelColor}
+              showAirflow={showAirflow}
+              shellMode={shellMode}
               ghosted={
                 (focusOn && !!selection && selection.tileId !== t.id) ||
                 !!recedeTileIds?.has(t.id)
               }
-              onSelect={(at) => {
-                handleSelect({ kind: "tile", tileId: t.id })
-                onOpenTile?.(t.id, at)
+              focusDeviceId={
+                focusOn && selection?.tileId === t.id
+                  ? (selection.deviceId ?? null)
+                  : null
+              }
+              onSelect={handleSelect}
+              onLegend={onLegend}
+              onDeviceMenu={onDeviceMenu}
+              onPortMenu={
+                canSetStatus
+                  ? (sel, at) =>
+                      sel.deviceId &&
+                      sel.portName &&
+                      setPartMenu({
+                        ...at,
+                        deviceId: sel.deviceId,
+                        marker: sel.portName,
+                        side:
+                          sel.portSide === "model" ? undefined : sel.portSide,
+                      })
+                  : undefined
+              }
+              onFlyTo={(target, position) => {
+                flyToRef.current = { target, position }
+                setViewSide("front")
+              }}
+              leds={roomLeds}
+              budget={modelBudget}
+            />
+          ))}
+          {shownCabinets.map((t) => (
+            <CabinetMesh
+              key={t.id}
+              plan={plan}
+              tile={t}
+              check={liveState?.tiles[t.id]?.check ?? null}
+              selected={
+                selection?.tileId === t.id && selection.kind === "cabinet"
+              }
+              ghosted={
+                (focusOn && !!selection && selection.tileId !== t.id) ||
+                !!recedeTileIds?.has(t.id)
+              }
+              xray={shellMode === "xray"}
+              attention={attention}
+              doorOpen={openDoors.has(t.id)}
+              selectedDeviceId={
+                selection?.tileId === t.id &&
+                (selection.kind === "device" || selection.kind === "port")
+                  ? (selection.deviceId ?? null)
+                  : null
+              }
+              selectedPort={
+                selection?.tileId === t.id &&
+                selection.kind === "port" &&
+                selection.deviceId &&
+                selection.portName
+                  ? { deviceId: selection.deviceId, marker: selection.portName }
+                  : null
+              }
+              // A hold on a port inside draws amber, as on the rack page.
+              markReserved
+              portLabelSource={portLabelsShown ? faceplatePortLabels : ""}
+              portLabelColor={faceplatePortLabelColor}
+              onSelect={handleSelect}
+              onHover={hoverStore.set}
+              onSelectDevice={(tileId, deviceId) =>
+                handleSelect({ kind: "device", tileId, deviceId })
+              }
+              onHoverDevice={hoverCabinetDevice}
+              onSelectPort={(tileId, deviceId, marker) =>
+                handleSelect({
+                  kind: "port",
+                  tileId,
+                  deviceId,
+                  portName: marker.name,
+                  portKind: marker.kind,
+                  portSide: "front",
+                })
+              }
+              onHoverPort={hoverCabinetPort}
+              onDeviceMenu={onDeviceMenu}
+              onPortMenu={
+                canSetStatus
+                  ? (_, deviceId, marker, at) =>
+                      setPartMenu({
+                        ...at,
+                        deviceId,
+                        marker: marker.name,
+                        side: "front",
+                      })
+                  : undefined
+              }
+              onLegend={onLegend}
+              onFlyTo={(target, position) => {
+                flyToRef.current = { target, position }
+                setViewSide("front")
               }}
             />
           ))}
-        {/* Devices placed on the floor: their rack-unit box or 3D model. */}
-        <FloorDevicesLayer
-          scene={data}
-          tiles={data.tiles.filter(
-            (t) =>
-              isPlacedDevice(t) &&
-              !hiddenTileIds?.has(t.id) &&
-              (!isolation || isolation.ids.has(t.id))
-          )}
-          checks={(id) => liveState?.tiles[id]?.check ?? null}
-          selection={selection}
-          focusTileId={focusOn && selection ? selection.tileId : null}
-          recedeTileIds={recedeTileIds}
-          showNames={!readableNames}
-          onSelect={handleSelect}
-          onFlyTo={(target, position) => {
-            flyToRef.current = { target, position }
-            setViewSide("front")
-          }}
-          onTooDetailed={setTooDetailed}
-          onDeviceMenu={onDeviceMenu}
-          leds={roomLeds}
-          budget={modelBudget}
-        />
-        <PlanTextDriver bus={textBus} />
-        <PlanTextLayer
-          bus={textBus}
-          items={activeTexts}
-          plan={plan}
-          readable={readableNames}
-          walls={sceneData?.walls}
-        />
-        {building &&
-          levels.length > 1 &&
-          building.mode !== "only" &&
-          levels
-            .filter((lv) => lv.look === "solid")
-            .map((lv) => (
-              <LevelPlanText
-                key={`text-${lv.floor.id}`}
-                placement={lv}
-                explode={explodeStore}
-                bus={textBus}
-                show={textShow}
-                readable={readableNames}
+          {data.trays.map((tr) => (
+            <TrayMesh
+              key={tr.id}
+              plan={plan}
+              tray={tr}
+              areas={scene.data.raised_floors}
+              junctions={trayJointPoints}
+              selected={traySel === tr.id}
+              onSelect={(id) => {
+                setSelection(null)
+                setStructSel(null)
+                setCableSel(null)
+                setTraySel((cur) => (cur === id ? null : id))
+              }}
+            />
+          ))}
+          {/* One plate per joint, at scene level: a crossing belongs to both
+            runs, so drawing it per tray would stack two in one place. */}
+          {trayJoints.map((j, i) => {
+            const owner = data.trays.find((t) => t.id === j.trayIds[0])
+            if (!owner) return null
+            return (
+              <TrayJunctionMesh
+                key={`joint-${i}`}
+                at={j.at}
+                y={trayElevationM(plan, owner, scene.data.raised_floors)}
+                color={owner.color || undefined}
+              />
+            )
+          })}
+          {raisedPads.map((rg) => (
+            <RaisedFloorMesh
+              key={rg.rows[0].id}
+              plan={plan}
+              region={rg}
+              // X-ray lifts every raised floor - the plenum is half the point.
+              peek={
+                floorPeek ||
+                shellMode === "xray" ||
+                rg.rows.some((r) => liftedIds.has(r.id))
+              }
+              onToggleLift={(ids) =>
+                setLiftedIds((prev) => {
+                  const next = new Set(prev)
+                  const lifted = ids.some((id) => next.has(id))
+                  for (const id of ids)
+                    if (lifted) next.delete(id)
+                    else next.add(id)
+                  return next
+                })
+              }
+            />
+          ))}
+          {showWalls &&
+            (scene.data.walls ?? []).map((wl) => (
+              <WallMesh
+                key={wl.id}
+                plan={plan}
+                wall={wl}
+                mode={shellMode === "xray" ? "ghost" : "solid"}
+                selected={structSel?.kind === "wall" && structSel.id === wl.id}
+                onPick={(frame) => {
+                  setSelection(null)
+                  setCableSel(null)
+                  setTraySel(null)
+                  setFocusOn(false)
+                  setStructSel({ kind: "wall", id: wl.id })
+                  const box = frame ? wallBox(plan, wl) : null
+                  if (box) navRef.current?.frame(box.min, box.max)
+                }}
               />
             ))}
-        {readableNames && (
-          <ReadableNames3D
-            textBus={textBus}
-            plan={plan}
-            tiles={namedTiles}
-            icons={readableIcons}
-            callouts={readableCallouts}
-            pinned={() => [selection?.tileId, hoverStore.get()]}
-            summaries={summaryStore}
-          />
-        )}
-        {showCables && (
-          <CablesLayer
-            planId={planId}
+          {/* Unlinked / non-rack tiles as ghost massing - a typed tile holds
+            its ground before any object is linked ("build in advance"). */}
+          {scene.data.tiles
+            .filter(
+              (t) =>
+                !t.is_zone &&
+                !t.rack &&
+                !t.cabinet &&
+                !isPlacedDevice(t) &&
+                !hiddenTileIds?.has(t.id) &&
+                (!isolation || isolation.ids.has(t.id))
+            )
+            .map((t) => (
+              <TileGhostMesh
+                key={`ghost-${t.id}`}
+                plan={plan}
+                tile={t}
+                showName={!readableNames}
+                selected={
+                  selection?.kind === "tile" && selection.tileId === t.id
+                }
+                ghosted={
+                  (focusOn && !!selection && selection.tileId !== t.id) ||
+                  !!recedeTileIds?.has(t.id)
+                }
+                onSelect={(at) => {
+                  handleSelect({ kind: "tile", tileId: t.id })
+                  onOpenTile?.(t.id, at)
+                }}
+              />
+            ))}
+          {/* Devices placed on the floor: their rack-unit box or 3D model. */}
+          <FloorDevicesLayer
             scene={data}
-            xray={shellMode === "xray"}
-            scale={cableScale}
-            look={cableLook}
-            selectedId={cableSel}
-            onSelect={(id) => {
-              setSelection(null)
-              setStructSel(null)
-              setTraySel(null)
-              setCableSel(id)
-              onOpenCable?.(id)
+            tiles={data.tiles.filter(
+              (t) =>
+                isPlacedDevice(t) &&
+                !hiddenTileIds?.has(t.id) &&
+                (!isolation || isolation.ids.has(t.id))
+            )}
+            checks={(id) => liveState?.tiles[id]?.check ?? null}
+            selection={selection}
+            focusTileId={focusOn && selection ? selection.tileId : null}
+            recedeTileIds={recedeTileIds}
+            showNames={!readableNames}
+            onSelect={handleSelect}
+            onFlyTo={(target, position) => {
+              flyToRef.current = { target, position }
+              setViewSide("front")
             }}
+            onTooDetailed={setTooDetailed}
+            onDeviceMenu={onDeviceMenu}
+            leds={roomLeds}
+            budget={modelBudget}
           />
-        )}
-        {traceCableId && traceCableId !== cableSel && (
-          <CableTrace3D
-            planId={planId}
-            scene={data}
-            cableId={traceCableId}
-            scale={cableScale}
+          <PlanTextDriver bus={textBus} />
+          <PlanTextLayer
+            bus={textBus}
+            items={activeTexts}
+            plan={plan}
+            readable={readableNames}
+            walls={sceneData?.walls}
           />
-        )}
+          {building &&
+            levels.length > 1 &&
+            building.mode !== "only" &&
+            levels
+              .filter((lv) => lv.look === "solid")
+              .map((lv) => (
+                <LevelPlanText
+                  key={`text-${lv.floor.id}`}
+                  placement={lv}
+                  explode={explodeStore}
+                  bus={textBus}
+                  show={textShow}
+                  readable={readableNames}
+                />
+              ))}
+          {readableNames && (
+            <ReadableNames3D
+              textBus={textBus}
+              plan={plan}
+              tiles={namedTiles}
+              icons={readableIcons}
+              callouts={readableCallouts}
+              pinned={() => [selection?.tileId, hoverStore.get()]}
+              summaries={summaryStore}
+            />
+          )}
+          {showCables && (
+            <CablesLayer
+              planId={planId}
+              scene={data}
+              xray={shellMode === "xray"}
+              scale={cableScale}
+              look={cableLook}
+              selectedId={cableSel}
+              onSelect={(id) => {
+                setSelection(null)
+                setStructSel(null)
+                setTraySel(null)
+                setCableSel(id)
+                onOpenCable?.(id)
+              }}
+            />
+          )}
+          {traceCableId && traceCableId !== cableSel && (
+            <CableTrace3D
+              planId={planId}
+              scene={data}
+              cableId={traceCableId}
+              scale={cableScale}
+            />
+          )}
+        </CordEndsContext.Provider>
       </Stage>
       {readableNames && (
         <SummaryMembers3D

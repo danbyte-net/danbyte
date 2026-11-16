@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 import { useFrame, useThree } from "@react-three/fiber"
 import { Line } from "@react-three/drei"
 import * as THREE from "three"
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
 
 import { isCameraMoving } from "./camera-motion"
 import type { Line2 } from "three-stdlib"
@@ -11,6 +18,18 @@ import { api, type FloorPlanCableEnd, type FloorPlanCablePath } from "@/lib/api"
 import { findPortMarker, normalizePortName } from "@/lib/faceplate-geometry"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 
+import {
+  cordLead,
+  endSignature,
+  roundCorners,
+  runCable,
+  transportFrames,
+  zipcordRails,
+} from "@/lib/cord-run"
+import type { CordEnd } from "@/lib/cord-run"
+import { fibreColor, fibreGrade } from "@/lib/fibre-colours"
+
+import { useCordEnds } from "./cord-ends"
 import { findModelPort, floorModelPortLocal } from "./device-model-ports"
 
 import {
@@ -210,6 +229,47 @@ function worldOf(
   ]
 }
 
+/** World → rack-local (x, y, z): the inverse of `worldOf`. */
+function localOf(scene: ScenePayload, tile: SceneTile, p: Vec3): Vec3 {
+  const {
+    centre: [cx, cz],
+    rotY: th,
+  } = tileWorldPose(scene.plan, tile)
+  const dx = p[0] - cx
+  const dz = p[2] - cz
+  return [
+    dx * Math.cos(th) - dz * Math.sin(th),
+    p[1],
+    dx * Math.sin(th) + dz * Math.cos(th),
+  ]
+}
+
+/**
+ * An end whose port has a cord drawn in it (port-plugs, cord-ends): the
+ * run starts at the cord's `cable` empty and leaves along its +Z, then
+ * carries on as the end did - to the rack's corner channel, or straight
+ * up or down from the lead on the floor.
+ */
+function withCord(scene: ScenePayload, end: EndRun, cord: CordEnd): EndRun {
+  const [at, lead] = cordLead(cord)
+  const tile = end.local.tile
+  const la = localOf(scene, tile, at)
+  const ls = localOf(scene, tile, lead)
+  const rest = end.entry.slice(2)
+  return {
+    ...end,
+    entry: [at, lead, ...rest],
+    railAt: rest.length ? end.railAt : (y) => [lead[0], y, lead[2]],
+    anchored: true,
+    local: { ...end.local, x: la[0], y: la[1], z: la[2], stubZ: ls[2] },
+  }
+}
+
+/** The cords drawn in the room, by device and port name. */
+export interface CordLookup {
+  get: (deviceId: string, port: string) => CordEnd | null
+}
+
 /** Resolve one termination to its port-anchored EndRun, or null. */
 function portEndRun(
   scene: ScenePayload,
@@ -366,8 +426,45 @@ function cabinetTileOf(
 export function cableRunPoints(
   scene: ScenePayload,
   sites: Map<string, DeviceSite>,
-  cp: FloorPlanCablePath
+  cp: FloorPlanCablePath,
+  cords?: CordLookup | null
 ): Vec3[] | null {
+  return cableRun(scene, sites, cp, cords)?.points ?? null
+}
+
+/** A cable's run and the cords at its ends (null where none is drawn). */
+export interface CableRun {
+  points: Vec3[]
+  a: CordEnd | null
+  b: CordEnd | null
+}
+
+/** The cords a cable's run would start and end at, without routing it. */
+function runCords(
+  scene: ScenePayload,
+  sites: Map<string, DeviceSite>,
+  cp: FloorPlanCablePath,
+  cords: CordLookup
+): [CordEnd | null, CordEnd | null] {
+  const one = (points: FloorPlanCableEnd[]) => {
+    for (const p of points) {
+      if (p.hidden) continue
+      if (portEndRun(scene, sites, p)) return cords.get(p.device, p.port)
+    }
+    return null
+  }
+  return [one(cp.a_points), one(cp.b_points)]
+}
+
+/** `cableRunPoints` with the cords: an end with a cord drawn starts at its
+ * `cable` empty, and the corners bend no tighter than its `min_bend_mm`
+ * where there is room (lib/cord-run). */
+export function cableRun(
+  scene: ScenePayload,
+  sites: Map<string, DeviceSite>,
+  cp: FloorPlanCablePath,
+  cords?: CordLookup | null
+): CableRun | null {
   const { plan } = scene
   const tileCentre = (tileId: string): Pt | null => {
     const t = scene.tiles.find((x) => x.id === tileId)
@@ -381,11 +478,20 @@ export function cableRunPoints(
     return null
   const endLane = cableLane(cp.id)
 
-  const endRun = (points: FloorPlanCableEnd[], tileId: string): EndRun => {
+  const ends: [CordEnd | null, CordEnd | null] = [null, null]
+  const endRun = (
+    points: FloorPlanCableEnd[],
+    tileId: string,
+    side: 0 | 1
+  ): EndRun => {
     for (const p of points) {
       if (p.hidden) continue
       const r = portEndRun(scene, sites, p)
-      if (r) return r
+      if (!r) continue
+      const cord = cords?.get(p.device, p.port) ?? null
+      if (!cord) return r
+      ends[side] = cord
+      return withCord(scene, r, cord)
     }
     const cabinet = cabinetTileOf(scene, tileId)
     const onCabinet = cabinet
@@ -409,8 +515,18 @@ export function cableRunPoints(
     }
   }
 
-  const A = endRun(cp.a_points, cp.a_tiles[0])
-  const B = endRun(cp.b_points, cp.b_tiles[0])
+  const A = endRun(cp.a_points, cp.a_tiles[0], 0)
+  const B = endRun(cp.b_points, cp.b_tiles[0], 1)
+  // A drawn cord's minimum bend, at the model's scale.
+  const drawn = runCable(ends[0], ends[1])
+  const minBend = drawn?.cable.min_bend_mm
+    ? (drawn.cable.min_bend_mm / 1000) * drawn.scale
+    : 0
+  const fillet = (pts: Vec3[], r: number): CableRun => ({
+    points: minBend > 0 ? roundCorners(pts, minBend, r) : filletPath(pts, r),
+    a: ends[0],
+    b: ends[1],
+  })
 
   // Same rack (or same tile). Three shapes:
   //  · SAME face, CLOSE (a PSU→PDU cord, two ports a U apart): a short
@@ -435,7 +551,7 @@ export function cableRunPoints(
     const lane = cableLane(cp.id)
     const far = Math.abs(la.y - lb.y) > 0.15 || Math.abs(la.x - lb.x) > 0.25
     if (A.rear === B.rear && !far) {
-      return filletPath(
+      return fillet(
         [
           w(la.x, la.y, la.z),
           w(la.x, la.y, la.stubZ),
@@ -456,7 +572,7 @@ export function cableRunPoints(
     const zA = la.stubZ + outA * lane.lift
     const zB = lb.stubZ + outB * lane.lift
     if (A.rear === B.rear) {
-      return filletPath(
+      return fillet(
         [
           w(la.x, la.y, la.z),
           w(la.x, la.y, zA),
@@ -470,7 +586,7 @@ export function cableRunPoints(
     }
     // Opposite faces - built in local coords so a rotated rack can't turn
     // "the side" into a diagonal through the gear.
-    return filletPath(
+    return fillet(
       [
         w(la.x, la.y, la.z),
         w(la.x, la.y, zA),
@@ -518,7 +634,7 @@ export function cableRunPoints(
   for (const [x, z] of rideWorld) pts.push([x, rideY, z]) // …ride the lane…
   pts.push(B.railAt(rideY), ...[...B.entry].reverse()) // …drop to the B port.
   // Hard corners become bends - nobody installs cable at 90°.
-  return filletPath(pts, 0.12)
+  return fillet(pts, 0.12)
 }
 
 /** Whether each end of ``cp`` anchored on a port marker (A, B). An end that
@@ -590,9 +706,12 @@ export function CableTrace3D({
   const paths = useCablePaths(planId)
   const cp = paths.data?.cables.find((c) => c.id === cableId)
   const sites = useMemo(() => deviceSites(scene), [scene])
+  const cords = useCordEnds()
+  const version = useCordVersion(cords)
   const points = useMemo(
-    () => (cp ? cableRunPoints(scene, sites, cp) : null),
-    [cp, scene, sites]
+    () => (cp ? cableRunPoints(scene, sites, cp, cords) : null),
+    // `version` stands for what `cords` holds.
+    [cp, scene, sites, cords, version]
   )
   if (!points) return null
   return (
@@ -638,19 +757,35 @@ export function CablesLayer({
 }) {
   const paths = useCablePaths(planId)
   const sites = useMemo(() => deviceSites(scene), [scene])
+  const cords = useCordEnds()
+  const version = useCordVersion(cords)
+  // Each run is kept while the cords at its ends are the same, so a cord
+  // appearing on one device re-routes only that device's runs - and their
+  // tubes, keyed on the points, are the only ones rebuilt.
+  const cache = useRef<{
+    base: unknown[]
+    runs: Map<string, { sig: string; run: CableRun | null }>
+  }>({ base: [], runs: new Map() })
   const runs = useMemo(() => {
+    const base = [paths.data, scene, sites, cords]
+    if (base.some((b, i) => b !== cache.current.base[i]))
+      cache.current = { base, runs: new Map() }
+    const kept = cache.current.runs
     const cables = paths.data?.cables ?? []
-    return cables
-      .map((cp) => ({ cp, points: cableRunPoints(scene, sites, cp) }))
-      .filter(
-        (
-          r
-        ): r is {
-          cp: FloorPlanCablePath
-          points: [number, number, number][]
-        } => Boolean(r.points)
-      )
-  }, [paths.data, scene, sites])
+    const out: { cp: FloorPlanCablePath; run: CableRun }[] = []
+    for (const cp of cables) {
+      const [a, b] = cords ? runCords(scene, sites, cp, cords) : [null, null]
+      const sig = `${endSignature(a)}\u0000${endSignature(b)}`
+      let hit = kept.get(cp.id)
+      if (!hit || hit.sig !== sig) {
+        hit = { sig, run: cableRun(scene, sites, cp, cords) }
+        kept.set(cp.id, hit)
+      }
+      if (hit.run) out.push({ cp, run: hit.run })
+    }
+    return out
+    // `version` stands for what `cords` holds.
+  }, [paths.data, scene, sites, cords, version])
 
   // Each run is its own Line2/tube draw call, so a big hall is well over a
   // thousand per frame - the dominant cost while orbiting. Hide the bulk layer
@@ -679,30 +814,31 @@ export function CablesLayer({
       {selectedId != null &&
         runs
           .filter((r) => r.cp.id === selectedId)
-          .map(({ cp, points }) => (
+          .map(({ cp, run }) => (
             <MarchingLine
               key={cp.id}
-              points={points}
+              points={run.points}
               color={cp.color || "#0ea5e9"}
               scale={scale}
             />
           ))}
       <group ref={group}>
-        {runs.map(({ cp, points }) =>
+        {runs.map(({ cp, run }) =>
           cp.id === selectedId ? null : tubes ? (
             <CableTube
               key={cp.id}
-              points={points}
-              color={cp.color || CABLE_FALLBACK}
+              points={run.points}
+              color={runColor(cp, run)}
               radius={cableRadiusM(cp.type) * scale}
+              profile={runProfile(run, scale)}
               xray={xray}
               onClick={() => onSelect(cp.id)}
             />
           ) : (
             <CableLine
               key={cp.id}
-              points={points}
-              color={cp.color || CABLE_FALLBACK}
+              points={run.points}
+              color={runColor(cp, run)}
               scale={scale}
               xray={xray}
               onClick={() => onSelect(cp.id)}
@@ -733,16 +869,20 @@ function CableTube({
   points,
   color,
   radius,
+  profile = null,
   xray = false,
   onClick,
 }: {
   points: [number, number, number][]
   color: string
   radius: number
+  /** The cord's cross-section where a cord is drawn at an end. */
+  profile?: RunProfile | null
   xray?: boolean
   onClick: () => void
 }) {
   const [hovered, setHovered] = useState(false)
+  const profileKey = profile ? JSON.stringify(profile) : ""
   const geometry = useMemo(() => {
     const v = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]))
     let len = 0
@@ -755,8 +895,13 @@ function CableTube({
     // smooth at the thickest slider setting.
     const path = new THREE.CatmullRomCurve3(v, false, "centripetal")
     const segments = Math.min(1200, Math.max(48, Math.round(len / 0.02)))
-    return new THREE.TubeGeometry(path, segments, radius, 10, false)
-  }, [points, radius])
+    if (!profile)
+      return new THREE.TubeGeometry(path, segments, radius, 10, false)
+    if (profile.kind === "round")
+      return new THREE.TubeGeometry(path, segments, profile.radius, 8, false)
+    return zipcordGeometry(path, segments, profile)
+    // `profileKey` stands for `profile`.
+  }, [points, radius, profileKey])
   useEffect(() => () => geometry.dispose(), [geometry])
   return (
     <mesh
@@ -787,6 +932,90 @@ function CableTube({
       />
     </mesh>
   )
+}
+
+/** A run's cross-section from the cord at its ends (lib/cord-run): a round
+ * jacket, or a zip cord's two jackets at their pitch, both at life size
+ * times the View menu's scale. */
+export type RunProfile =
+  | { kind: "round"; radius: number }
+  | {
+      kind: "zipcord"
+      radius: number
+      pitch: number
+      startUp: [number, number, number] | null
+      endUp: [number, number, number] | null
+    }
+
+export function runProfile(run: CableRun, scale = 1): RunProfile | null {
+  const drawn = runCable(run.a, run.b)
+  if (!drawn) return null
+  const k = (drawn.scale * scale) / 1000
+  const radius = (drawn.cable.jacket_mm / 2) * k
+  if (drawn.cable.profile === "round") return { kind: "round", radius }
+  return {
+    kind: "zipcord",
+    radius,
+    pitch: (drawn.cable.pitch_mm ?? drawn.cable.jacket_mm) * k,
+    startUp: run.a?.y ?? null,
+    endUp: run.b?.y ?? null,
+  }
+}
+
+/** A run's colour: a fibre run with a cord drawn takes the cord's jacket
+ * colour (lib/fibre-colours), so the run continues the stub; else the
+ * cable's colour, else the room's cable grey. */
+export function runColor(
+  cp: Pick<FloorPlanCablePath, "color" | "type">,
+  run: Pick<CableRun, "a" | "b">
+): string {
+  if (runCable(run.a, run.b) && fibreGrade(cp.type))
+    return fibreColor(cp.color, cp.type)
+  return cp.color || CABLE_FALLBACK
+}
+
+/** Two jackets side by side, carried untwisted along the run. */
+function zipcordGeometry(
+  path: THREE.Curve<THREE.Vector3>,
+  segments: number,
+  p: Extract<RunProfile, { kind: "zipcord" }>
+): THREE.BufferGeometry {
+  const centre = path
+    .getSpacedPoints(segments)
+    .map((q) => [q.x, q.y, q.z] as [number, number, number])
+  const frames = transportFrames(centre, p.startUp ?? [0, 1, 0], p.endUp)
+  const rails = zipcordRails(centre, frames, p.pitch)
+  const tubes = rails.map(
+    (rail) =>
+      new THREE.TubeGeometry(
+        new THREE.CatmullRomCurve3(
+          rail.map((q) => new THREE.Vector3(q[0], q[1], q[2]))
+        ),
+        segments,
+        p.radius,
+        6,
+        false
+      )
+  )
+  const merged = mergeGeometries(tubes) as THREE.BufferGeometry | null
+  if (merged) {
+    tubes.forEach((t) => t.dispose())
+    return merged
+  }
+  tubes[1].dispose()
+  return tubes[0]
+}
+
+/** The cord store's version, for memos that read it (0 without one). */
+const NO_CORDS = { subscribe: () => () => {}, getVersion: () => 0 }
+function useCordVersion(
+  store: {
+    subscribe: (fn: () => void) => () => void
+    getVersion: () => number
+  } | null
+): number {
+  const s = store ?? NO_CORDS
+  return useSyncExternalStore(s.subscribe, s.getVersion, s.getVersion)
 }
 
 function CableLine({

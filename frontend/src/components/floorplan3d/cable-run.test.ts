@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest"
 
-import { cableEndsAnchored, cableRunPoints } from "./cable-trace-3d"
+import { CORD_STUB_M, CordEndStore, tightestBend } from "@/lib/cord-run"
+import type { CordEnd } from "@/lib/cord-run"
+import { FIBRE_COLOURS } from "@/lib/fibre-colours"
+
+import {
+  cableEndsAnchored,
+  cableRun,
+  cableRunPoints,
+  runColor,
+  runProfile,
+} from "./cable-trace-3d"
 import {
   cellToWorld,
   rackOpeningM,
@@ -160,5 +170,81 @@ describe("same-rack cable runs", () => {
     expect(
       cableEndsAnchored(scene, path(["sw", "Gi1"], ["bare", "eth0"]))
     ).toEqual([true, false])
+  })
+})
+
+describe("runs from a cord", () => {
+  const sites = new Map([
+    ["sw", { tile, devIndex: 0 }],
+    ["srv", { tile, devIndex: 1 }],
+  ])
+  const fibre = { ...path(["sw", "Gi1"], ["srv", "eth0"]), type: "smf-os2" }
+  const plain = cableRunPoints(scene, sites, fibre)!
+  // The cord's cable empty: 5 cm out of the switch's port, along the
+  // stub's direction (the port's face is the rack's front, −Z here).
+  const out = Math.sign(plain[1][2] - plain[0][2]) || -1
+  const cord = (over: Partial<CordEnd> = {}): CordEnd => ({
+    at: [plain[0][0], plain[0][1], plain[0][2] + out * 0.05],
+    x: [1, 0, 0],
+    y: [0, 1, 0],
+    z: [0, 0, out],
+    scale: 1,
+    cable: {
+      profile: "zipcord",
+      jacket_mm: 1.8,
+      pitch_mm: 1.84,
+      min_bend_mm: 30,
+    },
+    ...over,
+  })
+
+  it("start at the cord's cable empty and leave along its +Z", () => {
+    const store = new CordEndStore()
+    const c = cord()
+    store.setDevice("sw", new Map([["Gi1", c]]))
+    const run = cableRun(scene, sites, fibre, store)!
+    expect(run.a).toEqual(c)
+    expect(run.b).toBeNull()
+    expect(run.points[0]).toEqual(c.at)
+    // The first step is along the empty's +Z (within the arc's first
+    // sixteenth of a half turn): the run continues the stub.
+    const d = run.points[1].map((v, i) => v - c.at[i])
+    expect(Math.sign(d[2])).toBe(out)
+    expect(Math.hypot(d[0], d[1]) / Math.abs(d[2])).toBeLessThan(
+      Math.tan(Math.PI / 32) + 1e-9
+    )
+    expect(Math.hypot(...d)).toBeLessThanOrEqual(CORD_STUB_M + 1e-9)
+    // The far end is as before.
+    expect(run.points[run.points.length - 1]).toEqual(plain[plain.length - 1])
+    // A cable without a drawn cord is unchanged.
+    expect(cableRunPoints(scene, sites, fibre, new CordEndStore())).toEqual(
+      plain
+    )
+  })
+
+  it("bend no tighter than the cord's minimum where there is room", () => {
+    const store = new CordEndStore()
+    store.setDevice("sw", new Map([["Gi1", cord()]]))
+    const run = cableRun(scene, sites, fibre, store)!
+    expect(tightestBend(run.points)).toBeGreaterThan(0.03 * 0.999)
+  })
+
+  it("draw a zip cord at life size, in the fibre's colour", () => {
+    const store = new CordEndStore()
+    store.setDevice("sw", new Map([["Gi1", cord()]]))
+    const run = cableRun(scene, sites, fibre, store)!
+    const p = runProfile(run, 2)!
+    expect(p.kind).toBe("zipcord")
+    if (p.kind !== "zipcord") return
+    expect(p.radius).toBeCloseTo(0.0018)
+    expect(p.pitch).toBeCloseTo(0.00368)
+    expect(p.startUp).toEqual([0, 1, 0])
+    expect(p.endUp).toBeNull()
+    expect(runColor(fibre, run)).toBe(FIBRE_COLOURS.yellow)
+    expect(runColor({ ...fibre, color: "#123456" }, run)).toBe("#123456")
+    // No cord: the cable's grey as before, and no profile.
+    const bare = cableRun(scene, sites, fibre)!
+    expect(runProfile(bare)).toBeNull()
+    expect(runColor(fibre, bare)).toBe("#64748b")
   })
 })

@@ -26,7 +26,7 @@ class AccessoryTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccessoryType
         fields = ["id", "vendor", "name", "kind", "connector", "fits", "parts", "standard",
-                  "wavelength_nm", "model_url", "created_at", "updated_at"]
+                  "wavelength_nm", "cable", "model_url", "created_at", "updated_at"]
         read_only_fields = fields
 
     def get_model_url(self, obj):

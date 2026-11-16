@@ -209,8 +209,9 @@ its interface or other port names, character for character.
 - **Status LEDs.** The `led:` lights glow with live state. See below.
 - **Port covers.** A `cover:port:` blank hides once its port is cabled or
   marked connected. See [Port covers](#port-covers).
-- **Plugs.** A cabled port shows the part plugged into it, from the
-  pack's accessory types. See [Accessory types](#accessory-types).
+- **Plugs.** A cabled port shows what is plugged into it - a transceiver
+  and its cord, or a plug - from the pack's accessory types, and the
+  room's cable run starts at the cord. See [Accessory types](#accessory-types).
 
 Module models come from the module type. A reader who may view the device
 and its modules but not the module types still sees them: the device serves
@@ -525,7 +526,7 @@ render's module part number may then be a module type the tenant has.
 |---|---|---|
 | Archive | A refusal from [the limits above](#security-limits). | |
 | `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list. |
-| Accessory types | No `name`; a `kind` other than `plug`, `transceiver` or `cord`; no usable `fits`; `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a part number two accessory types list; over the 2,000-triangle part budget; a part `types: accessory:` doesn't list. |
+| Accessory types | No `name`; a `kind` other than `plug`, `transceiver` or `cord`; no usable `fits`; `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a `cable:` block that isn't usable (unknown `profile`, no `jacket_mm`, a size that isn't a positive number of mm, a key Danbyte doesn't read), or one on a transceiver; a part number two accessory types list; over the triangle budget (a transceiver 1,500, a cord or plug 2,000); a transceiver with a connector but no `port:<connector>` empty; a cord with a `cable:` block but no `cable` empty; a part `types: accessory:` doesn't list. |
 | Models | Not a valid `.glb`; over the triangle budget (chassis 150,000, far 15,000; module 30,000, far 3,000) or the size budget (8 MB, far 1 MB). | A model no YAML names; no far copy on a chassis or on a module of 5,000 triangles or more. |
 | Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` with no interface or other port (console, power, aux, front or rear port) in the YAML, `led:port:` with no interface (module names with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
 | LEDs | A `leds:` entry that doesn't parse or names no `led:` in the model; on a module type, a `led:` without an entry. | On a chassis, a `led:` without an entry (it stays off); a glob matching nothing. |
@@ -561,11 +562,11 @@ the chassis.
 
 ## Accessory types
 
-When a port is cabled, Danbyte shows what is plugged into it: an RJ45 plug
-with its boot, an SFP with its LC connector, a DAC head, an IEC cord in a
-power inlet, a USB console plug. Each is an **accessory type**: one small
-generic part per file, seated at the port's `port:` anchor and coloured
-from the cable.
+When a port is in use, Danbyte shows what is plugged into it: an RJ45 plug
+with its boot, an SFP transceiver with its LC duplex cord, a DAC head, an
+IEC cord in a power inlet, a USB console plug. Each is an **accessory
+type**: one small part per file, seated at the port's `port:` anchor and
+coloured from the cable.
 
 ```text
 accessory-types/Generic/RJ45-PLUG.yaml
@@ -586,13 +587,22 @@ model3d:
 | Key | Meaning |
 |---|---|
 | `name` | The part's name, unique with its folder (the vendor, `Generic` above). |
-| `kind` | `plug`, `transceiver` or `cord`. |
-| `connector` | What the cable ends in: `rj45`, `lc`, `mpo`, `dac`, `iec-c13`, `usb-mini-b`… It decides between parts that fit the same cage (below). |
-| `fits` | The interface, console port and power port type slugs it plugs into (`10gbase-x-sfpp`, `rj-45`, `iec-60320-c14`). |
-| `model3d.file` | The part's model. Its origin is where the plug meets the port, +Z out along the cable, +Y up - the same as the `port:` empty, so Danbyte copies the anchor's transform onto it. An empty named `cable` marks the end of its cable stub. |
+| `kind` | `transceiver` (a module in a cage, which takes a cord), `plug` (a cord or plug: `RJ45-PLUG`, `LC-DUPLEX`, `MPO-12`, `IEC-C13`) or `cord` (a one-piece part: a DAC or AOC, body and cable together). |
+| `connector` | What it takes or ends in: `rj45`, `lc`, `mpo`, `dac`, `aoc`, `iec-c13`, `usb-mini-b`… A transceiver's connector names the cord it takes; a cord's says which transceivers it plugs into. |
+| `fits` | The interface, front port, console port and power port type slugs it plugs into (`10gbase-x-sfpp`, `lc-duplex`, `rj-45`, `iec-60320-c14`). |
+| `model3d.file` | The part's model. Its origin is where it meets the port, +Z out along the cable, +Y up - the same as the `port:` empty, so Danbyte copies the anchor's transform onto it. |
 | `parts` | Optional. A real transceiver's vendor part numbers - every one this model stands for, as printed on the label (`SFP-10G-SR`, not `SFP-10G-SR=`). |
 | `standard` | Optional. The IEEE / MSA name: `10GBASE-SR`, `100GBASE-SR4`. |
 | `wavelength_nm` | Optional. The nominal wavelength in nm; leave it out for copper. |
+| `cable` | Optional, on a cord or plug. How Danbyte draws the run from its `cable` empty (below). |
+
+**Transceivers and cords are separate parts** (export spec §13 v1.9). A
+transceiver's model holds the module alone, plus an empty
+**`port:<connector>`** (`port:lc`, `port:mpo`, `port:rj45`) on its
+receptacle face: centred between the bores, +Z out, +Y up. Danbyte seats
+the cord at that empty. A cord's origin is its mating face, and its stub
+ends in an empty named **`cable`**: +Z along the cable, +Y up, a zip
+cord's two jackets along ±X. Both ends of a cable use the same cord model.
 
 A real transceiver, modelled by its part number:
 
@@ -608,57 +618,121 @@ model3d:
   file: models/Cisco/SFP-10G-SR.glb
 ```
 
-In a transceiver's model, the connector seated in it (LC, MPO, the RJ45
-plug of an SFP-T) and its cable stub are **one child object named `plug`**,
-with the `cable` empty under it. The body is everything else. A one-piece
-part - a DAC, an AOC, the generic parts - has no `plug` child.
+A generic one per cage type - `SFP-GENERIC`, `QSFP-GENERIC`, with
+`parts: []` - stands in for a cabled cage with no transceiver recorded.
 
-**Which part a port takes.**
+A cord, with its run:
 
-- A port shows a part once it has a cable on it, is marked connected, or
-  holds a [transceiver record](inventory.md#transceivers) the reader may
-  view.
-- A port with a transceiver record takes the record's **3D part** when one
-  is set by hand, else the accessory type whose `parts` lists the record's
-  part ID. The match ignores case and a trailing `=` (the spare-part
-  suffix): a record `sfp-10g-sr=` draws `SFP-10G-SR`. When two accessory
-  types list the same part number, the first by vendor and name wins.
-- Otherwise the part is the one whose `fits` names the port's type: the
-  interface type, the console port type, the power port type.
-- When several parts fit a cage the cable's type decides: a DAC cable (`dac-active`,
-  `dac-passive`) takes the part whose connector is `dac`, a fibre cable
-  (`mmf…`, `smf…`, `aoc`) an optical one (`lc`, `sc`, `mpo`…), a
-  twisted-pair cable (`cat…`) an RJ45 one (an SFP-T in an SFP cage). A
-  cable of a type no fitting part matches shows nothing rather than a
-  wrong part. A cable with no type, a cable the reader may not view, or a
-  port only marked connected takes the optical part first, then a DAC,
-  then copper.
-- No part fits: the port shows nothing more than today (its
+```yaml
+name: LC-DUPLEX
+kind: plug
+connector: lc
+fits: [lc-duplex, lc-apc-duplex]   # LC panel front ports
+cable:
+  profile: zipcord      # zipcord (two jackets side by side) | round
+  jacket_mm: 1.8        # each jacket's diameter
+  pitch_mm: 1.84        # zipcord only: centre to centre
+  min_bend_mm: 30
+model3d:
+  file: models/Generic/LC-DUPLEX.glb
+```
+
+| `cable` key | Meaning |
+|---|---|
+| `profile` | `zipcord`: two jackets side by side, `pitch_mm` apart. `round`: one jacket. |
+| `jacket_mm` | Each jacket's diameter. Needed. |
+| `pitch_mm` | A zip cord's centre-to-centre spacing; it defaults to, and is never less than, `jacket_mm`. A round cable has none. |
+| `min_bend_mm` | Optional. The tightest bend Danbyte draws where there is room. |
+
+Sizes are positive numbers of mm (up to 50 for a jacket, 100 for a pitch,
+2,000 for a bend). A block Danbyte can't use is left out with a warning;
+the cord then draws, and its run is drawn as before.
+
+### Which parts a port shows
+
+A port shows parts once it has a cable on it, is marked connected, or
+holds a [transceiver record](inventory.md#transceivers) the reader may
+view. Per port Danbyte draws up to two parts:
+
+| Port has | Cable in it | Danbyte draws |
+|---|---|---|
+| a transceiver record | no | the transceiver |
+| a transceiver record | yes | the transceiver, plus the cord at its `port:<connector>` |
+| no record, a cage (SFP, QSFP…) | yes, fibre | the generic transceiver (`SFP-GENERIC`) and the cord |
+| no record, an SFP cage | yes, twisted pair | a copper SFP-T and an `RJ45-PLUG` at its `port:rj45` |
+| no record | yes, DAC or AOC | the one-piece DAC or AOC alone, at the port |
+| no transceiver: an RJ45 jack, an LC panel port, a power inlet | yes | the plug or cord alone, at the port's anchor |
+
+- **The transceiver.** A record's **3D part** when one is set by hand, else
+  the accessory type whose `parts` lists the record's part ID. The match
+  ignores case and a trailing `=` (the spare-part suffix): a record
+  `sfp-10g-sr=` draws `SFP-10G-SR`. When two accessory types list the same
+  part number, the first by vendor and name wins. A record whose part no
+  model stands for shows the generic transceiver for its cage.
+- **The generic transceiver** is a `kind: transceiver` part that fits the
+  cage, of the cable's medium (optical for fibre, `rj45` for twisted pair),
+  without `parts` before a real optic. A cable with no type, one the reader
+  may not view, or a port only marked connected takes the optical one.
+- **The cord** is the `plug` or `cord` whose `connector` is the record's
+  connector, else the transceiver's, else the cable's (`lc` for fibre,
+  `rj45` for twisted pair). `mpo-12` takes an `mpo` cord. A part that fits
+  a cage is never taken as a cord.
+- **A one-piece part** (`kind: cord`, or a `plug` that fits the cage) takes
+  the port alone and shows only while the port is cabled. A record whose
+  part is one, such as `SFP-H10GB-CU3M`, shows nothing without a cable.
+- **A port with no transceiver** takes the part whose `fits` names its type.
+  When several fit, the cable's type decides: a DAC cable (`dac-active`,
+  `dac-passive`) takes the `dac` part, a fibre cable (`mmf…`, `smf…`,
+  `aoc`) an optical one, a twisted-pair cable (`cat…`) an RJ45 one.
+- A cable of a type no fitting part matches shows nothing rather than a
+  wrong part. No part fits: the port shows nothing more than today (its
   [cover](#port-covers) hidden).
 
-**A transceiver without a cable.** A port holding a recorded transceiver
-but no cable shows the transceiver's body without its `plug` child: the
-optic sits in the cage with nothing plugged in. A one-piece part has no
-`plug` child and shows only while the port is cabled.
+**Where they sit.** The transceiver at the port's `port:` anchor; the cord
+at the transceiver's `port:<connector>` empty - the cord's connector first,
+then the transceiver's, else the transceiver's only `port:` empty - and at
+the port's own anchor when there is no transceiver or its model has no such
+empty. A cord waits for its transceiver's model to load.
 
-**How it looks.** The `CABLE` and `FIBRE` materials take the cable's
-colour (grey when it has none, or the reader may not view the cable);
-everything else keeps its own material. Each part loads once for the whole
-room and draws instanced - a 48-port switch fully cabled costs one draw per
-mesh of the plug, not 48. Plugs show on a device's full model: in its 3D
-viewer and in the 3D room up close, on the floor and in racks. A far copy
-draws none.
+**Colours.** Danbyte sets three materials; everything else keeps its own:
 
-**Picking.** A plug hovers, clicks and right-clicks as the port it sits
-in: the port's pick reaches out over its plug. The port's hover card
-names the recorded transceiver's part ID and serial under the port name.
+| Material | Colour |
+|---|---|
+| `CABLE` (copper jackets and boots, power cords, DACs) | the cable's colour, grey when it has none |
+| `FIBRE` (fibre jackets, matching boots) | the cable's colour, else by type: OS1/OS2 yellow, OM1/OM2 orange, OM3/OM4 aqua, OM5 lime |
+| `LC_BODY` (LC bodies and the duplex clip) | by type: single-mode UPC blue, APC green, OM1/OM2 beige, OM3/OM4 aqua, OM5 lime |
+
+APC is an `-apc` port or front-port type (`lc-apc-duplex`) or connector.
+Plain `mmf` counts as OM1/OM2, `smf` as OS1/OS2, `aoc` as OM3/OM4. A cable
+the reader may not view leaves all three grey.
+
+**Cable runs from a cord.** In the [3D room](../features/floor-plans.md#the-3d-room-view),
+where a cord is drawn at an end, the cable's run starts at the cord's
+`cable` empty and leaves straight along its +Z, so it continues the stub.
+With the cord's `cable:` block the run takes its cross-section at life size
+(times the View menu's cable scale): a zip cord as two jackets side by side,
+carried along the route without twisting from the `cable` empty's +Y and
+turned evenly to meet the far end's; a round cable as one jacket. Corners
+bend no tighter than `min_bend_mm` where the route leaves room; between two
+close ports it bends as tightly as it must. A fibre run with a cord takes
+the `FIBRE` colour. An end without a cord drawn - a far copy, or a device
+without a model - starts at the port as before.
+
+**Cost.** Each part loads once for the whole room and draws instanced: 48
+SFPs with 48 cords cost the meshes of two parts, not 96 copies. Parts show
+only on a device's full model: in its 3D viewer and in the 3D room up
+close, on the floor and in racks. A far copy draws none, so no far LOD is
+needed. Budgets: a transceiver 1,500 triangles, a cord or plug 2,000.
+
+**Picking.** A part hovers, clicks and right-clicks as the port it sits
+in: the port's pick reaches out over it. The port's hover card names the
+recorded transceiver's part ID and serial under the port name.
 
 **Scope.** Only the ports the reader may view count, as for covers. The
 cable's colour and type are read only from cables the reader may view, and
 a transceiver record counts only for a reader who may view inventory
-items.
-Accessory types are tenant-wide, like module types. A reader who may view
-module types downloads a part once for the room
+items. Accessory types are tenant-wide, like module types. A reader who
+may view module types downloads a part once for the room
 (`/api/accessory-types/{id}/model/`); anyone else gets it through the
 device (`/api/devices/{id}/accessory-model/{accessory id}/`).
 
@@ -747,12 +821,17 @@ by id, `{module}` resolved to the bay's position) and `locate`. `covers`
 lists the chassis' port covers to hide, by their names in the model, and
 `bay_covers` each bay's installed module's, `{module}` resolved. `plugs`
 lists the [accessory types](#accessory-types) seated in its ports:
-each `{port, bay, name, url, color, cabled, transceiver}` - the `port:`
-anchor as drawn (in the module at `bay`, null for the chassis), the
-device's port it stands for, the part's model URL, the cable's colour
-(`#rrggbb`, or null), whether a cable is in the port (false for a port
-listed only for its transceiver record), and the record's
-`{part_id, serial}` or null. A light left
+each `{port, bay, name, port_type, cabled, color, cable_type, transceiver,
+transceiver_part, cord_part}` - the `port:` anchor as drawn (in the module
+at `bay`, null for the chassis), the device's port it stands for and its
+type, whether a cable is in the port (false for a port listed only for its
+transceiver record), the cable's colour (`#rrggbb`, or null) and type (""
+when unknown), and the record's `{part_id, serial}` or null.
+`transceiver_part` (`{url, kind, connector}`) sits at the anchor;
+`cord_part` (`{url, kind, connector, cable}`, `cable` the cord's `cable:`
+block or null) at the transceiver's `port:<connector>`, or at the anchor
+when there is no transceiver. Either may be null; a port with a record
+that draws nothing is still listed, for its hover card. A light left
 out is off. A state is `green`, `amber`, `red`, `blue` or `neutral`, with
 `_blink` added when it blinks. The query count is the same for one device
 as for five hundred.

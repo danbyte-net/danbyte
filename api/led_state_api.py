@@ -65,8 +65,9 @@ def device_leds_view(request):
     connected, among the interfaces the reader may view) and ``bay_covers``
     each installed module's (api.port_covers). ``plugs`` lists the parts
     seated in cabled ports and in ports holding a transceiver record -
-    ``{port, bay, name, url, color, cabled, transceiver}`` - when the
-    tenant has accessory types (api.port_plugs)."""
+    ``{port, bay, name, port_type, cabled, color, cable_type, transceiver,
+    transceiver_part, cord_part}`` - when the tenant has accessory types
+    (api.port_plugs)."""
     from .models import Device, Rack
     from .topology_views import _parse_uuid, _uuid_list_param
     from .views import _get_active_tenant

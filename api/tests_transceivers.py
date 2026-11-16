@@ -26,7 +26,7 @@ from .models import (
     uninstall_module,
 )
 from .port_plugs import part_key, read_accessory
-from .tests_port_plugs import SFP, _Base
+from .tests_port_plugs import SFP, _Base, shown
 
 URL = "/api/inventory-items/"
 
@@ -274,8 +274,9 @@ class PlugTests(_Base):
     def test_an_uncabled_port_with_a_record_shows_its_part(self):
         _item(self.dev, interface=self.te1, part_id="sfp-10g-lr-s=", serial_number="FNS1")
         p = self._by_port()["Te1/0/1"]
-        self.assertEqual((p["url"], p["cabled"], p["transceiver"]),
-                         (self._url(self.lr), False,
+        self.assertEqual((p["transceiver_part"]["url"], p["cord_part"], p["cabled"],
+                          p["transceiver"]),
+                         (self._url(self.lr), None, False,
                           {"part_id": "sfp-10g-lr-s=", "serial": "FNS1"}))
         self.assertNotIn("Te1/0/2", self._by_port())
 
@@ -284,13 +285,14 @@ class PlugTests(_Base):
         self._cable(self.te1, type="dac-passive")
         # The part ID beats the cable rule.
         p = self._by_port()["Te1/0/1"]
-        self.assertEqual((p["url"], p["cabled"]), (self._url(self.lr), True))
-        # The hand-set part beats the part ID.
+        self.assertEqual((p["transceiver_part"]["url"], p["cabled"]), (self._url(self.lr), True))
+        # The hand-set part beats the part ID (a one-piece part: alone).
         InventoryItem.objects.filter(pk=it.pk).update(accessory_type=self.sr)
-        self.assertEqual(self._by_port()["Te1/0/1"]["url"], self._url(self.sr))
+        p = self._by_port()["Te1/0/1"]
+        self.assertEqual((p["transceiver_part"], shown(p)), (None, self._url(self.sr)))
         # No match: the cable rule.
         InventoryItem.objects.filter(pk=it.pk).update(accessory_type=None, part_id="NOPE")
-        self.assertEqual(self._by_port()["Te1/0/1"]["url"], self._url(self.dac))
+        self.assertEqual(shown(self._by_port()["Te1/0/1"]), self._url(self.dac))
 
     def test_cabled_port_without_a_record(self):
         self._cable(self.te1, type="mmf-om4")
@@ -328,6 +330,6 @@ class PlugTests(_Base):
             out = self._leds(self.dev, *more)
         self.assertEqual(len(six), len(one))
         for d in more:
-            ports = {p["port"]: p["url"] for p in out[str(d.id)]["plugs"]}
+            ports = {p["port"]: shown(p) for p in out[str(d.id)]["plugs"]}
             self.assertEqual(ports, {"Te1/0/1": self._url(self.dac),
                                      "Te1/0/2": self._url(self.lr)})

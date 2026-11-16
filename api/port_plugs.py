@@ -25,22 +25,30 @@ kind transceiver, ``InventoryItem.interface``) - among those the reader may
 view. Each plug carries its cable's colour when the reader may view the
 cable.
 
-A port picks its part in this order:
+Each port in use draws up to two parts, stacked (export spec §13 v1.9,
+``stack``): a **transceiver** in the cage, and the **cord** plugged into
+it - seated at the transceiver's ``port:<connector>`` empty, or at the
+port's own anchor where there is no transceiver (an RJ45 jack, an LC panel
+port, a power inlet). The transceiver comes, in this order, from
 
 1. its transceiver record's ``accessory_type``, set by hand;
 2. the accessory type whose ``parts`` lists the record's part ID
    (case-insensitive, a trailing ``=`` ignored, ``part_key``);
-3. the accessory type whose ``fits`` names the port's type (``choose``).
-   Among several parts that fit a cage the cable's medium decides: a DAC
-   cable takes a DAC head, a fibre cable an optical transceiver, a
-   twisted-pair cable an RJ45 part. A known medium no fitting part has
-   shows nothing rather than a wrong part.
+3. for a cabled cage without either, the generic transceiver that fits it
+   (``SFP-GENERIC``: no ``parts``) of the cable's medium - an SFP-T for a
+   twisted-pair cable.
 
-A port with a record and no cable is listed with ``cabled`` false: the
-viewer draws the transceiver body without its ``plug`` child, and a
-one-piece part (a DAC, a generic plug) not at all (export spec §13). The
-record's facts (part ID, serial) ride along only when the reader may view
-inventory items; a record they may not view counts for nothing.
+The cord is the one whose ``connector`` is the record's, else the
+transceiver's, else the cable's medium's. A one-piece part (a DAC or AOC,
+``kind: cord``) takes the port alone, only while cabled. A port with no
+transceiver takes the part whose ``fits`` names its type (``choose``):
+among several, the cable's medium decides, and a known medium no fitting
+part has shows nothing rather than a wrong part.
+
+A recorded transceiver shows without a cable (no cord then). The record's
+facts (part ID, serial) ride along only when the reader may view inventory
+items; a record they may not view counts for nothing. A cord carries its
+``cable`` block - how the viewer draws the run from its ``cable`` empty.
 
 Query cost: nothing when no device's model names a port; otherwise one
 query for the tenant's accessory types and, when there are any, one
@@ -57,8 +65,19 @@ from django.core.exceptions import ValidationError
 #: Where a pack keeps its accessory YAML.
 ACCESSORY_DIR = "accessory-types/"
 KINDS = ("plug", "transceiver", "cord")
-#: The export spec's budget for one accessory (§13).
+#: The export spec's budgets for one accessory (§13): a transceiver, and a
+#: cord or plug.
+TRANSCEIVER_TRIANGLES = 1_500
 ACCESSORY_TRIANGLES = 2_000
+#: A cord's run (``cable:``, §13 v1.9).
+CABLE_PROFILES = ("zipcord", "round")
+#: The largest jacket, pitch and bend a ``cable:`` block may give (mm).
+CABLE_MM_MAX = {"jacket_mm": 50.0, "pitch_mm": 100.0, "min_bend_mm": 2_000.0}
+
+
+def triangle_budget(kind: str) -> int:
+    """The triangle budget for an accessory of ``kind``."""
+    return TRANSCEIVER_TRIANGLES if kind == "transceiver" else ACCESSORY_TRIANGLES
 NAME_MAX = 100
 MAX_FITS = 64
 MAX_PARTS = 64
@@ -96,7 +115,7 @@ def connector_medium(connector: str) -> str:
         return ""
     if c.startswith(("dac", "twinax")):
         return "dac"
-    if _FIBRE_CONNECTOR.match(c):
+    if _FIBRE_CONNECTOR.match(c) or c.startswith("aoc"):
         return "fibre"
     if c.startswith(_COPPER_CONNECTOR):
         return "copper"
@@ -184,9 +203,62 @@ def read_accessory(path: str, data) -> tuple[dict | None, list[str]]:
         return None, ["model3d.file: missing or leaves the pack."]
     connector = str(data.get("connector") or "").strip().lower()[:32]
     parts, standard, wavelength = _read_part_facts(data, notes)
+    cable = read_cable(data.get("cable"), notes)
+    if cable is not None and kind == "transceiver":
+        notes.append("cable: a transceiver has no cable of its own; its cord does - ignored.")
+        cable = None
     return {"vendor": vendor_of(path)[:100], "name": name, "kind": kind,
             "connector": connector, "fits": fits, "parts": parts,
-            "standard": standard, "wavelength_nm": wavelength, "file": rel}, notes
+            "standard": standard, "wavelength_nm": wavelength, "cable": cable,
+            "file": rel}, notes
+
+
+def _mm(block: dict, key: str, notes: list[str]) -> float | None:
+    v = block.get(key)
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not (
+            0 < v <= CABLE_MM_MAX[key]):
+        notes.append(f"cable.{key}: {v!r} is not a size in mm up to "
+                     f"{CABLE_MM_MAX[key]:g} - ignored.")
+        return None
+    return round(float(v), 3)
+
+
+def read_cable(raw, notes: list[str]) -> dict | None:
+    """A cord's ``cable:`` block - ``{profile, jacket_mm, pitch_mm,
+    min_bend_mm}`` - or None when there is none or it can't be used (noted).
+    ``pitch_mm`` belongs to a zip cord only; a zip cord without one, or with
+    one narrower than its jacket, takes the jacket as its pitch."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        notes.append("cable: not a mapping - ignored.")
+        return None
+    profile = str(raw.get("profile") or "").strip().lower()
+    if profile not in CABLE_PROFILES:
+        notes.append(f"cable.profile: {raw.get('profile')!r} is not one of "
+                     f"{', '.join(CABLE_PROFILES)} - the block is ignored.")
+        return None
+    jacket = _mm(raw, "jacket_mm", notes)
+    if jacket is None:
+        notes.append("cable.jacket_mm: needed - the block is ignored.")
+        return None
+    pitch = _mm(raw, "pitch_mm", notes)
+    if profile == "round":
+        if pitch is not None:
+            notes.append("cable.pitch_mm: a round cable has no pitch - ignored.")
+        pitch = None
+    elif pitch is None or pitch < jacket:
+        if pitch is not None:
+            notes.append(f"cable.pitch_mm: {pitch:g} is narrower than the jacket; "
+                         f"{jacket:g} is used.")
+        pitch = jacket
+    known = {"profile", "jacket_mm", "pitch_mm", "min_bend_mm"}
+    for k in sorted(set(map(str, raw)) - known):
+        notes.append(f"cable.{k}: not a key Danbyte reads - ignored.")
+    return {"profile": profile, "jacket_mm": jacket, "pitch_mm": pitch,
+            "min_bend_mm": _mm(raw, "min_bend_mm", notes)}
 
 
 def _read_part_facts(data: dict, notes: list[str]):
@@ -223,6 +295,37 @@ def part_key(part_id: str) -> str:
     return (part_id or "").strip().rstrip("=").strip().upper()
 
 
+_CABLE_EMPTY = re.compile(r"^cable(\.\d+)?$")
+
+
+def node_names(doc: dict) -> set[str]:
+    """The names of the nodes the default scene draws."""
+    from .model_anchors import _world
+
+    nodes = doc.get("nodes") if isinstance(doc.get("nodes"), list) else []
+    return {str(nodes[i].get("name") or "") for i in _world(doc)
+            if isinstance(nodes[i], dict)}
+
+
+def empty_warnings(doc: dict, fields: dict) -> list[str]:
+    """What a part's model lacks for stacking (§13 v1.9): a transceiver
+    with a connector needs a ``port:<connector>`` empty for its cord, a
+    cord with a ``cable:`` block a ``cable`` empty to start the run."""
+    names = node_names(doc)
+    out = []
+    conn = fields.get("connector") or ""
+    if fields["kind"] == "transceiver" and conn and connector_medium(conn) != "dac":
+        ports = sorted(n for n in names if n.startswith("port:"))
+        if not ports:
+            out.append(f"no port:{conn} empty; a cord in it is seated at the cage instead.")
+        elif f"port:{conn}" not in names and len(ports) > 1:
+            out.append(f"no port:{conn} empty, and {len(ports)} port: empties to choose from.")
+    if fields["kind"] != "transceiver" and fields.get("cable") and not any(
+            _CABLE_EMPTY.match(n) for n in names):
+        out.append("no cable empty; the run starts at the port instead.")
+    return out
+
+
 def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
                     pack_name: str = "", pack_version: str = ""):
     """Import one accessory YAML: ``(action, name, id, notes)``, action
@@ -249,9 +352,11 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
         return "error", name, "", [*notes, f"model3d.file: {' '.join(exc.messages)}"]
     tri = triangles(doc)
     notes.append(f"model: {tri} triangles.")
-    if tri > ACCESSORY_TRIANGLES:
-        notes.append(f"model: over the {ACCESSORY_TRIANGLES}-triangle budget for a part; "
+    budget = triangle_budget(fields["kind"])
+    if tri > budget:
+        notes.append(f"model: over the {budget:,}-triangle budget for a {fields['kind']}; "
                      "imported, but many in a room cost frames.")
+    notes.extend(f"model: {w}" for w in empty_warnings(doc, fields))
     obj = AccessoryType.objects.filter(tenant=tenant, vendor=fields["vendor"],
                                        name=name).first()
     action = "matched" if obj is not None else "created"
@@ -260,10 +365,16 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
     obj.kind, obj.connector, obj.fits = fields["kind"], fields["connector"], fields["fits"]
     obj.parts, obj.standard = fields["parts"], fields["standard"]
     obj.wavelength_nm = fields["wavelength_nm"]
+    obj.cable = fields["cable"]
     obj.pack_import = {"pack": {"name": pack_name, "version": pack_version}}
     notes.append(f"{fields['kind']}, fits {', '.join(fields['fits'])}.")
     if fields["parts"]:
         notes.append(f"parts: {', '.join(fields['parts'])}.")
+    if fields["cable"]:
+        c = fields["cable"]
+        notes.append(f"cable: {c['profile']}, jacket {c['jacket_mm']:g} mm"
+                     + (f", pitch {c['pitch_mm']:g} mm" if c["pitch_mm"] else "")
+                     + (f", bend {c['min_bend_mm']:g} mm" if c["min_bend_mm"] else "") + ".")
     if dry_run:
         return action, name, "", notes
     model_3d.store(obj, glb)
@@ -315,7 +426,7 @@ def accessories_of(tenant) -> list:
     return list(AccessoryType.objects.filter(tenant=tenant)
                 .exclude(model_3d="").exclude(model_3d__isnull=True)
                 .only("id", "vendor", "name", "kind", "connector", "fits", "parts",
-                      "model_3d"))
+                      "cable", "model_3d"))
 
 
 def in_use(wanted: dict, user, tenant) -> dict:
@@ -376,7 +487,8 @@ def in_use(wanted: dict, user, tenant) -> dict:
         used = cabled
         rec = {"_xid": Value(None, output_field=text), "_xacc": Value(None, output_field=text),
                "_xpart": Value(None, output_field=text),
-               "_xserial": Value(None, output_field=text)}
+               "_xserial": Value(None, output_field=text),
+               "_xconn": Value(None, output_field=text)}
         if kind == "interface" and items is not None:
             mine = items.filter(interface=OuterRef("pk")).order_by()
             used = used | Q(Exists(mine))
@@ -385,6 +497,7 @@ def in_use(wanted: dict, user, tenant) -> dict:
                 "_xacc": Cast(Subquery(mine.values("accessory_type_id")[:1]), output_field=text),
                 "_xpart": Subquery(mine.values("part_id")[:1], output_field=text),
                 "_xserial": Subquery(mine.values("serial_number")[:1], output_field=text),
+                "_xconn": Subquery(mine.values("connector")[:1], output_field=text),
             }
         seen = terms.filter(cable__in=cables).order_by("cable_id")
         parts.append(
@@ -395,11 +508,11 @@ def in_use(wanted: dict, user, tenant) -> dict:
                       _cabled=ExpressionWrapper(cabled, output_field=BooleanField()),
                       **rec)
             .values_list("device_id", "_kind", "name", "type", "_ctype", "_color",
-                         "_cabled", "_xid", "_xacc", "_xpart", "_xserial"))
+                         "_cabled", "_xid", "_xacc", "_xpart", "_xserial", "_xconn"))
     rows = parts[0].union(*parts[1:], all=True) if len(parts) > 1 else parts[0]
     return {(str(d), k, n): (t or "", ct or "", col or "", bool(cab),
-                             (acc or "", part or "", serial or "") if xid else None)
-            for d, k, n, t, ct, col, cab, xid, acc, part, serial in rows}
+                             (acc or "", part or "", serial or "", conn or "") if xid else None)
+            for d, k, n, t, ct, col, cab, xid, acc, part, serial, conn in rows}
 
 
 def accessory_url(acc, device, shared: bool) -> str:
@@ -419,21 +532,148 @@ def may_view_types(user, tenant) -> bool:
     return rbac.has_action(user, tenant, "moduletype", "view")
 
 
-def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, list]:
-    """``{device id: [{port, bay, name, url, color, cabled, transceiver}]}``
-    - the parts to seat in each device's drawn model, by its port anchor as
-    drawn (``port``, with ``bay`` the module's bay or null); ``name`` is the
-    device's port (interface, console port, power inlet…) it stands for.
-    ``owners`` maps a device's id to its model's owner
-    (api.model_3d.effective_owner); the devices' ``_installed_parts`` are
-    loaded first (api.model_3d.installed_parts). ``color`` is the cable's
-    ``#rrggbb`` or null (the viewer's grey).
+def cord_for(accessories, connector: str):
+    """The cord or plug whose ``connector`` is ``connector`` (``lc`` →
+    ``LC-DUPLEX``; ``mpo-12`` takes an ``mpo`` cord), never a transceiver,
+    or None."""
+    c = (connector or "").strip().lower()
+    if not c:
+        return None
+    from .dcim_choices import PLUGGABLE_INTERFACE_TYPES
 
-    ``cabled`` says whether a cable is in the port: a port holding only a
-    transceiver record is listed too, and the viewer then hides the part's
-    ``plug`` child - or the whole part when it is one piece (export spec
-    §13). ``transceiver`` is the record's ``{part_id, serial}`` or null.
-    Devices with nothing to seat are left out."""
+    # A part that fits a cage is a module or a one-piece head, never a cord.
+    cages = PLUGGABLE_INTERFACE_TYPES - {"other"}
+    cords = [a for a in accessories if a.kind != "transceiver" and a.connector
+             and not any(f in cages for f in (a.fits or []))]
+    exact = [a for a in cords if a.connector == c]
+    near = exact or [a for a in cords
+                     if a.connector.startswith(c) or c.startswith(a.connector)]
+    return min(near, key=_by_name) if near else None
+
+
+def _by_name(a):
+    return (a.vendor.lower(), a.name.lower())
+
+
+#: The connector a cable's medium ends in when nothing else says.
+_MEDIUM_CONNECTOR = {"fibre": "lc", "copper": "rj45"}
+
+
+def generic_transceiver(accessories, port_type: str, medium: str = ""):
+    """The fallback transceiver for a cage of ``port_type`` with nothing
+    recorded in it (``SFP-GENERIC``): a transceiver that fits, of the
+    cable's ``medium`` when it is known (an optical one first when not),
+    a generic one (no ``parts``) before a real optic. None when none fits."""
+    fit = [a for a in accessories
+           if a.kind == "transceiver" and port_type in (a.fits or [])]
+    if medium:
+        fit = [a for a in fit if connector_medium(a.connector) == medium]
+    if not fit:
+        return None
+    return min(fit, key=lambda a: (bool(a.parts),
+                                   _DEFAULT_ORDER.get(connector_medium(a.connector), 3),
+                                   *_by_name(a)))
+
+
+def one_piece(accessories, port_type: str, cable_type: str = ""):
+    """A part that takes a port alone - a plug, a cord, a DAC head - by the
+    port's type and the cable's (``choose`` without the transceivers)."""
+    return choose([a for a in accessories if a.kind != "transceiver"],
+                  port_type, cable_type)
+
+
+def is_cage(kind: str, port_type: str) -> bool:
+    """Whether a port is a transceiver cage (SFP, QSFP…)."""
+    from .dcim_choices import PLUGGABLE_INTERFACE_TYPES
+
+    return kind == "interface" and port_type in PLUGGABLE_INTERFACE_TYPES
+
+
+def stack(accessories, by_id: dict, by_part: dict, kind: str, port_type: str,
+          cable_type: str, cabled: bool, record) -> tuple:
+    """``(transceiver, cord)`` for one port in use (either may be None;
+    export spec §13 v1.9, docs/dcim/model-packs.md → Which parts a port
+    shows):
+
+    * a transceiver record's part (set by hand, else by its part ID) sits
+      in the cage cabled or not; a cable adds the cord whose connector is
+      the record's, else the transceiver's, else the cable's;
+    * a one-piece part (``kind: cord`` or ``plug``: a DAC, an AOC) takes
+      the port alone, and only while it is cabled;
+    * a cabled cage with no record - or one whose part no model stands
+      for - takes the generic transceiver of the cable's medium (an SFP-T
+      for twisted pair) and its cord; a DAC or AOC cable, or a cage no
+      transceiver fits, takes a one-piece part;
+    * any other port (an RJ45 jack, an LC panel port, a power inlet)
+      takes the cord or plug that fits it, while cabled."""
+    medium = cable_medium(cable_type)
+    acc = None
+    if record is not None:
+        acc = by_id.get(record[0]) or (by_part.get(part_key(record[1]))
+                                       if record[1] else None)
+    if acc is not None:
+        if acc.kind != "transceiver":
+            return (None, acc if cabled else None)
+        if not cabled:
+            return (acc, None)
+        conn = (record[3] if record[3] not in ("", "other") else "") or acc.connector \
+            or _MEDIUM_CONNECTOR.get(medium, "")
+        return (acc, cord_for(accessories, conn))
+    rec_medium = connector_medium(record[3]) if record is not None else ""
+    if record is not None and record[3] == "aoc":
+        rec_medium = "aoc"
+    if is_cage(kind, port_type):
+        want = rec_medium or medium
+        one = want in ("dac", "aoc") or (cable_type or "").lower().startswith("aoc")
+        if not one:
+            t = generic_transceiver(accessories, port_type, want)
+            if t is not None:
+                if not cabled:
+                    return (t, None)
+                conn = (record[3] if record is not None and record[3] not in ("", "other")
+                        else "") or t.connector or _MEDIUM_CONNECTOR.get(medium, "")
+                return (t, cord_for(accessories, conn))
+        if not cabled:
+            return (None, None)
+        heads = accessories
+        if want != "aoc" and not (cable_type or "").lower().startswith("aoc"):
+            # An AOC is its own cable: a plain fibre in the cage is no AOC.
+            heads = [a for a in accessories if not (a.connector or "").startswith("aoc")]
+        return (None, one_piece(heads, port_type, cable_type))
+    if not cabled:
+        return (None, None)
+    return (None, one_piece(accessories, port_type, cable_type))
+
+
+def _part_doc(acc, device, shared: bool, *, cable: bool = False) -> dict:
+    doc = {"url": accessory_url(acc, device, shared), "kind": acc.kind,
+           "connector": acc.connector or ""}
+    if cable:
+        doc["cable"] = acc.cable if isinstance(acc.cable, dict) else None
+    return doc
+
+
+def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, list]:
+    """``{device id: [{port, bay, name, port_type, cabled, color,
+    cable_type, transceiver, transceiver_part, cord_part}]}`` - the parts
+    to seat in each device's drawn model, by its port anchor as drawn
+    (``port``, with ``bay`` the module's bay or null); ``name`` is the
+    device's port (interface, console port, power inlet…) it stands for
+    and ``port_type`` its type. ``owners`` maps a device's id to its
+    model's owner (api.model_3d.effective_owner); the devices'
+    ``_installed_parts`` are loaded first (api.model_3d.installed_parts).
+
+    Each port draws up to two parts (``stack``): ``transceiver_part``
+    ``{url, kind, connector}`` at the port's anchor, and ``cord_part``
+    ``{url, kind, connector, cable}`` at the transceiver's
+    ``port:<connector>`` empty - or at the port's anchor when there is no
+    transceiver. ``cable`` is the cord's run (``AccessoryType.cable``) or
+    null. ``color`` is the cable's ``#rrggbb`` or null and ``cable_type``
+    its type or "" (both only from a cable the reader may view);
+    ``cabled`` says whether a cable is in the port; ``transceiver`` is the
+    record's ``{part_id, serial}`` or null. A port with a record is listed
+    even when it draws nothing, for its hover card. Devices with nothing to
+    seat are left out."""
     devices = [d for d in devices if has_ports(d, owners.get(d.id))]
     if not devices:
         return {}
@@ -448,7 +688,7 @@ def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, li
     shared = may_view_types(user, tenant)
     by_id = {str(a.pk): a for a in accessories}
     by_part: dict = {}
-    for a in sorted(accessories, key=lambda a: (a.vendor.lower(), a.name.lower())):
+    for a in sorted(accessories, key=_by_name):
         for p in a.parts or []:
             by_part.setdefault(part_key(str(p)), a)
     picks: dict = {}
@@ -461,24 +701,27 @@ def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, li
             if hit is None:
                 continue
             ptype, ctype, color, cabled, rec = hit
-            acc = None
-            if rec is not None:
-                # The record's part by hand, else the part its ID names.
-                acc = by_id.get(rec[0]) or (by_part.get(part_key(rec[1]))
-                                            if rec[1] else None)
-            if acc is None:
-                k = (ptype, cable_medium(ctype))
+            if rec is None:
+                k = (kind, ptype, ctype, cabled)
                 if k not in picks:
-                    picks[k] = choose(accessories, ptype, ctype)
-                acc = picks[k]
-            if acc is None:
+                    picks[k] = stack(accessories, by_id, by_part, kind, ptype, ctype,
+                                     cabled, None)
+                pair = picks[k]
+            else:
+                pair = stack(accessories, by_id, by_part, kind, ptype, ctype, cabled, rec)
+            module, cord = pair
+            if module is None and cord is None and rec is None:
                 continue
-            rows.append({"port": drawn, "bay": bay, "name": comp,
-                         "url": accessory_url(acc, d, shared),
-                         "color": color.lower() if _HEX.match(color) else None,
-                         "cabled": cabled,
-                         "transceiver": ({"part_id": rec[1], "serial": rec[2]}
-                                         if rec is not None else None)})
+            rows.append({
+                "port": drawn, "bay": bay, "name": comp, "port_type": ptype,
+                "cabled": cabled,
+                "color": color.lower() if _HEX.match(color) else None,
+                "cable_type": ctype,
+                "transceiver": ({"part_id": rec[1], "serial": rec[2]}
+                                if rec is not None else None),
+                "transceiver_part": _part_doc(module, d, shared) if module else None,
+                "cord_part": _part_doc(cord, d, shared, cable=True) if cord else None,
+            })
         if rows:
             out[key] = sorted(rows, key=lambda r: (r["bay"] or "", r["port"]))
     return out

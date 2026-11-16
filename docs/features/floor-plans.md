@@ -952,6 +952,12 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   in a **lane of its own**, so ten runs in one duct read as ten parallel
   runs. Hover glows; click opens the cable card. Past a couple hundred runs
   the layer falls back to simple lines for performance.
+- **Runs start at the cord.** Where a device is drawn at full detail with a
+  cord in the port (a pack's accessory types), the run leaves the cord's
+  cable end instead of the port, at the cord's own size: an LC zip cord as
+  two jackets side by side, an MPO trunk as one, its corners no tighter than
+  the cord's bend radius where there is room. See
+  [Accessory types](../dcim/model-packs.md#which-parts-a-port-shows).
 - **Same-rack runs dress at the rail.** A lead between two devices in one
   cabinet takes the corner channel nearest the two ports (2 cm outside the
   rail opening, 3 cm in front of the face) and gets a small lane of its own,

@@ -340,6 +340,7 @@ function PlacedDevice({
             emptyMode={model?.empty_mode}
             leds={leds}
             showPlugs={full}
+            deviceId={dev.id}
             overlay={
               // Up close, as its ports: a bay's module menu on right-click.
               showPorts && !ghosted && onDeviceMenu && model?.bays?.length

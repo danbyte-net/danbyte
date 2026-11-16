@@ -1,29 +1,61 @@
 import type { DeviceLeds } from "@/lib/led-state"
+import { endColours, isApc, NEUTRAL } from "@/lib/fibre-colours"
+import type { RecolourChannel } from "@/lib/fibre-colours"
 
 /**
- * Plugs in cabled ports (docs/dcim/model-packs.md → Accessory types): the
- * server picks, per cabled port on a device's drawn model, the accessory
- * type that sits in it - an RJ45 plug, an SFP with its LC connector, a DAC
- * head, a cord plug - and names it in `/api/device-leds/` `plugs`
- * (api.port_plugs). Here are the pure parts: no three.js, so they test
- * without a canvas. floorplan3d/port-plugs seats them.
+ * Parts in the ports of a 3D model (docs/dcim/model-packs.md → Accessory
+ * types, export spec §13 v1.9): the server picks, per port in use on a
+ * device's drawn model, up to two stacked parts - a transceiver in the
+ * cage and the cord plugged into it (an LC duplex, an MPO trunk, an RJ45
+ * plug), or a part that takes the port alone (an RJ45 plug in a jack, an
+ * LC cord in a panel port, a DAC head, a power cord) - and names them in
+ * `/api/device-leds/` `plugs` (api.port_plugs). Here are the pure parts:
+ * no three.js, so they test without a canvas. floorplan3d/port-plugs seats
+ * them.
  */
 
-/** One part to seat: at the model's `port:<port>` anchor (in the module at
- * `bay`, null for the chassis'), `name` the device's port it stands for,
- * its model at `url`, its cable's colour or null. */
+/** A part's model and what it is. */
+export interface PlugPart {
+  url: string
+  kind: string
+  /** The connector it takes or ends in: `lc`, `mpo`, `rj45`, `dac`… */
+  connector: string
+}
+
+/** How a cord's run is drawn from its `cable` empty (the pack's
+ * `cable:` block). Sizes in mm. */
+export interface CordCable {
+  profile: "zipcord" | "round"
+  jacket_mm: number
+  pitch_mm: number | null
+  min_bend_mm: number | null
+}
+
+export interface CordPart extends PlugPart {
+  cable: CordCable | null
+}
+
+/** One port's parts: at the model's `port:<port>` anchor (in the module at
+ * `bay`, null for the chassis'), `name` the device's port it stands for. */
 export interface PortPlug {
   port: string
   bay: string | null
   name: string
-  url: string
-  color: string | null
-  /** A cable is in the port. A port listed only for its transceiver record
-   * is not: its part draws without its `plug` child, and a one-piece part
-   * not at all (export spec §13). Absent reads as cabled. */
+  /** The port's type (`10gbase-x-sfpp`, `lc-apc-duplex`). */
+  port_type?: string
+  /** A cable is in the port (or it is marked connected). */
   cabled?: boolean
+  /** The cable's colour, or null. */
+  color: string | null
+  /** The cable's type (`smf-os2`), "" when unknown or not viewable. */
+  cable_type?: string
   /** The transceiver recorded in the port, when the reader may view it. */
   transceiver?: PortTransceiver | null
+  /** In the cage, at the port's anchor. */
+  transceiver_part: PlugPart | null
+  /** At the transceiver's `port:<connector>` empty, else at the port's
+   * anchor. */
+  cord_part: CordPart | null
 }
 
 /** A port's recorded transceiver, for its hover card. */
@@ -32,22 +64,15 @@ export interface PortTransceiver {
   serial: string
 }
 
-/** The cable colour a plug takes when its cable names none: a neutral
- * patch-cord grey. */
-export const PLUG_DEFAULT_COLOR = "#9ca3af"
+/** The cable colour a plug takes when its cable names none. */
+export const PLUG_DEFAULT_COLOR = NEUTRAL
 
 /** Materials a part recolours from its cable (export spec §13). */
 export const RECOLOURED_MATERIALS: ReadonlySet<string> = new Set([
   "CABLE",
   "FIBRE",
+  "LC_BODY",
 ])
-
-const HEX = /^#[0-9a-f]{6}$/i
-
-/** The colour a plug's cable parts take. */
-export function plugColor(color: string | null | undefined): string {
-  return color && HEX.test(color) ? color.toLowerCase() : PLUG_DEFAULT_COLOR
-}
 
 /** The plugs of a payload entry (none when it carries none). */
 export function plugsOf(
@@ -60,73 +85,64 @@ export function plugsOf(
  * re-seats nothing. */
 export function plugsKey(dev: Pick<DeviceLeds, "plugs"> | null | undefined) {
   return plugsOf(dev)
-    .map(
-      (p) =>
-        `${p.bay ?? ""}\u0001${p.port}\u0001${p.url}\u0001${p.color ?? ""}\u0001${isCabled(p) ? 1 : 0}`
+    .map((p) =>
+      [
+        p.bay ?? "",
+        p.port,
+        p.name,
+        p.transceiver_part?.url ?? "",
+        p.transceiver_part?.connector ?? "",
+        p.cord_part?.url ?? "",
+        p.cord_part?.connector ?? "",
+        JSON.stringify(p.cord_part?.cable ?? null),
+        p.color ?? "",
+        p.cable_type ?? "",
+        p.port_type ?? "",
+      ].join("\u0001")
     )
     .sort()
     .join("\u0000")
 }
 
-/** The names of the device's ports a plug sits in - the port markers make
- * their pick reach over the plug. */
+/** The names of the device's ports a part sits in - the port markers make
+ * their pick reach over it. */
 export function pluggedNames(
   dev: Pick<DeviceLeds, "plugs"> | null | undefined
 ): ReadonlySet<string> {
-  return new Set(plugsOf(dev).map((p) => p.name))
+  return new Set(
+    plugsOf(dev)
+      .filter((p) => p.transceiver_part || p.cord_part)
+      .map((p) => p.name)
+  )
 }
 
-/** The plugs by model URL - one instanced draw per part's mesh. */
-export function plugsByUrl(
-  plugs: readonly PortPlug[]
-): Map<string, PortPlug[]> {
-  const out = new Map<string, PortPlug[]>()
-  for (const p of plugs) {
-    const list = out.get(p.url)
-    if (list) list.push(p)
-    else out.set(p.url, [p])
+/** The three recolour channels' colours for a port's parts. */
+export function plugColours(
+  p: Pick<PortPlug, "color" | "cable_type" | "port_type" | "cord_part">
+): Record<RecolourChannel, string> {
+  return endColours({
+    color: p.color,
+    cableType: p.cable_type,
+    apc: isApc(p.port_type, p.cord_part?.connector),
+  })
+}
+
+/** The connector names to look for as a `port:<connector>` empty in a
+ * transceiver's model, best first: the cord's, then the transceiver's
+ * (`mpo-12` also as `mpo`). */
+export function receptacleNames(
+  p: Pick<PortPlug, "cord_part" | "transceiver_part">
+): string[] {
+  const out: string[] = []
+  const add = (n: string) => {
+    if (n && !out.includes(n)) out.push(n)
+  }
+  for (const c of [p.cord_part?.connector, p.transceiver_part?.connector]) {
+    const n = (c ?? "").trim().toLowerCase()
+    add(n)
+    add(n.replace(/-\d+$/, ""))
   }
   return out
-}
-
-/** Whether a plug's port has a cable in it (an older payload says nothing:
- * cabled). */
-export function isCabled(p: Pick<PortPlug, "cabled">): boolean {
-  return p.cabled !== false
-}
-
-/** The plugs by model URL and cabled-ness - one instanced draw per part's
- * mesh, the uncabled ones without the part's `plug` child. */
-export function plugGroups(
-  plugs: readonly PortPlug[]
-): { url: string; cabled: boolean; plugs: PortPlug[] }[] {
-  const out = new Map<
-    string,
-    { url: string; cabled: boolean; plugs: PortPlug[] }
-  >()
-  for (const p of plugs) {
-    const cabled = isCabled(p)
-    const key = `${p.url}\u0001${cabled ? 1 : 0}`
-    const g = out.get(key)
-    if (g) g.plugs.push(p)
-    else out.set(key, { url: p.url, cabled, plugs: [p] })
-  }
-  return [...out.values()]
-}
-
-/** A part's node named `plug` (Blender may suffix a copy `plug.001`). */
-export const PLUG_NODE = /^plug(\.?\d+)?$/i
-
-/** The meshes of a part to draw in a port: all of them when cabled; else
- * the transceiver body without its `plug` child - and nothing for a
- * one-piece part (a DAC, a generic plug), which has no `plug` child. */
-export function shownMeshes<T extends { inPlug: boolean }>(
-  meshes: readonly T[],
-  cabled: boolean
-): T[] {
-  if (cabled) return [...meshes]
-  if (!meshes.some((m) => m.inPlug)) return []
-  return meshes.filter((m) => !m.inPlug)
 }
 
 /** The recorded transceivers by the device's port name, for the hover
@@ -138,4 +154,14 @@ export function portTransceivers(
   for (const p of plugsOf(dev))
     if (p.transceiver) out.set(p.name, p.transceiver)
   return out
+}
+
+/** Every part URL a set of plugs needs loaded. */
+export function plugUrls(plugs: readonly PortPlug[]): string[] {
+  const out = new Set<string>()
+  for (const p of plugs) {
+    if (p.transceiver_part) out.add(p.transceiver_part.url)
+    if (p.cord_part) out.add(p.cord_part.url)
+  }
+  return [...out]
 }

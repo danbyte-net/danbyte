@@ -1,104 +1,109 @@
 import { describe, expect, it } from "vitest"
 
+import { FIBRE_COLOURS as C, NEUTRAL } from "./fibre-colours"
 import {
   PLUG_DEFAULT_COLOR,
-  PLUG_NODE,
+  RECOLOURED_MATERIALS,
+  plugColours,
   pluggedNames,
-  plugColor,
-  plugGroups,
-  plugsByUrl,
   plugsKey,
+  plugUrls,
   portTransceivers,
-  shownMeshes,
+  receptacleNames,
 } from "./port-plugs"
 import type { PortPlug } from "./port-plugs"
+
+const SFP = {
+  url: "/api/accessory-types/sfp/model/?v=1",
+  kind: "transceiver",
+  connector: "lc",
+}
+const LC = {
+  url: "/api/accessory-types/lc/model/?v=1",
+  kind: "plug",
+  connector: "lc",
+  cable: {
+    profile: "zipcord" as const,
+    jacket_mm: 1.8,
+    pitch_mm: 1.84,
+    min_bend_mm: 30,
+  },
+}
 
 const plug = (port: string, over: Partial<PortPlug> = {}): PortPlug => ({
   port,
   bay: null,
   name: port,
-  url: "/api/accessory-types/a/model/?v=1",
   color: null,
+  cabled: true,
+  cable_type: "",
+  port_type: "10gbase-x-sfpp",
+  transceiver: null,
+  transceiver_part: SFP,
+  cord_part: LC,
   ...over,
 })
 
 describe("port plugs", () => {
-  it("colours a plug from its cable, grey without one", () => {
-    expect(plugColor("#FF0000")).toBe("#ff0000")
-    expect(plugColor(null)).toBe(PLUG_DEFAULT_COLOR)
-    expect(plugColor("red")).toBe(PLUG_DEFAULT_COLOR)
-  })
-
-  it("keys the same plugs the same in any order", () => {
-    const a = [plug("Gi1/0/1"), plug("Gi1/0/2", { color: "#00ff00" })]
+  it("keys the same plugs the same in any order, and a change apart", () => {
+    const a = [plug("Te1/0/1"), plug("Te1/0/2", { color: "#00ff00" })]
     expect(plugsKey({ plugs: a })).toBe(plugsKey({ plugs: [...a].reverse() }))
     expect(plugsKey({ plugs: a })).not.toBe(plugsKey({ plugs: a.slice(1) }))
+    // The cable leaving the port drops the cord.
+    expect(
+      plugsKey({ plugs: [plug("Te1/0/1", { cord_part: null })] })
+    ).not.toBe(plugsKey({ plugs: [plug("Te1/0/1")] }))
     expect(plugsKey(null)).toBe("")
   })
 
-  it("names the plugged ports and groups plugs by part", () => {
-    const sfp = "/api/accessory-types/b/model/?v=1"
-    const list = [
-      plug("Gi1/0/1"),
-      plug("Te1/{module}/1", { bay: "NM", name: "Te1/1/1", url: sfp }),
-      plug("Gi1/0/2"),
-    ]
-    expect([...pluggedNames({ plugs: list })].sort()).toEqual([
-      "Gi1/0/1",
-      "Gi1/0/2",
-      "Te1/1/1",
-    ])
-    const groups = plugsByUrl(list)
-    expect([...groups.keys()]).toEqual([list[0].url, sfp])
-    expect(groups.get(list[0].url)!.map((p) => p.port)).toEqual([
-      "Gi1/0/1",
-      "Gi1/0/2",
-    ])
-  })
-
-  it("keys a port that lost its cable apart", () => {
-    const a = [plug("Te1/0/1")]
-    expect(plugsKey({ plugs: a })).not.toBe(
-      plugsKey({ plugs: [plug("Te1/0/1", { cabled: false })] })
-    )
-    // An older payload without `cabled` reads as cabled.
-    expect(plugsKey({ plugs: a })).toBe(
-      plugsKey({ plugs: [plug("Te1/0/1", { cabled: true })] })
-    )
-  })
-
-  it("groups by part and cabled-ness", () => {
+  it("names the ports a part sits in, not a record drawing nothing", () => {
     const list = [
       plug("Te1/0/1"),
-      plug("Te1/0/2", { cabled: false }),
-      plug("Te1/0/3", { cabled: true }),
+      plug("Te1/{module}/1", { bay: "NM", name: "Te1/1/1", cord_part: null }),
+      plug("Te1/0/3", {
+        transceiver_part: null,
+        cord_part: null,
+        transceiver: { part_id: "SFP-H10GB-CU3M", serial: "X" },
+      }),
     ]
+    expect([...pluggedNames({ plugs: list })].sort()).toEqual([
+      "Te1/0/1",
+      "Te1/1/1",
+    ])
+    expect([...portTransceivers({ plugs: list }).keys()]).toEqual(["Te1/0/3"])
+    expect(plugUrls(list)).toEqual([SFP.url, LC.url])
+  })
+
+  it("colours each channel from the cable and the port", () => {
+    expect(plugColours(plug("F1", { cable_type: "smf-os2" }))).toEqual({
+      cable: NEUTRAL,
+      fibre: C.yellow,
+      lc: C.blue,
+    })
     expect(
-      plugGroups(list).map((g) => [g.cabled, g.plugs.map((p) => p.port)])
-    ).toEqual([
-      [true, ["Te1/0/1", "Te1/0/3"]],
-      [false, ["Te1/0/2"]],
+      plugColours(
+        plug("F1", { cable_type: "smf-os2", port_type: "lc-apc-duplex" })
+      ).lc
+    ).toBe(C.green)
+    expect(plugColours(plug("G1", { color: "#FF0000" })).cable).toBe("#ff0000")
+    expect(PLUG_DEFAULT_COLOR).toBe(NEUTRAL)
+    expect([...RECOLOURED_MATERIALS].sort()).toEqual([
+      "CABLE",
+      "FIBRE",
+      "LC_BODY",
     ])
   })
 
-  it("draws a transceiver body without its plug while uncabled", () => {
-    const body = { name: "Body", inPlug: false }
-    const lc = { name: "LC", inPlug: true }
-    expect(shownMeshes([body, lc], true)).toEqual([body, lc])
-    expect(shownMeshes([body, lc], false)).toEqual([body])
-    // One piece (a DAC, a generic plug): nothing without a cable.
-    expect(shownMeshes([body], false)).toEqual([])
-    expect(["plug", "Plug", "plug.001"].every((n) => PLUG_NODE.test(n))).toBe(
-      true
-    )
-    expect(PLUG_NODE.test("plugin")).toBe(false)
-  })
-
-  it("names the recorded transceivers by port", () => {
-    const t = { part_id: "SFP-10G-SR", serial: "FNS1" }
-    const map = portTransceivers({
-      plugs: [plug("Te1/0/1", { transceiver: t }), plug("Te1/0/2")],
-    })
-    expect([...map]).toEqual([["Te1/0/1", t]])
+  it("looks for the cord's connector on the transceiver first", () => {
+    expect(receptacleNames(plug("Q1"))).toEqual(["lc"])
+    expect(
+      receptacleNames(
+        plug("Q1", {
+          transceiver_part: { ...SFP, connector: "mpo" },
+          cord_part: { ...LC, connector: "mpo-12" },
+        })
+      )
+    ).toEqual(["mpo-12", "mpo"])
+    expect(receptacleNames(plug("Q1", { cord_part: null }))).toEqual(["lc"])
   })
 })

@@ -71,10 +71,13 @@ there too.
   transceiver's port, linked to the interface.
 - **Interface lists:** the optional **Transceiver** column (pick it in the
   Columns menu) shows the part ID.
-- **3D:** a port with a transceiver draws its part even with no cable in it:
-  the transceiver body, without the connector, until a cable is plugged in.
-  The port's hover card names the part ID and serial. See
-  [Accessory types](model-packs.md#accessory-types).
+- **3D:** a port with a transceiver draws its part even with no cable in it.
+  Once a cable is plugged in, the cord for the transceiver's connector (an
+  LC duplex, an MPO trunk, an RJ45 plug in an SFP-T) sits in it, and the 3D
+  room's cable run starts at that cord. The connector field picks the cord
+  first, before the part's own. A one-piece DAC or AOC shows only while
+  cabled. The port's hover card names the part ID and serial. See
+  [Which parts a port shows](model-packs.md#which-parts-a-port-shows).
 
 Each of these shows a transceiver only to a reader who may view inventory
 items at the device's site; anyone else sees the port without it.
