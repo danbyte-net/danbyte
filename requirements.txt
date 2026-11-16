@@ -54,7 +54,7 @@ coverage>=7.6              # test coverage (CI + `make coverage`)
 # Security floors for packages pulled in by the ones above: each is the first
 # release without known advisories at the time it was set. Raise, never lower.
 pillow>=13.0.0            # via weasyprint / reportlab
-PyJWT>=2.15.1             # via djangorestframework-simplejwt
+PyJWT>=2.15.1             # OIDC ID tokens (auth_api.sso); also djangorestframework-simplejwt
 certifi>=2026.10.18       # distrusted emSign root removed
 pyasn1>=0.6.5             # via pysnmp / python-ldap
 brotli>=1.2.1             # via weasyprint (fonttools)
